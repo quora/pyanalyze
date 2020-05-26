@@ -1,0 +1,18 @@
+[tool.black]
+target_version = ['py27']
+include = '\.pyi?$'
+
+# README
+# The first section is for directories
+# The second section is for specific files
+
+exclude = '''
+/(
+    \.git
+  | \.ipython
+  | \.ipython64
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+)/
+'''

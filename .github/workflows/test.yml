@@ -1,0 +1,48 @@
+name: main
+
+on:
+  push:
+    branches: [master]
+    tags: ['*']
+  pull_request:
+    paths-ignore:
+    - .gitignore
+    - LICENSE
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - name: py27
+          python: '2.7'
+          toxenv: py27
+        - name: py35
+          python: '3.5'
+          toxenv: py35
+        - name: py36
+          python: '3.6'
+          toxenv: py37
+        - name: py37
+          python: '3.7'
+          toxenv: py37
+        - name: py38
+          python: '3.8'
+          toxenv: py38
+        - name: black
+          python: '3.8'
+          toxenv: black
+
+    steps:
+    - uses: actions/checkout@v1
+    - uses: actions/setup-python@v1
+      with:
+        python-version: ${{ matrix.python }}
+    - name: install tox
+      run: pip install --upgrade setuptools 'virtualenv<20' tox==3.9.0
+    - name: setup tox environment
+      run: tox -e ${{ matrix.toxenv }} --notest
+    - name: test
+      run: tox -e ${{ matrix.toxenv }}

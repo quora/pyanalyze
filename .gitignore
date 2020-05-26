@@ -1,0 +1,5 @@
+.tox
+pyanalyze.egg-info/
+pyanalyze/*.c
+*.pyc
+build/
