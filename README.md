@@ -68,24 +68,24 @@ The main way to extend pyanalyze is by providing a specification for a particula
 
 As an example, suppose your codebase contains a function `database.run_query()` that takes as an argument a SQL string, like this:
 
-   database.run_query("SELECT answer, question FROM content")
+    database.run_query("SELECT answer, question FROM content")
 
 You want to detect when a call to `run_query()` contains syntactically invalid SQL or refers to a non-existent table or column. You could set that up with code like this:
 
-  from ast import AST
-  from pyanalyze.arg_spec import ExtendedArgSpec, Parameter
-  from pyanalyze.error_code import ErrorCode
-  from pyanalyze.name_check_visitor import NameCheckVisitor
-  from pyanalyze.value import KnownValue, TypedValue, Value
-  from typing import Dict
+    from ast import AST
+    from pyanalyze.arg_spec import ExtendedArgSpec, Parameter
+    from pyanalyze.error_code import ErrorCode
+    from pyanalyze.name_check_visitor import NameCheckVisitor
+    from pyanalyze.value import KnownValue, TypedValue, Value
+    from typing import Dict
 
-  from database import run_query, parse_sql
+    from database import run_query, parse_sql
 
-  def run_query_impl(
+    def run_query_impl(
       variables: Dict[str, Value],  # parameters passed to the function
       visitor: NameCheckVisitor,   # can be used to show errors or look up names
       node: AST,  # for showing errors
-  ) -> Value:
+    ) -> Value:
       sql = variables["sql"]
       if not isinstance(sql, KnownValue) or not isinstance(sql.val, str):
           visitor.show_error(
@@ -110,20 +110,20 @@ You want to detect when a call to `run_query()` contains syntactically invalid S
       # pyanalyze will use this as the inferred return type for the function
       return TypedValue(list)
 
-  class Config(pyanalyze.config.Config):
-      def get_known_argspecs(self, arg_spec_cache):
-          return {
-              # This infers the parameter types and names from the function signature
-              run_query: arg_spec_cache.get_argspec(
-                  run_query, implementation=run_query_impl,
-              )
-              # You can also write the signature manually
-              run_query: ExtendedArgSpec(
-                  [Parameter("sql", typ=TypedValue(str))],
-                  name="run_query",
-                  implementation=run_query_impl,
-              )
-          }
+      class Config(pyanalyze.config.Config):
+          def get_known_argspecs(self, arg_spec_cache):
+              return {
+                  # This infers the parameter types and names from the function signature
+                  run_query: arg_spec_cache.get_argspec(
+                      run_query, implementation=run_query_impl,
+                  )
+                  # You can also write the signature manually
+                  run_query: ExtendedArgSpec(
+                      [Parameter("sql", typ=TypedValue(str))],
+                      name="run_query",
+                      implementation=run_query_impl,
+                  )
+              }
 
 
 ### Displaying and checking the type of an expression
