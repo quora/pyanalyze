@@ -16,12 +16,16 @@ Usage
 
 You can install pyanalyze with:
 
-    $ pip install pyanalyze
+```bash
+$ pip install pyanalyze
+```
 
 Once it is installed, you can run pyanalyze on a Python file or package as follows:
 
-    $ python -m pyanalyze file.py
-    $ python -m pyanalyze package/
+```bash
+$ python -m pyanalyze file.py
+$ python -m pyanalyze package/
+```
 
 But note that this will try to import all Python files it is passed. If you have scripts that perform operations without `if __name__ == "__main__":` blocks, pyanalyze may end up executing them.
 
@@ -33,34 +37,35 @@ Pyanalyze has a number of command-line options, which you can see by running `py
 
 At Quora, when we want pyanalyze to check a library in CI, we write a unit test that invokes pyanalyze for us. This allows us to run pyanalyze with other tests without further special setup, and it provides a convenient place to put configuration options. An example is pyanalyze's own `test_self.py` test:
 
-    import os.path
-    import pyanalyze
-    from pyanalyze.error_code import ErrorCode
-    from pyanalyze.test_node_visitor import skip_before
+```python
+import os.path
+import pyanalyze
+from pyanalyze.error_code import ErrorCode
+from pyanalyze.test_node_visitor import skip_before
 
 
-    class PyanalyzeConfig(pyanalyze.config.Config):
-        DEFAULT_DIRS = (str(os.path.dirname(__file__)),)
-        DEFAULT_BASE_MODULE = pyanalyze
-        ENABLED_ERRORS = {
-            ErrorCode.condition_always_true,
-            ErrorCode.possibly_undefined_name,
-        }
+class PyanalyzeConfig(pyanalyze.config.Config):
+    DEFAULT_DIRS = (str(os.path.dirname(__file__)),)
+    DEFAULT_BASE_MODULE = pyanalyze
+    ENABLED_ERRORS = {
+        ErrorCode.condition_always_true,
+        ErrorCode.possibly_undefined_name,
+    }
 
 
-    class PyanalyzeVisitor(pyanalyze.name_check_visitor.NameCheckVisitor):
-        config = PyanalyzeConfig()
-        should_check_environ_for_files = False
+class PyanalyzeVisitor(pyanalyze.name_check_visitor.NameCheckVisitor):
+    config = PyanalyzeConfig()
+    should_check_environ_for_files = False
 
 
-    @skip_before((3, 6))
-    def test_all():
-        PyanalyzeVisitor.check_all_files()
+@skip_before((3, 6))
+def test_all():
+    PyanalyzeVisitor.check_all_files()
 
 
-    if __name__ == "__main__":
-        PyanalyzeVisitor.main()
-
+if __name__ == "__main__":
+    PyanalyzeVisitor.main()
+```
 
 ### Extending pyanalyze
 
@@ -68,62 +73,66 @@ The main way to extend pyanalyze is by providing a specification for a particula
 
 As an example, suppose your codebase contains a function `database.run_query()` that takes as an argument a SQL string, like this:
 
-    database.run_query("SELECT answer, question FROM content")
+```python
+database.run_query("SELECT answer, question FROM content")
+```
 
 You want to detect when a call to `run_query()` contains syntactically invalid SQL or refers to a non-existent table or column. You could set that up with code like this:
 
-    from ast import AST
-    from pyanalyze.arg_spec import ExtendedArgSpec, Parameter
-    from pyanalyze.error_code import ErrorCode
-    from pyanalyze.name_check_visitor import NameCheckVisitor
-    from pyanalyze.value import KnownValue, TypedValue, Value
-    from typing import Dict
+```python
+from ast import AST
+from pyanalyze.arg_spec import ExtendedArgSpec, Parameter
+from pyanalyze.error_code import ErrorCode
+from pyanalyze.name_check_visitor import NameCheckVisitor
+from pyanalyze.value import KnownValue, TypedValue, Value
+from typing import Dict
 
-    from database import run_query, parse_sql
+from database import run_query, parse_sql
 
-    def run_query_impl(
-      variables: Dict[str, Value],  # parameters passed to the function
-      visitor: NameCheckVisitor,   # can be used to show errors or look up names
-      node: AST,  # for showing errors
-    ) -> Value:
-      sql = variables["sql"]
-      if not isinstance(sql, KnownValue) or not isinstance(sql.val, str):
-          visitor.show_error(
-              node,
-              "Argument to run_query() must be a string literal",
-              error_code=ErrorCode.incompatible_call,
-          )
-          return
+def run_query_impl(
+  variables: Dict[str, Value],  # parameters passed to the function
+  visitor: NameCheckVisitor,   # can be used to show errors or look up names
+  node: AST,  # for showing errors
+) -> Value:
+  sql = variables["sql"]
+  if not isinstance(sql, KnownValue) or not isinstance(sql.val, str):
+      visitor.show_error(
+          node,
+          "Argument to run_query() must be a string literal",
+          error_code=ErrorCode.incompatible_call,
+      )
+      return
 
-      try:
-          parsed = parse_sql(sql)
-      except ValueError as e:
-          visitor.show_error(
-              node,
-              f"Invalid sql passed to run_query(): {e}",
-              error_code=ErrorCode.incompatible_call,
-          )
-          return
+  try:
+      parsed = parse_sql(sql)
+  except ValueError as e:
+      visitor.show_error(
+          node,
+          f"Invalid sql passed to run_query(): {e}",
+          error_code=ErrorCode.incompatible_call,
+      )
+      return
 
-      # check that the parsed SQL is valid...
+  # check that the parsed SQL is valid...
 
-      # pyanalyze will use this as the inferred return type for the function
-      return TypedValue(list)
+  # pyanalyze will use this as the inferred return type for the function
+  return TypedValue(list)
 
-      class Config(pyanalyze.config.Config):
-          def get_known_argspecs(self, arg_spec_cache):
-              return {
-                  # This infers the parameter types and names from the function signature
-                  run_query: arg_spec_cache.get_argspec(
-                      run_query, implementation=run_query_impl,
-                  )
-                  # You can also write the signature manually
-                  run_query: ExtendedArgSpec(
-                      [Parameter("sql", typ=TypedValue(str))],
-                      name="run_query",
-                      implementation=run_query_impl,
-                  )
-              }
+  class Config(pyanalyze.config.Config):
+      def get_known_argspecs(self, arg_spec_cache):
+          return {
+              # This infers the parameter types and names from the function signature
+              run_query: arg_spec_cache.get_argspec(
+                  run_query, implementation=run_query_impl,
+              )
+              # You can also write the signature manually
+              run_query: ExtendedArgSpec(
+                  [Parameter("sql", typ=TypedValue(str))],
+                  name="run_query",
+                  implementation=run_query_impl,
+              )
+          }
+```
 
 
 ### Displaying and checking the type of an expression
@@ -131,20 +140,23 @@ You want to detect when a call to `run_query()` contains syntactically invalid S
 You can use `pyanalyze.dump_value(expr)` to display the type pyanalyze infers for an expression. This can be
 useful to understand errors or to debug why pyanalyze does not catch a particular issue. For example:
 
+```python
+from pyanalyze import dump_value
 
-    from pyanalyze import dump_value
-
-    dump_value(1)  # value: KnownValue(val=1) (code: inference_failure)
+dump_value(1)  # value: KnownValue(val=1) (code: inference_failure)
+```
 
 
 Similarly, you can use `pyanalyze.assert_is_value` to assert that pyanalyze infers a particular type for
 an expression. This requires importing the appropriate `Value` subclass from `pyanalyze.value`. For example:
 
-    from pyanalyze import assert_is_value
-    from pyanalyze.value import KnownValue
+```python
+from pyanalyze import assert_is_value
+from pyanalyze.value import KnownValue
 
-    assert_is_value(1, KnownValue(1))  # succeeds
-    assert_is_value(int("2"), KnownValue(1))  # Bad value inference: expected KnownValue(val=1), got TypedValue(typ=<class 'int'>) (code: inference_failure)
+assert_is_value(1, KnownValue(1))  # succeeds
+assert_is_value(int("2"), KnownValue(1))  # Bad value inference: expected KnownValue(val=1), got TypedValue(typ=<class 'int'>) (code: inference_failure)
+```
 
 This function is mostly useful when writing unit tests for pyanalyze or an extension.
 
@@ -173,26 +185,30 @@ Pyanalyze is built on top of two lower-level abstractions: Python's built-in `as
 
 The `ast` module (<https://docs.python.org/3/library/ast.html>) provides access to the abstract syntax tree (AST) of Python code. The AST is a tree-based representation of the structure of a Python program. For example, the string "`import a`" resolves into this AST:
 
-    # ast.parse considers everything to be a module
-    Module(body=[
-        # the module contains one statement of type Import
-        Import(
-            # names is a list; it would contain multiple elements for "import a, b"
-            names=[
-                alias(
-                    name='a',
-                    # if we did "import a as b", this would be "b" instead of None
-                    asname=None
-                )
-            ]
-        )
-    ])
+```python
+# ast.parse considers everything to be a module
+Module(body=[
+    # the module contains one statement of type Import
+    Import(
+        # names is a list; it would contain multiple elements for "import a, b"
+        names=[
+            alias(
+                name='a',
+                # if we did "import a as b", this would be "b" instead of None
+                asname=None
+            )
+        ]
+    )
+])
+```
 
 The `ast.NodeVisitor` class provides a convenient way to run code that inspects an AST. For each AST node type, a NodeVisitor subclass can implement a method called `visit_<node type>`. When the visitor is run on an AST, this method will be called for each node of that type. For example, the following class could be used to find `import` statements:
 
-    class ImportFinder(ast.NodeVisitor):
-        def visit_Import(self, node):
-            print("Found import statement: %s" % ast.dump(node))
+```python
+class ImportFinder(ast.NodeVisitor):
+    def visit_Import(self, node):
+        print("Found import statement: %s" % ast.dump(node))
+```
 
 ### node_visitor.py
 
@@ -200,58 +216,66 @@ Pyanalyze uses an extension to `ast.NodeVisitor`, implemented in `pyanalyze/node
 
 The following is a simple example of a visitor using this abstraction---a visitor that will show an error for every `assert` and `import` statement found:
 
-    import enum
-    from pyanalyze import node_visitor
+```python
+import enum
+from pyanalyze import node_visitor
 
-    class ErrorCode(enum.Enum):
-        found_assert = 1
-        found_import = 2
+class ErrorCode(enum.Enum):
+    found_assert = 1
+    found_import = 2
 
-    class BadStatementFinder(node_visitor.BaseNodeVisitor):
-        error_code_enum = ErrorCode
+class BadStatementFinder(node_visitor.BaseNodeVisitor):
+    error_code_enum = ErrorCode
 
-        def visit_Assert(self, node):
-            self.show_error(node, error_code=ErrorCode.found_assert)
+    def visit_Assert(self, node):
+        self.show_error(node, error_code=ErrorCode.found_assert)
 
-        def visit_Import(self, node):
-            self.show_error(node, error_code=ErrorCode.found_import)
+    def visit_Import(self, node):
+        self.show_error(node, error_code=ErrorCode.found_import)
 
-    if __name__ == '__main__':
-        BadStatementFinder.main()
+if __name__ == '__main__':
+    BadStatementFinder.main()
+```
 
 As an example, we'll run the visitor on a file containing this code:
 
-    import a
-    assert True
+```python
+import a
+assert True
+```
 
 Running the visitor without arguments gives the following output:
 
-    $ python example_visitor.py example.py
-    Error: found_import (code: found_import)
-    In example.py at line 1:
-       1: import a
-          ^
-       2: assert True
-       3:
+```
+$ python example_visitor.py example.py
+Error: found_import (code: found_import)
+In example.py at line 1:
+   1: import a
+      ^
+   2: assert True
+   3:
 
-    Error: found_assert (code: found_assert)
-    In example.py at line 2:
-       1: import a
-       2: assert True
-          ^
-       3:
+Error: found_assert (code: found_assert)
+In example.py at line 2:
+   1: import a
+   2: assert True
+      ^
+   3:
+```
 
 Using information stored in the node that caused the error, the `show_error` method finds the line and column in the Python source file where the error appears.
 
 Passing an `error_code` argument to `show_error` makes it possible to conditionally suppress errors by passing a `--disable` command-line argument:
 
-    $ python example_visitor.py example.py --disable found_import
-    Error: found_assert (code: found_assert)
-    In example.py at line 2:
-       1: import a
-       2: assert True
-          ^
-       3:
+```
+$ python example_visitor.py example.py --disable found_import
+Error: found_assert (code: found_assert)
+In example.py at line 2:
+   1: import a
+   2: assert True
+      ^
+   3:
+```
 
 Subclasses of `BaseNodeVisitor` can specify which errors are enabled by default by overriding `is_enabled_by_default` and the description shown for an error by overriding `get_description_for_error_code`.
 
@@ -281,10 +305,12 @@ The function scope has a more complicated representation than the others so that
 
 Function scopes also support **constraints**. Constraints are restrictions on the values a local variable may take. For example, take the following code:
 
-    def f(x: Union[int, None]) -> None:
-        dump_value(x)  # Union[int, None]
-        if x is not None:
-            dump_value(x)  # int
+```python
+def f(x: Union[int, None]) -> None:
+    dump_value(x)  # Union[int, None]
+    if x is not None:
+        dump_value(x)  # int
+```
 
 In this code, the `x is not None` check is translated into a constraint that is stored in the local scope, similar to how assignments are stored. When a variable is used within the block, we look at active constraints to restrict the type. In this example, this makes pyanalyze able to understand that within the if block the type of `x` is `int`, not `Union[int, None]`.
 
@@ -327,31 +353,33 @@ The first step in implementing this check is to retrieve the argument specificat
 
 Once we have the argspec, we can figure out whether the arguments passed to the callee in the AST node under consideration are compatible with the argspec. The semantics of Python calls are sufficiently complicated that it seemed simplest to generate code that contains a function with the argspec and a call to that function with the node's arguments, which can be `exec`'ed to determine whether the call is valid. All default values and all arguments to the call are set to `None`. In verbose mode, this generated code is printed out:
 
-    $ cat call_example.py
-    def function(foo, bar=3, baz='baz'):
-        return str(foo * bar) + baz
+```
+$ cat call_example.py
+def function(foo, bar=3, baz='baz'):
+    return str(foo * bar) + baz
 
-    if False:  # to make the module importable
-        function(2, bar=2, bax='2')
-    $ python -m pyanalyze -vv call_example.py
-    Checking file: ('call_example.py', 3469)
-    Code to execute:
-    def str(self, *args, **kwargs):
-        return __builtin__.locals()
+if False:  # to make the module importable
+    function(2, bar=2, bax='2')
+$ python -m pyanalyze -vv call_example.py
+Checking file: ('call_example.py', 3469)
+Code to execute:
+def str(self, *args, **kwargs):
+    return __builtin__.locals()
 
-    Variables from function call: {'self': TypedValue(typ=<class 'str'>), 'args': (UnresolvedValue(),), 'kwargs': {}}
-    Code to execute:
-    def function(foo, bar=__default_bar, baz=__default_baz):
-        return __builtin__.locals()
+Variables from function call: {'self': TypedValue(typ=<class 'str'>), 'args': (UnresolvedValue(),), 'kwargs': {}}
+Code to execute:
+def function(foo, bar=__default_bar, baz=__default_baz):
+    return __builtin__.locals()
 
 
-    TypeError("function() got an unexpected keyword argument 'bax'") (code: incompatible_call)
-    In call_example.py at line 5:
-       2:     return str(foo * bar) + baz
-       3:
-       4: if False:  # to make the module importable
-       5:     function(2, bar=2, bax='2')
-              ^
+TypeError("function() got an unexpected keyword argument 'bax'") (code: incompatible_call)
+In call_example.py at line 5:
+   2:     return str(foo * bar) + baz
+   3:
+   4: if False:  # to make the module importable
+   5:     function(2, bar=2, bax='2')
+          ^
+```
 
 ### Non-existent object attributes
 
