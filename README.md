@@ -1,9 +1,6 @@
 pyanalyze
 =========
 
-Overview
---------
-
 Pyanalyze is a tool for programmatically detecting common mistakes in Python code, such as references to undefined variables and some categories of type mismatches.
 It can be extended to add additional rules and perform checks specific to particular functions.
 
