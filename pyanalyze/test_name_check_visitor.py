@@ -740,7 +740,7 @@ class TestAttributes(TestNameCheckVisitorBase):
             assert_is_value(c.value, UNRESOLVED_VALUE)
             assert_is_value(c.int_value, TypedValue(int))
 
-    @skip_before((3, 0))
+    @skip_before((3, 6))
     def test_attribute_in_annotations(self):
         self.assert_passes(
             """
@@ -755,7 +755,7 @@ def capybara():
 """
         )
 
-    @skip_before((3, 0))
+    @skip_before((3, 6))
     def test_attribute_in_base_class(self):
         self.assert_passes(
             """
@@ -785,7 +785,7 @@ def capybara():
 """
         )
 
-    @skip_before((3, 5))
+    @skip_before((3, 6))
     def test_attribute_union(self):
         self.assert_passes(
             """
@@ -1727,8 +1727,8 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(~x, UNRESOLVED_VALUE)
             assert_is_value(~3, KnownValue(-4))
 
-    @assert_passes()
     @skip_before((3, 6))  # relies on typeshed
+    @assert_passes()
     def test_binop_type_inference(self):
         import six
 
@@ -1823,7 +1823,7 @@ async def capybara():
 """,
         )
 
-    @skip_before((3, 5))
+    @skip_before((3, 6))
     def test_async_comprehension(self):
         self.assert_passes(
             """

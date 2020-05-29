@@ -965,7 +965,8 @@ class ArgSpecCache(object):
             name="input",
             implementation=_py2_input_impl,
         )
-        # Not needed in Python 3 because we have typeshed
+    if sys.version_info < (3, 6):
+        # Not needed in Python 3.6+ because we have typeshed
         DEFAULT_ARGSPECS[len] = ExtendedArgSpec(
             [Parameter("object")],
             return_value=TypedValue(int),
