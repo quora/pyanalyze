@@ -169,7 +169,7 @@ Background
 
 Pyanalyze is built on top of two lower-level abstractions: Python's built-in `ast` module and our own `node_visitor` abstraction, which is an extension of the `ast.NodeVisitor` class.
 
-### Python AST MODULE
+### Python AST module
 
 The `ast` module (<https://docs.python.org/3/library/ast.html>) provides access to the abstract syntax tree (AST) of Python code. The AST is a tree-based representation of the structure of a Python program. For example, the string "`import a`" resolves into this AST:
 
