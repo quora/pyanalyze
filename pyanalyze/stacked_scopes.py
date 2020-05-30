@@ -347,9 +347,12 @@ class Scope(qcore.InspectableClass):
 
     """
 
-    def __init__(self, scope_type, variables, parent_scope, scope_node=None):
+    def __init__(
+        self, scope_type, variables, parent_scope, scope_node=None, scope_object=None
+    ):
         assert_is_instance(scope_type, ScopeType)
         self.scope_type = scope_type
+        self.scope_object = scope_object
         assert_is_instance(variables, dict)
         self.variables = variables
         if parent_scope is not None:
@@ -372,6 +375,17 @@ class Scope(qcore.InspectableClass):
             return self.parent_scope.get(varname, parent_node, state)
         else:
             return UNINITIALIZED_VALUE
+
+    def get_with_scope(self, varname, node, state):
+        local_value = self.get_local(varname, node, state)
+        if local_value is not UNINITIALIZED_VALUE:
+            return self.resolve_reference(local_value, state), self
+        elif self.parent_scope is not None:
+            # Parent scopes don't get the node to help local lookup.
+            parent_node = (varname, self.scope_node) if self.scope_node else None
+            return self.parent_scope.get_with_scope(varname, parent_node, state)
+        else:
+            return UNINITIALIZED_VALUE, None
 
     def get_local(self, varname, node, state):
         if varname in self.variables:
@@ -794,16 +808,23 @@ class StackedScopes(object):
             }
         self.scopes = [
             self._builtin_scope,
-            Scope(ScopeType.module_scope, module_vars, self._builtin_scope),
+            Scope(
+                ScopeType.module_scope,
+                module_vars,
+                self._builtin_scope,
+                scope_object=module,
+            ),
         ]
 
     @contextlib.contextmanager
-    def add_scope(self, scope_type, scope_node):
+    def add_scope(self, scope_type, scope_node, scope_object=None):
         """Contextmanager that temporarily adds a scope of this type to the top of the stack."""
         if scope_type is ScopeType.function_scope:
             scope = FunctionScope(self.scopes[-1], scope_node)
         else:
-            scope = Scope(scope_type, {}, self.scopes[-1], scope_node)
+            scope = Scope(
+                scope_type, {}, self.scopes[-1], scope_node, scope_object=scope_object
+            )
         self.scopes.append(scope)
         try:
             yield
@@ -834,10 +855,18 @@ class StackedScopes(object):
           assignments and map name usages to their corresponding assignments, and then the checking
           state to locate any errors in the code.
 
-        Raises NameError if the name is not defined in any known scope.
+        Returns UNINITIALIZED_VALUE if the name is not defined in any known scope.
 
         """
         return self.scopes[-1].get(varname, node, state)
+
+    def get_with_scope(self, varname, node, state):
+        """Like get(), but also returns the scope object the name was found in.
+
+        Returns a (Value, Scope) tuple. The Scope is None if the name was not found.
+
+        """
+        return self.scopes[-1].get_with_scope(varname, node, state)
 
     def get_nonlocal_scope(self, varname, using_scope):
         """Gets the defining scope of a non-local variable."""

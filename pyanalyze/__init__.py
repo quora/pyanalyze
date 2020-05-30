@@ -16,6 +16,7 @@ from . import asynq_checker
 from . import config
 from . import error_code
 from . import find_unused
+from .find_unused import used
 from . import method_return_type
 from . import node_visitor
 from . import stacked_scopes
