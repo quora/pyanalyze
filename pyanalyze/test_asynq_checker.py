@@ -6,7 +6,6 @@ from qcore.asserts import assert_eq
 
 from .error_code import ErrorCode
 from .asynq_checker import (
-    is_async_classmethod,
     is_impure_async_fn,
     _stringify_async_fn,
     get_pure_async_equivalent,
@@ -42,7 +41,6 @@ class TestImpureAsyncCalls(TestNameCheckVisitorBase):
 
     def test_async_before_classmethod(self):
         # the decorators should work in either order
-        from pyanalyze.tests import PropertyObject
         from asynq import asynq, result
 
         class AsyncBeforeClassmethod(object):
@@ -463,10 +461,3 @@ def test_get_pure_async_equivalent():
         "pyanalyze.tests.PropertyObject.async_method.asynq",
         get_pure_async_equivalent(UnboundMethodValue("async_method", PropertyObject)),
     )
-
-
-def test_is_async_classmethod():
-    assert is_async_classmethod(PropertyObject.async_classmethod)
-    assert not is_async_classmethod(PropertyObject.is_prop_with_is)
-    assert not is_async_classmethod(PropertyObject.sync_load)
-    assert not is_async_classmethod(test_get_pure_async_equivalent)

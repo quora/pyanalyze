@@ -69,10 +69,6 @@ def async_fn(oid):
     return
 
 
-def normal_fn(oid):
-    return cached_fn(oid)
-
-
 class Wrapper(object):
     pass
 
