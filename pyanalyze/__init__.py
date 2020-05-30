@@ -10,6 +10,7 @@ __reviewer__ = "jelle"
 
 from . import name_check_visitor
 from . import analysis_lib
+from . import annotations
 from . import arg_spec
 from .arg_spec import assert_is_value, dump_value
 from . import asynq_checker
