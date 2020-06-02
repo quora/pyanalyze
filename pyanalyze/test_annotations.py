@@ -436,7 +436,6 @@ def capybara(x: Type[str], y: "Type[int]"):
         self.assert_passes(
             """
 from queue import Queue
-from typing import List
 
 class I:
     ...
