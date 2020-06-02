@@ -80,6 +80,7 @@ class UnusedObjectFinder(object):
         self.print_all = print_all
         self.usages = defaultdict(lambda: defaultdict(set))
         self.import_stars = defaultdict(set)
+        self.module_to_import_stars = defaultdict(set)
         self.visited_modules = []
         self._recursive_stack = set()
 
@@ -99,10 +100,14 @@ class UnusedObjectFinder(object):
     def record(self, owner, attr, using_module):
         if not self.enabled:
             return
-        self.usages[owner][attr].add(using_module)
+        try:
+            self.usages[owner][attr].add(using_module)
+        except Exception:
+            pass
 
     def record_import_star(self, module, using_module):
         self.import_stars[module].add(using_module)
+        self.module_to_import_stars[using_module].add(module)
 
     def record_module_visited(self, module):
         self.visited_modules.append(module)
@@ -126,6 +131,8 @@ class UnusedObjectFinder(object):
             if usage is _UsageKind.used:
                 continue
             if not self._should_record_usage(value):
+                continue
+            if any(hasattr(import_starred, attr) for import_starred in self.module_to_import_stars[module]):
                 continue
             if usage is _UsageKind.used_in_test:
                 if not is_test_module:

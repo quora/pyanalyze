@@ -672,7 +672,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # leaving this check disabled by default for now.
             self.show_errors_for_unused_ignores(ErrorCode.unused_ignore)
             self.show_errors_for_bare_ignores(ErrorCode.bare_ignore)
-            self.unused_finder.record_module_visited(self.module)
+            if self.unused_finder is not None:
+                self.unused_finder.record_module_visited(self.module)
         except node_visitor.VisitorError:
             raise
         except Exception as e:
@@ -1568,6 +1569,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _maybe_record_usages_from_import(self, node):
         if self.unused_finder is None:
             return
+        if self._is_unimportable_module(node):
+            return
         if node.level == 0:
             module_name = node.module
         else:
@@ -1592,6 +1595,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             else:
                 self.unused_finder.record(module, alias.name, self.module.__name__)
 
+    def _is_unimportable_module(self, node):
+        if isinstance(node, ast.ImportFrom):
+            # the split is needed for cases like "from foo.bar import baz" if foo is unimportable
+            return (
+                node.module is not None
+                and node.module.split(".")[0] in self.config.UNIMPORTABLE_MODULES
+            )
+        else:
+            # need the split if the code is "import foo.bar as bar" if foo is unimportable
+            return any(
+                name.name.split(".")[0] in self.config.UNIMPORTABLE_MODULES
+                for name in node.names
+            )
+
     def _simulate_import(self, node, is_import_from=False):
         """Set the names retrieved from an import node in nontrivial situations.
 
@@ -1610,19 +1627,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         source_code = decompile(node)
 
-        if is_import_from:
-            # the split is needed for cases like "from foo.bar import baz" if foo is unimportable
-            unimportable = (
-                node.module is not None
-                and node.module.split(".")[0] in self.config.UNIMPORTABLE_MODULES
-            )
-        else:
-            # need the split if the code is "import foo.bar as bar" if foo is unimportable
-            unimportable = any(
-                name.name.split(".")[0] in self.config.UNIMPORTABLE_MODULES
-                for name in node.names
-            )
-        if unimportable:
+        if self._is_unimportable_module(node):
             self._handle_imports(node.names)
             self.log(logging.INFO, "Ignoring import node", source_code)
             return

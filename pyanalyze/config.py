@@ -190,6 +190,10 @@ class Config(object):
         """
         return set()
 
+    def should_ignore_unused(self, object):
+        """If this returns True, we will exclude this object from the unused object check."""
+        return False
+
     #
     # Used by asynq_checker.py
     #
