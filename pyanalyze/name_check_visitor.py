@@ -1508,10 +1508,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._show_error_if_checking(node, error_code=ErrorCode.bad_global)
             return
 
+        module_scope = self.scope.module_scope()
         for name in node.names:
-            self._set_name_in_scope(
-                name, node, ReferencingValue(self.scope.module_scope(), name)
-            )
+            if self.unused_finder is not None and module_scope.scope_object is not None:
+                self.unused_finder.record(
+                    module_scope.scope_object, name, module_scope.scope_object.__name__
+                )
+            self._set_name_in_scope(name, node, ReferencingValue(module_scope, name))
 
     def visit_Nonlocal(self, node):
         if self.scope.scope_type() != ScopeType.function_scope:

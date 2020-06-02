@@ -132,7 +132,10 @@ class UnusedObjectFinder(object):
                 continue
             if not self._should_record_usage(value):
                 continue
-            if any(hasattr(import_starred, attr) for import_starred in self.module_to_import_stars[module]):
+            if any(
+                hasattr(import_starred, attr)
+                for import_starred in self.module_to_import_stars[module]
+            ):
                 continue
             if usage is _UsageKind.used_in_test:
                 if not is_test_module:
