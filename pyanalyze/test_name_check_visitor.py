@@ -193,6 +193,13 @@ def run():
         def what_is_it():
             return tucotuco
 
+    @skip_before((3, 0))
+    @assert_fails(ErrorCode.undefined_name)
+    def test_undefined_name_in_class_kwarg(self):
+        def capybara():
+            class Capybara(metaclass=Hutia):
+                pass
+
     @assert_passes()
     def test_no_failure_on_builtin(self):
         def run():
