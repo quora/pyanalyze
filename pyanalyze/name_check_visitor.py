@@ -2105,14 +2105,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         allow_call = method not in self.config.DISALLOW_CALLS_TO_DUNDERS
         with self.catch_errors() as left_errors:
             left_result = self._check_dunder_call(
-                source_node, left, method, [right], allow_call=allow_call,
+                source_node, left, method, [right], allow_call=allow_call
             )
         if not left_errors:
             return left_result
 
         with self.catch_errors() as right_errors:
             right_result = self._check_dunder_call(
-                source_node, right, rmethod, [left], allow_call=allow_call,
+                source_node, right, rmethod, [left], allow_call=allow_call
             )
         if not right_errors:
             return right_result
@@ -2871,7 +2871,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         lookup_val = callee_val.get_type_value()
 
         def on_error(typ):
-            self._show_error_if_checking(
+            self.show_error(
                 node,
                 "Object of type %s does not support %r" % (callee_val, method_name),
                 error_code=ErrorCode.unsupported_operation,

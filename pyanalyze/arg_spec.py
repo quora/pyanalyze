@@ -139,6 +139,8 @@ class BoundMethodArgSpecWrapper(InspectableClass):
     """
 
     def __init__(self, argspec, self_value):
+        if isinstance(argspec, BoundMethodArgSpecWrapper):
+            argspec = argspec.argspec
         assert isinstance(argspec, ExtendedArgSpec), "invalid argspec %r" % (argspec,)
         self.argspec = argspec
         self.self_value = self_value
@@ -925,8 +927,8 @@ class ArgSpecCache(object):
             [
                 Parameter("expected"),
                 Parameter("actual"),
-                Parameter("message", default_value=None,),
-                Parameter("extra", default_value=None,),
+                Parameter("message", default_value=None),
+                Parameter("extra", default_value=None),
             ],
             name="assert_is",
             implementation=_assert_is_impl,
@@ -935,8 +937,8 @@ class ArgSpecCache(object):
             [
                 Parameter("expected"),
                 Parameter("actual"),
-                Parameter("message", default_value=None,),
-                Parameter("extra", default_value=None,),
+                Parameter("message", default_value=None),
+                Parameter("extra", default_value=None),
             ],
             name="assert_is_not",
             implementation=_assert_is_not_impl,

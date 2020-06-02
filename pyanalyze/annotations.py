@@ -32,11 +32,16 @@ from .value import (
 )
 
 try:
-    from typing import get_origin  # Python 3.9
+    from typing import get_origin, get_args  # Python 3.9
+    from types import GenericAlias
 except ImportError:
+    GenericAlias = None
 
     def get_origin(obj):
         return None
+
+    def get_args(obj):
+        return ()
 
 
 def type_from_ast(ast_node, visitor=None):
@@ -110,6 +115,10 @@ def _type_from_runtime(val, ctx):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
         return _value_of_origin_args(origin, args, val, ctx)
+    elif GenericAlias is not None and isinstance(val, GenericAlias):
+        origin = get_origin(val)
+        args = get_args(val)
+        return GenericValue(origin, [_type_from_runtime(arg, ctx) for arg in args])
     elif isinstance(val, type):
         if val is type(None):
             return KnownValue(None)
