@@ -222,7 +222,7 @@ class X:
     @abstractmethod
     def f(self) -> int:
         pass
-""",
+"""
         )
         self.assert_fails(
             ErrorCode.incompatible_return_value,
@@ -428,5 +428,24 @@ from typing import Type
 def capybara(x: Type[str], y: "Type[int]"):
     assert_is_value(x, SubclassValue(str))
     assert_is_value(y, SubclassValue(int))
+"""
+        )
+
+    @skip_before((3, 6))
+    def test_generic_alias(self):
+        self.assert_passes(
+            """
+from queue import Queue
+from typing import List
+
+class I:
+    ...
+
+class X:
+    def __init__(self):
+        self.q: Queue[I] = Queue()
+
+def f(x: Queue[I]) -> None:
+    assert_is_value(x, GenericValue(Queue, [TypedValue(I)]))
 """
         )
