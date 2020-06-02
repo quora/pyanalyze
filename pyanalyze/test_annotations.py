@@ -404,6 +404,19 @@ def capybara(x: Pattern[str]):
 """
         )
 
+    @skip_before((3, 7))
+    def test_future_annotations(self):
+        self.assert_passes(
+            """
+from __future__ import annotations
+from typing import List
+
+def f(x: int, y: List[str]):
+    assert_is_value(x, TypedValue(int))
+    assert_is_value(y, GenericValue(list, [TypedValue(str)]))
+"""
+        )
+
     @skip_before((3, 6))
     def test_final(self):
         self.assert_passes(
