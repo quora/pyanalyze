@@ -431,7 +431,7 @@ def capybara(x: Type[str], y: "Type[int]"):
 """
         )
 
-    @skip_before((3, 6))
+    @skip_before((3, 9))
     def test_generic_alias(self):
         self.assert_passes(
             """
