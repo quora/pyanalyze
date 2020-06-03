@@ -898,6 +898,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_ClassDef(self, node):
         self._generic_visit_list(node.decorator_list)
         self._generic_visit_list(node.bases)
+        if hasattr(node, "keywords"):
+            self._generic_visit_list(node.keywords)
         value = self._visit_class_and_get_value(node)
         self._set_name_in_scope(node.name, node, value)
         return value
