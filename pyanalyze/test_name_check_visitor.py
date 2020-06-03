@@ -1738,6 +1738,7 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(u"foo" + six.text_type(x), TypedValue(six.text_type))
             assert_is_value(1 + float(x), TypedValue(float))
             assert_is_value(1.0 + int(x), TypedValue(float))
+            assert_is_value(3 * 3.0 + 1, KnownValue(10.0))
 
     @assert_fails(ErrorCode.unsupported_operation)
     def test_unsupported_unary_op(self):
