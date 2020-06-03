@@ -173,7 +173,19 @@ class TestScoping(TestNameCheckVisitorBase):
     def test_args_kwargs(self):
         def capybara(*args, **kwargs):
             assert_is_value(args, TypedValue(tuple))
-            assert_is_value(kwargs, TypedValue(dict))
+            assert_is_value(
+                kwargs, GenericValue(dict, [TypedValue(str), UNRESOLVED_VALUE])
+            )
+
+    @skip_before((3, 0))
+    def test_args_kwargs_annotated(self):
+        self.assert_passes(
+            """
+def capybara(*args: int, **kwargs: int):
+    assert_is_value(args, GenericValue(tuple, [TypedValue(int)]))
+    assert_is_value(kwargs, GenericValue(dict, [TypedValue(str), TypedValue(int)]))
+"""
+        )
 
     @assert_passes()
     def test_internal_imports(self):
