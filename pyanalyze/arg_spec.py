@@ -799,7 +799,7 @@ def _qcore_assert_impl(variables, visitor, node, constraint_type, positive):
     elif right_varname is not None:
         if not isinstance(variables["expected"], KnownValue):
             return KnownValue(None), NULL_CONSTRAINT, NULL_CONSTRAINT
-        varname = left_varname
+        varname = right_varname
         constrained_to = variables["expected"].val
     else:
         return KnownValue(None), NULL_CONSTRAINT, NULL_CONSTRAINT
