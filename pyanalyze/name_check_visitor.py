@@ -3414,14 +3414,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             and all(isinstance(value, KnownValue) for key, value in keywords)
         ):
             try:
-                return_value = KnownValue(
-                    callee_wrapped.val(
-                        *[arg.val for arg in args],
-                        **{key: value.val for key, value in keywords}
-                    )
+                result = callee_wrapped.val(
+                    *[arg.val for arg in args],
+                    **{key: value.val for key, value in keywords}
                 )
             except Exception as e:
                 self.log(logging.INFO, "exception calling", (callee_wrapped, e))
+            else:
+                if result is NotImplemented:
+                    self.show_error(
+                        node,
+                        "Call to %s is not supported" % (callee_wrapped.val,),
+                        error_code=ErrorCode.incompatible_call,
+                    )
+                return_value = KnownValue(result)
 
         # for .asynq functions, we use the argspec for the underlying function, but that means
         # that the return value is not wrapped in AsyncTask, so we do that manually here
