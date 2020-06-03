@@ -919,22 +919,32 @@ class TestConstraints(TestNameCheckVisitorBase):
         def capybara(cond):
             if cond:
                 x = True
+                y = True
             else:
                 x = False
+                y = False
 
             assert_is_value(x, MultiValuedValue([KnownValue(True), KnownValue(False)]))
+            assert_is_value(y, MultiValuedValue([KnownValue(True), KnownValue(False)]))
             assert_is(x, True)
+            assert_is(True, y)
             assert_is_value(x, KnownValue(True))
+            assert_is_value(y, KnownValue(True))
 
-        def capybara(cond):
+        def paca(cond):
             if cond:
                 x = True
+                y = True
             else:
                 x = False
+                y = False
 
             assert_is_value(x, MultiValuedValue([KnownValue(True), KnownValue(False)]))
+            assert_is_value(y, MultiValuedValue([KnownValue(True), KnownValue(False)]))
             assert_is_not(x, True)
+            assert_is_not(True, y)
             assert_is_value(x, KnownValue(False))
+            assert_is_value(y, KnownValue(False))
 
     @assert_passes()
     def test_is_or_is_not(self):

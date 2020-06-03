@@ -791,15 +791,11 @@ def _qcore_assert_impl(variables, visitor, node, constraint_type, positive):
         return KnownValue(None), NULL_CONSTRAINT, NULL_CONSTRAINT
     left_varname = visitor.varname_for_constraint(node.args[0])
     right_varname = visitor.varname_for_constraint(node.args[1])
-    if left_varname is not None:
-        if not isinstance(variables["actual"], KnownValue):
-            return KnownValue(None), NULL_CONSTRAINT, NULL_CONSTRAINT
+    if left_varname is not None and isinstance(variables["actual"], KnownValue):
         varname = left_varname
         constrained_to = variables["actual"].val
-    elif right_varname is not None:
-        if not isinstance(variables["expected"], KnownValue):
-            return KnownValue(None), NULL_CONSTRAINT, NULL_CONSTRAINT
-        varname = left_varname
+    elif right_varname is not None and isinstance(variables["expected"], KnownValue):
+        varname = right_varname
         constrained_to = variables["expected"].val
     else:
         return KnownValue(None), NULL_CONSTRAINT, NULL_CONSTRAINT
