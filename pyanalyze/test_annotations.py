@@ -4,7 +4,7 @@ from __future__ import absolute_import
 from __future__ import division
 
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import skip_before
+from .test_node_visitor import skip_before, assert_passes
 from .error_code import ErrorCode
 
 
@@ -459,5 +459,23 @@ class X:
 
 def f(x: Queue[I]) -> None:
     assert_is_value(x, GenericValue(Queue, [TypedValue(I)]))
+"""
+        )
+
+    @assert_passes()
+    def test_args_kwargs(self):
+        def capybara(*args, **kwargs):
+            assert_is_value(args, TypedValue(tuple))
+            assert_is_value(
+                kwargs, GenericValue(dict, [TypedValue(str), UNRESOLVED_VALUE])
+            )
+
+    @skip_before((3, 0))
+    def test_args_kwargs_annotated(self):
+        self.assert_passes(
+            """
+def capybara(*args: int, **kwargs: int):
+    assert_is_value(args, GenericValue(tuple, [TypedValue(int)]))
+    assert_is_value(kwargs, GenericValue(dict, [TypedValue(str), TypedValue(int)]))
 """
         )

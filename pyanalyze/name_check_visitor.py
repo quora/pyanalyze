@@ -1388,15 +1388,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     and not isinstance(node, ast.Lambda)
                 )
                 if getattr(arg, "annotation", None) is not None:
-                    # Evaluate annotations in the surrounding scope,
-                    # not the function's scope.
-                    with self.scope.ignore_topmost_scope(), qcore.override(
-                        self, "state", VisitorState.collect_names
-                    ):
-                        annotated_type = self.visit(arg.annotation)
-                    value = self._value_of_annotation_type(
-                        annotated_type, arg.annotation
-                    )
+                    value = self._value_of_annotated_arg(arg)
                     if default is not None and not self.is_value_compatible(
                         value, default
                     ):
@@ -1428,14 +1420,39 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     self.visit(arg)
 
             if node.args.vararg is not None:
+                value = TypedValue(tuple)
                 # in py3 the vararg is wrapped in an arg object
-                vararg = getattr(node.args.vararg, "arg", node.args.vararg)
-                self.scope.set(vararg, TypedValue(tuple), vararg, self.state)
+                if hasattr(node.args.vararg, "arg"):
+                    vararg = node.args.vararg.arg
+                    arg_value = self._value_of_annotated_arg(node.args.vararg)
+                    if arg_value is not UNRESOLVED_VALUE:
+                        value = GenericValue(tuple, [arg_value])
+                else:
+                    vararg = node.args.vararg
+                self.scope.set(vararg, value, vararg, self.state)
             if node.args.kwarg is not None:
-                kwarg = getattr(node.args.kwarg, "arg", node.args.kwarg)
-                self.scope.set(kwarg, TypedValue(dict), kwarg, self.state)
+                value = GenericValue(dict, [TypedValue(str), UNRESOLVED_VALUE])
+                if hasattr(node.args.kwarg, "arg"):
+                    kwarg = node.args.kwarg.arg
+                    arg_value = self._value_of_annotated_arg(node.args.kwarg)
+                    if arg_value is not UNRESOLVED_VALUE:
+                        value = GenericValue(dict, [TypedValue(str), arg_value])
+                else:
+                    kwarg = node.args.kwarg
+                self.scope.set(kwarg, value, kwarg, self.state)
 
         return args
+
+    def _value_of_annotated_arg(self, arg):
+        if not hasattr(arg, "annotation") or arg.annotation is None:
+            return UNRESOLVED_VALUE
+        # Evaluate annotations in the surrounding scope,
+        # not the function's scope.
+        with self.scope.ignore_topmost_scope(), qcore.override(
+            self, "state", VisitorState.collect_names
+        ):
+            annotated_type = self.visit(arg.annotation)
+        return self._value_of_annotation_type(annotated_type, arg.annotation)
 
     def _value_of_annotation_type(self, val, node):
         """Given a value encountered in a type annotation, return a type."""
