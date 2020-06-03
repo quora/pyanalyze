@@ -919,7 +919,7 @@ class TestConstraints(TestNameCheckVisitorBase):
             assert_is_value(x, KnownValue(True))
             assert_is_value(y, KnownValue(True))
 
-        def capybara(cond):
+        def paca(cond):
             if cond:
                 x = True
                 y = True
