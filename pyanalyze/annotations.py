@@ -17,6 +17,7 @@ except ImportError:
     from collections import Callable
 
 from .error_code import ErrorCode
+from .find_unused import used
 from .value import (
     KnownValue,
     NO_RETURN_VALUE,
@@ -44,6 +45,7 @@ except ImportError:
         return ()
 
 
+@used  # part of the API of this module; low cost even if currently unused
 def type_from_ast(ast_node, visitor=None):
     """Given an AST node representing an annotation, return a Value."""
     ctx = _Context(visitor, ast_node)

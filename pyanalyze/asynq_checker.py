@@ -237,15 +237,6 @@ def _stringify_obj(obj):
         return "%s.%s" % (obj.__module__, obj.__name__)
 
 
-def is_async_classmethod(obj):
-    try:
-        decorator = obj.decorator
-    except AttributeError:
-        return False
-    else:
-        return getattr(decorator, "type", None) is classmethod
-
-
 def replace_func_on_call_node(node, new_func):
     if six.PY2:
         return ast.Call(

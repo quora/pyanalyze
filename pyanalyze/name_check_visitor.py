@@ -53,7 +53,7 @@ from pyanalyze.arg_spec import (
 )
 from pyanalyze.config import Config
 from pyanalyze.error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
-from pyanalyze.find_unused import UnusedObjectFinder
+from pyanalyze.find_unused import UnusedObjectFinder, used
 from pyanalyze import format_strings
 from pyanalyze import importer
 from pyanalyze import method_return_type
@@ -511,6 +511,7 @@ class StackedContexts(object):
             self.contexts.pop()
 
 
+@used  # exposed as an API
 class CallSiteCollector(object):
     """Class to record function calls with their origin."""
 
@@ -671,6 +672,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # leaving this check disabled by default for now.
             self.show_errors_for_unused_ignores(ErrorCode.unused_ignore)
             self.show_errors_for_bare_ignores(ErrorCode.bare_ignore)
+            if self.unused_finder is not None:
+                self.unused_finder.record_module_visited(self.module)
         except node_visitor.VisitorError:
             raise
         except Exception as e:
@@ -793,7 +796,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """
         if error_node is None:
             error_node = node
-        value = self.scope.get(node.id, node, self.state)
+        value, defining_scope = self.scope.get_with_scope(node.id, node, self.state)
+        if defining_scope is not None:
+            if defining_scope.scope_type in (
+                ScopeType.module_scope,
+                ScopeType.class_scope,
+            ):
+                if defining_scope.scope_object is not None:
+                    self._maybe_record_usage(
+                        defining_scope.scope_object, node.id, value
+                    )
         if value is UNINITIALIZED_VALUE:
             if suppress_errors or node.id in self.config.IGNORED_VARIABLES:
                 self.log(logging.INFO, "ignoring undefined name", node.id)
@@ -932,7 +944,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 current_class = None
 
             with self.scope.add_scope(
-                ScopeType.class_scope, scope_node=None
+                ScopeType.class_scope, scope_node=None, scope_object=current_class
             ), self._set_current_class(current_class):
                 self._generic_visit_list(node.body)
 
@@ -1496,10 +1508,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._show_error_if_checking(node, error_code=ErrorCode.bad_global)
             return
 
+        module_scope = self.scope.module_scope()
         for name in node.names:
-            self._set_name_in_scope(
-                name, node, ReferencingValue(self.scope.module_scope(), name)
-            )
+            if self.unused_finder is not None and module_scope.scope_object is not None:
+                self.unused_finder.record(
+                    module_scope.scope_object, name, module_scope.scope_object.__name__
+                )
+            self._set_name_in_scope(name, node, ReferencingValue(module_scope, name))
 
     def visit_Nonlocal(self, node):
         if self.scope.scope_type() != ScopeType.function_scope:
@@ -1546,11 +1561,56 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             for name in node.names:
                 self.future_imports.add(name.name)
 
+        self._maybe_record_usages_from_import(node)
+
         is_star_import = len(node.names) == 1 and node.names[0].name == "*"
         if self.scope.scope_type() == ScopeType.module_scope and not is_star_import:
             self._handle_imports(node.names)
         else:
             self._simulate_import(node, is_import_from=True)
+
+    def _maybe_record_usages_from_import(self, node):
+        if self.unused_finder is None:
+            return
+        if self._is_unimportable_module(node):
+            return
+        if node.level == 0:
+            module_name = node.module
+        else:
+            if self.filename.endswith("/__init__.py"):
+                this_module_name = self.module.__name__ + ".__init__"
+            else:
+                this_module_name = self.module.__name__
+            parent_module_name = this_module_name.rsplit(".", maxsplit=node.level)[0]
+            if node.module is not None:
+                module_name = parent_module_name + "." + node.module
+            else:
+                module_name = parent_module_name
+        module = sys.modules.get(module_name)
+        if module is None:
+            try:
+                module = __import__(module_name)
+            except Exception:
+                return
+        for alias in node.names:
+            if alias.name == "*":
+                self.unused_finder.record_import_star(module, self.module)
+            else:
+                self.unused_finder.record(module, alias.name, self.module.__name__)
+
+    def _is_unimportable_module(self, node):
+        if isinstance(node, ast.ImportFrom):
+            # the split is needed for cases like "from foo.bar import baz" if foo is unimportable
+            return (
+                node.module is not None
+                and node.module.split(".")[0] in self.config.UNIMPORTABLE_MODULES
+            )
+        else:
+            # need the split if the code is "import foo.bar as bar" if foo is unimportable
+            return any(
+                name.name.split(".")[0] in self.config.UNIMPORTABLE_MODULES
+                for name in node.names
+            )
 
     def _simulate_import(self, node, is_import_from=False):
         """Set the names retrieved from an import node in nontrivial situations.
@@ -1570,19 +1630,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         source_code = decompile(node)
 
-        if is_import_from:
-            # the split is needed for cases like "from foo.bar import baz" if foo is unimportable
-            unimportable = (
-                node.module is not None
-                and node.module.split(".")[0] in self.config.UNIMPORTABLE_MODULES
-            )
-        else:
-            # need the split if the code is "import foo.bar as bar" if foo is unimportable
-            unimportable = any(
-                name.name.split(".")[0] in self.config.UNIMPORTABLE_MODULES
-                for name in node.names
-            )
-        if unimportable:
+        if self._is_unimportable_module(node):
             self._handle_imports(node.names)
             self.log(logging.INFO, "Ignoring import node", source_code)
             return
@@ -2740,8 +2788,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if force_read or self._is_read_ctx(node.ctx):
             self.yield_checker.record_usage(node.id, node)
             value = self.resolve_name(node)
-            if isinstance(value, KnownValue):
-                self._maybe_record_usage(value.val)
             varname_value = VariableNameValue.from_varname(
                 node.id, self.config.varname_value_map()
             )
@@ -3025,9 +3071,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return TypedValue(dict)
         elif attr == "__bases__":
             return GenericValue(tuple, [SubclassValue(object)])
-        return self._get_attribute_from_mro(
+        result = self._get_attribute_from_mro(
             node, attr, typ, self._get_attribute_value_from_raw_subclass, on_error
         )
+        self._maybe_record_usage(typ, attr, result)
+        return result
 
     def _get_attribute_value_from_raw_subclass(self, cls_val, attr, typ, node):
         if (
@@ -3060,9 +3108,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return KnownValue(typ)
         elif attr == "__dict__":
             return TypedValue(dict)
-        return self._get_attribute_from_mro(
+        result = self._get_attribute_from_mro(
             node, attr, typ, self._get_attribute_value_from_raw_typed, on_error
         )
+        self._maybe_record_usage(typ, attr, result)
+        return result
 
     def _get_attribute_from_mro(self, node, attr, typ, attribute_from_raw, on_error):
         # Then go through the MRO and find base classes that may define the attribute.
@@ -3177,12 +3227,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return UNRESOLVED_VALUE
 
         def _get_attribute_value_from_raw_known(cls_val, attr, typ, node):
-            self._maybe_record_usage(cls_val)
             return self._maybe_replace_name_attribute(node, attr, value, cls_val)
 
-        return self._get_attribute_from_mro(
+        result = self._get_attribute_from_mro(
             node, attr, value, _get_attribute_value_from_raw_known, on_error
         )
+        if isinstance(value, (types.ModuleType, type)):
+            self._maybe_record_usage(value, attr, result)
+        else:
+            self._maybe_record_usage(type(value), attr, result)
+        return result
 
     def _maybe_replace_name_attribute(self, node, attr, value, attr_value):
         # the __name__ of a class is bytes in py2 but text in py3, but treating it as bytes, can
@@ -3208,9 +3262,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             getattr(method, attr)
         except AttributeError:
             return on_error(method)
-        return UnboundMethodValue(
+        result = UnboundMethodValue(
             root_value.attr_name, root_value.typ, secondary_attr_name=attr
         )
+        self._maybe_record_usage(type(method), attr, result)
+        return result
 
     def _visit_set_attribute(self, node, root_value):
         if isinstance(root_value, (TypedValue, SubclassValue)):
@@ -3548,7 +3604,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Finding unused objects
 
-    def _maybe_record_usage(self, value):
+    def _maybe_record_usage(self, module_or_class, attribute, value):
         if self.unused_finder is None:
             return
 
@@ -3556,15 +3612,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if self.scope.scope_type() == ScopeType.function_scope and self._is_checking():
             return
 
-        # exclude calls within a class (probably in super calls)
-        if value is self.current_class:
-            return
+        if isinstance(value, KnownValue):
+            # exclude calls within a class (probably in super calls)
+            if value.val is self.current_class:
+                return
 
-        inner = self.config.unwrap_cls(value)
-        if inner is self.current_class:
-            return
+            inner = self.config.unwrap_cls(value.val)
+            if inner is self.current_class:
+                return
 
-        self.unused_finder.record(value)
+        self.unused_finder.record(module_or_class, attribute, self.module.__name__)
 
     @classmethod
     def _get_argument_parser(cls):

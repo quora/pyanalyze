@@ -11,6 +11,8 @@ Error codes used by test_scope.
 import enum
 from aenum import extend_enum
 
+from .find_unused import used
+
 
 class ErrorCode(enum.Enum):
     # internal
@@ -149,6 +151,7 @@ ERROR_DESCRIPTION = {
 }
 
 
+@used  # exposed as an API
 def register_error_code(name, description):
     """Register an additional error code. For use in extensions."""
     value = max(member.value for member in ErrorCode) + 1

@@ -9,6 +9,7 @@ Implementation of extended argument specifications used by test_scope.
 from .annotations import type_from_runtime
 from .config import Config
 from .error_code import ErrorCode
+from .find_unused import used
 from .format_strings import parse_format_string
 from .stacked_scopes import NULL_CONSTRAINT, Constraint, ConstraintType, OrConstraint
 from .value import (
@@ -55,6 +56,7 @@ _NO_ARG_SENTINEL = qcore.MarkerObject("no argument given")
 _NO_VALUE = qcore.MarkerObject("no value")
 
 
+@used  # exposed as an API
 def assert_is_value(obj, value):
     """Used to test test_scope's value inference.
 
@@ -66,6 +68,7 @@ def assert_is_value(obj, value):
     pass
 
 
+@used  # exposed as an API
 def dump_value(value):
     """Used for debugging test_scope.
 
@@ -76,6 +79,7 @@ def dump_value(value):
     pass
 
 
+@used  # exposed as an API
 @contextlib.contextmanager
 def with_implementation(fn, implementation_fn):
     """Temporarily sets the implementation of fn to be implementation_fn.
