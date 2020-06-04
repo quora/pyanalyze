@@ -105,9 +105,9 @@ class UnusedObjectFinder(object):
         except Exception:
             pass
 
-    def record_import_star(self, module, using_module):
-        self.import_stars[module].add(using_module)
-        self.module_to_import_stars[using_module].add(module)
+    def record_import_star(self, imported_module, importing_module):
+        self.import_stars[imported_module].add(importing_module)
+        self.module_to_import_stars[importing_module].add(imported_module)
 
     def record_module_visited(self, module):
         self.visited_modules.append(module)
@@ -194,6 +194,9 @@ class UnusedObjectFinder(object):
         elif inspect.ismodule(value):
             # test modules will usually show up as unused
             if value.__name__.split(".")[-1].startswith("test"):
+                return False
+            # if it was ever import *ed from, don't treat it as unused
+            if value in self.import_stars:
                 return False
         try:
             # __future__ imports are usually unused
