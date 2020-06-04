@@ -190,8 +190,13 @@ class Config(object):
         """
         return set()
 
-    def should_ignore_unused(self, object):
-        """If this returns True, we will exclude this object from the unused object check."""
+    def should_ignore_unused(self, module, attribute, object):
+        """If this returns True, we will exclude this object from the unused object check.
+
+        The arguments are the module the object was found in, the attribute used to
+        access it, and the object itself.
+
+        """
         return False
 
     #

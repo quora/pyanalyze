@@ -130,7 +130,7 @@ class UnusedObjectFinder(object):
             usage = _UsageKind.aggregate([own_usage, star_usage])
             if usage is _UsageKind.used:
                 continue
-            if not self._should_record_usage(value):
+            if not self._should_record_as_unused(module, attr, value):
                 continue
             if any(
                 hasattr(import_starred, attr)
@@ -161,7 +161,11 @@ class UnusedObjectFinder(object):
         )
         return _UsageKind.aggregate([usage, recursive_usage])
 
-    def _should_record_usage(self, value):
+    def _should_record_as_unused(self, module, attr, value):
+        if self.config.should_ignore_unused(module, attr, value):
+            return False
+        # TODO: remove most of the below and just rely on @used and
+        # should_ignore_unused()
         # also include async functions, but don't call is_async_fn on modules because it can fail
         if inspect.isfunction(value) or (
             not inspect.ismodule(value) and asynq.is_async_fn(value)
