@@ -365,8 +365,8 @@ def %(name)s(%(arguments)s):
             return_value = self.implementation(variables, visitor, node)
             if return_value is None:
                 return_value = UNRESOLVED_VALUE
-            # Implementation functioons may return a pair of (value, constraint)
-            # Or a three-tuple of (value, constraint, NoReturn unless)
+            # Implementation functions may return a pair of (value, constraint)
+            # or a three-tuple of (value, constraint, NoReturn unless)
             if isinstance(return_value, tuple):
                 if len(return_value) == 2:
                     return_value, constraint = return_value
