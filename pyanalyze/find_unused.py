@@ -179,44 +179,17 @@ class UnusedObjectFinder(object):
     def _should_record_as_unused(self, module, attr, value):
         if self.config.should_ignore_unused(module, attr, value):
             return False
-        # TODO: remove most of the below and just rely on @used and
-        # should_ignore_unused()
-        # also include async functions, but don't call is_async_fn on modules because it can fail
-        if inspect.isfunction(value) or (
-            not inspect.ismodule(value) and asynq.is_async_fn(value)
-        ):
-            registered = self.config.registered_values()
-            try:
-                if value in registered:
-                    return False
-            except TypeError:
-                return False  # mock.call can get here
-        elif inspect.isclass(value):
-            # can't reliably detect usage of classes with a metaclass
-            metaclass = type(value)
-            try:
-                is_allowed = metaclass in self.config.ALLOWED_METACLASSES
-            except TypeError:
-                # apparently mock objects have a dictionary as their metaclass
-                is_allowed = False
-            if not is_allowed:
-                return False
-            # controllers are called directly by Pylons
-            if any(issubclass(value, cls) for cls in self.config.USED_BASE_CLASSES):
-                return False
-            if value in self.config.registered_values():
-                return False
-        elif inspect.ismodule(value):
+        if inspect.ismodule(value):
             # test modules will usually show up as unused
             if value.__name__.split(".")[-1].startswith("test"):
                 return False
             # if it was ever import *ed from, don't treat it as unused
             if value in self.import_stars:
                 return False
+        if safe_in(value, _used_objects):
+            return False
         try:
             # __future__ imports are usually unused
-            return value not in _used_objects and not isinstance(
-                value, __future__._Feature
-            )
+            return not isinstance(value, __future__._Feature)
         except Exception:
             return True
