@@ -43,7 +43,7 @@ import asynq
 import qcore
 from qcore.helpers import safe_str
 
-from pyanalyze import analysis_lib
+from pyanalyze.analysis_lib import safe_in, is_iterable
 from pyanalyze import node_visitor
 from pyanalyze.annotations import type_from_runtime, type_from_value, is_typing_name
 from pyanalyze.arg_spec import (
@@ -1180,12 +1180,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 decorator_value = self.visit(decorator)
                 callee = self.visit(decorator.func)
                 if isinstance(callee, KnownValue):
-                    if self._safe_in(callee.val, self.config.ASYNQ_DECORATORS):
+                    if safe_in(callee.val, self.config.ASYNQ_DECORATORS):
                         if any(kw.arg == "pure" for kw in decorator.keywords):
                             async_kind = AsyncFunctionKind.pure
                         else:
                             async_kind = AsyncFunctionKind.normal
-                    elif self._safe_in(callee.val, self.config.ASYNC_PROXY_DECORATORS):
+                    elif safe_in(callee.val, self.config.ASYNC_PROXY_DECORATORS):
                         # @async_proxy(pure=True) is a noop, so don't treat it specially
                         if not any(kw.arg == "pure" for kw in decorator.keywords):
                             async_kind = AsyncFunctionKind.async_proxy
@@ -2514,7 +2514,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _member_value_of_iterator_val(self, iterated, node):
         if isinstance(iterated, KnownValue):
-            if iterated.val is not None and not analysis_lib.is_iterable(iterated.val):
+            if iterated.val is not None and not is_iterable(iterated.val):
                 self._show_error_if_checking(
                     node,
                     "Object %r is not iterable" % (iterated.val,),
@@ -3371,7 +3371,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if (
                 (return_value is UNRESOLVED_VALUE or return_value == KnownValue(None))
                 and inspect.isclass(callee_val)
-                and not self._safe_in(callee_val, self.config.IGNORED_CALLEES)
+                and not safe_in(callee_val, self.config.IGNORED_CALLEES)
             ):
                 # if all arguments are KnownValues and the class is whitelisted, instantiate it
                 if issubclass(
@@ -3383,7 +3383,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 else:
                     # calls to types result in values of that type
                     return_value = TypedValue(callee_val)
-            elif self._safe_in(
+            elif safe_in(
                 callee_val, self.config.FUNCTIONS_SAFE_TO_CALL
             ) and self._can_perform_call(node, args, keywords):
                 return_value = self._try_perform_call(
@@ -3391,14 +3391,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
 
         return return_value, constraint
-
-    def _safe_in(self, item, collection):
-        # Workaround against mock objects sometimes throwing ValueError if you compare them,
-        # and against objects throwing other kinds of errors if you use in.
-        try:
-            return item in collection
-        except Exception:
-            return False
 
     def _can_perform_call(self, node, args, keywords):
         """Returns whether all of the arguments were inferred successfully."""
