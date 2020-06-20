@@ -15,8 +15,11 @@ import inspect
 import qcore
 import __future__
 
+from .analysis_lib import safe_in
+
 
 _used_objects = set()
+_test_helper_objects = set()
 
 
 def used(obj):
@@ -29,8 +32,20 @@ def used(obj):
     return obj
 
 
+def test_helper(obj):
+    """Decorator indicating that an object is intended as a helper for tests.
+
+    If the object is used only in tests, this stops the UnusedObjectFinder from
+    marking it as unused.
+
+    """
+    _test_helper_objects.add(obj)
+    return obj
+
+
 # so it doesn't itself get marked as unused
 used(used)
+used(test_helper)
 
 
 class _UsageKind(enum.IntEnum):
@@ -138,7 +153,7 @@ class UnusedObjectFinder(object):
             ):
                 continue
             if usage is _UsageKind.used_in_test:
-                if not is_test_module:
+                if not is_test_module and not safe_in(value, _test_helper_objects):
                     print("%s.%s: used only in tests" % (module.__name__, attr))
             else:
                 print("%s.%s: unused" % (module.__name__, attr))

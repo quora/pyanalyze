@@ -106,3 +106,13 @@ def is_iterable(obj):
     if hasattr(typ, "__iter__"):
         return True
     return hasattr(typ, "__getitem__") and hasattr(typ, "__len__")
+
+
+def safe_in(item, collection):
+    """Safely checks whethe item is in collection. Defaults to returning false."""
+    # Workaround against mock objects sometimes throwing ValueError if you compare them,
+    # and against objects throwing other kinds of errors if you use in.
+    try:
+        return item in collection
+    except Exception:
+        return False
