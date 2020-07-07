@@ -127,7 +127,9 @@ class UnusedObjectFinder(object):
         self.visited_modules.append(module)
 
     def _print_unused_from_module(self, module):
-        is_test_module = any(part.startswith("test") for part in module.__name__.split("."))
+        is_test_module = any(
+            part.startswith("test") for part in module.__name__.split(".")
+        )
         for attr, value in module.__dict__.items():
             usages = self.usages[module][attr]
             if self.print_all:
