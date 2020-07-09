@@ -365,12 +365,15 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 for failure in sorted(
                     file_failures, key=lambda failure: failure.get("lineno", 0)
                 ):
-                    lines = failure["message"].splitlines()[1:]
-                    f.write("* line %s: `%s`\n" % (failure.get("lineno"), lines[0]))
-                    f.write("```\n")
-                    for line in lines[1:]:
-                        f.write("%s\n" % (line,))
-                    f.write("```\n")
+                    if "\n" in failure["message"]:
+                        lines = failure["message"].splitlines()[1:]
+                        f.write("* line %s: `%s`\n" % (failure.get("lineno"), lines[0]))
+                        f.write("```\n")
+                        for line in lines[1:]:
+                            f.write("%s\n" % (line,))
+                        f.write("```\n")
+                    else:
+                        f.write("* `%s`" % (failure["message"],))
 
     @classmethod
     def _run_and_apply_changes(cls, kwargs, autofix=False):
