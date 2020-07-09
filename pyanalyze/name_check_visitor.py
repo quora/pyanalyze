@@ -672,7 +672,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # leaving this check disabled by default for now.
             self.show_errors_for_unused_ignores(ErrorCode.unused_ignore)
             self.show_errors_for_bare_ignores(ErrorCode.bare_ignore)
-            if self.unused_finder is not None:
+            if self.unused_finder is not None and not self.has_file_level_ignore():
                 self.unused_finder.record_module_visited(self.module)
         except node_visitor.VisitorError:
             raise
