@@ -50,6 +50,9 @@ class Config(object):
     ENABLED_ERRORS = set()
     DISABLED_ERRORS = set()
 
+    # If true, an error is raised when pyanalyze finds any unused objects.
+    ENFORCE_NO_UNUSED_OBJECTS = False
+
     # If True, we assume that for loops are always entered at least once,
     # which affects the potentially_undefined_name check. This will miss
     # some bugs but also remove some annoying false positives.

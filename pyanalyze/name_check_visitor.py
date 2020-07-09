@@ -1417,6 +1417,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         "__init_subclass__",
                         "__new__",
                     ):
+                        assert self.current_class is not None
                         value = SubclassValue(self.current_class)
                     else:
                         # normal method
@@ -3604,7 +3605,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if self.scope.scope_type() == ScopeType.function_scope and self._is_checking():
             return
 
-        if isinstance(value, KnownValue):
+        if isinstance(value, KnownValue) and self.current_class is not None:
             # exclude calls within a class (probably in super calls)
             if value.val is self.current_class:
                 return
@@ -3630,13 +3631,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             default=False,
             help="Find unused class attributes",
         )
-        # TODO(jelle): this has false positives (e.g. from ... import)
-        parser.add_argument(
-            "--include-modules",
-            action="store_true",
-            default=False,
-            help="Include modules in the unused objects check.",
-        )
         return parser
 
     @classmethod
@@ -3659,30 +3653,47 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return cls.config.DEFAULT_DIRS
 
     @classmethod
-    def _run_on_files_or_all(
+    def _run_on_files(
         cls,
+        files,
         find_unused=False,
-        include_modules=False,
         settings=None,
         find_unused_attributes=False,
+        attribute_checker=None,
         **kwargs
     ):
         attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
         if "arg_spec_cache" not in kwargs:
             kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
-        with ClassAttributeChecker(
+        if attribute_checker is None:
+            inner_attribute_checker_obj = ClassAttributeChecker(
+                cls.config,
+                enabled=attribute_checker_enabled,
+                should_check_unused_attributes=find_unused_attributes,
+            )
+        else:
+            inner_attribute_checker_obj = qcore.empty_context
+        with inner_attribute_checker_obj as inner_attribute_checker, UnusedObjectFinder(
             cls.config,
-            enabled=attribute_checker_enabled,
-            should_check_unused_attributes=find_unused_attributes,
-        ) as attribute_checker, UnusedObjectFinder(
-            cls.config, enabled=find_unused, include_modules=include_modules
+            enabled=find_unused or cls.config.ENFORCE_NO_UNUSED_OBJECTS,
+            print_output=False,
         ) as unused_finder:
-            all_failures = super(NameCheckVisitor, cls)._run_on_files_or_all(
-                attribute_checker=attribute_checker,
+            all_failures = super(NameCheckVisitor, cls)._run_on_files(
+                files,
+                attribute_checker=attribute_checker
+                if attribute_checker is not None
+                else inner_attribute_checker,
                 unused_finder=unused_finder,
                 settings=settings,
                 **kwargs
             )
+        if unused_finder is not None:
+            for obj, message in unused_finder.get_unused_objects():
+                # Maybe we should switch to a more explicitly structured format for errors
+                # so we can share code with normal errors better.
+                failure = "%s: %s" % (obj, message)
+                print(failure)
+                all_failures.append({"filename": "<unused>", "message": failure + "\n"})
         if attribute_checker is not None:
             all_failures += attribute_checker.all_failures
         return all_failures

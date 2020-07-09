@@ -80,16 +80,10 @@ class UnusedObjectFinder(object):
     """
 
     def __init__(
-        self,
-        config,
-        enabled=False,
-        print_output=True,
-        include_modules=False,
-        print_all=False,
+        self, config, enabled=False, print_output=True, print_all=False,
     ):
         self.config = config
         self.enabled = enabled
-        self.include_modules = include_modules
         self.print_output = print_output
         self.print_all = print_all
         self.usages = defaultdict(lambda: defaultdict(set))
@@ -108,8 +102,8 @@ class UnusedObjectFinder(object):
         if not self.enabled or not self.print_output:
             return
 
-        for module in sorted(self.visited_modules, key=lambda mod: mod.__name__):
-            self._print_unused_from_module(module)
+        for path, description in self.get_unused_objects():
+            print("%s: %s" % (path, description))
 
     def record(self, owner, attr, using_module):
         if not self.enabled:
@@ -126,14 +120,22 @@ class UnusedObjectFinder(object):
     def record_module_visited(self, module):
         self.visited_modules.append(module)
 
-    def _print_unused_from_module(self, module):
+    def get_unused_objects(self):
+        for module in sorted(self.visited_modules, key=lambda mod: mod.__name__):
+            for pair in self._get_unused_from_module(module):
+                yield pair
+
+    def _get_unused_from_module(self, module):
         is_test_module = any(
             part.startswith("test") for part in module.__name__.split(".")
         )
         for attr, value in module.__dict__.items():
             usages = self.usages[module][attr]
             if self.print_all:
-                print("%s.%s: %d (%s)" % (module.__name__, attr, len(usages), usages))
+                yield "%s.%s" % (module.__name__, attr), "%d (%s)" % (
+                    len(usages),
+                    usages,
+                )
                 continue
             # Ignore attributes injected by Python
             if attr.startswith("__") and attr.endswith("__"):
@@ -155,9 +157,9 @@ class UnusedObjectFinder(object):
                 continue
             if usage is _UsageKind.used_in_test:
                 if not is_test_module and not safe_in(value, _test_helper_objects):
-                    print("%s.%s: used only in tests" % (module.__name__, attr))
+                    yield "%s.%s" % (module.__name__, attr), "used only in tests"
             else:
-                print("%s.%s: unused" % (module.__name__, attr))
+                yield "%s.%s" % (module.__name__, attr), "unused"
 
     def _has_import_star_usage(self, module, attr):
         with qcore.override(self, "_recursive_stack", set()):

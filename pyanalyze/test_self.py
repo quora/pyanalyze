@@ -12,6 +12,7 @@ from pyanalyze.test_node_visitor import skip_before
 class PyanalyzeConfig(pyanalyze.config.Config):
     DEFAULT_DIRS = (str(os.path.dirname(__file__)),)
     DEFAULT_BASE_MODULE = pyanalyze
+    ENFORCE_NO_UNUSED_OBJECTS = True
     ENABLED_ERRORS = {
         ErrorCode.condition_always_true,
         ErrorCode.possibly_undefined_name,
