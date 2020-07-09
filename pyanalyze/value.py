@@ -569,7 +569,6 @@ class ReferencingValue(Value):
         return "<reference to %s>" % (self.name,)
 
 
-# TODO(jelle): merge with NewTypeValuue
 @attr.s(frozen=True)
 class VariableNameValue(Value):
     """Value that is stored in a variable associated with a particular kind of value.
@@ -577,6 +576,9 @@ class VariableNameValue(Value):
     For example, any variable named 'uid' will get resolved into a VariableNameValue of type uid,
     and if it gets passed into a function that takes an argument called 'aid',
     is_value_compatible will return False.
+
+    This was created for a legacy codebase without type annotations. If possible, prefer
+    using NewTypes or other more explicit types.
 
     """
 
