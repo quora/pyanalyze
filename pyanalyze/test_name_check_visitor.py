@@ -926,6 +926,45 @@ class TestConditionAlwaysTrue(TestNameCheckVisitorBase):
             yield kerodon.asynq() or 0
 
 
+class TestBoolOp(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        def capybara(x):
+            if x:
+                cond = str(x)
+                cond2 = True
+            else:
+                cond = None
+                cond2 = None
+            assert_is_value(cond, MultiValuedValue([TypedValue(str), KnownValue(None)]))
+            assert_is_value(
+                cond2, MultiValuedValue([KnownValue(True), KnownValue(None)])
+            )
+            assert_is_value(
+                cond and 1,
+                MultiValuedValue([TypedValue(str), KnownValue(None), KnownValue(1)]),
+            )
+            assert_is_value(
+                cond2 and 1, MultiValuedValue([KnownValue(None), KnownValue(1)])
+            )
+            assert_is_value(
+                cond or 1, MultiValuedValue([TypedValue(str), KnownValue(1)])
+            )
+            assert_is_value(
+                cond2 or 1, MultiValuedValue([KnownValue(True), KnownValue(1)])
+            )
+
+        def hutia(x=None):
+            assert_is_value(x, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(None)]))
+            assert_is_value(x or 1, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(1)]))
+            y = x or 1
+            assert_is_value(y, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(1)]))
+            assert_is_value(
+                (True if x else False) or None,
+                MultiValuedValue([KnownValue(True), KnownValue(None)]),
+            )
+
+
 class TestReturnTypeInference(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
@@ -1730,7 +1769,7 @@ class TestOperators(TestNameCheckVisitorBase):
     def test_not(self):
         def capybara(x):
             assert_is_value(not x, TypedValue(bool))
-            assert_is_value(not True, TypedValue(bool))
+            assert_is_value(not True, KnownValue(False))
 
     @assert_passes()
     def test_unary_op(self):

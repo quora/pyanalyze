@@ -243,6 +243,10 @@ class Constraint(AbstractConstraint):
             assert False, "unknown constraint type %s" % (self.constraint_type,)
 
 
+TRUTHY_CONSTRAINT = Constraint(None, ConstraintType.is_truthy, True, None)
+FALSY_CONSTRAINT = Constraint(None, ConstraintType.is_truthy, False, None)
+
+
 class NullConstraint(AbstractConstraint):
     """Represents the absence of a constraint."""
 
@@ -924,6 +928,11 @@ class StackedScopes(object):
             and self.scopes[-1].scope_type == ScopeType.function_scope
             and self.scopes[-2].scope_type == ScopeType.function_scope
         )
+
+
+def constrain_value(value, constraint):
+    """Create a version of this value with the constraint applied."""
+    return _constrain_value([value], constraint.apply())
 
 
 def _uniq_chain(iterables):
