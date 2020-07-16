@@ -63,12 +63,15 @@ from pyanalyze.stacked_scopes import (
     AndConstraint,
     OrConstraint,
     NULL_CONSTRAINT,
+    FALSY_CONSTRAINT,
+    TRUTHY_CONSTRAINT,
     ConstraintType,
     ScopeType,
     StackedScopes,
     VisitorState,
     LEAVES_LOOP,
     LEAVES_SCOPE,
+    constrain_value,
 )
 from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker
 from pyanalyze.yield_checker import YieldChecker
@@ -340,7 +343,7 @@ class ClassAttributeChecker(object):
     def _cls_sort(self, pair):
         typ = pair[0]
         if hasattr(typ, "__name__") and isinstance(typ.__name__, six.string_types):
-            return (typ.__module__, typ.__name__)
+            return (six.text_type(typ.__module__), six.text_type(typ.__name__))
         else:
             return (six.text_type(typ), "")
 
@@ -2055,19 +2058,23 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         is_and = isinstance(node.op, ast.And)
         out_constraints = []
         with self.scope.subscope():
+            values = []
             left = node.values[:-1]
             for condition in left:
-                _, constraint = self.constraint_from_condition(condition)
+                new_value, constraint = self.constraint_from_condition(condition)
                 out_constraints.append(constraint)
                 if is_and:
                     self.add_constraint(condition, constraint)
+                    values.append(constrain_value(new_value, FALSY_CONSTRAINT))
                 else:
                     self.add_constraint(condition, constraint.invert())
-            _, constraint = self._visit_possible_constraint(node.values[-1])
+                    values.append(constrain_value(new_value, TRUTHY_CONSTRAINT))
+            right_value, constraint = self._visit_possible_constraint(node.values[-1])
+            values.append(right_value)
             out_constraints.append(constraint)
         constraint_cls = AndConstraint if is_and else OrConstraint
         constraint = reduce(constraint_cls, reversed(out_constraints))
-        return UNRESOLVED_VALUE, constraint
+        return unite_values(*values), constraint
 
     def visit_Compare(self, node):
         val, _ = self.constraint_from_compare(node)
@@ -2100,6 +2107,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(node.op, ast.Not):
             # not doesn't have its own special method
             val, constraint = self.constraint_from_condition(node.operand)
+            result = boolean_value(val)
+            if result is None:
+                val = TypedValue(bool)
+            else:
+                val = KnownValue(not result)
             return val, constraint.invert()
         else:
             operand = self.visit(node.operand)
@@ -2688,7 +2700,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     ),
                     error_code=ErrorCode.non_boolean_in_boolean_context,
                 )
-        return TypedValue(bool), constraint
+        return condition, constraint
 
     def _can_be_used_as_boolean(self, typ):
         if hasattr(typ, "__len__"):
