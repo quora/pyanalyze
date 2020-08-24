@@ -3672,6 +3672,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         settings=None,
         find_unused_attributes=False,
         attribute_checker=None,
+        unused_finder=None,
         **kwargs
     ):
         attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
@@ -3685,26 +3686,28 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         else:
             inner_attribute_checker_obj = qcore.empty_context
-        with inner_attribute_checker_obj as inner_attribute_checker, UnusedObjectFinder(
-            cls.config,
-            enabled=find_unused or cls.config.ENFORCE_NO_UNUSED_OBJECTS,
-            print_output=False,
-        ) as unused_finder:
+        if unused_finder is None:
+            unused_finder = UnusedObjectFinder(
+                cls.config,
+                enabled=find_unused or cls.config.ENFORCE_NO_UNUSED_OBJECTS,
+                print_output=False,
+            )
+        with inner_attribute_checker_obj as inner_attribute_checker, unused_finder as inner_unused_finder:
             all_failures = super(NameCheckVisitor, cls)._run_on_files(
                 files,
                 attribute_checker=attribute_checker
                 if attribute_checker is not None
                 else inner_attribute_checker,
-                unused_finder=unused_finder,
+                unused_finder=inner_unused_finder,
                 settings=settings,
                 **kwargs
             )
         if unused_finder is not None:
-            for obj, message in unused_finder.get_unused_objects():
-                # Maybe we should switch to a more explicitly structured format for errors
+            for unused_object in unused_finder.get_unused_objects():
+                # Maybe we should switch to a shared structured format for errors
                 # so we can share code with normal errors better.
-                failure = "%s: %s" % (obj, message)
-                print(failure)
+                failure = str(unused_object)
+                print(unused_object)
                 all_failures.append({"filename": "<unused>", "message": failure + "\n"})
         if attribute_checker is not None:
             all_failures += attribute_checker.all_failures
