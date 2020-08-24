@@ -8,10 +8,13 @@ Implementation of unused object detection.
 
 """
 
+import attr
 from collections import defaultdict
 import enum
 import inspect
 import qcore
+from types import ModuleType
+from typing import Any
 import __future__
 
 from .analysis_lib import safe_in
@@ -71,6 +74,17 @@ class _UsageKind(enum.IntEnum):
         return cls.aggregate(cls.classify(module_name) for module_name in module_names)
 
 
+@attr.s
+class UnusedObject(object):
+    module = attr.ib(type=ModuleType)
+    attribute = attr.ib(type=str)
+    value = attr.ib(type=Any)
+    message = attr.ib(type=str)
+
+    def __str__(self):
+        return "%s.%s: %s" % (self.module.__name__, self.attribute, self.message)
+
+
 class UnusedObjectFinder(object):
     """Context to find unused objects.
 
@@ -102,8 +116,8 @@ class UnusedObjectFinder(object):
         if not self.enabled or not self.print_output:
             return
 
-        for path, description in self.get_unused_objects():
-            print("%s: %s" % (path, description))
+        for unused_object in self.get_unused_objects():
+            print(unused_object)
 
     def record(self, owner, attr, using_module):
         if not self.enabled:
@@ -122,8 +136,8 @@ class UnusedObjectFinder(object):
 
     def get_unused_objects(self):
         for module in sorted(self.visited_modules, key=lambda mod: mod.__name__):
-            for pair in self._get_unused_from_module(module):
-                yield pair
+            for obj in self._get_unused_from_module(module):
+                yield obj
 
     def _get_unused_from_module(self, module):
         is_test_module = any(
@@ -132,10 +146,8 @@ class UnusedObjectFinder(object):
         for attr, value in module.__dict__.items():
             usages = self.usages[module][attr]
             if self.print_all:
-                yield "%s.%s" % (module.__name__, attr), "%d (%s)" % (
-                    len(usages),
-                    usages,
-                )
+                message = "%d (%s)" % (len(usages), usages)
+                yield UnusedObject(module, attr, value, message)
                 continue
             # Ignore attributes injected by Python
             if attr.startswith("__") and attr.endswith("__"):
@@ -157,9 +169,9 @@ class UnusedObjectFinder(object):
                 continue
             if usage is _UsageKind.used_in_test:
                 if not is_test_module and not safe_in(value, _test_helper_objects):
-                    yield "%s.%s" % (module.__name__, attr), "used only in tests"
+                    yield UnusedObject(module, attr, value, "used only in tests")
             else:
-                yield "%s.%s" % (module.__name__, attr), "unused"
+                yield UnusedObject(module, attr, value, "unused")
 
     def _has_import_star_usage(self, module, attr):
         with qcore.override(self, "_recursive_stack", set()):
