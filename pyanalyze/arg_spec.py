@@ -374,9 +374,11 @@ def %(name)s(%(arguments)s):
                 elif len(return_value) == 3:
                     return_value, constraint, no_return_unless = return_value
                 else:
-                    assert False, (
-                        "%s implementation must return a 2- or 3-tuple, not %s"
-                        % (self, return_value)
+                    assert (
+                        False
+                    ), "%s implementation must return a 2- or 3-tuple, not %s" % (
+                        self,
+                        return_value,
                     )
             else:
                 constraint = no_return_unless = NULL_CONSTRAINT
