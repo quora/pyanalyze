@@ -93,9 +93,7 @@ class UnusedObjectFinder(object):
 
     """
 
-    def __init__(
-        self, config, enabled=False, print_output=True, print_all=False,
-    ):
+    def __init__(self, config, enabled=False, print_output=True, print_all=False):
         self.config = config
         self.enabled = enabled
         self.print_output = print_output
