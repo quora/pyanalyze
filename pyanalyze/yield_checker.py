@@ -565,7 +565,7 @@ class YieldChecker(object):
         def is_available(name):
             if name in self.used_varnames:
                 return False
-            value = self.visitor.scope.get(name, node=None, state=None)
+            value = self.visitor.scopes.get(name, node=None, state=None)
             return value is UNINITIALIZED_VALUE
 
         varname = VarnameGenerator(is_available).get(node)

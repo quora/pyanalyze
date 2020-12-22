@@ -596,7 +596,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             and not self.is_compiled
         ):
             self.attribute_checker.record_module_examined(self.module.__name__)
-        self.scope = StackedScopes(self.module)
+        self.scopes = StackedScopes(self.module)
         self.node_context = StackedContexts()
         self.asynq_checker = AsynqChecker(
             self.config,
@@ -760,7 +760,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.show_error(node, msg, error_code=error_code, replacement=replacement)
 
     def _set_name_in_scope(self, varname, node, value=UNRESOLVED_VALUE):
-        scope_type = self.scope.scope_type()
+        scope_type = self.scopes.scope_type()
         if not isinstance(value, KnownValue) and scope_type == ScopeType.module_scope:
             try:
                 value = KnownValue(getattr(self.module, varname))
@@ -768,10 +768,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 pass
         if scope_type == ScopeType.class_scope:
             self._check_for_class_variable_redefinition(varname, node)
-        self.scope.set(varname, value, node, self.state)
+        self.scopes.set(varname, value, node, self.state)
 
     def _check_for_class_variable_redefinition(self, varname, node):
-        if varname not in self.scope.current_scope():
+        if varname not in self.scopes.current_scope():
             return
 
         # exclude cases where we do @<property>.setter
@@ -799,7 +799,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """
         if error_node is None:
             error_node = node
-        value, defining_scope = self.scope.get_with_scope(node.id, node, self.state)
+        value, defining_scope = self.scopes.get_with_scope(node.id, node, self.state)
         if defining_scope is not None:
             if defining_scope.scope_type in (
                 ScopeType.module_scope,
@@ -921,8 +921,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _visit_class_and_get_value(self, node):
         if self._is_checking():
-            if self.scope.scope_type() == ScopeType.module_scope:
-                cls_obj = self.scope.get(node.name, node, self.state)
+            if self.scopes.scope_type() == ScopeType.module_scope:
+                cls_obj = self.scopes.get(node.name, node, self.state)
             else:
                 cls_obj = UNRESOLVED_VALUE
 
@@ -946,7 +946,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             else:
                 current_class = None
 
-            with self.scope.add_scope(
+            with self.scopes.add_scope(
                 ScopeType.class_scope, scope_node=None, scope_object=current_class
             ), self._set_current_class(current_class):
                 self._generic_visit_list(node.body)
@@ -964,7 +964,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             info = self._visit_decorators_and_check_asynq(node.decorator_list)
         defaults, kw_defaults = self._visit_defaults(node)
 
-        scope_type = self.scope.scope_type()
+        scope_type = self.scopes.scope_type()
         if scope_type == ScopeType.module_scope and self.module is not None:
             potential_function = _safe_getattr(self.module, node.name, None)
         elif scope_type == ScopeType.class_scope and self.current_class is not None:
@@ -1221,7 +1221,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         kw_defaults=None,
     ):
         is_collecting = self._is_collecting()
-        if is_collecting and not self.scope.contains_scope_of_type(
+        if is_collecting and not self.scopes.contains_scope_of_type(
             ScopeType.function_scope
         ):
             return UNRESOLVED_VALUE, False, False
@@ -1231,14 +1231,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # scope propagate into this scope. This means that we'll use the constraints
         # of the place where the function is defined, not those of where the function
         # is called, which is strictly speaking wrong but should be fine in practice.
-        with self.scope.add_scope(
+        with self.scopes.add_scope(
             ScopeType.function_scope, scope_node=node
         ), qcore.override(self, "is_generator", False), qcore.override(
             self, "async_kind", function_info.async_kind
         ), qcore.override(
             self, "_name_node_to_statement", {}
         ):
-            scope = self.scope.current_scope()
+            scope = self.scopes.current_scope()
 
             if isinstance(node.body, list):
                 body = node.body
@@ -1248,7 +1248,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
             class_ctx = (
                 qcore.empty_context
-                if not self.scope.is_nested_function()
+                if not self.scopes.is_nested_function()
                 else qcore.override(self, "current_class", None)
             )
             with class_ctx:
@@ -1432,7 +1432,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
                 if is_self:
                     # we need this for the implementation of super()
-                    self.scope.set("%first_arg", value, "%first_arg", self.state)
+                    self.scopes.set("%first_arg", value, "%first_arg", self.state)
 
                 with qcore.override(self, "being_assigned", value):
                     self.visit(arg)
@@ -1447,7 +1447,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         value = GenericValue(tuple, [arg_value])
                 else:
                     vararg = node.args.vararg
-                self.scope.set(vararg, value, vararg, self.state)
+                self.scopes.set(vararg, value, vararg, self.state)
             if node.args.kwarg is not None:
                 value = GenericValue(dict, [TypedValue(str), UNRESOLVED_VALUE])
                 if hasattr(node.args.kwarg, "arg"):
@@ -1457,7 +1457,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         value = GenericValue(dict, [TypedValue(str), arg_value])
                 else:
                     kwarg = node.args.kwarg
-                self.scope.set(kwarg, value, kwarg, self.state)
+                self.scopes.set(kwarg, value, kwarg, self.state)
 
         return args
 
@@ -1466,7 +1466,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return UNRESOLVED_VALUE
         # Evaluate annotations in the surrounding scope,
         # not the function's scope.
-        with self.scope.ignore_topmost_scope(), qcore.override(
+        with self.scopes.ignore_topmost_scope(), qcore.override(
             self, "state", VisitorState.collect_names
         ):
             annotated_type = self.visit(arg.annotation)
@@ -1508,11 +1508,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return isinstance(node, ast.Name) and node.id == name
 
     def visit_Global(self, node):
-        if self.scope.scope_type() != ScopeType.function_scope:
+        if self.scopes.scope_type() != ScopeType.function_scope:
             self._show_error_if_checking(node, error_code=ErrorCode.bad_global)
             return
 
-        module_scope = self.scope.module_scope()
+        module_scope = self.scopes.module_scope()
         for name in node.names:
             if self.unused_finder is not None and module_scope.scope_object is not None:
                 self.unused_finder.record(
@@ -1521,13 +1521,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._set_name_in_scope(name, node, ReferencingValue(module_scope, name))
 
     def visit_Nonlocal(self, node):
-        if self.scope.scope_type() != ScopeType.function_scope:
+        if self.scopes.scope_type() != ScopeType.function_scope:
             self._show_error_if_checking(node, error_code=ErrorCode.bad_nonlocal)
             return
 
         for name in node.names:
-            defining_scope = self.scope.get_nonlocal_scope(
-                name, self.scope.current_scope()
+            defining_scope = self.scopes.get_nonlocal_scope(
+                name, self.scopes.current_scope()
             )
             if defining_scope is None:
                 # this is a SyntaxError, so it might be impossible to reach this branch
@@ -1538,13 +1538,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     ),
                     error_code=ErrorCode.bad_nonlocal,
                 )
-                defining_scope = self.scope.module_scope()
+                defining_scope = self.scopes.module_scope()
             self._set_name_in_scope(name, node, ReferencingValue(defining_scope, name))
 
     # Imports
 
     def visit_Import(self, node):
-        if self.scope.scope_type() == ScopeType.module_scope:
+        if self.scopes.scope_type() == ScopeType.module_scope:
             self._handle_imports(node.names)
 
             for name in node.names:
@@ -1556,7 +1556,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # this is used to decide where to add additional imports (after the first import), so
         # exclude __future__ imports
         if (
-            self.scope.scope_type() == ScopeType.module_scope
+            self.scopes.scope_type() == ScopeType.module_scope
             and node.module
             and node.module != "__future__"
         ):
@@ -1568,7 +1568,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._maybe_record_usages_from_import(node)
 
         is_star_import = len(node.names) == 1 and node.names[0].name == "*"
-        if self.scope.scope_type() == ScopeType.module_scope and not is_star_import:
+        if self.scopes.scope_type() == ScopeType.module_scope and not is_star_import:
             self._handle_imports(node.names)
         else:
             self._simulate_import(node, is_import_from=True)
@@ -1728,7 +1728,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_DictComp(self, node):
         if self.state == VisitorState.collect_names:
             return TypedValue(dict)
-        with self.scope.add_scope(ScopeType.function_scope, scope_node=node):
+        with self.scopes.add_scope(ScopeType.function_scope, scope_node=node):
             for state in (VisitorState.collect_names, VisitorState.check_names):
                 with qcore.override(self, "state", state):
                     for generator in node.generators:
@@ -1768,15 +1768,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # Strictly speaking this is unsafe to do for generator expressions, which may
             # be evaluated at a different place in the function than where they are defined,
             # but that is unlikely to be an issue in practice.
-            with self.scope.add_scope(
+            with self.scopes.add_scope(
                 ScopeType.function_scope, scope_node=node
             ), qcore.override(self, "_name_node_to_statement", {}):
                 return self._visit_comprehension_inner(node, typ, iterable_type)
 
-        with self.scope.add_scope(
+        with self.scopes.add_scope(
             ScopeType.function_scope, scope_node=node
         ), qcore.override(self, "_name_node_to_statement", {}):
-            scope = self.scope.current_scope()
+            scope = self.scopes.current_scope()
             for state in (VisitorState.collect_names, VisitorState.check_names):
                 with qcore.override(self, "state", state):
                     ret = self._visit_comprehension_inner(node, typ, iterable_type)
@@ -1879,7 +1879,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _name_exists(self, name):
         try:
-            val = self.scope.get(name, None, VisitorState.check_names)
+            val = self.scopes.get(name, None, VisitorState.check_names)
         except KeyError:
             return False
         else:
@@ -2057,7 +2057,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """
         is_and = isinstance(node.op, ast.And)
         out_constraints = []
-        with self.scope.subscope():
+        with self.scopes.subscope():
             values = []
             left = node.values[:-1]
             for condition in left:
@@ -2407,7 +2407,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_Assert(self, node):
         test, constraint = self._visit_possible_constraint(node.test)
         if node.msg is not None:
-            with self.scope.subscope():
+            with self.scopes.subscope():
                 self.add_constraint(node, constraint.invert())
                 self.visit(node.msg)
         self.add_constraint(node, constraint)
@@ -2421,7 +2421,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
 
     def add_constraint(self, node, constraint):
-        self.scope.current_scope().add_constraint(constraint, node, self.state)
+        self.scopes.current_scope().add_constraint(constraint, node, self.state)
 
     def _visit_possible_constraint(self, node):
         if isinstance(node, ast.Compare):
@@ -2458,8 +2458,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             always_entered = True
         else:
             always_entered = num_members is not None and num_members > 0
-        with self.scope.subscope() as body_scope:
-            with self.scope.loop_scope():
+        with self.scopes.subscope() as body_scope:
+            with self.scopes.loop_scope():
                 with qcore.override(self, "being_assigned", iterated_value):
                     # assume that node.target is not affected by variable assignments in the body
                     # one could write some contortion like
@@ -2475,7 +2475,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # to get all the definition nodes in that case, visit the body twice in the collecting
         # phase
         if self.state == VisitorState.collect_names:
-            with self.scope.subscope():
+            with self.scopes.subscope():
                 with qcore.override(self, "being_assigned", iterated_value):
                     self.visit(node.target)
                 self._generic_visit_list(node.body)
@@ -2484,8 +2484,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # see comments under For for discussion
         test, constraint = self.constraint_from_condition(node.test)
         always_entered = boolean_value(test) is True
-        with self.scope.subscope() as body_scope:
-            with self.scope.loop_scope():
+        with self.scopes.subscope() as body_scope:
+            with self.scopes.loop_scope():
                 # The "node" argument need not be an AST node but must be unique.
                 self.add_constraint((node, 1), constraint)
                 self._generic_visit_list(node.body)
@@ -2493,20 +2493,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         if self.state == VisitorState.collect_names:
             self.visit(node.test)
-            with self.scope.subscope():
+            with self.scopes.subscope():
                 self.add_constraint((node, 2), constraint)
                 self._generic_visit_list(node.body)
 
     def _handle_loop_else(self, orelse, body_scope, always_entered):
         if always_entered:
-            self.scope.combine_subscopes([body_scope])
+            self.scopes.combine_subscopes([body_scope])
             # Replace body_scope with a dummy scope, because body_scope
             # should always execute and has already been combined in.
-            with self.scope.subscope() as body_scope:
+            with self.scopes.subscope() as body_scope:
                 pass
-        with self.scope.subscope() as else_scope:
+        with self.scopes.subscope() as else_scope:
             self._generic_visit_list(orelse)
-        self.scope.combine_subscopes([body_scope, else_scope])
+        self.scopes.combine_subscopes([body_scope, else_scope])
 
     def _member_value_of_iterator(self, node, is_async=False):
         """Analyze an iterator AST node.
@@ -2580,44 +2580,44 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # try and the except block
         # this node type is py2 only (py3 uses Try), but the visit_Try implementation delegates to
         # this method
-        with self.scope.subscope():
-            with self.scope.subscope() as try_scope:
+        with self.scopes.subscope():
+            with self.scopes.subscope() as try_scope:
                 self._generic_visit_list(node.body)
                 self.yield_checker.reset_yield_checks()
                 self._generic_visit_list(node.orelse)
-            with self.scope.subscope() as dummy_subscope:
+            with self.scopes.subscope() as dummy_subscope:
                 pass
-            self.scope.combine_subscopes([try_scope, dummy_subscope])
+            self.scopes.combine_subscopes([try_scope, dummy_subscope])
 
             except_scopes = []
             for handler in node.handlers:
-                with self.scope.subscope() as except_scope:
+                with self.scopes.subscope() as except_scope:
                     except_scopes.append(except_scope)
                     self.yield_checker.reset_yield_checks()
                     self.visit(handler)
 
-        self.scope.combine_subscopes([try_scope] + except_scopes)
+        self.scopes.combine_subscopes([try_scope] + except_scopes)
         self.yield_checker.reset_yield_checks()
 
     def visit_TryFinally(self, node):
         # We visit the finally block twice, representing the two possible code paths where the try
         # body does and does not raise an exception.
-        with self.scope.subscope() as try_scope:
+        with self.scopes.subscope() as try_scope:
             self._generic_visit_list(node.body)
             self._generic_visit_list(node.finalbody)
-        with self.scope.subscope():
+        with self.scopes.subscope():
             self._generic_visit_list(node.finalbody)
-        self.scope.combine_subscopes([try_scope])
+        self.scopes.combine_subscopes([try_scope])
 
     def visit_Try(self, node):
         # py3 combines the Try and Try/Finally nodes
         if node.finalbody:
-            with self.scope.subscope() as try_scope:
+            with self.scopes.subscope() as try_scope:
                 self.visit_TryExcept(node)
                 self._generic_visit_list(node.finalbody)
-            with self.scope.subscope():
+            with self.scopes.subscope():
                 self._generic_visit_list(node.finalbody)
-            self.scope.combine_subscopes([try_scope])
+            self.scopes.combine_subscopes([try_scope])
         else:
             self.visit_TryExcept(node)
 
@@ -2665,23 +2665,23 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # reset yield checks to avoid incorrect errors when we yield in both the condition and one
         # of the blocks
         self.yield_checker.reset_yield_checks()
-        with self.scope.subscope() as body_scope:
+        with self.scopes.subscope() as body_scope:
             self.add_constraint(node, constraint)
             self._generic_visit_list(node.body)
         self.yield_checker.reset_yield_checks()
 
-        with self.scope.subscope() as else_scope:
+        with self.scopes.subscope() as else_scope:
             self.add_constraint(node, constraint.invert())
             self._generic_visit_list(node.orelse)
-        self.scope.combine_subscopes([body_scope, else_scope])
+        self.scopes.combine_subscopes([body_scope, else_scope])
         self.yield_checker.reset_yield_checks()
 
     def visit_IfExp(self, node):
         _, constraint = self.constraint_from_condition(node.test)
-        with self.scope.subscope():
+        with self.scopes.subscope():
             self.add_constraint(node, constraint)
             then_val = self.visit(node.body)
-        with self.scope.subscope():
+        with self.scopes.subscope():
             self.add_constraint(node, constraint.invert())
             else_val = self.visit(node.orelse)
         return unite_values(then_val, else_val)
@@ -2992,10 +2992,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
                 if varname_value is not None:
                     return varname_value
-            if self.scope.scope_type() == ScopeType.function_scope:
+            if self.scopes.scope_type() == ScopeType.function_scope:
                 composite = self.varname_for_constraint(node)
                 if composite:
-                    local_value = self.scope.current_scope().get_local(
+                    local_value = self.scopes.current_scope().get_local(
                         composite, node, self.state, fallback_value=value
                     )
                     if isinstance(local_value, MultiValuedValue):
@@ -3289,10 +3289,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return None
 
-        if self.scope.scope_type() == ScopeType.function_scope:
+        if self.scopes.scope_type() == ScopeType.function_scope:
             composite = self.varname_for_constraint(node)
             if composite:
-                self.scope.set(composite, self.being_assigned, node, self.state)
+                self.scopes.set(composite, self.being_assigned, node, self.state)
 
         self._record_type_attr_set(typ, node.attr, node, self.being_assigned)
 
@@ -3614,7 +3614,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return
 
         # in this case class isn't available
-        if self.scope.scope_type() == ScopeType.function_scope and self._is_checking():
+        if self.scopes.scope_type() == ScopeType.function_scope and self._is_checking():
             return
 
         if isinstance(value, KnownValue) and self.current_class is not None:
