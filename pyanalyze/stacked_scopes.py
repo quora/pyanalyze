@@ -370,13 +370,17 @@ class Scope(qcore.InspectableClass):
         pass
 
     def get(self, varname, node, state, from_parent_scope=False):
-        local_value = self.get_local(varname, node, state, from_parent_scope=from_parent_scope)
+        local_value = self.get_local(
+            varname, node, state, from_parent_scope=from_parent_scope
+        )
         if local_value is not UNINITIALIZED_VALUE:
             return self.resolve_reference(local_value, state), self
         elif self.parent_scope is not None:
             # Parent scopes don't get the node to help local lookup.
             parent_node = (varname, self.scope_node) if self.scope_node else None
-            return self.parent_scope.get(varname, parent_node, state, from_parent_scope=True)
+            return self.parent_scope.get(
+                varname, parent_node, state, from_parent_scope=True
+            )
         else:
             return UNINITIALIZED_VALUE, None
 
@@ -651,7 +655,9 @@ class FunctionScope(Scope):
         self.name_to_all_definition_nodes[varname].add(node)
         self._add_composite(varname)
 
-    def get_local(self, varname, node, state, from_parent_scope=False, fallback_value=None):
+    def get_local(
+        self, varname, node, state, from_parent_scope=False, fallback_value=None
+    ):
         self._add_composite(varname)
         ctx = _LookupContext(varname, fallback_value, node, state)
         if from_parent_scope:

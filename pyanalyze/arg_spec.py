@@ -543,9 +543,7 @@ def _super_impl(variables, visitor, node):
         current_class = visitor.asynq_checker.current_class
         if current_class is not None:
             try:
-                first_arg = visitor.scopes.get(
-                    "%first_arg", None, visitor.state
-                )
+                first_arg = visitor.scopes.get("%first_arg", None, visitor.state)
             except KeyError:
                 # something weird with this function; give up
                 visitor.show_error(
