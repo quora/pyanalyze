@@ -562,6 +562,16 @@ def capybara():
                 break
             print(x)
 
+    @assert_passes()
+    def test_nesting(self):
+        def capybara():
+            def inner():
+                print(x)
+
+            x = 3
+            inner()
+            x = 4
+
 
 class TestUnusedVariableComprehension(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.unused_variable)

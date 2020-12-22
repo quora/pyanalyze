@@ -369,29 +369,18 @@ class Scope(qcore.InspectableClass):
         """Constraints are ignored outside of function scopes."""
         pass
 
-    def get(self, varname, node, state):
-        local_value = self.get_local(varname, node, state)
-        if local_value is not UNINITIALIZED_VALUE:
-            return self.resolve_reference(local_value, state)
-        elif self.parent_scope is not None:
-            # Parent scopes don't get the node to help local lookup.
-            parent_node = (varname, self.scope_node) if self.scope_node else None
-            return self.parent_scope.get(varname, parent_node, state)
-        else:
-            return UNINITIALIZED_VALUE
-
-    def get_with_scope(self, varname, node, state):
-        local_value = self.get_local(varname, node, state)
+    def get(self, varname, node, state, from_parent_scope=False):
+        local_value = self.get_local(varname, node, state, from_parent_scope=from_parent_scope)
         if local_value is not UNINITIALIZED_VALUE:
             return self.resolve_reference(local_value, state), self
         elif self.parent_scope is not None:
             # Parent scopes don't get the node to help local lookup.
             parent_node = (varname, self.scope_node) if self.scope_node else None
-            return self.parent_scope.get_with_scope(varname, parent_node, state)
+            return self.parent_scope.get(varname, parent_node, state, from_parent_scope=True)
         else:
             return UNINITIALIZED_VALUE, None
 
-    def get_local(self, varname, node, state):
+    def get_local(self, varname, node, state, from_parent_scope=False):
         if varname in self.variables:
             return self.variables[varname]
         else:
@@ -662,9 +651,11 @@ class FunctionScope(Scope):
         self.name_to_all_definition_nodes[varname].add(node)
         self._add_composite(varname)
 
-    def get_local(self, varname, node, state, fallback_value=None):
+    def get_local(self, varname, node, state, from_parent_scope=False, fallback_value=None):
         self._add_composite(varname)
         ctx = _LookupContext(varname, fallback_value, node, state)
+        if from_parent_scope:
+            self.accessed_from_special_nodes.add(varname)
         if node is None:
             self.accessed_from_special_nodes.add(varname)
             # this indicates that we're not looking at a normal local variable reference, but
@@ -862,7 +853,8 @@ class StackedScopes(object):
         Returns UNINITIALIZED_VALUE if the name is not defined in any known scope.
 
         """
-        return self.scopes[-1].get(varname, node, state)
+        value, _ = self.get_with_scope(varname, node, state)
+        return value
 
     def get_with_scope(self, varname, node, state):
         """Like get(), but also returns the scope object the name was found in.
@@ -870,7 +862,7 @@ class StackedScopes(object):
         Returns a (Value, Scope) tuple. The Scope is None if the name was not found.
 
         """
-        return self.scopes[-1].get_with_scope(varname, node, state)
+        return self.scopes[-1].get(varname, node, state)
 
     def get_nonlocal_scope(self, varname, using_scope):
         """Gets the defining scope of a non-local variable."""
