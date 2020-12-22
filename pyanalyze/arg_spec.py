@@ -534,7 +534,7 @@ def _super_impl(variables, visitor, node):
                 "Zero-argument super() does not work inside a comprehension",
                 ErrorCode.bad_super_call,
             )
-        elif visitor.scope.is_nested_function():
+        elif visitor.scopes.is_nested_function():
             visitor.show_error(
                 node,
                 "Zero-argument super() does not work inside a nested function",
@@ -543,7 +543,7 @@ def _super_impl(variables, visitor, node):
         current_class = visitor.asynq_checker.current_class
         if current_class is not None:
             try:
-                first_arg = visitor.scope.current_scope().get(
+                first_arg = visitor.scopes.current_scope().get(
                     "%first_arg", None, visitor.state
                 )
             except KeyError:

@@ -25,116 +25,116 @@ class Module(object):
 
 class TestStackedScopes(object):
     def setup(self):
-        self.scope = StackedScopes(Module)
+        self.scopes = StackedScopes(Module)
 
     def test_scope_type(self):
-        assert_eq(ScopeType.module_scope, self.scope.scope_type())
+        assert_eq(ScopeType.module_scope, self.scopes.scope_type())
 
-        with self.scope.add_scope(ScopeType.function_scope, scope_node=None):
-            assert_eq(ScopeType.function_scope, self.scope.scope_type())
+        with self.scopes.add_scope(ScopeType.function_scope, scope_node=None):
+            assert_eq(ScopeType.function_scope, self.scopes.scope_type())
 
-        assert_eq(ScopeType.module_scope, self.scope.scope_type())
+        assert_eq(ScopeType.module_scope, self.scopes.scope_type())
 
     def test_current_and_module_scope(self):
-        assert_in("foo", self.scope.current_scope())
-        assert_in("foo", self.scope.module_scope())
+        assert_in("foo", self.scopes.current_scope())
+        assert_in("foo", self.scopes.module_scope())
 
-        with self.scope.add_scope(ScopeType.function_scope, scope_node=None):
-            assert_not_in("foo", self.scope.current_scope())
-            assert_in("foo", self.scope.module_scope())
+        with self.scopes.add_scope(ScopeType.function_scope, scope_node=None):
+            assert_not_in("foo", self.scopes.current_scope())
+            assert_in("foo", self.scopes.module_scope())
 
-        assert_in("foo", self.scope.current_scope())
-        assert_in("foo", self.scope.module_scope())
+        assert_in("foo", self.scopes.current_scope())
+        assert_in("foo", self.scopes.module_scope())
 
     def test_get(self):
-        assert_eq(KnownValue(1), self.scope.get("foo", None, None))
+        assert_eq(KnownValue(1), self.scopes.get("foo", None, None))
 
-        with self.scope.add_scope(ScopeType.module_scope, scope_node=None):
-            self.scope.set("foo", KnownValue(2), None, None)
-            assert_eq(KnownValue(2), self.scope.get("foo", None, None))
+        with self.scopes.add_scope(ScopeType.module_scope, scope_node=None):
+            self.scopes.set("foo", KnownValue(2), None, None)
+            assert_eq(KnownValue(2), self.scopes.get("foo", None, None))
 
-        assert_eq(KnownValue(1), self.scope.get("foo", None, None))
+        assert_eq(KnownValue(1), self.scopes.get("foo", None, None))
 
-        assert_is(UNINITIALIZED_VALUE, self.scope.get("doesnt_exist", None, None))
+        assert_is(UNINITIALIZED_VALUE, self.scopes.get("doesnt_exist", None, None))
 
         # outer class scopes aren't used
-        with self.scope.add_scope(ScopeType.class_scope, scope_node=None):
-            self.scope.set("cls1", KnownValue(1), None, None)
-            assert_eq(KnownValue(1), self.scope.get("cls1", None, None))
+        with self.scopes.add_scope(ScopeType.class_scope, scope_node=None):
+            self.scopes.set("cls1", KnownValue(1), None, None)
+            assert_eq(KnownValue(1), self.scopes.get("cls1", None, None))
 
-            with self.scope.add_scope(ScopeType.class_scope, scope_node=None):
-                self.scope.set("cls2", KnownValue(1), None, None)
-                assert_eq(KnownValue(1), self.scope.get("cls2", None, None))
+            with self.scopes.add_scope(ScopeType.class_scope, scope_node=None):
+                self.scopes.set("cls2", KnownValue(1), None, None)
+                assert_eq(KnownValue(1), self.scopes.get("cls2", None, None))
 
-                assert_is(UNINITIALIZED_VALUE, self.scope.get("cls1", None, None))
+                assert_is(UNINITIALIZED_VALUE, self.scopes.get("cls1", None, None))
 
-            assert_eq(KnownValue(1), self.scope.get("cls1", None, None))
+            assert_eq(KnownValue(1), self.scopes.get("cls1", None, None))
 
     def test_set(self):
-        with self.scope.add_scope(ScopeType.module_scope, scope_node=None):
-            self.scope.set("multivalue", KnownValue(1), None, None)
-            assert_eq(KnownValue(1), self.scope.get("multivalue", None, None))
-            self.scope.set("multivalue", KnownValue(2), None, None)
+        with self.scopes.add_scope(ScopeType.module_scope, scope_node=None):
+            self.scopes.set("multivalue", KnownValue(1), None, None)
+            assert_eq(KnownValue(1), self.scopes.get("multivalue", None, None))
+            self.scopes.set("multivalue", KnownValue(2), None, None)
             assert_eq(
                 MultiValuedValue([KnownValue(1), KnownValue(2)]),
-                self.scope.get("multivalue", None, None),
+                self.scopes.get("multivalue", None, None),
             )
-            self.scope.set("multivalue", KnownValue(3), None, None)
+            self.scopes.set("multivalue", KnownValue(3), None, None)
             assert_eq(
                 MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue(3)]),
-                self.scope.get("multivalue", None, None),
+                self.scopes.get("multivalue", None, None),
             )
 
             # if the values set are the same, don't make a MultiValuedValue
-            self.scope.set("same", KnownValue(1), None, None)
-            assert_eq(KnownValue(1), self.scope.get("same", None, None))
-            self.scope.set("same", KnownValue(1), None, None)
-            assert_eq(KnownValue(1), self.scope.get("same", None, None))
+            self.scopes.set("same", KnownValue(1), None, None)
+            assert_eq(KnownValue(1), self.scopes.get("same", None, None))
+            self.scopes.set("same", KnownValue(1), None, None)
+            assert_eq(KnownValue(1), self.scopes.get("same", None, None))
 
             # even if they are UNRESOLVED_VALUE
-            self.scope.set("unresolved", UNRESOLVED_VALUE, None, None)
-            assert_is(UNRESOLVED_VALUE, self.scope.get("unresolved", None, None))
-            self.scope.set("unresolved", UNRESOLVED_VALUE, None, None)
-            assert_is(UNRESOLVED_VALUE, self.scope.get("unresolved", None, None))
+            self.scopes.set("unresolved", UNRESOLVED_VALUE, None, None)
+            assert_is(UNRESOLVED_VALUE, self.scopes.get("unresolved", None, None))
+            self.scopes.set("unresolved", UNRESOLVED_VALUE, None, None)
+            assert_is(UNRESOLVED_VALUE, self.scopes.get("unresolved", None, None))
 
     def test_referencing_value(self):
-        with self.scope.add_scope(ScopeType.module_scope, scope_node=None):
-            outer = self.scope.current_scope()
-            self.scope.set("reference", KnownValue(1), None, None)
+        with self.scopes.add_scope(ScopeType.module_scope, scope_node=None):
+            outer = self.scopes.current_scope()
+            self.scopes.set("reference", KnownValue(1), None, None)
             multivalue = MultiValuedValue([KnownValue(1), KnownValue(2)])
 
-            with self.scope.add_scope(ScopeType.module_scope, scope_node=None):
+            with self.scopes.add_scope(ScopeType.module_scope, scope_node=None):
                 val = ReferencingValue(outer, "reference")
-                self.scope.set("reference", val, None, None)
-                assert_eq(KnownValue(1), self.scope.get("reference", None, None))
-                self.scope.set("reference", KnownValue(2), None, None)
-                assert_eq(multivalue, self.scope.get("reference", None, None))
+                self.scopes.set("reference", val, None, None)
+                assert_eq(KnownValue(1), self.scopes.get("reference", None, None))
+                self.scopes.set("reference", KnownValue(2), None, None)
+                assert_eq(multivalue, self.scopes.get("reference", None, None))
 
-            assert_eq(multivalue, self.scope.get("reference", None, None))
+            assert_eq(multivalue, self.scopes.get("reference", None, None))
 
-            self.scope.set(
+            self.scopes.set(
                 "nonexistent",
-                ReferencingValue(self.scope.module_scope(), "nonexistent"),
+                ReferencingValue(self.scopes.module_scope(), "nonexistent"),
                 None,
                 None,
             )
-            assert_is(UNINITIALIZED_VALUE, self.scope.get("nonexistent", None, None))
+            assert_is(UNINITIALIZED_VALUE, self.scopes.get("nonexistent", None, None))
 
-            self.scope.set("is_none", KnownValue(None), None, None)
+            self.scopes.set("is_none", KnownValue(None), None, None)
 
-            with self.scope.add_scope(ScopeType.function_scope, scope_node=None):
-                self.scope.set(
+            with self.scopes.add_scope(ScopeType.function_scope, scope_node=None):
+                self.scopes.set(
                     "is_none", ReferencingValue(outer, "is_none"), None, None
                 )
-                assert_is(UNRESOLVED_VALUE, self.scope.get("is_none", None, None))
+                assert_is(UNRESOLVED_VALUE, self.scopes.get("is_none", None, None))
 
     def test_typed_value_set(self):
-        self.scope.set("value", TypedValue(dict), None, None)
-        assert_eq(TypedValue(dict), self.scope.get("value", None, None))
-        self.scope.set(
+        self.scopes.set("value", TypedValue(dict), None, None)
+        assert_eq(TypedValue(dict), self.scopes.get("value", None, None))
+        self.scopes.set(
             "value", DictIncompleteValue([]), None, None
         )  # subclass of TypedValue
-        assert_eq(DictIncompleteValue([]), self.scope.get("value", None, None))
+        assert_eq(DictIncompleteValue([]), self.scopes.get("value", None, None))
 
 
 class TestScoping(TestNameCheckVisitorBase):

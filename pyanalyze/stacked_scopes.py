@@ -426,7 +426,7 @@ class Scope(qcore.InspectableClass):
 
     def resolve_reference(self, value, state):
         if isinstance(value, ReferencingValue):
-            referenced = value.scope.get(value.name, None, state)
+            referenced, _ = value.scope.get(value.name, None, state)
             # globals that are None are probably set to something else later
             if _safe_equals(referenced, KnownValue(None)):
                 return UNRESOLVED_VALUE
@@ -744,7 +744,7 @@ class FunctionScope(Scope):
                     val.definition_nodes, ctx, val.constraints
                 )
             else:
-                parent_val = self.parent_scope.get(ctx.varname, None, ctx.state)
+                parent_val, _ = self.parent_scope.get(ctx.varname, None, ctx.state)
                 resolved = _constrain_value([parent_val], val.constraints)
             val.resolution_cache[key] = resolved
             return resolved
