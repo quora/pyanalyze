@@ -37,7 +37,7 @@ import sys
 import tempfile
 import traceback
 import types
-from typing import Iterable
+from typing import Iterable, Union
 
 import asynq
 import qcore
@@ -610,6 +610,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.current_function = None
         self.expected_return_value = None
         self.is_async_def = False
+        self.in_annotation = False
         self.collector = collector
         self.import_name_to_node = {}
         self.imports_added = set()
@@ -987,7 +988,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 potential_function = evaled_function.val
 
         if hasattr(node, "returns") and node.returns is not None:
-            return_annotation = self.visit(node.returns)
+            return_annotation = self._visit_annotation(node.returns)
             expected_return_value = self._value_of_annotation_type(
                 return_annotation, node.returns
             )
@@ -1469,8 +1470,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         with self.scopes.ignore_topmost_scope(), qcore.override(
             self, "state", VisitorState.collect_names
         ):
-            annotated_type = self.visit(arg.annotation)
+            annotated_type = self._visit_annotation(arg.annotation)
         return self._value_of_annotation_type(annotated_type, arg.annotation)
+
+    def _visit_annotation(self, node):
+        with qcore.override(self, "in_annotation", True):
+            return self.visit(node)
 
     def _value_of_annotation_type(self, val, node):
         """Given a value encountered in a type annotation, return a type."""
@@ -2150,6 +2155,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._show_error_if_checking(
                 source_node, error_code=ErrorCode.mixing_bytes_and_text
             )
+        elif self.in_annotation and isinstance(op, ast.BitOr):
+            # Accept PEP 604 (int | None) in annotations
+            if isinstance(left, KnownValue) and isinstance(right, KnownValue):
+                return KnownValue(Union[left.val, right.val])
+            else:
+                self._show_error_if_checking(
+                    source_node,
+                    "Unsupported operands for | in annotation: %s and %s"
+                    % (left, right),
+                    error_code=ErrorCode.unsupported_operation,
+                )
+                return UNRESOLVED_VALUE
 
         # compute the return value
         # we can't use six.text_types here because we want to includes bytes in py3; six.text_types
@@ -2747,7 +2764,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._generic_visit_list(node.targets)
 
     def visit_AnnAssign(self, node):
-        annotation = self.visit(node.annotation)
+        annotation = self._visit_annotation(node.annotation)
         if isinstance(annotation, KnownValue) and is_typing_name(
             annotation.val, "Final"
         ):

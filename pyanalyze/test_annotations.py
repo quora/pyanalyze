@@ -459,5 +459,25 @@ class X:
 
 def f(x: Queue[I]) -> None:
     assert_is_value(x, GenericValue(Queue, [TypedValue(I)]))
+
+def capybara(x: list[int], y: tuple[int, str], z: tuple[int, ...]) -> None:
+    assert_is_value(x, GenericValue(list, [TypedValue(int)]))
+    assert_is_value(
+        y,
+        SequenceIncompleteValue(tuple, [TypedValue(int), TypedValue(str)])
+    )
+    assert_is_value(z, GenericValue(tuple, [TypedValue(int)]))
+"""
+        )
+
+    @skip_before((3, 9))
+    def test_pep604(self):
+        self.assert_passes(
+            """
+from __future__ import annotations
+
+def capybara(x: int | None, y: int | str) -> None:
+    assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
+    assert_is_value(y, MultiValuedValue([TypedValue(int), TypedValue(str)]))
 """
         )
