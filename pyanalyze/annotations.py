@@ -120,7 +120,7 @@ def _type_from_runtime(val, ctx):
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
         args = get_args(val)
-        return GenericValue(origin, [_type_from_runtime(arg, ctx) for arg in args])
+        return _value_of_origin_args(origin, args, val, ctx)
     elif isinstance(val, type):
         if val is type(None):
             return KnownValue(None)
@@ -341,7 +341,7 @@ def _value_of_origin_args(origin, args, val, ctx):
         else:
             # Perhaps a forward reference
             return UNRESOLVED_VALUE
-    elif origin is typing.Tuple:
+    elif origin is typing.Tuple or origin is tuple:
         if not args:
             return TypedValue(tuple)
         elif len(args) == 2 and args[1] is Ellipsis:
