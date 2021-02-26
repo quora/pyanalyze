@@ -813,7 +813,6 @@ def g():
         )
 
     @skip_before((3, 6))
-    @only_before((3, 9))
     def test_coroutine_from_typeshed(self):
         self.assert_passes(
             """
@@ -822,9 +821,7 @@ from asyncio.streams import open_connection, StreamReader, StreamWriter
 
 async def capybara():
     # annotated as def ... -> Future in typeshed
-    # This doesn't work in 3.9 because we become smart enough to understand that
-    # it returns a Future, but not smart enough to await a Future.
-    assert_is_value(asyncio.sleep(3), AwaitableIncompleteValue(UNRESOLVED_VALUE))
+    assert_is_value(asyncio.sleep(3), GenericValue(asyncio.Future, [UNRESOLVED_VALUE]))
     return 42
 """
         )

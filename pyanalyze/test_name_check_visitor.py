@@ -468,6 +468,25 @@ def capybara():
         def tucotuco():
             assert_is_value(2 + 3, KnownValue(5))
 
+    @skip_before((3, 0))
+    def test_inplace_binop(self):
+        self.assert_passes(
+            """
+class Capybara:
+    def __add__(self, x: int) -> str:
+        return ""
+
+    def __iadd__(self, x: str) -> int:
+        return 0
+
+def tucotuco():
+    x = Capybara()
+    assert_is_value(x + 1, TypedValue(str))
+    x += "a"
+    assert_is_value(x, TypedValue(int))
+"""
+        )
+
     @assert_passes()
     def test_global_sets_value(self):
         capybara = None
@@ -737,6 +756,7 @@ class TestAttributes(TestNameCheckVisitorBase):
                 ),
             )
 
+    @skip_before((3, 0))
     @assert_passes()
     def test_attrs(self):
         import attr

@@ -97,22 +97,29 @@ from pyanalyze.value import (
 )
 
 OPERATION_TO_DESCRIPTION_AND_METHOD = {
-    ast.Add: ("addition", "__add__", "__radd__"),
-    ast.Sub: ("subtraction", "__sub__", "__rsub__"),
-    ast.Mult: ("multiplication", "__mul__", "__rmul__"),
-    ast.Div: ("division", "__div__", "__rdiv__"),
-    ast.Mod: ("modulo", "__mod__", "__rmod__"),
-    ast.Pow: ("exponentiation", "__pow__", "__rpow__"),
-    ast.LShift: ("left-shifting", "__lshift__", "__rlshift__"),
-    ast.RShift: ("right-shifting", "__rshift__", "__rrshift__"),
-    ast.BitOr: ("bitwise OR", "__or__", "__ror__"),
-    ast.BitXor: ("bitwise XOR", "__xor__", "__rxor__"),
-    ast.BitAnd: ("bitwise AND", "__and__", "__rand__"),
-    ast.FloorDiv: ("floor division", "__floordiv__", "__rfloordiv__"),
-    ast.Invert: ("inversion", "__invert__", None),
-    ast.UAdd: ("unary positive", "__pos__", None),
-    ast.USub: ("unary negation", "__neg__", None),
+    ast.Add: ("addition", "__add__", "__iadd__", "__radd__"),
+    ast.Sub: ("subtraction", "__sub__", "__isub__", "__rsub__"),
+    ast.Mult: ("multiplication", "__mul__", "__imul__", "__rmul__"),
+    ast.Div: ("division", "__div__", "__idiv__", "__rdiv__"),
+    ast.Mod: ("modulo", "__mod__", "__imod__", "__rmod__"),
+    ast.Pow: ("exponentiation", "__pow__", "__ipow__", "__rpow__"),
+    ast.LShift: ("left-shifting", "__lshift__", "__ilshift__", "__rlshift__"),
+    ast.RShift: ("right-shifting", "__rshift__", "__irshift__", "__rrshift__"),
+    ast.BitOr: ("bitwise OR", "__or__", "__ior__", "__ror__"),
+    ast.BitXor: ("bitwise XOR", "__xor__", "__ixor__", "__rxor__"),
+    ast.BitAnd: ("bitwise AND", "__and__", "__iand__", "__rand__"),
+    ast.FloorDiv: ("floor division", "__floordiv__", "__ifloordiv__", "__rfloordiv__"),
+    ast.Invert: ("inversion", "__invert__", None, None),
+    ast.UAdd: ("unary positive", "__pos__", None, None),
+    ast.USub: ("unary negation", "__neg__", None, None),
 }
+if hasattr(ast, "MatMult"):
+    OPERATION_TO_DESCRIPTION_AND_METHOD[ast.MatMult] = (
+        "matrix multiplication",
+        "__matmul__",
+        "__imatmul__",
+        "__rmatmul__",
+    )
 
 
 # these don't appear to be in the standard types module
@@ -2120,7 +2127,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return val, constraint.invert()
         else:
             operand = self.visit(node.operand)
-            _, method, _ = OPERATION_TO_DESCRIPTION_AND_METHOD[type(node.op)]
+            _, method, _, _ = OPERATION_TO_DESCRIPTION_AND_METHOD[type(node.op)]
             val = self._check_dunder_call(node, operand, method, [], allow_call=True)
             return val, NULL_CONSTRAINT
 
@@ -2132,7 +2139,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         )
 
     def _visit_binop_internal(
-        self, left_node, left, op, right_node, right, source_node
+        self, left_node, left, op, right_node, right, source_node, is_inplace=False
     ):
         # check for some py3 deprecations
         if (
@@ -2192,14 +2199,27 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(op, ast.Div):
             if six.PY3 or "division" in self.future_imports:
                 method = "__truediv__"
+                imethod = "__itruediv__"
                 rmethod = "__rtruediv__"
             else:
                 method = "__div__"
+                imethod = "__idiv__"
                 rmethod = "__rdiv__"
             description = "division"
         else:
-            description, method, rmethod = OPERATION_TO_DESCRIPTION_AND_METHOD[type(op)]
+            description, method, imethod, rmethod = OPERATION_TO_DESCRIPTION_AND_METHOD[
+                type(op)
+            ]
         allow_call = method not in self.config.DISALLOW_CALLS_TO_DUNDERS
+
+        if is_inplace:
+            with self.catch_errors() as inplace_errors:
+                inplace_result = self._check_dunder_call(
+                    source_node, left, imethod, [right], allow_call=allow_call
+                )
+            if not inplace_errors:
+                return inplace_result
+
         with self.catch_errors() as left_errors:
             left_result = self._check_dunder_call(
                 source_node, left, method, [right], allow_call=allow_call
@@ -2738,7 +2758,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._show_error_if_checking(
                 node, error_code=ErrorCode.task_needs_yield, replacement=replacement
             )
-        elif isinstance(value, AwaitableIncompleteValue):
+        # If the value is an awaitable or is assignable to asyncio.Future, show
+        # an error about a missing await.
+        elif isinstance(value, AwaitableIncompleteValue) or (
+            asyncio is not None and value.is_type(asyncio.Future)
+        ):
             if self.is_async_def:
                 new_node = ast.Expr(value=ast.Await(value=node.value))
             else:
@@ -2805,7 +2829,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             lhs = UNRESOLVED_VALUE
 
         value = self._visit_binop_internal(
-            node.target, lhs, node.op, node.value, rhs, node
+            node.target, lhs, node.op, node.value, rhs, node, is_inplace=True
         )
 
         with qcore.override(

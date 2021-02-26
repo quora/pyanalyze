@@ -6,7 +6,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .annotations import type_from_runtime
+from .annotations import type_from_runtime, Context, type_from_ast
 from .config import Config
 from .error_code import ErrorCode
 from .find_unused import used
@@ -44,6 +44,8 @@ import re
 import six
 import sys
 import warnings
+import attr
+from typing import NewType
 
 try:
     import typeshed_client
@@ -53,7 +55,6 @@ except ImportError:
 
 NON_IDENTIFIER_CHARS = re.compile(r"[^a-zA-Z_\d]")
 _NO_ARG_SENTINEL = qcore.MarkerObject("no argument given")
-_NO_VALUE = qcore.MarkerObject("no value")
 
 
 @used  # exposed as an API
@@ -943,6 +944,10 @@ class ArgSpecCache(object):
             name="assert_is_not",
             implementation=_assert_is_not_impl,
         ),
+        # Need to override this because the type for the tp parameter in typeshed is too strict
+        NewType: ExtendedArgSpec(
+            [Parameter("name", typ=str), Parameter(name="tp")], name="NewType"
+        ),
     }
     if six.PY2:
         DEFAULT_ARGSPECS[str.format] = ExtendedArgSpec(
@@ -1302,6 +1307,26 @@ if typeshed_client is None:
 else:
     from typed_ast import ast3
 
+    @attr.s
+    class _AnnotationContext(Context):
+        finder = attr.ib(default=None)
+        module = attr.ib(default=None)
+
+        def show_error(self, message, error_code=ErrorCode.invalid_annotation):
+            self.finder.log(message, ())
+
+        def get_name(self, node):
+            info = self.finder.resolver.get_fully_qualified_name(
+                "%s.%s" % (self.module, node.id)
+            )
+            if info is not None:
+                return self.finder._value_from_info(info, self.module)
+            elif hasattr(builtins, node.id):
+                val = getattr(builtins, node.id)
+                if val is None or isinstance(val, type):
+                    return KnownValue(val)
+            return UNRESOLVED_VALUE
+
     class TypeshedFinder(object):
         def __init__(self, verbose=False):
             self.verbose = verbose
@@ -1436,50 +1461,8 @@ else:
                     yield Parameter(arg.arg, typ=typ, default_value=None)
 
         def _parse_expr(self, node, module):
-            raw = self._parse_ast_node(node, module)
-            if raw is _NO_VALUE:
-                return UNRESOLVED_VALUE
-            else:
-                return type_from_runtime(raw)
-
-        def _parse_ast_node(self, node, module):
-            if isinstance(node, ast3.NameConstant):
-                return node.value
-            elif isinstance(node, ast3.Name):
-                info = self.resolver.get_fully_qualified_name(
-                    "%s.%s" % (module, node.id)
-                )
-                if info is not None:
-                    return self._value_from_info(info, module)
-                elif hasattr(builtins, node.id):
-                    val = getattr(builtins, node.id)
-                    if val is None or isinstance(val, type):
-                        return val
-            elif isinstance(node, ast3.Subscript):
-                value = self._parse_ast_node(node.value, module)
-                subscript = self._parse_ast_node(node.slice, module)
-                try:
-                    return value[subscript]
-                except Exception:
-                    self.log("Ignoring subscript failure", (value, subscript))
-                    return _NO_VALUE
-            elif isinstance(node, ast3.Index):
-                return self._parse_ast_node(node.value, module)
-            elif isinstance(node, ast3.Tuple):
-                return tuple(self._parse_ast_node(elt, module) for elt in node.elts)
-            elif isinstance(node, ast3.List):
-                return [self._parse_ast_node(elt, module) for elt in node.elts]
-            elif isinstance(node, ast3.Ellipsis):
-                return Ellipsis
-            elif isinstance(node, ast3.Attribute):
-                value = self._parse_ast_node(node.value, module)
-                try:
-                    return getattr(value, node.attr)
-                except Exception:
-                    self.log("Ignoring getattr failure", (value, node.attr))
-                    return _NO_VALUE
-            self.log("Ignoring node", (node, module))
-            return _NO_VALUE
+            ctx = _AnnotationContext(finder=self, module=module)
+            return type_from_ast(node, ctx=ctx)
 
         def _value_from_info(self, info, module):
             if isinstance(info, typeshed_client.ImportedInfo):
@@ -1487,13 +1470,13 @@ else:
             elif isinstance(info, typeshed_client.NameInfo):
                 try:
                     mod = __import__(module)
-                    return getattr(mod, info.name)
+                    return KnownValue(getattr(mod, info.name))
                 except Exception:
                     self.log("Unable to import", (module, info))
-                    return _NO_VALUE
+                    return UNRESOLVED_VALUE
             else:
                 self.log("Ignoring info", info)
-                return _NO_VALUE
+                return UNRESOLVED_VALUE
 
 
 def _is_coroutine_function(obj):
