@@ -3,6 +3,7 @@
 Code for understanding type annotations.
 
 """
+import attr
 import mypy_extensions
 import typing_extensions
 import typing
@@ -45,22 +46,45 @@ except ImportError:
         return ()
 
 
+@attr.s
+class Context(object):
+    """Default context used in interpreting annotations.
+
+    Subclass this to do something more useful.
+
+    """
+
+    should_suppress_undefined_names = attr.ib(default=False)
+
+    def suppress_undefined_names(self):
+        return qcore.override(self, "should_suppress_undefined_names", True)
+
+    def show_error(self, message, error_code=ErrorCode.invalid_annotation):
+        pass
+
+    def get_name(self, node):
+        return UNRESOLVED_VALUE
+
+
 @used  # part of the API of this module; low cost even if currently unused
-def type_from_ast(ast_node, visitor=None):
+def type_from_ast(ast_node, visitor=None, ctx=None):
     """Given an AST node representing an annotation, return a Value."""
-    ctx = _Context(visitor, ast_node)
+    if ctx is None:
+        ctx = _DefaultContext(visitor, ast_node)
     return _type_from_ast(ast_node, ctx)
 
 
-def type_from_runtime(val, visitor=None, node=None, globals=None):
+def type_from_runtime(val, visitor=None, node=None, globals=None, ctx=None):
     """Given a runtime annotation object, return a Value."""
-    ctx = _Context(visitor, node, globals)
+    if ctx is None:
+        ctx = _DefaultContext(visitor, node, globals)
     return _type_from_runtime(val, ctx)
 
 
-def type_from_value(value, visitor=None, node=None):
+def type_from_value(value, visitor=None, node=None, ctx=None):
     """Given a Value from resolving an annotation, return the type."""
-    ctx = _Context(visitor, node)
+    if ctx is None:
+        ctx = _DefaultContext(visitor, node)
     return _type_from_value(value, ctx)
 
 
@@ -151,8 +175,15 @@ def _type_from_runtime(val, ctx):
     ):
         # This has issues because the forward ref may be defined in a different file, in
         # which case we don't know which names are valid in it.
-        with qcore.override(ctx, "suppress_undefined_name", True):
-            return UNRESOLVED_VALUE
+        with ctx.suppress_undefined_names():
+            try:
+                code = ast.parse(val.__forward_arg__)
+            except SyntaxError:
+                ctx.show_error(
+                    "Syntax error in forward reference: %s" % (val.__forward_arg__,)
+                )
+                return UNRESOLVED_VALUE
+            return _type_from_ast(code, ctx)
     elif val is Ellipsis:
         # valid in Callable[..., ]
         return UNRESOLVED_VALUE
@@ -195,6 +226,13 @@ def _type_from_value(value, ctx):
                     "Arguments to Literal[] must be literals, not %s" % (value.members,)
                 )
                 return UNRESOLVED_VALUE
+        elif root is typing.Tuple or root is tuple:
+            if len(value.members) == 2 and value.members[1] == KnownValue(Ellipsis):
+                return GenericValue(tuple, [_type_from_value(value.members[0], ctx)])
+            else:
+                return SequenceIncompleteValue(
+                    tuple, [_type_from_value(arg, ctx) for arg in value.members]
+                )
         elif root is typing.Optional:
             if len(value.members) != 1:
                 ctx.show_error("Optional[] takes only one argument")
@@ -235,12 +273,12 @@ def _type_from_value(value, ctx):
         return UNRESOLVED_VALUE
 
 
-class _Context(object):
+class _DefaultContext(Context):
     def __init__(self, visitor, node, globals=None):
+        super().__init__()
         self.visitor = visitor
         self.node = node
         self.globals = globals
-        self.suppress_undefined_name = False
 
     def show_error(self, message, error_code=ErrorCode.invalid_annotation):
         if self.visitor is not None:
@@ -249,7 +287,9 @@ class _Context(object):
     def get_name(self, node):
         if self.visitor is not None:
             return self.visitor.resolve_name(
-                node, error_node=self.node, suppress_errors=self.suppress_undefined_name
+                node,
+                error_node=self.node,
+                suppress_errors=self.should_suppress_undefined_names,
             )
         elif self.globals is not None:
             if node.id in self.globals:
