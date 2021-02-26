@@ -756,6 +756,7 @@ class TestAttributes(TestNameCheckVisitorBase):
                 ),
             )
 
+    @skip_before((3, 0))
     @assert_passes()
     def test_attrs(self):
         import attr
