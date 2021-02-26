@@ -804,12 +804,44 @@ import asyncio
 @asyncio.coroutine
 def f():
     yield from asyncio.sleep(3)
-    assert_is_value(asyncio.sleep(3), AwaitableIncompleteValue(UNRESOLVED_VALUE))
     return 42
 
 @asyncio.coroutine
 def g():
     assert_is_value(f(), AwaitableIncompleteValue(KnownValue(42)))
+"""
+        )
+
+    @skip_before((3, 6))
+    @only_before((3, 9))
+    def test_coroutine_from_typeshed(self):
+        self.assert_passes(
+            """
+import asyncio
+from asyncio.streams import open_connection, StreamReader, StreamWriter
+
+async def capybara():
+    # annotated as def ... -> Future in typeshed
+    # This doesn't work in 3.9 because we become smart enough to understand that
+    # it returns a Future, but not smart enough to await a Future.
+    assert_is_value(asyncio.sleep(3), AwaitableIncompleteValue(UNRESOLVED_VALUE))
+    return 42
+"""
+        )
+
+    @skip_before((3, 6))
+    def test_async_def_from_typeshed(self):
+        self.assert_passes(
+            """
+import asyncio
+from asyncio.streams import open_connection, StreamReader, StreamWriter
+
+async def capybara():
+    # annotated as async def in typeshed
+    assert_is_value(open_connection(), AwaitableIncompleteValue(
+        SequenceIncompleteValue(tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)])
+    ))
+    return 42
 """
         )
 

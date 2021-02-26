@@ -1175,8 +1175,8 @@ class ArgSpecCache(object):
 
         argspec = self.ts_finder.get_argspec(obj)
         if argspec is not None:
-            if _is_coroutine_function(obj):
-                argspec.return_value = AwaitableIncompleteValue(argspec.return_value)
+            if _is_coroutine_function(obj) and argspec.return_value is UNRESOLVED_VALUE:
+                argspec.return_value = AwaitableIncompleteValue(UNRESOLVED_VALUE)
             return argspec
 
         if inspect.isfunction(obj):
@@ -1366,8 +1366,14 @@ else:
 
         def _get_argspec_from_info(self, info, obj, fq_name, mod):
             if isinstance(info, typeshed_client.NameInfo):
-                if isinstance(info.ast, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
-                    return self._get_argspec_from_func_def(info.ast, obj, mod)
+                if isinstance(info.ast, ast3.FunctionDef):
+                    return self._get_argspec_from_func_def(
+                        info.ast, obj, mod, is_async_fn=False
+                    )
+                elif isinstance(info.ast, ast3.AsyncFunctionDef):
+                    return self._get_argspec_from_func_def(
+                        info.ast, obj, mod, is_async_fn=True
+                    )
                 else:
                     self.log("Ignoring unrecognized AST", (fq_name, info))
                     return None
@@ -1383,7 +1389,7 @@ else:
         def _get_info_for_name(self, fq_name):
             return self.resolver.get_fully_qualified_name(fq_name)
 
-        def _get_argspec_from_func_def(self, node, obj, mod):
+        def _get_argspec_from_func_def(self, node, obj, mod, is_async_fn):
             if node.decorator_list:
                 # might be @overload or something else we don't recognize
                 return None
@@ -1411,7 +1417,9 @@ else:
                 starargs=starargs,
                 kwargs=kwargs,
                 kwonly_args=kwonly,
-                return_value=return_value,
+                return_value=AwaitableIncompleteValue(return_value)
+                if is_async_fn
+                else return_value,
                 name=obj.__name__,
             )
 
