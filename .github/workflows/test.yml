@@ -16,12 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - name: py27
-          python: '2.7'
-          toxenv: py27
-        - name: py35
-          python: '3.5'
-          toxenv: py35
         - name: py36
           python: '3.6'
           toxenv: py36
@@ -31,6 +25,9 @@ jobs:
         - name: py38
           python: '3.8'
           toxenv: py38
+        - name: py39
+          python: '3.9'
+          toxenv: py39
         - name: black
           python: '3.8'
           toxenv: black
