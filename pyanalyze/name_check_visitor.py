@@ -144,12 +144,6 @@ _DEFAULT_FUNCTION_INFO = FunctionInfo(AsyncFunctionKind.normal, False, False, Fa
 _BOOL_DUNDER = "__bool__" if six.PY3 else "__nonzero__"
 
 
-if asyncio is None:
-    _future_value = NO_RETURN_VALUE
-else:
-    _future_value = TypedValue(asyncio.Future)
-
-
 class ClassAttributeChecker(object):
     """Helper class to keep track of attributes that are read and set on instances."""
 
@@ -2767,9 +2761,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # If the value is an awaitable or is assignable to asyncio.Future, show
         # an error about a missing await.
         elif isinstance(value, AwaitableIncompleteValue) or (
-            value is not UNRESOLVED_VALUE
-            and value is not NO_RETURN_VALUE
-            and _future_value.is_value_compatible(value)
+            asyncio is not None and value.is_type(asyncio.Future)
         ):
             if self.is_async_def:
                 new_node = ast.Expr(value=ast.Await(value=node.value))
