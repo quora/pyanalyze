@@ -616,6 +616,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.yield_checker = YieldChecker(self)
         self.current_function = None
         self.expected_return_value = None
+        self.current_enum_members = None
         self.is_async_def = False
         self.in_annotation = False
         self.collector = collector
@@ -913,9 +914,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     @contextlib.contextmanager
     def _set_current_class(self, current_class):
+        if isinstance(
+            current_class, type
+        ) and self.config.should_check_class_for_duplicate_values(current_class):
+            current_enum_members = {}
+        else:
+            current_enum_members = None
         with qcore.override(self, "current_class", current_class), qcore.override(
             self.asynq_checker, "current_class", current_class
-        ):
+        ), qcore.override(self, "current_enum_members", current_enum_members):
             yield
 
     def visit_ClassDef(self, node):
@@ -2786,6 +2793,35 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         ), self.yield_checker.check_yield_result_assignment(is_yield):
             # syntax like 'x = y = 0' results in multiple targets
             self._generic_visit_list(node.targets)
+
+        if (
+            self.current_enum_members is not None
+            and self.current_function is None
+            and isinstance(value, KnownValue)
+        ):
+            try:
+                hash(value.val)
+            except TypeError:
+                return
+
+            names = [
+                target.id for target in node.targets if isinstance(target, ast.Name)
+            ]
+
+            if value.val in self.current_enum_members:
+                self._show_error_if_checking(
+                    node,
+                    "Duplicate enum member: %s is used for both %s and %s"
+                    % (
+                        value.val,
+                        self.current_enum_members[value.val],
+                        ", ".join(names),
+                    ),
+                    error_code=ErrorCode.duplicate_enum_member,
+                )
+            else:
+                for name in names:
+                    self.current_enum_members[value.val] = name
 
     def visit_AnnAssign(self, node):
         annotation = self._visit_annotation(node.annotation)

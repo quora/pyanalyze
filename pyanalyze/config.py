@@ -8,6 +8,7 @@ Module-specific configurations for test_scope.
 
 """
 import asynq
+import enum
 import qcore
 import six
 from six.moves import range
@@ -272,3 +273,11 @@ class Config(object):
 
         """
         return {}
+
+    def should_check_class_for_duplicate_values(self, cls):
+        """Whether we should produce an error if this class contains duplicate values.
+
+        Used for the duplicate_enum check.
+
+        """
+        return issubclass(cls, enum.Enum)
