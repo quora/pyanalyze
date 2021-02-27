@@ -188,6 +188,14 @@ def run():
 """,
         )
 
+    @assert_fails(ErrorCode.duplicate_enum_member)
+    def test_duplicate_enum_member(self):
+        import enum
+
+        class Foo(enum.Enum):
+            a = 1
+            b = 1
+
     @assert_fails(ErrorCode.undefined_name)
     def test_undefined_name_in_return(self):
         def what_is_it():

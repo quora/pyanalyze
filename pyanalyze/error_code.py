@@ -79,6 +79,7 @@ class ErrorCode(enum.Enum):
     invalid_typeddict_key = 58
     invalid_annotation = 59
     bare_ignore = 60
+    duplicate_enum_member = 61
 
 
 DISABLED_BY_DEFAULT = {
@@ -148,6 +149,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.invalid_typeddict_key: "Invalid key in TypedDict",
     ErrorCode.invalid_annotation: "Invalid type annotation",
     ErrorCode.bare_ignore: "Ignore comment without an error code",
+    ErrorCode.duplicate_enum_member: "Duplicate enum member",
 }
 
 
