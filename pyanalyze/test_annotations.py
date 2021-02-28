@@ -411,3 +411,15 @@ def capybara(x: int | None, y: int | str) -> None:
     assert_is_value(y, MultiValuedValue([TypedValue(int), TypedValue(str)]))
 """
         )
+
+    @skip_before((3, 8))
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_initvar(self):
+        from dataclasses import dataclass, InitVar
+
+        @dataclass
+        class Capybara:
+            x: InitVar[str]
+
+        def f():
+            Capybara(x=3)

@@ -136,6 +136,12 @@ def _type_from_runtime(val, ctx):
         )
     elif typing_inspect.is_callable_type(val):
         return TypedValue(Callable)
+    elif val is InitVar:
+        # On 3.6 and 3.7, InitVar[T] just returns InitVar at runtime, so we can't
+        # get the actual type out.
+        return UNRESOLVED_VALUE
+    elif isinstance(val, InitVar):
+        return type_from_runtime(val.type)
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
@@ -187,9 +193,6 @@ def _type_from_runtime(val, ctx):
     elif is_instance_of_typing_name(val, "_TypeAlias"):
         # typing.Pattern and Match, which are not normal generic types for some reason
         return GenericValue(val.impl_type, [_type_from_runtime(val.type_var, ctx)])
-    elif isinstance(val, InitVar):
-        # No need to bother with it further; dataclasses processes it for us.
-        return UNRESOLVED_VALUE
     else:
         origin = get_origin(val)
         if origin is not None:
