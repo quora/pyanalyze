@@ -3536,8 +3536,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
                 return None
             call_fn = typ.__call__
-            if hasattr(call_fn, "__func__"):  # py2
-                call_fn = call_fn.__func__
             argspec = self._get_argspec(call_fn, node, name=name)
             if argspec is None:
                 return None

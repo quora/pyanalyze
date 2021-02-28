@@ -4,11 +4,12 @@ Implementation of value classes, which represent values found while analyzing an
 
 """
 
-import attr
+import ast
 from collections import OrderedDict
+from dataclasses import dataclass, field, InitVar
 import inspect
 from itertools import chain
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from unittest import mock
 
 # __builtin__ in Python 2 and builtins in Python 3
@@ -42,7 +43,7 @@ class Value(object):
         return self
 
 
-@attr.s(frozen=True)
+@dataclass(frozen=True)
 class UnresolvedValue(Value):
     """Value that we cannot resolve further."""
 
@@ -53,7 +54,7 @@ class UnresolvedValue(Value):
 UNRESOLVED_VALUE = UnresolvedValue()
 
 
-@attr.s(frozen=True)
+@dataclass(frozen=True)
 class UninitializedValue(Value):
     """Value for variables that have not been initialized.
 
@@ -68,7 +69,7 @@ class UninitializedValue(Value):
 UNINITIALIZED_VALUE = UninitializedValue()
 
 
-@attr.s(frozen=True)
+@dataclass(frozen=True)
 class NoReturnValue(Value):
     """Value that indicates that a function will never return."""
 
@@ -83,12 +84,14 @@ class NoReturnValue(Value):
 NO_RETURN_VALUE = NoReturnValue()
 
 
-@attr.s(frozen=True, hash=False, cmp=False)
+@dataclass(frozen=True)
 class KnownValue(Value):
     """Variable with a known value."""
 
-    val = attr.ib()
-    source_node = attr.ib(default=None, repr=False, hash=False, cmp=False)
+    val: Any
+    source_node: Optional[ast.AST] = field(
+        default=None, repr=False, hash=False, compare=False
+    )
 
     def is_value_compatible(self, val):
         if isinstance(val, KnownValue):
@@ -121,7 +124,7 @@ class KnownValue(Value):
         return not (self == other)
 
     def __hash__(self):
-        # For Python 2, make sure b'' and u'' are hashed differently.
+        # Make sure e.g. 1 and True are handled differently.
         return hash((type(self.val), self.val))
 
     def __str__(self):
@@ -134,7 +137,7 @@ class KnownValue(Value):
         return KnownValue(type(self.val))
 
 
-@attr.s(frozen=True)
+@dataclass(frozen=True)
 class UnboundMethodValue(Value):
     """Value that represents an unbound method.
 
@@ -142,9 +145,9 @@ class UnboundMethodValue(Value):
 
     """
 
-    attr_name = attr.ib(type=str)
-    typ = attr.ib(type=type)
-    secondary_attr_name = attr.ib(default=None, type=Optional[str])
+    attr_name: str
+    typ: type
+    secondary_attr_name: Optional[str] = None
 
     def get_method(self):
         """Returns the method object for this UnboundMethodValue."""
@@ -176,7 +179,7 @@ class UnboundMethodValue(Value):
         )
 
 
-@attr.s(hash=True)
+@dataclass(unsafe_hash=True)
 class TypedValue(Value):
     """Value for which we know the type.
 
@@ -193,7 +196,7 @@ class TypedValue(Value):
 
     """
 
-    typ = attr.ib()
+    typ: Any
 
     def is_value_compatible(self, val):
         if hasattr(self.typ, "_VALUES_TO_NAMES"):
@@ -245,7 +248,7 @@ class TypedValue(Value):
         return _stringify_type(self.typ)
 
 
-@attr.s(hash=True, init=False)
+@dataclass(unsafe_hash=True, init=False)
 class NewTypeValue(TypedValue):
     """A wrapper around an underlying type.
 
@@ -253,10 +256,10 @@ class NewTypeValue(TypedValue):
 
     """
 
-    name = attr.ib(type=str)
-    newtype = attr.ib()
+    name: str
+    newtype: Any
 
-    def __init__(self, newtype):
+    def __init__(self, newtype: Any) -> None:
         super(NewTypeValue, self).__init__(newtype.__supertype__)
         self.name = newtype.__name__
         self.newtype = newtype
@@ -271,7 +274,7 @@ class NewTypeValue(TypedValue):
         return "NewType(%r, %s)" % (self.name, _stringify_type(self.typ))
 
 
-@attr.s(hash=True)
+@dataclass(unsafe_hash=True, init=False)
 class GenericValue(TypedValue):
     """A TypedValue representing a generic.
 
@@ -279,7 +282,11 @@ class GenericValue(TypedValue):
 
     """
 
-    args = attr.ib(converter=tuple, type=Tuple[Value, ...])
+    args: Tuple[Value, ...]
+
+    def __init__(self, typ: type, args: Iterable[Value]) -> None:
+        super().__init__(typ)
+        self.args = tuple(args)
 
     def __str__(self):
         if self.typ is tuple:
@@ -311,7 +318,7 @@ class GenericValue(TypedValue):
             return UNRESOLVED_VALUE
 
 
-@attr.s(hash=True, init=False)
+@dataclass(unsafe_hash=True, init=False)
 class SequenceIncompleteValue(GenericValue):
     """A TypedValue representing a sequence whose members are not completely known.
 
@@ -320,14 +327,14 @@ class SequenceIncompleteValue(GenericValue):
 
     """
 
-    members = attr.ib(type=Tuple[Value, ...])
+    members: Tuple[Value, ...]
 
-    def __init__(self, typ, members):
+    def __init__(self, typ: type, members: Sequence[Value]) -> None:
         if members:
             args = (unite_values(*members),)
         else:
             args = (UNRESOLVED_VALUE,)
-        super(SequenceIncompleteValue, self).__init__(typ, args)
+        super().__init__(typ, args)
         self.members = tuple(members)
 
     def is_value_compatible(self, val):
@@ -352,7 +359,7 @@ class SequenceIncompleteValue(GenericValue):
         )
 
 
-@attr.s(hash=True, init=False)
+@dataclass(unsafe_hash=True, init=False)
 class DictIncompleteValue(GenericValue):
     """A TypedValue representing a dictionary whose keys and values are not completely known.
 
@@ -361,15 +368,15 @@ class DictIncompleteValue(GenericValue):
 
     """
 
-    items = attr.ib(type=List[Tuple[Value, Value]])
+    items: List[Tuple[Value, Value]]
 
-    def __init__(self, items):
+    def __init__(self, items: List[Tuple[Value, Value]]) -> None:
         if items:
             key_type = unite_values(*[key for key, _ in items])
             value_type = unite_values(*[value for _, value in items])
         else:
             key_type = value_type = UNRESOLVED_VALUE
-        super(DictIncompleteValue, self).__init__(dict, (key_type, value_type))
+        super().__init__(dict, (key_type, value_type))
         self.items = items
 
     def __str__(self):
@@ -379,11 +386,11 @@ class DictIncompleteValue(GenericValue):
         )
 
 
-@attr.s(init=False)
+@dataclass(init=False)
 class TypedDictValue(GenericValue):
-    items = attr.ib(type=Dict[str, Value])
+    items: Dict[str, Value]
 
-    def __init__(self, items):
+    def __init__(self, items: Dict[str, Value]) -> None:
         if items:
             value_type = unite_values(*items.values())
         else:
@@ -434,7 +441,7 @@ class TypedDictValue(GenericValue):
         return hash(tuple(sorted(self.items)))
 
 
-@attr.s(hash=True, init=False)
+@dataclass(unsafe_hash=True, init=False)
 class AsyncTaskIncompleteValue(GenericValue):
     """A TypedValue representing an async task.
 
@@ -442,18 +449,18 @@ class AsyncTaskIncompleteValue(GenericValue):
 
     """
 
-    value = attr.ib(type=Value)
+    value: Value
 
-    def __init__(self, typ, value):
+    def __init__(self, typ: type, value: Value) -> None:
         super(AsyncTaskIncompleteValue, self).__init__(typ, (value,))
         self.value = value
 
 
-@attr.s(frozen=True)
+@dataclass(frozen=True)
 class AwaitableIncompleteValue(Value):
     """A Value representing a Python 3 awaitable, e.g. a coroutine object."""
 
-    value = attr.ib(type=Value)
+    value: Value
 
     def get_type_value(self):
         return UNRESOLVED_VALUE
@@ -462,11 +469,11 @@ class AwaitableIncompleteValue(Value):
         return "Awaitable[%s]" % (self.value,)
 
 
-@attr.s(frozen=True)
+@dataclass(frozen=True)
 class SubclassValue(Value):
     """Value that is either a type or its subclass."""
 
-    typ = attr.ib(type=type)
+    typ: type
 
     def is_type(self, typ):
         try:
@@ -507,15 +514,19 @@ class SubclassValue(Value):
         return "Type[%s]" % (_stringify_type(self.typ),)
 
 
-@attr.s(cmp=False, frozen=True, hash=True)
+@dataclass(frozen=True, order=False)
 class MultiValuedValue(Value):
     """Variable for which multiple possible values have been recorded."""
 
-    vals = attr.ib(
-        converter=lambda vals: tuple(
-            chain.from_iterable(flatten_values(val) for val in vals)
+    raw_vals: InitVar[Iterable[Value]]
+    vals: Tuple[Value, ...] = field(init=False)
+
+    def __post_init__(self, raw_vals: Iterable[Value]) -> None:
+        object.__setattr__(
+            self,
+            "vals",
+            tuple(chain.from_iterable(flatten_values(val) for val in raw_vals)),
         )
-    )
 
     def is_value_compatible(self, val):
         if isinstance(val, MultiValuedValue):
@@ -550,18 +561,18 @@ class MultiValuedValue(Value):
         return "Union[%s]" % ", ".join(map(str, self.vals))
 
 
-@attr.s(frozen=True)
+@dataclass(frozen=True)
 class ReferencingValue(Value):
     """Value that is a reference to another value (used to implement globals)."""
 
-    scope = attr.ib()
-    name = attr.ib(type=str)
+    scope: Any
+    name: str
 
     def __str__(self):
         return "<reference to %s>" % (self.name,)
 
 
-@attr.s(frozen=True)
+@dataclass(frozen=True)
 class VariableNameValue(Value):
     """Value that is stored in a variable associated with a particular kind of value.
 
@@ -574,7 +585,7 @@ class VariableNameValue(Value):
 
     """
 
-    varnames = attr.ib(type=List[str])
+    varnames: List[str]
 
     def is_value_compatible(self, val):
         if not isinstance(val, VariableNameValue):
