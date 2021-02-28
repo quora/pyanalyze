@@ -1,7 +1,3 @@
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 """
 
 Base class for scripts that run ast-based checks on the codebase.
@@ -9,31 +5,33 @@ Base class for scripts that run ast-based checks on the codebase.
 """
 
 import argparse
-import attr
 from ast_decompiler import decompile
 import ast
 import codemod
 import collections
 from contextlib import contextmanager
 import concurrent.futures
+from dataclasses import dataclass
 import qcore
 import cProfile
-from io import open
 import logging
-import multiprocessing
 import os
 import os.path
 import re
-import six
 import subprocess
 import sys
 import tempfile
-from six.moves import builtins
-from six.moves.builtins import print as real_print
+import builtins
+from builtins import print as real_print
+from typing import List, Optional, Sequence
 
 from . import analysis_lib
 
-_FakeNode = collections.namedtuple("_FakeNode", ["lineno", "col_offset"])
+
+@dataclass(frozen=True)
+class _FakeNode:
+    lineno: int
+    col_offset: int
 
 
 # Environment variable that may contain the name of a file listing Python files that we should run
@@ -49,16 +47,6 @@ IGNORE_COMMENT = "# static analysis: ignore"
 ITERATION_LIMIT = 150
 
 
-@attr.s()
-class _Query(object):
-    """Simple equivalent of codemod.Query."""
-
-    patches = attr.ib()
-
-    def generate_patches(self):
-        return self.patches
-
-
 class _PatchWithDescription(codemod.Patch):
     def __init__(
         self,
@@ -68,9 +56,7 @@ class _PatchWithDescription(codemod.Patch):
         path=None,
         description=None,
     ):
-        super(_PatchWithDescription, self).__init__(
-            start_line_number, end_line_number, new_lines, path
-        )
+        super().__init__(start_line_number, end_line_number, new_lines, path)
         self.description = description
 
     def render_range(self):
@@ -78,6 +64,16 @@ class _PatchWithDescription(codemod.Patch):
         if self.description is not None:
             return text + ": " + self.description
         return text
+
+
+@dataclass
+class _Query:
+    """Simple equivalent of codemod.Query."""
+
+    patches: List[_PatchWithDescription]
+
+    def generate_patches(self):
+        return self.patches
 
 
 class VisitorError(Exception):
@@ -89,26 +85,25 @@ class VisitorError(Exception):
         return self.message
 
 
-class Replacement(qcore.InspectableClass):
+@dataclass
+class Replacement:
     """Simple class that contains replacement info for the --autofix option.
 
     Also contains the error string for the case when test_scope just shows the
     error on stdout (i.e. no autofix)
 
+    linenos_to_delete: line numbers to delete
+
+    lines_to_add: list of strings (lines) to add. These are added right after the
+    last deleted line.
+
+    error_str: error to show on stdout
+
     """
 
-    def __init__(self, linenos_to_delete, lines_to_add, error_str=None):
-        """linenos_to_delete: line numbers to delete
-
-        lines_to_add: list of strings (lines) to add. These are added right after the
-        last deleted line.
-
-        error_str: error to show on stdout
-
-        """
-        self.linenos_to_delete = linenos_to_delete
-        self.lines_to_add = lines_to_add
-        self.error_str = error_str
+    linenos_to_delete: Sequence[int]
+    lines_to_add: Optional[Sequence[str]]
+    error_str: Optional[str] = None
 
 
 class FileNotFoundError(Exception):
@@ -146,7 +141,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         verbosity: controls how much logging is emitted
 
         """
-        if not isinstance(contents, six.text_type):
+        if not isinstance(contents, str):
             raise TypeError("File contents must be text, not {}".format(type(contents)))
         super(BaseNodeVisitor, self).__init__()
         self.filename = filename
@@ -186,7 +181,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             return
         self.logger.log(
             level,
-            "%s: %s" % (analysis_lib.safe_text(label), analysis_lib.safe_text(value)),
+            "%s: %s" % (qcore.safe_str(label), qcore.safe_str(value)),
         )
 
     @qcore.caching.cached_per_instance()
@@ -413,7 +408,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _apply_changes(cls, changes):
-        for filename, changeset in six.iteritems(changes):
+        for filename, changeset in changes.items():
             with open(filename, "r") as f:
                 lines = f.readlines()
             lines = cls._apply_changes_to_lines(changeset, lines)
@@ -581,12 +576,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
         error["message"] = message
         self.all_failures.append(error)
-        if six.PY3:
-            sys.stderr.write(message)
-        else:
-            # In Python 2, writing a text string directly to stderr may trigger UnicodeEncodeError
-            # static analysis: ignore[incompatible_argument]
-            sys.stderr.write(message.encode("utf-8"))
+        sys.stderr.write(message)
         sys.stderr.flush()
         if self.fail_after_first:
             raise VisitorError(message, error_code)
@@ -636,9 +626,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         args = [(filename, kwargs) for filename in sorted(files)]
         if kwargs.pop("parallel", False):
             extra_data = []
-            with concurrent.futures.ProcessPoolExecutor(
-                cls.num_processes()
-            ) as executor:
+            with concurrent.futures.ProcessPoolExecutor(os.cpu_count()) as executor:
                 for failures, extra in executor.map(cls._check_file_single_arg, args):
                     all_failures += failures
                     extra_data.append(extra)
@@ -647,13 +635,6 @@ class BaseNodeVisitor(ast.NodeVisitor):
             for failures, _ in map(cls._check_file_single_arg, args):
                 all_failures += failures
         return all_failures
-
-    @classmethod
-    def num_processes(cls):
-        if six.PY3:
-            return os.cpu_count()
-        else:
-            return multiprocessing.cpu_count()
 
     @classmethod
     def _check_file_single_arg(cls, args):

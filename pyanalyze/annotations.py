@@ -3,19 +3,16 @@
 Code for understanding type annotations.
 
 """
-import attr
+from dataclasses import dataclass, InitVar, field
 import mypy_extensions
 import typing_extensions
 import typing
 import typing_inspect
 import qcore
 import ast
-from six.moves import builtins
-
-try:
-    from collections.abc import Callable
-except ImportError:
-    from collections import Callable
+import builtins
+from collections.abc import Callable
+from typing import ContextManager
 
 from .error_code import ErrorCode
 from .find_unused import used
@@ -46,23 +43,25 @@ except ImportError:
         return ()
 
 
-@attr.s
-class Context(object):
+@dataclass
+class Context:
     """Default context used in interpreting annotations.
 
     Subclass this to do something more useful.
 
     """
 
-    should_suppress_undefined_names = attr.ib(default=False)
+    should_suppress_undefined_names: bool = field(default=False, init=False)
 
-    def suppress_undefined_names(self):
+    def suppress_undefined_names(self) -> ContextManager[None]:
         return qcore.override(self, "should_suppress_undefined_names", True)
 
-    def show_error(self, message, error_code=ErrorCode.invalid_annotation):
+    def show_error(
+        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+    ) -> None:
         pass
 
-    def get_name(self, node):
+    def get_name(self, node: ast.Name) -> Value:
         return UNRESOLVED_VALUE
 
 
@@ -137,6 +136,12 @@ def _type_from_runtime(val, ctx):
         )
     elif typing_inspect.is_callable_type(val):
         return TypedValue(Callable)
+    elif val is InitVar:
+        # On 3.6 and 3.7, InitVar[T] just returns InitVar at runtime, so we can't
+        # get the actual type out.
+        return UNRESOLVED_VALUE
+    elif isinstance(val, InitVar):
+        return type_from_runtime(val.type)
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
@@ -146,9 +151,7 @@ def _type_from_runtime(val, ctx):
         args = get_args(val)
         return _value_of_origin_args(origin, args, val, ctx)
     elif isinstance(val, type):
-        if val is type(None):
-            return KnownValue(None)
-        return TypedValue(val)
+        return _maybe_typed_value(val)
     elif val is None:
         return KnownValue(None)
     elif is_typing_name(val, "NoReturn"):
@@ -193,7 +196,7 @@ def _type_from_runtime(val, ctx):
     else:
         origin = get_origin(val)
         if origin is not None:
-            return TypedValue(origin)
+            return _maybe_typed_value(origin)
         ctx.show_error("Invalid type annotation %s" % (val,))
         return UNRESOLVED_VALUE
 
@@ -397,12 +400,25 @@ def _value_of_origin_args(origin, args, val, ctx):
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(val is UNRESOLVED_VALUE for val in args_vals):
-                return TypedValue(origin)
+                return _maybe_typed_value(origin)
             return GenericValue(origin, args_vals)
         else:
-            return TypedValue(origin)
+            return _maybe_typed_value(origin)
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
-        return TypedValue(val)
+        return _maybe_typed_value(val)
     else:
         return UNRESOLVED_VALUE
+
+
+def _maybe_typed_value(val: type) -> Value:
+    if val is type(None):
+        return KnownValue(None)
+    try:
+        isinstance(1, val)
+    except Exception:
+        # type that doesn't support isinstance, e.g.
+        # a Protocol
+        return UNRESOLVED_VALUE
+    else:
+        return TypedValue(val)

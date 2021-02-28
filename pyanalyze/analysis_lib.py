@@ -1,16 +1,11 @@
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 """
 
 Commonly useful components for static analysis tools.
 
 """
-
 import ast
-import qcore
 import os
+from typing import List
 
 
 def _all_files(root, filter_function=None):
@@ -41,7 +36,7 @@ def get_indentation(line):
     return len(line) - len(line.lstrip())
 
 
-def get_line_range_for_node(node, lines):
+def get_line_range_for_node(node: ast.AST, lines: List[str]) -> List[int]:
     """Returns the lines taken up by a Python ast node.
 
     lines is a list of code lines for the file the node came from.
@@ -56,8 +51,7 @@ def get_line_range_for_node(node, lines):
         elif hasattr(childnode, "lineno"):
             last_lineno = max(last_lineno, childnode.lineno)
 
-    def is_part_of_same_node(first_line, line):
-
+    def is_part_of_same_node(first_line: str, line: str) -> bool:
         current_indent = get_indentation(line)
         first_indent = get_indentation(first_line)
         if current_indent > first_indent:
@@ -85,22 +79,7 @@ def get_line_range_for_node(node, lines):
     return list(range(first_lineno, last_lineno))
 
 
-def safe_text(obj):
-    """Safely turns an object into a textual representation.
-
-    Calls str(), then on Python 2 decodes the result.
-
-    """
-    result = qcore.safe_str(obj)
-    if isinstance(result, bytes):
-        try:
-            result = result.decode("utf-8")
-        except Exception as e:
-            result = "<n/a: .decode() raised %r>" % e
-    return result
-
-
-def is_iterable(obj):
+def is_iterable(obj: object) -> bool:
     """Returns whether a Python object is iterable."""
     typ = type(obj)
     if hasattr(typ, "__iter__"):

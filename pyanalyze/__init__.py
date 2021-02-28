@@ -1,13 +1,8 @@
-from __future__ import absolute_import, print_function, division, unicode_literals
-
 """
 
 pyanalyze is a package for Python static analysis.
 
 """
-__team__ = "product-platform"
-__reviewer__ = "jelle"
-
 from . import name_check_visitor
 from . import analysis_lib
 from . import annotations

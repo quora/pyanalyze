@@ -1,7 +1,5 @@
 # static analysis: ignore
-from __future__ import absolute_import, division, print_function, unicode_literals
 from qcore.asserts import assert_eq, assert_ge
-import six
 
 from .error_code import ErrorCode
 from .format_strings import (
@@ -11,7 +9,6 @@ from .format_strings import (
     FormatString,
     ReplacementField,
     IndexOrAttribute,
-    FormatSpec,
     parse_format_string,
 )
 from .value import (
@@ -22,7 +19,7 @@ from .value import (
     TypedValue,
 )
 
-from .test_node_visitor import assert_passes, assert_fails, only_before, skip_before
+from .test_node_visitor import assert_passes, assert_fails
 from .test_name_check_visitor import TestNameCheckVisitorBase
 
 
@@ -115,10 +112,10 @@ DOT_FORMAT_TESTCASES = [
         ],
     ),
     ("{a!r}", [ReplacementField("a", conversion="r")]),
-    ("{a:3}", [ReplacementField("a", format_spec=FormatSpec(["3"]))]),
+    ("{a:3}", [ReplacementField("a", format_spec=FormatString(["3"]))]),
     (
         "{a:{b}}",
-        [ReplacementField("a", format_spec=FormatSpec([ReplacementField("b")]))],
+        [ReplacementField("a", format_spec=FormatString([ReplacementField("b")]))],
     ),
     (
         "{a.b!r:{c:{d}}}",
@@ -127,10 +124,10 @@ DOT_FORMAT_TESTCASES = [
                 "a",
                 index_attribute=((IndexOrAttribute.attribute, "b"),),
                 conversion="r",
-                format_spec=FormatSpec(
+                format_spec=FormatString(
                     [
                         ReplacementField(
-                            "c", format_spec=FormatSpec([ReplacementField("d")])
+                            "c", format_spec=FormatString([ReplacementField("d")])
                         )
                     ]
                 ),
@@ -192,12 +189,6 @@ def test_lint():
     assert_lints(
         "%b", ["the %b conversion specifier works only on Python 3 bytes patterns"]
     )
-    if six.PY2:
-        assert_lints(
-            b"%b", ["the %b conversion specifier works only on Python 3 bytes patterns"]
-        )
-        assert_lints("%a", ["the %a conversion specifier works only in Python 3"])
-        assert_lints(b"%a", ["the %a conversion specifier works only in Python 3"])
 
 
 class TestAccept(object):
@@ -238,20 +229,12 @@ class TestAccept(object):
         self.assert_errors(
             ConversionSpecifier("c", is_bytes=True), KnownValue(b"c"), []
         )
-        if six.PY3:
-            self.assert_errors(
-                ConversionSpecifier("c"), KnownValue(b"c"), [expected_err]
-            )
-            self.assert_errors(
-                ConversionSpecifier("c", is_bytes=True),
-                KnownValue("c"),
-                ["%c on a bytes pattern requires an integer or a byte"],
-            )
-        else:
-            self.assert_errors(ConversionSpecifier("c"), KnownValue(b"c"), [])
-            self.assert_errors(
-                ConversionSpecifier("c", is_bytes=True), KnownValue("c"), []
-            )
+        self.assert_errors(ConversionSpecifier("c"), KnownValue(b"c"), [expected_err])
+        self.assert_errors(
+            ConversionSpecifier("c", is_bytes=True),
+            KnownValue("c"),
+            ["%c on a bytes pattern requires an integer or a byte"],
+        )
 
         # %b
         expected_err = "%b accepts only bytes"
@@ -259,44 +242,17 @@ class TestAccept(object):
         self.assert_errors(ConversionSpecifier("b"), KnownValue(b"b"), [])
 
         # %s
-        if six.PY3:
-            expected_err = "%s accepts only bytes"
-            self.assert_errors(
-                ConversionSpecifier("s", is_bytes=True), KnownValue("s"), [expected_err]
-            )
-            self.assert_errors(
-                ConversionSpecifier("s", is_bytes=True), KnownValue(b"b"), []
-            )
-        else:
-            self.assert_errors(ConversionSpecifier("s"), KnownValue("s"), [])
-            self.assert_errors(
-                ConversionSpecifier("s", is_bytes=True), KnownValue(b"b"), []
-            )
-            self.assert_errors(
-                ConversionSpecifier("s"),
-                KnownValue(b"b"),
-                ["cannot pass bytes argument to text % string"],
-            )
-            self.assert_errors(
-                ConversionSpecifier("s", is_bytes=True),
-                KnownValue("s"),
-                ["cannot pass text argument to bytes % string"],
-            )
-            # anything else is fine
-            self.assert_errors(ConversionSpecifier("s"), KnownValue(3), [])
-            self.assert_errors(
-                ConversionSpecifier("s", is_bytes=True), KnownValue(3), []
-            )
+        expected_err = "%s accepts only bytes"
+        self.assert_errors(
+            ConversionSpecifier("s", is_bytes=True), KnownValue("s"), [expected_err]
+        )
+        self.assert_errors(
+            ConversionSpecifier("s", is_bytes=True), KnownValue(b"b"), []
+        )
 
     def test_star_conversion_specifier(self):
         expected_err = "'*' special specifier only accepts ints"
         self.assert_errors(StarConversionSpecifier(), KnownValue("s"), [expected_err])
-        if six.PY2:
-            self.assert_errors(
-                StarConversionSpecifier(),
-                KnownValue(long(3)),  # noqlint
-                [expected_err],
-            )
 
     def test_format_string_no_specifiers(self):
         expected_err = "use of % on string with no conversion specifiers"
@@ -406,115 +362,69 @@ class TestAccept(object):
         )
 
 
-# Black removes some important u prefixes
-# fmt: off
 class TestPercentFormatString(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.bad_format_string)
     def test_too_few_values(self):
         def capybara(x):
-            print('%s %s' % (x,))
+            print("%s %s" % (x,))
 
     @assert_fails(ErrorCode.bad_format_string)
     def test_too_few_values_typed(self):
         def capybara(x):
-            print('%s %s' % int(x))
+            print("%s %s" % int(x))
 
     @assert_passes()
     def test_too_few_values_dict_typed(self):
         def capybara(x):
-            print('%(capybara)s %(paca)s' % dict(x))
+            print("%(capybara)s %(paca)s" % dict(x))
 
     @assert_passes()
     def test_bad_key_in_known_dict(self):
         def capybara():
-            print('%(capybara)s' % {42: 'capybara', 'capybara': 42})
+            print("%(capybara)s" % {42: "capybara", "capybara": 42})
 
     @assert_passes()
     def test_bad_key_in_incomplete_dict(self):
         def capybara(x):
-            print('%(capybara)s' % {int(x): 'capybara'})
+            print("%(capybara)s" % {int(x): "capybara"})
 
     @assert_passes()
     def test_dict_key_is_not_format(self):
         def capybara(x):
-            print('hello %s' % {'foo': x})
-            print('hello %s' % {'foo': 'x'})
+            print("hello %s" % {"foo": x})
+            print("hello %s" % {"foo": "x"})
 
     @assert_fails(ErrorCode.bad_format_string)
     def test_wrong_type(self):
         def capybara(x):
-            print('%d %s' % ('foo', x))
+            print("%d %s" % ("foo", x))
 
     # should pass because test_scope can't recognize if the dictionary was mutated later,
     # so we should ignore all missing keys on dictionary arguments
     @assert_passes()
     def test_missing_key(self):
         def capybara(x):
-            print('%(foo)s' % {})
+            print("%(foo)s" % {})
 
     @assert_passes()
     def test_none_passes(self):
         def capybara(foo):
             # to deal with some code that sets global state to None and changes it later
-            print('%d %s' % (None, foo))
+            print("%d %s" % (None, foo))
 
     @assert_fails(ErrorCode.bad_format_string)
     def test_no_format(self):
         def pacarana(foo):
-            return 'dinomys' % foo
+            return "dinomys" % foo
 
     @assert_passes()
     def test_inference(self):
         def capybara(a):
-            assert_is_value('%s %s' % (3, 0), TypedValue(str))
-            assert_is_value('%s %s' % (a, 0), TypedValue(str))
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.bad_format_string)
-    def test_unicode_bytes(self):
-        def pacarana():
-            u'foo %s' % b'bar'
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.bad_format_string)
-    def test_unicode_bytes_in_known_dict(self):
-        def pacarana():
-            u'foo %(bar)s' % {u'bar': b'bar'}
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.bad_format_string)
-    def test_unicode_bytes_in_incomplete_dict(self):
-        def pacarana(x):
-            u'foo %(bar)s' % {u'bar': bytes(x)}
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.bad_format_string)
-    def test_unicode_bytes_tuple(self):
-        def pacarana():
-            u'foo %s' % (b'bar',)
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.bad_format_string)
-    def test_bytes_unicode(self):
-        def pacarana():
-            b'foo %s' % u'bar'
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.bad_format_string)
-    def test_bytes_unicode_tuple(self):
-        def pacarana():
-            b'foo %s' % (u'bar',)
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.bad_format_string)
-    def test_bytes_typed(self):
-        def pacarana(x):
-            u'foo %s' % bytes(x)
-# fmt: on
+            assert_is_value("%s %s" % (3, 0), TypedValue(str))
+            assert_is_value("%s %s" % (a, 0), TypedValue(str))
 
 
 class TestUseFStrings(TestNameCheckVisitorBase):
-    @skip_before((3, 6))
     def test_replacement(self):
         self.assert_is_changed(
             """
@@ -537,7 +447,6 @@ def capybara(x, y):
 """,
         )
 
-    @skip_before((3, 6))
     def test_newline(self):
         self.assert_is_changed(
             r"""
@@ -550,37 +459,31 @@ def capybara(x):
 """,
         )
 
-    @skip_before((3, 6))
     @assert_passes()
     def test_bytes(self):
         def capybara(x):
             b"foo %s\n" % x
 
-    @skip_before((3, 6))
     @assert_passes()
     def test_braces(self):
         def capybara(x):
             "foo {%s}" % x
 
-    @skip_before((3, 6))
     @assert_passes()
     def test_fancy_conversions(self):
         def capybara(x):
             "foo %.3s" % x
 
-    @skip_before((3, 6))
     @assert_passes()
     def test_mapping(self):
         def capybara(x):
             "foo %(x)s" % {"x": x}
 
-    @skip_before((3, 6))
     @assert_passes()
     def test_conversion_type(self):
         def capybara(x):
             "foo %f" % x
 
-    @skip_before((3, 6))
     @assert_passes()
     def test_complicated_expression(self):
         def capybara(x):

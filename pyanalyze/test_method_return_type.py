@@ -1,7 +1,4 @@
 # static analysis: ignore
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
 from .error_code import ErrorCode
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes

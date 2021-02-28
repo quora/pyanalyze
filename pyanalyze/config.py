@@ -1,7 +1,3 @@
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 """
 
 Module-specific configurations for test_scope.
@@ -10,17 +6,8 @@ Module-specific configurations for test_scope.
 import asynq
 import enum
 import qcore
-import six
-from six.moves import range
-
-try:
-    import mock
-except ImportError:
-    from unittest import mock
-try:
-    import asyncio
-except ImportError:
-    asyncio = None
+from unittest import mock
+import asyncio
 
 from . import value
 
@@ -119,9 +106,6 @@ class Config(object):
     # their arguments. This is useful mostly for classes that are commonly instantiated with static
     # arguments.
     CLASSES_SAFE_TO_INSTANTIATE = (value.Value, asynq.ConstFuture, range)
-    if six.PY2:
-        # in py3 trying to instantiate super() without arguments may not work
-        CLASSES_SAFE_TO_INSTANTIATE += (super,)
 
     # Similarly, these functions will be called
     FUNCTIONS_SAFE_TO_CALL = (

@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 """
 
 Module for checking %-formatted and .format()-formatted strings.
@@ -8,17 +6,13 @@ Module for checking %-formatted and .format()-formatted strings.
 
 import ast
 from collections import defaultdict
+from dataclasses import dataclass, field
 import enum
 import numbers
-from qcore import InspectableClass
 import re
-import six
 import sys
-
-try:
-    from collections.abc import Mapping
-except ImportError:
-    from collections import Mapping
+from collections.abc import Mapping
+from typing import Iterable, Optional, Sequence, Union, List, Tuple
 
 from .error_code import ErrorCode
 from .value import (
@@ -59,26 +53,17 @@ _IDENTIFIER_REGEX = re.compile(r"^[A-Za-z_][A-Za-z_\d]*$")
 #
 
 
-class ConversionSpecifier(InspectableClass):
+@dataclass
+class ConversionSpecifier:
     """Class representing a single conversion specifier in a format string."""
 
-    def __init__(
-        self,
-        conversion_type,
-        mapping_key=None,
-        conversion_flags=None,
-        field_width=None,
-        precision=None,
-        length_modifier=None,
-        is_bytes=False,
-    ):
-        self.conversion_type = conversion_type
-        self.mapping_key = mapping_key
-        self.conversion_flags = conversion_flags
-        self.field_width = field_width
-        self.precision = precision
-        self.length_modifier = length_modifier
-        self.is_bytes = is_bytes
+    conversion_type: str
+    mapping_key: Optional[str] = None
+    conversion_flags: Optional[str] = None
+    field_width: Optional[int] = None
+    precision: Optional[int] = None
+    length_modifier: Optional[str] = None
+    is_bytes: bool = False
 
     @classmethod
     def from_match(cls, match):
@@ -138,11 +123,8 @@ class ConversionSpecifier(InspectableClass):
                 # here you're using %% escaping, but you use one of the optional specifiers, none
                 # of which will do anything
                 yield "using % combined with optional specifiers does not make sense"
-        elif self.conversion_type == "a":
-            if not six.PY3:
-                yield "the %a conversion specifier works only in Python 3"
         elif self.conversion_type == "b":
-            if not six.PY3 or not self.is_bytes:
+            if not self.is_bytes:
                 yield "the %b conversion specifier works only on Python 3 bytes patterns"
 
     def accept(self, arg):
@@ -163,8 +145,8 @@ class ConversionSpecifier(InspectableClass):
             # accepts anything
             pass
         elif self.conversion_type == "c":
-            if arg.is_type(six.string_types + six.integer_types):
-                if six.PY3 and self.is_bytes and arg.is_type(str):
+            if arg.is_type((int, str)):
+                if self.is_bytes and arg.is_type(str):
                     yield "%c on a bytes pattern requires an integer or a byte, not {!r}".format(
                         arg
                     )
@@ -174,22 +156,14 @@ class ConversionSpecifier(InspectableClass):
             else:
                 yield "%c requires an integer or string, not {!r}".format(arg)
         elif self.conversion_type == "b" or (
-            six.PY3 and self.is_bytes and self.conversion_type == "s"
+            self.is_bytes and self.conversion_type == "s"
         ):
             # in Python 3 bytes patterns, s is equivalent to b
             if not arg.is_type(bytes):
                 yield "%{} accepts only bytes, not {}".format(self.conversion_type, arg)
         elif self.conversion_type == "s":
-            # accepts anything, but we want to avoid mixing bytes and text in Python 2
-            if six.PY2:
-                if self.is_bytes and arg.is_type(six.text_type):
-                    yield "cannot pass text argument to bytes % string: {!r}".format(
-                        arg
-                    )
-                elif not self.is_bytes and arg.is_type(bytes):
-                    yield "cannot pass bytes argument to text % string: {!r}".format(
-                        arg
-                    )
+            # accepts anything
+            pass
         elif self.conversion_type == "%":
             yield "%% does not accept arguments"
         else:
@@ -206,7 +180,8 @@ class StarConversionSpecifier(object):
             yield "'*' special specifier only accepts ints, not {}".format(arg)
 
 
-class PercentFormatString(InspectableClass):
+@dataclass
+class PercentFormatString:
     """Class representing a parsed % format string.
 
     pattern is the original string
@@ -216,11 +191,10 @@ class PercentFormatString(InspectableClass):
 
     """
 
-    def __init__(self, pattern, is_bytes=False, specifiers=(), raw_pieces=()):
-        self.raw_pieces = raw_pieces
-        self.pattern = pattern
-        self.is_bytes = is_bytes
-        self.specifiers = specifiers
+    pattern: Union[bytes, str]
+    is_bytes: bool = False
+    specifiers: Sequence[ConversionSpecifier] = ()
+    raw_pieces: Sequence[str] = ()
 
     @classmethod
     def from_pattern(cls, pattern):
@@ -228,7 +202,7 @@ class PercentFormatString(InspectableClass):
         if isinstance(pattern, bytes):
             is_bytes = True
             rgx = _FORMAT_STRING_REGEX_BYTES
-        elif isinstance(pattern, six.text_type):
+        elif isinstance(pattern, str):
             is_bytes = False
             rgx = _FORMAT_STRING_REGEX_TEXT
         else:
@@ -252,7 +226,7 @@ class PercentFormatString(InspectableClass):
             raw_pieces=tuple(raw_pieces),
         )
 
-    def needs_mapping(self):
+    def needs_mapping(self) -> bool:
         """Returns whether this format string requires a mapping as an argument."""
         return any(cs.mapping_key is not None for cs in self.specifiers)
 
@@ -442,32 +416,35 @@ def _is_simple_enough(node):
 # .format()
 #
 
+FormatErrors = List[Tuple[int, str]]
+Children = List[Union[str, "ReplacementField"]]
 
-class _ParserState(InspectableClass):
-    def __init__(self, string):
-        self.string = string
-        self.current_index = 0
-        self.errors = []
 
-    def peek(self):
+@dataclass
+class _ParserState:
+    string: str
+    current_index: int = 0
+    errors: FormatErrors = field(default_factory=list)
+
+    def peek(self) -> Optional[str]:
         if self.current_index >= len(self.string):
             return None
         return self.string[self.current_index]
 
-    def next(self):
+    def next(self) -> Optional[str]:
         char = self.peek()
         self.current_index += 1
         return char
 
-    def add_error(self, message):
+    def add_error(self, message: str) -> None:
         self.errors.append((self.current_index, message))
 
 
-class FormatString(InspectableClass):
-    def __init__(self, children):
-        self.children = children
+@dataclass
+class FormatString:
+    children: Children
 
-    def iter_replacement_fields(self):
+    def iter_replacement_fields(self) -> Iterable["ReplacementField"]:
         """Iterator over all child replacement fields."""
         for child in self.children:
             if isinstance(child, ReplacementField):
@@ -497,14 +474,14 @@ class IndexOrAttribute(enum.Enum):
     attribute = 2
 
 
-class ReplacementField(InspectableClass):
-    def __init__(self, arg_name, index_attribute=(), conversion=None, format_spec=None):
-        self.arg_name = arg_name
-        self.index_attribute = index_attribute
-        self.conversion = conversion
-        self.format_spec = format_spec
+@dataclass
+class ReplacementField:
+    arg_name: Union[None, int, str]
+    index_attribute: Sequence[Tuple[IndexOrAttribute, str]] = ()
+    conversion: Optional[str] = None
+    format_spec: Optional[FormatString] = None
 
-    def iter_replacement_fields(self):
+    def iter_replacement_fields(self) -> Iterable["ReplacementField"]:
         """Iterator over all child replacement fields."""
         yield self
         if self.format_spec:
@@ -514,18 +491,13 @@ class ReplacementField(InspectableClass):
                         yield field
 
 
-class FormatSpec(InspectableClass):
-    def __init__(self, children):
-        self.children = children
-
-
-def parse_format_string(string):
+def parse_format_string(string: str) -> Tuple[FormatString, FormatErrors]:
     state = _ParserState(string)
     children = _parse_children(state, end_at=None)
     return FormatString(children), state.errors
 
 
-def _parse_children(state, end_at):
+def _parse_children(state: _ParserState, end_at: Optional[str] = None) -> Children:
     children = []
     current_literal = []
     while True:
@@ -563,7 +535,7 @@ def _parse_children(state, end_at):
     return children
 
 
-def _parse_replacement_field(state):
+def _parse_replacement_field(state: _ParserState) -> Union[str, ReplacementField]:
     arg_name_chars = []
     index_attribute = []
     conversion = None
@@ -633,7 +605,7 @@ def _parse_replacement_field(state):
                     )
                     return ""
             elif char == ":":
-                format_spec = FormatSpec(_parse_children(state, "}"))
+                format_spec = FormatString(_parse_children(state, "}"))
                 break
         elif char == "{":
             state.add_error("unexpected '{' in field name")

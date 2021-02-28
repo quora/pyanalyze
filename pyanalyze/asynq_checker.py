@@ -1,7 +1,3 @@
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 """
 
 Implementation of test_scope's asynq checks.
@@ -14,7 +10,6 @@ import contextlib
 import enum
 import qcore
 import inspect
-import six
 import types
 
 from .error_code import ErrorCode
@@ -123,8 +118,6 @@ class AsynqChecker(object):
                     method_node = ast.Attribute(value=node.value, attr=async_name)
                     func_node = ast.Attribute(value=method_node, attr="asynq")
                     kwargs = {"args": [], "keywords": []}
-                    if six.PY2:
-                        kwargs["starargs"] = kwargs["kwargs"] = None
                     call_node = ast.Call(func=func_node, **kwargs)
                     replacement_node = ast.Yield(value=call_node)
                     self._show_impure_async_error(
@@ -238,13 +231,4 @@ def _stringify_obj(obj):
 
 
 def replace_func_on_call_node(node, new_func):
-    if six.PY2:
-        return ast.Call(
-            func=new_func,
-            args=node.args,
-            keywords=node.keywords,
-            starargs=node.starargs,
-            kwargs=node.kwargs,
-        )
-    else:
-        return ast.Call(func=new_func, args=node.args, keywords=node.keywords)
+    return ast.Call(func=new_func, args=node.args, keywords=node.keywords)

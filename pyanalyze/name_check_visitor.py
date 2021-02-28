@@ -1,27 +1,19 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 """
 
-Implementation of the qcore of pyanalyze.
+Implementation of the core of pyanalyze.
 
 Contains an AST visitor that visits each node and infers a value for most nodes.
 
-Some things that are not yet checked and could be are listed in
-https://app.asana.com/0/10206869882253/45193094024681.
-
 """
-
-from six.moves import builtins, range, reduce
 from abc import abstractmethod
 import ast
 from ast_decompiler import decompile
-
-try:
-    import asyncio
-except ImportError:
-    asyncio = None
+import asyncio
+import builtins
 import collections
 import contextlib
+from dataclasses import dataclass
+from functools import reduce
 import imp
 import inspect
 import inspect2
@@ -31,13 +23,12 @@ import os.path
 import pickle
 import random
 import re
-import six
 import string
 import sys
 import tempfile
 import traceback
 import types
-from typing import Iterable, Union
+from typing import Iterable, Union, Any, List
 
 import asynq
 import qcore
@@ -100,7 +91,7 @@ OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.Add: ("addition", "__add__", "__iadd__", "__radd__"),
     ast.Sub: ("subtraction", "__sub__", "__isub__", "__rsub__"),
     ast.Mult: ("multiplication", "__mul__", "__imul__", "__rmul__"),
-    ast.Div: ("division", "__div__", "__idiv__", "__rdiv__"),
+    ast.Div: ("division", "__truediv__", "__itruediv__", "__rtruediv__"),
     ast.Mod: ("modulo", "__mod__", "__imod__", "__rmod__"),
     ast.Pow: ("exponentiation", "__pow__", "__ipow__", "__rpow__"),
     ast.LShift: ("left-shifting", "__lshift__", "__ilshift__", "__rlshift__"),
@@ -126,25 +117,25 @@ if hasattr(ast, "MatMult"):
 SlotWrapperType = type(type.__init__)
 MethodDescriptorType = type(list.append)
 
-FunctionInfo = collections.namedtuple(
-    "FunctionInfo",
-    [
-        "async_kind",  # AsyncFunctionKind
-        "is_classmethod",  # has @classmethod
-        "is_staticmethod",  # has @staticmethod
-        "is_decorated_coroutine",  # has @asyncio.coroutine
-        # a list of pairs of (decorator function, applied decorator function). These are different
-        # for decorators that take arguments, like @asynq(): the first element will be the asynq
-        # function and the second will be the result of calling asynq().
-        "decorators",
-    ],
-)
+
+@dataclass(frozen=True)
+class FunctionInfo:
+    async_kind: AsyncFunctionKind
+    is_classmethod: bool  # has @classmethod
+    is_staticmethod: bool  # has @staticmethod
+    is_decorated_coroutine: bool  # has @asyncio.coroutine
+    # a list of pairs of (decorator function, applied decorator function). These are different
+    # for decorators that take arguments, like @asynq(): the first element will be the asynq
+    # function and the second will be the result of calling asynq().
+    decorators: List[Any]
+
+
 # FunctionInfo for a vanilla function (e.g. a lambda)
 _DEFAULT_FUNCTION_INFO = FunctionInfo(AsyncFunctionKind.normal, False, False, False, [])
-_BOOL_DUNDER = "__bool__" if six.PY3 else "__nonzero__"
+_BOOL_DUNDER = "__bool__"
 
 
-class ClassAttributeChecker(object):
+class ClassAttributeChecker:
     """Helper class to keep track of attributes that are read and set on instances."""
 
     def __init__(self, config, enabled=True, should_check_unused_attributes=False):
@@ -235,9 +226,9 @@ class ClassAttributeChecker(object):
         """
         if isinstance(typ, super):
             typ = typ.__self_class__
-        if isinstance(
-            _safe_getattr(typ, "__module__", None), six.string_types
-        ) and isinstance(_safe_getattr(typ, "__name__", None), six.string_types):
+        if isinstance(_safe_getattr(typ, "__module__", None), str) and isinstance(
+            _safe_getattr(typ, "__name__", None), str
+        ):
             module = typ.__module__
             name = typ.__name__
             if module not in sys.modules:
@@ -279,7 +270,7 @@ class ClassAttributeChecker(object):
 
         """
         for serialized, attrs_read in sorted(
-            six.iteritems(self.attributes_read), key=self._cls_sort
+            self.attributes_read.items(), key=self._cls_sort
         ):
             typ = self.unserialize_type(serialized)
             if typ is None:
@@ -323,7 +314,7 @@ class ClassAttributeChecker(object):
                 for child_cls in qcore.inspection.get_subclass_tree(typ):
                     all_attrs_read[child_cls] |= attr_names_read
 
-        for serialized, attrs_read in six.iteritems(self.attributes_read):
+        for serialized, attrs_read in self.attributes_read.items():
             attr_names_read = {attr_name for attr_name, _, _ in attrs_read}
             _add_attrs(self.unserialize_type(serialized), attr_names_read)
 
@@ -332,9 +323,7 @@ class ClassAttributeChecker(object):
 
         used_bases = tuple(self.config.USED_BASE_CLASSES)
 
-        for typ, attrs_read in sorted(
-            six.iteritems(all_attrs_read), key=self._cls_sort
-        ):
+        for typ, attrs_read in sorted(all_attrs_read.items(), key=self._cls_sort):
             if self.serialize_type(typ) not in self.classes_examined or issubclass(
                 typ, used_bases
             ):
@@ -349,10 +338,10 @@ class ClassAttributeChecker(object):
     # sort by module + name in order to get errors in a reasonable order
     def _cls_sort(self, pair):
         typ = pair[0]
-        if hasattr(typ, "__name__") and isinstance(typ.__name__, six.string_types):
-            return (six.text_type(typ.__module__), six.text_type(typ.__name__))
+        if hasattr(typ, "__name__") and isinstance(typ.__name__, str):
+            return (str(typ.__module__), str(typ.__name__))
         else:
-            return (six.text_type(typ), "")
+            return (str(typ), "")
 
     def _check_attribute_read(self, typ, attr_name, node, visitor):
         # class itself has the attribute
@@ -1183,8 +1172,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         with self.asynq_checker.set_func_name("<lambda>"):
             self._visit_function_body(node, defaults=defaults, kw_defaults=kw_defaults)
 
-    def _visit_decorators_and_check_asynq(self, decorator_list):
-        """Visits a function's decorator list. Returns a FunctionInfo namedtuple."""
+    def _visit_decorators_and_check_asynq(
+        self, decorator_list: List[ast.expr]
+    ) -> FunctionInfo:
+        """Visits a function's decorator list."""
         async_kind = AsyncFunctionKind.non_async
         is_classmethod = False
         is_decorated_coroutine = False
@@ -1214,9 +1205,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     is_classmethod = True
                 elif decorator_value == KnownValue(staticmethod):
                     is_staticmethod = True
-                elif asyncio is not None and decorator_value == KnownValue(
-                    asyncio.coroutine
-                ):
+                elif decorator_value == KnownValue(asyncio.coroutine):
                     is_decorated_coroutine = True
                 decorators.append((decorator_value, decorator_value))
         return FunctionInfo(
@@ -1513,18 +1502,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 "Method must have at least one non-keyword argument",
                 ErrorCode.method_first_arg,
             )
-        elif not self._arg_has_name(node.args.args[0], first_must_be):
+        elif node.args.args[0].arg != first_must_be:
             self.show_error(
                 node,
                 "First argument to method should be %s" % (first_must_be,),
                 ErrorCode.method_first_arg,
             )
-
-    def _arg_has_name(self, node, name):
-        if six.PY3:
-            return node.arg == name
-        else:
-            return isinstance(node, ast.Name) and node.id == name
 
     def visit_Global(self, node):
         if self.scopes.scope_type() != ScopeType.function_scope:
@@ -1706,7 +1689,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if pseudo_module_name in sys.modules:
                     del sys.modules[pseudo_module_name]
 
-        for name, value in six.iteritems(pseudo_module.__dict__):
+        for name, value in pseudo_module.__dict__.items():
             if name.startswith("__") or (
                 hasattr(builtins, name) and value == getattr(builtins, name)
             ):
@@ -1727,19 +1710,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     # Comprehensions
 
     def visit_ListComp(self, node):
-        # in python 2, list comprehensions don't generate a new scope, all others do
-        # therefore, they should not go through the collecting and checking phases separately
-        if six.PY3:
-            return self._visit_comprehension(node, list)
-        for generator in node.generators:
-            self.visit(generator)
-
-        with qcore.override(self, "in_comprehension_body", True):
-            member_value = self.visit(node.elt)
-        if member_value is UNRESOLVED_VALUE:
-            return TypedValue(list)
-        else:
-            return GenericValue(list, [member_value])
+        return self._visit_comprehension(node, list)
 
     def visit_SetComp(self, node):
         return self._visit_comprehension(node, set)
@@ -1849,7 +1820,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return KnownValue(node.n)
 
     def visit_Str(self, node):
-        self._maybe_show_implicit_non_ascii_error(node)
         self._maybe_show_missing_f_error(node, node.s)
         return KnownValue(node.s)
 
@@ -1903,35 +1873,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return False
         else:
             return val is not UNINITIALIZED_VALUE
-
-    def _maybe_show_implicit_non_ascii_error(self, node):
-        """Strings with non-ASCII characters should be marked explicitly as bytes or unicode."""
-        if six.PY3:
-            return
-        if not isinstance(node.s, bytes):
-            return
-        if not any(ord(c) > 127 for c in node.s):
-            return
-        if any(
-            self.filename.endswith(suffix)
-            for suffix in self.config.IGNORED_FILES_FOR_EXPLICIT_STRING_LITERALS
-        ):
-            return
-        # for multiline strings, the lineno is the last line and the col_offset is -1
-        # there appears to be no simple way to get to the beginning of the string, and therefore no
-        # way to determine whether there is a b prefix, so just ignore these strings
-        if node.col_offset == -1:
-            return
-        line = self._lines()[node.lineno - 1]
-        char = line[node.col_offset]
-        if char in ("b", "u"):
-            return
-        self._show_error_if_checking(
-            node,
-            "string containing non-ASCII characters should be explicitly marked as bytes or "
-            "unicode",
-            error_code=ErrorCode.implicit_non_ascii_string,
-        )
 
     def visit_Bytes(self, node):
         return KnownValue(node.s)
@@ -2148,24 +2089,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _visit_binop_internal(
         self, left_node, left, op, right_node, right, source_node, is_inplace=False
     ):
-        # check for some py3 deprecations
-        if (
-            isinstance(op, ast.Div)
-            and left.is_type(six.integer_types)
-            and right.is_type(six.integer_types)
-            and six.PY2
-            and "division" not in self.future_imports
+        if isinstance(op, ast.Add) and (
+            (left.is_type(bytes) and right.is_type(str))
+            or (left.is_type(str) and right.is_type(bytes))
         ):
-            new_node = ast.BinOp(left=left_node, op=ast.FloorDiv(), right=right_node)
-            self._show_error_if_checking(
-                source_node,
-                error_code=ErrorCode.use_floor_div,
-                replacement=self.replace_node(source_node, new_node),
-            )
-        elif isinstance(op, ast.Add) and (
-            (left.is_type(bytes) and right.is_type(six.text_type))
-            or (left.is_type(six.text_type) and right.is_type(bytes))
-        ):
+            # TODO this might be redundant (can't we just get the right types from typeshed?)
             self._show_error_if_checking(
                 source_node, error_code=ErrorCode.mixing_bytes_and_text
             )
@@ -2182,13 +2110,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
                 return UNRESOLVED_VALUE
 
-        # compute the return value
-        # we can't use six.text_types here because we want to includes bytes in py3; six.text_types
-        # is only str in py3
         if (
             isinstance(op, ast.Mod)
             and isinstance(left, KnownValue)
-            and isinstance(left.val, (bytes, six.text_type))
+            and isinstance(left.val, (bytes, str))
         ):
             value, replacement_node = format_strings.check_string_format(
                 left_node, left.val, right_node, right, self._show_error_if_checking
@@ -2202,21 +2127,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
             return value
 
-        # Div maps to a different dunder depending on language version and __future__ imports
-        if isinstance(op, ast.Div):
-            if six.PY3 or "division" in self.future_imports:
-                method = "__truediv__"
-                imethod = "__itruediv__"
-                rmethod = "__rtruediv__"
-            else:
-                method = "__div__"
-                imethod = "__idiv__"
-                rmethod = "__rdiv__"
-            description = "division"
-        else:
-            description, method, imethod, rmethod = OPERATION_TO_DESCRIPTION_AND_METHOD[
-                type(op)
-            ]
+        description, method, imethod, rmethod = OPERATION_TO_DESCRIPTION_AND_METHOD[
+            type(op)
+        ]
         allow_call = method not in self.config.DISALLOW_CALLS_TO_DUNDERS
 
         if is_inplace:
@@ -2415,7 +2328,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.return_values.append(None)
         self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
 
-        raised_expr = node.type if six.PY2 else node.exc
+        raised_expr = node.exc
 
         if raised_expr is not None:
             raised_value = self.visit(raised_expr)
@@ -2438,15 +2351,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     )
             # TODO handle other values
 
-        if six.PY2:
-            # these two are deprecated, maybe we should error on them
-            if node.inst is not None:
-                self.visit(node.inst)
-            if node.tback is not None:
-                self.visit(node.tback)
-        else:
-            if node.cause is not None:
-                self.visit(node.cause)
+        if node.cause is not None:
+            self.visit(node.cause)
 
     def visit_Assert(self, node):
         test, constraint = self._visit_possible_constraint(node.test)
@@ -2582,7 +2488,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 return TypedValue(int), len(iterated.val)
             # if the thing we're iterating over is e.g. a file or an infinite generator, calling
             # list() may hang the process
-            if not iterated.is_type((list, set, tuple, dict, six.string_types)):
+            if not iterated.is_type((list, set, tuple, dict, str, bytes)):
                 return UNRESOLVED_VALUE, None
             try:
                 values = list(iterated.val)
@@ -2768,7 +2674,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # If the value is an awaitable or is assignable to asyncio.Future, show
         # an error about a missing await.
         elif isinstance(value, AwaitableIncompleteValue) or (
-            asyncio is not None and value.is_type(asyncio.Future)
+            value.is_type(asyncio.Future)
         ):
             if self.is_async_def:
                 new_node = ast.Expr(value=ast.Await(value=node.value))
@@ -2917,14 +2823,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         hand, an UNRESOLVED_VALUE carries no information, so we're fine always replacing it.
 
         """
-        if isinstance(value, KnownValue):
-            return type(value.val) in six.integer_types
-        elif (
-            type(value) is TypedValue
-        ):  # Only replace exactly TypedValue(int), not subtypes
-            return value.typ in six.integer_types
-        else:
-            return value is UNRESOLVED_VALUE
+        return value.is_type(int) or value is UNRESOLVED_VALUE
 
     def _maybe_use_hardcoded_type(self, value, name):
         """Replaces a value with a name of hardcoded type where applicable."""
@@ -2942,7 +2841,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         value = self.visit(node.value)
         index = self.visit(node.slice)
 
-        if value.is_type((list, tuple) + six.string_types) and not index.is_type(slice):
+        if value.is_type((list, tuple, str, bytes)) and not index.is_type(slice):
             index = self._check_dunder_call(
                 node, index, "__index__", [], allow_call=True
             )
@@ -3004,7 +2903,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if (
                 return_value is UNRESOLVED_VALUE
                 and isinstance(index, KnownValue)
-                and isinstance(index.val, six.string_types)
+                and isinstance(index.val, str)
             ):
                 varname_value = VariableNameValue.from_varname(
                     index.val, self.config.varname_value_map()
@@ -3263,24 +3162,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         elif inspect.ismethod(cls_val):
             return UnboundMethodValue(node.attr, typ)
         elif inspect.isfunction(cls_val):
-            if six.PY3:
-                # either a staticmethod or an unbound method
-                try:
-                    descriptor = inspect.getattr_static(typ, node.attr)
-                except AttributeError:
-                    # probably a super call; assume unbound method
-                    if attr != "__new__":
-                        return UnboundMethodValue(attr, typ)
-                    else:
-                        # __new__ is implicitly a staticmethod
-                        return KnownValue(cls_val)
-                if isinstance(descriptor, staticmethod) or node.attr == "__new__":
-                    return KnownValue(cls_val)
+            # either a staticmethod or an unbound method
+            try:
+                descriptor = inspect.getattr_static(typ, node.attr)
+            except AttributeError:
+                # probably a super call; assume unbound method
+                if attr != "__new__":
+                    return UnboundMethodValue(attr, typ)
                 else:
-                    return UnboundMethodValue(node.attr, typ)
-            else:
-                # staticmethod
+                    # __new__ is implicitly a staticmethod
+                    return KnownValue(cls_val)
+            if isinstance(descriptor, staticmethod) or node.attr == "__new__":
                 return KnownValue(cls_val)
+            else:
+                return UnboundMethodValue(node.attr, typ)
         elif isinstance(cls_val, (MethodDescriptorType, SlotWrapperType)):
             # built-in method; e.g. scope_lib.tests.SimpleDatabox.get
             return UnboundMethodValue(attr, typ)
@@ -3428,12 +3323,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.visit(node.starargs)
         if getattr(node, "kwargs", None) is not None:
             self.visit(node.kwargs)
-        if six.PY2:
-            has_args_kwargs = node.starargs is not None or node.kwargs is not None
-        else:
-            has_args_kwargs = any(
-                isinstance(arg, ast.Starred) for arg in node.args
-            ) or any(kw.arg is None for kw in node.keywords)
+        has_args_kwargs = any(isinstance(arg, ast.Starred) for arg in node.args) or any(
+            kw.arg is None for kw in node.keywords
+        )
 
         return_value, constraint = self._get_argspec_and_check_call(
             node, callee_wrapped, args, keywords, has_args_kwargs
@@ -3644,8 +3536,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
                 return None
             call_fn = typ.__call__
-            if hasattr(call_fn, "__func__"):  # py2
-                call_fn = call_fn.__func__
             argspec = self._get_argspec(call_fn, node, name=name)
             if argspec is None:
                 return None

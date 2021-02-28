@@ -1,12 +1,9 @@
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
 from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
+from typing import NewType
 
 from . import tests
 from . import value
 from .value import KnownValue, TypedValue, MultiValuedValue, SubclassValue
-from .test_node_visitor import skip_before
 
 
 def test_UNRESOLVED_VALUE():
@@ -268,10 +265,7 @@ def test_typeddict_value():
     )
 
 
-@skip_before((3, 5))
 def test_new_type_value():
-    from typing import NewType
-
     nt1 = NewType("nt1", int)
     nt1_val = value.NewTypeValue(nt1)
     nt2 = NewType("nt2", int)

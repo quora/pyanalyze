@@ -1,8 +1,4 @@
-# coding: utf-8
 # static analysis: ignore
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
 import ast
 from qcore.asserts import assert_eq
 
@@ -539,7 +535,6 @@ class TestMissingAsync(TestNameCheckVisitorBase):
         def capybara(box):
             yield box.get_async()
 
-    @skip_before((3, 0))
     def test_autofix(self):
         self.assert_is_changed(
             """
