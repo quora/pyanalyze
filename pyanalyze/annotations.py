@@ -143,9 +143,7 @@ def _type_from_runtime(val, ctx):
         args = get_args(val)
         return _value_of_origin_args(origin, args, val, ctx)
     elif isinstance(val, type):
-        if val is type(None):
-            return KnownValue(None)
-        return TypedValue(val)
+        return _maybe_typed_value(val)
     elif val is None:
         return KnownValue(None)
     elif is_typing_name(val, "NoReturn"):
@@ -193,7 +191,7 @@ def _type_from_runtime(val, ctx):
     else:
         origin = get_origin(val)
         if origin is not None:
-            return TypedValue(origin)
+            return _maybe_typed_value(origin)
         ctx.show_error("Invalid type annotation %s" % (val,))
         return UNRESOLVED_VALUE
 
@@ -397,12 +395,25 @@ def _value_of_origin_args(origin, args, val, ctx):
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(val is UNRESOLVED_VALUE for val in args_vals):
-                return TypedValue(origin)
+                return _maybe_typed_value(origin)
             return GenericValue(origin, args_vals)
         else:
-            return TypedValue(origin)
+            return _maybe_typed_value(origin)
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
-        return TypedValue(val)
+        return _maybe_typed_value(val)
     else:
         return UNRESOLVED_VALUE
+
+
+def _maybe_typed_value(val: type) -> Value:
+    if val is type(None):
+        return KnownValue(None)
+    try:
+        isinstance(1, val)
+    except Exception:
+        # type that doesn't support isinstance, e.g.
+        # a Protocol
+        return UNRESOLVED_VALUE
+    else:
+        return TypedValue(val)

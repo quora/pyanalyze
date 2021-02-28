@@ -1106,7 +1106,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         try:
             return val1.is_value_compatible(val2)
         except Exception:
-            raise
             # is_value_compatible() can call into some user code
             # (e.g. __eq__ and __subclasscheck__), so ignore any errors
             self.log(
