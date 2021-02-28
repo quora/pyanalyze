@@ -5,7 +5,6 @@ Base class for scripts that run ast-based checks on the codebase.
 """
 
 import argparse
-import attr
 from ast_decompiler import decompile
 import ast
 import codemod
