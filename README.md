@@ -172,9 +172,7 @@ You can add an error code, like `# static analysis: ignore[undefined_name]`, to 
 
 ### Python version support
 
-Pyanalyze supports Python 2.7 and 3.5 through 3.8. Because it imports the code it checks, you have to run it using the same version of Python you use to run your code.
-
-In Python 2 mode, some checks (notably, many of those related to type checking) are not supported. In the future we will likely drop Python 2 support completely.
+Pyanalyze supports Python 3.6 through 3.9. Because it imports the code it checks, you have to run it using the same version of Python you use to run your code.
 
 Background
 ----------
