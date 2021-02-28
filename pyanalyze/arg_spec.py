@@ -1197,6 +1197,8 @@ class ArgSpecCache:
                 # old-style class
                 return None
             argspec = self._safe_get_argspec(constructor)
+            if argspec is None:
+                return None
 
             kwonly_args = []
             for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
