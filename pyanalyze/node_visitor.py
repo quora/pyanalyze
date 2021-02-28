@@ -12,6 +12,7 @@ import codemod
 import collections
 from contextlib import contextmanager
 import concurrent.futures
+from dataclasses import dataclass
 import qcore
 import cProfile
 import logging
@@ -23,6 +24,7 @@ import sys
 import tempfile
 import builtins
 from builtins import print as real_print
+from typing import Optional, Sequence
 
 from . import analysis_lib
 
@@ -82,26 +84,25 @@ class VisitorError(Exception):
         return self.message
 
 
-class Replacement(qcore.InspectableClass):
+@dataclass
+class Replacement:
     """Simple class that contains replacement info for the --autofix option.
 
     Also contains the error string for the case when test_scope just shows the
     error on stdout (i.e. no autofix)
 
+    linenos_to_delete: line numbers to delete
+
+    lines_to_add: list of strings (lines) to add. These are added right after the
+    last deleted line.
+
+    error_str: error to show on stdout
+
     """
 
-    def __init__(self, linenos_to_delete, lines_to_add, error_str=None):
-        """linenos_to_delete: line numbers to delete
-
-        lines_to_add: list of strings (lines) to add. These are added right after the
-        last deleted line.
-
-        error_str: error to show on stdout
-
-        """
-        self.linenos_to_delete = linenos_to_delete
-        self.lines_to_add = lines_to_add
-        self.error_str = error_str
+    linenos_to_delete: Sequence[int]
+    lines_to_add: Optional[Sequence[str]]
+    error_str: Optional[str] = None
 
 
 class FileNotFoundError(Exception):

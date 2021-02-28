@@ -18,14 +18,14 @@ Other subtleties implemented here:
 - Class scopes except the current one are skipped in name lookup
 
 """
-
 from collections import defaultdict, namedtuple, OrderedDict
 import contextlib
+from dataclasses import dataclass, field
 import enum
 import qcore
-from qcore.asserts import assert_is_instance
 from itertools import chain
 import builtins
+from typing import Any, Dict, Iterable, Sequence, Optional
 
 from .value import (
     KnownValue,
@@ -78,7 +78,7 @@ class ConstraintType(enum.Enum):
     all_of = 5
 
 
-class AbstractConstraint(qcore.InspectableClass):
+class AbstractConstraint:
     """Base class for abstract constraints.
 
     We distinguish between abstract and concrete constraints. Abstract
@@ -93,19 +93,20 @@ class AbstractConstraint(qcore.InspectableClass):
 
     """
 
-    def apply(self):
+    def apply(self) -> Iterable["Constraint"]:
         """Yields concrete constraints that are active when this constraint is applied."""
         raise NotImplementedError
 
-    def invert(self):
+    def invert(self) -> "AbstractConstraint":
         """Return an inverted version of this constraint."""
         raise NotImplementedError
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         # Constraints need to be hashable by identity.
         return object.__hash__(self)
 
 
+@dataclass(frozen=True, eq=False)
 class Constraint(AbstractConstraint):
     """A constraint is a restriction on the value of a variable.
 
@@ -131,27 +132,26 @@ class Constraint(AbstractConstraint):
 
     """
 
-    def __init__(self, varname, constraint_type, positive, value):
-        self.varname = varname
-        self.constraint_type = constraint_type
-        self.positive = positive
-        self.value = value
+    varname: str
+    constraint_type: ConstraintType
+    positive: bool
+    value: Any
 
-    def apply(self):
+    def apply(self) -> Iterable["Constraint"]:
         yield self
 
-    def invert(self):
+    def invert(self) -> "Constraint":
         """Returns the opposite of this constraint."""
         return Constraint(
             self.varname, self.constraint_type, not self.positive, self.value
         )
 
-    def apply_to_values(self, values):
+    def apply_to_values(self, values: Iterable[Value]) -> Iterable[Value]:
         for value in values:
             for applied in self.apply_to_value(value):
                 yield applied
 
-    def apply_to_value(self, value):
+    def apply_to_value(self, value: Value) -> Iterable[Value]:
         """Yield values consistent with this constraint.
 
         Produces zero or more values consistent both with the given
@@ -240,49 +240,50 @@ class Constraint(AbstractConstraint):
             assert False, "unknown constraint type %s" % (self.constraint_type,)
 
 
-TRUTHY_CONSTRAINT = Constraint(None, ConstraintType.is_truthy, True, None)
-FALSY_CONSTRAINT = Constraint(None, ConstraintType.is_truthy, False, None)
+TRUTHY_CONSTRAINT = Constraint("%unused", ConstraintType.is_truthy, True, None)
+FALSY_CONSTRAINT = Constraint("%unused", ConstraintType.is_truthy, False, None)
 
 
+@dataclass(frozen=True)
 class NullConstraint(AbstractConstraint):
     """Represents the absence of a constraint."""
 
-    def apply(self):
+    def apply(self) -> Iterable[Constraint]:
         return []
 
-    def invert(self):
+    def invert(self) -> "NullConstraint":
         return self
 
 
 NULL_CONSTRAINT = NullConstraint()
 
 
+@dataclass(frozen=True)
 class AndConstraint(AbstractConstraint):
     """Represents the AND of two constraints."""
 
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
+    left: AbstractConstraint
+    right: AbstractConstraint
 
-    def apply(self):
+    def apply(self) -> Iterable["Constraint"]:
         for constraint in self.left.apply():
             yield constraint
         for constraint in self.right.apply():
             yield constraint
 
-    def invert(self):
+    def invert(self) -> "OrConstraint":
         # ~(A and B) -> ~A or ~B
         return OrConstraint(self.left.invert(), self.right.invert())
 
 
+@dataclass(frozen=True)
 class OrConstraint(AbstractConstraint):
     """Represents the OR of two constraints."""
 
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
+    left: AbstractConstraint
+    right: AbstractConstraint
 
-    def apply(self):
+    def apply(self) -> Iterable[Constraint]:
         left = self._group_constraints(self.left)
         right = self._group_constraints(self.right)
         for varname, constraints in left.items():
@@ -299,19 +300,21 @@ class OrConstraint(AbstractConstraint):
                     ],
                 )
 
-    def _constraint_from_list(self, varname, constraints):
+    def _constraint_from_list(self, varname: str, constraints: Sequence[Constraint]):
         if len(constraints) == 1:
             return constraints[0]
         else:
             return Constraint(varname, ConstraintType.all_of, True, constraints)
 
-    def _group_constraints(self, abstract_constraint):
+    def _group_constraints(
+        self, abstract_constraint: AbstractConstraint
+    ) -> Dict[str, Constraint]:
         by_varname = defaultdict(list)
         for constraint in abstract_constraint.apply():
             by_varname[constraint.varname].append(constraint)
         return by_varname
 
-    def invert(self):
+    def invert(self) -> AndConstraint:
         # ~(A or B) -> ~A and ~B
         return AndConstraint(self.left.invert(), self.right.invert())
 
@@ -339,26 +342,23 @@ class _ConstrainedValue(Value):
 _empty_constrained = _ConstrainedValue(set(), [])
 
 
-class Scope(qcore.InspectableClass):
+@dataclass
+class Scope:
     """Represents a single level in the scope stack.
 
     May be a builtin, module, class, or function scope.
 
     """
 
-    def __init__(
-        self, scope_type, variables, parent_scope, scope_node=None, scope_object=None
-    ):
-        assert_is_instance(scope_type, ScopeType)
-        self.scope_type = scope_type
-        self.scope_object = scope_object
-        assert_is_instance(variables, dict)
-        self.variables = variables
-        if parent_scope is not None:
-            self.parent_scope = parent_scope.scope_used_as_parent()
-        else:
-            self.parent_scope = None
-        self.scope_node = scope_node
+    scope_type: ScopeType
+    variables: Dict[str, Value] = field(default_factory=dict)
+    parent_scope: Optional["Scope"] = None
+    scope_node: Optional[object] = None
+    scope_object: Optional[object] = None
+
+    def __post_init__(self) -> None:
+        if self.parent_scope is not None:
+            self.parent_scope = self.parent_scope.scope_used_as_parent()
 
     def add_constraint(self, abstract_constraint, node, state):
         """Constraints are ignored outside of function scopes."""
@@ -587,9 +587,7 @@ class FunctionScope(Scope):
     """
 
     def __init__(self, parent_scope, scope_node=None):
-        super(FunctionScope, self).__init__(
-            ScopeType.function_scope, {}, parent_scope, scope_node
-        )
+        super().__init__(ScopeType.function_scope, {}, parent_scope, scope_node)
         self.name_to_current_definition_nodes = defaultdict(list)
         self.usage_to_definition_nodes = defaultdict(list)
         self.definition_node_to_value = {_UNINITIALIZED: _empty_constrained}
@@ -786,7 +784,7 @@ class FunctionScope(Scope):
         return varname in self.name_to_all_definition_nodes
 
 
-class StackedScopes(object):
+class StackedScopes:
     """Represents the stack of scopes in which Python searches for variables."""
 
     _builtin_scope = Scope(
