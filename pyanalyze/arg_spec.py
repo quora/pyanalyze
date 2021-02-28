@@ -1245,9 +1245,7 @@ class ArgSpecCache:
 
         raise TypeError("%r object is not callable" % (obj,))
 
-    def _safe_get_argspec(
-        self, obj: Any
-    ) -> Union[inspect.Signature, inspect.FullArgSpec, inspect.ArgSpec, None]:
+    def _safe_get_argspec(self, obj: Any) -> Optional[inspect.Signature]:
         """Wrapper around inspect.getargspec that catches TypeErrors."""
         try:
             # follow_wrapped=True leads to problems with decorators that
@@ -1257,7 +1255,7 @@ class ArgSpecCache:
             # TypeError if signature() does not support the object, ValueError
             # if it cannot provide a signature, and AttributeError if we're on
             # Python 2.
-            pass
+            return None
         else:
             # Signature preserves the return annotation for wrapped functions,
             # because @functools.wraps copies the __annotations__ of the wrapped function. We
@@ -1267,17 +1265,6 @@ class ArgSpecCache:
                 return sig.replace(return_annotation=inspect.Signature.empty)
             else:
                 return sig
-        try:
-            if hasattr(inspect, "getfullargspec"):
-                try:
-                    return inspect.getfullargspec(obj)  # static analysis: ignore
-                except TypeError:
-                    # fall back to qcore.inspection
-                    return qcore.inspection.getargspec(obj)
-            return qcore.inspection.getargspec(obj)
-        except TypeError:
-            # probably a builtin or Cythonized object
-            return None
 
 
 @dataclass
