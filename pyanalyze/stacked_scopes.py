@@ -362,7 +362,7 @@ class Scope:
     scope_type: ScopeType
     variables: Dict[str, Value] = field(default_factory=dict)
     parent_scope: Optional["Scope"] = None
-    scope_node: Optional[object] = None
+    scope_node: Optional[ast.AST] = None
     scope_object: Optional[object] = None
 
     def __post_init__(self) -> None:
