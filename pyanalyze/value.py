@@ -27,7 +27,7 @@ from unittest import mock
 BUILTIN_MODULE = str.__module__
 
 TypeOrTuple = Union[type, Tuple[type, ...]]
-TypeVarMap = Mapping[TypeVar, "Value"]
+TypeVarMap = Mapping["TypeVar", "Value"]
 
 
 class Value(object):
@@ -122,6 +122,8 @@ class KnownValue(Value):
     )
 
     def is_value_compatible(self, val: Value) -> bool:
+        if isinstance(val, TypeVarValue):
+            val = val.get_degenerate_value()
         if isinstance(val, KnownValue):
             return self.val == val.val
         elif isinstance(val, TypedValue):
@@ -227,6 +229,8 @@ class TypedValue(Value):
     typ: Any
 
     def is_value_compatible(self, val: Value) -> bool:
+        if isinstance(val, TypeVarValue):
+            val = val.get_degenerate_value()
         if hasattr(self.typ, "_VALUES_TO_NAMES"):
             # Special case: Thrift enums. These are conceptually like
             # enums, but they are ints at runtime.
@@ -327,6 +331,8 @@ class GenericValue(TypedValue):
         )
 
     def is_value_compatible(self, val: Value) -> bool:
+        if isinstance(val, TypeVarValue):
+            val = val.get_degenerate_value()
         if isinstance(val, GenericValue):
             if not super(GenericValue, self).is_value_compatible(val):
                 return False
@@ -557,6 +563,8 @@ class SubclassValue(Value):
             return False
 
     def is_value_compatible(self, val: Value) -> bool:
+        if isinstance(val, TypeVarValue):
+            val = val.get_degenerate_value()
         if isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible(subval) for subval in val.vals)
         elif isinstance(val, SubclassValue):
@@ -665,6 +673,10 @@ class TypeVarValue(Value):
             # Ignore the passed value, we'll error elsewhere
             return (typevars[self.typevar], {})
         return value, {self.typevar: value}
+
+    def get_degenerate_value(self) -> Value:
+        # TODO: support bounds and bases here to do something smarter
+        return UNRESOLVED_VALUE
 
 
 @dataclass(frozen=True)
@@ -783,7 +795,7 @@ def boolean_value(value: Optional[Value]) -> Optional[bool]:
     return None
 
 
-def extract_typevars(value: Value) -> Iterable[TypeVar]:
+def extract_typevars(value: Value) -> Iterable["TypeVar"]:
     for val in value.walk_values():
         if isinstance(val, TypeVarValue):
             yield val.typevar

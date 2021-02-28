@@ -275,10 +275,10 @@ class ExtendedArgSpec:
     logger: Optional[Logger] = field(repr=False, default=None, compare=False)
     params_of_names: Dict[str, Parameter] = field(init=False)
     _has_return_value: bool = field(init=False)
-    typevars_of_params: Dict[str, List[TypeVar]] = field(
+    typevars_of_params: Dict[str, List["TypeVar"]] = field(
         init=False, default_factory=dict
     )
-    all_typevars: Set[TypeVar] = field(init=False, default_factory=set)
+    all_typevars: Set["TypeVar"] = field(init=False, default_factory=set)
 
     def __post_init__(self) -> None:
         self._has_return_value = self.return_value is not UNRESOLVED_VALUE
