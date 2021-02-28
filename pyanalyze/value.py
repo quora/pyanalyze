@@ -9,17 +9,19 @@ from collections import OrderedDict
 from dataclasses import dataclass, field, InitVar
 import inspect
 from itertools import chain
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 from unittest import mock
 
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
 
+TypeOrTuple = Union[type, Tuple[type, ...]]
+
 
 class Value(object):
     """Class that represents the value of a variable."""
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: "Value") -> bool:
         """Returns whether the given value is compatible with this value.
 
         val must be a more precise type than (or the same type as) self.
@@ -30,15 +32,15 @@ class Value(object):
         """
         return True
 
-    def is_type(self, typ):
+    def is_type(self, typ: TypeOrTuple) -> bool:
         """Returns whether this value is an instance of the given type."""
         return False
 
-    def get_type(self):
+    def get_type(self) -> Optional[type]:
         """Returns the type of this value, or None if it is not known."""
         return None
 
-    def get_type_value(self):
+    def get_type_value(self) -> "Value":
         """Return the type of this object as used for dunder lookups."""
         return self
 
@@ -47,7 +49,7 @@ class Value(object):
 class UnresolvedValue(Value):
     """Value that we cannot resolve further."""
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "Any"
 
 
@@ -62,7 +64,7 @@ class UninitializedValue(Value):
 
     """
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "<uninitialized>"
 
 
@@ -73,10 +75,10 @@ UNINITIALIZED_VALUE = UninitializedValue()
 class NoReturnValue(Value):
     """Value that indicates that a function will never return."""
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "NoReturn"
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         # You can't assign anything to NoReturn
         return False
 
@@ -93,7 +95,7 @@ class KnownValue(Value):
         default=None, repr=False, hash=False, compare=False
     )
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, KnownValue):
             return self.val == val.val
         elif isinstance(val, TypedValue):
@@ -107,33 +109,33 @@ class KnownValue(Value):
         else:
             return True
 
-    def is_type(self, typ):
+    def is_type(self, typ: TypeOrTuple) -> bool:
         return isinstance(self.val, typ)
 
-    def get_type(self):
+    def get_type(self) -> type:
         return type(self.val)
 
-    def __eq__(self, other):
+    def __eq__(self, other: Value) -> bool:
         return (
             isinstance(other, KnownValue)
             and type(self.val) is type(other.val)
             and self.val == other.val
         )
 
-    def __ne__(self, other):
+    def __ne__(self, other: Value) -> bool:
         return not (self == other)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         # Make sure e.g. 1 and True are handled differently.
         return hash((type(self.val), self.val))
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.val is None:
             return "None"
         else:
             return "Literal[%r]" % (self.val,)
 
-    def get_type_value(self):
+    def get_type_value(self) -> Value:
         return KnownValue(type(self.val))
 
 
@@ -149,7 +151,7 @@ class UnboundMethodValue(Value):
     typ: type
     secondary_attr_name: Optional[str] = None
 
-    def get_method(self):
+    def get_method(self) -> Optional[Any]:
         """Returns the method object for this UnboundMethodValue."""
         try:
             method = getattr(self.typ, self.attr_name)
@@ -162,16 +164,16 @@ class UnboundMethodValue(Value):
         except AttributeError:
             return None
 
-    def is_type(self, typ):
+    def is_type(self, typ: TypeOrTuple) -> bool:
         return isinstance(self.get_method(), typ)
 
-    def get_type(self):
+    def get_type(self) -> type:
         return type(self.get_method())
 
-    def get_type_value(self):
+    def get_type_value(self) -> Value:
         return KnownValue(type(self.get_method()))
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "<method %s%s on %s>" % (
             self.attr_name,
             ".%s" % (self.secondary_attr_name,) if self.secondary_attr_name else "",
@@ -198,7 +200,7 @@ class TypedValue(Value):
 
     typ: Any
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         if hasattr(self.typ, "_VALUES_TO_NAMES"):
             # Special case: Thrift enums. These are conceptually like
             # enums, but they are ints at runtime.
@@ -219,7 +221,7 @@ class TypedValue(Value):
         else:
             return True
 
-    def is_value_compatible_thrift_enum(self, val):
+    def is_value_compatible_thrift_enum(self, val: Value) -> bool:
         if isinstance(val, KnownValue):
             if not isinstance(val.val, int):
                 return False
@@ -235,16 +237,16 @@ class TypedValue(Value):
         else:
             return False
 
-    def is_type(self, typ):
+    def is_type(self, typ: TypeOrTuple) -> bool:
         return issubclass(self.typ, typ)
 
-    def get_type(self):
+    def get_type(self) -> type:
         return self.typ
 
-    def get_type_value(self):
+    def get_type_value(self) -> Value:
         return KnownValue(self.typ)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return _stringify_type(self.typ)
 
 
@@ -264,13 +266,13 @@ class NewTypeValue(TypedValue):
         self.name = newtype.__name__
         self.newtype = newtype
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, NewTypeValue):
             return self.newtype is val.newtype
         else:
             return super(NewTypeValue, self).is_value_compatible(val)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "NewType(%r, %s)" % (self.name, _stringify_type(self.typ))
 
 
@@ -288,7 +290,7 @@ class GenericValue(TypedValue):
         super().__init__(typ)
         self.args = tuple(args)
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.typ is tuple:
             args = list(self.args) + ["..."]
         else:
@@ -298,7 +300,7 @@ class GenericValue(TypedValue):
             ", ".join(str(arg) for arg in args),
         )
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, GenericValue):
             if not super(GenericValue, self).is_value_compatible(val):
                 return False
@@ -311,7 +313,7 @@ class GenericValue(TypedValue):
         else:
             return super(GenericValue, self).is_value_compatible(val)
 
-    def get_arg(self, index):
+    def get_arg(self, index: int) -> Value:
         try:
             return self.args[index]
         except IndexError:
@@ -337,7 +339,7 @@ class SequenceIncompleteValue(GenericValue):
         super().__init__(typ, args)
         self.members = tuple(members)
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, SequenceIncompleteValue):
             if not issubclass(val.typ, self.typ):
                 return False
@@ -350,7 +352,7 @@ class SequenceIncompleteValue(GenericValue):
         else:
             return super(SequenceIncompleteValue, self).is_value_compatible(val)
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.typ is tuple:
             return "tuple[%s]" % (", ".join(str(m) for m in self.members))
         return "<%s containing [%s]>" % (
@@ -379,7 +381,7 @@ class DictIncompleteValue(GenericValue):
         super().__init__(dict, (key_type, value_type))
         self.items = items
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "<%s containing {%s}>" % (
             _stringify_type(self.typ),
             ", ".join("%s: %s" % (key, value) for key, value in self.items),
@@ -398,7 +400,7 @@ class TypedDictValue(GenericValue):
         super(TypedDictValue, self).__init__(dict, (TypedValue(str), value_type))
         self.items = items
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, DictIncompleteValue):
             if len(val.items) < len(self.items):
                 return False
@@ -433,11 +435,11 @@ class TypedDictValue(GenericValue):
         else:
             return super(TypedDictValue, self).is_value_compatible(val)
 
-    def __str__(self):
+    def __str__(self) -> str:
         items = ['"%s": %s' % (key, value) for key, value in self.items.items()]
         return "TypedDict({%s})" % ", ".join(items)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(tuple(sorted(self.items)))
 
 
@@ -462,10 +464,10 @@ class AwaitableIncompleteValue(Value):
 
     value: Value
 
-    def get_type_value(self):
+    def get_type_value(self) -> Value:
         return UNRESOLVED_VALUE
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "Awaitable[%s]" % (self.value,)
 
 
@@ -475,13 +477,13 @@ class SubclassValue(Value):
 
     typ: type
 
-    def is_type(self, typ):
+    def is_type(self, typ: TypeOrTuple) -> bool:
         try:
             return issubclass(self.typ, typ)
         except Exception:
             return False
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible(subval) for subval in val.vals)
         elif isinstance(val, SubclassValue):
@@ -504,13 +506,13 @@ class SubclassValue(Value):
         else:
             return False
 
-    def get_type(self):
+    def get_type(self) -> type:
         return type(self.typ)
 
-    def get_type_value(self):
+    def get_type_value(self) -> Value:
         return KnownValue(type(self.typ))
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "Type[%s]" % (_stringify_type(self.typ),)
 
 
@@ -528,7 +530,7 @@ class MultiValuedValue(Value):
             tuple(chain.from_iterable(flatten_values(val) for val in raw_vals)),
         )
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, MultiValuedValue):
             return all(
                 any(subval.is_value_compatible(other_subval) for subval in self.vals)
@@ -537,10 +539,10 @@ class MultiValuedValue(Value):
         else:
             return any(subval.is_value_compatible(val) for subval in self.vals)
 
-    def get_type_value(self):
+    def get_type_value(self) -> Value:
         return MultiValuedValue([val.get_type_value() for val in self.vals])
 
-    def __eq__(self, other):
+    def __eq__(self, other: Value) -> Union[bool, type(NotImplemented)]:
         if not isinstance(other, MultiValuedValue):
             return NotImplemented
         if self.vals == other.vals:
@@ -554,10 +556,10 @@ class MultiValuedValue(Value):
             return False
         return left_vals == right_vals
 
-    def __ne__(self, other):
+    def __ne__(self, other: Value) -> bool:
         return not (self == other)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "Union[%s]" % ", ".join(map(str, self.vals))
 
 
@@ -568,7 +570,7 @@ class ReferencingValue(Value):
     scope: Any
     name: str
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "<reference to %s>" % (self.name,)
 
 
@@ -587,16 +589,18 @@ class VariableNameValue(Value):
 
     varnames: List[str]
 
-    def is_value_compatible(self, val):
+    def is_value_compatible(self, val: Value) -> bool:
         if not isinstance(val, VariableNameValue):
             return True
         return val == self
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "<variable name: %s>" % ", ".join(self.varnames)
 
     @classmethod
-    def from_varname(cls, varname, varname_map):
+    def from_varname(
+        cls, varname: str, varname_map: Dict[str, "VariableNameValue"]
+    ) -> Optional["VariableNameValue"]:
         """Returns the VariableNameValue corresponding to a variable name.
 
         If there is no VariableNameValue that corresponds to the variable name, returns None.
@@ -614,7 +618,7 @@ class VariableNameValue(Value):
         return None
 
 
-def flatten_values(val):
+def flatten_values(val: Value) -> Iterable[Value]:
     """Flatten a MultiValuedValue into a single value.
 
     We don't need to do this recursively because the
@@ -628,7 +632,7 @@ def flatten_values(val):
         yield val
 
 
-def unite_values(*values):
+def unite_values(*values: Value) -> Value:
     if not values:
         return UNRESOLVED_VALUE
     # Make sure order is consistent; conceptually this is a set but
@@ -659,7 +663,7 @@ def unite_values(*values):
         return MultiValuedValue(existing)
 
 
-def are_types_compatible(t1, t2):
+def are_types_compatible(t1: type, t2: type) -> bool:
     """Special cases for type compatibility checks."""
     # As a special case, the Python type system treats int as
     # a subtype of float.
@@ -671,7 +675,7 @@ def are_types_compatible(t1, t2):
     return False
 
 
-def boolean_value(value):
+def boolean_value(value: Optional[Value]) -> Optional[bool]:
     """Given a Value, returns whether the object is statically known to be truthy.
 
     Returns None if its truth value cannot be determined.
@@ -686,7 +690,7 @@ def boolean_value(value):
     return None
 
 
-def _stringify_type(typ):
+def _stringify_type(typ: type) -> str:
     try:
         if typ.__module__ == BUILTIN_MODULE:
             return typ.__name__

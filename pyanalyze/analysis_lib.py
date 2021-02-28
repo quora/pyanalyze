@@ -5,10 +5,14 @@ Commonly useful components for static analysis tools.
 """
 import ast
 import os
-from typing import List
+from typing import List, Callable, Optional, Set, TypeVar, Container
+
+T = TypeVar("T")
 
 
-def _all_files(root, filter_function=None):
+def _all_files(
+    root: str, filter_function: Optional[Callable[[str], bool]] = None
+) -> Set[str]:
     """Returns the set of all files at the given root.
 
     Filtered optionally by the filter_function.
@@ -23,12 +27,12 @@ def _all_files(root, filter_function=None):
     return all_files
 
 
-def files_with_extension_from_directory(extension, dirname):
+def files_with_extension_from_directory(extension: str, dirname: str) -> Set[str]:
     """Finds all files in a given directory with this extension."""
     return _all_files(dirname, filter_function=lambda fn: fn.endswith("." + extension))
 
 
-def get_indentation(line):
+def get_indentation(line: str) -> int:
     """Returns the indendation of a line of code."""
     if len(line.lstrip()) == 0:
         # if it is a newline or a line with just spaces
@@ -87,7 +91,7 @@ def is_iterable(obj: object) -> bool:
     return hasattr(typ, "__getitem__") and hasattr(typ, "__len__")
 
 
-def safe_in(item, collection):
+def safe_in(item: T, collection: Container[T]) -> bool:
     """Safely checks whethe item is in collection. Defaults to returning false."""
     # Workaround against mock objects sometimes throwing ValueError if you compare them,
     # and against objects throwing other kinds of errors if you use in.

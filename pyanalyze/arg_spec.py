@@ -9,7 +9,13 @@ from .config import Config
 from .error_code import ErrorCode
 from .find_unused import used
 from .format_strings import parse_format_string
-from .stacked_scopes import NULL_CONSTRAINT, Constraint, ConstraintType, OrConstraint
+from .stacked_scopes import (
+    NULL_CONSTRAINT,
+    Constraint,
+    ConstraintType,
+    OrConstraint,
+    AbstractConstraint,
+)
 from .value import (
     TypedValue,
     SubclassValue,
@@ -38,9 +44,46 @@ import logging
 import re
 import sys
 import warnings
-from typing import Any, Sequence, NewType, Optional, ClassVar, Union, Callable, Dict
+from typing import (
+    Any,
+    Sequence,
+    NewType,
+    Iterable,
+    Mapping,
+    Optional,
+    ClassVar,
+    Union,
+    Callable,
+    Dict,
+    Tuple,
+    TYPE_CHECKING,
+)
 import typeshed_client
 from typed_ast import ast3
+
+if TYPE_CHECKING:
+    from .name_check_visitor import NameCheckVisitor
+
+# Implementation functions are passed the following arguments:
+# - variables: a dictionary with the function's arguments (keys are variable names and values are
+#   Value objects)
+# - visitor: the test_scope NameCheckVisitor object, which can be used to check context and emit
+#   errors
+# - node: the AST node corresponding to the call, which needs to be given in order to show errors.
+# They return either a single Value object, indicating what the function returns, or a tuple of two
+# or three elements:
+# - The return value
+# - A Constraint indicating things that are true if the function returns a truthy value
+# - A Constraint indicating things that are true unless the function does not return
+ImplementationFnReturn = Union[
+    Value,
+    Tuple[Value, AbstractConstraint],
+    Tuple[Value, AbstractConstraint, AbstractConstraint],
+]
+VarsDict = Dict[str, Value]
+ImplementationFn = Callable[
+    [VarsDict, "NameCheckVisitor", ast.AST], ImplementationFnReturn
+]
 
 
 NON_IDENTIFIER_CHARS = re.compile(r"[^a-zA-Z_\d]")
@@ -48,7 +91,7 @@ _NO_ARG_SENTINEL = qcore.MarkerObject("no argument given")
 
 
 @used  # exposed as an API
-def assert_is_value(obj, value):
+def assert_is_value(obj: object, value: Value) -> None:
     """Used to test test_scope's value inference.
 
     Takes two arguments: a Python object and a Value object. This function does nothing at runtime,
@@ -60,7 +103,7 @@ def assert_is_value(obj, value):
 
 
 @used  # exposed as an API
-def dump_value(value):
+def dump_value(value: object) -> None:
     """Used for debugging test_scope.
 
     Calling it will make test_scope print out the argument's inferred value. Does nothing at
@@ -72,7 +115,9 @@ def dump_value(value):
 
 @used  # exposed as an API
 @contextlib.contextmanager
-def with_implementation(fn, implementation_fn):
+def with_implementation(
+    fn: object, implementation_fn: ImplementationFn
+) -> Iterable[None]:
     """Temporarily sets the implementation of fn to be implementation_fn.
 
     This is useful for invoking test_scope to aggregate all calls to a particular function. For
@@ -123,7 +168,7 @@ class Parameter:
     default_value: object = no_default_value
     typ: Optional[Value] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         assert self.typ is None or isinstance(self.typ, Value), repr(self)
 
 
@@ -139,7 +184,9 @@ class BoundMethodArgSpecWrapper:
     argspec_arg: InitVar[Union["ExtendedArgSpec", "BoundMethodArgSpecWrapper"]]
     self_value: Value
 
-    def __post_init__(self, argspec_arg):
+    def __post_init__(
+        self, argspec_arg: Union["ExtendedArgSpec", "BoundMethodArgSpecWrapper"]
+    ) -> None:
         if isinstance(argspec_arg, BoundMethodArgSpecWrapper):
             argspec_arg = argspec_arg.argspec
         assert isinstance(
@@ -147,9 +194,15 @@ class BoundMethodArgSpecWrapper:
         ), f"invalid argspec {argspec_arg!r}"
         self.argspec = argspec_arg
 
-    def check_call(self, args, keywords, visitor, node):
+    def check_call(
+        self,
+        args: Iterable[Value],
+        keywords: Iterable[Tuple[str, Value]],
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
         return self.argspec.check_call(
-            [self.self_value] + args, keywords, visitor, node
+            [self.self_value, *args], keywords, visitor, node
         )
 
     def has_return_value(self) -> bool:
@@ -167,14 +220,20 @@ class PropertyArgSpec:
     obj: object
     return_value: Value = UNRESOLVED_VALUE
 
-    def check_call(self, args, keywords, visitor, node):
+    def check_call(
+        self,
+        args: Iterable[Value],
+        keywords: Iterable[Tuple[str, Value]],
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
         raise TypeError("property object is not callable")
 
-    def has_return_value(self):
+    def has_return_value(self) -> bool:
         return self.return_value is not UNRESOLVED_VALUE
 
 
-ImplementationFn = Callable[[Dict[str, Value], Any, ast.AST], Value]
+Logger = Callable[[int, str, object], object]
 
 
 @dataclass
@@ -208,13 +267,11 @@ class ExtendedArgSpec:
     return_value: Value = UNRESOLVED_VALUE
     name: Optional[str] = None
     implementation: Optional[ImplementationFn] = None
-    logger: Optional[Callable[[int, str, object], object]] = field(
-        repr=False, default=None, compare=False
-    )
+    logger: Optional[Logger] = field(repr=False, default=None, compare=False)
     params_of_names: Dict[str, Parameter] = field(init=False)
     _has_return_value: bool = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._has_return_value = self.return_value is not UNRESOLVED_VALUE
         self.params_of_names = {}
         for param in self.arguments:
@@ -230,12 +287,12 @@ class ExtendedArgSpec:
                 self.kwargs, typ=TypedValue(dict)
             )
 
-    def log(self, level, label, value):
+    def log(self, level: int, label: str, value: object) -> None:
         if self.logger is not None:
             self.logger(level, label, value)
 
     @qcore.caching.cached_per_instance()
-    def generate_function(self):
+    def generate_function(self) -> Callable[..., Any]:
         """Generates a function with this argspec.
 
         This is done by exec-ing code that corresponds to this argspec. The function will return
@@ -292,7 +349,13 @@ def %(name)s(%(arguments)s):
         exec (code_str, scope)
         return scope[name]
 
-    def _check_param_type_compatibility(self, param, var_value, visitor, node):
+    def _check_param_type_compatibility(
+        self,
+        param: Parameter,
+        var_value: Value,
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+    ) -> None:
         if param.typ is not None and var_value != KnownValue(param.default_value):
             compatible = visitor.is_value_compatible(param.typ, var_value)
             if not compatible:
@@ -303,7 +366,13 @@ def %(name)s(%(arguments)s):
                     ErrorCode.incompatible_argument,
                 )
 
-    def check_call(self, args, keywords, visitor, node):
+    def check_call(
+        self,
+        args: Iterable[Value],
+        keywords: Iterable[Tuple[str, Value]],
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
         """Tries to call this object with the given arguments and keyword arguments.
 
         Raises a TypeError if something goes wrong.
@@ -355,13 +424,13 @@ def %(name)s(%(arguments)s):
         else:
             return self.return_value, NULL_CONSTRAINT, NULL_CONSTRAINT
 
-    def has_return_value(self):
+    def has_return_value(self) -> bool:
         # We can't check self.return_value directly here because that may have
         # been wrapped in AwaitableIncompleteValue.
         return self._has_return_value
 
 
-def is_dot_asynq_function(obj):
+def is_dot_asynq_function(obj: Any) -> bool:
     """Returns whether obj is the .asynq member on an async function."""
     try:
         self_obj = obj.__self__
@@ -388,19 +457,10 @@ def is_dot_asynq_function(obj):
 
 
 # Implementations of some important functions for use in their ExtendedArgSpecs (see above). These
-# are called when the test_scope checker encounters call to these functions. They are passed
-# the following arguments:
-# - variables: a dictionary with the function's arguments (keys are variable names and values are
-#   Value objects)
-# - visitor: the test_scope NameCheckVisitor object, which can be used to check context and emit
-#   errors
-# - node: the AST node corresponding to the call, which needs to be given in order to show errors.
-# They return either a single Value object, indicating what the function returns, or a tuple of two
-# or three elements:
-# - The return value
-# - A Constraint indicating things that are true if the function returns a truthy value
-# - A Constraint indicating things that are true unless the function does not return
-def _isinstance_impl(variables, visitor, node):
+# are called when the test_scope checker encounters call to these functions.
+def _isinstance_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     class_or_tuple = variables["class_or_tuple"]
     if not isinstance(class_or_tuple, KnownValue):
         return TypedValue(bool), NULL_CONSTRAINT
@@ -426,7 +486,9 @@ def _isinstance_impl(variables, visitor, node):
         return TypedValue(bool), NULL_CONSTRAINT
 
 
-def _hasattr_impl(variables, visitor, node):
+def _hasattr_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     obj = variables["object"]
     name = variables["name"]
     if not isinstance(name, KnownValue):
@@ -449,7 +511,7 @@ def _hasattr_impl(variables, visitor, node):
         return TypedValue(bool)
 
 
-def _safe_has_attr(item, member):
+def _safe_has_attr(item: object, member: str) -> bool:
     try:
         # some sketchy implementation (like paste.registry) of
         # __getattr__ caused errors at static analysis.
@@ -458,7 +520,9 @@ def _safe_has_attr(item, member):
         return False
 
 
-def _setattr_impl(variables, visitor, node):
+def _setattr_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     # if we set an attribute on a value of known type, record it to the attribute checker so we
     # don't say the attribute is undefined
     obj = variables["object"]
@@ -472,7 +536,9 @@ def _setattr_impl(variables, visitor, node):
     return KnownValue(None)
 
 
-def _super_impl(variables, visitor, node):
+def _super_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     typ = variables["type"]
     obj = variables["obj"]
     if typ == KnownValue(None):
@@ -557,19 +623,27 @@ def _super_impl(variables, visitor, node):
         return KnownValue(super_val)
 
 
-def _tuple_impl(variables, visitor, node):
+def _tuple_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     return _sequence_impl(tuple, variables, visitor, node)
 
 
-def _list_impl(variables, visitor, node):
+def _list_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     return _sequence_impl(list, variables, visitor, node)
 
 
-def _set_impl(variables, visitor, node):
+def _set_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     return _sequence_impl(set, variables, visitor, node)
 
 
-def _sequence_impl(typ, variables, visitor, node):
+def _sequence_impl(
+    typ: type, variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     iterable = variables["iterable"]
     if iterable == KnownValue(_NO_ARG_SENTINEL):
         return KnownValue(typ())
@@ -602,7 +676,9 @@ def _sequence_impl(typ, variables, visitor, node):
     return TypedValue(typ)
 
 
-def _assert_is_value_impl(variables, visitor, node):
+def _assert_is_value_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     if not visitor._is_checking():
         return KnownValue(None)
     obj = variables["obj"]
@@ -624,7 +700,9 @@ def _assert_is_value_impl(variables, visitor, node):
     return KnownValue(None)
 
 
-def _dump_value_impl(variables, visitor, node):
+def _dump_value_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     if visitor._is_checking():
         visitor.show_error(
             node, "value: %r" % variables["value"], ErrorCode.inference_failure
@@ -632,7 +710,9 @@ def _dump_value_impl(variables, visitor, node):
     return KnownValue(None)
 
 
-def _str_format_impl(variables, visitor, node):
+def _str_format_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     self = variables["self"]
     if not isinstance(self, KnownValue):
         return TypedValue(str)
@@ -695,15 +775,25 @@ def _str_format_impl(variables, visitor, node):
     return TypedValue(str)
 
 
-def _assert_is_impl(variables, visitor, node):
+def _assert_is_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     return _qcore_assert_impl(variables, visitor, node, ConstraintType.is_value, True)
 
 
-def _assert_is_not_impl(variables, visitor, node):
+def _assert_is_not_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
     return _qcore_assert_impl(variables, visitor, node, ConstraintType.is_value, False)
 
 
-def _qcore_assert_impl(variables, visitor, node, constraint_type, positive):
+def _qcore_assert_impl(
+    variables: VarsDict,
+    visitor: "NameCheckVisitor",
+    node: ast.AST,
+    constraint_type: ConstraintType,
+    positive: bool,
+) -> ImplementationFnReturn:
     if len(node.args) < 2:
         # arguments were passed as kwargs
         return KnownValue(None), NULL_CONSTRAINT, NULL_CONSTRAINT
@@ -724,8 +814,10 @@ def _qcore_assert_impl(variables, visitor, node, constraint_type, positive):
 
 _ENCODING_PARAMETER = Parameter("encoding", typ=TypedValue(str), default_value="")
 
+_MaybeArgspec = Union[None, ExtendedArgSpec, PropertyArgSpec, BoundMethodArgSpecWrapper]
 
-class ArgSpecCache(object):
+
+class ArgSpecCache:
     DEFAULT_ARGSPECS = {
         assert_is_value: ExtendedArgSpec(
             [Parameter("obj"), Parameter("value", typ=TypedValue(Value))],
@@ -859,7 +951,7 @@ class ArgSpecCache(object):
         ),
     }
 
-    def __init__(self, config):
+    def __init__(self, config: Config) -> None:
         self.config = config
         self.ts_finder = TypeshedFinder(verbose=False)
         self.known_argspecs = {}
@@ -869,19 +961,19 @@ class ArgSpecCache(object):
         for obj, argspec in default_argspecs.items():
             self.known_argspecs[obj] = argspec
 
-    def __reduce_ex__(self, proto):
+    def __reduce_ex__(self, proto: object) -> object:
         # Don't pickle the actual argspecs, which are frequently unpicklable.
         return self.__class__, (self.config,)
 
     def from_argspec(
         self,
-        argspec,
-        kwonly_args=None,
-        name=None,
-        logger=None,
-        implementation=None,
-        function_object=None,
-    ):
+        argspec: Union[inspect.Signature, inspect.ArgSpec, inspect.FullArgSpec],
+        kwonly_args: Any = None,
+        name: Optional[str] = None,
+        logger: Optional[Logger] = None,
+        implementation: Optional[ImplementationFn] = None,
+        function_object: Optional[object] = None,
+    ) -> Optional[ExtendedArgSpec]:
         """Constructs an ExtendedArgSpec from a standard argspec.
 
         argspec can be either an inspect.ArgSpec or, in Python 3 only, an inspect.FullArgSpec, with
@@ -894,6 +986,9 @@ class ArgSpecCache(object):
         logger is the log function to be used.
 
         implementation is an implementation function for this object.
+
+        TODO: do we need support for non-Signature argspecs and for the separate kwonly_args
+        argument?
 
         """
         if argspec is None:
@@ -984,7 +1079,9 @@ class ArgSpecCache(object):
             implementation=implementation,
         )
 
-    def _parameter_from_signature(self, parameter, func_globals):
+    def _parameter_from_signature(
+        self, parameter: inspect.Parameter, func_globals: Mapping[str, object]
+    ) -> Parameter:
         """Given an inspect.Parameter, returns a Parameter object."""
         if parameter.annotation is not inspect.Parameter.empty:
             typ = type_from_runtime(parameter.annotation, globals=func_globals)
@@ -1001,13 +1098,21 @@ class ArgSpecCache(object):
             default_value = parameter.default
         return Parameter(parameter.name, default_value=default_value, typ=typ)
 
-    def get_argspec(self, obj, name=None, logger=None, implementation=None):
+    def get_argspec(
+        self,
+        obj: object,
+        name: Optional[str] = None,
+        logger: Optional[Logger] = None,
+        implementation: Optional[ImplementationFn] = None,
+    ) -> _MaybeArgspec:
         """Constructs the ExtendedArgSpec for a Python object."""
         kwargs = {"name": name, "logger": logger, "implementation": implementation}
         argspec = self._cached_get_argspec(obj, kwargs)
         return argspec
 
-    def _cached_get_argspec(self, obj, kwargs):
+    def _cached_get_argspec(
+        self, obj: object, kwargs: Mapping[str, Any]
+    ) -> _MaybeArgspec:
         try:
             if obj in self.known_argspecs:
                 return self.known_argspecs[obj]
@@ -1024,7 +1129,9 @@ class ArgSpecCache(object):
             self.known_argspecs[obj] = extended
         return extended
 
-    def _uncached_get_argspec(self, obj, kwargs):
+    def _uncached_get_argspec(
+        self, obj: Any, kwargs: Mapping[str, Any]
+    ) -> _MaybeArgspec:
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause
 
@@ -1138,7 +1245,9 @@ class ArgSpecCache(object):
 
         raise TypeError("%r object is not callable" % (obj,))
 
-    def _safe_get_argspec(self, obj):
+    def _safe_get_argspec(
+        self, obj: Any
+    ) -> Union[inspect.Signature, inspect.FullArgSpec, inspect.ArgSpec, None]:
         """Wrapper around inspect.getargspec that catches TypeErrors."""
         try:
             # follow_wrapped=True leads to problems with decorators that
@@ -1176,10 +1285,12 @@ class _AnnotationContext(Context):
     finder: "TypeshedFinder"
     module: str
 
-    def show_error(self, message, error_code=ErrorCode.invalid_annotation):
+    def show_error(
+        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+    ) -> None:
         self.finder.log(message, ())
 
-    def get_name(self, node):
+    def get_name(self, node: ast.AST) -> Value:
         info = self.finder.resolver.get_fully_qualified_name(
             "%s.%s" % (self.module, node.id)
         )
@@ -1193,16 +1304,16 @@ class _AnnotationContext(Context):
 
 
 class TypeshedFinder(object):
-    def __init__(self, verbose=False):
+    def __init__(self, verbose: bool = False) -> None:
         self.verbose = verbose
         self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
 
-    def log(self, message, obj):
+    def log(self, message: str, obj: object) -> None:
         if not self.verbose:
             return
         print("%s: %r" % (message, obj))
 
-    def get_argspec(self, obj):
+    def get_argspec(self, obj: object) -> Optional[ExtendedArgSpec]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
@@ -1228,7 +1339,13 @@ class TypeshedFinder(object):
             self.log("Found argspec", (fq_name, argspec))
         return argspec
 
-    def _get_method_argspec_from_info(self, info, obj, fq_name, mod):
+    def _get_method_argspec_from_info(
+        self,
+        info: typeshed_client.resolver.ResolvedName,
+        obj: object,
+        fq_name: str,
+        mod: str,
+    ) -> Optional[ExtendedArgSpec]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
@@ -1244,7 +1361,7 @@ class TypeshedFinder(object):
             self.log("Ignoring unrecognized info", (fq_name, info))
             return None
 
-    def _get_fq_name(self, obj):
+    def _get_fq_name(self, obj: Any) -> Optional[str]:
         try:
             module = obj.__module__
             if module is None:
@@ -1254,7 +1371,13 @@ class TypeshedFinder(object):
             self.log("Ignoring object without module or qualname", obj)
             return None
 
-    def _get_argspec_from_info(self, info, obj, fq_name, mod):
+    def _get_argspec_from_info(
+        self,
+        info: typeshed_client.resolver.ResolvedName,
+        obj: object,
+        fq_name: str,
+        mod: str,
+    ) -> Optional[ExtendedArgSpec]:
         if isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, ast3.FunctionDef):
                 return self._get_argspec_from_func_def(
@@ -1276,10 +1399,16 @@ class TypeshedFinder(object):
             return None
 
     @qcore.caching.cached_per_instance()
-    def _get_info_for_name(self, fq_name):
+    def _get_info_for_name(self, fq_name: str) -> typeshed_client.resolver.ResolvedName:
         return self.resolver.get_fully_qualified_name(fq_name)
 
-    def _get_argspec_from_func_def(self, node, obj, mod, is_async_fn):
+    def _get_argspec_from_func_def(
+        self,
+        node: Union[ast3.FunctionDef, ast3.AsyncFunctionDef],
+        obj: object,
+        mod: str,
+        is_async_fn: bool,
+    ) -> Optional[ExtendedArgSpec]:
         if node.decorator_list:
             # might be @overload or something else we don't recognize
             return None
@@ -1311,7 +1440,12 @@ class TypeshedFinder(object):
             name=obj.__name__,
         )
 
-    def _parse_param_list(self, args, defaults, module):
+    def _parse_param_list(
+        self,
+        args: Iterable[ast3.arg],
+        defaults: Iterable[Optional[ast3.AST]],
+        module: str,
+    ) -> Iterable[Parameter]:
         for arg, default in zip(args, defaults):
             typ = None
             if arg.annotation is not None:
@@ -1323,11 +1457,11 @@ class TypeshedFinder(object):
                 # doesn't matter what the default is
                 yield Parameter(arg.arg, typ=typ, default_value=None)
 
-    def _parse_expr(self, node, module):
+    def _parse_expr(self, node: ast.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
         return type_from_ast(node, ctx=ctx)
 
-    def _value_from_info(self, info, module):
+    def _value_from_info(self, info: str, module: str) -> Value:
         if isinstance(info, typeshed_client.ImportedInfo):
             return self._value_from_info(info.info, ".".join(info.source_module))
         elif isinstance(info, typeshed_client.NameInfo):
@@ -1342,7 +1476,7 @@ class TypeshedFinder(object):
             return UNRESOLVED_VALUE
 
 
-def _is_qcore_decorator(obj):
+def _is_qcore_decorator(obj: object) -> bool:
     try:
         return (
             hasattr(obj, "is_decorator")

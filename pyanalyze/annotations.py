@@ -12,7 +12,7 @@ import qcore
 import ast
 import builtins
 from collections.abc import Callable
-from typing import ContextManager
+from typing import ContextManager, Mapping, Sequence, Optional, TYPE_CHECKING
 
 from .error_code import ErrorCode
 from .find_unused import used
@@ -29,6 +29,9 @@ from .value import (
     TypedDictValue,
     NewTypeValue,
 )
+
+if TYPE_CHECKING:
+    from .name_check_visitor import NameCheckVisitor
 
 try:
     from typing import get_origin, get_args  # Python 3.9
@@ -66,28 +69,43 @@ class Context:
 
 
 @used  # part of the API of this module; low cost even if currently unused
-def type_from_ast(ast_node, visitor=None, ctx=None):
+def type_from_ast(
+    ast_node: ast.AST,
+    visitor: Optional["NameCheckVisitor"] = None,
+    ctx: Optional[Context] = None,
+) -> Value:
     """Given an AST node representing an annotation, return a Value."""
     if ctx is None:
         ctx = _DefaultContext(visitor, ast_node)
     return _type_from_ast(ast_node, ctx)
 
 
-def type_from_runtime(val, visitor=None, node=None, globals=None, ctx=None):
+def type_from_runtime(
+    val: object,
+    visitor: Optional["NameCheckVisitor"] = None,
+    node: Optional[ast.AST] = None,
+    globals: Optional[Mapping[str, object]] = None,
+    ctx: Optional[Context] = None,
+) -> Value:
     """Given a runtime annotation object, return a Value."""
     if ctx is None:
         ctx = _DefaultContext(visitor, node, globals)
     return _type_from_runtime(val, ctx)
 
 
-def type_from_value(value, visitor=None, node=None, ctx=None):
+def type_from_value(
+    value: Value,
+    visitor: Optional["NameCheckVisitor"] = None,
+    node: Optional[ast.AST] = None,
+    ctx: Optional[Context] = None,
+) -> Value:
     """Given a Value from resolving an annotation, return the type."""
     if ctx is None:
         ctx = _DefaultContext(visitor, node)
     return _type_from_value(value, ctx)
 
 
-def _type_from_ast(node, ctx):
+def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
     val = _Visitor(ctx).visit(node)
     if val is None:
         # TODO show an error here
@@ -95,7 +113,7 @@ def _type_from_ast(node, ctx):
     return _type_from_value(val, ctx)
 
 
-def _type_from_runtime(val, ctx):
+def _type_from_runtime(val: object, ctx: Context) -> Value:
     if isinstance(val, str):
         return _eval_forward_ref(val, ctx)
     elif isinstance(val, tuple):
@@ -201,7 +219,7 @@ def _type_from_runtime(val, ctx):
         return UNRESOLVED_VALUE
 
 
-def _eval_forward_ref(val, ctx):
+def _eval_forward_ref(val: str, ctx: Context) -> Value:
     try:
         tree = ast.parse(val, mode="eval")
     except SyntaxError:
@@ -211,7 +229,7 @@ def _eval_forward_ref(val, ctx):
         return _type_from_ast(tree.body, ctx)
 
 
-def _type_from_value(value, ctx):
+def _type_from_value(value: Value, ctx: Context) -> Value:
     if isinstance(value, KnownValue):
         return _type_from_runtime(value.val, ctx)
     elif isinstance(value, _SubscriptedValue):
@@ -277,17 +295,24 @@ def _type_from_value(value, ctx):
 
 
 class _DefaultContext(Context):
-    def __init__(self, visitor, node, globals=None):
+    def __init__(
+        self,
+        visitor: "NameCheckVisitor",
+        node: Optional[ast.AST],
+        globals: Optional[Mapping[str, object]] = None,
+    ) -> None:
         super().__init__()
         self.visitor = visitor
         self.node = node
         self.globals = globals
 
-    def show_error(self, message, error_code=ErrorCode.invalid_annotation):
-        if self.visitor is not None:
+    def show_error(
+        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+    ) -> None:
+        if self.visitor is not None and self.node is not None:
             self.visitor.show_error(self.node, message, error_code)
 
-    def get_name(self, node):
+    def get_name(self, node: ast.AST) -> Value:
         if self.visitor is not None:
             return self.visitor.resolve_name(
                 node,
@@ -305,20 +330,20 @@ class _DefaultContext(Context):
             return UNRESOLVED_VALUE
 
 
+@dataclass
 class _SubscriptedValue(Value):
-    def __init__(self, root, members):
-        self.root = root
-        self.members = members
+    root: Optional[Value]
+    members: Sequence[Value]
 
 
 class _Visitor(ast.NodeVisitor):
-    def __init__(self, ctx):
+    def __init__(self, ctx: Context) -> None:
         self.ctx = ctx
 
-    def visit_Name(self, node):
+    def visit_Name(self, node: ast.Name) -> Value:
         return self.ctx.get_name(node)
 
-    def visit_Subscript(self, node):
+    def visit_Subscript(self, node: ast.Subscript) -> Value:
         value = self.visit(node.value)
         index = self.visit(node.slice)
         if isinstance(index, SequenceIncompleteValue):
@@ -327,7 +352,7 @@ class _Visitor(ast.NodeVisitor):
             members = [index]
         return _SubscriptedValue(value, members)
 
-    def visit_Attribute(self, node):
+    def visit_Attribute(self, node: ast.Attribute) -> Optional[Value]:
         root_value = self.visit(node.value)
         if isinstance(root_value, KnownValue):
             try:
@@ -336,22 +361,22 @@ class _Visitor(ast.NodeVisitor):
                 return None
         return None
 
-    def visit_Tuple(self, node):
+    def visit_Tuple(self, node: ast.Tuple) -> Value:
         elts = [self.visit(elt) for elt in node.elts]
         return SequenceIncompleteValue(tuple, elts)
 
-    def visit_List(self, node):
+    def visit_List(self, node: ast.List) -> Value:
         elts = [self.visit(elt) for elt in node.elts]
         return SequenceIncompleteValue(list, elts)
 
-    def visit_Index(self, node):
+    def visit_Index(self, node: ast.Index) -> Value:
         return self.visit(node.value)
 
-    def visit_Ellipsis(self, node):
+    def visit_Ellipsis(self, node: ast.Ellipsis) -> Value:
         return KnownValue(Ellipsis)
 
 
-def is_typing_name(obj, name):
+def is_typing_name(obj: object, name: str) -> bool:
     for mod in (typing, typing_extensions, mypy_extensions):
         try:
             typing_obj = getattr(mod, name)
@@ -363,7 +388,7 @@ def is_typing_name(obj, name):
     return False
 
 
-def is_instance_of_typing_name(obj, name):
+def is_instance_of_typing_name(obj: object, name: str) -> bool:
     for mod in (typing, typing_extensions, mypy_extensions):
         try:
             typing_obj = getattr(mod, name)
@@ -375,7 +400,9 @@ def is_instance_of_typing_name(obj, name):
     return False
 
 
-def _value_of_origin_args(origin, args, val, ctx):
+def _value_of_origin_args(
+    origin: object, args: Sequence[object], val: object, ctx: Context
+) -> Value:
     if origin is typing.Type or origin is type:
         if isinstance(args[0], type):
             return SubclassValue(args[0])
