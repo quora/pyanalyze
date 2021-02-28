@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, print_function
-
 """
 
 Implementation of extended argument specifications used by test_scope.
@@ -26,14 +24,10 @@ from .value import (
     AwaitableIncompleteValue,
 )
 
-import ast
-
-try:
-    import asyncio
-except ImportError:
-    asyncio = None
+import asyncio
 import asynq
-from six.moves import builtins, reduce
+import builtins
+from functools import reduce
 import collections
 import contextlib
 import qcore
@@ -41,16 +35,12 @@ from qcore import InspectableClass
 import inspect
 import logging
 import re
-import six
 import sys
 import warnings
 import attr
 from typing import NewType
-
-try:
-    import typeshed_client
-except ImportError:
-    typeshed_client = None
+import typeshed_client
+from typed_ast import ast3
 
 
 NON_IDENTIFIER_CHARS = re.compile(r"[^a-zA-Z_\d]")
@@ -270,24 +260,18 @@ class ExtendedArgSpec(InspectableClass):
         if self.starargs is not None:
             argument_strings.append("*%s" % self.starargs)
 
-        if six.PY2:
-            if self.kwargs is not None:
-                argument_strings.append("**%s" % self.kwargs)
-            elif self.kwonly_args is not None:
-                argument_strings.append("**%s" % self._kwonly_args_name)
-        else:
-            if self.kwonly_args is not None:
-                if self.starargs is None:
-                    argument_strings.append("*")
-                for arg in self.kwonly_args:
-                    add_arg(arg)
-            if self.kwargs is not None:
-                argument_strings.append("**%s" % self.kwargs)
+        if self.kwonly_args is not None:
+            if self.starargs is None:
+                argument_strings.append("*")
+            for arg in self.kwonly_args:
+                add_arg(arg)
+        if self.kwargs is not None:
+            argument_strings.append("**%s" % self.kwargs)
 
         if self.name is None:
             name = "test_function"
         else:
-            name = six.text_type(self.name)
+            name = str(self.name)
         # for lambdas name is "<lambda>"
         name = NON_IDENTIFIER_CHARS.sub("_", name)
 
@@ -331,35 +315,10 @@ def %(name)s(%(arguments)s):
             return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         self.log(logging.DEBUG, "Variables from function call", variables)
         non_param_names = {self.starargs, self.kwargs, self._kwonly_args_name}
-        for name, var_value in six.iteritems(variables):
+        for name, var_value in variables.items():
             if var_value is not self._default_value and name not in non_param_names:
                 param = self.params_of_names[name]
                 self._check_param_type_compatibility(param, var_value, visitor, node)
-        if six.PY2 and self.kwonly_args is not None:
-            varname = self.kwargs if self.kwargs is not None else self._kwonly_args_name
-            kwargs = variables[varname]
-            if self.kwargs is None:
-                unexpected_args = set(kwargs.keys()) - {
-                    param.name for param in self.kwonly_args
-                }
-                if len(unexpected_args) > 0:
-                    visitor.show_error(
-                        node,
-                        "Unexpected keyword arguments: %r" % ", ".join(unexpected_args),
-                        ErrorCode.incompatible_call,
-                    )
-                for param in self.kwonly_args:
-                    if param.name in kwargs:
-                        self._check_param_type_compatibility(
-                            param, kwargs[param.name], visitor, node
-                        )
-                    elif param.default_value is Parameter.no_default_value:
-                        visitor.show_error(
-                            node,
-                            "Required keyword-only argument was not passed in: %r"
-                            % param.name,
-                            ErrorCode.incompatible_call,
-                        )
 
         if self.implementation is not None:
             self.log(logging.DEBUG, "Using implementation", self.implementation)
@@ -508,26 +467,10 @@ def _setattr_impl(variables, visitor, node):
     return KnownValue(None)
 
 
-def _len_impl(variables, visitor, node):
-    obj = variables["object"]
-    typ = obj.get_type()
-    if (
-        typ is not None
-        and not hasattr(typ, "__len__")
-        and typ not in visitor.config.IGNORED_TYPES
-    ):
-        visitor.show_error(
-            node,
-            "object of type %s has no len()" % (typ,),
-            error_code=ErrorCode.incompatible_argument,
-        )
-    return TypedValue(int)
-
-
 def _super_impl(variables, visitor, node):
     typ = variables["type"]
     obj = variables["obj"]
-    if six.PY3 and typ == KnownValue(None):
+    if typ == KnownValue(None):
         # Zero-argument super()
         if visitor.in_comprehension_body:
             visitor.show_error(
@@ -684,45 +627,10 @@ def _dump_value_impl(variables, visitor, node):
     return KnownValue(None)
 
 
-def _xrange_impl(variables, visitor, node):
-    for name in ("start", "stop", "step"):
-        val = variables[name]
-        if isinstance(val, KnownValue) and val.val is not None:
-            if val.val >= 2 ** 31:
-                new_node = ast.Name(id="lrange")
-                visitor._maybe_show_missing_import_error(new_node)
-                visitor.show_error(
-                    node,
-                    "xrange does not support arguments greater than 2**31 (got %s)"
-                    % val.val,
-                    ErrorCode.incompatible_argument,
-                    replacement=visitor.replace_node(node.func, new_node),
-                )
-    return UNRESOLVED_VALUE
-
-
-def _py2_input_impl(variables, visitor, node):
-    visitor.show_error(
-        node,
-        "Do not use input(); it is unsafe. Use raw_input() instead or use "
-        '"from six.moves import input".',
-        ErrorCode.incompatible_call,
-    )
-    return UNRESOLVED_VALUE
-
-
 def _str_format_impl(variables, visitor, node):
-    return _format_impl(six.text_type, variables, visitor, node)
-
-
-def _bytes_format_impl(variables, visitor, node):
-    return _format_impl(bytes, variables, visitor, node)
-
-
-def _format_impl(typ, variables, visitor, node):
     self = variables["self"]
     if not isinstance(self, KnownValue):
-        return TypedValue(typ)
+        return TypedValue(str)
     args = variables["args"]
     kwargs = variables["kwargs"]
     template = self.val
@@ -733,7 +641,7 @@ def _format_impl(typ, variables, visitor, node):
     if errors:
         _, message = errors[0]
         visitor.show_error(node, message, error_code=ErrorCode.incompatible_call)
-        return TypedValue(typ)
+        return TypedValue(str)
     for field in parsed.iter_replacement_fields():
         # TODO validate conversion specifiers, attributes, etc.
         if field.arg_name is None:
@@ -779,7 +687,7 @@ def _format_impl(typ, variables, visitor, node):
             "Named argument(s) %s were not used" % (", ".join(sorted(unused_kwargs))),
             error_code=ErrorCode.incompatible_call,
         )
-    return TypedValue(typ)
+    return TypedValue(str)
 
 
 def _assert_is_impl(variables, visitor, node):
@@ -809,12 +717,7 @@ def _qcore_assert_impl(variables, visitor, node, constraint_type, positive):
     return KnownValue(None), NULL_CONSTRAINT, no_return_unless
 
 
-if six.PY3:
-    _ENCODING_PARAMETER = Parameter("encoding", typ=str, default_value="")
-else:
-    # In Python 2, enforce that encoding is given so that we're more explicit
-    # in dealing with str/bytes.
-    _ENCODING_PARAMETER = Parameter("encoding", typ=six.string_types)
+_ENCODING_PARAMETER = Parameter("encoding", typ=str, default_value="")
 
 
 class ArgSpecCache(object):
@@ -836,13 +739,13 @@ class ArgSpecCache(object):
         getattr: ExtendedArgSpec(
             [
                 Parameter("object"),
-                Parameter("name", typ=six.string_types),
+                Parameter("name", typ=str),
                 Parameter("default", default_value=None),
             ],
             name="getattr",
         ),
         hasattr: ExtendedArgSpec(
-            [Parameter("object"), Parameter("name", typ=six.string_types)],
+            [Parameter("object"), Parameter("name", typ=str)],
             return_value=TypedValue(bool),
             name="hasattr",
             implementation=_hasattr_impl,
@@ -850,7 +753,7 @@ class ArgSpecCache(object):
         setattr: ExtendedArgSpec(
             [
                 Parameter("object"),
-                Parameter("name", typ=six.string_types),
+                Parameter("name", typ=str),
                 Parameter("value"),
             ],
             return_value=KnownValue(None),
@@ -861,7 +764,7 @@ class ArgSpecCache(object):
             [
                 Parameter(
                     "type",
-                    default_value=None if six.PY3 else Parameter.no_default_value,
+                    default_value=None,
                 ),
                 Parameter("obj", default_value=None),
             ],
@@ -887,25 +790,25 @@ class ArgSpecCache(object):
             [
                 Parameter("self", typ=bytes),
                 _ENCODING_PARAMETER,
-                Parameter("errors", typ=six.string_types, default_value=""),
+                Parameter("errors", typ=str, default_value=""),
             ],
             name="bytes.decode",
-            return_value=TypedValue(six.text_type),
+            return_value=TypedValue(str),
         ),
-        six.text_type.encode: ExtendedArgSpec(
+        str.encode: ExtendedArgSpec(
             [
-                Parameter("self", typ=six.text_type),
+                Parameter("self", typ=str),
                 _ENCODING_PARAMETER,
-                Parameter("errors", typ=six.string_types, default_value=""),
+                Parameter("errors", typ=str, default_value=""),
             ],
-            name="{}.encode".format(six.text_type.__name__),
+            name="str.encode",
             return_value=TypedValue(bytes),
         ),
-        six.text_type.format: ExtendedArgSpec(
-            [Parameter("self", typ=six.text_type)],
+        str.format: ExtendedArgSpec(
+            [Parameter("self", typ=str)],
             starargs="args",
             kwargs="kwargs",
-            name="{}.format".format(six.text_type.__name__),
+            name="str.format",
             implementation=_str_format_impl,
         ),
         # workaround for https://github.com/python/typeshed/pull/3501
@@ -949,37 +852,6 @@ class ArgSpecCache(object):
             [Parameter("name", typ=str), Parameter(name="tp")], name="NewType"
         ),
     }
-    if six.PY2:
-        DEFAULT_ARGSPECS[str.format] = ExtendedArgSpec(
-            [Parameter("self", typ=str)],
-            starargs="args",
-            kwargs="kwargs",
-            name="str.format",
-            implementation=_bytes_format_impl,
-        )
-        # static analysis: ignore[undefined_name]
-        DEFAULT_ARGSPECS[xrange] = ExtendedArgSpec(
-            [
-                Parameter("start", typ=six.integer_types),
-                Parameter("stop", typ=six.integer_types, default_value=None),
-                Parameter("step", typ=six.integer_types, default_value=None),
-            ],
-            name="xrange",
-            implementation=_xrange_impl,
-        )
-        DEFAULT_ARGSPECS[input] = ExtendedArgSpec(
-            [Parameter("start", typ=six.string_types, default_value=None)],
-            name="input",
-            implementation=_py2_input_impl,
-        )
-    if sys.version_info < (3, 6):
-        # Not needed in Python 3.6+ because we have typeshed
-        DEFAULT_ARGSPECS[len] = ExtendedArgSpec(
-            [Parameter("object")],
-            return_value=TypedValue(int),
-            name="len",
-            implementation=_len_impl,
-        )
 
     def __init__(self, config):
         self.config = config
@@ -988,9 +860,7 @@ class ArgSpecCache(object):
         default_argspecs = dict(self.DEFAULT_ARGSPECS)
         default_argspecs.update(self.config.get_known_argspecs(self))
 
-        for obj, argspec in six.iteritems(default_argspecs):
-            # unbound methods in py2
-            obj = getattr(obj, "__func__", obj)
+        for obj, argspec in default_argspecs.items():
             self.known_argspecs[obj] = argspec
 
     def __reduce_ex__(self, proto):
@@ -1180,7 +1050,10 @@ class ArgSpecCache(object):
 
         argspec = self.ts_finder.get_argspec(obj)
         if argspec is not None:
-            if _is_coroutine_function(obj) and argspec.return_value is UNRESOLVED_VALUE:
+            if (
+                asyncio.iscoroutinefunction(obj)
+                and argspec.return_value is UNRESOLVED_VALUE
+            ):
                 argspec.return_value = AwaitableIncompleteValue(UNRESOLVED_VALUE)
             return argspec
 
@@ -1192,7 +1065,7 @@ class ArgSpecCache(object):
             argspec = self.from_argspec(
                 self._safe_get_argspec(obj), function_object=obj, **kwargs
             )
-            if _is_coroutine_function(obj):
+            if asyncio.iscoroutinefunction(obj):
                 argspec.return_value = AwaitableIncompleteValue(argspec.return_value)
             return argspec
 
@@ -1216,9 +1089,7 @@ class ArgSpecCache(object):
             argspec = self._safe_get_argspec(constructor)
 
             kwonly_args = []
-            for cls_, args in six.iteritems(
-                self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS
-            ):
+            for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
                 if issubclass(obj, cls_):
                     kwonly_args += [
                         Parameter(param_name, default_value=None) for param_name in args
@@ -1294,198 +1165,175 @@ class ArgSpecCache(object):
             return None
 
 
-if typeshed_client is None:
-    # Fallback: always fails
-    class TypeshedFinder(object):
-        def __init__(self, verbose=False):
-            pass
+@attr.s
+class _AnnotationContext(Context):
+    finder = attr.ib(default=None)
+    module = attr.ib(default=None)
 
-        def get_argspec(self, obj):
-            return None
+    def show_error(self, message, error_code=ErrorCode.invalid_annotation):
+        self.finder.log(message, ())
+
+    def get_name(self, node):
+        info = self.finder.resolver.get_fully_qualified_name(
+            "%s.%s" % (self.module, node.id)
+        )
+        if info is not None:
+            return self.finder._value_from_info(info, self.module)
+        elif hasattr(builtins, node.id):
+            val = getattr(builtins, node.id)
+            if val is None or isinstance(val, type):
+                return KnownValue(val)
+        return UNRESOLVED_VALUE
 
 
-else:
-    from typed_ast import ast3
+class TypeshedFinder(object):
+    def __init__(self, verbose=False):
+        self.verbose = verbose
+        self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
 
-    @attr.s
-    class _AnnotationContext(Context):
-        finder = attr.ib(default=None)
-        module = attr.ib(default=None)
+    def log(self, message, obj):
+        if not self.verbose:
+            return
+        print("%s: %r" % (message, obj))
 
-        def show_error(self, message, error_code=ErrorCode.invalid_annotation):
-            self.finder.log(message, ())
-
-        def get_name(self, node):
-            info = self.finder.resolver.get_fully_qualified_name(
-                "%s.%s" % (self.module, node.id)
-            )
-            if info is not None:
-                return self.finder._value_from_info(info, self.module)
-            elif hasattr(builtins, node.id):
-                val = getattr(builtins, node.id)
-                if val is None or isinstance(val, type):
-                    return KnownValue(val)
-            return UNRESOLVED_VALUE
-
-    class TypeshedFinder(object):
-        def __init__(self, verbose=False):
-            self.verbose = verbose
-            self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
-
-        def log(self, message, obj):
-            if not self.verbose:
-                return
-            print("%s: %r" % (message, obj))
-
-        def get_argspec(self, obj):
-            if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
-                objclass = obj.__objclass__
-                fq_name = self._get_fq_name(objclass)
-                if fq_name is None:
-                    return None
-                info = self._get_info_for_name(fq_name)
-                argspec = self._get_method_argspec_from_info(
-                    info, obj, fq_name, objclass.__module__
-                )
-                if argspec is not None:
-                    self.log("Found argspec", (obj, argspec))
-                return argspec
-
-            if inspect.ismethod(obj):
-                self.log("Ignoring method", obj)
-                return None
-            fq_name = self._get_fq_name(obj)
+    def get_argspec(self, obj):
+        if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
+            objclass = obj.__objclass__
+            fq_name = self._get_fq_name(objclass)
             if fq_name is None:
                 return None
             info = self._get_info_for_name(fq_name)
-            argspec = self._get_argspec_from_info(info, obj, fq_name, obj.__module__)
+            argspec = self._get_method_argspec_from_info(
+                info, obj, fq_name, objclass.__module__
+            )
             if argspec is not None:
-                self.log("Found argspec", (fq_name, argspec))
+                self.log("Found argspec", (obj, argspec))
             return argspec
 
-        def _get_method_argspec_from_info(self, info, obj, fq_name, mod):
-            if info is None:
-                return None
-            elif isinstance(info, typeshed_client.ImportedInfo):
-                return self._get_method_argspec_from_info(info.info, obj, fq_name, mod)
-            elif isinstance(info, typeshed_client.NameInfo):
-                # Note that this doesn't handle names inherited from base classes
-                if obj.__name__ in info.child_nodes:
-                    child_info = info.child_nodes[obj.__name__]
-                    return self._get_argspec_from_info(child_info, obj, fq_name, mod)
-                else:
-                    return None
-            else:
-                self.log("Ignoring unrecognized info", (fq_name, info))
-                return None
+        if inspect.ismethod(obj):
+            self.log("Ignoring method", obj)
+            return None
+        fq_name = self._get_fq_name(obj)
+        if fq_name is None:
+            return None
+        info = self._get_info_for_name(fq_name)
+        argspec = self._get_argspec_from_info(info, obj, fq_name, obj.__module__)
+        if argspec is not None:
+            self.log("Found argspec", (fq_name, argspec))
+        return argspec
 
-        def _get_fq_name(self, obj):
+    def _get_method_argspec_from_info(self, info, obj, fq_name, mod):
+        if info is None:
+            return None
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._get_method_argspec_from_info(info.info, obj, fq_name, mod)
+        elif isinstance(info, typeshed_client.NameInfo):
+            # Note that this doesn't handle names inherited from base classes
+            if obj.__name__ in info.child_nodes:
+                child_info = info.child_nodes[obj.__name__]
+                return self._get_argspec_from_info(child_info, obj, fq_name, mod)
+            else:
+                return None
+        else:
+            self.log("Ignoring unrecognized info", (fq_name, info))
+            return None
+
+    def _get_fq_name(self, obj):
+        try:
+            module = obj.__module__
+            if module is None:
+                module = "builtins"
+            return ".".join([module, obj.__qualname__])
+        except (AttributeError, TypeError):
+            self.log("Ignoring object without module or qualname", obj)
+            return None
+
+    def _get_argspec_from_info(self, info, obj, fq_name, mod):
+        if isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.FunctionDef):
+                return self._get_argspec_from_func_def(
+                    info.ast, obj, mod, is_async_fn=False
+                )
+            elif isinstance(info.ast, ast3.AsyncFunctionDef):
+                return self._get_argspec_from_func_def(
+                    info.ast, obj, mod, is_async_fn=True
+                )
+            else:
+                self.log("Ignoring unrecognized AST", (fq_name, info))
+                return None
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._get_argspec_from_info(info.info, obj, fq_name, mod)
+        elif info is None:
+            return None
+        else:
+            self.log("Ignoring unrecognized info", (fq_name, info))
+            return None
+
+    @qcore.caching.cached_per_instance()
+    def _get_info_for_name(self, fq_name):
+        return self.resolver.get_fully_qualified_name(fq_name)
+
+    def _get_argspec_from_func_def(self, node, obj, mod, is_async_fn):
+        if node.decorator_list:
+            # might be @overload or something else we don't recognize
+            return None
+        if node.returns is None:
+            return_value = UNRESOLVED_VALUE
+        else:
+            return_value = self._parse_expr(node.returns, mod)
+        args = node.args
+        if args.vararg is None:
+            starargs = None
+        else:
+            starargs = args.vararg.arg
+        if args.kwarg is None:
+            kwargs = None
+        else:
+            kwargs = args.kwarg.arg
+        num_without_defaults = len(args.args) - len(args.defaults)
+        defaults = [None] * num_without_defaults + args.defaults
+        arguments = list(self._parse_param_list(args.args, defaults, mod))
+        kwonly = list(self._parse_param_list(args.kwonlyargs, args.kw_defaults, mod))
+        return ExtendedArgSpec(
+            arguments,
+            starargs=starargs,
+            kwargs=kwargs,
+            kwonly_args=kwonly,
+            return_value=AwaitableIncompleteValue(return_value)
+            if is_async_fn
+            else return_value,
+            name=obj.__name__,
+        )
+
+    def _parse_param_list(self, args, defaults, module):
+        for arg, default in zip(args, defaults):
+            typ = None
+            if arg.annotation is not None:
+                typ = self._parse_expr(arg.annotation, module)
+
+            if default is None:
+                yield Parameter(arg.arg, typ=typ)
+            else:
+                # doesn't matter what the default is
+                yield Parameter(arg.arg, typ=typ, default_value=None)
+
+    def _parse_expr(self, node, module):
+        ctx = _AnnotationContext(finder=self, module=module)
+        return type_from_ast(node, ctx=ctx)
+
+    def _value_from_info(self, info, module):
+        if isinstance(info, typeshed_client.ImportedInfo):
+            return self._value_from_info(info.info, ".".join(info.source_module))
+        elif isinstance(info, typeshed_client.NameInfo):
             try:
-                module = obj.__module__
-                if module is None:
-                    module = "builtins"
-                return ".".join([module, obj.__qualname__])
-            except (AttributeError, TypeError):
-                self.log("Ignoring object without module or qualname", obj)
-                return None
-
-        def _get_argspec_from_info(self, info, obj, fq_name, mod):
-            if isinstance(info, typeshed_client.NameInfo):
-                if isinstance(info.ast, ast3.FunctionDef):
-                    return self._get_argspec_from_func_def(
-                        info.ast, obj, mod, is_async_fn=False
-                    )
-                elif isinstance(info.ast, ast3.AsyncFunctionDef):
-                    return self._get_argspec_from_func_def(
-                        info.ast, obj, mod, is_async_fn=True
-                    )
-                else:
-                    self.log("Ignoring unrecognized AST", (fq_name, info))
-                    return None
-            elif isinstance(info, typeshed_client.ImportedInfo):
-                return self._get_argspec_from_info(info.info, obj, fq_name, mod)
-            elif info is None:
-                return None
-            else:
-                self.log("Ignoring unrecognized info", (fq_name, info))
-                return None
-
-        @qcore.caching.cached_per_instance()
-        def _get_info_for_name(self, fq_name):
-            return self.resolver.get_fully_qualified_name(fq_name)
-
-        def _get_argspec_from_func_def(self, node, obj, mod, is_async_fn):
-            if node.decorator_list:
-                # might be @overload or something else we don't recognize
-                return None
-            if node.returns is None:
-                return_value = UNRESOLVED_VALUE
-            else:
-                return_value = self._parse_expr(node.returns, mod)
-            args = node.args
-            if args.vararg is None:
-                starargs = None
-            else:
-                starargs = args.vararg.arg
-            if args.kwarg is None:
-                kwargs = None
-            else:
-                kwargs = args.kwarg.arg
-            num_without_defaults = len(args.args) - len(args.defaults)
-            defaults = [None] * num_without_defaults + args.defaults
-            arguments = list(self._parse_param_list(args.args, defaults, mod))
-            kwonly = list(
-                self._parse_param_list(args.kwonlyargs, args.kw_defaults, mod)
-            )
-            return ExtendedArgSpec(
-                arguments,
-                starargs=starargs,
-                kwargs=kwargs,
-                kwonly_args=kwonly,
-                return_value=AwaitableIncompleteValue(return_value)
-                if is_async_fn
-                else return_value,
-                name=obj.__name__,
-            )
-
-        def _parse_param_list(self, args, defaults, module):
-            for arg, default in zip(args, defaults):
-                typ = None
-                if arg.annotation is not None:
-                    typ = self._parse_expr(arg.annotation, module)
-
-                if default is None:
-                    yield Parameter(arg.arg, typ=typ)
-                else:
-                    # doesn't matter what the default is
-                    yield Parameter(arg.arg, typ=typ, default_value=None)
-
-        def _parse_expr(self, node, module):
-            ctx = _AnnotationContext(finder=self, module=module)
-            return type_from_ast(node, ctx=ctx)
-
-        def _value_from_info(self, info, module):
-            if isinstance(info, typeshed_client.ImportedInfo):
-                return self._value_from_info(info.info, ".".join(info.source_module))
-            elif isinstance(info, typeshed_client.NameInfo):
-                try:
-                    mod = __import__(module)
-                    return KnownValue(getattr(mod, info.name))
-                except Exception:
-                    self.log("Unable to import", (module, info))
-                    return UNRESOLVED_VALUE
-            else:
-                self.log("Ignoring info", info)
+                mod = __import__(module)
+                return KnownValue(getattr(mod, info.name))
+            except Exception:
+                self.log("Unable to import", (module, info))
                 return UNRESOLVED_VALUE
-
-
-def _is_coroutine_function(obj):
-    if asyncio is not None:
-        # Python 3.4+
-        return asyncio.iscoroutinefunction(obj)
-    else:
-        # no coroutines for you
-        return False
+        else:
+            self.log("Ignoring info", info)
+            return UNRESOLVED_VALUE
 
 
 def _is_qcore_decorator(obj):

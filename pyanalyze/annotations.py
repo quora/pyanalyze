@@ -10,12 +10,8 @@ import typing
 import typing_inspect
 import qcore
 import ast
-from six.moves import builtins
-
-try:
-    from collections.abc import Callable
-except ImportError:
-    from collections import Callable
+import builtins
+from collections.abc import Callable
 
 from .error_code import ErrorCode
 from .find_unused import used

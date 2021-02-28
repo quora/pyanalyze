@@ -1,15 +1,9 @@
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 """
 
 Commonly useful components for static analysis tools.
 
 """
-
 import ast
-import qcore
 import os
 
 
@@ -83,21 +77,6 @@ def get_line_range_for_node(node, lines):
     ):
         last_lineno += 1
     return list(range(first_lineno, last_lineno))
-
-
-def safe_text(obj):
-    """Safely turns an object into a textual representation.
-
-    Calls str(), then on Python 2 decodes the result.
-
-    """
-    result = qcore.safe_str(obj)
-    if isinstance(result, bytes):
-        try:
-            result = result.decode("utf-8")
-        except Exception as e:
-            result = "<n/a: .decode() raised %r>" % e
-    return result
 
 
 def is_iterable(obj):

@@ -1,5 +1,3 @@
-from __future__ import absolute_import, print_function, division, unicode_literals
-
 """
 
 Implementation of scope nesting in pyanalyze.
@@ -27,8 +25,7 @@ import enum
 import qcore
 from qcore.asserts import assert_is_instance
 from itertools import chain
-import six
-from six.moves import builtins
+import builtins
 
 from .value import (
     KnownValue,
@@ -321,9 +318,7 @@ class OrConstraint(AbstractConstraint):
 
 CompositeVariable = namedtuple("CompositeVariable", ["varname", "attributes"])
 
-# __doc__ is not writable in Python 2
-if six.PY3:
-    CompositeVariable.__doc__ = """Fake variable used to implement constraints on instance variables.
+CompositeVariable.__doc__ = """Fake variable used to implement constraints on instance variables.
 
 For example, access to "self.x" would make us use
 CompositeVariable('self', ('x',)). If a function contains a check for
@@ -410,7 +405,7 @@ class Scope(qcore.InspectableClass):
                 self.variables[varname] = unite_values(existing, value)
 
     def items(self):
-        return six.iteritems(self.variables)
+        return self.variables.items()
 
     def __contains__(self, varname):
         return varname in self.variables
@@ -796,7 +791,7 @@ class StackedScopes(object):
 
     _builtin_scope = Scope(
         ScopeType.builtin_scope,
-        {k: KnownValue(v) for k, v in six.iteritems(builtins.__dict__)},
+        {k: KnownValue(v) for k, v in builtins.__dict__.items()},
         None,
     )
 
@@ -805,7 +800,7 @@ class StackedScopes(object):
             module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
         else:
             module_vars = {
-                key: KnownValue(value) for key, value in six.iteritems(module.__dict__)
+                key: KnownValue(value) for key, value in module.__dict__.items()
             }
         self.scopes = [
             self._builtin_scope,

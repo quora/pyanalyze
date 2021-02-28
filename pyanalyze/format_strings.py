@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 """
 
 Module for checking %-formatted and .format()-formatted strings.
@@ -12,13 +10,8 @@ import enum
 import numbers
 from qcore import InspectableClass
 import re
-import six
 import sys
-
-try:
-    from collections.abc import Mapping
-except ImportError:
-    from collections import Mapping
+from collections.abc import Mapping
 
 from .error_code import ErrorCode
 from .value import (
@@ -138,11 +131,8 @@ class ConversionSpecifier(InspectableClass):
                 # here you're using %% escaping, but you use one of the optional specifiers, none
                 # of which will do anything
                 yield "using % combined with optional specifiers does not make sense"
-        elif self.conversion_type == "a":
-            if not six.PY3:
-                yield "the %a conversion specifier works only in Python 3"
         elif self.conversion_type == "b":
-            if not six.PY3 or not self.is_bytes:
+            if not self.is_bytes:
                 yield "the %b conversion specifier works only on Python 3 bytes patterns"
 
     def accept(self, arg):
@@ -163,8 +153,8 @@ class ConversionSpecifier(InspectableClass):
             # accepts anything
             pass
         elif self.conversion_type == "c":
-            if arg.is_type(six.string_types + six.integer_types):
-                if six.PY3 and self.is_bytes and arg.is_type(str):
+            if arg.is_type((int, str)):
+                if self.is_bytes and arg.is_type(str):
                     yield "%c on a bytes pattern requires an integer or a byte, not {!r}".format(
                         arg
                     )
@@ -174,22 +164,14 @@ class ConversionSpecifier(InspectableClass):
             else:
                 yield "%c requires an integer or string, not {!r}".format(arg)
         elif self.conversion_type == "b" or (
-            six.PY3 and self.is_bytes and self.conversion_type == "s"
+            self.is_bytes and self.conversion_type == "s"
         ):
             # in Python 3 bytes patterns, s is equivalent to b
             if not arg.is_type(bytes):
                 yield "%{} accepts only bytes, not {}".format(self.conversion_type, arg)
         elif self.conversion_type == "s":
-            # accepts anything, but we want to avoid mixing bytes and text in Python 2
-            if six.PY2:
-                if self.is_bytes and arg.is_type(six.text_type):
-                    yield "cannot pass text argument to bytes % string: {!r}".format(
-                        arg
-                    )
-                elif not self.is_bytes and arg.is_type(bytes):
-                    yield "cannot pass bytes argument to text % string: {!r}".format(
-                        arg
-                    )
+            # accepts anything
+            pass
         elif self.conversion_type == "%":
             yield "%% does not accept arguments"
         else:
@@ -228,7 +210,7 @@ class PercentFormatString(InspectableClass):
         if isinstance(pattern, bytes):
             is_bytes = True
             rgx = _FORMAT_STRING_REGEX_BYTES
-        elif isinstance(pattern, six.text_type):
+        elif isinstance(pattern, str):
             is_bytes = False
             rgx = _FORMAT_STRING_REGEX_TEXT
         else:

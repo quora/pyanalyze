@@ -1,7 +1,3 @@
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 """
 
 Base class for scripts that run ast-based checks on the codebase.
@@ -18,18 +14,15 @@ from contextlib import contextmanager
 import concurrent.futures
 import qcore
 import cProfile
-from io import open
 import logging
-import multiprocessing
 import os
 import os.path
 import re
-import six
 import subprocess
 import sys
 import tempfile
-from six.moves import builtins
-from six.moves.builtins import print as real_print
+import builtins
+from builtins import print as real_print
 
 from . import analysis_lib
 
@@ -146,7 +139,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         verbosity: controls how much logging is emitted
 
         """
-        if not isinstance(contents, six.text_type):
+        if not isinstance(contents, str):
             raise TypeError("File contents must be text, not {}".format(type(contents)))
         super(BaseNodeVisitor, self).__init__()
         self.filename = filename
@@ -186,7 +179,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             return
         self.logger.log(
             level,
-            "%s: %s" % (analysis_lib.safe_text(label), analysis_lib.safe_text(value)),
+            "%s: %s" % (qcore.safe_str(label), qcore.safe_str(value)),
         )
 
     @qcore.caching.cached_per_instance()
@@ -413,7 +406,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _apply_changes(cls, changes):
-        for filename, changeset in six.iteritems(changes):
+        for filename, changeset in changes.items():
             with open(filename, "r") as f:
                 lines = f.readlines()
             lines = cls._apply_changes_to_lines(changeset, lines)
@@ -581,12 +574,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
         error["message"] = message
         self.all_failures.append(error)
-        if six.PY3:
-            sys.stderr.write(message)
-        else:
-            # In Python 2, writing a text string directly to stderr may trigger UnicodeEncodeError
-            # static analysis: ignore[incompatible_argument]
-            sys.stderr.write(message.encode("utf-8"))
+        sys.stderr.write(message)
         sys.stderr.flush()
         if self.fail_after_first:
             raise VisitorError(message, error_code)
@@ -636,9 +624,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         args = [(filename, kwargs) for filename in sorted(files)]
         if kwargs.pop("parallel", False):
             extra_data = []
-            with concurrent.futures.ProcessPoolExecutor(
-                cls.num_processes()
-            ) as executor:
+            with concurrent.futures.ProcessPoolExecutor(os.cpu_count()) as executor:
                 for failures, extra in executor.map(cls._check_file_single_arg, args):
                     all_failures += failures
                     extra_data.append(extra)
@@ -647,13 +633,6 @@ class BaseNodeVisitor(ast.NodeVisitor):
             for failures, _ in map(cls._check_file_single_arg, args):
                 all_failures += failures
         return all_failures
-
-    @classmethod
-    def num_processes(cls):
-        if six.PY3:
-            return os.cpu_count()
-        else:
-            return multiprocessing.cpu_count()
 
     @classmethod
     def _check_file_single_arg(cls, args):
