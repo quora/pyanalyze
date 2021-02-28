@@ -1,7 +1,3 @@
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 """
 
 Implementation of value classes, which represent values found while analyzing an AST.
@@ -13,11 +9,7 @@ from collections import OrderedDict
 import inspect
 from itertools import chain
 from typing import Dict, List, Optional, Tuple
-
-try:
-    from unittest import mock
-except ImportError:
-    import mock
+from unittest import mock
 
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__

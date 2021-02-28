@@ -1,7 +1,4 @@
 # static analysis: ignore
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
 import ast
 from ast_decompiler import decompile
 import difflib

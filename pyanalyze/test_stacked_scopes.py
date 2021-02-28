@@ -1,11 +1,10 @@
 # static analysis: ignore
-from __future__ import absolute_import, division, print_function, unicode_literals
 from qcore.asserts import assert_eq, assert_in, assert_not_in, assert_is
 
 from .error_code import ErrorCode
 from .stacked_scopes import ScopeType, StackedScopes, _uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes, skip_before
+from .test_node_visitor import assert_fails, assert_passes
 from .value import (
     DictIncompleteValue,
     KnownValue,
@@ -177,15 +176,13 @@ class TestScoping(TestNameCheckVisitorBase):
                 kwargs, GenericValue(dict, [TypedValue(str), UNRESOLVED_VALUE])
             )
 
-    @skip_before((3, 0))
+    @assert_passes()
     def test_args_kwargs_annotated(self):
-        self.assert_passes(
-            """
-def capybara(*args: int, **kwargs: int):
-    assert_is_value(args, GenericValue(tuple, [TypedValue(int)]))
-    assert_is_value(kwargs, GenericValue(dict, [TypedValue(str), TypedValue(int)]))
-"""
-        )
+        def capybara(*args: int, **kwargs: int):
+            assert_is_value(args, GenericValue(tuple, [TypedValue(int)]))
+            assert_is_value(
+                kwargs, GenericValue(dict, [TypedValue(str), TypedValue(int)])
+            )
 
     @assert_passes()
     def test_internal_imports(self):
@@ -199,32 +196,13 @@ def capybara(*args: int, **kwargs: int):
             assert_is_value(Counter, KnownValue(collections.Counter))
             assert_is_value(defaultdict, KnownValue(collections.defaultdict))
 
-    def test_nested_star_import(self):
-        try:
-            self.assert_passes(
-                """
-import collections
-
-def capybara():
-    from collections import *
-    assert_is_value(Counter, KnownValue(collections.Counter))
-    assert_is_value(defaultdict, KnownValue(collections.defaultdict))
-"""
-            )
-        except SyntaxError:
-            pass  # ignore if we're in a Python version where this raises an error
-
-    @skip_before((3, 0))
+    @assert_passes()
     def test_return_annotation(self):
-        self.assert_passes(
-            """
-import socket
+        import socket
 
-class Capybara:
-    def socket(self) -> socket.error:
-        return socket.error()
-"""
-        )
+        class Capybara:
+            def socket(self) -> socket.error:
+                return socket.error()
 
 
 class TestIf(TestNameCheckVisitorBase):
@@ -665,19 +643,15 @@ class TestUnusedVariableUnpacking(TestNameCheckVisitorBase):
             (a, b), c = obj
             return c
 
-    @skip_before((3, 6))
+    @assert_passes()
     def test_used_in_annassign(self):
-        self.assert_passes(
-            """
-def capybara(condition):
-    x: int
-    if condition:
-        x = 1
-    else:
-        x = 2
-    return x
-"""
-        )
+        def capybara(condition):
+            x: int
+            if condition:
+                x = 1
+            else:
+                x = 2
+            return x
 
 
 class TestLeavesScope(TestNameCheckVisitorBase):
@@ -753,22 +727,18 @@ class TestLeavesScope(TestNameCheckVisitorBase):
 
             print(x)
 
-    @skip_before((3, 5))
+    @assert_passes()
     def test_visit_assert_message(self):
-        self.assert_passes(
-            """
-from typing import Union
+        from typing import Union
 
-def needs_int(x: int) -> None:
-    pass
+        def needs_int(x: int) -> None:
+            pass
 
-def capybara(x: Union[int, str]) -> None:
-    assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+        def capybara(x: Union[int, str]) -> None:
+            assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
 
-    assert isinstance(x, str), needs_int(x)
-    assert_is_value(x, TypedValue(str))
-"""
-        )
+            assert isinstance(x, str), needs_int(x)
+            assert_is_value(x, TypedValue(str))
 
     @assert_passes()
     def test_no_cross_function_propagation(self):
@@ -1113,19 +1083,15 @@ class TestConstraints(TestNameCheckVisitorBase):
                 y = True
             assert_is_value(y, KnownValue(True))
 
-    @skip_before((3, 5))
+    @assert_passes()
     def test_optional_becomes_non_optional(self):
-        self.assert_passes(
-            """
-from typing import Optional
+        from typing import Optional
 
-def capybara(x: Optional[int]) -> None:
-    assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
-    if not x:
-        x = int(0)
-    assert_is_value(x, TypedValue(int))
-"""
-        )
+        def capybara(x: Optional[int]) -> None:
+            assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
+            if not x:
+                x = int(0)
+            assert_is_value(x, TypedValue(int))
 
     @assert_passes()
     def test_reset_on_assignment(self):
@@ -1139,48 +1105,42 @@ def capybara(x: Optional[int]) -> None:
                 y = bool(x)
                 assert_is_value(y, TypedValue(bool))
 
-    @skip_before((3, 5))
+    @assert_passes()
     def test_constraint_on_arg_type(self):
-        self.assert_passes(
-            """
-from typing import Optional
+        from typing import Optional
 
-def kerodon() -> Optional[int]:
-    return 3
+        def kerodon() -> Optional[int]:
+            return 3
 
-def capybara() -> None:
-    x = kerodon()
-    assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
+        def capybara() -> None:
+            x = kerodon()
+            assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
 
-    if x:
-        assert_is_value(x, TypedValue(int))
-    else:
-        assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
-    if x is not None:
-        assert_is_value(x, TypedValue(int))
-    else:
-        assert_is_value(x, KnownValue(None))
-"""
-        )
+            if x:
+                assert_is_value(x, TypedValue(int))
+            else:
+                assert_is_value(
+                    x, MultiValuedValue([TypedValue(int), KnownValue(None)])
+                )
+            if x is not None:
+                assert_is_value(x, TypedValue(int))
+            else:
+                assert_is_value(x, KnownValue(None))
 
-    @skip_before((3, 5))
+    @assert_passes()
     def test_constraint_in_nested_scope(self):
-        self.assert_passes(
-            """
-from typing import Optional
+        from typing import Optional
 
-def capybara(x: Optional[int], z):
-    if x is None:
-        return
+        def capybara(x: Optional[int], z):
+            if x is None:
+                return
 
-    assert_is_value(x, TypedValue(int))
+            assert_is_value(x, TypedValue(int))
 
-    def nested():
-        assert_is_value(x, TypedValue(int))
+            def nested():
+                assert_is_value(x, TypedValue(int))
 
-    return [assert_is_value(x, TypedValue(int)) for _ in z]
-"""
-        )
+            return [assert_is_value(x, TypedValue(int)) for _ in z]
 
     @assert_passes()
     def test_repeated_constraints(self):
@@ -1272,27 +1232,25 @@ def capybara(x: Optional[int], z):
                 else:
                     assert_is_value(x, KnownValue(False))
 
-    @skip_before((3, 0))
+    @assert_passes()
     def test_nonlocal_known_with_write(self):
-        self.assert_passes(
-            """
-def capybara(y):
-    if y:
-        x = True
-    else:
-        x = False
+        def capybara(y):
+            if y:
+                x = True
+            else:
+                x = False
 
-    def nested():
-        nonlocal x
-        assert_is_value(x, MultiValuedValue([KnownValue(True), KnownValue(False)]))
-        if x:
-            assert_is_value(x, KnownValue(True))
-        else:
-            assert_is_value(x, KnownValue(False))
-            x = True
-            assert_is_value(x, KnownValue(True))
-"""
-        )
+            def nested():
+                nonlocal x
+                assert_is_value(
+                    x, MultiValuedValue([KnownValue(True), KnownValue(False)])
+                )
+                if x:
+                    assert_is_value(x, KnownValue(True))
+                else:
+                    assert_is_value(x, KnownValue(False))
+                    x = True
+                    assert_is_value(x, KnownValue(True))
 
     @assert_passes()
     def test_nonlocal_in_loop(self):
