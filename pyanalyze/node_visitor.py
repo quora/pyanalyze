@@ -24,7 +24,7 @@ import sys
 import tempfile
 import builtins
 from builtins import print as real_print
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 from . import analysis_lib
 
@@ -48,16 +48,6 @@ IGNORE_COMMENT = "# static analysis: ignore"
 ITERATION_LIMIT = 150
 
 
-@attr.s()
-class _Query(object):
-    """Simple equivalent of codemod.Query."""
-
-    patches = attr.ib()
-
-    def generate_patches(self):
-        return self.patches
-
-
 class _PatchWithDescription(codemod.Patch):
     def __init__(
         self,
@@ -67,9 +57,7 @@ class _PatchWithDescription(codemod.Patch):
         path=None,
         description=None,
     ):
-        super(_PatchWithDescription, self).__init__(
-            start_line_number, end_line_number, new_lines, path
-        )
+        super().__init__(start_line_number, end_line_number, new_lines, path)
         self.description = description
 
     def render_range(self):
@@ -77,6 +65,16 @@ class _PatchWithDescription(codemod.Patch):
         if self.description is not None:
             return text + ": " + self.description
         return text
+
+
+@dataclass
+class _Query:
+    """Simple equivalent of codemod.Query."""
+
+    patches: List[_PatchWithDescription]
+
+    def generate_patches(self):
+        return self.patches
 
 
 class VisitorError(Exception):

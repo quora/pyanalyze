@@ -3,8 +3,7 @@
 Code for understanding type annotations.
 
 """
-import attr
-from dataclasses import InitVar
+from dataclasses import dataclass, InitVar, field
 import mypy_extensions
 import typing_extensions
 import typing
@@ -13,6 +12,7 @@ import qcore
 import ast
 import builtins
 from collections.abc import Callable
+from typing import ContextManager
 
 from .error_code import ErrorCode
 from .find_unused import used
@@ -43,23 +43,25 @@ except ImportError:
         return ()
 
 
-@attr.s
-class Context(object):
+@dataclass
+class Context:
     """Default context used in interpreting annotations.
 
     Subclass this to do something more useful.
 
     """
 
-    should_suppress_undefined_names = attr.ib(default=False)
+    should_suppress_undefined_names: bool = field(default=False, init=False)
 
-    def suppress_undefined_names(self):
+    def suppress_undefined_names(self) -> ContextManager[None]:
         return qcore.override(self, "should_suppress_undefined_names", True)
 
-    def show_error(self, message, error_code=ErrorCode.invalid_annotation):
+    def show_error(
+        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+    ) -> None:
         pass
 
-    def get_name(self, node):
+    def get_name(self, node: ast.Name) -> Value:
         return UNRESOLVED_VALUE
 
 

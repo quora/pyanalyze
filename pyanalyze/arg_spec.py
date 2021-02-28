@@ -38,7 +38,6 @@ import logging
 import re
 import sys
 import warnings
-import attr
 from typing import Any, Sequence, NewType, Optional, ClassVar, Union, Callable, Dict
 import typeshed_client
 from typed_ast import ast3
@@ -1172,10 +1171,10 @@ class ArgSpecCache(object):
             return None
 
 
-@attr.s
+@dataclass
 class _AnnotationContext(Context):
-    finder = attr.ib(default=None)
-    module = attr.ib(default=None)
+    finder: "TypeshedFinder"
+    module: str
 
     def show_error(self, message, error_code=ErrorCode.invalid_annotation):
         self.finder.log(message, ())

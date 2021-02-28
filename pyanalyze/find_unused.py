@@ -3,14 +3,12 @@
 Implementation of unused object detection.
 
 """
-
-import attr
 from collections import defaultdict
+from dataclasses import dataclass
 import enum
 import inspect
 import qcore
 from types import ModuleType
-from typing import Any
 import __future__
 
 from .analysis_lib import safe_in
@@ -70,12 +68,12 @@ class _UsageKind(enum.IntEnum):
         return cls.aggregate(cls.classify(module_name) for module_name in module_names)
 
 
-@attr.s
+@dataclass
 class UnusedObject(object):
-    module = attr.ib(type=ModuleType)
-    attribute = attr.ib(type=str)
-    value = attr.ib(type=Any)
-    message = attr.ib(type=str)
+    module: ModuleType
+    attribute: str
+    value: object
+    message: str
 
     def __str__(self):
         return "%s.%s: %s" % (self.module.__name__, self.attribute, self.message)
