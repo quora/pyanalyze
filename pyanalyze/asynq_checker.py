@@ -7,13 +7,16 @@ Implementation of test_scope's asynq checks.
 import ast
 import asynq
 import contextlib
+from dataclasses import dataclass, field
 import enum
 import qcore
 import inspect
 import types
+from typing import Sequence, Any, Callable, Optional, Iterable
 
+from .config import Config
 from .error_code import ErrorCode
-from .value import KnownValue, TypedValue, UnboundMethodValue
+from .value import Value, KnownValue, TypedValue, UnboundMethodValue
 
 
 class AsyncFunctionKind(enum.Enum):
@@ -23,25 +26,30 @@ class AsyncFunctionKind(enum.Enum):
     pure = 3
 
 
-class AsynqChecker(object):
-    def __init__(self, config, module, lines, on_error, log, replace_node):
-        self.config = config
-        self.module = module
-        self.lines = lines
-        self.on_error = on_error
-        self.log = log
-        self.replace_node = replace_node
-        self.current_func_name = None
-        self.current_class = None
-        self.current_async_kind = AsyncFunctionKind.non_async
-        self.is_classmethod = False
+@dataclass
+class AsynqChecker:
+    config: Config
+    module: types.ModuleType
+    lines: Sequence[str]
+    on_error: Callable[..., Any]
+    log: Callable[..., Any]
+    replace_node: Callable[..., Any]
+    current_func_name: Optional[str] = field(init=False, default=None)
+    current_class: Optional[type] = field(init=False, default=None)
+    current_async_kind: AsyncFunctionKind = field(
+        init=False, default=AsyncFunctionKind.non_async
+    )
+    is_classmethod: bool = field(init=False, default=False)
 
     # Functions called from test_scope itself
 
     @contextlib.contextmanager
     def set_func_name(
-        self, name, async_kind=AsyncFunctionKind.non_async, is_classmethod=False
-    ):
+        self,
+        name: str,
+        async_kind: AsyncFunctionKind = AsyncFunctionKind.non_async,
+        is_classmethod: bool = False,
+    ) -> Iterable[None]:
         """Sets the current function name for async data collection."""
         # Override current_func_name only if this is the outermost function, so that data access
         # within nested functions is attributed to the outer function. However, for async inner
@@ -58,7 +66,7 @@ class AsynqChecker(object):
             else:
                 yield
 
-    def check_call(self, value, node):
+    def check_call(self, value: Value, node: ast.Call) -> None:
         if not self.should_perform_async_checks():
             return
         if is_impure_async_fn(value):
@@ -90,7 +98,9 @@ class AsynqChecker(object):
                 replacement_node=replacement_node,
             )
 
-    def record_attribute_access(self, root_value, attr_name, node):
+    def record_attribute_access(
+        self, root_value: Value, attr_name: str, node: ast.Attribute
+    ) -> None:
         """Records that the given attribute of root_value was accessed."""
         if isinstance(root_value, TypedValue):
             if hasattr(root_value.typ, attr_name) and callable(
@@ -100,7 +110,9 @@ class AsynqChecker(object):
             if self.should_perform_async_checks():
                 self._check_attribute_access_in_async(root_value, attr_name, node)
 
-    def _check_attribute_access_in_async(self, root_value, attr_name, node):
+    def _check_attribute_access_in_async(
+        self, root_value: Value, attr_name: str, node: ast.Attribute
+    ) -> None:
         if isinstance(root_value, TypedValue):
             if not (
                 hasattr(root_value.typ, attr_name)
@@ -126,7 +138,7 @@ class AsynqChecker(object):
                         replacement_node=replacement_node,
                     )
 
-    def should_perform_async_checks(self):
+    def should_perform_async_checks(self) -> bool:
         if self.current_async_kind in (
             AsyncFunctionKind.normal,
             AsyncFunctionKind.pure,
@@ -138,7 +150,7 @@ class AsynqChecker(object):
             return False
         return self.should_check_class_for_async(self.current_class)
 
-    def should_check_class_for_async(self, cls):
+    def should_check_class_for_async(self, cls: type) -> bool:
         """Returns whether we should perform async checks on all methods on this class."""
         for base_cls in self.config.BASE_CLASSES_CHECKED_FOR_ASYNQ:
             try:
@@ -149,8 +161,11 @@ class AsynqChecker(object):
         return False
 
     def _show_impure_async_error(
-        self, node, replacement_call=None, replacement_node=None
-    ):
+        self,
+        node: ast.AST,
+        replacement_call: Optional[str] = None,
+        replacement_node: Optional[ast.AST] = None,
+    ) -> None:
         if replacement_call is None:
             message = "impure async call (you should yield it)"
         else:
@@ -170,7 +185,7 @@ class AsynqChecker(object):
         )
 
 
-def is_impure_async_fn(value):
+def is_impure_async_fn(value: Value) -> bool:
     """Returns whether the given Value is an impure async call.
 
     This can be used to detect places where async functions are called synchronously.
@@ -186,7 +201,7 @@ def is_impure_async_fn(value):
     return False
 
 
-def get_pure_async_equivalent(value):
+def get_pure_async_equivalent(value: Value) -> str:
     """Returns the pure-async equivalent of an async function."""
     assert is_impure_async_fn(value), "%s is not an impure async function" % value
     if isinstance(value, KnownValue):
@@ -199,7 +214,7 @@ def get_pure_async_equivalent(value):
         assert False, "cannot get pure async equivalent of %s" % value
 
 
-def _stringify_async_fn(value):
+def _stringify_async_fn(value: Value) -> str:
     if isinstance(value, KnownValue):
         return _stringify_obj(value.val)
     elif isinstance(value, UnboundMethodValue):
@@ -211,7 +226,7 @@ def _stringify_async_fn(value):
         return str(value)
 
 
-def _stringify_obj(obj):
+def _stringify_obj(obj: Any) -> str:
     # covers .asynq on async methods
     if (inspect.isbuiltin(obj) and obj.__self__ is not None) or isinstance(
         obj, types.MethodType
@@ -230,5 +245,5 @@ def _stringify_obj(obj):
         return "%s.%s" % (obj.__module__, obj.__name__)
 
 
-def replace_func_on_call_node(node, new_func):
+def replace_func_on_call_node(node: ast.Call, new_func: ast.expr) -> ast.Call:
     return ast.Call(func=new_func, args=node.args, keywords=node.keywords)

@@ -28,7 +28,7 @@ import sys
 import tempfile
 import traceback
 import types
-from typing import Iterable, Union, Any, List
+from typing import cast, Iterable, Union, Any, List, Optional, Tuple, Sequence
 
 import asynq
 import qcore
@@ -49,6 +49,7 @@ from pyanalyze import format_strings
 from pyanalyze import importer
 from pyanalyze import method_return_type
 from pyanalyze.stacked_scopes import (
+    AbstractConstraint,
     CompositeVariable,
     Constraint,
     AndConstraint,
@@ -85,6 +86,7 @@ from pyanalyze.value import (
     AwaitableIncompleteValue,
     GenericValue,
     TypedDictValue,
+    Value,
 )
 
 OPERATION_TO_DESCRIPTION_AND_METHOD = {
@@ -138,7 +140,12 @@ _BOOL_DUNDER = "__bool__"
 class ClassAttributeChecker:
     """Helper class to keep track of attributes that are read and set on instances."""
 
-    def __init__(self, config, enabled=True, should_check_unused_attributes=False):
+    def __init__(
+        self,
+        config: Config,
+        enabled: bool = True,
+        should_check_unused_attributes: bool = False,
+    ):
         # we might not have examined all parent classes when looking for attributes set
         # we dump them here. incase the callers want to extend coverage.
         self.unexamined_base_classes = set()
@@ -622,7 +629,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._method_cache = {}
         self._fill_method_cache()
 
-    def __reduce_ex__(self, proto):
+    def __reduce_ex__(self, proto: object) -> object:
         # Only pickle the attributes needed to get error reporting working
         return self.__class__, (self.filename, self.contents, self.tree, self.settings)
 
@@ -662,7 +669,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 # skip compiled (Cythonized) files because pyanalyze will misinterpret the
                 # AST in some cases (for example, if a function was cdefed)
                 return []
-            if self.module is None:
+            if self.module is None or self.tree is None:
                 # If we could not import the module, other checks frequently fail.
                 return self.all_failures
             with qcore.override(self, "state", VisitorState.collect_names):
@@ -690,7 +697,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._argspec_to_retval.clear()
         return self.all_failures
 
-    def visit(self, node):
+    def visit(self, node: ast.AST) -> Value:
         """Visits a node and ensures that it returns UNRESOLVED_VALUE when necessary."""
         # inline self.node_context.add and the superclass's visit() for performance
         method = self._method_cache[type(node)]
@@ -724,7 +731,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             node.inferred_value = ret
         return ret
 
-    def generic_visit(self, node):
+    def generic_visit(self, node: ast.AST) -> None:
         """Inlined version of ast.Visitor.generic_visit for performance."""
         for field in node._fields:
             try:
@@ -738,37 +745,45 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             elif isinstance(value, ast.AST):
                 self.visit(value)
 
-    def _fill_method_cache(self):
+    def _fill_method_cache(self) -> None:
         for typ in qcore.inspection.get_subclass_tree(ast.AST):
             method = "visit_" + typ.__name__
             visitor = getattr(self, method, self.generic_visit)
             self._method_cache[typ] = visitor
 
-    def _is_collecting(self):
+    def _is_collecting(self) -> bool:
         return self.state == VisitorState.collect_names
 
-    def _is_checking(self):
+    def _is_checking(self) -> bool:
         return self.state == VisitorState.check_names
 
     def _show_error_if_checking(
-        self, node, msg=None, error_code=None, replacement=None
+        self,
+        node: ast.AST,
+        msg: Union[None, str, Exception] = None,
+        error_code: Optional[ErrorCode] = None,
+        replacement=None,
     ):
         """We usually should show errors only in the check_names state to avoid duplicate errors."""
         if self._is_checking():
             self.show_error(node, msg, error_code=error_code, replacement=replacement)
 
-    def _set_name_in_scope(self, varname, node, value=UNRESOLVED_VALUE):
+    def _set_name_in_scope(
+        self, varname: str, node: object, value: Value = UNRESOLVED_VALUE
+    ) -> None:
         scope_type = self.scopes.scope_type()
         if not isinstance(value, KnownValue) and scope_type == ScopeType.module_scope:
             try:
                 value = KnownValue(getattr(self.module, varname))
             except AttributeError:
                 pass
-        if scope_type == ScopeType.class_scope:
+        if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
             self._check_for_class_variable_redefinition(varname, node)
         self.scopes.set(varname, value, node, self.state)
 
-    def _check_for_class_variable_redefinition(self, varname, node):
+    def _check_for_class_variable_redefinition(
+        self, varname: str, node: ast.AST
+    ) -> None:
         if varname not in self.scopes.current_scope():
             return
 
@@ -789,7 +804,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             error_code=ErrorCode.class_variable_redefinition,
         )
 
-    def resolve_name(self, node, error_node=None, suppress_errors=False):
+    def resolve_name(
+        self,
+        node: ast.AST,
+        error_node: Optional[ast.AST] = None,
+        suppress_errors: bool = False,
+    ) -> Value:
         """Resolves a Name node to a value.
 
         If error_node is given, it is used (instead of Node) to show errors on.
@@ -892,13 +912,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _get_first_import_node(self):
         return min(self.import_name_to_node.values(), key=lambda node: node.lineno)
 
-    def _generic_visit_list(self, lst):
+    def _generic_visit_list(self, lst: Iterable[ast.AST]) -> List[Value]:
         return [self.visit(node) for node in lst]
 
-    def _is_write_ctx(self, ctx):
+    def _is_write_ctx(self, ctx: ast.AST) -> bool:
         return isinstance(ctx, (ast.Store, ast.Param))
 
-    def _is_read_ctx(self, ctx):
+    def _is_read_ctx(self, ctx: ast.AST) -> bool:
         return isinstance(ctx, (ast.Load, ast.Del))
 
     @contextlib.contextmanager
@@ -914,7 +934,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         ), qcore.override(self, "current_enum_members", current_enum_members):
             yield
 
-    def visit_ClassDef(self, node):
+    def visit_ClassDef(self, node: ast.ClassDef) -> Value:
         self._generic_visit_list(node.decorator_list)
         self._generic_visit_list(node.bases)
         if hasattr(node, "keywords"):
@@ -923,7 +943,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._set_name_in_scope(node.name, node, value)
         return value
 
-    def _visit_class_and_get_value(self, node):
+    def _visit_class_and_get_value(self, node: ast.ClassDef) -> Value:
         if self._is_checking():
             if self.scopes.scope_type() == ScopeType.module_scope:
                 cls_obj = self.scopes.get(node.name, node, self.state)
@@ -960,10 +980,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         return TypedValue(type)
 
-    def visit_AsyncFunctionDef(self, node):
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Value:
         return self.visit_FunctionDef(node, is_coroutine=True)
 
-    def visit_FunctionDef(self, node, is_coroutine=False):
+    def visit_FunctionDef(
+        self,
+        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        is_coroutine: bool = False,
+    ) -> Value:
         with qcore.override(self, "current_class", None):
             info = self._visit_decorators_and_check_asynq(node.decorator_list)
         defaults, kw_defaults = self._visit_defaults(node)
@@ -1090,7 +1114,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.log(logging.DEBUG, "No argspec", (potential_function, node))
         return KnownValue(potential_function)
 
-    def _visit_defaults(self, node):
+    def _visit_defaults(
+        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
+    ) -> Tuple[List[Value], Optional[List[Optional[Value]]]]:
         with qcore.override(self, "current_class", None):
             defaults = self._generic_visit_list(node.args.defaults)
 
@@ -1103,7 +1129,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 kw_defaults = None
             return defaults, kw_defaults
 
-    def is_value_compatible(self, val1, val2):
+    def is_value_compatible(self, val1: Value, val2: Value) -> bool:
         try:
             return val1.is_value_compatible(val2)
         except Exception:
@@ -1114,7 +1140,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
             return True
 
-    def _get_evaled_function(self, node, decorators):
+    def _get_evaled_function(self, node, decorators) -> Value:
         to_apply = []
         for decorator, applied_decorator in decorators:
             if (
@@ -1160,17 +1186,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             pass
         return KnownValue(fn)
 
-    def _strip_annotation(self, node):
-        if hasattr(node, "annotation"):  # py3
-            return ast.arg(arg=node.arg, annotation=None)
-        else:
-            return node
+    def _strip_annotation(self, node: Optional[ast.arg]) -> Optional[ast.arg]:
+        if node is None:
+            return None
+        return ast.arg(arg=node.arg, annotation=None)
 
-    def visit_Lambda(self, node):
+    def visit_Lambda(self, node: ast.Lambda) -> Value:
         defaults, kw_defaults = self._visit_defaults(node)
 
         with self.asynq_checker.set_func_name("<lambda>"):
             self._visit_function_body(node, defaults=defaults, kw_defaults=kw_defaults)
+            return UNRESOLVED_VALUE
 
     def _visit_decorators_and_check_asynq(
         self, decorator_list: List[ast.expr]
@@ -1218,12 +1244,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _visit_function_body(
         self,
-        node,
-        function_info=_DEFAULT_FUNCTION_INFO,
-        name=None,
+        node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda],
+        function_info: FunctionInfo = _DEFAULT_FUNCTION_INFO,
+        name: Optional[str] = None,
         defaults=None,
         kw_defaults=None,
-    ):
+    ) -> Tuple[Value, bool, bool]:
         is_collecting = self._is_collecting()
         if is_collecting and not self.scopes.contains_scope_of_type(
             ScopeType.function_scope
@@ -1281,7 +1307,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._check_function_unused_vars(scope, args)
             return self._compute_return_type(node, name, return_values, return_set)
 
-    def _compute_return_type(self, node, name, return_values, return_set):
+    def _compute_return_type(
+        self,
+        node: ast.AST,
+        name: Optional[str],
+        return_values: Sequence[Optional[Value]],
+        return_set: Value,
+    ) -> Tuple[Value, bool, bool]:
         # Ignore generators for now.
         if return_set is UNRESOLVED_VALUE or self.is_generator:
             has_return = True
@@ -1388,7 +1420,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 replacement=replacement,
             )
 
-    def _visit_function_args(self, node, function_info, defaults, kw_defaults):
+    def _visit_function_args(
+        self, node, function_info: FunctionInfo, defaults, kw_defaults
+    ):
         """Visits and checks the arguments to a function. Returns the list of argument names."""
         self._check_method_first_arg(node, function_info=function_info)
 
@@ -1465,7 +1499,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         return args
 
-    def _value_of_annotated_arg(self, arg):
+    def _value_of_annotated_arg(self, arg: ast.arg) -> Value:
         if not hasattr(arg, "annotation") or arg.annotation is None:
             return UNRESOLVED_VALUE
         # Evaluate annotations in the surrounding scope,
@@ -1476,15 +1510,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             annotated_type = self._visit_annotation(arg.annotation)
         return self._value_of_annotation_type(annotated_type, arg.annotation)
 
-    def _visit_annotation(self, node):
+    def _visit_annotation(self, node: ast.AST) -> Value:
         with qcore.override(self, "in_annotation", True):
             return self.visit(node)
 
-    def _value_of_annotation_type(self, val, node):
+    def _value_of_annotation_type(self, val: Value, node: ast.AST) -> Value:
         """Given a value encountered in a type annotation, return a type."""
         return type_from_value(val, visitor=self, node=node)
 
-    def _check_method_first_arg(self, node, function_info=_DEFAULT_FUNCTION_INFO):
+    def _check_method_first_arg(
+        self,
+        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        function_info: FunctionInfo = _DEFAULT_FUNCTION_INFO,
+    ) -> None:
         """Makes sure the first argument to a method is self or cls."""
         if self.current_class is None:
             return
@@ -1509,7 +1547,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 ErrorCode.method_first_arg,
             )
 
-    def visit_Global(self, node):
+    def visit_Global(self, node: ast.Global) -> None:
         if self.scopes.scope_type() != ScopeType.function_scope:
             self._show_error_if_checking(node, error_code=ErrorCode.bad_global)
             return
@@ -1522,7 +1560,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
             self._set_name_in_scope(name, node, ReferencingValue(module_scope, name))
 
-    def visit_Nonlocal(self, node):
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
         if self.scopes.scope_type() != ScopeType.function_scope:
             self._show_error_if_checking(node, error_code=ErrorCode.bad_nonlocal)
             return
@@ -1545,7 +1583,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Imports
 
-    def visit_Import(self, node):
+    def visit_Import(self, node: ast.Import) -> None:
         if self.scopes.scope_type() == ScopeType.module_scope:
             self._handle_imports(node.names)
 
@@ -1554,7 +1592,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             self._simulate_import(node)
 
-    def visit_ImportFrom(self, node):
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         # this is used to decide where to add additional imports (after the first import), so
         # exclude __future__ imports
         if (
@@ -1709,13 +1747,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Comprehensions
 
-    def visit_ListComp(self, node):
+    def visit_ListComp(self, node: ast.ListComp) -> Value:
         return self._visit_comprehension(node, list)
 
-    def visit_SetComp(self, node):
+    def visit_SetComp(self, node: ast.SetComp) -> Value:
         return self._visit_comprehension(node, set)
 
-    def visit_DictComp(self, node):
+    def visit_DictComp(self, node: ast.DictComp) -> Value:
         if self.state == VisitorState.collect_names:
             return TypedValue(dict)
         with self.scopes.add_scope(ScopeType.function_scope, scope_node=node):
@@ -1729,7 +1767,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     ret = GenericValue(dict, [key, value])
         return ret
 
-    def visit_GeneratorExp(self, node):
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Value:
         return self._visit_comprehension(node, types.GeneratorType)
 
     def visit_comprehension(self, node, iterable_type=None):
@@ -1800,7 +1838,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Literals and displays
 
-    def visit_JoinedStr(self, node):
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> Value:
         """JoinedStr is the node type for f-strings.
 
         Not too much to check here. Perhaps we can add checks that format specifiers
@@ -1810,16 +1848,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._generic_visit_list(node.values)
         return TypedValue(str)
 
-    def visit_Constant(self, node):
+    def visit_Constant(self, node: ast.Constant) -> Value:
         # replaces Num, Str, etc. in 3.8+
         if isinstance(node.value, str):
             self._maybe_show_missing_f_error(node, node.value)
         return KnownValue(node.value)
 
-    def visit_Num(self, node):
+    def visit_Num(self, node: ast.Num) -> Value:
         return KnownValue(node.n)
 
-    def visit_Str(self, node):
+    def visit_Str(self, node: ast.Str) -> Value:
         self._maybe_show_missing_f_error(node, node.s)
         return KnownValue(node.s)
 
@@ -1874,14 +1912,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return val is not UNINITIALIZED_VALUE
 
-    def visit_Bytes(self, node):
+    def visit_Bytes(self, node: ast.Bytes) -> Value:
         return KnownValue(node.s)
 
-    def visit_NameConstant(self, node):
+    def visit_NameConstant(self, node: ast.NameConstant) -> Value:
         # True, False, None in py3
         return KnownValue(node.value)
 
-    def visit_Dict(self, node):
+    def visit_Dict(self, node: ast.Dict) -> Value:
         """Returns a KnownValue if all the keys and values can be resolved to KnownValues.
 
         Also checks that there are no duplicate keys and that all keys are hashable.
@@ -1936,13 +1974,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return KnownValue(ret)
 
-    def visit_Set(self, node):
+    def visit_Set(self, node: ast.Set) -> Value:
         return self._visit_display_read(node, set)
 
-    def visit_List(self, node):
+    def visit_List(self, node: ast.List) -> Value:
         return self._visit_display(node, list)
 
-    def visit_Tuple(self, node):
+    def visit_Tuple(self, node: ast.Tuple) -> Value:
         return self._visit_display(node, tuple)
 
     def _visit_display(self, node, typ):
@@ -1986,9 +2024,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             isinstance(elt, ast.Starred) for elt in node.elts
         ):
             return TypedValue(typ)
-        elif all(isinstance(elt, KnownValue) for elt in elts):
+        else:
+            return self._maybe_make_sequence(typ, elts, node)
+
+    def _maybe_make_sequence(
+        self, typ: type, elts: Sequence[Value], node: ast.AST
+    ) -> Value:
+        if all(isinstance(elt, KnownValue) for elt in elts):
+            vals = [elt.val for elt in cast(Sequence[KnownValue], elts)]
             try:
-                obj = typ(elt.val for elt in elts)
+                obj = typ(vals)
             except TypeError as e:
                 # probably an unhashable type being included in a set
                 self._show_error_if_checking(node, e, ErrorCode.unhashable_key)
@@ -1999,7 +2044,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Operations
 
-    def visit_BoolOp(self, node):
+    def visit_BoolOp(self, node: ast.BoolOp) -> Value:
         val, _ = self.constraint_from_bool_op(node)
         return val
 
@@ -2036,7 +2081,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         constraint = reduce(constraint_cls, reversed(out_constraints))
         return unite_values(*values), constraint
 
-    def visit_Compare(self, node):
+    def visit_Compare(self, node: ast.Compare) -> Value:
         val, _ = self.constraint_from_compare(node)
         return val
 
@@ -2059,7 +2104,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     )
         return val, constraint
 
-    def visit_UnaryOp(self, node):
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> Value:
         val, _ = self.constraint_from_unary_op(node)
         return val
 
@@ -2079,7 +2124,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             val = self._check_dunder_call(node, operand, method, [], allow_call=True)
             return val, NULL_CONSTRAINT
 
-    def visit_BinOp(self, node):
+    def visit_BinOp(self, node: ast.BinOp) -> Value:
         left = self.visit(node.left)
         right = self.visit(node.right)
         return self._visit_binop_internal(
@@ -2163,10 +2208,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Indexing
 
-    def visit_Ellipsis(self, node):
+    def visit_Ellipsis(self, node: ast.Ellipsis) -> Value:
         return KnownValue(Ellipsis)
 
-    def visit_Slice(self, node):
+    def visit_Slice(self, node: ast.Slice) -> Value:
         lower = self.visit(node.lower) if node.lower is not None else None
         upper = self.visit(node.upper) if node.upper is not None else None
         step = self.visit(node.step) if node.step is not None else None
@@ -2176,26 +2221,23 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return TypedValue(slice)
 
-    def visit_ExtSlice(self, node):
+    def visit_ExtSlice(self, node: ast.ExtSlice) -> Value:
         dims = [self.visit(dim) for dim in node.dims]
-        if all(isinstance(val, KnownValue) for val in dims):
-            return KnownValue(tuple(val.val for val in dims))
-        else:
-            return SequenceIncompleteValue(tuple, dims)
+        return self._maybe_make_sequence(tuple, dims, node)
 
-    def visit_Index(self, node):
+    def visit_Index(self, node: ast.Index) -> Value:
         return self.visit(node.value)
 
     # Control flow
 
-    def visit_Await(self, node):
+    def visit_Await(self, node: ast.Await) -> Value:
         value = self.visit(node.value)
         if isinstance(value, AwaitableIncompleteValue):
             return value.value
         else:
             return self._check_dunder_call(node.value, value, "__await__", [])
 
-    def visit_YieldFrom(self, node):
+    def visit_YieldFrom(self, node: ast.YieldFrom) -> Value:
         self.is_generator = True
         value = self.visit(node.value)
         if not TypedValue(Iterable).is_value_compatible(value):
@@ -2206,7 +2248,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         return UNRESOLVED_VALUE
 
-    def visit_Yield(self, node):
+    def visit_Yield(self, node: ast.Yield) -> Value:
         if self._is_checking():
             if self.in_comprehension_body:
                 self._show_error_if_checking(
@@ -2235,7 +2277,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return UNRESOLVED_VALUE
 
-    def _unwrap_yield_result(self, node, value):
+    def _unwrap_yield_result(self, node: ast.AST, value: Value) -> Value:
         if isinstance(value, AsyncTaskIncompleteValue):
             return value.value
         elif isinstance(value, TypedValue) and issubclass(value.typ, (list, tuple)):
@@ -2243,10 +2285,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 values = [
                     self._unwrap_yield_result(node, member) for member in value.members
                 ]
-                if all(isinstance(member, KnownValue) for member in values):
-                    return KnownValue(value.typ(member.val for member in values))
-                else:
-                    return SequenceIncompleteValue(value.typ, values)
+                return self._maybe_make_sequence(value.typ, values, node)
             elif isinstance(value, GenericValue):
                 member_value = self._unwrap_yield_result(node, value.get_arg(0))
                 return GenericValue(value.typ, [member_value])
@@ -2289,7 +2328,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
             return UNRESOLVED_VALUE
 
-    def visit_Return(self, node):
+    def visit_Return(self, node: ast.Return) -> None:
         """For return type inference, set the pseudo-variable RETURN_VALUE in the local scope."""
         if node.value is None:
             value = KnownValue(None)
@@ -2322,7 +2361,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 error_code=ErrorCode.incompatible_return_value,
             )
 
-    def visit_Raise(self, node):
+    def visit_Raise(self, node: ast.Raise) -> None:
         # we need to record this in the return value so that functions that always raise
         # NotImplementedError aren't inferred as returning None
         self.return_values.append(None)
@@ -2354,7 +2393,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if node.cause is not None:
             self.visit(node.cause)
 
-    def visit_Assert(self, node):
+    def visit_Assert(self, node: ast.Assert) -> None:
         test, constraint = self._visit_possible_constraint(node.test)
         if node.msg is not None:
             with self.scopes.subscope():
@@ -2370,10 +2409,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         elif val is False:
             self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
 
-    def add_constraint(self, node, constraint):
+    def add_constraint(self, node: object, constraint: AbstractConstraint) -> None:
         self.scopes.current_scope().add_constraint(constraint, node, self.state)
 
-    def _visit_possible_constraint(self, node):
+    def _visit_possible_constraint(
+        self, node: ast.AST
+    ) -> Tuple[Value, AbstractConstraint]:
         if isinstance(node, ast.Compare):
             return self.constraint_from_compare(node)
         elif isinstance(node, ast.Name):
@@ -2396,13 +2437,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return self.visit(node), NULL_CONSTRAINT
 
-    def visit_Break(self, node):
+    def visit_Break(self, node: ast.Break) -> None:
         self._set_name_in_scope(LEAVES_LOOP, node, UNRESOLVED_VALUE)
 
-    def visit_Continue(self, node):
+    def visit_Continue(self, node: ast.Continue) -> None:
         self._set_name_in_scope(LEAVES_LOOP, node, UNRESOLVED_VALUE)
 
-    def visit_For(self, node):
+    def visit_For(self, node: ast.For) -> None:
         iterated_value, num_members = self._member_value_of_iterator(node.iter)
         if self.config.FOR_LOOP_ALWAYS_ENTERED:
             always_entered = True
@@ -2430,7 +2471,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     self.visit(node.target)
                 self._generic_visit_list(node.body)
 
-    def visit_While(self, node):
+    def visit_While(self, node: ast.While) -> None:
         # see comments under For for discussion
         test, constraint = self.constraint_from_condition(node.test)
         always_entered = boolean_value(test) is True
@@ -2525,11 +2566,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return unite_values(*vals), num
         return UNRESOLVED_VALUE, None
 
-    def visit_TryExcept(self, node):
+    def visit_try_except(self, node: ast.Try) -> None:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
         # try and the except block
-        # this node type is py2 only (py3 uses Try), but the visit_Try implementation delegates to
-        # this method
         with self.scopes.subscope():
             with self.scopes.subscope() as try_scope:
                 self._generic_visit_list(node.body)
@@ -2549,29 +2588,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.scopes.combine_subscopes([try_scope] + except_scopes)
         self.yield_checker.reset_yield_checks()
 
-    def visit_TryFinally(self, node):
-        # We visit the finally block twice, representing the two possible code paths where the try
-        # body does and does not raise an exception.
-        with self.scopes.subscope() as try_scope:
-            self._generic_visit_list(node.body)
-            self._generic_visit_list(node.finalbody)
-        with self.scopes.subscope():
-            self._generic_visit_list(node.finalbody)
-        self.scopes.combine_subscopes([try_scope])
-
-    def visit_Try(self, node):
+    def visit_Try(self, node: ast.Try) -> None:
         # py3 combines the Try and Try/Finally nodes
         if node.finalbody:
             with self.scopes.subscope() as try_scope:
-                self.visit_TryExcept(node)
+                self.visit_try_except(node)
                 self._generic_visit_list(node.finalbody)
             with self.scopes.subscope():
                 self._generic_visit_list(node.finalbody)
             self.scopes.combine_subscopes([try_scope])
         else:
-            self.visit_TryExcept(node)
+            self.visit_try_except(node)
 
-    def visit_ExceptHandler(self, node):
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.type is not None:
             typ = self.visit(node.type)
             if isinstance(typ, KnownValue):
@@ -2610,7 +2639,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return True
 
-    def visit_If(self, node):
+    def visit_If(self, node: ast.If) -> None:
         _, constraint = self.constraint_from_condition(node.test)
         # reset yield checks to avoid incorrect errors when we yield in both the condition and one
         # of the blocks
@@ -2626,7 +2655,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.scopes.combine_subscopes([body_scope, else_scope])
         self.yield_checker.reset_yield_checks()
 
-    def visit_IfExp(self, node):
+    def visit_IfExp(self, node: ast.IfExp) -> Value:
         _, constraint = self.constraint_from_condition(node.test)
         with self.scopes.subscope():
             self.add_constraint(node, constraint)
@@ -2636,7 +2665,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             else_val = self.visit(node.orelse)
         return unite_values(then_val, else_val)
 
-    def constraint_from_condition(self, node):
+    def constraint_from_condition(
+        self, node: ast.AST
+    ) -> Tuple[Optional[Value], AbstractConstraint]:
         condition, constraint = self._visit_possible_constraint(node)
         if self._is_collecting():
             return condition, constraint
@@ -2663,7 +2694,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return bool_fn is not getattr(asynq.FutureBase, _BOOL_DUNDER)
         return False
 
-    def visit_Expr(self, node):
+    def visit_Expr(self, node: ast.Expr) -> Value:
         value = self.visit(node.value)
         if value.is_type((asynq.FutureBase, asynq.AsyncTask)):
             new_node = ast.Expr(value=ast.Yield(value=node.value))
@@ -2690,7 +2721,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Assignments
 
-    def visit_Assign(self, node):
+    def visit_Assign(self, node: ast.Assign) -> None:
         is_yield = isinstance(node.value, ast.Yield)
         value = self.visit(node.value)
 
@@ -2729,7 +2760,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 for name in names:
                     self.current_enum_members[value.val] = name
 
-    def visit_AnnAssign(self, node):
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         annotation = self._visit_annotation(node.annotation)
         if isinstance(annotation, KnownValue) and is_typing_name(
             annotation.val, "Final"
@@ -2761,7 +2792,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # - Scopes keep track of a map {name: expected type}
         # - Assignments that are inconsistent with the declared type produce an error.
 
-    def visit_AugAssign(self, node):
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
         is_yield = isinstance(node.value, ast.Yield)
         rhs = self.visit(node.value)
 
@@ -2807,7 +2838,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
             return None
 
-    def visit_arg(self, node):
+    def visit_arg(self, node: ast.arg) -> None:
         # py3 only; in py2 arguments are just Name nodes
         self.yield_checker.record_assignment(node.arg)
         self._set_name_in_scope(node.arg, node, value=self.being_assigned)
@@ -2837,7 +2868,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return TypedValue(typ)
 
-    def visit_Subscript(self, node):
+    def visit_Subscript(self, node: ast.Subscript) -> Value:
         value = self.visit(node.value)
         index = self.visit(node.slice)
 
@@ -2940,7 +2971,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         )
         return return_value
 
-    def visit_Attribute(self, node):
+    def visit_Attribute(self, node: ast.Attribute) -> Value:
         """Visits an Attribute node (e.g. a.b).
 
         This resolves the value on the left and checks that it has the attribute. If it does not, an
@@ -2990,7 +3021,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return value
         else:
             self.show_error(node, "Unknown context", ErrorCode.unexpected_node)
-            return None
+            return UNRESOLVED_VALUE
 
     def _get_attribute(self, node, attr, root_value, on_error=None):
         if on_error is None:
@@ -3294,16 +3325,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     return True
         return False
 
-    def _should_ignore_type(self, typ):
+    def _should_ignore_type(self, typ: type) -> bool:
         """Types for which we do not check whether they support the actions we take on them."""
         return typ in self.config.IGNORED_TYPES
 
     # Call nodes
 
-    def visit_keyword(self, node):
+    def visit_keyword(self, node: ast.keyword) -> Tuple[str, Value]:
         return (node.arg, self.visit(node.value))
 
-    def visit_Call(self, node):
+    def visit_Call(self, node: ast.Call) -> Value:
         """Call nodes represent function or other calls.
 
         We try to resolve the callee node into a value and then check whether its signature
