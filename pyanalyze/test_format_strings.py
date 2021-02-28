@@ -9,7 +9,6 @@ from .format_strings import (
     FormatString,
     ReplacementField,
     IndexOrAttribute,
-    FormatSpec,
     parse_format_string,
 )
 from .value import (
@@ -113,10 +112,10 @@ DOT_FORMAT_TESTCASES = [
         ],
     ),
     ("{a!r}", [ReplacementField("a", conversion="r")]),
-    ("{a:3}", [ReplacementField("a", format_spec=FormatSpec(["3"]))]),
+    ("{a:3}", [ReplacementField("a", format_spec=FormatString(["3"]))]),
     (
         "{a:{b}}",
-        [ReplacementField("a", format_spec=FormatSpec([ReplacementField("b")]))],
+        [ReplacementField("a", format_spec=FormatString([ReplacementField("b")]))],
     ),
     (
         "{a.b!r:{c:{d}}}",
@@ -125,10 +124,10 @@ DOT_FORMAT_TESTCASES = [
                 "a",
                 index_attribute=((IndexOrAttribute.attribute, "b"),),
                 conversion="r",
-                format_spec=FormatSpec(
+                format_spec=FormatString(
                     [
                         ReplacementField(
-                            "c", format_spec=FormatSpec([ReplacementField("d")])
+                            "c", format_spec=FormatString([ReplacementField("d")])
                         )
                     ]
                 ),
