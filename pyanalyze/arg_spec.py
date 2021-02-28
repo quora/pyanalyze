@@ -967,17 +967,16 @@ class ArgSpecCache:
 
     def from_argspec(
         self,
-        argspec: Union[inspect.Signature, inspect.ArgSpec, inspect.FullArgSpec],
+        argspec: inspect.Signature,
         kwonly_args: Any = None,
         name: Optional[str] = None,
         logger: Optional[Logger] = None,
         implementation: Optional[ImplementationFn] = None,
         function_object: Optional[object] = None,
-    ) -> Optional[ExtendedArgSpec]:
+    ) -> ExtendedArgSpec:
         """Constructs an ExtendedArgSpec from a standard argspec.
 
-        argspec can be either an inspect.ArgSpec or, in Python 3 only, an inspect.FullArgSpec, with
-        support for keyword-only arguments, or inspect.Signature.
+        argspec is an inspect.Signature.
 
         kwonly_args may be a list of custom keyword-only arguments added to the argspec or None.
 
@@ -991,83 +990,34 @@ class ArgSpecCache:
         argument?
 
         """
-        if argspec is None:
-            return None
         if kwonly_args is None:
             kwonly_args = []
         else:
             kwonly_args = list(kwonly_args)
         func_globals = getattr(function_object, "__globals__", None)
 
-        if hasattr(argspec, "parameters"):
-            # inspect.Signature object
-            starargs = None
-            kwargs = None
-            args = []
-            if argspec.return_annotation is argspec.empty:
-                return_value = UNRESOLVED_VALUE
-            else:
-                return_value = type_from_runtime(
-                    argspec.return_annotation, globals=func_globals
-                )
-            for parameter in argspec.parameters.values():
-                if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
-                    starargs = parameter.name
-                elif parameter.kind == inspect.Parameter.VAR_KEYWORD:
-                    kwargs = parameter.name
-                elif parameter.kind == inspect.Parameter.KEYWORD_ONLY:
-                    kwonly_args.append(
-                        self._parameter_from_signature(parameter, func_globals)
-                    )
-                else:
-                    # positional or positional-or-keyword
-                    args.append(self._parameter_from_signature(parameter, func_globals))
-        else:
-            if argspec.defaults is None:
-                arg_pairs = [(arg, Parameter.no_default_value) for arg in argspec.args]
-            else:
-                num_non_default = len(argspec.args) - len(argspec.defaults)
-                defaults = [Parameter.no_default_value] * num_non_default
-                for default in argspec.defaults:
-                    # hack to enable test_scope to run on itself
-                    if default is Parameter.no_default_value:
-                        defaults.append(object())
-                    else:
-                        defaults.append(default)
-                arg_pairs = zip(argspec.args, defaults)
-
-            args = []
-            for arg, default_value in arg_pairs:
-                args.append(
-                    Parameter(
-                        arg,
-                        default_value=default_value,
-                        typ=VariableNameValue.from_varname(
-                            arg, self.config.varname_value_map()
-                        ),
-                    )
-                )
-
-            # python 3 keyword-only arguments
-            if hasattr(argspec, "kwonlyargs") and argspec.kwonlyargs:
-                kwonlydefaults = (
-                    argspec.kwonlydefaults if argspec.kwonlydefaults is not None else {}
-                )
-
-                for arg in argspec.kwonlyargs:
-                    kwonly_args.append(
-                        Parameter(
-                            arg,
-                            default_value=kwonlydefaults.get(
-                                arg, Parameter.no_default_value
-                            ),
-                        )
-                    )
-
-            # FullArgSpec has varkw and ArgSpec has keywords
-            kwargs = argspec.keywords if hasattr(argspec, "keywords") else argspec.varkw
+        # inspect.Signature object
+        starargs = None
+        kwargs = None
+        args = []
+        if argspec.return_annotation is argspec.empty:
             return_value = UNRESOLVED_VALUE
-            starargs = argspec.varargs
+        else:
+            return_value = type_from_runtime(
+                argspec.return_annotation, globals=func_globals
+            )
+        for parameter in argspec.parameters.values():
+            if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+                starargs = parameter.name
+            elif parameter.kind == inspect.Parameter.VAR_KEYWORD:
+                kwargs = parameter.name
+            elif parameter.kind == inspect.Parameter.KEYWORD_ONLY:
+                kwonly_args.append(
+                    self._parameter_from_signature(parameter, func_globals)
+                )
+            else:
+                # positional or positional-or-keyword
+                args.append(self._parameter_from_signature(parameter, func_globals))
         return ExtendedArgSpec(
             args,
             starargs=starargs,
