@@ -1,7 +1,4 @@
 # static analysis: ignore
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
 from asynq import asynq
 from qcore.asserts import assert_eq
 
@@ -9,14 +6,13 @@ from .test_name_check_visitor import (
     TestNameCheckVisitorBase,
     ConfiguredNameCheckVisitor,
 )
-from .test_node_visitor import assert_fails, assert_passes, only_before, skip_before
+from .test_node_visitor import assert_fails, assert_passes
 from .arg_spec import (
     ArgSpecCache,
     BoundMethodArgSpecWrapper,
     ExtendedArgSpec,
     Parameter,
     is_dot_asynq_function,
-    typeshed_client,
 )
 from .error_code import ErrorCode
 from .tests import l0cached_async_fn
@@ -196,14 +192,12 @@ class TestSuperCall(TestNameCheckVisitorBase):
             def eat_food(self):
                 super(Acouchy, self).eat_food()
 
-    @skip_before((3, 0))
     @assert_passes()
     def test_super_no_args(self):
         class Canaanimys:
             def __init__(self, a, b):
                 super().__init__()
 
-    @skip_before((3, 0))
     @assert_fails(ErrorCode.incompatible_call)
     def test_super_no_args_wrong_args(self):
         class Gaudeamus:
@@ -214,7 +208,6 @@ class TestSuperCall(TestNameCheckVisitorBase):
             def eat(self, grass):
                 super(Canaanimys, self).eat(grass)
 
-    @skip_before((3, 0))
     @assert_fails(ErrorCode.incompatible_call)
     def test_super_no_args_wrong_args_classmethod(self):
         class Gaudeamus:
@@ -227,21 +220,18 @@ class TestSuperCall(TestNameCheckVisitorBase):
             def eat(cls, grass):
                 super().eat(grass)
 
-    @skip_before((3, 0))
     @assert_fails(ErrorCode.bad_super_call)
     def test_super_no_args_in_comprehension(self):
         class Canaanimys:
             def __init__(self, a, b):
                 self.x = [super().__init__() for _ in range(1)]
 
-    @skip_before((3, 0))
     @assert_fails(ErrorCode.bad_super_call)
     def test_super_no_args_in_gen_exp(self):
         class Canaanimys:
             def __init__(self, a, b):
                 self.x = (super().__init__() for _ in range(1))
 
-    @skip_before((3, 0))
     @assert_fails(ErrorCode.bad_super_call)
     def test_super_no_args_in_nested_function(self):
         class Canaanimys:
@@ -251,7 +241,6 @@ class TestSuperCall(TestNameCheckVisitorBase):
 
                 nested()
 
-    @skip_before((3, 6))
     @assert_passes()
     def test_super_init_subclass(self):
         class Pithanotomys:
@@ -397,38 +386,6 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
     def test_tuple_typed_int(self):
         def capybara(x):
             tuple(int(x))
-
-
-class TestXrange(TestNameCheckVisitorBase):
-    @only_before((3, 0))
-    @assert_passes()
-    def test_basic(self):
-        def capybara():
-            return xrange(1)
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_too_few_args(self):
-        def capybara():
-            return xrange()
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_too_many_args(self):
-        def capybara():
-            return xrange(1, 2, 3, 4)
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.incompatible_argument)
-    def test_wrong_type(self):
-        def capybara():
-            return xrange("A", "B")
-
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.incompatible_argument)
-    def test_too_large(self):
-        def capybara():
-            return xrange(2 ** 31)
 
 
 class TestFormat(TestNameCheckVisitorBase):
@@ -766,12 +723,6 @@ class TestEncodeDecode(TestNameCheckVisitorBase):
         def capybara():
             u"".encode(42)
 
-    @only_before((3, 0))
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_encode_implicit(self):
-        def capybara():
-            u"".encode()
-
     @assert_fails(ErrorCode.incompatible_argument)
     def test_decode_wrong_type(self):
         def capybara():
@@ -795,78 +746,65 @@ class TestLen(TestNameCheckVisitorBase):
 
 
 class TestCoroutines(TestNameCheckVisitorBase):
-    @skip_before((3, 4))
+    @assert_passes()
     def test_asyncio_coroutine(self):
-        self.assert_passes(
-            """
-import asyncio
+        import asyncio
 
-@asyncio.coroutine
-def f():
-    yield from asyncio.sleep(3)
-    return 42
+        @asyncio.coroutine
+        def f():
+            yield from asyncio.sleep(3)
+            return 42
 
-@asyncio.coroutine
-def g():
-    assert_is_value(f(), AwaitableIncompleteValue(KnownValue(42)))
-"""
-        )
+        @asyncio.coroutine
+        def g():
+            assert_is_value(f(), AwaitableIncompleteValue(KnownValue(42)))
 
-    @skip_before((3, 6))
+    @assert_passes()
     def test_coroutine_from_typeshed(self):
-        self.assert_passes(
-            """
-import asyncio
-from asyncio.streams import open_connection, StreamReader, StreamWriter
+        import asyncio
 
-async def capybara():
-    # annotated as def ... -> Future in typeshed
-    assert_is_value(asyncio.sleep(3), GenericValue(asyncio.Future, [UNRESOLVED_VALUE]))
-    return 42
-"""
-        )
+        async def capybara():
+            # annotated as def ... -> Future in typeshed
+            assert_is_value(
+                asyncio.sleep(3), GenericValue(asyncio.Future, [UNRESOLVED_VALUE])
+            )
+            return 42
 
-    @skip_before((3, 6))
+    @assert_passes()
     def test_async_def_from_typeshed(self):
-        self.assert_passes(
-            """
-import asyncio
-from asyncio.streams import open_connection, StreamReader, StreamWriter
+        from asyncio.streams import open_connection, StreamReader, StreamWriter
 
-async def capybara():
-    # annotated as async def in typeshed
-    assert_is_value(open_connection(), AwaitableIncompleteValue(
-        SequenceIncompleteValue(tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)])
-    ))
-    return 42
-"""
-        )
+        async def capybara():
+            # annotated as async def in typeshed
+            assert_is_value(
+                open_connection(),
+                AwaitableIncompleteValue(
+                    SequenceIncompleteValue(
+                        tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
+                    )
+                ),
+            )
+            return 42
 
-    @skip_before((3, 5))
+    @assert_passes()
     def test_async_def(self):
-        self.assert_passes(
-            """
-async def f():
-    return 42
+        async def f():
+            return 42
 
-async def g():
-    assert_is_value(f(), AwaitableIncompleteValue(KnownValue(42)))
-"""
-        )
+        async def g():
+            assert_is_value(f(), AwaitableIncompleteValue(KnownValue(42)))
 
 
-if typeshed_client is not None:
+class TestTypeshedClient(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_types(self):
+        import math
 
-    class TestTypeshedClient(TestNameCheckVisitorBase):
-        @assert_passes()
-        def test_types(self):
-            import math
+        assert_is_value(math.exp(1.0), TypedValue(float))
+        assert_is_value("".isspace(), TypedValue(bool))
 
-            assert_is_value(math.exp(1.0), TypedValue(float))
-            assert_is_value("".isspace(), TypedValue(bool))
-
-        @assert_passes()
-        def test_dict_update(self):
-            def capybara():
-                x = {}
-                x.update({})  # just check that this doesn't fail
+    @assert_passes()
+    def test_dict_update(self):
+        def capybara():
+            x = {}
+            x.update({})  # just check that this doesn't fail
