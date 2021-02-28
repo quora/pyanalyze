@@ -12,6 +12,7 @@ import asyncio
 import builtins
 import collections
 import contextlib
+from dataclasses import dataclass
 from functools import reduce
 import imp
 import inspect
@@ -27,7 +28,7 @@ import sys
 import tempfile
 import traceback
 import types
-from typing import Iterable, Union
+from typing import Iterable, Union, Any, List
 
 import asynq
 import qcore
@@ -116,25 +117,25 @@ if hasattr(ast, "MatMult"):
 SlotWrapperType = type(type.__init__)
 MethodDescriptorType = type(list.append)
 
-FunctionInfo = collections.namedtuple(
-    "FunctionInfo",
-    [
-        "async_kind",  # AsyncFunctionKind
-        "is_classmethod",  # has @classmethod
-        "is_staticmethod",  # has @staticmethod
-        "is_decorated_coroutine",  # has @asyncio.coroutine
-        # a list of pairs of (decorator function, applied decorator function). These are different
-        # for decorators that take arguments, like @asynq(): the first element will be the asynq
-        # function and the second will be the result of calling asynq().
-        "decorators",
-    ],
-)
+
+@dataclass(frozen=True)
+class FunctionInfo:
+    async_kind: AsyncFunctionKind
+    is_classmethod: bool  # has @classmethod
+    is_staticmethod: bool  # has @staticmethod
+    is_decorated_coroutine: bool  # has @asyncio.coroutine
+    # a list of pairs of (decorator function, applied decorator function). These are different
+    # for decorators that take arguments, like @asynq(): the first element will be the asynq
+    # function and the second will be the result of calling asynq().
+    decorators: List[Any]
+
+
 # FunctionInfo for a vanilla function (e.g. a lambda)
 _DEFAULT_FUNCTION_INFO = FunctionInfo(AsyncFunctionKind.normal, False, False, False, [])
 _BOOL_DUNDER = "__bool__"
 
 
-class ClassAttributeChecker(object):
+class ClassAttributeChecker:
     """Helper class to keep track of attributes that are read and set on instances."""
 
     def __init__(self, config, enabled=True, should_check_unused_attributes=False):
@@ -1171,8 +1172,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         with self.asynq_checker.set_func_name("<lambda>"):
             self._visit_function_body(node, defaults=defaults, kw_defaults=kw_defaults)
 
-    def _visit_decorators_and_check_asynq(self, decorator_list):
-        """Visits a function's decorator list. Returns a FunctionInfo namedtuple."""
+    def _visit_decorators_and_check_asynq(
+        self, decorator_list: List[ast.expr]
+    ) -> FunctionInfo:
+        """Visits a function's decorator list."""
         async_kind = AsyncFunctionKind.non_async
         is_classmethod = False
         is_decorated_coroutine = False

@@ -18,9 +18,10 @@ Other subtleties implemented here:
 - Class scopes except the current one are skipped in name lookup
 
 """
-from collections import defaultdict, namedtuple, OrderedDict
+import ast
+from collections import defaultdict, OrderedDict
 import contextlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import enum
 import qcore
 from itertools import chain
@@ -44,9 +45,14 @@ from .value import (
 LEAVES_SCOPE = "%LEAVES_SCOPE"
 LEAVES_LOOP = "%LEAVES_LOOP"
 _UNINITIALIZED = qcore.MarkerObject("uninitialized")
-_LookupContext = namedtuple(
-    "_LookupContext", ["varname", "fallback_value", "node", "state"]
-)
+
+
+@dataclass(frozen=True)
+class _LookupContext:
+    varname: str
+    fallback_value: Optional[Value]
+    node: ast.AST
+    state: object
 
 
 class VisitorState(enum.Enum):
@@ -319,15 +325,18 @@ class OrConstraint(AbstractConstraint):
         return AndConstraint(self.left.invert(), self.right.invert())
 
 
-CompositeVariable = namedtuple("CompositeVariable", ["varname", "attributes"])
+@dataclass(frozen=True)
+class CompositeVariable:
+    """Fake variable used to implement constraints on instance variables.
 
-CompositeVariable.__doc__ = """Fake variable used to implement constraints on instance variables.
+    For example, access to "self.x" would make us use
+    CompositeVariable('self', ('x',)). If a function contains a check for
+    isinstance(self.x, int), we would put a Constraint on this CompositeVariable.
 
-For example, access to "self.x" would make us use
-CompositeVariable('self', ('x',)). If a function contains a check for
-isinstance(self.x, int), we would put a Constraint on this CompositeVariable.
+    """
 
-"""
+    varname: str
+    attributes: Sequence[str]
 
 
 class _ConstrainedValue(Value):
@@ -735,7 +744,7 @@ class FunctionScope(Scope):
             # Cache repeated resolutions of the same ConstrainedValue, because otherwise
             # lots of nested constraints can lead to exponential performance (see the
             # test_repeated_constraints test case).
-            key = ctx._replace(fallback_value=None)
+            key = replace(ctx, fallback_value=None)
             if key in val.resolution_cache:
                 return val.resolution_cache[key]
             if val.definition_nodes or ctx.fallback_value:

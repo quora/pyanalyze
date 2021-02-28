@@ -28,7 +28,11 @@ from typing import Optional, Sequence
 
 from . import analysis_lib
 
-_FakeNode = collections.namedtuple("_FakeNode", ["lineno", "col_offset"])
+
+@dataclass(frozen=True)
+class _FakeNode:
+    lineno: int
+    col_offset: int
 
 
 # Environment variable that may contain the name of a file listing Python files that we should run
