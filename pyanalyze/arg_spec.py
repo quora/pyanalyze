@@ -28,6 +28,7 @@ from .value import (
     Value,
     VariableNameValue,
     AwaitableIncompleteValue,
+    extract_typevars,
 )
 
 import asyncio
@@ -55,6 +56,9 @@ from typing import (
     Union,
     Callable,
     Dict,
+    List,
+    Set,
+    TypeVar,
     Tuple,
     TYPE_CHECKING,
 )
@@ -258,6 +262,7 @@ class ExtendedArgSpec:
 
     _default_value: ClassVar[object] = object()
     _kwonly_args_name: ClassVar[str] = "__kwargs"
+    _return_key: ClassVar[str] = "%return"
     _excluded_attributes = {"logger"}
 
     arguments: Sequence[Parameter]
@@ -270,6 +275,10 @@ class ExtendedArgSpec:
     logger: Optional[Logger] = field(repr=False, default=None, compare=False)
     params_of_names: Dict[str, Parameter] = field(init=False)
     _has_return_value: bool = field(init=False)
+    typevars_of_params: Dict[str, List[TypeVar]] = field(
+        init=False, default_factory=dict
+    )
+    all_typevars: Set[TypeVar] = field(init=False, default_factory=set)
 
     def __post_init__(self) -> None:
         self._has_return_value = self.return_value is not UNRESOLVED_VALUE
@@ -286,6 +295,20 @@ class ExtendedArgSpec:
             self.params_of_names[self.kwargs] = Parameter(
                 self.kwargs, typ=TypedValue(dict)
             )
+        for param_name, param in self.params_of_names.items():
+            if param.typ is None:
+                continue
+            typevars = list(extract_typevars(param.typ))
+            if typevars:
+                self.typevars_of_params[param_name] = typevars
+        return_typevars = list(extract_typevars(self.return_value))
+        if return_typevars:
+            self.typevars_of_params[self._return_key] = return_typevars
+        self.all_typevars = {
+            typevar
+            for tv_list in self.typevars_of_params.values()
+            for typevar in tv_list
+        }
 
     def log(self, level: int, label: str, value: object) -> None:
         if self.logger is not None:
@@ -388,6 +411,30 @@ def %(name)s(%(arguments)s):
             visitor.show_error(node, repr(e), ErrorCode.incompatible_call)
             return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         self.log(logging.DEBUG, "Variables from function call", variables)
+        return_value = self.return_value
+        if self.all_typevars:
+            typevar_values: Dict[TypeVar, Value] = {}
+            for param_name in self.typevars_of_params:
+                if param_name == self._return_key:
+                    continue
+                var_value = variables[param_name]
+                if var_value is self._default_value:
+                    continue
+                param = self.params_of_names[param_name]
+                if param.typ is None:
+                    continue
+                new_value, new_typevars = param.typ.apply_typevars(
+                    var_value, typevar_values
+                )
+                typevar_values.update(new_typevars)
+                variables[param_name] = new_value
+            for typevar in self.all_typevars:
+                typevar_values.setdefault(typevar, UNRESOLVED_VALUE)
+            if self._return_key in self.typevars_of_params:
+                return_value, _ = return_value.apply_typevars(
+                    return_value, typevar_values
+                )
+
         non_param_names = {self.starargs, self.kwargs, self._kwonly_args_name}
         for name, var_value in variables.items():
             if var_value is not self._default_value and name not in non_param_names:
@@ -422,7 +469,7 @@ def %(name)s(%(arguments)s):
             )
             return return_value, constraint, no_return_unless
         else:
-            return self.return_value, NULL_CONSTRAINT, NULL_CONSTRAINT
+            return return_value, NULL_CONSTRAINT, NULL_CONSTRAINT
 
     def has_return_value(self) -> bool:
         # We can't check self.return_value directly here because that may have
