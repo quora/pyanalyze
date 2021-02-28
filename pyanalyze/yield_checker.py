@@ -13,9 +13,11 @@ import ast
 from ast_decompiler import decompile
 import asynq
 import contextlib
+from dataclasses import dataclass, field
 import qcore
 import itertools
 import logging
+from typing import List
 
 from .asynq_checker import AsyncFunctionKind
 from .error_code import ErrorCode
@@ -24,22 +26,25 @@ from .analysis_lib import get_indentation, get_line_range_for_node
 from .node_visitor import Replacement
 
 
-class YieldInfo(qcore.InspectableClass):
+@dataclass
+class YieldInfo:
     """Wrapper class for yield nodes."""
 
-    def __init__(self, yield_node, statement_node, lines):
-        self.yield_node = yield_node
-        self.statement_node = statement_node
-        self._lines = lines
-        self.line_range = get_line_range_for_node(statement_node, lines)
+    yield_node: ast.Yield
+    statement_node: ast.stmt
+    lines: List[str]
+    line_range: List[int] = field(init=False)
 
-    def is_assign_or_expr(self):
+    def __post_init__(self) -> None:
+        self.line_range = get_line_range_for_node(self.statement_node, self.lines)
+
+    def is_assign_or_expr(self) -> bool:
         if not isinstance(self.statement_node, (ast.Expr, ast.Assign)):
             return False
         return self.statement_node.value is self.yield_node
 
     def get_indentation(self):
-        return get_indentation(self._lines[self.statement_node.lineno - 1])
+        return get_indentation(self.lines[self.statement_node.lineno - 1])
 
     def target_and_value(self):
         """Returns a pair of a list of target nodes and a list of value nodes."""
@@ -400,6 +405,8 @@ class YieldChecker(object):
     def _create_replacement_for_yield_nodes(self, second_node, second_parent):
         """Returns one statement that does a batched yield of the given 2 yields."""
         lines = self.visitor._lines()
+        assert self.previous_yield is not None
+        assert self.statement_for_previous_yield is not None
         first_yield = YieldInfo(
             self.previous_yield, self.statement_for_previous_yield, lines
         )

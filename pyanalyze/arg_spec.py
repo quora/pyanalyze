@@ -25,20 +25,21 @@ from .value import (
 )
 
 import asyncio
+import ast
 import asynq
 import builtins
+from dataclasses import dataclass, field, InitVar
 from functools import reduce
 import collections
 import contextlib
 import qcore
-from qcore import InspectableClass
 import inspect
 import logging
 import re
 import sys
 import warnings
 import attr
-from typing import NewType
+from typing import Any, Sequence, NewType, Optional, ClassVar, Union, Callable, Dict
 import typeshed_client
 from typed_ast import ast3
 
@@ -109,66 +110,76 @@ def with_implementation(fn, implementation_fn):
             yield
 
 
-class Parameter(InspectableClass):
+@dataclass
+class Parameter:
     """Class representing a function parameter.
 
     default_value is Parameter.no_default_value when there is no default value.
 
     """
 
-    no_default_value = object()
+    no_default_value: ClassVar[object] = object()
 
-    def __init__(self, name, default_value=no_default_value, typ=None):
-        self.name = name
-        self.default_value = default_value
-        if isinstance(typ, (type, tuple)):
-            typ = TypedValue(typ)
-        self.typ = typ
+    name: str
+    default_value: object = no_default_value
+    typ: Optional[Value] = None
+
+    def __post_init__(self):
+        assert self.typ is None or isinstance(self.typ, Value), repr(self)
 
 
-class BoundMethodArgSpecWrapper(InspectableClass):
+@dataclass
+class BoundMethodArgSpecWrapper:
     """Wrapper around ExtendedArgSpec to support bound methods.
 
     Adds the object that the method is bound to as an argument.
 
     """
 
-    def __init__(self, argspec, self_value):
-        if isinstance(argspec, BoundMethodArgSpecWrapper):
-            argspec = argspec.argspec
-        assert isinstance(argspec, ExtendedArgSpec), "invalid argspec %r" % (argspec,)
-        self.argspec = argspec
-        self.self_value = self_value
+    argspec: "ExtendedArgSpec" = field(init=False)
+    argspec_arg: InitVar[Union["ExtendedArgSpec", "BoundMethodArgSpecWrapper"]]
+    self_value: Value
+
+    def __post_init__(self, argspec_arg):
+        if isinstance(argspec_arg, BoundMethodArgSpecWrapper):
+            argspec_arg = argspec_arg.argspec
+        assert isinstance(
+            argspec_arg, ExtendedArgSpec
+        ), f"invalid argspec {argspec_arg!r}"
+        self.argspec = argspec_arg
 
     def check_call(self, args, keywords, visitor, node):
         return self.argspec.check_call(
             [self.self_value] + args, keywords, visitor, node
         )
 
-    def has_return_value(self):
+    def has_return_value(self) -> bool:
         return self.argspec.has_return_value()
 
     @property
-    def return_value(self):
+    def return_value(self) -> Value:
         return self.argspec.return_value
 
 
-class PropertyArgSpec(InspectableClass):
+@dataclass
+class PropertyArgSpec:
     """Pseudo-argspec for properties."""
 
-    def __init__(self, obj, return_value=UNRESOLVED_VALUE):
-        self.obj = obj
-        self._has_return_value = return_value is not UNRESOLVED_VALUE
-        self.return_value = return_value
+    obj: object
+    return_value: Value = UNRESOLVED_VALUE
 
     def check_call(self, args, keywords, visitor, node):
         raise TypeError("property object is not callable")
 
     def has_return_value(self):
-        return self._has_return_value
+        return self.return_value is not UNRESOLVED_VALUE
 
 
-class ExtendedArgSpec(InspectableClass):
+ImplementationFn = Callable[[Dict[str, Value], Any, ast.AST], Value]
+
+
+@dataclass
+class ExtendedArgSpec:
     """A richer version of the standard inspect.ArgSpec object.
 
     This stores:
@@ -187,43 +198,38 @@ class ExtendedArgSpec(InspectableClass):
 
     """
 
-    _default_value = object()
-    _kwonly_args_name = "__kwargs"
+    _default_value: ClassVar[object] = object()
+    _kwonly_args_name: ClassVar[str] = "__kwargs"
     _excluded_attributes = {"logger"}
 
-    def __init__(
-        self,
-        arguments,
-        starargs=None,
-        kwargs=None,
-        kwonly_args=None,
-        return_value=UNRESOLVED_VALUE,
-        name=None,
-        logger=None,
-        implementation=None,
-    ):
-        self.arguments = arguments
-        self.starargs = starargs
-        self.kwargs = kwargs
-        if kwonly_args == []:
-            kwonly_args = None
-        self.kwonly_args = kwonly_args
-        self._has_return_value = return_value is not UNRESOLVED_VALUE
-        self.return_value = return_value
-        self.name = name
-        self.logger = logger
-        self.implementation = implementation
+    arguments: Sequence[Parameter]
+    starargs: Optional[str] = None
+    kwargs: Optional[str] = None
+    kwonly_args: Sequence[Parameter] = field(default_factory=list)
+    return_value: Value = UNRESOLVED_VALUE
+    name: Optional[str] = None
+    implementation: Optional[ImplementationFn] = None
+    logger: Optional[Callable[[int, str, object], object]] = field(
+        repr=False, default=None, compare=False
+    )
+    params_of_names: Dict[str, Parameter] = field(init=False)
+    _has_return_value: bool = field(init=False)
 
+    def __post_init__(self):
+        self._has_return_value = self.return_value is not UNRESOLVED_VALUE
         self.params_of_names = {}
-        for param in arguments:
+        for param in self.arguments:
             self.params_of_names[param.name] = param
-        if kwonly_args is not None:
-            for param in kwonly_args:
-                self.params_of_names[param.name] = param
-        if starargs is not None:
-            self.params_of_names[starargs] = Parameter(starargs, typ=tuple)
-        if kwargs is not None:
-            self.params_of_names[kwargs] = Parameter(kwargs, typ=dict)
+        for param in self.kwonly_args:
+            self.params_of_names[param.name] = param
+        if self.starargs is not None:
+            self.params_of_names[self.starargs] = Parameter(
+                self.starargs, typ=TypedValue(tuple)
+            )
+        if self.kwargs is not None:
+            self.params_of_names[self.kwargs] = Parameter(
+                self.kwargs, typ=TypedValue(dict)
+            )
 
     def log(self, level, label, value):
         if self.logger is not None:
@@ -260,7 +266,7 @@ class ExtendedArgSpec(InspectableClass):
         if self.starargs is not None:
             argument_strings.append("*%s" % self.starargs)
 
-        if self.kwonly_args is not None:
+        if self.kwonly_args:
             if self.starargs is None:
                 argument_strings.append("*")
             for arg in self.kwonly_args:
@@ -717,13 +723,13 @@ def _qcore_assert_impl(variables, visitor, node, constraint_type, positive):
     return KnownValue(None), NULL_CONSTRAINT, no_return_unless
 
 
-_ENCODING_PARAMETER = Parameter("encoding", typ=str, default_value="")
+_ENCODING_PARAMETER = Parameter("encoding", typ=TypedValue(str), default_value="")
 
 
 class ArgSpecCache(object):
     DEFAULT_ARGSPECS = {
         assert_is_value: ExtendedArgSpec(
-            [Parameter("obj"), Parameter("value", typ=Value)],
+            [Parameter("obj"), Parameter("value", typ=TypedValue(Value))],
             implementation=_assert_is_value_impl,
             name="assert_is_value",
         ),
@@ -739,13 +745,13 @@ class ArgSpecCache(object):
         getattr: ExtendedArgSpec(
             [
                 Parameter("object"),
-                Parameter("name", typ=str),
+                Parameter("name", typ=TypedValue(str)),
                 Parameter("default", default_value=None),
             ],
             name="getattr",
         ),
         hasattr: ExtendedArgSpec(
-            [Parameter("object"), Parameter("name", typ=str)],
+            [Parameter("object"), Parameter("name", typ=TypedValue(str))],
             return_value=TypedValue(bool),
             name="hasattr",
             implementation=_hasattr_impl,
@@ -753,7 +759,7 @@ class ArgSpecCache(object):
         setattr: ExtendedArgSpec(
             [
                 Parameter("object"),
-                Parameter("name", typ=str),
+                Parameter("name", typ=TypedValue(str)),
                 Parameter("value"),
             ],
             return_value=KnownValue(None),
@@ -788,24 +794,24 @@ class ArgSpecCache(object):
         ),
         bytes.decode: ExtendedArgSpec(
             [
-                Parameter("self", typ=bytes),
+                Parameter("self", typ=TypedValue(bytes)),
                 _ENCODING_PARAMETER,
-                Parameter("errors", typ=str, default_value=""),
+                Parameter("errors", typ=TypedValue(str), default_value=""),
             ],
             name="bytes.decode",
             return_value=TypedValue(str),
         ),
         str.encode: ExtendedArgSpec(
             [
-                Parameter("self", typ=str),
+                Parameter("self", typ=TypedValue(str)),
                 _ENCODING_PARAMETER,
-                Parameter("errors", typ=str, default_value=""),
+                Parameter("errors", typ=TypedValue(str), default_value=""),
             ],
             name="str.encode",
             return_value=TypedValue(bytes),
         ),
         str.format: ExtendedArgSpec(
-            [Parameter("self", typ=str)],
+            [Parameter("self", typ=TypedValue(str))],
             starargs="args",
             kwargs="kwargs",
             name="str.format",
@@ -819,10 +825,10 @@ class ArgSpecCache(object):
                     typ=MultiValuedValue([TypedValue(str), TypedValue(Warning)]),
                 ),
                 Parameter("category", typ=UNRESOLVED_VALUE, default_value=None),
-                Parameter("stacklevel", typ=int, default_value=1),
+                Parameter("stacklevel", typ=TypedValue(int), default_value=1),
             ],
             name="warnings.warn",
-            return_value=None,
+            return_value=KnownValue(None),
         ),
         # qcore/asynq
         # just so we can infer the return value
@@ -849,7 +855,8 @@ class ArgSpecCache(object):
         ),
         # Need to override this because the type for the tp parameter in typeshed is too strict
         NewType: ExtendedArgSpec(
-            [Parameter("name", typ=str), Parameter(name="tp")], name="NewType"
+            [Parameter("name", typ=TypedValue(str)), Parameter(name="tp")],
+            name="NewType",
         ),
     }
 
@@ -971,7 +978,7 @@ class ArgSpecCache(object):
             args,
             starargs=starargs,
             kwargs=kwargs,
-            kwonly_args=kwonly_args or None,
+            kwonly_args=kwonly_args,
             return_value=return_value,
             name=name,
             logger=logger,

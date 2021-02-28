@@ -4,6 +4,7 @@ Code for understanding type annotations.
 
 """
 import attr
+from dataclasses import InitVar
 import mypy_extensions
 import typing_extensions
 import typing
@@ -186,6 +187,9 @@ def _type_from_runtime(val, ctx):
     elif is_instance_of_typing_name(val, "_TypeAlias"):
         # typing.Pattern and Match, which are not normal generic types for some reason
         return GenericValue(val.impl_type, [_type_from_runtime(val.type_var, ctx)])
+    elif isinstance(val, InitVar):
+        # No need to bother with it further; dataclasses processes it for us.
+        return UNRESOLVED_VALUE
     else:
         origin = get_origin(val)
         if origin is not None:
