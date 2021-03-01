@@ -241,7 +241,6 @@ class TypedValue(Value):
                 return True
             return are_types_compatible(self.typ, type(val.val))
         elif isinstance(val, TypedValue):
-            print("IIIII", self, val)
             if issubclass(val.typ, self.typ):
                 return True
             return are_types_compatible(self.typ, val.typ)
