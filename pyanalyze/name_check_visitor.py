@@ -36,7 +36,7 @@ from qcore.helpers import safe_str
 
 from pyanalyze.analysis_lib import safe_in, is_iterable
 from pyanalyze import attributes, node_visitor
-from pyanalyze.annotations import type_from_runtime, type_from_value, is_typing_name
+from pyanalyze.annotations import type_from_value, is_typing_name
 from pyanalyze.arg_spec import (
     ArgSpecCache,
     BoundMethodArgSpecWrapper,
