@@ -37,7 +37,7 @@ import asynq
 import builtins
 from dataclasses import dataclass, field, InitVar
 from functools import reduce
-import collections
+import collections.abc
 import contextlib
 import qcore
 import inspect
@@ -711,7 +711,7 @@ def _sequence_impl(
         return SequenceIncompleteValue(typ, [key for key, _ in iterable.items])
     elif isinstance(iterable, TypedValue):
         if not iterable.is_type(
-            collections.Iterable
+            collections.abc.Iterable
         ) and not visitor._should_ignore_type(iterable.typ):
             visitor.show_error(
                 node,

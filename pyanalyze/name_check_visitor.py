@@ -10,13 +10,12 @@ import ast
 from ast_decompiler import decompile
 import asyncio
 import builtins
-import collections
+import collections.abc
 import contextlib
 from dataclasses import dataclass
 from functools import reduce
 import imp
 import inspect
-import inspect2
 from itertools import chain
 import logging
 import os.path
@@ -2567,7 +2566,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         elif isinstance(iterated, TypedValue):
             if not issubclass(
-                iterated.typ, collections.Iterable
+                iterated.typ, collections.abc.Iterable
             ) and not self._should_ignore_type(iterated.typ):
                 self._show_error_if_checking(
                     node,
@@ -3630,7 +3629,7 @@ def _safe_getattr(value, attr, default):
 
 def _is_coroutine_function(obj):
     try:
-        return inspect2.iscoroutinefunction(obj)
+        return inspect.iscoroutinefunction(obj)
     except AttributeError:
         # This can happen to cached classmethods.
         return False
