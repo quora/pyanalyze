@@ -65,7 +65,7 @@ from pyanalyze.stacked_scopes import (
     LEAVES_SCOPE,
     constrain_value,
 )
-from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker
+from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from pyanalyze.yield_checker import YieldChecker
 from pyanalyze.value import (
     boolean_value,
@@ -113,18 +113,6 @@ if hasattr(ast, "MatMult"):
         "__imatmul__",
         "__rmatmul__",
     )
-
-
-@dataclass(frozen=True)
-class FunctionInfo:
-    async_kind: AsyncFunctionKind
-    is_classmethod: bool  # has @classmethod
-    is_staticmethod: bool  # has @staticmethod
-    is_decorated_coroutine: bool  # has @asyncio.coroutine
-    # a list of pairs of (decorator function, applied decorator function). These are different
-    # for decorators that take arguments, like @asynq(): the first element will be the asynq
-    # function and the second will be the result of calling asynq().
-    decorators: List[Any]
 
 
 @dataclass

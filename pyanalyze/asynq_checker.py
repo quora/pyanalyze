@@ -12,7 +12,7 @@ import enum
 import qcore
 import inspect
 import types
-from typing import Sequence, Any, Callable, Optional, Iterable
+from typing import Sequence, Any, Callable, List, Optional, Iterable
 
 from .config import Config
 from .error_code import ErrorCode
@@ -24,6 +24,18 @@ class AsyncFunctionKind(enum.Enum):
     normal = 1
     async_proxy = 2
     pure = 3
+
+
+@dataclass(frozen=True)
+class FunctionInfo:
+    async_kind: AsyncFunctionKind
+    is_classmethod: bool  # has @classmethod
+    is_staticmethod: bool  # has @staticmethod
+    is_decorated_coroutine: bool  # has @asyncio.coroutine
+    # a list of pairs of (decorator function, applied decorator function). These are different
+    # for decorators that take arguments, like @asynq(): the first element will be the asynq
+    # function and the second will be the result of calling asynq().
+    decorators: List[Any]
 
 
 @dataclass
