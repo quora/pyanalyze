@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from functools import reduce
 import imp
 import inspect
-import inspect2
 from itertools import chain
 import logging
 import os.path
@@ -3630,7 +3629,7 @@ def _safe_getattr(value, attr, default):
 
 def _is_coroutine_function(obj):
     try:
-        return inspect2.iscoroutinefunction(obj)
+        return inspect.iscoroutinefunction(obj)
     except AttributeError:
         # This can happen to cached classmethods.
         return False
