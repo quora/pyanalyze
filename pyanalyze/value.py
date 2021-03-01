@@ -176,13 +176,14 @@ class UnboundMethodValue(Value):
     """
 
     attr_name: str
-    typ: type
+    typ: Value
     secondary_attr_name: Optional[str] = None
 
     def get_method(self) -> Optional[Any]:
         """Returns the method object for this UnboundMethodValue."""
         try:
-            method = getattr(self.typ, self.attr_name)
+            typ = self.typ.get_type()
+            method = getattr(typ, self.attr_name)
             if self.secondary_attr_name is not None:
                 method = getattr(method, self.secondary_attr_name)
             # don't use unbound methods in py2
@@ -205,7 +206,7 @@ class UnboundMethodValue(Value):
         return "<method %s%s on %s>" % (
             self.attr_name,
             ".%s" % (self.secondary_attr_name,) if self.secondary_attr_name else "",
-            _stringify_type(self.typ),
+            self.typ,
         )
 
 

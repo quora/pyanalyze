@@ -81,7 +81,7 @@ class AsynqChecker:
         elif (
             isinstance(value, UnboundMethodValue)
             and value.secondary_attr_name is None
-            and hasattr(value.typ, value.attr_name + "_async")
+            and hasattr(value.typ.get_type(), value.attr_name + "_async")
         ):
             if isinstance(node.func, ast.Attribute):
                 func_node = ast.Attribute(
@@ -94,7 +94,7 @@ class AsynqChecker:
             self._show_impure_async_error(
                 node,
                 replacement_call="%s.%s_async"
-                % (_stringify_obj(value.typ), value.attr_name),
+                % (_stringify_obj(value.typ.get_type()), value.attr_name),
                 replacement_node=replacement_node,
             )
 
@@ -125,7 +125,7 @@ class AsynqChecker:
                     getattr(root_value.typ, async_name)
                 ):
                     replacement_call = _stringify_async_fn(
-                        UnboundMethodValue(async_name, root_value.typ, "asynq")
+                        UnboundMethodValue(async_name, root_value, "asynq")
                     )
                     method_node = ast.Attribute(value=node.value, attr=async_name)
                     func_node = ast.Attribute(value=method_node, attr="asynq")
@@ -218,7 +218,7 @@ def _stringify_async_fn(value: Value) -> str:
     if isinstance(value, KnownValue):
         return _stringify_obj(value.val)
     elif isinstance(value, UnboundMethodValue):
-        ret = "%s.%s" % (_stringify_obj(value.typ), value.attr_name)
+        ret = "%s.%s" % (_stringify_obj(value.typ.get_type()), value.attr_name)
         if value.secondary_attr_name is not None:
             ret += ".%s" % value.secondary_attr_name
         return ret
