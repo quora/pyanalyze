@@ -172,6 +172,8 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
+        if getattr(val, "_is_special", False):
+            args = []  # distinguish List from List[T] on 3.7 and 3.8
         return _value_of_origin_args(origin, args, val, ctx)
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
