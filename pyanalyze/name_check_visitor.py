@@ -35,8 +35,8 @@ import qcore
 from qcore.helpers import safe_str
 
 from pyanalyze.analysis_lib import safe_in, is_iterable
-from pyanalyze import node_visitor
-from pyanalyze.annotations import type_from_runtime, type_from_value, is_typing_name
+from pyanalyze import attributes, node_visitor
+from pyanalyze.annotations import type_from_value, is_typing_name
 from pyanalyze.arg_spec import (
     ArgSpecCache,
     BoundMethodArgSpecWrapper,
@@ -115,11 +115,6 @@ if hasattr(ast, "MatMult"):
     )
 
 
-# these don't appear to be in the standard types module
-SlotWrapperType = type(type.__init__)
-MethodDescriptorType = type(list.append)
-
-
 @dataclass(frozen=True)
 class FunctionInfo:
     async_kind: AsyncFunctionKind
@@ -130,6 +125,37 @@ class FunctionInfo:
     # for decorators that take arguments, like @asynq(): the first element will be the asynq
     # function and the second will be the result of calling asynq().
     decorators: List[Any]
+
+
+@dataclass
+class _AttrContext(attributes.AttrContext):
+    visitor: "NameCheckVisitor"
+
+    def record_usage(self, obj: Any, val: Value) -> None:
+        self.visitor._maybe_record_usage(obj, self.attr, val)
+
+    def record_attr_read(self, obj: Any) -> None:
+        self.visitor._record_type_attr_read(obj, self.attr, self.node)
+
+    def should_ignore_class_attribute(self, obj: Any) -> bool:
+        return self.visitor.config.should_ignore_class_attribute(obj)
+
+    def get_property_type_from_config(self, obj: Any) -> Value:
+        try:
+            return self.visitor.config.PROPERTIES_OF_KNOWN_TYPE[obj]
+        except (KeyError, TypeError):
+            return UNRESOLVED_VALUE  # can't figure out what this will return
+
+    def get_property_type_from_argspec(self, obj: Any) -> Value:
+        argspec = self.visitor.arg_spec_cache.get_argspec(obj)
+        if argspec is not None:
+            if argspec.has_return_value():
+                return argspec.return_value
+            # If we visited the property and inferred a return value,
+            # use it.
+            if id(argspec) in self.visitor._argspec_to_retval:
+                return self.visitor._argspec_to_retval[id(argspec)]
+        return UNRESOLVED_VALUE
 
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
@@ -355,7 +381,7 @@ class ClassAttributeChecker:
         if hasattr(typ, attr_name):
             return
         # the attribute is in __annotations__, e.g. a dataclass
-        if _has_annotation_for_attr(typ, attr_name) or _get_attrs_attribute(
+        if _has_annotation_for_attr(typ, attr_name) or attributes.get_attrs_attribute(
             typ, attr_name
         ):
             return
@@ -2912,19 +2938,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     node.value, value, "__getitem__", [index], allow_call=True
                 )
             if getitem_errors:
-
-                def on_error(typ):
-                    self._show_error_if_checking(
-                        node,
-                        "Object %s does not support subscripting" % (value,),
-                        error_code=ErrorCode.unsupported_operation,
-                    )
-                    return UNRESOLVED_VALUE
-
                 with self.catch_errors() as class_getitem_errors:
-                    cgi = self._get_attribute(
-                        node.value, "__class_getitem__", value, on_error=on_error
-                    )
+                    cgi = self.get_attribute(node.value, "__class_getitem__", value)
+                    if cgi is UNINITIALIZED_VALUE:
+                        self._show_error_if_checking(
+                            node,
+                            "Object %s does not support subscripting" % (value,),
+                            error_code=ErrorCode.unsupported_operation,
+                        )
+                        cgi = UNRESOLVED_VALUE
                     return_value, _ = self._get_argspec_and_check_call(
                         node.value, cgi, [index], allow_call=True
                     )
@@ -2955,17 +2977,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _check_dunder_call(self, node, callee_val, method_name, args, allow_call=False):
         lookup_val = callee_val.get_type_value()
 
-        def on_error(typ):
+        method_object = self.get_attribute(node, method_name, lookup_val)
+        if method_object is UNINITIALIZED_VALUE:
             self.show_error(
                 node,
                 "Object of type %s does not support %r" % (callee_val, method_name),
                 error_code=ErrorCode.unsupported_operation,
             )
-            return UNRESOLVED_VALUE
-
-        method_object = self._get_attribute(
-            node, method_name, lookup_val, on_error=on_error
-        )
+            method_object = UNRESOLVED_VALUE
         return_value, _ = self._get_argspec_and_check_call(
             node, method_object, [callee_val] + args, allow_call=allow_call
         )
@@ -2992,7 +3011,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         elif self._is_read_ctx(node.ctx):
             if self._is_checking():
                 self.asynq_checker.record_attribute_access(root_value, node.attr, node)
-            value = self._get_attribute(node, node.attr, root_value)
+            value = self._get_attribute_with_fallback(node, node.attr, root_value)
             if self._should_use_varname_value(value):
                 varname_value = VariableNameValue.from_varname(
                     node.attr, self.config.varname_value_map()
@@ -3023,265 +3042,63 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.show_error(node, "Unknown context", ErrorCode.unexpected_node)
             return UNRESOLVED_VALUE
 
-    def _get_attribute(self, node, attr, root_value, on_error=None):
-        if on_error is None:
+    def get_attribute(self, node: ast.Attribute, attr: str, root_value: Value) -> Value:
+        """Get an attribute of this value.
 
-            def on_error(typ):
-                # default on_error() doesn't throw an error in many
-                # cases where we're not quite suer whether an attribute
-                # will exist.
-                if isinstance(root_value, UnboundMethodValue):
-                    if self._should_ignore_val(node):
-                        return UNRESOLVED_VALUE
-                elif isinstance(root_value, KnownValue):
-                    # super calls on mixin classes may use attributes that are defined only on child classes
-                    if isinstance(typ, super):
-                        subclasses = qcore.inspection.get_subclass_tree(
-                            typ.__thisclass__
-                        )
-                        if any(
-                            hasattr(cls, attr)
-                            for cls in subclasses
-                            if cls is not typ.__thisclass__
-                        ):
-                            return UNRESOLVED_VALUE
+        Returns UninitializedValue if the attribute cannot be found.
 
-                    # Ignore objects that override __getattr__
-                    if (
-                        _static_hasattr(typ, "__getattr__")
-                        or self._should_ignore_val(node)
-                        or _safe_getattr(typ, "_pyanalyze_is_nested_function", False)
+        """
+        ctx = _AttrContext(root_value, attr, node, self)
+        return attributes.get_attribute(ctx)
+
+    def _get_attribute_with_fallback(
+        self, node: ast.Attribute, attr: str, root_value: Value
+    ) -> Value:
+        result = self.get_attribute(node, attr, root_value)
+        if result is UNINITIALIZED_VALUE:
+            # default on_error() doesn't throw an error in many
+            # cases where we're not quite suer whether an attribute
+            # will exist.
+            if isinstance(root_value, UnboundMethodValue):
+                if self._should_ignore_val(node):
+                    return UNRESOLVED_VALUE
+            elif isinstance(root_value, KnownValue):
+                # super calls on mixin classes may use attributes that are defined only on child classes
+                if isinstance(root_value.val, super):
+                    subclasses = qcore.inspection.get_subclass_tree(
+                        root_value.val.__thisclass__
+                    )
+                    if any(
+                        hasattr(cls, attr)
+                        for cls in subclasses
+                        if cls is not root_value.val.__thisclass__
                     ):
                         return UNRESOLVED_VALUE
-                else:
-                    # namedtuples have only static attributes
-                    if not (
-                        isinstance(typ, type)
-                        and issubclass(typ, tuple)
-                        and not hasattr(typ, "__getattr__")
-                    ):
-                        return self._maybe_get_attr_value(typ, attr)
-                self._show_error_if_checking(
-                    node,
-                    "%s has no attribute %r" % (root_value, attr),
-                    ErrorCode.undefined_attribute,
-                )
-                return UNRESOLVED_VALUE
 
-        if isinstance(root_value, KnownValue):
-            return self._visit_get_attribute_known(node, attr, root_value.val, on_error)
-        elif isinstance(root_value, SubclassValue):
-            return self._visit_get_attribute_subclass(
-                node, attr, root_value.typ, on_error
+                # Ignore objects that override __getattr__
+                if (
+                    _static_hasattr(root_value.val, "__getattr__")
+                    or self._should_ignore_val(node)
+                    or _safe_getattr(
+                        root_value.val, "_pyanalyze_is_nested_function", False
+                    )
+                ):
+                    return UNRESOLVED_VALUE
+            elif isinstance(root_value, (TypedValue, SubclassValue)):
+                # namedtuples have only static attributes
+                if not (
+                    isinstance(root_value.typ, type)
+                    and issubclass(root_value.typ, tuple)
+                    and not hasattr(root_value.typ, "__getattr__")
+                ):
+                    return self._maybe_get_attr_value(root_value.typ, attr)
+            self._show_error_if_checking(
+                node,
+                "%s has no attribute %r" % (root_value, attr),
+                ErrorCode.undefined_attribute,
             )
-        elif isinstance(root_value, TypedValue):
-            return self._visit_get_attribute_typed(node, attr, root_value.typ, on_error)
-        elif isinstance(root_value, UnboundMethodValue):
-            return self._visit_get_attribute_unbound(node, attr, root_value, on_error)
-        else:
             return UNRESOLVED_VALUE
 
-    def _visit_get_attribute_subclass(self, node, attr, typ, on_error):
-        self._record_type_attr_read(typ, attr, node)
-
-        # First check values that are special in Python
-        if attr == "__class__":
-            return KnownValue(type(typ))
-        elif attr == "__dict__":
-            return TypedValue(dict)
-        elif attr == "__bases__":
-            return GenericValue(tuple, [SubclassValue(object)])
-        result = self._get_attribute_from_mro(
-            node, attr, typ, self._get_attribute_value_from_raw_subclass, on_error
-        )
-        self._maybe_record_usage(typ, attr, result)
-        return result
-
-    def _get_attribute_value_from_raw_subclass(self, cls_val, attr, typ, node):
-        if (
-            qcore.inspection.is_classmethod(cls_val)
-            or inspect.ismethod(cls_val)
-            or inspect.isfunction(cls_val)
-            or isinstance(cls_val, (MethodDescriptorType, SlotWrapperType))
-            or (
-                # non-static method
-                _static_hasattr(cls_val, "decorator")
-                and _static_hasattr(cls_val, "instance")
-                and not isinstance(cls_val.instance, type)
-            )
-            or asynq.is_async_fn(cls_val)
-        ):
-            # static or class method
-            return KnownValue(cls_val)
-        elif _static_hasattr(cls_val, "__get__"):
-            return UNRESOLVED_VALUE  # can't figure out what this will return
-        elif self.config.should_ignore_class_attribute(cls_val):
-            return UNRESOLVED_VALUE  # probably set on child classes
-        else:
-            return self._maybe_replace_name_attribute(node, attr, typ, cls_val)
-
-    def _visit_get_attribute_typed(self, node, attr, typ, on_error):
-        self._record_type_attr_read(typ, attr, node)
-
-        # First check values that are special in Python
-        if attr == "__class__":
-            return KnownValue(typ)
-        elif attr == "__dict__":
-            return TypedValue(dict)
-        result = self._get_attribute_from_mro(
-            node, attr, typ, self._get_attribute_value_from_raw_typed, on_error
-        )
-        self._maybe_record_usage(typ, attr, result)
-        return result
-
-    def _get_attribute_from_mro(self, node, attr, typ, attribute_from_raw, on_error):
-        # Then go through the MRO and find base classes that may define the attribute.
-        try:
-            mro = list(typ.mro())
-        except Exception:
-            # broken mro method
-            pass
-        else:
-            for base_cls in mro:
-                try:
-                    # Make sure to use only __annotations__ that are actually on this
-                    # class, not ones inherited from a base class.
-                    annotation = base_cls.__dict__["__annotations__"][attr]
-                except Exception:
-                    # no __annotations__, or it's not a dict, or the attr isn't there
-                    try:
-                        # Make sure we use only the object from this class, but do invoke
-                        # the descriptor protocol with getattr.
-                        base_cls.__dict__[attr]
-                        cls_val = getattr(typ, attr)
-                    except Exception:
-                        pass
-                    else:
-                        return attribute_from_raw(cls_val, attr, typ, node)
-                else:
-                    return type_from_runtime(annotation)
-
-        attrs_type = _get_attrs_attribute(typ, attr)
-        if attrs_type is not None:
-            return attrs_type
-
-        # Even if we didn't find it any __dict__, maybe getattr() finds it directly.
-        try:
-            cls_val = getattr(typ, attr)
-        except Exception:
-            pass
-        else:
-            return attribute_from_raw(cls_val, attr, typ, node)
-
-        return on_error(typ)
-
-    def _get_attribute_value_from_raw_typed(self, cls_val, attr, typ, node):
-        if isinstance(cls_val, property):
-            if cls_val in self.config.PROPERTIES_OF_KNOWN_TYPE:
-                return self.config.PROPERTIES_OF_KNOWN_TYPE[cls_val]
-            argspec = self.arg_spec_cache.get_argspec(cls_val)
-            if argspec is not None:
-                if argspec.has_return_value():
-                    return argspec.return_value
-                # If we visited the property and inferred a return value,
-                # use it.
-                if id(argspec) in self._argspec_to_retval:
-                    return self._argspec_to_retval[id(argspec)]
-            return UNRESOLVED_VALUE
-        elif qcore.inspection.is_classmethod(cls_val):
-            return KnownValue(cls_val)
-        elif inspect.ismethod(cls_val):
-            return UnboundMethodValue(node.attr, typ)
-        elif inspect.isfunction(cls_val):
-            # either a staticmethod or an unbound method
-            try:
-                descriptor = inspect.getattr_static(typ, node.attr)
-            except AttributeError:
-                # probably a super call; assume unbound method
-                if attr != "__new__":
-                    return UnboundMethodValue(attr, typ)
-                else:
-                    # __new__ is implicitly a staticmethod
-                    return KnownValue(cls_val)
-            if isinstance(descriptor, staticmethod) or node.attr == "__new__":
-                return KnownValue(cls_val)
-            else:
-                return UnboundMethodValue(node.attr, typ)
-        elif isinstance(cls_val, (MethodDescriptorType, SlotWrapperType)):
-            # built-in method; e.g. scope_lib.tests.SimpleDatabox.get
-            return UnboundMethodValue(attr, typ)
-        elif (
-            _static_hasattr(cls_val, "decorator")
-            and _static_hasattr(cls_val, "instance")
-            and not isinstance(cls_val.instance, type)
-        ):
-            # non-static method
-            return UnboundMethodValue(node.attr, typ)
-        elif asynq.is_async_fn(cls_val):
-            # static or class method
-            return KnownValue(cls_val)
-        elif _static_hasattr(cls_val, "__get__"):
-            try:
-                is_known = cls_val in self.config.PROPERTIES_OF_KNOWN_TYPE
-            except TypeError:  # not hashable
-                is_known = False
-            if is_known:
-                return self.config.PROPERTIES_OF_KNOWN_TYPE[cls_val]
-            else:
-                return UNRESOLVED_VALUE  # can't figure out what this will return
-        elif self.config.should_ignore_class_attribute(cls_val):
-            return UNRESOLVED_VALUE  # probably set on child classes
-        else:
-            return self._maybe_replace_name_attribute(node, attr, typ, cls_val)
-
-    def _visit_get_attribute_known(self, node, attr, value, on_error):
-        self._record_type_attr_read(type(value), attr, node)
-
-        if value is None:
-            # This usually indicates some context is set to None
-            # in the module and initialized later.
-            return UNRESOLVED_VALUE
-
-        def _get_attribute_value_from_raw_known(cls_val, attr, typ, node):
-            return self._maybe_replace_name_attribute(node, attr, value, cls_val)
-
-        result = self._get_attribute_from_mro(
-            node, attr, value, _get_attribute_value_from_raw_known, on_error
-        )
-        if isinstance(value, (types.ModuleType, type)):
-            self._maybe_record_usage(value, attr, result)
-        else:
-            self._maybe_record_usage(type(value), attr, result)
-        return result
-
-    def _maybe_replace_name_attribute(self, node, attr, value, attr_value):
-        # the __name__ of a class is bytes in py2 but text in py3, but treating it as bytes, can
-        # often produce unnecessary errors about mixing bytes and text in py2; such mixing is
-        # safe because __name__ in py2 is always ascii anyway
-        if (
-            attr in ("__name__", "__module__")
-            and isinstance(value, type)
-            and isinstance(attr_value, bytes)
-        ):
-            return unite_values(
-                KnownValue(attr_value, source_node=node),
-                KnownValue(attr_value.decode("ascii"), source_node=node),
-            )
-        else:
-            return KnownValue(attr_value, source_node=node)
-
-    def _visit_get_attribute_unbound(self, node, attr, root_value, on_error):
-        method = root_value.get_method()
-        if method is None:
-            return UNRESOLVED_VALUE
-        try:
-            getattr(method, attr)
-        except AttributeError:
-            return on_error(method)
-        result = UnboundMethodValue(
-            root_value.attr_name, root_value.typ, secondary_attr_name=attr
-        )
-        self._maybe_record_usage(type(method), attr, result)
         return result
 
     def _visit_set_attribute(self, node, root_value):
@@ -3830,19 +3647,3 @@ def _has_annotation_for_attr(typ, attr):
     except Exception:
         # __annotations__ doesn't exist or isn't a dict
         return False
-
-
-def _get_attrs_attribute(typ, attr):
-    try:
-        if hasattr(typ, "__attrs_attrs__"):
-            for attr_attr in typ.__attrs_attrs__:
-                if attr_attr.name == attr:
-                    if attr_attr.type is not None:
-                        return type_from_runtime(attr_attr.type)
-                    else:
-                        return UNRESOLVED_VALUE
-    except Exception:
-        # Guard against silly objects throwing exceptions on hasattr()
-        # or similar shenanigans.
-        pass
-    return None

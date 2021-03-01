@@ -123,7 +123,7 @@ class KnownValue(Value):
 
     def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, TypeVarValue):
-            val = val.get_degenerate_value()
+            val = val.get_fallback_value()
         if isinstance(val, KnownValue):
             return self.val == val.val
         elif isinstance(val, TypedValue):
@@ -230,7 +230,7 @@ class TypedValue(Value):
 
     def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, TypeVarValue):
-            val = val.get_degenerate_value()
+            val = val.get_fallback_value()
         if hasattr(self.typ, "_VALUES_TO_NAMES"):
             # Special case: Thrift enums. These are conceptually like
             # enums, but they are ints at runtime.
@@ -332,7 +332,7 @@ class GenericValue(TypedValue):
 
     def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, TypeVarValue):
-            val = val.get_degenerate_value()
+            val = val.get_fallback_value()
         if isinstance(val, GenericValue):
             if not super(GenericValue, self).is_value_compatible(val):
                 return False
@@ -564,7 +564,7 @@ class SubclassValue(Value):
 
     def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, TypeVarValue):
-            val = val.get_degenerate_value()
+            val = val.get_fallback_value()
         if isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible(subval) for subval in val.vals)
         elif isinstance(val, SubclassValue):
@@ -674,7 +674,7 @@ class TypeVarValue(Value):
             return (typevars[self.typevar], {})
         return value, {self.typevar: value}
 
-    def get_degenerate_value(self) -> Value:
+    def get_fallback_value(self) -> Value:
         # TODO: support bounds and bases here to do something smarter
         return UNRESOLVED_VALUE
 
