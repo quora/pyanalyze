@@ -3279,7 +3279,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         else:
             if isinstance(callee_wrapped, UnboundMethodValue):
-                args = [TypedValue(callee_wrapped.typ)] + args
+                args = [callee_wrapped.typ] + args
 
             if self._is_checking():
                 (
