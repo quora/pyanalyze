@@ -22,6 +22,7 @@ from .value import (
     UnboundMethodValue,
     SubclassValue,
     TypedValue,
+    VariableNameValue,
 )
 
 # these don't appear to be in the standard types module
@@ -61,7 +62,7 @@ def get_attribute(ctx: AttrContext) -> Value:
         return _get_attribute_from_subclass(root_value.typ, ctx)
     elif isinstance(root_value, UnboundMethodValue):
         return _get_attribute_from_unbound(root_value, ctx)
-    elif root_value is UNRESOLVED_VALUE:
+    elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
         return UNRESOLVED_VALUE
     elif isinstance(root_value, MultiValuedValue):
         # TODO: actually check this
