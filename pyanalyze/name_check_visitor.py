@@ -119,6 +119,13 @@ if hasattr(ast, "MatMult"):
 class _AttrContext(attributes.AttrContext):
     visitor: "NameCheckVisitor"
 
+    # Needs to be implemented explicitly to work around Cython limitations
+    def __init__(
+        self, root_value: Value, attr: str, node: ast.AST, visitor: "NameCheckVisitor"
+    ) -> None:
+        super().__init__(root_value, attr, node)
+        self.visitor = visitor
+
     def record_usage(self, obj: Any, val: Value) -> None:
         self.visitor._maybe_record_usage(obj, self.attr, val)
 
