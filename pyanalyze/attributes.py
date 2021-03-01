@@ -22,6 +22,7 @@ from .value import (
     UnboundMethodValue,
     SubclassValue,
     TypedValue,
+    TypeVarValue,
     VariableNameValue,
 )
 
@@ -54,6 +55,8 @@ class AttrContext:
 
 def get_attribute(ctx: AttrContext) -> Value:
     root_value = ctx.root_value
+    if isinstance(root_value, TypeVarValue):
+        root_value = root_value.get_fallback_value()
     if isinstance(root_value, KnownValue):
         return _get_attribute_from_known(root_value.val, ctx)
     elif isinstance(root_value, TypedValue):
