@@ -10,7 +10,7 @@ import ast
 from ast_decompiler import decompile
 import asyncio
 import builtins
-import collections
+import collections.abc
 import contextlib
 from dataclasses import dataclass
 from functools import reduce
@@ -2566,7 +2566,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         elif isinstance(iterated, TypedValue):
             if not issubclass(
-                iterated.typ, collections.Iterable
+                iterated.typ, collections.abc.Iterable
             ) and not self._should_ignore_type(iterated.typ):
                 self._show_error_if_checking(
                     node,
