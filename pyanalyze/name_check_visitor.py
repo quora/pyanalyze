@@ -3267,7 +3267,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         else:
             if isinstance(callee_wrapped, UnboundMethodValue):
-                args = [TypedValue(callee_wrapped.typ)] + args
+                args = [callee_wrapped.typ] + args
 
             if self._is_checking():
                 (
@@ -3327,7 +3327,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         elif isinstance(
             callee_wrapped, UnboundMethodValue
         ) and callee_wrapped.secondary_attr_name in ("async", "asynq"):
-            async_fn = getattr(callee_wrapped.typ, callee_wrapped.attr_name)
+            async_fn = callee_wrapped.get_method()
             return (
                 AsyncTaskIncompleteValue(_get_task_cls(async_fn), return_value),
                 constraint,

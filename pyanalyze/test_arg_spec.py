@@ -813,7 +813,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
 class TestTypeVar(TestNameCheckVisitorBase):
     @assert_passes()
     def test_simple(self):
-        from typing import TypeVar, List
+        from typing import TypeVar, List, Generic
 
         T = TypeVar("T")
 
@@ -825,7 +825,11 @@ class TestTypeVar(TestNameCheckVisitorBase):
                 return elt
             assert False
 
-        def capybara(x: str, xs: List[int]) -> None:
+        class GenCls(Generic[T]):
+            def get_one(self: "GenCls[T]") -> T:
+                raise NotImplementedError
+
+        def capybara(x: str, xs: List[int], gen: GenCls[int]) -> None:
             assert_is_value(id(3), KnownValue(3))
             assert_is_value(id(x), TypedValue(str))
             assert_is_value(get_one(xs), TypedValue(int))
@@ -833,3 +837,5 @@ class TestTypeVar(TestNameCheckVisitorBase):
             # This one doesn't work yet because we don't know how to go from
             # KnownValue([3]) to a GenericValue of some sort.
             # assert_is_value(get_one([3]), KnownValue(3))
+
+            assert_is_value(gen.get_one(), TypedValue(int))

@@ -148,7 +148,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
     elif qcore.inspection.is_classmethod(cls_val):
         return KnownValue(cls_val)
     elif inspect.ismethod(cls_val):
-        return UnboundMethodValue(ctx.attr, typ)
+        return UnboundMethodValue(ctx.attr, ctx.root_value)
     elif inspect.isfunction(cls_val):
         # either a staticmethod or an unbound method
         try:
@@ -156,24 +156,24 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         except AttributeError:
             # probably a super call; assume unbound method
             if ctx.attr != "__new__":
-                return UnboundMethodValue(ctx.attr, typ)
+                return UnboundMethodValue(ctx.attr, ctx.root_value)
             else:
                 # __new__ is implicitly a staticmethod
                 return KnownValue(cls_val)
         if isinstance(descriptor, staticmethod) or ctx.attr == "__new__":
             return KnownValue(cls_val)
         else:
-            return UnboundMethodValue(ctx.attr, typ)
+            return UnboundMethodValue(ctx.attr, ctx.root_value)
     elif isinstance(cls_val, (MethodDescriptorType, SlotWrapperType)):
         # built-in method; e.g. scope_lib.tests.SimpleDatabox.get
-        return UnboundMethodValue(ctx.attr, typ)
+        return UnboundMethodValue(ctx.attr, ctx.root_value)
     elif (
         _static_hasattr(cls_val, "decorator")
         and _static_hasattr(cls_val, "instance")
         and not isinstance(cls_val.instance, type)
     ):
         # non-static method
-        return UnboundMethodValue(ctx.attr, typ)
+        return UnboundMethodValue(ctx.attr, ctx.root_value)
     elif asynq.is_async_fn(cls_val):
         # static or class method
         return KnownValue(cls_val)

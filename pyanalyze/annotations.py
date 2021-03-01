@@ -281,6 +281,10 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             return TypedValue(type)
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
+            if origin is None:
+                # On Python 3.9 at least, get_origin() of a class that inherits
+                # from Generic[T] is None.
+                origin = root
             if getattr(origin, "__extra__", None) is not None:
                 origin = origin.__extra__
             return GenericValue(

@@ -33,23 +33,27 @@ def test_known_value():
 
 
 def test_unbound_method_value():
-    val = value.UnboundMethodValue("get_prop_with_get", tests.PropertyObject)
+    val = value.UnboundMethodValue(
+        "get_prop_with_get", value.TypedValue(tests.PropertyObject)
+    )
     assert_eq("<method get_prop_with_get on pyanalyze.tests.PropertyObject>", str(val))
     assert_eq("get_prop_with_get", val.attr_name)
-    assert_is(tests.PropertyObject, val.typ)
+    assert_eq(TypedValue(tests.PropertyObject), val.typ)
     assert_is(None, val.secondary_attr_name)
     assert_eq(tests.PropertyObject.get_prop_with_get, val.get_method())
     assert val.is_type(object)
     assert not val.is_type(str)
 
     val = value.UnboundMethodValue(
-        "get_prop_with_get", tests.PropertyObject, secondary_attr_name="asynq"
+        "get_prop_with_get",
+        value.TypedValue(tests.PropertyObject),
+        secondary_attr_name="asynq",
     )
     assert_eq(
         "<method get_prop_with_get.asynq on pyanalyze.tests.PropertyObject>", str(val)
     )
     assert_eq("get_prop_with_get", val.attr_name)
-    assert_is(tests.PropertyObject, val.typ)
+    assert_eq(TypedValue(tests.PropertyObject), val.typ)
     assert_eq("asynq", val.secondary_attr_name)
     method = val.get_method()
     assert_in(method.__name__, tests.ASYNQ_METHOD_NAMES)

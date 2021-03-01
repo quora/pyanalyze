@@ -16,7 +16,7 @@ from .tests import (
     Subclass,
     ASYNQ_METHOD_NAME,
 )
-from .value import KnownValue, UnboundMethodValue
+from .value import KnownValue, UnboundMethodValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes
 
@@ -402,11 +402,11 @@ def test_stringify_async_fn():
     # UnboundMethodValue
     check(
         "PropertyObject.async_method",
-        UnboundMethodValue("async_method", PropertyObject),
+        UnboundMethodValue("async_method", TypedValue(PropertyObject)),
     )
     check(
         "PropertyObject.async_method.asynq",
-        UnboundMethodValue("async_method", PropertyObject, "asynq"),
+        UnboundMethodValue("async_method", TypedValue(PropertyObject), "asynq"),
     )
 
     check(
@@ -415,7 +415,7 @@ def test_stringify_async_fn():
     assert_eq(
         "super(pyanalyze.tests.Subclass, self).async_method",
         _stringify_async_fn(
-            UnboundMethodValue("async_method", super(Subclass, Subclass))
+            UnboundMethodValue("async_method", TypedValue(super(Subclass, Subclass)))
         ),
     )
 
@@ -435,9 +435,11 @@ def test_is_impure_async_fn():
     assert not is_impure_async_fn(KnownValue(PropertyObject(1).async_method.asynq))
 
     # UnboundMethodValue
-    assert is_impure_async_fn(UnboundMethodValue("async_method", PropertyObject))
+    assert is_impure_async_fn(
+        UnboundMethodValue("async_method", TypedValue(PropertyObject))
+    )
     assert not is_impure_async_fn(
-        UnboundMethodValue("async_method", PropertyObject, "asynq")
+        UnboundMethodValue("async_method", TypedValue(PropertyObject), "asynq")
     )
 
 
@@ -456,5 +458,7 @@ def test_get_pure_async_equivalent():
 
     assert_eq(
         "pyanalyze.tests.PropertyObject.async_method.asynq",
-        get_pure_async_equivalent(UnboundMethodValue("async_method", PropertyObject)),
+        get_pure_async_equivalent(
+            UnboundMethodValue("async_method", TypedValue(PropertyObject))
+        ),
     )

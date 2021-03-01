@@ -1495,20 +1495,26 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
         def capybara(oid):
             assert_is_value(
                 PropertyObject(oid).non_async_method,
-                UnboundMethodValue("non_async_method", PropertyObject),
+                UnboundMethodValue("non_async_method", TypedValue(PropertyObject)),
             )
             assert_is_value(
                 PropertyObject(oid).async_method,
-                UnboundMethodValue("async_method", PropertyObject),
+                UnboundMethodValue("async_method", TypedValue(PropertyObject)),
             )
             assert_is_value(
                 ClassWithAsync().get_async,
-                UnboundMethodValue("get_async", ClassWithAsync),
+                UnboundMethodValue("get_async", TypedValue(ClassWithAsync)),
             )
             assert_is_value(
-                ClassWithAsync().get, UnboundMethodValue("get", ClassWithAsync)
+                ClassWithAsync().get,
+                UnboundMethodValue("get", TypedValue(ClassWithAsync)),
             )
-            assert_is_value([oid].append, UnboundMethodValue("append", list))
+            assert_is_value(
+                [oid].append,
+                UnboundMethodValue(
+                    "append", SequenceIncompleteValue(list, [UNRESOLVED_VALUE])
+                ),
+            )
 
     @assert_passes()
     def test_metaclass_super(self):
@@ -1520,7 +1526,7 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
                 # assert_is_value(super(Metaclass, self).__init__,
                 #                 UnboundMethodValue('__init__', super(Metaclass, Metaclass)))
                 assert_is_value(
-                    self.__init__, UnboundMethodValue("__init__", Metaclass)
+                    self.__init__, UnboundMethodValue("__init__", TypedValue(Metaclass))
                 )
 
 
