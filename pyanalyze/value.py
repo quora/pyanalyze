@@ -9,13 +9,25 @@ from collections import OrderedDict
 from dataclasses import dataclass, field, InitVar
 import inspect
 from itertools import chain
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    TypeVar,
+)
 from unittest import mock
 
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
 
 TypeOrTuple = Union[type, Tuple[type, ...]]
+TypeVarMap = Mapping["TypeVar", "Value"]
 
 
 class Value(object):
@@ -43,6 +55,20 @@ class Value(object):
     def get_type_value(self) -> "Value":
         """Return the type of this object as used for dunder lookups."""
         return self
+
+    def walk_values(self) -> Iterable["Value"]:
+        """Walk over all values contained in this value."""
+        yield self
+
+    def apply_typevars(
+        self, value: "Value", typevars: TypeVarMap
+    ) -> Tuple["Value", TypeVarMap]:
+        """Greedily apply the typevars in the map to this value.
+
+        Return a tuple of a new value and newly applied typevars.
+
+        """
+        return self, {}
 
 
 @dataclass(frozen=True)
@@ -96,6 +122,8 @@ class KnownValue(Value):
     )
 
     def is_value_compatible(self, val: Value) -> bool:
+        if isinstance(val, TypeVarValue):
+            val = val.get_degenerate_value()
         if isinstance(val, KnownValue):
             return self.val == val.val
         elif isinstance(val, TypedValue):
@@ -201,6 +229,8 @@ class TypedValue(Value):
     typ: Any
 
     def is_value_compatible(self, val: Value) -> bool:
+        if isinstance(val, TypeVarValue):
+            val = val.get_degenerate_value()
         if hasattr(self.typ, "_VALUES_TO_NAMES"):
             # Special case: Thrift enums. These are conceptually like
             # enums, but they are ints at runtime.
@@ -301,6 +331,8 @@ class GenericValue(TypedValue):
         )
 
     def is_value_compatible(self, val: Value) -> bool:
+        if isinstance(val, TypeVarValue):
+            val = val.get_degenerate_value()
         if isinstance(val, GenericValue):
             if not super(GenericValue, self).is_value_compatible(val):
                 return False
@@ -318,6 +350,29 @@ class GenericValue(TypedValue):
             return self.args[index]
         except IndexError:
             return UNRESOLVED_VALUE
+
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        for arg in self.args:
+            yield from arg.walk_values()
+
+    def apply_typevars(
+        self, val: "Value", typevars: TypeVarMap
+    ) -> Tuple["Value", TypeVarMap]:
+        if (
+            isinstance(val, GenericValue)
+            and self.is_value_compatible(val)
+            and self.typ is val.typ
+            and len(self.args) == len(val.args)
+        ):
+            new_args = []
+            for my_arg, their_arg in zip(self.args, val.args):
+                new_val, new_typevars = my_arg.apply_typevars(their_arg, typevars)
+                typevars = {**typevars, **new_typevars}
+                new_args.append(new_val)
+            return GenericValue(self.typ, new_args), typevars
+        else:
+            return self, {}
 
 
 @dataclass(unsafe_hash=True, init=False)
@@ -360,6 +415,11 @@ class SequenceIncompleteValue(GenericValue):
             ", ".join(map(str, self.members)),
         )
 
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        for member in self.members:
+            yield from member.walk_values()
+
 
 @dataclass(unsafe_hash=True, init=False)
 class DictIncompleteValue(GenericValue):
@@ -386,6 +446,12 @@ class DictIncompleteValue(GenericValue):
             _stringify_type(self.typ),
             ", ".join("%s: %s" % (key, value) for key, value in self.items),
         )
+
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        for key, value in self.items:
+            yield from key.walk_values()
+            yield from value.walk_values()
 
 
 @dataclass(init=False)
@@ -442,6 +508,11 @@ class TypedDictValue(GenericValue):
     def __hash__(self) -> int:
         return hash(tuple(sorted(self.items)))
 
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        for value in self.items.values():
+            yield from value.walk_values()
+
 
 @dataclass(unsafe_hash=True, init=False)
 class AsyncTaskIncompleteValue(GenericValue):
@@ -457,6 +528,10 @@ class AsyncTaskIncompleteValue(GenericValue):
         super(AsyncTaskIncompleteValue, self).__init__(typ, (value,))
         self.value = value
 
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        yield from self.value.walk_values()
+
 
 @dataclass(frozen=True)
 class AwaitableIncompleteValue(Value):
@@ -469,6 +544,10 @@ class AwaitableIncompleteValue(Value):
 
     def __str__(self) -> str:
         return "Awaitable[%s]" % (self.value,)
+
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        yield from self.value.walk_values()
 
 
 @dataclass(frozen=True)
@@ -484,6 +563,8 @@ class SubclassValue(Value):
             return False
 
     def is_value_compatible(self, val: Value) -> bool:
+        if isinstance(val, TypeVarValue):
+            val = val.get_degenerate_value()
         if isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible(subval) for subval in val.vals)
         elif isinstance(val, SubclassValue):
@@ -562,6 +643,11 @@ class MultiValuedValue(Value):
     def __str__(self) -> str:
         return "Union[%s]" % ", ".join(map(str, self.vals))
 
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        for val in self.vals:
+            yield from val.walk_values()
+
 
 @dataclass(frozen=True)
 class ReferencingValue(Value):
@@ -572,6 +658,25 @@ class ReferencingValue(Value):
 
     def __str__(self) -> str:
         return "<reference to %s>" % (self.name,)
+
+
+@dataclass(frozen=True)
+class TypeVarValue(Value):
+    """Value representing a type variable."""
+
+    typevar: TypeVar
+
+    def apply_typevars(
+        self, value: "Value", typevars: TypeVarMap
+    ) -> Tuple["Value", TypeVarMap]:
+        if self.typevar in typevars:
+            # Ignore the passed value, we'll error elsewhere
+            return (typevars[self.typevar], {})
+        return value, {self.typevar: value}
+
+    def get_degenerate_value(self) -> Value:
+        # TODO: support bounds and bases here to do something smarter
+        return UNRESOLVED_VALUE
 
 
 @dataclass(frozen=True)
@@ -688,6 +793,12 @@ def boolean_value(value: Optional[Value]) -> Optional[bool]:
             # Its __bool__ threw an exception. Just give up.
             return None
     return None
+
+
+def extract_typevars(value: Value) -> Iterable["TypeVar"]:
+    for val in value.walk_values():
+        if isinstance(val, TypeVarValue):
+            yield val.typevar
 
 
 def _stringify_type(typ: type) -> str:

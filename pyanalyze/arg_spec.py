@@ -28,6 +28,7 @@ from .value import (
     Value,
     VariableNameValue,
     AwaitableIncompleteValue,
+    extract_typevars,
 )
 
 import asyncio
@@ -55,6 +56,9 @@ from typing import (
     Union,
     Callable,
     Dict,
+    List,
+    Set,
+    TypeVar,
     Tuple,
     TYPE_CHECKING,
 )
@@ -258,6 +262,7 @@ class ExtendedArgSpec:
 
     _default_value: ClassVar[object] = object()
     _kwonly_args_name: ClassVar[str] = "__kwargs"
+    _return_key: ClassVar[str] = "%return"
     _excluded_attributes = {"logger"}
 
     arguments: Sequence[Parameter]
@@ -270,6 +275,10 @@ class ExtendedArgSpec:
     logger: Optional[Logger] = field(repr=False, default=None, compare=False)
     params_of_names: Dict[str, Parameter] = field(init=False)
     _has_return_value: bool = field(init=False)
+    typevars_of_params: Dict[str, List["TypeVar"]] = field(
+        init=False, default_factory=dict
+    )
+    all_typevars: Set["TypeVar"] = field(init=False, default_factory=set)
 
     def __post_init__(self) -> None:
         self._has_return_value = self.return_value is not UNRESOLVED_VALUE
@@ -286,6 +295,20 @@ class ExtendedArgSpec:
             self.params_of_names[self.kwargs] = Parameter(
                 self.kwargs, typ=TypedValue(dict)
             )
+        for param_name, param in self.params_of_names.items():
+            if param.typ is None:
+                continue
+            typevars = list(extract_typevars(param.typ))
+            if typevars:
+                self.typevars_of_params[param_name] = typevars
+        return_typevars = list(extract_typevars(self.return_value))
+        if return_typevars:
+            self.typevars_of_params[self._return_key] = return_typevars
+        self.all_typevars = {
+            typevar
+            for tv_list in self.typevars_of_params.values()
+            for typevar in tv_list
+        }
 
     def log(self, level: int, label: str, value: object) -> None:
         if self.logger is not None:
@@ -388,6 +411,30 @@ def %(name)s(%(arguments)s):
             visitor.show_error(node, repr(e), ErrorCode.incompatible_call)
             return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         self.log(logging.DEBUG, "Variables from function call", variables)
+        return_value = self.return_value
+        if self.all_typevars:
+            typevar_values: Dict[TypeVar, Value] = {}
+            for param_name in self.typevars_of_params:
+                if param_name == self._return_key:
+                    continue
+                var_value = variables[param_name]
+                if var_value is self._default_value:
+                    continue
+                param = self.params_of_names[param_name]
+                if param.typ is None:
+                    continue
+                new_value, new_typevars = param.typ.apply_typevars(
+                    var_value, typevar_values
+                )
+                typevar_values.update(new_typevars)
+                variables[param_name] = new_value
+            for typevar in self.all_typevars:
+                typevar_values.setdefault(typevar, UNRESOLVED_VALUE)
+            if self._return_key in self.typevars_of_params:
+                return_value, _ = return_value.apply_typevars(
+                    return_value, typevar_values
+                )
+
         non_param_names = {self.starargs, self.kwargs, self._kwonly_args_name}
         for name, var_value in variables.items():
             if var_value is not self._default_value and name not in non_param_names:
@@ -422,7 +469,7 @@ def %(name)s(%(arguments)s):
             )
             return return_value, constraint, no_return_unless
         else:
-            return self.return_value, NULL_CONSTRAINT, NULL_CONSTRAINT
+            return return_value, NULL_CONSTRAINT, NULL_CONSTRAINT
 
     def has_return_value(self) -> bool:
         # We can't check self.return_value directly here because that may have
@@ -967,17 +1014,16 @@ class ArgSpecCache:
 
     def from_argspec(
         self,
-        argspec: Union[inspect.Signature, inspect.ArgSpec, inspect.FullArgSpec],
+        argspec: inspect.Signature,
         kwonly_args: Any = None,
         name: Optional[str] = None,
         logger: Optional[Logger] = None,
         implementation: Optional[ImplementationFn] = None,
         function_object: Optional[object] = None,
-    ) -> Optional[ExtendedArgSpec]:
+    ) -> ExtendedArgSpec:
         """Constructs an ExtendedArgSpec from a standard argspec.
 
-        argspec can be either an inspect.ArgSpec or, in Python 3 only, an inspect.FullArgSpec, with
-        support for keyword-only arguments, or inspect.Signature.
+        argspec is an inspect.Signature.
 
         kwonly_args may be a list of custom keyword-only arguments added to the argspec or None.
 
@@ -991,83 +1037,34 @@ class ArgSpecCache:
         argument?
 
         """
-        if argspec is None:
-            return None
         if kwonly_args is None:
             kwonly_args = []
         else:
             kwonly_args = list(kwonly_args)
         func_globals = getattr(function_object, "__globals__", None)
 
-        if hasattr(argspec, "parameters"):
-            # inspect.Signature object
-            starargs = None
-            kwargs = None
-            args = []
-            if argspec.return_annotation is argspec.empty:
-                return_value = UNRESOLVED_VALUE
-            else:
-                return_value = type_from_runtime(
-                    argspec.return_annotation, globals=func_globals
-                )
-            for parameter in argspec.parameters.values():
-                if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
-                    starargs = parameter.name
-                elif parameter.kind == inspect.Parameter.VAR_KEYWORD:
-                    kwargs = parameter.name
-                elif parameter.kind == inspect.Parameter.KEYWORD_ONLY:
-                    kwonly_args.append(
-                        self._parameter_from_signature(parameter, func_globals)
-                    )
-                else:
-                    # positional or positional-or-keyword
-                    args.append(self._parameter_from_signature(parameter, func_globals))
-        else:
-            if argspec.defaults is None:
-                arg_pairs = [(arg, Parameter.no_default_value) for arg in argspec.args]
-            else:
-                num_non_default = len(argspec.args) - len(argspec.defaults)
-                defaults = [Parameter.no_default_value] * num_non_default
-                for default in argspec.defaults:
-                    # hack to enable test_scope to run on itself
-                    if default is Parameter.no_default_value:
-                        defaults.append(object())
-                    else:
-                        defaults.append(default)
-                arg_pairs = zip(argspec.args, defaults)
-
-            args = []
-            for arg, default_value in arg_pairs:
-                args.append(
-                    Parameter(
-                        arg,
-                        default_value=default_value,
-                        typ=VariableNameValue.from_varname(
-                            arg, self.config.varname_value_map()
-                        ),
-                    )
-                )
-
-            # python 3 keyword-only arguments
-            if hasattr(argspec, "kwonlyargs") and argspec.kwonlyargs:
-                kwonlydefaults = (
-                    argspec.kwonlydefaults if argspec.kwonlydefaults is not None else {}
-                )
-
-                for arg in argspec.kwonlyargs:
-                    kwonly_args.append(
-                        Parameter(
-                            arg,
-                            default_value=kwonlydefaults.get(
-                                arg, Parameter.no_default_value
-                            ),
-                        )
-                    )
-
-            # FullArgSpec has varkw and ArgSpec has keywords
-            kwargs = argspec.keywords if hasattr(argspec, "keywords") else argspec.varkw
+        # inspect.Signature object
+        starargs = None
+        kwargs = None
+        args = []
+        if argspec.return_annotation is argspec.empty:
             return_value = UNRESOLVED_VALUE
-            starargs = argspec.varargs
+        else:
+            return_value = type_from_runtime(
+                argspec.return_annotation, globals=func_globals
+            )
+        for parameter in argspec.parameters.values():
+            if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+                starargs = parameter.name
+            elif parameter.kind == inspect.Parameter.VAR_KEYWORD:
+                kwargs = parameter.name
+            elif parameter.kind == inspect.Parameter.KEYWORD_ONLY:
+                kwonly_args.append(
+                    self._parameter_from_signature(parameter, func_globals)
+                )
+            else:
+                # positional or positional-or-keyword
+                args.append(self._parameter_from_signature(parameter, func_globals))
         return ExtendedArgSpec(
             args,
             starargs=starargs,
@@ -1200,6 +1197,8 @@ class ArgSpecCache:
                 # old-style class
                 return None
             argspec = self._safe_get_argspec(constructor)
+            if argspec is None:
+                return None
 
             kwonly_args = []
             for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
@@ -1245,9 +1244,7 @@ class ArgSpecCache:
 
         raise TypeError("%r object is not callable" % (obj,))
 
-    def _safe_get_argspec(
-        self, obj: Any
-    ) -> Union[inspect.Signature, inspect.FullArgSpec, inspect.ArgSpec, None]:
+    def _safe_get_argspec(self, obj: Any) -> Optional[inspect.Signature]:
         """Wrapper around inspect.getargspec that catches TypeErrors."""
         try:
             # follow_wrapped=True leads to problems with decorators that
@@ -1257,7 +1254,7 @@ class ArgSpecCache:
             # TypeError if signature() does not support the object, ValueError
             # if it cannot provide a signature, and AttributeError if we're on
             # Python 2.
-            pass
+            return None
         else:
             # Signature preserves the return annotation for wrapped functions,
             # because @functools.wraps copies the __annotations__ of the wrapped function. We
@@ -1267,17 +1264,6 @@ class ArgSpecCache:
                 return sig.replace(return_annotation=inspect.Signature.empty)
             else:
                 return sig
-        try:
-            if hasattr(inspect, "getfullargspec"):
-                try:
-                    return inspect.getfullargspec(obj)  # static analysis: ignore
-                except TypeError:
-                    # fall back to qcore.inspection
-                    return qcore.inspection.getargspec(obj)
-            return qcore.inspection.getargspec(obj)
-        except TypeError:
-            # probably a builtin or Cythonized object
-            return None
 
 
 @dataclass

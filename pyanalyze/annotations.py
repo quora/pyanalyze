@@ -12,7 +12,15 @@ import qcore
 import ast
 import builtins
 from collections.abc import Callable
-from typing import ContextManager, Mapping, Sequence, Optional, TYPE_CHECKING
+from typing import (
+    cast,
+    TypeVar,
+    ContextManager,
+    Mapping,
+    Sequence,
+    Optional,
+    TYPE_CHECKING,
+)
 
 from .error_code import ErrorCode
 from .find_unused import used
@@ -28,6 +36,7 @@ from .value import (
     SubclassValue,
     TypedDictValue,
     NewTypeValue,
+    TypeVarValue,
 )
 
 if TYPE_CHECKING:
@@ -163,6 +172,8 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
+        if getattr(val, "_special", False):
+            args = []  # distinguish List from List[T] on 3.7 and 3.8
         return _value_of_origin_args(origin, args, val, ctx)
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
@@ -187,8 +198,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
             ctx.show_error("Invalid NewType %s" % (val,))
             return UNRESOLVED_VALUE
     elif typing_inspect.is_typevar(val):
-        # TypeVar; not supported yet
-        return UNRESOLVED_VALUE
+        return TypeVarValue(cast(TypeVar, val))
     elif typing_inspect.is_classvar(val):
         return UNRESOLVED_VALUE
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
