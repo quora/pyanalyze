@@ -224,7 +224,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
                     "Syntax error in forward reference: %s" % (val.__forward_arg__,)
                 )
                 return UNRESOLVED_VALUE
-            return _type_from_ast(code, ctx)
+            return _type_from_ast(code.body[0], ctx)
     elif val is Ellipsis:
         # valid in Callable[..., ]
         return UNRESOLVED_VALUE
