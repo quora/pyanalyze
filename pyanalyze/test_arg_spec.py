@@ -26,6 +26,14 @@ class ClassWithCall(object):
     def __call__(self, arg):
         pass
 
+    @classmethod
+    def normal_classmethod(cls):
+        pass
+
+    @staticmethod
+    def normal_staticmethod(arg):
+        pass
+
     @asynq()
     def async_method(self, x):
         pass
@@ -79,6 +87,17 @@ def test_get_argspec():
                 cwc_typed,
             ),
             visitor._get_argspec_from_value(cwc_typed, None),
+        )
+
+        assert_eq(
+            BoundMethodArgSpecWrapper(
+                ExtendedArgSpec([Parameter("cls")]), KnownValue(ClassWithCall)
+            ),
+            ArgSpecCache(config).get_argspec(ClassWithCall.normal_classmethod),
+        )
+        assert_eq(
+            ExtendedArgSpec([Parameter("arg")]),
+            ArgSpecCache(config).get_argspec(ClassWithCall.normal_staticmethod),
         )
 
         assert_eq(

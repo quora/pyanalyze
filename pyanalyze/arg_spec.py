@@ -1144,7 +1144,8 @@ class ArgSpecCache:
                         break
                 if (
                     class_obj is not None
-                    and getattr(class_obj, function_name, None) is function_object
+                    and inspect.getattr_static(class_obj, function_name, None)
+                    is function_object
                 ):
                     return type_from_maybe_generic(class_obj)
         return VariableNameValue.from_varname(
