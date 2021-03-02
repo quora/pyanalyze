@@ -363,6 +363,9 @@ class _Visitor(ast.NodeVisitor):
     def __init__(self, ctx: Context) -> None:
         self.ctx = ctx
 
+    def generic_visit(self, node: ast.AST) -> None:
+        raise Exception(node)
+
     def visit_Name(self, node: ast.Name) -> Value:
         return self.ctx.get_name(node)
 
@@ -397,6 +400,51 @@ class _Visitor(ast.NodeVisitor):
 
     def visit_Ellipsis(self, node: ast.Ellipsis) -> Value:
         return KnownValue(Ellipsis)
+
+    def visit_Constant(self, node: ast.Constant) -> Value:
+        return KnownValue(node.value)
+
+    def visit_NameConstant(self, node: ast.NameConstant) -> Value:
+        return KnownValue(node.value)
+
+    def visit_Num(self, node: ast.Num) -> Value:
+        return KnownValue(node.n)
+
+    def visit_Str(self, node: ast.Str) -> Value:
+        return KnownValue(node.s)
+
+    def visit_Bytes(self, node: ast.Bytes) -> Value:
+        return KnownValue(node.s)
+
+    def visit_Call(self, node: ast.Call) -> Value:
+        func = self.visit(node.func)
+        if func == KnownValue(TypeVar):
+            arg_values = [self.visit(arg) for arg in node.args]
+            kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
+            args = []
+            kwargs = {}
+            for arg_value in arg_values:
+                if isinstance(arg_value, KnownValue):
+                    args.append(arg_value.val)
+                else:
+                    return None
+            for name, kwarg_value in kwarg_values:
+                if name is None:
+                    if isinstance(kwarg_value, KnownValue) and isinstance(
+                        kwarg_value.val, dict
+                    ):
+                        kwargs.update(kwarg_value.val)
+                    else:
+                        return None
+                else:
+                    if isinstance(kwarg_value, KnownValue):
+                        kwargs[name] = kwarg_value.val
+                    else:
+                        return None
+            typevar = TypeVar(*args, **kwargs)
+            return KnownValue(typevar)
+        else:
+            return None
 
 
 def is_typing_name(obj: object, name: str) -> bool:

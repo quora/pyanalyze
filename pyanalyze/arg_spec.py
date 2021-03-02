@@ -1350,6 +1350,7 @@ class TypeshedFinder(object):
     def __init__(self, verbose: bool = False) -> None:
         self.verbose = verbose
         self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
+        self._assignment_cache = {}
 
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
@@ -1441,7 +1442,6 @@ class TypeshedFinder(object):
             self.log("Ignoring unrecognized info", (fq_name, info))
             return None
 
-    @qcore.caching.cached_per_instance()
     def _get_info_for_name(self, fq_name: str) -> typeshed_client.resolver.ResolvedName:
         return self.resolver.get_fully_qualified_name(fq_name)
 
@@ -1500,6 +1500,7 @@ class TypeshedFinder(object):
                 # doesn't matter what the default is
                 yield Parameter(arg.arg, typ=typ, default_value=None)
 
+    @qcore.caching.cached_per_instance()
     def _parse_expr(self, node: ast.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
         return type_from_ast(node, ctx=ctx)
@@ -1513,7 +1514,14 @@ class TypeshedFinder(object):
                 return KnownValue(getattr(mod, info.name))
             except Exception:
                 self.log("Unable to import", (module, info))
-                return UNRESOLVED_VALUE
+            if isinstance(info.ast, ast3.Assign):
+                key = (module, info.ast)
+                if key in self._assignment_cache:
+                    return self._assignment_cache[key]
+                value = self._parse_expr(info.ast.value, module)
+                self._assignment_cache[key] = value
+                return value
+            return UNRESOLVED_VALUE
         else:
             self.log("Ignoring info", info)
             return UNRESOLVED_VALUE
