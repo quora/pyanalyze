@@ -26,6 +26,14 @@ class ClassWithCall(object):
     def __call__(self, arg):
         pass
 
+    @classmethod
+    def normal_classmethod(cls):
+        pass
+
+    @staticmethod
+    def normal_staticmethod(arg):
+        pass
+
     @asynq()
     def async_method(self, x):
         pass
@@ -63,6 +71,8 @@ def async_function(x, y):
 def test_get_argspec():
     visitor = ConfiguredNameCheckVisitor(__file__, u"", {}, fail_after_first=False)
     config = visitor.config
+    cwc_typed = TypedValue(ClassWithCall)
+    cwc_self = Parameter("self", typ=cwc_typed)
 
     # test everything twice because calling qcore.get_original_fn has side effects
     for _ in range(2):
@@ -72,12 +82,22 @@ def test_get_argspec():
         assert_eq(
             BoundMethodArgSpecWrapper(
                 ExtendedArgSpec(
-                    arguments=[Parameter("self"), Parameter("arg")],
-                    name="ClassWithCall",
+                    arguments=[cwc_self, Parameter("arg")], name="ClassWithCall"
                 ),
-                TypedValue(ClassWithCall),
+                cwc_typed,
             ),
-            visitor._get_argspec_from_value(TypedValue(ClassWithCall), None),
+            visitor._get_argspec_from_value(cwc_typed, None),
+        )
+
+        assert_eq(
+            BoundMethodArgSpecWrapper(
+                ExtendedArgSpec([Parameter("cls")]), KnownValue(ClassWithCall)
+            ),
+            ArgSpecCache(config).get_argspec(ClassWithCall.normal_classmethod),
+        )
+        assert_eq(
+            ExtendedArgSpec([Parameter("arg")]),
+            ArgSpecCache(config).get_argspec(ClassWithCall.normal_staticmethod),
         )
 
         assert_eq(
@@ -829,6 +849,9 @@ class TestTypeVar(TestNameCheckVisitorBase):
             def get_one(self: "GenCls[T]") -> T:
                 raise NotImplementedError
 
+            def get_another(self) -> T:
+                raise NotImplementedError
+
         def capybara(x: str, xs: List[int], gen: GenCls[int]) -> None:
             assert_is_value(id(3), KnownValue(3))
             assert_is_value(id(x), TypedValue(str))
@@ -839,3 +862,17 @@ class TestTypeVar(TestNameCheckVisitorBase):
             # assert_is_value(get_one([3]), KnownValue(3))
 
             assert_is_value(gen.get_one(), TypedValue(int))
+            assert_is_value(gen.get_another(), TypedValue(int))
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_only_T(self):
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class Capybara(Generic[T]):
+            def add_one(self, obj: T) -> None:
+                pass
+
+        def capybara(x: Capybara[int]) -> None:
+            x.add_one("x")
