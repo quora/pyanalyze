@@ -364,6 +364,9 @@ class _Visitor(ast.NodeVisitor):
     def __init__(self, ctx: Context) -> None:
         self.ctx = ctx
 
+    def generic_visit(self, node: ast.AST) -> None:
+        raise Exception(node)
+
     def visit_Name(self, node: ast.Name) -> Value:
         return self.ctx.get_name(node)
 
