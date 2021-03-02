@@ -4,7 +4,12 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .annotations import type_from_runtime, Context, type_from_ast
+from .annotations import (
+    type_from_runtime,
+    type_from_maybe_generic,
+    Context,
+    type_from_ast,
+)
 from .config import Config
 from .error_code import ErrorCode
 from .find_unused import used
@@ -29,6 +34,7 @@ from .value import (
     VariableNameValue,
     AwaitableIncompleteValue,
     extract_typevars,
+    TypeVarMap,
 )
 
 import asyncio
@@ -273,12 +279,12 @@ class ExtendedArgSpec:
     name: Optional[str] = None
     implementation: Optional[ImplementationFn] = None
     logger: Optional[Logger] = field(repr=False, default=None, compare=False)
-    params_of_names: Dict[str, Parameter] = field(init=False)
-    _has_return_value: bool = field(init=False)
+    params_of_names: Dict[str, Parameter] = field(init=False, repr=False)
+    _has_return_value: bool = field(init=False, repr=False)
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
-        init=False, default_factory=dict
+        init=False, default_factory=dict, repr=False
     )
-    all_typevars: Set["TypeVar"] = field(init=False, default_factory=set)
+    all_typevars: Set["TypeVar"] = field(init=False, default_factory=set, repr=False)
 
     def __post_init__(self) -> None:
         self._has_return_value = self.return_value is not UNRESOLVED_VALUE
@@ -378,14 +384,19 @@ def %(name)s(%(arguments)s):
         var_value: Value,
         visitor: "NameCheckVisitor",
         node: ast.AST,
+        typevar_map: TypeVarMap,
     ) -> None:
         if param.typ is not None and var_value != KnownValue(param.default_value):
-            compatible = visitor.is_value_compatible(param.typ, var_value)
+            if typevar_map:
+                param_typ, _ = param.typ.apply_typevars(param.typ, typevar_map)
+            else:
+                param_typ = param.typ
+            compatible = visitor.is_value_compatible(param_typ, var_value)
             if not compatible:
                 visitor.show_error(
                     node,
                     "Incompatible argument type for %s: expected %s but got %s"
-                    % (param.name, param.typ, var_value),
+                    % (param.name, param_typ, var_value),
                     ErrorCode.incompatible_argument,
                 )
 
@@ -412,8 +423,8 @@ def %(name)s(%(arguments)s):
             return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         self.log(logging.DEBUG, "Variables from function call", variables)
         return_value = self.return_value
+        typevar_values: Dict[TypeVar, Value] = {}
         if self.all_typevars:
-            typevar_values: Dict[TypeVar, Value] = {}
             for param_name in self.typevars_of_params:
                 if param_name == self._return_key:
                     continue
@@ -423,11 +434,8 @@ def %(name)s(%(arguments)s):
                 param = self.params_of_names[param_name]
                 if param.typ is None:
                     continue
-                new_value, new_typevars = param.typ.apply_typevars(
-                    var_value, typevar_values
-                )
+                _, new_typevars = param.typ.apply_typevars(var_value, typevar_values)
                 typevar_values.update(new_typevars)
-                variables[param_name] = new_value
             for typevar in self.all_typevars:
                 typevar_values.setdefault(typevar, UNRESOLVED_VALUE)
             if self._return_key in self.typevars_of_params:
@@ -439,7 +447,9 @@ def %(name)s(%(arguments)s):
         for name, var_value in variables.items():
             if var_value is not self._default_value and name not in non_param_names:
                 param = self.params_of_names[name]
-                self._check_param_type_compatibility(param, var_value, visitor, node)
+                self._check_param_type_compatibility(
+                    param, var_value, visitor, node, typevar_values
+                )
 
         if self.implementation is not None:
             self.log(logging.DEBUG, "Using implementation", self.implementation)
@@ -1015,6 +1025,7 @@ class ArgSpecCache:
     def from_argspec(
         self,
         argspec: inspect.Signature,
+        *,
         kwonly_args: Any = None,
         name: Optional[str] = None,
         logger: Optional[Logger] = None,
@@ -1053,18 +1064,24 @@ class ArgSpecCache:
             return_value = type_from_runtime(
                 argspec.return_annotation, globals=func_globals
             )
-        for parameter in argspec.parameters.values():
+        for i, parameter in enumerate(argspec.parameters.values()):
             if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
                 starargs = parameter.name
             elif parameter.kind == inspect.Parameter.VAR_KEYWORD:
                 kwargs = parameter.name
             elif parameter.kind == inspect.Parameter.KEYWORD_ONLY:
                 kwonly_args.append(
-                    self._parameter_from_signature(parameter, func_globals)
+                    self._parameter_from_signature(
+                        parameter, func_globals, function_object, i
+                    )
                 )
             else:
                 # positional or positional-or-keyword
-                args.append(self._parameter_from_signature(parameter, func_globals))
+                args.append(
+                    self._parameter_from_signature(
+                        parameter, func_globals, function_object, i
+                    )
+                )
         return ExtendedArgSpec(
             args,
             starargs=starargs,
@@ -1077,15 +1094,16 @@ class ArgSpecCache:
         )
 
     def _parameter_from_signature(
-        self, parameter: inspect.Parameter, func_globals: Mapping[str, object]
+        self,
+        parameter: inspect.Parameter,
+        func_globals: Mapping[str, object],
+        function_object: Optional[object],
+        index: int,
     ) -> Parameter:
         """Given an inspect.Parameter, returns a Parameter object."""
-        if parameter.annotation is not inspect.Parameter.empty:
-            typ = type_from_runtime(parameter.annotation, globals=func_globals)
-        else:
-            typ = VariableNameValue.from_varname(
-                parameter.name, self.config.varname_value_map()
-            )
+        typ = self._get_type_for_parameter(
+            parameter, func_globals, function_object, index
+        )
         if parameter.default is inspect.Parameter.empty:
             default_value = Parameter.no_default_value
         elif parameter.default is Parameter.no_default_value:
@@ -1094,6 +1112,44 @@ class ArgSpecCache:
         else:
             default_value = parameter.default
         return Parameter(parameter.name, default_value=default_value, typ=typ)
+
+    def _get_type_for_parameter(
+        self,
+        parameter: inspect.Parameter,
+        func_globals: Mapping[str, object],
+        function_object: Optional[object],
+        index: int,
+    ) -> Optional[Value]:
+        if parameter.annotation is not inspect.Parameter.empty:
+            return type_from_runtime(parameter.annotation, globals=func_globals)
+        # If this is the self argument of a method, try to infer the self type.
+        elif index == 0 and parameter.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            module_name = getattr(function_object, "__module__", None)
+            qualname = getattr(function_object, "__qualname__", None)
+            name = getattr(function_object, "__name__", None)
+            if (
+                qualname != name
+                and module_name is not None
+                and module_name in sys.modules
+            ):
+                module = sys.modules[module_name]
+                *class_names, function_name = qualname.split(".")
+                class_obj = module
+                for class_name in class_names:
+                    class_obj = getattr(class_obj, class_name, None)
+                    if class_obj is None:
+                        break
+                if (
+                    class_obj is not None
+                    and getattr(class_obj, function_name, None) is function_object
+                ):
+                    return type_from_maybe_generic(class_obj)
+        return VariableNameValue.from_varname(
+            parameter.name, self.config.varname_value_map()
+        )
 
     def get_argspec(
         self,
