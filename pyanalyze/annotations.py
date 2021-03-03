@@ -19,6 +19,7 @@ from typing import (
     Mapping,
     Sequence,
     Optional,
+    Union,
     TYPE_CHECKING,
 )
 
@@ -419,7 +420,15 @@ class _Visitor(ast.NodeVisitor):
     def visit_Expr(self, node: ast.Expr) -> Value:
         return self.visit(node.value)
 
-    def visit_Call(self, node: ast.Call) -> Value:
+    def visit_BinOp(self, node: ast.BinOp) -> Optional[Value]:
+        if isinstance(node.op, ast.BitOr):
+            return _SubscriptedValue(
+                KnownValue(Union), [self.visit(node.left), self.visit(node.right)]
+            )
+        else:
+            return None
+
+    def visit_Call(self, node: ast.Call) -> Optional[Value]:
         func = self.visit(node.func)
         if func == KnownValue(TypeVar):
             arg_values = [self.visit(arg) for arg in node.args]
