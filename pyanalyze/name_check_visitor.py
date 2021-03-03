@@ -279,7 +279,7 @@ class ClassAttributeChecker:
 
     def get_attribute_value(self, typ, attr_name):
         """Gets the current recorded value of the attribute."""
-        for base_typ in self._get_mro(typ):
+        for base_typ in get_mro(typ):
             serialized_base = self.serialize_type(base_typ)
             if serialized_base is None:
                 continue
@@ -306,7 +306,7 @@ class ClassAttributeChecker:
             # have
             if any(
                 self.serialize_type(base_cls) in self.types_with_dynamic_attrs
-                for base_cls in self._get_mro(typ)
+                for base_cls in get_mro(typ)
             ):
                 continue
 
@@ -411,7 +411,7 @@ class ClassAttributeChecker:
 
         base_classes_examined = {typ}
         any_base_classes_unexamined = False
-        for base_cls in self._get_mro(typ):
+        for base_cls in get_mro(typ):
             # the attribute is in __annotations__, e.g. a dataclass
             if _has_annotation_for_attr(base_cls, attr_name):
                 return
@@ -440,7 +440,7 @@ class ClassAttributeChecker:
         for child_cls in qcore.inspection.get_subclass_tree(typ):
             # also check the child classes' base classes, because mixins sometimes use attributes
             # defined on other parents of their child classes
-            for base_cls in self._get_mro(child_cls):
+            for base_cls in get_mro(child_cls):
                 if base_cls in base_classes_examined:
                     continue
 
@@ -491,17 +491,6 @@ class ClassAttributeChecker:
         if not result:
             self.unexamined_base_classes.add(base_cls)
         return result
-
-    def _get_mro(self, typ):
-        if isinstance(typ, super):
-            typ_for_mro = typ.__thisclass__
-        else:
-            typ_for_mro = typ
-        try:
-            return inspect.getmro(typ_for_mro)
-        except AttributeError:
-            # It's not actually a class.
-            return []
 
 
 class StackedContexts(object):
@@ -986,7 +975,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if isinstance(cls_obj, KnownValue):
                 cls_obj = KnownValue(self.config.unwrap_cls(cls_obj.val))
                 current_class = cls_obj.val
-                self._record_class_examined(current_class)
+                if isinstance(current_class, type):
+                    self._record_class_examined(current_class)
+                else:
+                    current_class = None
             else:
                 current_class = None
 
@@ -1085,8 +1077,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if evaled_function:
             return evaled_function
 
-        if info.async_kind == AsyncFunctionKind.normal and return_value.is_type(
-            (asynq.FutureBase, asynq.AsyncTask)
+        if info.async_kind == AsyncFunctionKind.normal and _is_asynq_future(
+            return_value
         ):
             self._show_error_if_checking(node, error_code=ErrorCode.task_needs_yield)
 
@@ -2260,7 +2252,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Value:
         self.is_generator = True
         value = self.visit(node.value)
-        if not TypedValue(Iterable).is_value_compatible(value):
+        if not TypedValue(collections.abc.Iterable).is_value_compatible(value):
             self._show_error_if_checking(
                 node,
                 "Cannot use %s in yield from" % (value,),
@@ -2300,7 +2292,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _unwrap_yield_result(self, node: ast.AST, value: Value) -> Value:
         if isinstance(value, AsyncTaskIncompleteValue):
             return value.value
-        elif isinstance(value, TypedValue) and issubclass(value.typ, (list, tuple)):
+        elif isinstance(value, TypedValue) and (
+            value.is_type(list) or value.is_type(tuple)
+        ):
             if isinstance(value, SequenceIncompleteValue):
                 values = [
                     self._unwrap_yield_result(node, member) for member in value.members
@@ -2311,7 +2305,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 return GenericValue(value.typ, [member_value])
             else:
                 return value
-        elif isinstance(value, TypedValue) and issubclass(value.typ, dict):
+        elif isinstance(value, TypedValue) and value.is_type(dict):
             if isinstance(value, DictIncompleteValue):
                 values = [
                     (key, self._unwrap_yield_result(node, val))
@@ -2338,7 +2332,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return unite_values(
                 *[self._unwrap_yield_result(node, val) for val in value.vals]
             )
-        elif value.is_type((asynq.FutureBase, asynq.AsyncTask)):
+        elif _is_asynq_future(value):
             return UNRESOLVED_VALUE
         else:
             self._show_error_if_checking(
@@ -2549,7 +2543,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 return TypedValue(int), len(iterated.val)
             # if the thing we're iterating over is e.g. a file or an infinite generator, calling
             # list() may hang the process
-            if not iterated.is_type((list, set, tuple, dict, str, bytes)):
+            if not any(
+                iterated.is_type(typ) for typ in (list, set, tuple, dict, str, bytes)
+            ):
                 return UNRESOLVED_VALUE, None
             try:
                 values = list(iterated.val)
@@ -2565,8 +2561,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 len(iterated.items),
             )
         elif isinstance(iterated, TypedValue):
-            if not issubclass(
-                iterated.typ, collections.abc.Iterable
+            if not iterated.is_type(
+                collections.abc.Iterable
             ) and not self._should_ignore_type(iterated.typ):
                 self._show_error_if_checking(
                     node,
@@ -2716,7 +2712,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_Expr(self, node: ast.Expr) -> Value:
         value = self.visit(node.value)
-        if value.is_type((asynq.FutureBase, asynq.AsyncTask)):
+        if _is_asynq_future(value):
             new_node = ast.Expr(value=ast.Yield(value=node.value))
             replacement = self.replace_node(node, new_node)
             self._show_error_if_checking(
@@ -2892,7 +2888,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         value = self.visit(node.value)
         index = self.visit(node.slice)
 
-        if value.is_type((list, tuple, str, bytes)) and not index.is_type(slice):
+        if any(
+            value.is_type(typ) for typ in (list, tuple, str, bytes)
+        ) and not index.is_type(slice):
             index = self._check_dunder_call(
                 node, index, "__index__", [], allow_call=True
             )
@@ -3050,8 +3048,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     ) -> Value:
         result = self.get_attribute(node, attr, root_value)
         if result is UNINITIALIZED_VALUE:
-            # default on_error() doesn't throw an error in many
-            # cases where we're not quite suer whether an attribute
+            # We don't throw an error in many
+            # cases where we're not quite sure whether an attribute
             # will exist.
             if isinstance(root_value, UnboundMethodValue):
                 if self._should_ignore_val(node):
@@ -3079,13 +3077,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 ):
                     return UNRESOLVED_VALUE
             elif isinstance(root_value, (TypedValue, SubclassValue)):
+                root_type = root_value.typ
                 # namedtuples have only static attributes
                 if not (
-                    isinstance(root_value.typ, type)
-                    and issubclass(root_value.typ, tuple)
-                    and not hasattr(root_value.typ, "__getattr__")
+                    isinstance(root_type, type)
+                    and issubclass(root_type, tuple)
+                    and not hasattr(root_type, "__getattr__")
                 ):
-                    return self._maybe_get_attr_value(root_value.typ, attr)
+                    return self._maybe_get_attr_value(root_type, attr)
             self._show_error_if_checking(
                 node,
                 "%s has no attribute %r" % (root_value, attr),
@@ -3096,11 +3095,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return result
 
     def _visit_set_attribute(self, node, root_value):
-        if isinstance(root_value, (TypedValue, SubclassValue)):
-            typ = root_value.typ
-        elif isinstance(root_value, KnownValue):
-            typ = type(root_value.val)
-        else:
+        typ = root_value.get_type()
+        if typ is None:
             return None
 
         if self.scopes.scope_type() == ScopeType.function_scope:
@@ -3641,3 +3637,19 @@ def _has_annotation_for_attr(typ, attr):
     except Exception:
         # __annotations__ doesn't exist or isn't a dict
         return False
+
+
+def _is_asynq_future(value: Value) -> bool:
+    return value.is_type(asynq.FutureBase) or value.is_type(asynq.AsyncTask)
+
+
+def get_mro(typ: Union[type, super]) -> Sequence[type]:
+    if isinstance(typ, super):
+        typ_for_mro = typ.__thisclass__
+    else:
+        typ_for_mro = typ
+    try:
+        return inspect.getmro(typ_for_mro)
+    except AttributeError:
+        # It's not actually a class.
+        return []

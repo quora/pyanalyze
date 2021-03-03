@@ -1350,6 +1350,7 @@ class TypeshedFinder(object):
     def __init__(self, verbose: bool = False) -> None:
         self.verbose = verbose
         self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
+        self._assignment_cache = {}
 
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
@@ -1513,7 +1514,14 @@ class TypeshedFinder(object):
                 return KnownValue(getattr(mod, info.name))
             except Exception:
                 self.log("Unable to import", (module, info))
-                return UNRESOLVED_VALUE
+            if isinstance(info.ast, ast3.Assign):
+                key = (module, info.ast)
+                if key in self._assignment_cache:
+                    return self._assignment_cache[key]
+                value = self._parse_expr(info.ast.value, module)
+                self._assignment_cache[key] = value
+                return value
+            return UNRESOLVED_VALUE
         else:
             self.log("Ignoring info", info)
             return UNRESOLVED_VALUE

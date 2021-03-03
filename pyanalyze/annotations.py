@@ -19,6 +19,7 @@ from typing import (
     Mapping,
     Sequence,
     Optional,
+    Union,
     TYPE_CHECKING,
 )
 
@@ -397,6 +398,62 @@ class _Visitor(ast.NodeVisitor):
 
     def visit_Ellipsis(self, node: ast.Ellipsis) -> Value:
         return KnownValue(Ellipsis)
+
+    def visit_Constant(self, node: ast.Constant) -> Value:
+        return KnownValue(node.value)
+
+    def visit_NameConstant(self, node: ast.NameConstant) -> Value:
+        return KnownValue(node.value)
+
+    def visit_Num(self, node: ast.Num) -> Value:
+        return KnownValue(node.n)
+
+    def visit_Str(self, node: ast.Str) -> Value:
+        return KnownValue(node.s)
+
+    def visit_Bytes(self, node: ast.Bytes) -> Value:
+        return KnownValue(node.s)
+
+    def visit_Expr(self, node: ast.Expr) -> Value:
+        return self.visit(node.value)
+
+    def visit_BinOp(self, node: ast.BinOp) -> Optional[Value]:
+        if isinstance(node.op, ast.BitOr):
+            return _SubscriptedValue(
+                KnownValue(Union), [self.visit(node.left), self.visit(node.right)]
+            )
+        else:
+            return None
+
+    def visit_Call(self, node: ast.Call) -> Optional[Value]:
+        func = self.visit(node.func)
+        if func == KnownValue(TypeVar):
+            arg_values = [self.visit(arg) for arg in node.args]
+            kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
+            args = []
+            kwargs = {}
+            for arg_value in arg_values:
+                if isinstance(arg_value, KnownValue):
+                    args.append(arg_value.val)
+                else:
+                    return None
+            for name, kwarg_value in kwarg_values:
+                if name is None:
+                    if isinstance(kwarg_value, KnownValue) and isinstance(
+                        kwarg_value.val, dict
+                    ):
+                        kwargs.update(kwarg_value.val)
+                    else:
+                        return None
+                else:
+                    if isinstance(kwarg_value, KnownValue):
+                        kwargs[name] = kwarg_value.val
+                    else:
+                        return None
+            typevar = TypeVar(*args, **kwargs)
+            return KnownValue(typevar)
+        else:
+            return None
 
 
 def is_typing_name(obj: object, name: str) -> bool:
