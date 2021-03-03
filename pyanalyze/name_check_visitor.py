@@ -66,6 +66,7 @@ from pyanalyze.stacked_scopes import (
 )
 from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from pyanalyze.yield_checker import YieldChecker
+from pyanalyze.type_object import get_mro
 from pyanalyze.value import (
     boolean_value,
     UNINITIALIZED_VALUE,
@@ -3641,15 +3642,3 @@ def _has_annotation_for_attr(typ, attr):
 
 def _is_asynq_future(value: Value) -> bool:
     return value.is_type(asynq.FutureBase) or value.is_type(asynq.AsyncTask)
-
-
-def get_mro(typ: Union[type, super]) -> Sequence[type]:
-    if isinstance(typ, super):
-        typ_for_mro = typ.__thisclass__
-    else:
-        typ_for_mro = typ
-    try:
-        return inspect.getmro(typ_for_mro)
-    except AttributeError:
-        # It's not actually a class.
-        return []
