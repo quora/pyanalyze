@@ -23,11 +23,10 @@ from typing import (
 )
 from unittest import mock
 
-from .type_object import TypeObject
-
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
 
+TypeOrTuple = Union[type, Tuple[type, ...]]
 TypeVarMap = Mapping["TypeVar", "Value"]
 
 
@@ -45,7 +44,7 @@ class Value(object):
         """
         return True
 
-    def is_type(self, typ: type) -> bool:
+    def is_type(self, typ: TypeOrTuple) -> bool:
         """Returns whether this value is an instance of the given type."""
         return False
 
@@ -128,7 +127,9 @@ class KnownValue(Value):
         if isinstance(val, KnownValue):
             return self.val == val.val
         elif isinstance(val, TypedValue):
-            return val.type_object.is_assignable_to_type(type(self.val))
+            if self.is_type(val.typ):
+                return True
+            return are_types_compatible(type(self.val), val.typ)
         elif isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible(v) for v in val.vals)
         elif isinstance(val, SubclassValue):
@@ -136,14 +137,11 @@ class KnownValue(Value):
         else:
             return True
 
-    def is_type(self, typ: type) -> bool:
-        return self.get_type_object().is_assignable_to_type(typ)
+    def is_type(self, typ: TypeOrTuple) -> bool:
+        return isinstance(self.val, typ)
 
     def get_type(self) -> type:
         return type(self.val)
-
-    def get_type_object(self) -> TypeObject:
-        return TypeObject.make(type(self.val))
 
     def __eq__(self, other: Value) -> bool:
         return (
@@ -195,7 +193,7 @@ class UnboundMethodValue(Value):
         except AttributeError:
             return None
 
-    def is_type(self, typ: type) -> bool:
+    def is_type(self, typ: TypeOrTuple) -> bool:
         return isinstance(self.get_method(), typ)
 
     def get_type(self) -> type:
@@ -230,22 +228,22 @@ class TypedValue(Value):
     """
 
     typ: Any
-    type_object: TypeObject = field(init=False, repr=False, hash=False, compare=False)
-
-    def __post_init__(self) -> None:
-        self.type_object = TypeObject.make(self.typ)
 
     def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, TypeVarValue):
             val = val.get_fallback_value()
-        if self.type_object.is_thrift_enum:
+        if hasattr(self.typ, "_VALUES_TO_NAMES"):
             # Special case: Thrift enums. These are conceptually like
             # enums, but they are ints at runtime.
             return self.is_value_compatible_thrift_enum(val)
         elif isinstance(val, KnownValue):
-            return TypeObject.make(type(val.val)).is_assignable_to_type(self.typ)
+            if isinstance(val.val, self.typ):
+                return True
+            return are_types_compatible(self.typ, type(val.val))
         elif isinstance(val, TypedValue):
-            return val.type_object.is_assignable_to_type(self.typ)
+            if issubclass(val.typ, self.typ):
+                return True
+            return are_types_compatible(self.typ, val.typ)
         elif isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible(v) for v in val.vals)
         elif isinstance(val, SubclassValue):
@@ -260,9 +258,7 @@ class TypedValue(Value):
                 return False
             return val.val in self.typ._VALUES_TO_NAMES
         elif isinstance(val, TypedValue):
-            return val.type_object.is_assignable_to_type(
-                self.typ
-            ) or val.type_object.is_assignable_to_type(int)
+            return issubclass(val.typ, (self.typ, int))
         elif isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible_thrift_enum(v) for v in val.vals)
         elif isinstance(val, (SubclassValue, UnboundMethodValue)):
@@ -272,8 +268,8 @@ class TypedValue(Value):
         else:
             return False
 
-    def is_type(self, typ: type) -> bool:
-        return self.type_object.is_assignable_to_type(typ)
+    def is_type(self, typ: TypeOrTuple) -> bool:
+        return issubclass(self.typ, typ)
 
     def get_type(self) -> type:
         return self.typ
@@ -561,7 +557,7 @@ class SubclassValue(Value):
 
     typ: type
 
-    def is_type(self, typ: type) -> bool:
+    def is_type(self, typ: TypeOrTuple) -> bool:
         try:
             return issubclass(self.typ, typ)
         except Exception:
@@ -771,6 +767,18 @@ def unite_values(*values: Value) -> Value:
         return existing[0]
     else:
         return MultiValuedValue(existing)
+
+
+def are_types_compatible(t1: type, t2: type) -> bool:
+    """Special cases for type compatibility checks."""
+    # As a special case, the Python type system treats int as
+    # a subtype of float.
+    if t1 is float and t2 is int:
+        return True
+    # Everything is compatible with mock objects
+    if issubclass(t2, mock.NonCallableMock):
+        return True
+    return False
 
 
 def boolean_value(value: Optional[Value]) -> Optional[bool]:

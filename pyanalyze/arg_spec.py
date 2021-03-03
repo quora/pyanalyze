@@ -1442,6 +1442,7 @@ class TypeshedFinder(object):
             self.log("Ignoring unrecognized info", (fq_name, info))
             return None
 
+    @qcore.caching.cached_per_instance()
     def _get_info_for_name(self, fq_name: str) -> typeshed_client.resolver.ResolvedName:
         return self.resolver.get_fully_qualified_name(fq_name)
 
@@ -1500,7 +1501,6 @@ class TypeshedFinder(object):
                 # doesn't matter what the default is
                 yield Parameter(arg.arg, typ=typ, default_value=None)
 
-    @qcore.caching.cached_per_instance()
     def _parse_expr(self, node: ast.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
         return type_from_ast(node, ctx=ctx)

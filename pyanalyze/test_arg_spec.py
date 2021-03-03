@@ -876,10 +876,3 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
         def capybara(x: Capybara[int]) -> None:
             x.add_one("x")
-
-    @assert_fails(ErrorCode.incompatible_argument)
-    def test_typeshed(self):
-        from typing import List
-
-        def capybara(lst: List[int]) -> None:
-            lst.append("x")
