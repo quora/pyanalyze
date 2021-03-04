@@ -26,9 +26,9 @@ def get_mro(typ: Union[type, super]) -> Sequence[type]:
 @dataclass
 class TypeObject:
     typ: Union[type, super]
+    base_classes: Set[type] = field(default_factory=set)
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
-    base_classes: Set[type] = field(init=False)
 
     def __post_init__(self) -> None:
         if isinstance(self.typ, super):
@@ -37,7 +37,7 @@ class TypeObject:
             assert isinstance(self.typ, type), repr(self.typ)
             self.is_universally_assignable = issubclass(self.typ, mock.NonCallableMock)
         self.is_thrift_enum = hasattr(self.typ, "_VALUES_TO_NAMES")
-        self.base_classes = set(get_mro(self.typ))
+        self.base_classes |= set(get_mro(self.typ))
         if self.typ is int:
             # As a special case, the Python type system treats int as
             # a subtype of float.
