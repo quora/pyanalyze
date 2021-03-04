@@ -88,7 +88,11 @@ class Value:
         return None.
 
         """
-        if other is UNRESOLVED_VALUE or other is NO_RETURN_VALUE:
+        if (
+            other is UNRESOLVED_VALUE
+            or other is NO_RETURN_VALUE
+            or isinstance(other, VariableNameValue)
+        ):
             return {}
         elif isinstance(other, MultiValuedValue):
             tv_maps = [self.can_assign(val, ctx) for val in other.vals]
