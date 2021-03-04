@@ -101,6 +101,8 @@ class Value:
         elif isinstance(other, MultiValuedValue):
             tv_maps = [self.can_assign(val, ctx) for val in other.vals]
             return unify_typevar_maps(tv_maps)
+        elif isinstance(other, TypeVarValue):
+            return self.can_assign(other.get_fallback_value(), ctx)
         return None
 
     def is_assignable(self, other: "Value", ctx: CanAssignContext) -> bool:

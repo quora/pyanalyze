@@ -57,6 +57,9 @@ class TypeObject:
 
     def is_assignable_to_type(self, typ: type) -> bool:
         for base in self.base_classes:
-            if issubclass(base, typ):
-                return True
+            try:
+                if issubclass(base, typ):
+                    return True
+            except Exception:
+                pass  # ignore if issubclass() raised
         return self.is_universally_assignable

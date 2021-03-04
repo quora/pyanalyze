@@ -3359,7 +3359,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 and isinstance(callee_wrapped, KnownValue)
                 and asynq.is_pure_async_fn(callee_wrapped.val)
             ):
-                return TypedValue(_get_task_cls(callee_wrapped.val)), constraint
+                task_cls = _get_task_cls(callee_wrapped.val)
+                if isinstance(task_cls, type):
+                    return TypedValue(task_cls), constraint
             return return_value, constraint
 
     def _get_argspec_from_value(self, callee_wrapped, node):
