@@ -884,6 +884,21 @@ class TestTypeVar(TestNameCheckVisitorBase):
         def capybara(x: Capybara[int]) -> None:
             x.add_one("x")
 
+    @assert_passes()
+    def test_multi_typevar(self):
+        from typing import TypeVar, Optional
+
+        T = TypeVar("T")
+
+        # inspired by tempfile.mktemp
+        def mktemp(prefix: Optional[T] = None, suffix: Optional[T] = None) -> T:
+            raise NotImplementedError
+
+        def capybara() -> None:
+            assert_is_value(mktemp(), UNRESOLVED_VALUE)
+            assert_is_value(mktemp(prefix="p"), KnownValue("p"))
+            assert_is_value(mktemp(suffix="s"), KnownValue("s"))
+
     @skip_before((3, 10))
     @assert_fails(ErrorCode.incompatible_argument)
     def test_typeshed(self):

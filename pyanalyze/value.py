@@ -810,7 +810,19 @@ class MultiValuedValue(Value):
             return unify_typevar_maps(tv_maps)
         else:
             tv_maps = [val.can_assign(other, ctx) for val in self.vals]
-            return unify_typevar_maps(tv_maps, allow_none=True)
+            # Ignore any branches that don't match
+            tv_maps = [tv_map for tv_map in tv_maps if tv_map is not None]
+            if not tv_maps:
+                return None
+            # Include only typevars that appear in all branches; i.e., prefer
+            # branches that don't set typevars.
+            typevars = collections.Counter(tv for tv_map in tv_maps for tv in tv_map)
+            num_tv_maps = len(tv_maps)
+            return {
+                tv: unite_values(*[tv_map[tv] for tv_map in tv_maps])
+                for tv, count in typevars.items()
+                if count == num_tv_maps
+            }
 
     def get_type_value(self) -> Value:
         return MultiValuedValue([val.get_type_value() for val in self.vals])
@@ -934,21 +946,13 @@ def flatten_values(val: Value) -> Iterable[Value]:
         yield val
 
 
-def unify_typevar_maps(
-    tv_maps: Iterable[Optional[TypeVarMap]], allow_none: bool = False
-) -> Optional[TypeVarMap]:
+def unify_typevar_maps(tv_maps: Iterable[Optional[TypeVarMap]]) -> Optional[TypeVarMap]:
     raw_map = defaultdict(list)
-    has_non_none = False
     for tv_map in tv_maps:
         if tv_map is None:
-            if not allow_none:
-                return None
-        else:
-            has_non_none = True
-            for tv, value in tv_map.items():
-                raw_map[tv].append(value)
-    if not has_non_none:
-        return None
+            return None
+        for tv, value in tv_map.items():
+            raw_map[tv].append(value)
     return {tv: unite_values(*values) for tv, values in raw_map.items()}
 
 
