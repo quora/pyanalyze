@@ -224,7 +224,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
                     "Syntax error in forward reference: %s" % (val.__forward_arg__,)
                 )
                 return UNRESOLVED_VALUE
-            return _type_from_ast(code.body[0], ctx)
+            return _type_from_ast(code, ctx)
     elif val is Ellipsis:
         # valid in Callable[..., ]
         return UNRESOLVED_VALUE
@@ -363,9 +363,6 @@ class _SubscriptedValue(Value):
 class _Visitor(ast.NodeVisitor):
     def __init__(self, ctx: Context) -> None:
         self.ctx = ctx
-
-    def generic_visit(self, node: ast.AST) -> None:
-        raise Exception(node)
 
     def visit_Name(self, node: ast.Name) -> Value:
         return self.ctx.get_name(node)
