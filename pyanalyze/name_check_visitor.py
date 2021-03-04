@@ -177,6 +177,7 @@ class ClassAttributeChecker:
         config: Config,
         enabled: bool = True,
         should_check_unused_attributes: bool = False,
+        should_serialize: bool = False,
     ):
         # we might not have examined all parent classes when looking for attributes set
         # we dump them here. incase the callers want to extend coverage.
@@ -184,6 +185,7 @@ class ClassAttributeChecker:
         self.modules_examined = set()
         self.enabled = enabled
         self.should_check_unused_attributes = should_check_unused_attributes
+        self.should_serialize = should_serialize
         self.all_failures = []
         self.types_with_dynamic_attrs = set()
         self.config = config
@@ -263,6 +265,13 @@ class ClassAttributeChecker:
         to parallel workers.
 
         """
+        if not self.should_serialize:
+            try:
+                hash(typ)
+            except Exception:
+                return None  # ignore non-hashable types
+            else:
+                return typ
         if isinstance(typ, super):
             typ = typ.__self_class__
         if isinstance(_safe_getattr(typ, "__module__", None), str) and isinstance(
@@ -280,6 +289,8 @@ class ClassAttributeChecker:
         return None
 
     def unserialize_type(self, serialized):
+        if not self.should_serialize:
+            return serialized
         module, name = serialized
         if module not in sys.modules:
             __import__(module)
@@ -3493,6 +3504,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 cls.config,
                 enabled=attribute_checker_enabled,
                 should_check_unused_attributes=find_unused_attributes,
+                should_serialize=kwargs.get("parallel", False),
             )
         else:
             inner_attribute_checker_obj = qcore.empty_context
