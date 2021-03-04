@@ -40,7 +40,11 @@ class CanAssignContext:
         return set()
 
     def make_type_object(self, typ: Union[type, super]) -> TypeObject:
-        if typ in _type_object_cache:
+        try:
+            in_cache = typ in _type_object_cache
+        except Exception:
+            return TypeObject(typ, self.get_additional_bases(typ))
+        if in_cache:
             return _type_object_cache[typ]
         type_object = TypeObject(typ, self.get_additional_bases(typ))
         _type_object_cache[typ] = type_object
@@ -448,7 +452,7 @@ class GenericValue(TypedValue):
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, GenericValue):
             # TODO make this properly look for the right generic baes
-            if len(self.args) != len(other.args):
+            if len(self.args) > len(other.args):
                 return None
             tv_maps = [super().can_assign(other, ctx)]
             for arg1, arg2 in zip(self.args, other.args):

@@ -45,7 +45,11 @@ class TypeObject:
 
     @classmethod
     def make(cls, typ: type) -> "TypeObject":
-        if typ in _cache:
+        try:
+            in_cache = typ in _cache
+        except Exception:
+            return cls(typ)
+        if in_cache:
             return _cache[typ]
         type_object = cls(typ)
         _cache[typ] = type_object
