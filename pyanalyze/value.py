@@ -5,32 +5,53 @@ Implementation of value classes, which represent values found while analyzing an
 """
 
 import ast
-from collections import OrderedDict
+import collections.abc
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field, InitVar
 import inspect
 from itertools import chain
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterable,
     List,
     Mapping,
     Optional,
     Sequence,
+    Set,
     Tuple,
     Union,
     TypeVar,
 )
-from unittest import mock
+
+from .type_object import TypeObject
 
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
 
-TypeOrTuple = Union[type, Tuple[type, ...]]
 TypeVarMap = Mapping["TypeVar", "Value"]
 
+_type_object_cache: Dict[type, TypeObject] = {}
 
-class Value(object):
+
+class CanAssignContext:
+    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
+        return set()
+
+    def make_type_object(self, typ: Union[type, super]) -> TypeObject:
+        try:
+            in_cache = typ in _type_object_cache
+        except Exception:
+            return TypeObject(typ, self.get_additional_bases(typ))
+        if in_cache:
+            return _type_object_cache[typ]
+        type_object = TypeObject(typ, self.get_additional_bases(typ))
+        _type_object_cache[typ] = type_object
+        return type_object
+
+
+class Value:
     """Class that represents the value of a variable."""
 
     def is_value_compatible(self, val: "Value") -> bool:
@@ -44,7 +65,7 @@ class Value(object):
         """
         return True
 
-    def is_type(self, typ: TypeOrTuple) -> bool:
+    def is_type(self, typ: type) -> bool:
         """Returns whether this value is an instance of the given type."""
         return False
 
@@ -60,15 +81,40 @@ class Value(object):
         """Walk over all values contained in this value."""
         yield self
 
-    def apply_typevars(
-        self, value: "Value", typevars: TypeVarMap
-    ) -> Tuple["Value", TypeVarMap]:
-        """Greedily apply the typevars in the map to this value.
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
+        """Substitute the typevars in the map to produce a new Value."""
+        return self
 
-        Return a tuple of a new value and newly applied typevars.
+    def can_assign(self, other: "Value", ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        """Whether other can be assigned to self.
+
+        If yes, return a (possibly empty) map with TypeVar substitutions. If not,
+        return None.
 
         """
-        return self, {}
+        if (
+            other is UNRESOLVED_VALUE
+            or other is NO_RETURN_VALUE
+            or isinstance(other, VariableNameValue)
+        ):
+            return {}
+        elif isinstance(other, MultiValuedValue):
+            tv_maps = [self.can_assign(val, ctx) for val in other.vals]
+            return unify_typevar_maps(tv_maps)
+        elif isinstance(other, TypeVarValue):
+            return self.can_assign(other.get_fallback_value(), ctx)
+        elif (
+            isinstance(other, UnboundMethodValue)
+            and other.secondary_attr_name is not None
+        ):
+            # Allow any UnboundMethodValue with a secondary attr; it might not be
+            # a method.
+            return {}
+        return None
+
+    def is_assignable(self, other: "Value", ctx: CanAssignContext) -> bool:
+        """Similar to can_assign but just returns a bool."""
+        return self.can_assign(other, ctx) is not None
 
 
 @dataclass(frozen=True)
@@ -77,6 +123,9 @@ class UnresolvedValue(Value):
 
     def __str__(self) -> str:
         return "Any"
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        return {}  # Always allowed
 
 
 UNRESOLVED_VALUE = UnresolvedValue()
@@ -108,6 +157,10 @@ class NoReturnValue(Value):
         # You can't assign anything to NoReturn
         return False
 
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        # You can't assign anything to NoReturn
+        return None
+
 
 NO_RETURN_VALUE = NoReturnValue()
 
@@ -127,9 +180,7 @@ class KnownValue(Value):
         if isinstance(val, KnownValue):
             return self.val == val.val
         elif isinstance(val, TypedValue):
-            if self.is_type(val.typ):
-                return True
-            return are_types_compatible(type(self.val), val.typ)
+            return val.type_object.is_assignable_to_type(type(self.val))
         elif isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible(v) for v in val.vals)
         elif isinstance(val, SubclassValue):
@@ -137,11 +188,23 @@ class KnownValue(Value):
         else:
             return True
 
-    def is_type(self, typ: TypeOrTuple) -> bool:
-        return isinstance(self.val, typ)
+    def is_type(self, typ: type) -> bool:
+        return self.get_type_object().is_assignable_to_type(typ)
 
     def get_type(self) -> type:
         return type(self.val)
+
+    def get_type_object(self) -> TypeObject:
+        return TypeObject.make(type(self.val))
+
+    def get_type_value(self) -> Value:
+        return KnownValue(type(self.val))
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        if isinstance(other, KnownValue):
+            if self.val == other.val and type(self) == type(other):
+                return {}
+        return super().can_assign(other, ctx)
 
     def __eq__(self, other: Value) -> bool:
         return (
@@ -162,9 +225,6 @@ class KnownValue(Value):
             return "None"
         else:
             return "Literal[%r]" % (self.val,)
-
-    def get_type_value(self) -> Value:
-        return KnownValue(type(self.val))
 
 
 @dataclass(frozen=True)
@@ -193,7 +253,7 @@ class UnboundMethodValue(Value):
         except AttributeError:
             return None
 
-    def is_type(self, typ: TypeOrTuple) -> bool:
+    def is_type(self, typ: type) -> bool:
         return isinstance(self.get_method(), typ)
 
     def get_type(self) -> type:
@@ -201,6 +261,14 @@ class UnboundMethodValue(Value):
 
     def get_type_value(self) -> Value:
         return KnownValue(type(self.get_method()))
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
+        """Substitute the typevars in the map to produce a new Value."""
+        return UnboundMethodValue(
+            self.attr_name,
+            self.typ.substitute_typevars(typevars),
+            self.secondary_attr_name,
+        )
 
     def __str__(self) -> str:
         return "<method %s%s on %s>" % (
@@ -228,22 +296,22 @@ class TypedValue(Value):
     """
 
     typ: Any
+    type_object: TypeObject = field(init=False, repr=False, hash=False, compare=False)
+
+    def __post_init__(self) -> None:
+        self.type_object = TypeObject.make(self.typ)
 
     def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, TypeVarValue):
             val = val.get_fallback_value()
-        if hasattr(self.typ, "_VALUES_TO_NAMES"):
+        if self.type_object.is_thrift_enum:
             # Special case: Thrift enums. These are conceptually like
             # enums, but they are ints at runtime.
             return self.is_value_compatible_thrift_enum(val)
         elif isinstance(val, KnownValue):
-            if isinstance(val.val, self.typ):
-                return True
-            return are_types_compatible(self.typ, type(val.val))
+            return TypeObject.make(type(val.val)).is_assignable_to_type(self.typ)
         elif isinstance(val, TypedValue):
-            if issubclass(val.typ, self.typ):
-                return True
-            return are_types_compatible(self.typ, val.typ)
+            return val.type_object.is_assignable_to_type(self.typ)
         elif isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible(v) for v in val.vals)
         elif isinstance(val, SubclassValue):
@@ -258,7 +326,9 @@ class TypedValue(Value):
                 return False
             return val.val in self.typ._VALUES_TO_NAMES
         elif isinstance(val, TypedValue):
-            return issubclass(val.typ, (self.typ, int))
+            return val.type_object.is_assignable_to_type(
+                self.typ
+            ) or val.type_object.is_assignable_to_type(int)
         elif isinstance(val, MultiValuedValue):
             return all(self.is_value_compatible_thrift_enum(v) for v in val.vals)
         elif isinstance(val, (SubclassValue, UnboundMethodValue)):
@@ -268,8 +338,47 @@ class TypedValue(Value):
         else:
             return False
 
-    def is_type(self, typ: TypeOrTuple) -> bool:
-        return issubclass(self.typ, typ)
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        if self.type_object.is_thrift_enum:
+            # Special case: Thrift enums. These are conceptually like
+            # enums, but they are ints at runtime.
+            return self.can_assign_thrift_enum(other, ctx)
+        elif isinstance(other, KnownValue):
+            if ctx.make_type_object(type(other.val)).is_assignable_to_type(self.typ):
+                return {}
+        elif isinstance(other, TypedValue):
+            if ctx.make_type_object(other.typ).is_assignable_to_type(self.typ):
+                return {}
+        elif isinstance(other, SubclassValue):
+            if isinstance(other.typ, self.typ):
+                return {}
+        elif isinstance(other, UnboundMethodValue):
+            if self.typ in {Callable, collections.abc.Callable, object}:
+                return {}
+        return super().can_assign(other, ctx)
+
+    def can_assign_thrift_enum(
+        self, other: Value, ctx: CanAssignContext
+    ) -> Optional[TypeVarMap]:
+        if other is UNRESOLVED_VALUE or other is NO_RETURN_VALUE:
+            return {}
+        elif isinstance(other, KnownValue):
+            if not isinstance(other.val, int):
+                return None
+            if other.val in self.typ._VALUES_TO_NAMES:
+                return {}
+        elif isinstance(other, TypedValue):
+            if other.type_object.is_assignable_to_type(
+                self.typ
+            ) or other.type_object.is_assignable_to_type(int):
+                return {}
+        elif isinstance(other, MultiValuedValue):
+            tv_maps = [self.can_assign(val, ctx) for val in other.vals]
+            return unify_typevar_maps(tv_maps)
+        return None
+
+    def is_type(self, typ: type) -> bool:
+        return self.type_object.is_assignable_to_type(typ)
 
     def get_type(self) -> type:
         return self.typ
@@ -293,7 +402,7 @@ class NewTypeValue(TypedValue):
     newtype: Any
 
     def __init__(self, newtype: Any) -> None:
-        super(NewTypeValue, self).__init__(newtype.__supertype__)
+        super().__init__(newtype.__supertype__)
         self.name = newtype.__name__
         self.newtype = newtype
 
@@ -302,6 +411,13 @@ class NewTypeValue(TypedValue):
             return self.newtype is val.newtype
         else:
             return super(NewTypeValue, self).is_value_compatible(val)
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        if isinstance(other, NewTypeValue):
+            if self.newtype is other.newtype:
+                return {}
+            return None
+        return super().can_assign(other, ctx)
 
     def __str__(self) -> str:
         return "NewType(%r, %s)" % (self.name, _stringify_type(self.typ))
@@ -346,6 +462,17 @@ class GenericValue(TypedValue):
         else:
             return super(GenericValue, self).is_value_compatible(val)
 
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        if isinstance(other, GenericValue):
+            # TODO make this properly look for the right generic baes
+            if len(self.args) > len(other.args):
+                return None
+            tv_maps = [super().can_assign(other, ctx)]
+            for arg1, arg2 in zip(self.args, other.args):
+                tv_maps.append(arg1.can_assign(arg2, ctx))
+            return unify_typevar_maps(tv_maps)
+        return super().can_assign(other, ctx)
+
     def get_arg(self, index: int) -> Value:
         try:
             return self.args[index]
@@ -357,23 +484,10 @@ class GenericValue(TypedValue):
         for arg in self.args:
             yield from arg.walk_values()
 
-    def apply_typevars(
-        self, val: "Value", typevars: TypeVarMap
-    ) -> Tuple["Value", TypeVarMap]:
-        if (
-            isinstance(val, GenericValue)
-            and self.is_value_compatible(val)
-            and self.typ is val.typ
-            and len(self.args) == len(val.args)
-        ):
-            new_args = []
-            for my_arg, their_arg in zip(self.args, val.args):
-                new_val, new_typevars = my_arg.apply_typevars(their_arg, typevars)
-                typevars = {**typevars, **new_typevars}
-                new_args.append(new_val)
-            return GenericValue(self.typ, new_args), typevars
-        else:
-            return self, {}
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return GenericValue(
+            self.typ, [arg.substitute_typevars(typevars) for arg in self.args]
+        )
 
 
 @dataclass(unsafe_hash=True, init=False)
@@ -381,7 +495,7 @@ class SequenceIncompleteValue(GenericValue):
     """A TypedValue representing a sequence whose members are not completely known.
 
     For example, the expression [int(self.foo)] may be typed as
-    SequenceValue(list, [TypedValue(int)])
+    SequenceIncompleteValue(list, [TypedValue(int)])
 
     """
 
@@ -407,6 +521,24 @@ class SequenceIncompleteValue(GenericValue):
             )
         else:
             return super(SequenceIncompleteValue, self).is_value_compatible(val)
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        if isinstance(other, SequenceIncompleteValue):
+            if not issubclass(other.typ, self.typ):
+                return None
+            if len(other.members) != len(self.members):
+                return None
+            tv_maps = [
+                my_member.can_assign(other_member, ctx)
+                for my_member, other_member in zip(self.members, other.members)
+            ]
+            return unify_typevar_maps(tv_maps)
+        return super().can_assign(other, ctx)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return SequenceIncompleteValue(
+            self.typ, [member.substitute_typevars(typevars) for member in self.members]
+        )
 
     def __str__(self) -> str:
         if self.typ is tuple:
@@ -454,6 +586,14 @@ class DictIncompleteValue(GenericValue):
             yield from key.walk_values()
             yield from value.walk_values()
 
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return DictIncompleteValue(
+            [
+                (key.substitute_typevars(typevars), value.substitute_typevars(typevars))
+                for key, value in self.items
+            ]
+        )
+
 
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
@@ -464,7 +604,7 @@ class TypedDictValue(GenericValue):
             value_type = unite_values(*items.values())
         else:
             value_type = UNRESOLVED_VALUE
-        super(TypedDictValue, self).__init__(dict, (TypedValue(str), value_type))
+        super().__init__(dict, (TypedValue(str), value_type))
         self.items = items
 
     def is_value_compatible(self, val: Value) -> bool:
@@ -502,6 +642,48 @@ class TypedDictValue(GenericValue):
         else:
             return super(TypedDictValue, self).is_value_compatible(val)
 
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        if isinstance(other, DictIncompleteValue):
+            if len(other.items) < len(self.items):
+                return None
+            known_part = {
+                key.val: value
+                for key, value in other.items
+                if isinstance(key, KnownValue) and isinstance(key.val, str)
+            }
+            has_unknowns = len(known_part) < len(other.items)
+            tv_maps = []
+            for key, value in self.items.items():
+                if key not in known_part:
+                    if not has_unknowns:
+                        return None
+                else:
+                    tv_maps.append(value.can_assign(known_part[key], ctx))
+            return unify_typevar_maps(tv_maps)
+        elif isinstance(other, TypedDictValue):
+            tv_maps = []
+            for key, value in self.items.items():
+                if key not in other.items:
+                    return None
+                tv_maps.append(value.can_assign(other.items[key], ctx))
+            return unify_typevar_maps(tv_maps)
+        elif isinstance(other, KnownValue) and isinstance(other.val, dict):
+            tv_maps = []
+            for key, value in self.items.items():
+                if key not in other.val:
+                    return None
+                tv_maps.append(value.can_assign(KnownValue(other.val[key]), ctx))
+            return unify_typevar_maps(tv_maps)
+        return super().can_assign(other, ctx)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return TypedDictValue(
+            {
+                key: value.substitute_typevars(typevars)
+                for key, value in self.items.items()
+            }
+        )
+
     def __str__(self) -> str:
         items = ['"%s": %s' % (key, value) for key, value in self.items.items()]
         return "TypedDict({%s})" % ", ".join(items)
@@ -529,22 +711,10 @@ class AsyncTaskIncompleteValue(GenericValue):
         super(AsyncTaskIncompleteValue, self).__init__(typ, (value,))
         self.value = value
 
-    def walk_values(self) -> Iterable["Value"]:
-        yield self
-        yield from self.value.walk_values()
-
-
-@dataclass(frozen=True)
-class AwaitableIncompleteValue(Value):
-    """A Value representing a Python 3 awaitable, e.g. a coroutine object."""
-
-    value: Value
-
-    def get_type_value(self) -> Value:
-        return UNRESOLVED_VALUE
-
-    def __str__(self) -> str:
-        return "Awaitable[%s]" % (self.value,)
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return AsyncTaskIncompleteValue(
+            self.typ, self.value.substitute_typevars(typevars)
+        )
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -557,7 +727,7 @@ class SubclassValue(Value):
 
     typ: type
 
-    def is_type(self, typ: TypeOrTuple) -> bool:
+    def is_type(self, typ: type) -> bool:
         try:
             return issubclass(self.typ, typ)
         except Exception:
@@ -587,6 +757,21 @@ class SubclassValue(Value):
             return True
         else:
             return False
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        if isinstance(other, SubclassValue):
+            if issubclass(other.typ, self.typ):
+                return {}
+        elif isinstance(other, KnownValue):
+            if isinstance(other.val, type) and issubclass(other.val, self.typ):
+                return {}
+        elif isinstance(other, TypedValue):
+            if other.typ is type:
+                return {}
+            # metaclass
+            elif issubclass(other.typ, type) and isinstance(self.typ, other.typ):
+                return {}
+        return super().can_assign(other, ctx)
 
     def get_type(self) -> type:
         return type(self.typ)
@@ -620,6 +805,31 @@ class MultiValuedValue(Value):
             )
         else:
             return any(subval.is_value_compatible(val) for subval in self.vals)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return MultiValuedValue(
+            [val.substitute_typevars(typevars) for val in self.vals]
+        )
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        if isinstance(other, MultiValuedValue):
+            tv_maps = [self.can_assign(val, ctx) for val in other.vals]
+            return unify_typevar_maps(tv_maps)
+        else:
+            tv_maps = [val.can_assign(other, ctx) for val in self.vals]
+            # Ignore any branches that don't match
+            tv_maps = [tv_map for tv_map in tv_maps if tv_map is not None]
+            if not tv_maps:
+                return None
+            # Include only typevars that appear in all branches; i.e., prefer
+            # branches that don't set typevars.
+            typevars = collections.Counter(tv for tv_map in tv_maps for tv in tv_map)
+            num_tv_maps = len(tv_maps)
+            return {
+                tv: unite_values(*[tv_map[tv] for tv_map in tv_maps])
+                for tv, count in typevars.items()
+                if count == num_tv_maps
+            }
 
     def get_type_value(self) -> Value:
         return MultiValuedValue([val.get_type_value() for val in self.vals])
@@ -667,13 +877,11 @@ class TypeVarValue(Value):
 
     typevar: TypeVar
 
-    def apply_typevars(
-        self, value: "Value", typevars: TypeVarMap
-    ) -> Tuple["Value", TypeVarMap]:
-        if self.typevar in typevars:
-            # Ignore the passed value, we'll error elsewhere
-            return (typevars[self.typevar], {})
-        return value, {self.typevar: value}
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return typevars.get(self.typevar, self)
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        return {self.typevar: other}
 
     def get_fallback_value(self) -> Value:
         # TODO: support bounds and bases here to do something smarter
@@ -699,6 +907,13 @@ class VariableNameValue(Value):
         if not isinstance(val, VariableNameValue):
             return True
         return val == self
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        if not isinstance(other, VariableNameValue):
+            return {}
+        if other == self:
+            return {}
+        return None
 
     def __str__(self) -> str:
         return "<variable name: %s>" % ", ".join(self.varnames)
@@ -738,6 +953,16 @@ def flatten_values(val: Value) -> Iterable[Value]:
         yield val
 
 
+def unify_typevar_maps(tv_maps: Iterable[Optional[TypeVarMap]]) -> Optional[TypeVarMap]:
+    raw_map = defaultdict(list)
+    for tv_map in tv_maps:
+        if tv_map is None:
+            return None
+        for tv, value in tv_map.items():
+            raw_map[tv].append(value)
+    return {tv: unite_values(*values) for tv, values in raw_map.items()}
+
+
 def unite_values(*values: Value) -> Value:
     if not values:
         return UNRESOLVED_VALUE
@@ -767,18 +992,6 @@ def unite_values(*values: Value) -> Value:
         return existing[0]
     else:
         return MultiValuedValue(existing)
-
-
-def are_types_compatible(t1: type, t2: type) -> bool:
-    """Special cases for type compatibility checks."""
-    # As a special case, the Python type system treats int as
-    # a subtype of float.
-    if t1 is float and t2 is int:
-        return True
-    # Everything is compatible with mock objects
-    if issubclass(t2, mock.NonCallableMock):
-        return True
-    return False
 
 
 def boolean_value(value: Optional[Value]) -> Optional[bool]:

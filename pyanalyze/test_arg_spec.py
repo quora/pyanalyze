@@ -6,7 +6,7 @@ from .test_name_check_visitor import (
     TestNameCheckVisitorBase,
     ConfiguredNameCheckVisitor,
 )
-from .test_node_visitor import assert_fails, assert_passes
+from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .arg_spec import (
     ArgSpecCache,
     BoundMethodArgSpecWrapper,
@@ -769,6 +769,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
     @assert_passes()
     def test_asyncio_coroutine(self):
         import asyncio
+        from collections.abc import Awaitable
 
         @asyncio.coroutine
         def f():
@@ -777,7 +778,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
 
         @asyncio.coroutine
         def g():
-            assert_is_value(f(), AwaitableIncompleteValue(KnownValue(42)))
+            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
 
     @assert_passes()
     def test_coroutine_from_typeshed(self):
@@ -793,26 +794,32 @@ class TestCoroutines(TestNameCheckVisitorBase):
     @assert_passes()
     def test_async_def_from_typeshed(self):
         from asyncio.streams import open_connection, StreamReader, StreamWriter
+        from collections.abc import Awaitable
 
         async def capybara():
             # annotated as async def in typeshed
             assert_is_value(
                 open_connection(),
-                AwaitableIncompleteValue(
-                    SequenceIncompleteValue(
-                        tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
-                    )
+                GenericValue(
+                    Awaitable,
+                    [
+                        SequenceIncompleteValue(
+                            tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
+                        )
+                    ],
                 ),
             )
             return 42
 
     @assert_passes()
     def test_async_def(self):
+        from collections.abc import Awaitable
+
         async def f():
             return 42
 
         async def g():
-            assert_is_value(f(), AwaitableIncompleteValue(KnownValue(42)))
+            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
 
 
 class TestTypeshedClient(TestNameCheckVisitorBase):
@@ -876,3 +883,26 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
         def capybara(x: Capybara[int]) -> None:
             x.add_one("x")
+
+    @assert_passes()
+    def test_multi_typevar(self):
+        from typing import TypeVar, Optional
+
+        T = TypeVar("T")
+
+        # inspired by tempfile.mktemp
+        def mktemp(prefix: Optional[T] = None, suffix: Optional[T] = None) -> T:
+            raise NotImplementedError
+
+        def capybara() -> None:
+            assert_is_value(mktemp(), UNRESOLVED_VALUE)
+            assert_is_value(mktemp(prefix="p"), KnownValue("p"))
+            assert_is_value(mktemp(suffix="s"), KnownValue("s"))
+
+    @skip_before((3, 10))
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_typeshed(self):
+        from typing import List
+
+        def capybara(lst: List[int]) -> None:
+            lst.append("x")

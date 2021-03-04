@@ -11,6 +11,7 @@ from ast_decompiler import decompile
 import asyncio
 import builtins
 import collections.abc
+from collections.abc import Awaitable
 import contextlib
 from dataclasses import dataclass
 from functools import reduce
@@ -27,7 +28,17 @@ import sys
 import tempfile
 import traceback
 import types
-from typing import cast, Iterable, Union, Any, List, Optional, Tuple, Sequence
+from typing import (
+    cast,
+    Iterable,
+    Union,
+    Any,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Sequence,
+)
 
 import asynq
 import qcore
@@ -66,6 +77,7 @@ from pyanalyze.stacked_scopes import (
 )
 from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from pyanalyze.yield_checker import YieldChecker
+from pyanalyze.type_object import get_mro
 from pyanalyze.value import (
     boolean_value,
     UNINITIALIZED_VALUE,
@@ -82,10 +94,10 @@ from pyanalyze.value import (
     DictIncompleteValue,
     SequenceIncompleteValue,
     AsyncTaskIncompleteValue,
-    AwaitableIncompleteValue,
     GenericValue,
     TypedDictValue,
     Value,
+    CanAssignContext,
 )
 
 OPERATION_TO_DESCRIPTION_AND_METHOD = {
@@ -542,7 +554,7 @@ class CallSiteCollector(object):
             pass
 
 
-class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
+class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     """Visitor class that infers the type and value of Python objects and detects some errors."""
 
     error_code_enum = ErrorCode
@@ -637,6 +649,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._argspec_to_retval = {}
         self._method_cache = {}
         self._fill_method_cache()
+
+    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
+        return self.config.get_additional_bases(typ)
 
     def __reduce_ex__(self, proto: object) -> object:
         # Only pickle the attributes needed to get error reporting working
@@ -1107,7 +1122,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             is_coroutine = _is_coroutine_function(potential_function)
 
         if is_coroutine or info.is_decorated_coroutine:
-            return_value = AwaitableIncompleteValue(return_value)
+            return_value = GenericValue(Awaitable, [return_value])
 
         try:
             argspec = self.arg_spec_cache.get_argspec(
@@ -1456,9 +1471,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
                 if getattr(arg, "annotation", None) is not None:
                     value = self._value_of_annotated_arg(arg)
-                    if default is not None and not self.is_value_compatible(
-                        value, default
-                    ):
+                    if default is not None and not value.is_assignable(default, self):
                         self._show_error_if_checking(
                             arg,
                             "Default value for argument %s incompatible with declared type %s"
@@ -2099,7 +2112,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def constraint_from_compare(self, node):
         if len(node.ops) != 1:
-            return self.generic_visit(node), NULL_CONSTRAINT
+            # TODO handle multi-comparison properly
+            self.generic_visit(node)
+            return UNRESOLVED_VALUE, NULL_CONSTRAINT
         op = node.ops[0]
         self.visit(node.left)
         rhs = self.visit(node.comparators[0])
@@ -2244,15 +2259,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_Await(self, node: ast.Await) -> Value:
         value = self.visit(node.value)
-        if isinstance(value, AwaitableIncompleteValue):
-            return value.value
+        if isinstance(value, GenericValue) and value.typ is Awaitable:
+            return value.args[0]
         else:
             return self._check_dunder_call(node.value, value, "__await__", [])
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Value:
         self.is_generator = True
         value = self.visit(node.value)
-        if not TypedValue(collections.abc.Iterable).is_value_compatible(value):
+        if not TypedValue(collections.abc.Iterable).is_assignable(
+            value, self
+        ) and not TypedValue(Awaitable).is_assignable(value, self):
             self._show_error_if_checking(
                 node,
                 "Cannot use %s in yield from" % (value,),
@@ -2358,7 +2375,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # TODO check generator types properly
             not (self.is_generator and self.async_kind == AsyncFunctionKind.non_async)
             and self.expected_return_value is not None
-            and not self.is_value_compatible(self.expected_return_value, value)
+            and not self.expected_return_value.is_assignable(value, self)
         ):
             self._show_error_if_checking(
                 node,
@@ -2720,9 +2737,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         # If the value is an awaitable or is assignable to asyncio.Future, show
         # an error about a missing await.
-        elif isinstance(value, AwaitableIncompleteValue) or (
-            value.is_type(asyncio.Future)
-        ):
+        elif value.is_type(Awaitable) or (value.is_type(asyncio.Future)):
             if self.is_async_def:
                 new_node = ast.Expr(value=ast.Await(value=node.value))
             else:
@@ -2792,7 +2807,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if node.value:
             is_yield = isinstance(node.value, ast.Yield)
             value = self.visit(node.value)
-            if not self.is_value_compatible(expected_type, value):
+            if not expected_type.is_assignable(value, self):
                 self._show_error_if_checking(
                     node.value,
                     "Incompatible assignment: expected %s, got %s"
@@ -2901,7 +2916,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         elif isinstance(node.ctx, ast.Load):
             if isinstance(value, TypedDictValue):
-                if not TypedValue(str).is_value_compatible(index):
+                if not TypedValue(str).is_assignable(index, self):
                     self._show_error_if_checking(
                         node.slice.value,
                         "dict key must be str, not %s" % (index,),
@@ -3344,7 +3359,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 and isinstance(callee_wrapped, KnownValue)
                 and asynq.is_pure_async_fn(callee_wrapped.val)
             ):
-                return TypedValue(_get_task_cls(callee_wrapped.val)), constraint
+                task_cls = _get_task_cls(callee_wrapped.val)
+                if isinstance(task_cls, type):
+                    return TypedValue(task_cls), constraint
             return return_value, constraint
 
     def _get_argspec_from_value(self, callee_wrapped, node):
@@ -3641,15 +3658,3 @@ def _has_annotation_for_attr(typ, attr):
 
 def _is_asynq_future(value: Value) -> bool:
     return value.is_type(asynq.FutureBase) or value.is_type(asynq.AsyncTask)
-
-
-def get_mro(typ: Union[type, super]) -> Sequence[type]:
-    if isinstance(typ, super):
-        typ_for_mro = typ.__thisclass__
-    else:
-        typ_for_mro = typ
-    try:
-        return inspect.getmro(typ_for_mro)
-    except AttributeError:
-        # It's not actually a class.
-        return []
