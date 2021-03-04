@@ -103,6 +103,13 @@ class Value:
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, TypeVarValue):
             return self.can_assign(other.get_fallback_value(), ctx)
+        elif (
+            isinstance(other, UnboundMethodValue)
+            and other.secondary_attr_name is not None
+        ):
+            # Allow any UnboundMethodValue with a secondary attr; it might not be
+            # a method.
+            return {}
         return None
 
     def is_assignable(self, other: "Value", ctx: CanAssignContext) -> bool:
