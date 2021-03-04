@@ -34,7 +34,7 @@ _type_object_cache: Dict[type, TypeObject] = {}
 
 
 class CanAssignContext:
-    def get_additional_bases(self, typ: type) -> Set[type]:
+    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
         return set()
 
     def make_type_object(self, typ: Union[type, super]) -> TypeObject:
@@ -99,7 +99,7 @@ class Value:
         if other is UNRESOLVED_VALUE or other is NO_RETURN_VALUE:
             return {}
         elif isinstance(other, MultiValuedValue):
-            tv_maps = [self.can_assign(val) for val in other.vals]
+            tv_maps = [self.can_assign(val, ctx) for val in other.vals]
             return unify_typevar_maps(tv_maps)
         return None
 
@@ -345,16 +345,17 @@ class TypedValue(Value):
         self, other: Value, ctx: CanAssignContext
     ) -> Optional[TypeVarMap]:
         if other is UNRESOLVED_VALUE or other is NO_RETURN_VALUE:
-            return True
+            return {}
         elif isinstance(other, KnownValue):
             if not isinstance(other.val, int):
-                return False
+                return None
             if other.val in self.typ._VALUES_TO_NAMES:
                 return {}
         elif isinstance(other, TypedValue):
-            return other.type_object.is_assignable_to_type(
+            if other.type_object.is_assignable_to_type(
                 self.typ
-            ) or other.type_object.is_assignable_to_type(int)
+            ) or other.type_object.is_assignable_to_type(int):
+                return {}
         elif isinstance(other, MultiValuedValue):
             tv_maps = [self.can_assign(val, ctx) for val in other.vals]
             return unify_typevar_maps(tv_maps)
@@ -523,7 +524,7 @@ class SequenceIncompleteValue(GenericValue):
         else:
             return super(SequenceIncompleteValue, self).is_value_compatible(val)
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Value:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, SequenceIncompleteValue):
             if not issubclass(other.typ, self.typ):
                 return None
@@ -538,7 +539,7 @@ class SequenceIncompleteValue(GenericValue):
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return SequenceIncompleteValue(
-            [member.substitute_typevars(typevars) for member in self.members]
+            self.typ, [member.substitute_typevars(typevars) for member in self.members]
         )
 
     def __str__(self) -> str:
@@ -713,7 +714,9 @@ class AsyncTaskIncompleteValue(GenericValue):
         self.value = value
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return AsyncTaskIncompleteValue(self.value.substitute_typevars(typevars))
+        return AsyncTaskIncompleteValue(
+            self.typ, self.value.substitute_typevars(typevars)
+        )
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
