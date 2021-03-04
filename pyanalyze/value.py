@@ -77,16 +77,6 @@ class Value:
         """Walk over all values contained in this value."""
         yield self
 
-    def apply_typevars(
-        self, value: "Value", typevars: TypeVarMap
-    ) -> Tuple["Value", TypeVarMap]:
-        """Greedily apply the typevars in the map to this value.
-
-        Return a tuple of a new value and newly applied typevars.
-
-        """
-        return self, {}
-
     def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
         """Substitute the typevars in the map to produce a new Value."""
         return self
@@ -472,24 +462,6 @@ class GenericValue(TypedValue):
         yield self
         for arg in self.args:
             yield from arg.walk_values()
-
-    def apply_typevars(
-        self, val: "Value", typevars: TypeVarMap
-    ) -> Tuple["Value", TypeVarMap]:
-        if (
-            isinstance(val, GenericValue)
-            and self.is_value_compatible(val)
-            and self.typ is val.typ
-            and len(self.args) == len(val.args)
-        ):
-            new_args = []
-            for my_arg, their_arg in zip(self.args, val.args):
-                new_val, new_typevars = my_arg.apply_typevars(their_arg, typevars)
-                typevars = {**typevars, **new_typevars}
-                new_args.append(new_val)
-            return GenericValue(self.typ, new_args), typevars
-        else:
-            return self, {}
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return GenericValue(
@@ -892,14 +864,6 @@ class TypeVarValue(Value):
     """Value representing a type variable."""
 
     typevar: TypeVar
-
-    def apply_typevars(
-        self, value: "Value", typevars: TypeVarMap
-    ) -> Tuple["Value", TypeVarMap]:
-        if self.typevar in typevars:
-            # Ignore the passed value, we'll error elsewhere
-            return (typevars[self.typevar], {})
-        return value, {self.typevar: value}
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return typevars.get(self.typevar, self)
