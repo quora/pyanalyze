@@ -154,6 +154,11 @@ def test_subclass_value():
     assert not val.is_value_compatible(TypedValue(int))
     assert val.is_value_compatible(SubclassValue(bool))
     assert not val.is_value_compatible(SubclassValue(str))
+    val = value.SubclassValue(str)
+    assert_eq("Type[str]", str(val))
+    assert_is(str, val.typ)
+    assert val.is_type(str)
+    assert not val.is_type(int)
 
 
 def test_generic_value():
@@ -271,14 +276,6 @@ def test_is_value_compatible_thrift_enum():
     assert not val.is_value_compatible(TypedValue(str))
 
 
-def test_subclass_value():
-    val = value.SubclassValue(str)
-    assert_eq("Type[str]", str(val))
-    assert_is(str, val.typ)
-    assert val.is_type(str)
-    assert not val.is_type(int)
-
-
 def test_variable_name_value():
     uid_val = value.VariableNameValue(["uid", "viewer"])
     varname_map = {
@@ -293,6 +290,10 @@ def test_variable_name_value():
     assert_is(val, value.VariableNameValue.from_varname("viewer", varname_map))
     assert_is(val, value.VariableNameValue.from_varname("old_uid", varname_map))
     assert_is_not(val, value.VariableNameValue.from_varname("actor_id", varname_map))
+    assert_can_assign(TypedValue(int), val)
+    assert_can_assign(KnownValue(1), val)
+    assert_can_assign(val, TypedValue(int))
+    assert_can_assign(val, KnownValue(1))
 
 
 def test_typeddict_value():
