@@ -32,7 +32,6 @@ from .value import (
     UNRESOLVED_VALUE,
     Value,
     VariableNameValue,
-    AwaitableIncompleteValue,
     extract_typevars,
     TypeVarMap,
 )
@@ -41,6 +40,7 @@ import asyncio
 import ast
 import asynq
 import builtins
+from collections.abc import Awaitable
 from dataclasses import dataclass, field, InitVar
 from functools import reduce
 import collections.abc
@@ -482,7 +482,7 @@ def %(name)s(%(arguments)s):
 
     def has_return_value(self) -> bool:
         # We can't check self.return_value directly here because that may have
-        # been wrapped in AwaitableIncompleteValue.
+        # been wrapped in an Awaitable.
         return self._has_return_value
 
 
@@ -1220,7 +1220,7 @@ class ArgSpecCache:
                 asyncio.iscoroutinefunction(obj)
                 and argspec.return_value is UNRESOLVED_VALUE
             ):
-                argspec.return_value = AwaitableIncompleteValue(UNRESOLVED_VALUE)
+                argspec.return_value = GenericValue(Awaitable, [UNRESOLVED_VALUE])
             return argspec
 
         if inspect.isfunction(obj):
@@ -1232,7 +1232,7 @@ class ArgSpecCache:
                 self._safe_get_argspec(obj), function_object=obj, **kwargs
             )
             if asyncio.iscoroutinefunction(obj):
-                argspec.return_value = AwaitableIncompleteValue(argspec.return_value)
+                argspec.return_value = GenericValue(Awaitable, [argspec.return_value])
             return argspec
 
         # decorator binders
@@ -1477,7 +1477,7 @@ class TypeshedFinder(object):
             starargs=starargs,
             kwargs=kwargs,
             kwonly_args=kwonly,
-            return_value=AwaitableIncompleteValue(return_value)
+            return_value=GenericValue(Awaitable, [return_value])
             if is_async_fn
             else return_value,
             name=obj.__name__,

@@ -11,6 +11,7 @@ from ast_decompiler import decompile
 import asyncio
 import builtins
 import collections.abc
+from collections.abc import Awaitable
 import contextlib
 from dataclasses import dataclass
 from functools import reduce
@@ -27,7 +28,17 @@ import sys
 import tempfile
 import traceback
 import types
-from typing import cast, Iterable, Union, Any, List, Optional, Set, Tuple, Sequence
+from typing import (
+    cast,
+    Iterable,
+    Union,
+    Any,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Sequence,
+)
 
 import asynq
 import qcore
@@ -83,7 +94,6 @@ from pyanalyze.value import (
     DictIncompleteValue,
     SequenceIncompleteValue,
     AsyncTaskIncompleteValue,
-    AwaitableIncompleteValue,
     GenericValue,
     TypedDictValue,
     Value,
@@ -1112,7 +1122,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             is_coroutine = _is_coroutine_function(potential_function)
 
         if is_coroutine or info.is_decorated_coroutine:
-            return_value = AwaitableIncompleteValue(return_value)
+            return_value = GenericValue(Awaitable, [return_value])
 
         try:
             argspec = self.arg_spec_cache.get_argspec(
@@ -2249,15 +2259,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def visit_Await(self, node: ast.Await) -> Value:
         value = self.visit(node.value)
-        if isinstance(value, AwaitableIncompleteValue):
-            return value.value
+        if isinstance(value, GenericValue) and value.typ is Awaitable:
+            return value.args[0]
         else:
             return self._check_dunder_call(node.value, value, "__await__", [])
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Value:
         self.is_generator = True
         value = self.visit(node.value)
-        if not TypedValue(collections.abc.Iterable).is_value_compatible(value):
+        if not TypedValue(collections.abc.Iterable).is_assignable(
+            value, self
+        ) and not TypedValue(Awaitable).is_assignable(value, self):
             self._show_error_if_checking(
                 node,
                 "Cannot use %s in yield from" % (value,),
@@ -2725,9 +2737,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
         # If the value is an awaitable or is assignable to asyncio.Future, show
         # an error about a missing await.
-        elif isinstance(value, AwaitableIncompleteValue) or (
-            value.is_type(asyncio.Future)
-        ):
+        elif value.is_type(Awaitable) or (value.is_type(asyncio.Future)):
             if self.is_async_def:
                 new_node = ast.Expr(value=ast.Await(value=node.value))
             else:

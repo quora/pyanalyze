@@ -103,6 +103,10 @@ class Value:
             return unify_typevar_maps(tv_maps)
         return None
 
+    def is_assignable(self, other: "Value", ctx: CanAssignContext) -> bool:
+        """Similar to can_assign but just returns a bool."""
+        return self.can_assign(other, ctx) is not None
+
 
 @dataclass(frozen=True)
 class UnresolvedValue(Value):
@@ -702,27 +706,6 @@ class AsyncTaskIncompleteValue(GenericValue):
         return AsyncTaskIncompleteValue(
             self.typ, self.value.substitute_typevars(typevars)
         )
-
-    def walk_values(self) -> Iterable["Value"]:
-        yield self
-        yield from self.value.walk_values()
-
-
-# TODO: replace with GenericValue(Awaitable, [V])
-@dataclass(frozen=True)
-class AwaitableIncompleteValue(Value):
-    """A Value representing a Python 3 awaitable, e.g. a coroutine object."""
-
-    value: Value
-
-    def get_type_value(self) -> Value:
-        return UNRESOLVED_VALUE
-
-    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return AwaitableIncompleteValue(self.value.substitute_typevars(typevars))
-
-    def __str__(self) -> str:
-        return "Awaitable[%s]" % (self.value,)
 
     def walk_values(self) -> Iterable["Value"]:
         yield self

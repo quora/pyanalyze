@@ -287,6 +287,7 @@ def test_variable_name_value():
     assert_is(None, value.VariableNameValue.from_varname("capybaras", varname_map))
 
     val = value.VariableNameValue.from_varname("uid", varname_map)
+    assert_is_not(None, val)
     assert_is(val, value.VariableNameValue.from_varname("viewer", varname_map))
     assert_is(val, value.VariableNameValue.from_varname("old_uid", varname_map))
     assert_is_not(val, value.VariableNameValue.from_varname("actor_id", varname_map))

@@ -35,7 +35,6 @@ from .value import (
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     VariableNameValue,
-    AwaitableIncompleteValue,
     SubclassValue,
     GenericValue,
     TypedDictValue,
@@ -127,7 +126,6 @@ def _make_module(code_str):
         UnboundMethodValue=UnboundMethodValue,
         UNRESOLVED_VALUE=UNRESOLVED_VALUE,
         VariableNameValue=VariableNameValue,
-        AwaitableIncompleteValue=AwaitableIncompleteValue,
         ReferencingValue=ReferencingValue,
         SubclassValue=SubclassValue,
         NewTypeValue=NewTypeValue,
@@ -1661,13 +1659,15 @@ def capybara(oid):
 class TestAsyncAwait(TestNameCheckVisitorBase):
     @assert_passes()
     def test_type_inference(self):
+        from collections.abc import Awaitable
+
         async def capybara(x):
             assert_is_value(x, UNRESOLVED_VALUE)
             return "hydrochoerus"
 
         async def kerodon(x):
             task = capybara(x)
-            assert_is_value(task, AwaitableIncompleteValue(KnownValue("hydrochoerus")))
+            assert_is_value(task, GenericValue(Awaitable, [KnownValue("hydrochoerus")]))
             val = await task
             assert_is_value(val, KnownValue("hydrochoerus"))
 

@@ -769,6 +769,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
     @assert_passes()
     def test_asyncio_coroutine(self):
         import asyncio
+        from collections.abc import Awaitable
 
         @asyncio.coroutine
         def f():
@@ -777,7 +778,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
 
         @asyncio.coroutine
         def g():
-            assert_is_value(f(), AwaitableIncompleteValue(KnownValue(42)))
+            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
 
     @assert_passes()
     def test_coroutine_from_typeshed(self):
@@ -793,26 +794,32 @@ class TestCoroutines(TestNameCheckVisitorBase):
     @assert_passes()
     def test_async_def_from_typeshed(self):
         from asyncio.streams import open_connection, StreamReader, StreamWriter
+        from collections.abc import Awaitable
 
         async def capybara():
             # annotated as async def in typeshed
             assert_is_value(
                 open_connection(),
-                AwaitableIncompleteValue(
-                    SequenceIncompleteValue(
-                        tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
-                    )
+                GenericValue(
+                    Awaitable,
+                    [
+                        SequenceIncompleteValue(
+                            tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
+                        )
+                    ],
                 ),
             )
             return 42
 
     @assert_passes()
     def test_async_def(self):
+        from collections.abc import Awaitable
+
         async def f():
             return 42
 
         async def g():
-            assert_is_value(f(), AwaitableIncompleteValue(KnownValue(42)))
+            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
 
 
 class TestTypeshedClient(TestNameCheckVisitorBase):
