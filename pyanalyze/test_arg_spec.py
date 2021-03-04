@@ -6,7 +6,7 @@ from .test_name_check_visitor import (
     TestNameCheckVisitorBase,
     ConfiguredNameCheckVisitor,
 )
-from .test_node_visitor import assert_fails, assert_passes
+from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .arg_spec import (
     ArgSpecCache,
     BoundMethodArgSpecWrapper,
@@ -877,6 +877,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
         def capybara(x: Capybara[int]) -> None:
             x.add_one("x")
 
+    @skip_before((3, 10))
     @assert_fails(ErrorCode.incompatible_argument)
     def test_typeshed(self):
         from typing import List

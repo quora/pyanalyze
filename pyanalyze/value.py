@@ -5,12 +5,14 @@ Implementation of value classes, which represent values found while analyzing an
 """
 
 import ast
+import collections.abc
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field, InitVar
 import inspect
 from itertools import chain
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterable,
     List,
@@ -338,6 +340,9 @@ class TypedValue(Value):
                 return {}
         elif isinstance(other, SubclassValue):
             if isinstance(other.typ, self.typ):
+                return {}
+        elif isinstance(other, UnboundMethodValue):
+            if self.typ in {Callable, collections.abc.Callable, object}:
                 return {}
         return super().can_assign(other, ctx)
 
@@ -899,7 +904,7 @@ class TypeVarValue(Value):
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return typevars.get(self.typevar, self)
 
-    def can_apply(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         return {self.typevar: other}
 
     def get_fallback_value(self) -> Value:

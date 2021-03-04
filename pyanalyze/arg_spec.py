@@ -388,11 +388,11 @@ def %(name)s(%(arguments)s):
     ) -> None:
         if param.typ is not None and var_value != KnownValue(param.default_value):
             if typevar_map:
-                param_typ, _ = param.typ.apply_typevars(param.typ, typevar_map)
+                param_typ = param.typ.substitute_typevars(typevar_map)
             else:
                 param_typ = param.typ
-            compatible = visitor.is_value_compatible(param_typ, var_value)
-            if not compatible:
+            compatible = param_typ.can_assign(var_value, visitor)
+            if compatible is None:
                 visitor.show_error(
                     node,
                     "Incompatible argument type for %s: expected %s but got %s"
@@ -421,7 +421,6 @@ def %(name)s(%(arguments)s):
         except TypeError as e:
             visitor.show_error(node, repr(e), ErrorCode.incompatible_call)
             return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
-        self.log(logging.DEBUG, "Variables from function call", variables)
         return_value = self.return_value
         typevar_values: Dict[TypeVar, Value] = {}
         if self.all_typevars:
@@ -434,14 +433,15 @@ def %(name)s(%(arguments)s):
                 param = self.params_of_names[param_name]
                 if param.typ is None:
                     continue
-                _, new_typevars = param.typ.apply_typevars(var_value, typevar_values)
-                typevar_values.update(new_typevars)
+                tv_map = param.typ.can_assign(var_value, visitor)
+                if tv_map:
+                    # For now, the first assignment wins.
+                    for typevar, value in tv_map.items():
+                        typevar_values.setdefault(typevar, value)
             for typevar in self.all_typevars:
                 typevar_values.setdefault(typevar, UNRESOLVED_VALUE)
             if self._return_key in self.typevars_of_params:
-                return_value, _ = return_value.apply_typevars(
-                    return_value, typevar_values
-                )
+                return_value = return_value.substitute_typevars(typevar_values)
 
         non_param_names = {self.starargs, self.kwargs, self._kwonly_args_name}
         for name, var_value in variables.items():
@@ -452,7 +452,6 @@ def %(name)s(%(arguments)s):
                 )
 
         if self.implementation is not None:
-            self.log(logging.DEBUG, "Using implementation", self.implementation)
             return_value = self.implementation(variables, visitor, node)
             if return_value is None:
                 return_value = UNRESOLVED_VALUE

@@ -8,6 +8,7 @@ import enum
 import qcore
 from unittest import mock
 import asyncio
+from typing import Set, Union
 
 from . import value
 
@@ -265,3 +266,7 @@ class Config(object):
 
         """
         return issubclass(cls, enum.Enum)
+
+    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
+        """Return additional classes that should be considered bae classes of typ."""
+        return set()

@@ -27,7 +27,7 @@ import sys
 import tempfile
 import traceback
 import types
-from typing import cast, Iterable, Union, Any, List, Optional, Tuple, Sequence
+from typing import cast, Iterable, Union, Any, List, Optional, Set, Tuple, Sequence
 
 import asynq
 import qcore
@@ -87,6 +87,7 @@ from pyanalyze.value import (
     GenericValue,
     TypedDictValue,
     Value,
+    CanAssignContext,
 )
 
 OPERATION_TO_DESCRIPTION_AND_METHOD = {
@@ -543,7 +544,7 @@ class CallSiteCollector(object):
             pass
 
 
-class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
+class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     """Visitor class that infers the type and value of Python objects and detects some errors."""
 
     error_code_enum = ErrorCode
@@ -638,6 +639,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._argspec_to_retval = {}
         self._method_cache = {}
         self._fill_method_cache()
+
+    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
+        return self.config.get_additional_bases(typ)
 
     def __reduce_ex__(self, proto: object) -> object:
         # Only pickle the attributes needed to get error reporting working

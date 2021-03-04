@@ -7,6 +7,7 @@ test_scope module for checking the return type of overridden methods.
 import inspect
 
 from .error_code import ErrorCode
+from . import type_object
 from . import value
 
 NoneType = type(None)
@@ -70,7 +71,7 @@ def _get_expected_return_types(visitor, method_name):
     # Iterate over the MRO so that we can support specifying a different return type for a child
     # class
     return_types = visitor.config.METHOD_RETURN_TYPES
-    for base_cls in inspect.getmro(cls):
+    for base_cls in type_object.get_mro(cls):
         if base_cls in return_types and method_name in return_types[base_cls]:
             yield return_types[base_cls][method_name]
             return
