@@ -1471,9 +1471,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
                 if getattr(arg, "annotation", None) is not None:
                     value = self._value_of_annotated_arg(arg)
-                    if default is not None and not self.is_value_compatible(
-                        value, default
-                    ):
+                    if default is not None and not value.is_assignable(default, self):
                         self._show_error_if_checking(
                             arg,
                             "Default value for argument %s incompatible with declared type %s"
@@ -2377,7 +2375,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # TODO check generator types properly
             not (self.is_generator and self.async_kind == AsyncFunctionKind.non_async)
             and self.expected_return_value is not None
-            and not self.is_value_compatible(self.expected_return_value, value)
+            and not self.expected_return_value.is_assignable(value, self)
         ):
             self._show_error_if_checking(
                 node,
@@ -2809,7 +2807,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if node.value:
             is_yield = isinstance(node.value, ast.Yield)
             value = self.visit(node.value)
-            if not self.is_value_compatible(expected_type, value):
+            if not expected_type.is_assignable(value, self):
                 self._show_error_if_checking(
                     node.value,
                     "Incompatible assignment: expected %s, got %s"
@@ -2918,7 +2916,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
         elif isinstance(node.ctx, ast.Load):
             if isinstance(value, TypedDictValue):
-                if not TypedValue(str).is_value_compatible(index):
+                if not TypedValue(str).is_assignable(index, self):
                     self._show_error_if_checking(
                         node.slice.value,
                         "dict key must be str, not %s" % (index,),
