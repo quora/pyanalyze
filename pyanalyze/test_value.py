@@ -1,5 +1,7 @@
+import collections.abc
 from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
 from typing import NewType
+import types
 from unittest import mock
 
 from . import tests
@@ -175,6 +177,15 @@ def test_generic_value():
     assert not val.is_value_compatible(value.GenericValue(list, [TypedValue(str)]))
     assert not val.is_value_compatible(value.GenericValue(set, [TypedValue(int)]))
     assert_eq("tuple[int, ...]", str(value.GenericValue(tuple, [TypedValue(int)])))
+
+    it = GenericValue(collections.abc.Iterable, [TypedValue(object)])
+    assert_can_assign(
+        it,
+        GenericValue(
+            types.GeneratorType,
+            [MultiValuedValue([TypedValue(bool), KnownValue(None)])],
+        ),
+    )
 
 
 def test_sequence_incomplete_value():

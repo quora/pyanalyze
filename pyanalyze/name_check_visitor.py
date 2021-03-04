@@ -2114,7 +2114,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def constraint_from_compare(self, node):
         if len(node.ops) != 1:
-            return self.generic_visit(node), NULL_CONSTRAINT
+            # TODO handle multi-comparison properly
+            self.generic_visit(node)
+            return UNRESOLVED_VALUE, NULL_CONSTRAINT
         op = node.ops[0]
         self.visit(node.left)
         rhs = self.visit(node.comparators[0])
