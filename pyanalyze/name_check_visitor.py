@@ -177,6 +177,7 @@ class ClassAttributeChecker:
         config: Config,
         enabled: bool = True,
         should_check_unused_attributes: bool = False,
+        should_serialize: bool = False,
     ):
         # we might not have examined all parent classes when looking for attributes set
         # we dump them here. incase the callers want to extend coverage.
@@ -184,6 +185,7 @@ class ClassAttributeChecker:
         self.modules_examined = set()
         self.enabled = enabled
         self.should_check_unused_attributes = should_check_unused_attributes
+        self.should_serialize = should_serialize
         self.all_failures = []
         self.types_with_dynamic_attrs = set()
         self.config = config
@@ -263,6 +265,13 @@ class ClassAttributeChecker:
         to parallel workers.
 
         """
+        if not self.should_serialize:
+            try:
+                hash(typ)
+            except Exception:
+                return None  # ignore non-hashable types
+            else:
+                return typ
         if isinstance(typ, super):
             typ = typ.__self_class__
         if isinstance(_safe_getattr(typ, "__module__", None), str) and isinstance(
@@ -280,6 +289,8 @@ class ClassAttributeChecker:
         return None
 
     def unserialize_type(self, serialized):
+        if not self.should_serialize:
+            return serialized
         module, name = serialized
         if module not in sys.modules:
             __import__(module)
@@ -648,6 +659,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         # deterministic because we'll start depending on the order modules are checked.
         self._argspec_to_retval = {}
         self._method_cache = {}
+        self._statement_types = set()
         self._fill_method_cache()
 
     def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
@@ -724,11 +736,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def visit(self, node: ast.AST) -> Value:
         """Visits a node and ensures that it returns UNRESOLVED_VALUE when necessary."""
         # inline self.node_context.add and the superclass's visit() for performance
-        method = self._method_cache[type(node)]
+        node_type = type(node)
+        method = self._method_cache[node_type]
         self.node_context.contexts.append(node)
         try:
             # This part inlines ReplacingNodeVisitor.visit
-            if isinstance(node, ast.stmt):
+            if node_type in self._statement_types:
                 # inline qcore.override here
                 old_statement = self.current_statement
                 try:
@@ -774,6 +787,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             method = "visit_" + typ.__name__
             visitor = getattr(self, method, self.generic_visit)
             self._method_cache[typ] = visitor
+            if issubclass(typ, ast.stmt):
+                self._statement_types.add(typ)
 
     def _is_collecting(self) -> bool:
         return self.state == VisitorState.collect_names
@@ -1146,14 +1161,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> Tuple[List[Value], Optional[List[Optional[Value]]]]:
         with qcore.override(self, "current_class", None):
             defaults = self._generic_visit_list(node.args.defaults)
-
-            if hasattr(node.args, "kw_defaults"):  # py3
-                kw_defaults = [
-                    None if kw_default is None else self.visit(kw_default)
-                    for kw_default in node.args.kw_defaults
-                ]
-            else:
-                kw_defaults = None
+            kw_defaults = [
+                None if kw_default is None else self.visit(kw_default)
+                for kw_default in node.args.kw_defaults
+            ]
             return defaults, kw_defaults
 
     def is_value_compatible(self, val1: Value, val2: Value) -> bool:
@@ -1501,15 +1512,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     self.visit(arg)
 
             if node.args.vararg is not None:
-                value = TypedValue(tuple)
-                # in py3 the vararg is wrapped in an arg object
-                if hasattr(node.args.vararg, "arg"):
-                    vararg = node.args.vararg.arg
-                    arg_value = self._value_of_annotated_arg(node.args.vararg)
-                    if arg_value is not UNRESOLVED_VALUE:
-                        value = GenericValue(tuple, [arg_value])
+                # the vararg is wrapped in an arg object
+                vararg = node.args.vararg.arg
+                arg_value = self._value_of_annotated_arg(node.args.vararg)
+                if arg_value is UNRESOLVED_VALUE:
+                    value = TypedValue(tuple)
                 else:
-                    vararg = node.args.vararg
+                    value = GenericValue(tuple, [arg_value])
                 self.scopes.set(vararg, value, vararg, self.state)
             if node.args.kwarg is not None:
                 value = GenericValue(dict, [TypedValue(str), UNRESOLVED_VALUE])
@@ -2653,11 +2662,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 # statically findable
                 to_assign = TypedValue(BaseException)
             if node.name is not None:
-                if isinstance(node.name, str):  # py3
-                    self._set_name_in_scope(node.name, node, value=to_assign)
-                else:
-                    with qcore.override(self, "being_assigned", to_assign):
-                        self.visit(node.name)
+                self._set_name_in_scope(node.name, node, value=to_assign)
 
         self._generic_visit_list(node.body)
 
@@ -2870,7 +2875,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return None
 
     def visit_arg(self, node: ast.arg) -> None:
-        # py3 only; in py2 arguments are just Name nodes
         self.yield_checker.record_assignment(node.arg)
         self._set_name_in_scope(node.arg, node, value=self.being_assigned)
 
@@ -3171,11 +3175,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         args = self._generic_visit_list(node.args)
         keywords = self._generic_visit_list(node.keywords)
 
-        # these don't exist in py3
-        if getattr(node, "starargs", None) is not None:
-            self.visit(node.starargs)
-        if getattr(node, "kwargs", None) is not None:
-            self.visit(node.kwargs)
         has_args_kwargs = any(isinstance(arg, ast.Starred) for arg in node.args) or any(
             kw.arg is None for kw in node.keywords
         )
@@ -3505,6 +3504,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 cls.config,
                 enabled=attribute_checker_enabled,
                 should_check_unused_attributes=find_unused_attributes,
+                should_serialize=kwargs.get("parallel", False),
             )
         else:
             inner_attribute_checker_obj = qcore.empty_context
