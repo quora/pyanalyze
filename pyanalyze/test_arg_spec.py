@@ -923,6 +923,42 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(mktemp(prefix="p"), KnownValue("p"))
             assert_is_value(mktemp(suffix="s"), KnownValue("s"))
 
+    @assert_passes()
+    def test_generic_base(self):
+        from typing import TypeVar, Generic
+
+        T = TypeVar("T")
+
+        class Base(Generic[T]):
+            pass
+
+        class Derived(Base[int]):
+            pass
+
+        def take_base(b: Base[int]) -> None:
+            pass
+
+        def capybara(c: Derived):
+            take_base(c)
+
+    @assert_fails(ErrorCode.incompatible_call)
+    def test_wrong_generic_base(self):
+        from typing import TypeVar, Generic
+
+        T = TypeVar("T")
+
+        class Base(Generic[T]):
+            pass
+
+        class Derived(Base[int]):
+            pass
+
+        def take_base(b: Base[str]) -> None:
+            pass
+
+        def capybara(c: Derived):
+            take_base(c)
+
     @skip_before((3, 10))
     @assert_fails(ErrorCode.incompatible_argument)
     def test_typeshed(self):
