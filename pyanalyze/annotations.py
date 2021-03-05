@@ -252,7 +252,15 @@ def _eval_forward_ref(val: str, ctx: Context) -> Value:
 def _type_from_value(value: Value, ctx: Context) -> Value:
     if isinstance(value, KnownValue):
         return _type_from_runtime(value.val, ctx)
+    elif isinstance(value, TypeVarValue):
+        return value
     elif isinstance(value, _SubscriptedValue):
+        if isinstance(value.root, GenericValue):
+            if len(value.root.args) == len(value.members):
+                return GenericValue(
+                    value.root.typ,
+                    [_type_from_value(member, ctx) for member in value.members],
+                )
         if not isinstance(value.root, KnownValue):
             ctx.show_error("Cannot resolve subscripted annotation: %s" % (value.root,))
             return UNRESOLVED_VALUE

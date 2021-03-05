@@ -1333,9 +1333,7 @@ class _AnnotationContext(Context):
         self.finder.log(message, ())
 
     def get_name(self, node: ast.AST) -> Value:
-        info = self.finder.resolver.get_fully_qualified_name(
-            "%s.%s" % (self.module, node.id)
-        )
+        info = self.finder._get_info_for_name("%s.%s" % (self.module, node.id))
         if info is not None:
             return self.finder._value_from_info(info, self.module)
         elif hasattr(builtins, node.id):
@@ -1382,6 +1380,30 @@ class TypeshedFinder(object):
             self.log("Found argspec", (fq_name, argspec))
         return argspec
 
+    def get_bases(self, typ: type) -> Optional[List[Tuple[Value, List[Value]]]]:
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return None
+        info = self._get_info_for_name(fq_name)
+        return self._get_bases_from_info(info, typ.__module__)
+
+    def _get_bases_from_info(
+        self, info: typeshed_client.resolver.ResolvedName, mod: str
+    ):
+        if info is None:
+            return None
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._get_bases_from_info(info.info, ".".join(info.source_module))
+        elif isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.ClassDef):
+                bases = info.ast.bases
+                return [self._parse_expr(base, mod) for base in bases]
+            elif isinstance(info.ast, ast3.Assign):
+                return [self._parse_expr(info.ast.value, mod)]
+            else:
+                raise NotImplementedError(ast3.dump(info.ast))
+        return None
+
     def _get_method_argspec_from_info(
         self,
         info: typeshed_client.resolver.ResolvedName,
@@ -1392,7 +1414,9 @@ class TypeshedFinder(object):
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_method_argspec_from_info(info.info, obj, fq_name, mod)
+            return self._get_method_argspec_from_info(
+                info.info, obj, fq_name, ".".join(info.source_module)
+            )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
             if obj.__name__ in info.child_nodes:
@@ -1434,7 +1458,9 @@ class TypeshedFinder(object):
                 self.log("Ignoring unrecognized AST", (fq_name, info))
                 return None
         elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_argspec_from_info(info.info, obj, fq_name, mod)
+            return self._get_argspec_from_info(
+                info.info, obj, fq_name, ".".join(info.source_module)
+            )
         elif info is None:
             return None
         else:
@@ -1504,15 +1530,12 @@ class TypeshedFinder(object):
         ctx = _AnnotationContext(finder=self, module=module)
         return type_from_ast(node, ctx=ctx)
 
-    def _value_from_info(self, info: str, module: str) -> Value:
+    def _value_from_info(
+        self, info: typeshed_client.resolver.ResolvedName, module: str
+    ) -> Value:
         if isinstance(info, typeshed_client.ImportedInfo):
             return self._value_from_info(info.info, ".".join(info.source_module))
         elif isinstance(info, typeshed_client.NameInfo):
-            try:
-                mod = __import__(module)
-                return KnownValue(getattr(mod, info.name))
-            except Exception:
-                self.log("Unable to import", (module, info))
             if isinstance(info.ast, ast3.Assign):
                 key = (module, info.ast)
                 if key in self._assignment_cache:
@@ -1520,6 +1543,11 @@ class TypeshedFinder(object):
                 value = self._parse_expr(info.ast.value, module)
                 self._assignment_cache[key] = value
                 return value
+            try:
+                mod = __import__(module)
+                return KnownValue(getattr(mod, info.name))
+            except Exception:
+                self.log("Unable to import", (module, info))
             return UNRESOLVED_VALUE
         else:
             self.log("Ignoring info", info)

@@ -1,6 +1,9 @@
 # static analysis: ignore
 from asynq import asynq
 from qcore.asserts import assert_eq
+from qcore.testing import Anything
+from collections.abc import MutableSequence, Sequence, Collection, Reversible
+from typing import Generic
 
 from .test_name_check_visitor import (
     TestNameCheckVisitorBase,
@@ -12,11 +15,12 @@ from .arg_spec import (
     BoundMethodArgSpecWrapper,
     ExtendedArgSpec,
     Parameter,
+    TypeshedFinder,
     is_dot_asynq_function,
 )
 from .error_code import ErrorCode
 from .tests import l0cached_async_fn
-from .value import KnownValue, TypedValue
+from .value import KnownValue, TypedValue, GenericValue, TypeVarValue
 
 
 class ClassWithCall(object):
@@ -787,7 +791,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
         async def capybara():
             # annotated as def ... -> Future in typeshed
             assert_is_value(
-                asyncio.sleep(3), GenericValue(asyncio.Future, [UNRESOLVED_VALUE])
+                asyncio.sleep(3), GenericValue(asyncio.Future, [KnownValue(None)])
             )
             return 42
 
@@ -835,6 +839,26 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         def capybara():
             x = {}
             x.update({})  # just check that this doesn't fail
+
+    def test_get_bases(self):
+        tsf = TypeshedFinder(verbose=True)
+        assert_eq(
+            [
+                GenericValue(
+                    typ=MutableSequence, args=(TypeVarValue(typevar=Anything),)
+                ),
+                GenericValue(typ=Generic, args=(TypeVarValue(typevar=Anything),)),
+            ],
+            tsf.get_bases(list),
+        )
+        assert_eq(
+            [
+                GenericValue(typ=Collection, args=(TypeVarValue(typevar=Anything),)),
+                GenericValue(typ=Reversible, args=(TypeVarValue(typevar=Anything),)),
+                GenericValue(typ=Generic, args=(TypeVarValue(typevar=Anything),)),
+            ],
+            tsf.get_bases(Sequence),
+        )
 
 
 class TestTypeVar(TestNameCheckVisitorBase):
