@@ -110,6 +110,8 @@ class Value:
             # Allow any UnboundMethodValue with a secondary attr; it might not be
             # a method.
             return {}
+        elif self == other:
+            return {}
         return None
 
     def is_assignable(self, other: "Value", ctx: CanAssignContext) -> bool:
