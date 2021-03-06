@@ -1366,11 +1366,23 @@ class ArgSpecCache:
             pass
         except Exception:
             return {}  # We don't support unhashable types.
-        generic_bases = {}
         bases = self.ts_finder.get_bases(typ)
-        if bases is None:
+        generic_bases = self._extract_bases(typ, bases)
+        if generic_bases is None:
             bases = [type_from_runtime(base) for base in self.get_runtime_bases(typ)]
+            generic_bases = self._extract_bases(typ, bases)
+            assert (
+                generic_bases is not None
+            ), f"failed to extract runtime bases from {typ}"
+        return generic_bases
+
+    def _extract_bases(
+        self, typ: type, bases: Optional[Sequence[Value]]
+    ) -> Optional[Dict[type, Sequence[Value]]]:
+        if bases is None:
+            return None
         my_typevars = uniq_chain(extract_typevars(base) for base in bases)
+        generic_bases = {}
         generic_bases[typ] = [TypeVarValue(tv) for tv in my_typevars]
         for base in bases:
             if isinstance(base, TypedValue):
@@ -1381,7 +1393,7 @@ class ArgSpecCache:
                     args = ()
                 generic_bases.update(self.get_generic_bases(base.typ, args))
             else:
-                raise NotImplementedError((typ, base))
+                return None
         return generic_bases
 
     def get_runtime_bases(self, typ: type) -> Sequence[Value]:

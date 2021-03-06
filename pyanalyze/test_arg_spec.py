@@ -10,6 +10,7 @@ from collections.abc import (
     Reversible,
     Set,
 )
+import time
 from typing import Generic, TypeVar
 
 from .test_config import TestConfig
@@ -1017,6 +1018,22 @@ class TestGetGenericBases:
         assert_eq(
             {collections.abc.Callable: [], object: []},
             self.get_generic_bases(collections.abc.Callable, []),
+        )
+
+    def test_struct_time(self):
+        assert_eq(
+            {
+                time.struct_time: [],
+                # Ideally should be not Any, but we haven't implemented
+                # support for typeshed namedtuples.
+                tuple: [UNRESOLVED_VALUE],
+                collections.abc.Collection: [UNRESOLVED_VALUE],
+                collections.abc.Reversible: [UNRESOLVED_VALUE],
+                collections.abc.Iterable: [UNRESOLVED_VALUE],
+                collections.abc.Sequence: [UNRESOLVED_VALUE],
+                collections.abc.Container: [UNRESOLVED_VALUE],
+            },
+            self.get_generic_bases(time.struct_time, []),
         )
 
     def test_collections(self):
