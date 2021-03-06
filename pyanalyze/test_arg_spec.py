@@ -992,6 +992,22 @@ class GenericChild(Parent[T]):
     pass
 
 
+class TestSubclasses(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        class Parent:
+            pass
+
+        class Child(Parent):
+            pass
+
+        def capybara(typ: type):
+            assert_is_value(
+                typ.__subclasses__(), GenericValue(list, [TypedValue(type)])
+            )
+            assert_is_value(Parent.__subclasses__(), KnownValue([Child]))
+
+
 class TestGetGenericBases:
     def setup(self) -> None:
         arg_spec_cache = ArgSpecCache(TestConfig())

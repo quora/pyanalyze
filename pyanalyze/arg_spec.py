@@ -843,6 +843,16 @@ def _str_format_impl(
     return TypedValue(str)
 
 
+def _subclasses_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> Value:
+    """Overridden because typeshed types make it (T) => List[T] instead."""
+    self_obj = variables["self"]
+    if isinstance(self_obj, KnownValue) and isinstance(self_obj.val, type):
+        return KnownValue(self_obj.val.__subclasses__())
+    return GenericValue(list, [TypedValue(type)])
+
+
 def _assert_is_impl(
     variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
 ) -> ImplementationFnReturn:
@@ -1016,6 +1026,11 @@ class ArgSpecCache:
         NewType: ExtendedArgSpec(
             [Parameter("name", typ=TypedValue(str)), Parameter(name="tp")],
             name="NewType",
+        ),
+        type.__subclasses__: ExtendedArgSpec(
+            [Parameter("self")],
+            name="type.__subclasses__",
+            implementation=_subclasses_impl,
         ),
     }
 
