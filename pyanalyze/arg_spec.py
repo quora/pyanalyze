@@ -20,6 +20,7 @@ from .stacked_scopes import (
     ConstraintType,
     OrConstraint,
     AbstractConstraint,
+    uniq_chain,
 )
 from .value import (
     TypedValue,
@@ -32,15 +33,17 @@ from .value import (
     UNRESOLVED_VALUE,
     Value,
     VariableNameValue,
-    extract_typevars,
     TypeVarMap,
+    TypeVarValue,
+    extract_typevars,
+    substitute_typevars,
 )
 
 import asyncio
 import ast
 import asynq
 import builtins
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Collection, Set as AbstractSet
 from dataclasses import dataclass, field, InitVar
 from functools import reduce
 import collections.abc
@@ -51,10 +54,13 @@ import logging
 import re
 import sys
 import warnings
+from types import GeneratorType
 from typing import (
     Any,
     Sequence,
     NewType,
+    Generic,
+    Protocol,
     Iterable,
     Mapping,
     Optional,
@@ -68,11 +74,14 @@ from typing import (
     Tuple,
     TYPE_CHECKING,
 )
+import typing_inspect
 import typeshed_client
 from typed_ast import ast3
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
+
+T_co = TypeVar("T_co", covariant=True)
 
 # Implementation functions are passed the following arguments:
 # - variables: a dictionary with the function's arguments (keys are variable names and values are
@@ -1011,6 +1020,7 @@ class ArgSpecCache:
         self.config = config
         self.ts_finder = TypeshedFinder(verbose=False)
         self.known_argspecs = {}
+        self.generic_bases_cache = {}
         default_argspecs = dict(self.DEFAULT_ARGSPECS)
         default_argspecs.update(self.config.get_known_argspecs(self))
 
@@ -1321,6 +1331,63 @@ class ArgSpecCache:
             else:
                 return sig
 
+    def get_generic_bases(
+        self, typ: type, generic_args: Sequence[Value] = ()
+    ) -> Dict[type, Sequence[Value]]:
+        if typ is Generic or typ is Protocol:
+            return {}
+        generic_bases = self._get_generic_bases_cached(typ)
+        if typ not in generic_bases:
+            return generic_bases
+        my_typevars = generic_bases[typ]
+        if not my_typevars:
+            return generic_bases
+        tv_map = {}
+        for i, tv_value in enumerate(my_typevars):
+            if not isinstance(tv_value, TypeVarValue):
+                continue
+            try:
+                value = generic_args[i]
+            except IndexError:
+                value = UNRESOLVED_VALUE
+            tv_map[tv_value.typevar] = value
+        return {
+            base: substitute_typevars(args, tv_map)
+            for base, args in generic_bases.items()
+        }
+
+    def _get_generic_bases_cached(self, typ: type) -> Dict[type, Sequence[Value]]:
+        try:
+            return self.generic_bases_cache[typ]
+        except KeyError:
+            pass
+        except Exception:
+            return {}  # We don't support unhashable types.
+        generic_bases = {}
+        bases = self.ts_finder.get_bases(typ)
+        if bases is None:
+            bases = [
+                type_from_runtime(base, self) for base in self.get_runtime_bases(typ)
+            ]
+        my_typevars = uniq_chain(extract_typevars(base) for base in bases)
+        generic_bases[typ] = [TypeVarValue(tv) for tv in my_typevars]
+        for base in bases:
+            if isinstance(base, TypedValue):
+                assert base.typ is not typ, base
+                if isinstance(base, GenericValue):
+                    args = base.args
+                else:
+                    args = ()
+                generic_bases.update(self.get_generic_bases(base.typ, args))
+            else:
+                raise NotImplementedError((typ, base))
+        return generic_bases
+
+    def get_runtime_bases(self, typ: type) -> Sequence[Value]:
+        if typing_inspect.is_generic_type(typ):
+            return typing_inspect.get_generic_bases(typ)
+        return typ.__bases__
+
 
 @dataclass
 class _AnnotationContext(Context):
@@ -1380,7 +1447,11 @@ class TypeshedFinder(object):
             self.log("Found argspec", (fq_name, argspec))
         return argspec
 
-    def get_bases(self, typ: type) -> Optional[List[Tuple[Value, List[Value]]]]:
+    def get_bases(self, typ: type) -> Optional[List[Value]]:
+        # The way AbstractSet/Set is handled between collections and typing is
+        # too confusing, just hardcode it.
+        if typ is AbstractSet:
+            return [GenericValue(Collection, (TypeVarValue(T_co),))]
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
             return None
@@ -1389,7 +1460,7 @@ class TypeshedFinder(object):
 
     def _get_bases_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str
-    ):
+    ) -> Optional[List[Value]]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
@@ -1429,6 +1500,8 @@ class TypeshedFinder(object):
             return None
 
     def _get_fq_name(self, obj: Any) -> Optional[str]:
+        if obj is GeneratorType:
+            return "typing.Generator"
         try:
             module = obj.__module__
             if module is None:

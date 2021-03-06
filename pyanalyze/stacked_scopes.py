@@ -26,7 +26,7 @@ import enum
 import qcore
 from itertools import chain
 import builtins
-from typing import Any, Dict, Iterable, Sequence, Optional
+from typing import Any, Dict, Iterable, List, Sequence, Optional, TypeVar
 
 from .value import (
     KnownValue,
@@ -40,6 +40,8 @@ from .value import (
     unite_values,
     flatten_values,
 )
+
+T = TypeVar("T")
 
 
 LEAVES_SCOPE = "%LEAVES_SCOPE"
@@ -730,7 +732,7 @@ class FunctionScope(Scope):
             return {LEAVES_SCOPE: [UNRESOLVED_VALUE]}
         all_variables = set(chain.from_iterable(new_scopes))
         return {
-            varname: _uniq_chain(
+            varname: uniq_chain(
                 scope.get(varname, [_UNINITIALIZED]) for scope in new_scopes
             )
             for varname in all_variables
@@ -935,7 +937,7 @@ def constrain_value(value, constraint):
     return _constrain_value([value], constraint.apply())
 
 
-def _uniq_chain(iterables):
+def uniq_chain(iterables: Iterable[Iterable[T]]) -> List[T]:
     """Returns a flattened list, collapsing equal elements but preserving order."""
     return list(OrderedDict.fromkeys(chain.from_iterable(iterables)))
 
