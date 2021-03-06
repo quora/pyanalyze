@@ -1410,6 +1410,21 @@ class _AnnotationContext(Context):
         return UNRESOLVED_VALUE
 
 
+# These are specified as just "List = _Alias()" in typing.pyi. Redirect
+# them to the proper runtime equivalent.
+_TYPING_ALIASES = {
+    "typing.List": "builtins.list",
+    "typing.Dict": "builtins.dict",
+    "typing.DefaultDict": "collections.defaultdict",
+    "typing.Set": "builtins.set",
+    "typing.Frozenzet": "builtins.frozenset",
+    "typing.Counter": "collections.Counter",
+    "typing.Deque": "collections.deque",
+    "typing.ChainMap": "collections.ChainMap",
+    "typing.OrderedDict": "collections.OrderedDict",
+}
+
+
 class TypeshedFinder(object):
     def __init__(self, verbose: bool = False) -> None:
         self.verbose = verbose
@@ -1471,6 +1486,8 @@ class TypeshedFinder(object):
                 return [self._parse_expr(base, mod) for base in bases]
             elif isinstance(info.ast, ast3.Assign):
                 return [self._parse_expr(info.ast.value, mod)]
+            elif isinstance(info.ast, typeshed_client.OverloadedName):
+                return None  # overloads are not supported yet
             else:
                 raise NotImplementedError(ast3.dump(info.ast))
         return None
@@ -1542,6 +1559,7 @@ class TypeshedFinder(object):
 
     @qcore.caching.cached_per_instance()
     def _get_info_for_name(self, fq_name: str) -> typeshed_client.resolver.ResolvedName:
+        fq_name = _TYPING_ALIASES.get(fq_name, fq_name)
         return self.resolver.get_fully_qualified_name(fq_name)
 
     def _get_argspec_from_func_def(
@@ -1609,6 +1627,11 @@ class TypeshedFinder(object):
         if isinstance(info, typeshed_client.ImportedInfo):
             return self._value_from_info(info.info, ".".join(info.source_module))
         elif isinstance(info, typeshed_client.NameInfo):
+            fq_name = f"{module}.{info.name}"
+            if fq_name in _TYPING_ALIASES:
+                new_fq_name = _TYPING_ALIASES[fq_name]
+                info = self._get_info_for_name(new_fq_name)
+                return self._value_from_info(info, new_fq_name.split(".")[0])
             if isinstance(info.ast, ast3.Assign):
                 key = (module, info.ast)
                 if key in self._assignment_cache:

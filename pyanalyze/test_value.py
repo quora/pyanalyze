@@ -1,11 +1,13 @@
 import collections.abc
 from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
-from typing import NewType
+from typing import NewType, Sequence, Dict
 import types
 from unittest import mock
 
 from . import tests
 from . import value
+from .arg_spec import ArgSpecCache
+from .test_config import TestConfig
 from .value import (
     Value,
     GenericValue,
@@ -18,7 +20,18 @@ from .value import (
     UNRESOLVED_VALUE,
 )
 
-_CTX = CanAssignContext()
+
+class Context(CanAssignContext):
+    def __init__(self) -> None:
+        self.arg_spec_cache = ArgSpecCache(TestConfig())
+
+    def get_generic_bases(
+        self, typ: type, generic_args: Sequence[Value] = ()
+    ) -> Dict[type, Sequence[Value]]:
+        return self.arg_spec_cache.get_generic_bases(typ, generic_args)
+
+
+_CTX = Context()
 
 
 def assert_cannot_assign(left: Value, right: Value) -> None:

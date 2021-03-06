@@ -86,7 +86,7 @@ def test_get_argspec():
     visitor = ConfiguredNameCheckVisitor(__file__, u"", {}, fail_after_first=False)
     config = visitor.config
     cwc_typed = TypedValue(ClassWithCall)
-    cwc_self = Parameter("self", cwc_typed)
+    cwc_self = Parameter("self", typ=cwc_typed)
 
     # test everything twice because calling qcore.get_original_fn has side effects
     for _ in range(2):
@@ -952,7 +952,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
         def capybara(c: Derived):
             take_base(c)
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_fails(ErrorCode.incompatible_argument)
     def test_wrong_generic_base(self):
         from typing import TypeVar, Generic
 
@@ -1011,6 +1011,34 @@ class TestGetGenericBases:
         assert_eq(
             {GenericChild: [one], Parent: [one]},
             self.get_generic_bases(GenericChild, [one]),
+        )
+
+    def test_defaultdict(self):
+        int_tv = TypedValue(int)
+        str_tv = TypedValue(str)
+        assert_eq(
+            {
+                collections.deque: [int_tv],
+                collections.abc.MutableSequence: [int_tv],
+                collections.abc.Collection: [int_tv],
+                collections.abc.Reversible: [int_tv],
+                collections.abc.Iterable: [int_tv],
+                collections.abc.Sequence: [int_tv],
+                collections.abc.Container: [int_tv],
+            },
+            self.get_generic_bases(collections.deque, [int_tv]),
+        )
+        assert_eq(
+            {
+                collections.defaultdict: [int_tv, str_tv],
+                dict: [int_tv, str_tv],
+                collections.abc.MutableMapping: [int_tv, str_tv],
+                collections.abc.Mapping: [int_tv, str_tv],
+                collections.abc.Collection: [int_tv],
+                collections.abc.Iterable: [int_tv],
+                collections.abc.Container: [int_tv],
+            },
+            self.get_generic_bases(collections.defaultdict, [int_tv, str_tv]),
         )
 
     def test_typeshed(self):

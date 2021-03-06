@@ -2,7 +2,7 @@
 from qcore.asserts import assert_eq, assert_in, assert_not_in, assert_is
 
 from .error_code import ErrorCode
-from .stacked_scopes import ScopeType, StackedScopes, _uniq_chain
+from .stacked_scopes import ScopeType, StackedScopes, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes
 from .value import (
@@ -1397,6 +1397,6 @@ class TestComposite(TestNameCheckVisitorBase):
 
 
 def test_uniq_chain():
-    assert_eq([], _uniq_chain([]))
-    assert_eq(list(range(3)), _uniq_chain(range(3) for _ in range(3)))
-    assert_eq([1], _uniq_chain([1, 1, 1] for _ in range(3)))
+    assert_eq([], uniq_chain([]))
+    assert_eq(list(range(3)), uniq_chain(range(3) for _ in range(3)))
+    assert_eq([1], uniq_chain([1, 1, 1] for _ in range(3)))

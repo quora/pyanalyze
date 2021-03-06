@@ -470,16 +470,23 @@ class GenericValue(TypedValue):
             return super(GenericValue, self).is_value_compatible(val)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
-        if isinstance(other, GenericValue):
-            generic_bases = ctx.get_generic_bases(other.typ, other.args)
+        if isinstance(other, TypedValue):
+            if isinstance(other, GenericValue):
+                args = other.args
+            else:
+                args = ()
+            generic_bases = ctx.get_generic_bases(other.typ, args)
+            print(self, other, generic_bases)
             try:
                 generic_args = generic_bases[self.typ]
             except KeyError:
-                return None
+                # If we don't think it's a generic base, try super;
+                # runtime isinstance() may disagree.
+                return super().can_assign(other, ctx)
             if len(self.args) != len(generic_args):
                 return None
             tv_maps = [super().can_assign(other, ctx)]
-            for arg1, arg2 in zip(self.args, other.args):
+            for arg1, arg2 in zip(self.args, generic_args):
                 tv_maps.append(arg1.can_assign(arg2, ctx))
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
