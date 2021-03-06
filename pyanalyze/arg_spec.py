@@ -407,7 +407,7 @@ def %(name)s(%(arguments)s):
             if compatible is None:
                 visitor.show_error(
                     node,
-                    "Incompatible argument type for %s: expected %r but got %r"
+                    "Incompatible argument type for %s: expected %s but got %s"
                     % (param.name, param_typ, var_value),
                     ErrorCode.incompatible_argument,
                 )
