@@ -9,6 +9,7 @@ from .annotations import (
     type_from_maybe_generic,
     Context,
     type_from_ast,
+    is_typing_name,
 )
 from .config import Config
 from .error_code import ErrorCode
@@ -60,7 +61,6 @@ from typing import (
     Sequence,
     NewType,
     Generic,
-    Protocol,
     Iterable,
     Mapping,
     Optional,
@@ -1334,7 +1334,7 @@ class ArgSpecCache:
     def get_generic_bases(
         self, typ: type, generic_args: Sequence[Value] = ()
     ) -> Dict[type, Sequence[Value]]:
-        if typ is Generic or typ is Protocol:
+        if typ is Generic or is_typing_name(typ, "Protocol"):
             return {}
         generic_bases = self._get_generic_bases_cached(typ)
         if typ not in generic_bases:
