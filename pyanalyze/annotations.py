@@ -539,6 +539,8 @@ def _maybe_typed_value(val: type) -> Value:
     except Exception:
         # type that doesn't support isinstance, e.g.
         # a Protocol
+        if is_typing_name(val, "Protocol"):
+            return TypedValue(typing_extensions.Protocol)
         return UNRESOLVED_VALUE
     else:
         return TypedValue(val)

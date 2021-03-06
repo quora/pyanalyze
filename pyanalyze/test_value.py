@@ -153,6 +153,16 @@ def test_typed_value():
     assert TypedValue(type).is_value_compatible(SubclassValue(float))
 
 
+def test_callable():
+    cval = TypedValue(collections.abc.Callable)
+    assert_can_assign(cval, cval)
+
+    gen_val = GenericValue(
+        collections.abc.Callable, [TypedValue(int), KnownValue(None)]
+    )
+    assert_can_assign(gen_val, gen_val)
+
+
 def test_subclass_value():
     val = SubclassValue(int)
     assert_can_assign(val, KnownValue(int))

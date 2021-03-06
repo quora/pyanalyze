@@ -1013,9 +1013,24 @@ class TestGetGenericBases:
             self.get_generic_bases(GenericChild, [one]),
         )
 
-    def test_defaultdict(self):
+    def test_callable(self):
+        assert_eq(
+            {collections.abc.Callable: [], object: []},
+            self.get_generic_bases(collections.abc.Callable, []),
+        )
+
+    def test_collections(self):
         int_tv = TypedValue(int)
         str_tv = TypedValue(str)
+        assert_eq(
+            {
+                collections.abc.ValuesView: [int_tv],
+                collections.abc.MappingView: [],
+                collections.abc.Iterable: [int_tv],
+                collections.abc.Sized: [],
+            },
+            self.get_generic_bases(collections.abc.ValuesView, [int_tv]),
+        )
         assert_eq(
             {
                 collections.deque: [int_tv],

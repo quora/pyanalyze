@@ -44,7 +44,7 @@ import asyncio
 import ast
 import asynq
 import builtins
-from collections.abc import Awaitable, Collection, Set as AbstractSet
+from collections.abc import Awaitable, Collection, Set as AbstractSet, Sized
 from dataclasses import dataclass, field, InitVar
 from functools import reduce
 import collections.abc
@@ -57,6 +57,7 @@ import sys
 import warnings
 from types import GeneratorType
 from typing import (
+    cast,
     Any,
     Sequence,
     NewType,
@@ -74,6 +75,7 @@ from typing import (
     Tuple,
     TYPE_CHECKING,
 )
+from typing_extensions import Protocol
 import typing_inspect
 import typeshed_client
 from typed_ast import ast3
@@ -105,6 +107,7 @@ ImplementationFn = Callable[
 ]
 
 
+IS_PRE_38 = sys.version_info < (3, 8)
 NON_IDENTIFIER_CHARS = re.compile(r"[^a-zA-Z_\d]")
 _NO_ARG_SENTINEL = qcore.MarkerObject("no argument given")
 
@@ -404,7 +407,7 @@ def %(name)s(%(arguments)s):
             if compatible is None:
                 visitor.show_error(
                     node,
-                    "Incompatible argument type for %s: expected %s but got %s"
+                    "Incompatible argument type for %s: expected %r but got %r"
                     % (param.name, param_typ, var_value),
                     ErrorCode.incompatible_argument,
                 )
@@ -1422,11 +1425,12 @@ _TYPING_ALIASES = {
     "typing.Deque": "collections.deque",
     "typing.ChainMap": "collections.ChainMap",
     "typing.OrderedDict": "collections.OrderedDict",
+    "typing.Tuple": "builtins.tuple",
 }
 
 
 class TypeshedFinder(object):
-    def __init__(self, verbose: bool = False) -> None:
+    def __init__(self, verbose: bool = True) -> None:
         self.verbose = verbose
         self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
         self._assignment_cache = {}
@@ -1457,7 +1461,8 @@ class TypeshedFinder(object):
         if fq_name is None:
             return None
         info = self._get_info_for_name(fq_name)
-        argspec = self._get_argspec_from_info(info, obj, fq_name, obj.__module__)
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
+        argspec = self._get_argspec_from_info(info, obj, fq_name, mod)
         if argspec is not None:
             self.log("Found argspec", (fq_name, argspec))
         return argspec
@@ -1467,11 +1472,14 @@ class TypeshedFinder(object):
         # too confusing, just hardcode it.
         if typ is AbstractSet:
             return [GenericValue(Collection, (TypeVarValue(T_co),))]
+        if typ is Callable or typ is collections.abc.Callable:
+            return None
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
             return None
         info = self._get_info_for_name(fq_name)
-        return self._get_bases_from_info(info, typ.__module__)
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
+        return self._get_bases_from_info(info, mod)
 
     def _get_bases_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str
@@ -1486,7 +1494,9 @@ class TypeshedFinder(object):
                 return [self._parse_expr(base, mod) for base in bases]
             elif isinstance(info.ast, ast3.Assign):
                 return [self._parse_expr(info.ast.value, mod)]
-            elif isinstance(info.ast, typeshed_client.OverloadedName):
+            elif isinstance(
+                info.ast, (typeshed_client.OverloadedName, typeshed_client.ImportedName)
+            ):
                 return None  # overloads are not supported yet
             else:
                 raise NotImplementedError(ast3.dump(info.ast))
@@ -1519,11 +1529,15 @@ class TypeshedFinder(object):
     def _get_fq_name(self, obj: Any) -> Optional[str]:
         if obj is GeneratorType:
             return "typing.Generator"
+        if IS_PRE_38:
+            if obj is Sized:
+                return "typing.Sized"
         try:
             module = obj.__module__
             if module is None:
                 module = "builtins"
-            return ".".join([module, obj.__qualname__])
+            fq_name = ".".join([module, obj.__qualname__])
+            return _TYPING_ALIASES.get(fq_name, fq_name)
         except (AttributeError, TypeError):
             self.log("Ignoring object without module or qualname", obj)
             return None
@@ -1559,7 +1573,6 @@ class TypeshedFinder(object):
 
     @qcore.caching.cached_per_instance()
     def _get_info_for_name(self, fq_name: str) -> typeshed_client.resolver.ResolvedName:
-        fq_name = _TYPING_ALIASES.get(fq_name, fq_name)
         return self.resolver.get_fully_qualified_name(fq_name)
 
     def _get_argspec_from_func_def(
@@ -1617,9 +1630,12 @@ class TypeshedFinder(object):
                 # doesn't matter what the default is
                 yield Parameter(arg.arg, typ=typ, default_value=None)
 
-    def _parse_expr(self, node: ast.AST, module: str) -> Value:
+    def _parse_expr(self, node: ast3.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
-        return type_from_ast(node, ctx=ctx)
+        typ = type_from_ast(cast(ast.AST, node), ctx=ctx)
+        if self.verbose and typ is UNRESOLVED_VALUE:
+            self.log("Got UNRESOLVED_VALUE", (ast3.dump(node), module))
+        return typ
 
     def _value_from_info(
         self, info: typeshed_client.resolver.ResolvedName, module: str
@@ -1631,7 +1647,12 @@ class TypeshedFinder(object):
             if fq_name in _TYPING_ALIASES:
                 new_fq_name = _TYPING_ALIASES[fq_name]
                 info = self._get_info_for_name(new_fq_name)
-                return self._value_from_info(info, new_fq_name.split(".")[0])
+                return self._value_from_info(
+                    info, new_fq_name.rsplit(".", maxsplit=1)[0]
+                )
+            elif IS_PRE_38:
+                if fq_name in ("typing.Protocol", "typing_extensions.Protocol"):
+                    return KnownValue(Protocol)
             if isinstance(info.ast, ast3.Assign):
                 key = (module, info.ast)
                 if key in self._assignment_cache:
@@ -1640,11 +1661,20 @@ class TypeshedFinder(object):
                 self._assignment_cache[key] = value
                 return value
             try:
-                mod = __import__(module)
+                __import__(module)
+                mod = sys.modules[module]
                 return KnownValue(getattr(mod, info.name))
             except Exception:
                 self.log("Unable to import", (module, info))
-            return UNRESOLVED_VALUE
+                return UNRESOLVED_VALUE
+        elif isinstance(info, tuple):
+            module_path = ".".join(info)
+            try:
+                __import__(module_path)
+                return KnownValue(sys.modules[module_path])
+            except Exception:
+                self.log("Unable to import", module_path)
+                return UNRESOLVED_VALUE
         else:
             self.log("Ignoring info", info)
             return UNRESOLVED_VALUE

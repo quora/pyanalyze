@@ -476,7 +476,6 @@ class GenericValue(TypedValue):
             else:
                 args = ()
             generic_bases = ctx.get_generic_bases(other.typ, args)
-            print(self, other, generic_bases)
             try:
                 generic_args = generic_bases[self.typ]
             except KeyError:
@@ -484,7 +483,7 @@ class GenericValue(TypedValue):
                 # runtime isinstance() may disagree.
                 return super().can_assign(other, ctx)
             if len(self.args) != len(generic_args):
-                return None
+                return super().can_assign(other, ctx)
             tv_maps = [super().can_assign(other, ctx)]
             for arg1, arg2 in zip(self.args, generic_args):
                 tv_maps.append(arg1.can_assign(arg2, ctx))
