@@ -1369,9 +1369,7 @@ class ArgSpecCache:
         generic_bases = {}
         bases = self.ts_finder.get_bases(typ)
         if bases is None:
-            bases = [
-                type_from_runtime(base, self) for base in self.get_runtime_bases(typ)
-            ]
+            bases = [type_from_runtime(base) for base in self.get_runtime_bases(typ)]
         my_typevars = uniq_chain(extract_typevars(base) for base in bases)
         generic_bases[typ] = [TypeVarValue(tv) for tv in my_typevars]
         for base in bases:

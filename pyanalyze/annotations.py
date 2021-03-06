@@ -464,6 +464,8 @@ class _Visitor(ast.NodeVisitor):
             typevar = TypeVar(*args, **kwargs)
             return KnownValue(typevar)
         elif isinstance(func, KnownValue) and isinstance(func.val, type):
+            if func.val is object:
+                return UNRESOLVED_VALUE
             return TypedValue(func.val)
         else:
             raise NotImplementedError(ast.dump(node))
