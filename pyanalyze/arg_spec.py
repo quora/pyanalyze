@@ -9,6 +9,7 @@ from .annotations import (
     type_from_maybe_generic,
     Context,
     type_from_ast,
+    is_typing_name,
 )
 from .config import Config
 from .error_code import ErrorCode
@@ -20,6 +21,7 @@ from .stacked_scopes import (
     ConstraintType,
     OrConstraint,
     AbstractConstraint,
+    uniq_chain,
 )
 from .value import (
     TypedValue,
@@ -32,15 +34,18 @@ from .value import (
     UNRESOLVED_VALUE,
     Value,
     VariableNameValue,
-    extract_typevars,
     TypeVarMap,
+    TypeVarValue,
+    extract_typevars,
+    substitute_typevars,
 )
 
 import asyncio
 import ast
 import asynq
 import builtins
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Collection, Set as AbstractSet, Sized
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, InitVar
 from functools import reduce
 import collections.abc
@@ -51,10 +56,13 @@ import logging
 import re
 import sys
 import warnings
+from types import GeneratorType
 from typing import (
+    cast,
     Any,
     Sequence,
     NewType,
+    Generic,
     Iterable,
     Mapping,
     Optional,
@@ -68,11 +76,15 @@ from typing import (
     Tuple,
     TYPE_CHECKING,
 )
+from typing_extensions import Protocol
+import typing_inspect
 import typeshed_client
 from typed_ast import ast3
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
+
+T_co = TypeVar("T_co", covariant=True)
 
 # Implementation functions are passed the following arguments:
 # - variables: a dictionary with the function's arguments (keys are variable names and values are
@@ -96,6 +108,7 @@ ImplementationFn = Callable[
 ]
 
 
+IS_PRE_38 = sys.version_info < (3, 8)
 NON_IDENTIFIER_CHARS = re.compile(r"[^a-zA-Z_\d]")
 _NO_ARG_SENTINEL = qcore.MarkerObject("no argument given")
 
@@ -831,6 +844,16 @@ def _str_format_impl(
     return TypedValue(str)
 
 
+def _subclasses_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> Value:
+    """Overridden because typeshed types make it (T) => List[T] instead."""
+    self_obj = variables["self"]
+    if isinstance(self_obj, KnownValue) and isinstance(self_obj.val, type):
+        return KnownValue(self_obj.val.__subclasses__())
+    return GenericValue(list, [TypedValue(type)])
+
+
 def _assert_is_impl(
     variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
 ) -> ImplementationFnReturn:
@@ -1005,12 +1028,18 @@ class ArgSpecCache:
             [Parameter("name", typ=TypedValue(str)), Parameter(name="tp")],
             name="NewType",
         ),
+        type.__subclasses__: ExtendedArgSpec(
+            [Parameter("self")],
+            name="type.__subclasses__",
+            implementation=_subclasses_impl,
+        ),
     }
 
     def __init__(self, config: Config) -> None:
         self.config = config
         self.ts_finder = TypeshedFinder(verbose=False)
         self.known_argspecs = {}
+        self.generic_bases_cache = {}
         default_argspecs = dict(self.DEFAULT_ARGSPECS)
         default_argspecs.update(self.config.get_known_argspecs(self))
 
@@ -1321,6 +1350,73 @@ class ArgSpecCache:
             else:
                 return sig
 
+    def get_generic_bases(
+        self, typ: type, generic_args: Sequence[Value] = ()
+    ) -> Dict[type, Sequence[Value]]:
+        if typ is Generic or is_typing_name(typ, "Protocol"):
+            return {}
+        generic_bases = self._get_generic_bases_cached(typ)
+        if typ not in generic_bases:
+            return generic_bases
+        my_typevars = generic_bases[typ]
+        if not my_typevars:
+            return generic_bases
+        tv_map = {}
+        for i, tv_value in enumerate(my_typevars):
+            if not isinstance(tv_value, TypeVarValue):
+                continue
+            try:
+                value = generic_args[i]
+            except IndexError:
+                value = UNRESOLVED_VALUE
+            tv_map[tv_value.typevar] = value
+        return {
+            base: substitute_typevars(args, tv_map)
+            for base, args in generic_bases.items()
+        }
+
+    def _get_generic_bases_cached(self, typ: type) -> Dict[type, Sequence[Value]]:
+        try:
+            return self.generic_bases_cache[typ]
+        except KeyError:
+            pass
+        except Exception:
+            return {}  # We don't support unhashable types.
+        bases = self.ts_finder.get_bases(typ)
+        generic_bases = self._extract_bases(typ, bases)
+        if generic_bases is None:
+            bases = [type_from_runtime(base) for base in self.get_runtime_bases(typ)]
+            generic_bases = self._extract_bases(typ, bases)
+            assert (
+                generic_bases is not None
+            ), f"failed to extract runtime bases from {typ}"
+        return generic_bases
+
+    def _extract_bases(
+        self, typ: type, bases: Optional[Sequence[Value]]
+    ) -> Optional[Dict[type, Sequence[Value]]]:
+        if bases is None:
+            return None
+        my_typevars = uniq_chain(extract_typevars(base) for base in bases)
+        generic_bases = {}
+        generic_bases[typ] = [TypeVarValue(tv) for tv in my_typevars]
+        for base in bases:
+            if isinstance(base, TypedValue):
+                assert base.typ is not typ, base
+                if isinstance(base, GenericValue):
+                    args = base.args
+                else:
+                    args = ()
+                generic_bases.update(self.get_generic_bases(base.typ, args))
+            else:
+                return None
+        return generic_bases
+
+    def get_runtime_bases(self, typ: type) -> Sequence[Value]:
+        if typing_inspect.is_generic_type(typ):
+            return typing_inspect.get_generic_bases(typ)
+        return typ.__bases__
+
 
 @dataclass
 class _AnnotationContext(Context):
@@ -1333,9 +1429,7 @@ class _AnnotationContext(Context):
         self.finder.log(message, ())
 
     def get_name(self, node: ast.AST) -> Value:
-        info = self.finder.resolver.get_fully_qualified_name(
-            "%s.%s" % (self.module, node.id)
-        )
+        info = self.finder._get_info_for_name("%s.%s" % (self.module, node.id))
         if info is not None:
             return self.finder._value_from_info(info, self.module)
         elif hasattr(builtins, node.id):
@@ -1345,8 +1439,24 @@ class _AnnotationContext(Context):
         return UNRESOLVED_VALUE
 
 
+# These are specified as just "List = _Alias()" in typing.pyi. Redirect
+# them to the proper runtime equivalent.
+_TYPING_ALIASES = {
+    "typing.List": "builtins.list",
+    "typing.Dict": "builtins.dict",
+    "typing.DefaultDict": "collections.defaultdict",
+    "typing.Set": "builtins.set",
+    "typing.Frozenzet": "builtins.frozenset",
+    "typing.Counter": "collections.Counter",
+    "typing.Deque": "collections.deque",
+    "typing.ChainMap": "collections.ChainMap",
+    "typing.OrderedDict": "collections.OrderedDict",
+    "typing.Tuple": "builtins.tuple",
+}
+
+
 class TypeshedFinder(object):
-    def __init__(self, verbose: bool = False) -> None:
+    def __init__(self, verbose: bool = True) -> None:
         self.verbose = verbose
         self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
         self._assignment_cache = {}
@@ -1377,10 +1487,52 @@ class TypeshedFinder(object):
         if fq_name is None:
             return None
         info = self._get_info_for_name(fq_name)
-        argspec = self._get_argspec_from_info(info, obj, fq_name, obj.__module__)
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
+        argspec = self._get_argspec_from_info(info, obj, fq_name, mod)
         if argspec is not None:
             self.log("Found argspec", (fq_name, argspec))
         return argspec
+
+    def get_bases(self, typ: type) -> Optional[List[Value]]:
+        # The way AbstractSet/Set is handled between collections and typing is
+        # too confusing, just hardcode it.
+        if typ is AbstractSet:
+            return [GenericValue(Collection, (TypeVarValue(T_co),))]
+        if typ is AbstractContextManager:
+            return [GenericValue(Generic, (TypeVarValue(T_co),))]
+        if typ is Callable or typ is collections.abc.Callable:
+            return None
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return None
+        info = self._get_info_for_name(fq_name)
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
+        return self._get_bases_from_info(info, mod)
+
+    def _get_bases_from_info(
+        self, info: typeshed_client.resolver.ResolvedName, mod: str
+    ) -> Optional[List[Value]]:
+        if info is None:
+            return None
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._get_bases_from_info(info.info, ".".join(info.source_module))
+        elif isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.ClassDef):
+                bases = info.ast.bases
+                return [self._parse_expr(base, mod) for base in bases]
+            elif isinstance(info.ast, ast3.Assign):
+                val = self._parse_expr(info.ast.value, mod)
+                if isinstance(val, KnownValue) and isinstance(val.val, type):
+                    return self.get_bases(val.val)
+                else:
+                    return [val]
+            elif isinstance(
+                info.ast, (typeshed_client.OverloadedName, typeshed_client.ImportedName)
+            ):
+                return None  # overloads are not supported yet
+            else:
+                raise NotImplementedError(ast3.dump(info.ast))
+        return None
 
     def _get_method_argspec_from_info(
         self,
@@ -1392,7 +1544,9 @@ class TypeshedFinder(object):
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_method_argspec_from_info(info.info, obj, fq_name, mod)
+            return self._get_method_argspec_from_info(
+                info.info, obj, fq_name, ".".join(info.source_module)
+            )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
             if obj.__name__ in info.child_nodes:
@@ -1405,11 +1559,17 @@ class TypeshedFinder(object):
             return None
 
     def _get_fq_name(self, obj: Any) -> Optional[str]:
+        if obj is GeneratorType:
+            return "typing.Generator"
+        if IS_PRE_38:
+            if obj is Sized:
+                return "typing.Sized"
         try:
             module = obj.__module__
             if module is None:
                 module = "builtins"
-            return ".".join([module, obj.__qualname__])
+            fq_name = ".".join([module, obj.__qualname__])
+            return _TYPING_ALIASES.get(fq_name, fq_name)
         except (AttributeError, TypeError):
             self.log("Ignoring object without module or qualname", obj)
             return None
@@ -1434,7 +1594,9 @@ class TypeshedFinder(object):
                 self.log("Ignoring unrecognized AST", (fq_name, info))
                 return None
         elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_argspec_from_info(info.info, obj, fq_name, mod)
+            return self._get_argspec_from_info(
+                info.info, obj, fq_name, ".".join(info.source_module)
+            )
         elif info is None:
             return None
         else:
@@ -1500,19 +1662,29 @@ class TypeshedFinder(object):
                 # doesn't matter what the default is
                 yield Parameter(arg.arg, typ=typ, default_value=None)
 
-    def _parse_expr(self, node: ast.AST, module: str) -> Value:
+    def _parse_expr(self, node: ast3.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
-        return type_from_ast(node, ctx=ctx)
+        typ = type_from_ast(cast(ast.AST, node), ctx=ctx)
+        if self.verbose and typ is UNRESOLVED_VALUE:
+            self.log("Got UNRESOLVED_VALUE", (ast3.dump(node), module))
+        return typ
 
-    def _value_from_info(self, info: str, module: str) -> Value:
+    def _value_from_info(
+        self, info: typeshed_client.resolver.ResolvedName, module: str
+    ) -> Value:
         if isinstance(info, typeshed_client.ImportedInfo):
             return self._value_from_info(info.info, ".".join(info.source_module))
         elif isinstance(info, typeshed_client.NameInfo):
-            try:
-                mod = __import__(module)
-                return KnownValue(getattr(mod, info.name))
-            except Exception:
-                self.log("Unable to import", (module, info))
+            fq_name = f"{module}.{info.name}"
+            if fq_name in _TYPING_ALIASES:
+                new_fq_name = _TYPING_ALIASES[fq_name]
+                info = self._get_info_for_name(new_fq_name)
+                return self._value_from_info(
+                    info, new_fq_name.rsplit(".", maxsplit=1)[0]
+                )
+            elif IS_PRE_38:
+                if fq_name in ("typing.Protocol", "typing_extensions.Protocol"):
+                    return KnownValue(Protocol)
             if isinstance(info.ast, ast3.Assign):
                 key = (module, info.ast)
                 if key in self._assignment_cache:
@@ -1520,7 +1692,21 @@ class TypeshedFinder(object):
                 value = self._parse_expr(info.ast.value, module)
                 self._assignment_cache[key] = value
                 return value
-            return UNRESOLVED_VALUE
+            try:
+                __import__(module)
+                mod = sys.modules[module]
+                return KnownValue(getattr(mod, info.name))
+            except Exception:
+                self.log("Unable to import", (module, info))
+                return UNRESOLVED_VALUE
+        elif isinstance(info, tuple):
+            module_path = ".".join(info)
+            try:
+                __import__(module_path)
+                return KnownValue(sys.modules[module_path])
+            except Exception:
+                self.log("Unable to import", module_path)
+                return UNRESOLVED_VALUE
         else:
             self.log("Ignoring info", info)
             return UNRESOLVED_VALUE

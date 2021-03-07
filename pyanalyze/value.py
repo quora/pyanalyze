@@ -50,6 +50,11 @@ class CanAssignContext:
         _type_object_cache[typ] = type_object
         return type_object
 
+    def get_generic_bases(
+        self, typ: type, generic_args: Sequence["Value"] = ()
+    ) -> Dict[type, Sequence["Value"]]:
+        return {}
+
 
 class Value:
     """Class that represents the value of a variable."""
@@ -109,6 +114,8 @@ class Value:
         ):
             # Allow any UnboundMethodValue with a secondary attr; it might not be
             # a method.
+            return {}
+        elif self == other:
             return {}
         return None
 
@@ -463,12 +470,22 @@ class GenericValue(TypedValue):
             return super(GenericValue, self).is_value_compatible(val)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
-        if isinstance(other, GenericValue):
-            # TODO make this properly look for the right generic baes
-            if len(self.args) > len(other.args):
-                return None
+        if isinstance(other, TypedValue):
+            if isinstance(other, GenericValue):
+                args = other.args
+            else:
+                args = ()
+            generic_bases = ctx.get_generic_bases(other.typ, args)
+            try:
+                generic_args = generic_bases[self.typ]
+            except KeyError:
+                # If we don't think it's a generic base, try super;
+                # runtime isinstance() may disagree.
+                return super().can_assign(other, ctx)
+            if len(self.args) != len(generic_args):
+                return super().can_assign(other, ctx)
             tv_maps = [super().can_assign(other, ctx)]
-            for arg1, arg2 in zip(self.args, other.args):
+            for arg1, arg2 in zip(self.args, generic_args):
                 tv_maps.append(arg1.can_assign(arg2, ctx))
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
@@ -1013,6 +1030,10 @@ def extract_typevars(value: Value) -> Iterable["TypeVar"]:
     for val in value.walk_values():
         if isinstance(val, TypeVarValue):
             yield val.typevar
+
+
+def substitute_typevars(values: Iterable[Value], tv_map: TypeVarMap):
+    return [value.substitute_typevars(tv_map) for value in values]
 
 
 def _stringify_type(typ: type) -> str:

@@ -233,7 +233,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
         return GenericValue(val.impl_type, [_type_from_runtime(val.type_var, ctx)])
     else:
         origin = get_origin(val)
-        if origin is not None:
+        if isinstance(origin, type):
             return _maybe_typed_value(origin)
         ctx.show_error("Invalid type annotation %s" % (val,))
         return UNRESOLVED_VALUE
@@ -252,7 +252,15 @@ def _eval_forward_ref(val: str, ctx: Context) -> Value:
 def _type_from_value(value: Value, ctx: Context) -> Value:
     if isinstance(value, KnownValue):
         return _type_from_runtime(value.val, ctx)
+    elif isinstance(value, (TypeVarValue, TypedValue)):
+        return value
     elif isinstance(value, _SubscriptedValue):
+        if isinstance(value.root, GenericValue):
+            if len(value.root.args) == len(value.members):
+                return GenericValue(
+                    value.root.typ,
+                    [_type_from_value(member, ctx) for member in value.members],
+                )
         if not isinstance(value.root, KnownValue):
             ctx.show_error("Cannot resolve subscripted annotation: %s" % (value.root,))
             return UNRESOLVED_VALUE
@@ -308,7 +316,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             # In Python 3.9, generics are implemented differently and typing.get_origin
             # can help.
             origin = get_origin(root)
-            if origin is not None:
+            if isinstance(origin, type):
                 return GenericValue(
                     origin, [_type_from_value(elt, ctx) for elt in value.members]
                 )
@@ -455,8 +463,12 @@ class _Visitor(ast.NodeVisitor):
                         return None
             typevar = TypeVar(*args, **kwargs)
             return KnownValue(typevar)
+        elif isinstance(func, KnownValue) and isinstance(func.val, type):
+            if func.val is object:
+                return UNRESOLVED_VALUE
+            return TypedValue(func.val)
         else:
-            return None
+            raise NotImplementedError(ast.dump(node))
 
 
 def is_typing_name(obj: object, name: str) -> bool:
@@ -529,6 +541,8 @@ def _maybe_typed_value(val: type) -> Value:
     except Exception:
         # type that doesn't support isinstance, e.g.
         # a Protocol
+        if is_typing_name(val, "Protocol"):
+            return TypedValue(typing_extensions.Protocol)
         return UNRESOLVED_VALUE
     else:
         return TypedValue(val)

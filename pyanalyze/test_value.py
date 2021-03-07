@@ -1,11 +1,13 @@
 import collections.abc
 from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
-from typing import NewType
+from typing import NewType, Sequence, Dict
 import types
 from unittest import mock
 
 from . import tests
 from . import value
+from .arg_spec import ArgSpecCache
+from .test_config import TestConfig
 from .value import (
     Value,
     GenericValue,
@@ -18,7 +20,18 @@ from .value import (
     UNRESOLVED_VALUE,
 )
 
-_CTX = CanAssignContext()
+
+class Context(CanAssignContext):
+    def __init__(self) -> None:
+        self.arg_spec_cache = ArgSpecCache(TestConfig())
+
+    def get_generic_bases(
+        self, typ: type, generic_args: Sequence[Value] = ()
+    ) -> Dict[type, Sequence[Value]]:
+        return self.arg_spec_cache.get_generic_bases(typ, generic_args)
+
+
+_CTX = Context()
 
 
 def assert_cannot_assign(left: Value, right: Value) -> None:
@@ -138,6 +151,16 @@ def test_typed_value():
     assert_can_assign(TypedValue(type), SubclassValue(float))
     assert not float_val.is_value_compatible(SubclassValue(float))
     assert TypedValue(type).is_value_compatible(SubclassValue(float))
+
+
+def test_callable():
+    cval = TypedValue(collections.abc.Callable)
+    assert_can_assign(cval, cval)
+
+    gen_val = GenericValue(
+        collections.abc.Callable, [TypedValue(int), KnownValue(None)]
+    )
+    assert_can_assign(gen_val, gen_val)
 
 
 def test_subclass_value():

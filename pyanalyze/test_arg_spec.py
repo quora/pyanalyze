@@ -1,7 +1,20 @@
 # static analysis: ignore
 from asynq import asynq
 from qcore.asserts import assert_eq
+from qcore.testing import Anything
+import collections.abc
+from collections.abc import (
+    MutableSequence,
+    Sequence,
+    Collection,
+    Reversible,
+    Set,
+)
+import contextlib
+import time
+from typing import Generic, TypeVar
 
+from .test_config import TestConfig
 from .test_name_check_visitor import (
     TestNameCheckVisitorBase,
     ConfiguredNameCheckVisitor,
@@ -12,11 +25,14 @@ from .arg_spec import (
     BoundMethodArgSpecWrapper,
     ExtendedArgSpec,
     Parameter,
+    TypeshedFinder,
     is_dot_asynq_function,
 )
 from .error_code import ErrorCode
 from .tests import l0cached_async_fn
-from .value import KnownValue, TypedValue
+from .value import KnownValue, TypedValue, GenericValue, TypeVarValue, UNRESOLVED_VALUE
+
+T = TypeVar("T")
 
 
 class ClassWithCall(object):
@@ -787,7 +803,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
         async def capybara():
             # annotated as def ... -> Future in typeshed
             assert_is_value(
-                asyncio.sleep(3), GenericValue(asyncio.Future, [UNRESOLVED_VALUE])
+                asyncio.sleep(3), GenericValue(asyncio.Future, [KnownValue(None)])
             )
             return 42
 
@@ -835,6 +851,27 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         def capybara():
             x = {}
             x.update({})  # just check that this doesn't fail
+
+    def test_get_bases(self):
+        tsf = TypeshedFinder(verbose=True)
+        assert_eq(
+            [
+                GenericValue(MutableSequence, (TypeVarValue(typevar=Anything),)),
+                GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
+            ],
+            tsf.get_bases(list),
+        )
+        assert_eq(
+            [
+                GenericValue(Collection, (TypeVarValue(typevar=Anything),)),
+                GenericValue(Reversible, (TypeVarValue(typevar=Anything),)),
+                GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
+            ],
+            tsf.get_bases(Sequence),
+        )
+        assert_eq(
+            [GenericValue(Collection, (TypeVarValue(Anything),))], tsf.get_bases(Set)
+        )
 
 
 class TestTypeVar(TestNameCheckVisitorBase):
@@ -899,6 +936,42 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(mktemp(prefix="p"), KnownValue("p"))
             assert_is_value(mktemp(suffix="s"), KnownValue("s"))
 
+    @assert_passes()
+    def test_generic_base(self):
+        from typing import TypeVar, Generic
+
+        T = TypeVar("T")
+
+        class Base(Generic[T]):
+            pass
+
+        class Derived(Base[int]):
+            pass
+
+        def take_base(b: Base[int]) -> None:
+            pass
+
+        def capybara(c: Derived):
+            take_base(c)
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_wrong_generic_base(self):
+        from typing import TypeVar, Generic
+
+        T = TypeVar("T")
+
+        class Base(Generic[T]):
+            pass
+
+        class Derived(Base[int]):
+            pass
+
+        def take_base(b: Base[str]) -> None:
+            pass
+
+        def capybara(c: Derived):
+            take_base(c)
+
     @skip_before((3, 10))
     @assert_fails(ErrorCode.incompatible_argument)
     def test_typeshed(self):
@@ -906,3 +979,158 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
         def capybara(lst: List[int]) -> None:
             lst.append("x")
+
+
+class Parent(Generic[T]):
+    pass
+
+
+class Child(Parent[int]):
+    pass
+
+
+class GenericChild(Parent[T]):
+    pass
+
+
+class TestSubclasses(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        class Parent:
+            pass
+
+        class Child(Parent):
+            pass
+
+        def capybara(typ: type):
+            assert_is_value(
+                typ.__subclasses__(), GenericValue(list, [TypedValue(type)])
+            )
+            assert_is_value(Parent.__subclasses__(), KnownValue([Child]))
+
+
+class TestGetGenericBases:
+    def setup(self) -> None:
+        arg_spec_cache = ArgSpecCache(TestConfig())
+        self.get_generic_bases = arg_spec_cache.get_generic_bases
+
+    def test_runtime(self):
+        assert_eq({Parent: [UNRESOLVED_VALUE]}, self.get_generic_bases(Parent))
+        assert_eq(
+            {Parent: [TypeVarValue(T)]},
+            self.get_generic_bases(Parent, [TypeVarValue(T)]),
+        )
+        assert_eq({Child: [], Parent: [TypedValue(int)]}, self.get_generic_bases(Child))
+        assert_eq(
+            {GenericChild: [UNRESOLVED_VALUE], Parent: [UNRESOLVED_VALUE]},
+            self.get_generic_bases(GenericChild),
+        )
+        one = KnownValue(1)
+        assert_eq(
+            {GenericChild: [one], Parent: [one]},
+            self.get_generic_bases(GenericChild, [one]),
+        )
+
+    def test_callable(self):
+        assert_eq(
+            {collections.abc.Callable: [], object: []},
+            self.get_generic_bases(collections.abc.Callable, []),
+        )
+
+    def test_struct_time(self):
+        assert_eq(
+            {
+                time.struct_time: [],
+                # Ideally should be not Any, but we haven't implemented
+                # support for typeshed namedtuples.
+                tuple: [UNRESOLVED_VALUE],
+                collections.abc.Collection: [UNRESOLVED_VALUE],
+                collections.abc.Reversible: [UNRESOLVED_VALUE],
+                collections.abc.Iterable: [UNRESOLVED_VALUE],
+                collections.abc.Sequence: [UNRESOLVED_VALUE],
+                collections.abc.Container: [UNRESOLVED_VALUE],
+            },
+            self.get_generic_bases(time.struct_time, []),
+        )
+
+    def test_context_manager(self):
+        int_tv = TypedValue(int)
+        assert_eq(
+            {contextlib.AbstractContextManager: [int_tv]},
+            self.get_generic_bases(contextlib.AbstractContextManager, [int_tv]),
+        )
+
+    def test_collections(self):
+        int_tv = TypedValue(int)
+        str_tv = TypedValue(str)
+        assert_eq(
+            {
+                collections.abc.ValuesView: [int_tv],
+                collections.abc.MappingView: [],
+                collections.abc.Iterable: [int_tv],
+                collections.abc.Sized: [],
+            },
+            self.get_generic_bases(collections.abc.ValuesView, [int_tv]),
+        )
+        assert_eq(
+            {
+                collections.deque: [int_tv],
+                collections.abc.MutableSequence: [int_tv],
+                collections.abc.Collection: [int_tv],
+                collections.abc.Reversible: [int_tv],
+                collections.abc.Iterable: [int_tv],
+                collections.abc.Sequence: [int_tv],
+                collections.abc.Container: [int_tv],
+            },
+            self.get_generic_bases(collections.deque, [int_tv]),
+        )
+        assert_eq(
+            {
+                collections.defaultdict: [int_tv, str_tv],
+                dict: [int_tv, str_tv],
+                collections.abc.MutableMapping: [int_tv, str_tv],
+                collections.abc.Mapping: [int_tv, str_tv],
+                collections.abc.Collection: [int_tv],
+                collections.abc.Iterable: [int_tv],
+                collections.abc.Container: [int_tv],
+            },
+            self.get_generic_bases(collections.defaultdict, [int_tv, str_tv]),
+        )
+
+    def test_typeshed(self):
+        int_tv = TypedValue(int)
+        str_tv = TypedValue(str)
+        assert_eq(
+            {
+                list: [int_tv],
+                collections.abc.MutableSequence: [int_tv],
+                collections.abc.Collection: [int_tv],
+                collections.abc.Reversible: [int_tv],
+                collections.abc.Iterable: [int_tv],
+                collections.abc.Sequence: [int_tv],
+                collections.abc.Container: [int_tv],
+            },
+            self.get_generic_bases(list, [int_tv]),
+        )
+        assert_eq(
+            {
+                set: [int_tv],
+                collections.abc.MutableSet: [int_tv],
+                collections.abc.Set: [int_tv],
+                collections.abc.Collection: [int_tv],
+                collections.abc.Iterable: [int_tv],
+                collections.abc.Container: [int_tv],
+            },
+            self.get_generic_bases(set, [int_tv]),
+        )
+        assert_eq(
+            {
+                dict: [int_tv, str_tv],
+                collections.abc.MutableMapping: [int_tv, str_tv],
+                collections.abc.Mapping: [int_tv, str_tv],
+                collections.abc.Collection: [int_tv],
+                collections.abc.Iterable: [int_tv],
+                collections.abc.Container: [int_tv],
+            },
+            self.get_generic_bases(dict, [int_tv, str_tv]),
+        )
