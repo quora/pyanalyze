@@ -346,7 +346,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         for failure in failures:
             by_file[failure["filename"]].append(failure)
 
-        prefix = os.path.commonprefix(list(by_file.keys()))
+        prefix = os.path.commonpath(list(by_file.keys()))
 
         with open(output_file, "w") as f:
             f.write("%d total failures in %d files\n\n" % (len(failures), len(by_file)))
