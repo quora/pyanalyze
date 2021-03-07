@@ -1660,7 +1660,7 @@ class TypeshedFinder(object):
                 yield Parameter(arg.arg, typ=typ)
             else:
                 # doesn't matter what the default is
-                yield Parameter(arg.arg, typ=typ, default_value=None)
+                yield Parameter(arg.arg, typ=typ, default_value=UNRESOLVED_VALUE)
 
     def _parse_expr(self, node: ast3.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
