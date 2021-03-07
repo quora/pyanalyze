@@ -1525,7 +1525,7 @@ class TypeshedFinder(object):
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
                     return self.get_bases(val.val)
                 else:
-                    return None
+                    return [val]
             elif isinstance(
                 info.ast, (typeshed_client.OverloadedName, typeshed_client.ImportedName)
             ):
@@ -1660,7 +1660,7 @@ class TypeshedFinder(object):
                 yield Parameter(arg.arg, typ=typ)
             else:
                 # doesn't matter what the default is
-                yield Parameter(arg.arg, typ=typ, default_value=UNRESOLVED_VALUE)
+                yield Parameter(arg.arg, typ=typ, default_value=None)
 
     def _parse_expr(self, node: ast3.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
