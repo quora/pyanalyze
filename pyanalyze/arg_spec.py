@@ -4,6 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
+<<<<<<< HEAD
 from .annotations import (
     type_from_runtime,
     Context,
@@ -11,6 +12,9 @@ from .annotations import (
     is_typing_name,
     type_from_maybe_generic,
 )
+=======
+from .annotations import type_from_runtime, Context, type_from_ast, is_typing_name
+>>>>>>> use get_generic_bases() for self type inference
 from .config import Config
 from .error_code import ErrorCode
 from .find_unused import used
@@ -287,7 +291,10 @@ class ArgSpecCache:
                     and inspect.getattr_static(class_obj, function_name, None)
                     is function_object
                 ):
-                    return type_from_maybe_generic(class_obj)
+                    generic_bases = self._get_generic_bases_cached(class_obj)
+                    if generic_bases and generic_bases.get(class_obj):
+                        return GenericValue(class_obj, generic_bases[class_obj])
+                    return TypedValue(class_obj)
         return VariableNameValue.from_varname(
             parameter.name, self.config.varname_value_map()
         )
