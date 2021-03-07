@@ -45,6 +45,7 @@ import ast
 import asynq
 import builtins
 from collections.abc import Awaitable, Collection, Set as AbstractSet, Sized
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, InitVar
 from functools import reduce
 import collections.abc
@@ -1497,6 +1498,8 @@ class TypeshedFinder(object):
         # too confusing, just hardcode it.
         if typ is AbstractSet:
             return [GenericValue(Collection, (TypeVarValue(T_co),))]
+        if typ is AbstractContextManager:
+            return [GenericValue(Generic, (TypeVarValue(T_co),))]
         if typ is Callable or typ is collections.abc.Callable:
             return None
         fq_name = self._get_fq_name(typ)
@@ -1518,7 +1521,11 @@ class TypeshedFinder(object):
                 bases = info.ast.bases
                 return [self._parse_expr(base, mod) for base in bases]
             elif isinstance(info.ast, ast3.Assign):
-                return [self._parse_expr(info.ast.value, mod)]
+                val = self._parse_expr(info.ast.value, mod)
+                if isinstance(val, KnownValue) and isinstance(val.val, type):
+                    return self.get_bases(val.val)
+                else:
+                    return None
             elif isinstance(
                 info.ast, (typeshed_client.OverloadedName, typeshed_client.ImportedName)
             ):

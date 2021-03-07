@@ -10,6 +10,7 @@ from collections.abc import (
     Reversible,
     Set,
 )
+import contextlib
 import time
 from typing import Generic, TypeVar
 
@@ -1050,6 +1051,13 @@ class TestGetGenericBases:
                 collections.abc.Container: [UNRESOLVED_VALUE],
             },
             self.get_generic_bases(time.struct_time, []),
+        )
+
+    def test_context_manager(self):
+        int_tv = TypedValue(int)
+        assert_eq(
+            {contextlib.AbstractContextManager: [int_tv]},
+            self.get_generic_bases(contextlib.AbstractContextManager, [int_tv]),
         )
 
     def test_collections(self):
