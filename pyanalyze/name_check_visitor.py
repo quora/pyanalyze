@@ -599,7 +599,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         )
 
         # State (to use in with qcore.override)
-        self.state = None
+        self.state = VisitorState.collect_names
         # value currently being assigned
         self.being_assigned = UNRESOLVED_VALUE
         # current class (for inferring the type of cls and self arguments)
@@ -2711,20 +2711,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def constraint_from_condition(
         self, node: ast.AST
-    ) -> Tuple[Optional[Value], AbstractConstraint]:
+    ) -> Tuple[Value, AbstractConstraint]:
         condition, constraint = self._visit_possible_constraint(node)
         if self._is_collecting():
             return condition, constraint
-        if condition is not None:
-            typ = condition.get_type()
-            if typ is not None and not self._can_be_used_as_boolean(typ):
-                self._show_error_if_checking(
-                    node,
-                    "Object of type {} will always evaluate to True in boolean context".format(
-                        typ
-                    ),
-                    error_code=ErrorCode.non_boolean_in_boolean_context,
-                )
+        typ = condition.get_type()
+        if typ is not None and not self._can_be_used_as_boolean(typ):
+            self._show_error_if_checking(
+                node,
+                "Object of type {} will always evaluate to True in boolean context".format(
+                    typ
+                ),
+                error_code=ErrorCode.non_boolean_in_boolean_context,
+            )
         return condition, constraint
 
     def _can_be_used_as_boolean(self, typ):

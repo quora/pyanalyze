@@ -18,7 +18,6 @@ Other subtleties implemented here:
 - Class scopes except the current one are skipped in name lookup
 
 """
-import ast
 from collections import defaultdict, OrderedDict
 import contextlib
 from dataclasses import dataclass, field, replace
@@ -49,6 +48,10 @@ LEAVES_SCOPE = "%LEAVES_SCOPE"
 LEAVES_LOOP = "%LEAVES_LOOP"
 _UNINITIALIZED = qcore.MarkerObject("uninitialized")
 
+# Nodes as used in scopes can be any object, as long as they are hashable.
+Node = object
+NCDN = Dict[str, List[Node]]
+
 
 class VisitorState(enum.Enum):
     collect_names = 1
@@ -66,7 +69,7 @@ class ScopeType(enum.Enum):
 class _LookupContext:
     varname: str
     fallback_value: Optional[Value]
-    node: ast.AST
+    node: Node
     state: VisitorState
 
 
@@ -353,10 +356,6 @@ class _ConstrainedValue(Value):
 
 _empty_constrained = _ConstrainedValue(set(), [])
 
-# Nodes as used in scopes can be any object, as long as they are hashable.
-Node = object
-NCDN = Dict[str, List[Node]]
-
 
 @dataclass
 class Scope:
@@ -369,7 +368,7 @@ class Scope:
     scope_type: ScopeType
     variables: Dict[str, Value] = field(default_factory=dict)
     parent_scope: Optional["Scope"] = None
-    scope_node: Optional[ast.AST] = None
+    scope_node: Optional[Node] = None
     scope_object: Optional[object] = None
 
     def __post_init__(self) -> None:
@@ -403,6 +402,7 @@ class Scope:
         node: Node,
         state: VisitorState,
         from_parent_scope: bool = False,
+        fallback_value: Optional[Value] = None,
     ) -> Value:
         if varname in self.variables:
             return self.variables[varname]
@@ -444,7 +444,7 @@ class Scope:
         """Context manager for the subscope associated with a loop."""
         yield
 
-    def combine_subscopes(self, scopes: Iterable["Scope"]) -> None:
+    def combine_subscopes(self, scopes: Iterable[Dict[str, Any]]) -> None:
         pass
 
     def resolve_reference(self, value: Value, state: VisitorState) -> Value:
@@ -750,7 +750,7 @@ class FunctionScope(Scope):
             ]
         )
 
-    def get_combined_scope(self, scopes: Iterable[Scope]) -> None:
+    def get_combined_scope(self, scopes: Iterable[NCDN]) -> NCDN:
         new_scopes = []
         for scope in scopes:
             if LEAVES_LOOP in scope:
@@ -767,7 +767,7 @@ class FunctionScope(Scope):
             for varname in all_variables
         }
 
-    def combine_subscopes(self, scopes: Iterable[Scope]) -> None:
+    def combine_subscopes(self, scopes: Iterable[NCDN]) -> None:
         self.name_to_current_definition_nodes.update(self.get_combined_scope(scopes))
 
     def _resolve_value(self, val: Value, ctx: _LookupContext) -> Value:
@@ -990,7 +990,7 @@ def _safe_equals(left: object, right: object) -> bool:
         return False
 
 
-def _safe_issubclass(value: object, typ: type) -> bool:
+def _safe_issubclass(value: type, typ: type) -> bool:
     try:
         return issubclass(value, typ)
     except Exception:
