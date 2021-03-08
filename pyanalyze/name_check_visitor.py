@@ -667,8 +667,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
         return self.config.get_additional_bases(typ)
 
+    # The type for typ should be type, but that leads Cython to reject calls that pass
+    # an instance of ABCMeta.
     def get_generic_bases(
-        self, typ: type, generic_args: Sequence[Value] = ()
+        self, typ: Any, generic_args: Sequence[Value] = ()
     ) -> Dict[type, Sequence[Value]]:
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
 
