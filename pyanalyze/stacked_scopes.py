@@ -389,7 +389,9 @@ class Scope:
             return self.resolve_reference(local_value, state), self
         elif self.parent_scope is not None:
             # Parent scopes don't get the node to help local lookup.
-            parent_node = (varname, self.scope_node) if self.scope_node else None
+            parent_node = (
+                (varname, self.scope_node) if self.scope_node is not None else None
+            )
             return self.parent_scope.get(
                 varname, parent_node, state, from_parent_scope=True
             )
