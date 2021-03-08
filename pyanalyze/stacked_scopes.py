@@ -28,6 +28,7 @@ import builtins
 from types import ModuleType
 from typing import Any, Dict, Iterable, List, Sequence, Optional, Set, Tuple, TypeVar
 
+from .safe import safe_equals, safe_issubclass
 from .value import (
     KnownValue,
     ReferencingValue,
@@ -190,15 +191,15 @@ class Constraint(AbstractConstraint):
                         yield value
             elif isinstance(value, TypedValue):
                 if self.positive:
-                    if _safe_issubclass(value.typ, self.value):
+                    if safe_issubclass(value.typ, self.value):
                         yield value
-                    elif _safe_issubclass(self.value, value.typ):
+                    elif safe_issubclass(self.value, value.typ):
                         yield TypedValue(self.value)
                     # TODO: Technically here we should infer an intersection type:
                     # a type that is a subclass of both types. In practice currently
                     # _constrain_values() will eventually return UNRESOLVED_VALUE.
                 else:
-                    if not _safe_issubclass(value.typ, self.value):
+                    if not safe_issubclass(value.typ, self.value):
                         yield value
             elif isinstance(value, SubclassValue):
                 if self.positive:
@@ -220,7 +221,7 @@ class Constraint(AbstractConstraint):
                     if isinstance(self.value, value.typ):
                         yield known_val
                 elif isinstance(value, SubclassValue):
-                    if isinstance(self.value, type) and _safe_issubclass(
+                    if isinstance(self.value, type) and safe_issubclass(
                         self.value, value.typ
                     ):
                         yield known_val
@@ -414,7 +415,7 @@ class Scope:
     def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
         if varname not in self:
             self.variables[varname] = value
-        elif value is UNRESOLVED_VALUE or not _safe_equals(
+        elif value is UNRESOLVED_VALUE or not safe_equals(
             self.variables[varname], value
         ):
             existing = self.variables[varname]
@@ -453,7 +454,7 @@ class Scope:
         if isinstance(value, ReferencingValue):
             referenced, _ = value.scope.get(value.name, None, state)
             # globals that are None are probably set to something else later
-            if _safe_equals(referenced, KnownValue(None)):
+            if safe_equals(referenced, KnownValue(None)):
                 return UNRESOLVED_VALUE
             else:
                 return referenced
@@ -983,20 +984,6 @@ def constrain_value(value: Value, constraint: AbstractConstraint) -> Value:
 def uniq_chain(iterables: Iterable[Iterable[T]]) -> List[T]:
     """Returns a flattened list, collapsing equal elements but preserving order."""
     return list(OrderedDict.fromkeys(chain.from_iterable(iterables)))
-
-
-def _safe_equals(left: object, right: object) -> bool:
-    try:
-        return bool(left == right)
-    except Exception:
-        return False
-
-
-def _safe_issubclass(value: type, typ: type) -> bool:
-    try:
-        return issubclass(value, typ)
-    except Exception:
-        return False
 
 
 def _constrain_value(

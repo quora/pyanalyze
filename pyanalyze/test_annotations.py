@@ -1,7 +1,7 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
-from .arg_spec import assert_is_value
+from .implementation import assert_is_value
 from .error_code import ErrorCode
 from .value import (
     KnownValue,

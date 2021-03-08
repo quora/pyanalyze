@@ -59,6 +59,7 @@ from pyanalyze.find_unused import UnusedObjectFinder, used
 from pyanalyze import format_strings
 from pyanalyze import importer
 from pyanalyze import method_return_type
+from pyanalyze.safe import safe_getattr
 from pyanalyze.stacked_scopes import (
     AbstractConstraint,
     CompositeVariable,
@@ -275,15 +276,15 @@ class ClassAttributeChecker:
                 return typ
         if isinstance(typ, super):
             typ = typ.__self_class__
-        if isinstance(_safe_getattr(typ, "__module__", None), str) and isinstance(
-            _safe_getattr(typ, "__name__", None), str
+        if isinstance(safe_getattr(typ, "__module__", None), str) and isinstance(
+            safe_getattr(typ, "__name__", None), str
         ):
             module = typ.__module__
             name = typ.__name__
             if module not in sys.modules:
                 return None
             if (
-                self.config.unwrap_cls(_safe_getattr(sys.modules[module], name, None))
+                self.config.unwrap_cls(safe_getattr(sys.modules[module], name, None))
                 is typ
             ):
                 return (module, name)
@@ -382,7 +383,7 @@ class ClassAttributeChecker:
             existing_attrs = set(typ.__dict__.keys())
             for attr in existing_attrs - attrs_read - self.config.IGNORED_UNUSED_ATTRS:
                 # server calls will always show up as unused here
-                if _safe_getattr(_safe_getattr(typ, attr, None), "server_call", False):
+                if safe_getattr(safe_getattr(typ, attr, None), "server_call", False):
                     continue
                 print("Unused method: %r.%s" % (typ, attr))
 
@@ -1002,7 +1003,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     for val in cls_obj.vals
                     if isinstance(val, KnownValue)
                     and isinstance(val.val, type)
-                    and _safe_getattr(val.val, "__module__", None)
+                    and safe_getattr(val.val, "__module__", None)
                     == self.module.__name__
                 ]
                 if len(possible_values) == 1:
@@ -1042,9 +1043,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         scope_type = self.scopes.scope_type()
         if scope_type == ScopeType.module_scope and self.module is not None:
-            potential_function = _safe_getattr(self.module, node.name, None)
+            potential_function = safe_getattr(self.module, node.name, None)
         elif scope_type == ScopeType.class_scope and self.current_class is not None:
-            potential_function = _safe_getattr(self.current_class, node.name, None)
+            potential_function = safe_getattr(self.current_class, node.name, None)
         else:
             potential_function = None
 
@@ -1721,7 +1722,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         # create a pseudo-module and examine its dictionary to figure out what this imports
         # default to the current __file__ if necessary
-        module_file = _safe_getattr(self.module, "__file__", __file__)
+        module_file = safe_getattr(self.module, "__file__", __file__)
         random_suffix = "".join(
             random.choice(string.ascii_lowercase) for _ in range(10)
         )
@@ -3095,7 +3096,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 if (
                     _static_hasattr(root_value.val, "__getattr__")
                     or self._should_ignore_val(node)
-                    or _safe_getattr(
+                    or safe_getattr(
                         root_value.val, "_pyanalyze_is_nested_function", False
                     )
                 ):
@@ -3635,14 +3636,6 @@ def _static_hasattr(value, attr):
         return False
     else:
         return True
-
-
-def _safe_getattr(value, attr, default):
-    """Returns whether this value has the given attribute, ignoring exceptions."""
-    try:
-        return getattr(value, attr)
-    except Exception:
-        return default
 
 
 def _is_coroutine_function(obj):

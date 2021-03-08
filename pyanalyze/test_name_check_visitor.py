@@ -19,7 +19,8 @@ from .name_check_visitor import (
     ClassAttributeChecker,
     NameCheckVisitor,
 )
-from .arg_spec import assert_is_value, ArgSpecCache, dump_value
+from .arg_spec import ArgSpecCache
+from .implementation import assert_is_value, dump_value
 from .error_code import ErrorCode
 from .test_config import TestConfig
 from .value import (
