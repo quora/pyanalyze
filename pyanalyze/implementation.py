@@ -1,3 +1,4 @@
+from .annotations import type_from_value
 from .error_code import ErrorCode
 from .find_unused import used
 from .format_strings import parse_format_string
@@ -22,7 +23,7 @@ import collections.abc
 import qcore
 import inspect
 import warnings
-from typing import NewType, TYPE_CHECKING
+from typing import cast, NewType, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -363,6 +364,13 @@ def _str_format_impl(
     return TypedValue(str)
 
 
+def _cast_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> Value:
+    typ = variables["typ"]
+    return type_from_value(typ, visitor=visitor, node=node)
+
+
 def _subclasses_impl(
     variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
 ) -> Value:
@@ -503,6 +511,11 @@ def get_default_argspecs():
             kwargs="kwargs",
             name="str.format",
             implementation=_str_format_impl,
+        ),
+        cast: ExtendedArgSpec(
+            [Parameter("typ"), Parameter("val")],
+            name="typing.cast",
+            implementation=_cast_impl,
         ),
         # workaround for https://github.com/python/typeshed/pull/3501
         warnings.warn: ExtendedArgSpec(
