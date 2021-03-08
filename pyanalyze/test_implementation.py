@@ -301,6 +301,24 @@ class TestLen(TestNameCheckVisitorBase):
             len(3)
 
 
+class TestCast(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing import cast, List
+
+        def capybara():
+            assert_is_value(cast(str, 1), TypedValue(str))
+            assert_is_value(cast("str", 1), TypedValue(str))
+            assert_is_value(cast("List[str]", 1), GenericValue(list, [TypedValue(str)]))
+
+    @assert_fails(ErrorCode.undefined_name)
+    def test(self):
+        from typing import cast, List
+
+        def capybara():
+            cast("List[fail]", 1)
+
+
 class TestSubclasses(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
