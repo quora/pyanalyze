@@ -470,7 +470,7 @@ class GenericValue(TypedValue):
             return super(GenericValue, self).is_value_compatible(val)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
-        if isinstance(other, TypedValue):
+        if isinstance(other, TypedValue) and isinstance(other.typ, type):
             if isinstance(other, GenericValue):
                 args = other.args
             else:

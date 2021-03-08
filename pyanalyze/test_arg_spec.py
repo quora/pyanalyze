@@ -980,6 +980,20 @@ class TestTypeVar(TestNameCheckVisitorBase):
         def capybara(lst: List[int]) -> None:
             lst.append("x")
 
+    @assert_passes()
+    def test_generic_super(self):
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class A(Generic[T]):
+            def capybara(self) -> None:
+                pass
+
+        class B(A):
+            def capybara(self) -> None:
+                super().capybara()
+
 
 class Parent(Generic[T]):
     pass
