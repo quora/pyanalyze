@@ -316,7 +316,7 @@ class OrConstraint(AbstractConstraint):
 
     def _group_constraints(
         self, abstract_constraint: AbstractConstraint
-    ) -> Dict[str, Constraint]:
+    ) -> Dict[str, List[Constraint]]:
         by_varname = defaultdict(list)
         for constraint in abstract_constraint.apply():
             by_varname[constraint.varname].append(constraint)
