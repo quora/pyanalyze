@@ -18,7 +18,6 @@ Other subtleties implemented here:
 - Class scopes except the current one are skipped in name lookup
 
 """
-import ast
 from collections import defaultdict, OrderedDict
 import contextlib
 from dataclasses import dataclass, field, replace
@@ -26,7 +25,8 @@ import enum
 import qcore
 from itertools import chain
 import builtins
-from typing import Any, Dict, Iterable, List, Sequence, Optional, TypeVar
+from types import ModuleType
+from typing import Any, Dict, Iterable, List, Sequence, Optional, Set, Tuple, TypeVar
 
 from .value import (
     KnownValue,
@@ -48,13 +48,9 @@ LEAVES_SCOPE = "%LEAVES_SCOPE"
 LEAVES_LOOP = "%LEAVES_LOOP"
 _UNINITIALIZED = qcore.MarkerObject("uninitialized")
 
-
-@dataclass(frozen=True)
-class _LookupContext:
-    varname: str
-    fallback_value: Optional[Value]
-    node: ast.AST
-    state: object
+# Nodes as used in scopes can be any object, as long as they are hashable.
+Node = object
+NCDN = Dict[str, List[Node]]
 
 
 class VisitorState(enum.Enum):
@@ -67,6 +63,14 @@ class ScopeType(enum.Enum):
     module_scope = 2
     class_scope = 3
     function_scope = 4
+
+
+@dataclass(frozen=True)
+class _LookupContext:
+    varname: str
+    fallback_value: Optional[Value]
+    node: Node
+    state: VisitorState
 
 
 class ConstraintType(enum.Enum):
@@ -316,7 +320,7 @@ class OrConstraint(AbstractConstraint):
 
     def _group_constraints(
         self, abstract_constraint: AbstractConstraint
-    ) -> Dict[str, Constraint]:
+    ) -> Dict[str, List[Constraint]]:
         by_varname = defaultdict(list)
         for constraint in abstract_constraint.apply():
             by_varname[constraint.varname].append(constraint)
@@ -364,14 +368,16 @@ class Scope:
     scope_type: ScopeType
     variables: Dict[str, Value] = field(default_factory=dict)
     parent_scope: Optional["Scope"] = None
-    scope_node: Optional[ast.AST] = None
+    scope_node: Optional[Node] = None
     scope_object: Optional[object] = None
 
     def __post_init__(self) -> None:
         if self.parent_scope is not None:
             self.parent_scope = self.parent_scope.scope_used_as_parent()
 
-    def add_constraint(self, abstract_constraint, node, state):
+    def add_constraint(
+        self, abstract_constraint: AbstractConstraint, node: Node, state: VisitorState
+    ) -> None:
         """Constraints are ignored outside of function scopes."""
         pass
 
@@ -383,20 +389,29 @@ class Scope:
             return self.resolve_reference(local_value, state), self
         elif self.parent_scope is not None:
             # Parent scopes don't get the node to help local lookup.
-            parent_node = (varname, self.scope_node) if self.scope_node else None
+            parent_node = (
+                (varname, self.scope_node) if self.scope_node is not None else None
+            )
             return self.parent_scope.get(
                 varname, parent_node, state, from_parent_scope=True
             )
         else:
             return UNINITIALIZED_VALUE, None
 
-    def get_local(self, varname, node, state, from_parent_scope=False):
+    def get_local(
+        self,
+        varname: str,
+        node: Node,
+        state: VisitorState,
+        from_parent_scope: bool = False,
+        fallback_value: Optional[Value] = None,
+    ) -> Value:
         if varname in self.variables:
             return self.variables[varname]
         else:
             return UNINITIALIZED_VALUE
 
-    def set(self, varname, value, node, state):
+    def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
         if varname not in self:
             self.variables[varname] = value
         elif value is UNRESOLVED_VALUE or not _safe_equals(
@@ -415,10 +430,10 @@ class Scope:
             else:
                 self.variables[varname] = unite_values(existing, value)
 
-    def items(self):
+    def items(self) -> Iterable[Tuple[str, Value]]:
         return self.variables.items()
 
-    def __contains__(self, varname):
+    def __contains__(self, varname: str) -> bool:
         return varname in self.variables
 
     # no real subscopes in non-function scopes, just dummy implementations
@@ -431,10 +446,10 @@ class Scope:
         """Context manager for the subscope associated with a loop."""
         yield
 
-    def combine_subscopes(self, scopes):
+    def combine_subscopes(self, scopes: Iterable[Dict[str, Any]]) -> None:
         pass
 
-    def resolve_reference(self, value, state):
+    def resolve_reference(self, value: Value, state: VisitorState) -> Value:
         if isinstance(value, ReferencingValue):
             referenced, _ = value.scope.get(value.name, None, state)
             # globals that are None are probably set to something else later
@@ -445,7 +460,7 @@ class Scope:
         else:
             return value
 
-    def scope_used_as_parent(self):
+    def scope_used_as_parent(self) -> "Scope":
         """Class scopes are skipped in scope lookup, so don't set them as parent scopes."""
         if self.scope_type == ScopeType.class_scope:
             return self.parent_scope.scope_used_as_parent()
@@ -597,7 +612,16 @@ class FunctionScope(Scope):
 
     """
 
-    def __init__(self, parent_scope, scope_node=None):
+    name_to_current_definition_nodes: NCDN
+    usage_to_definition_nodes: Dict[Node, List[Node]]
+    definition_node_to_value: Dict[Node, Value]
+    name_to_all_definition_nodes: Dict[str, Set[Node]]
+    name_to_composites: Dict[str, Set[CompositeVariable]]
+    referencing_value_vars: Dict[str, Value]
+    accessed_from_special_nodes: Set[str]
+    current_loop_scopes: List[NCDN]
+
+    def __init__(self, parent_scope: Scope, scope_node: Optional[Node] = None) -> None:
         super().__init__(ScopeType.function_scope, {}, parent_scope, scope_node)
         self.name_to_current_definition_nodes = defaultdict(list)
         self.usage_to_definition_nodes = defaultdict(list)
@@ -610,7 +634,9 @@ class FunctionScope(Scope):
         self.accessed_from_special_nodes = set()
         self.current_loop_scopes = []
 
-    def add_constraint(self, abstract_constraint, node, state):
+    def add_constraint(
+        self, abstract_constraint: AbstractConstraint, node: Node, state: VisitorState
+    ) -> None:
         """Add a new constraint.
 
         Constraints are represented as assignments of fake values, which are
@@ -638,7 +664,7 @@ class FunctionScope(Scope):
             self.name_to_current_definition_nodes[constraint.varname] = [node]
             self._add_composite(constraint.varname)
 
-    def set(self, varname, value, node, state):
+    def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
         if isinstance(value, ReferencingValue):
             self.referencing_value_vars[varname] = value
             return
@@ -660,8 +686,13 @@ class FunctionScope(Scope):
         self._add_composite(varname)
 
     def get_local(
-        self, varname, node, state, from_parent_scope=False, fallback_value=None
-    ):
+        self,
+        varname: str,
+        node: Node,
+        state: VisitorState,
+        from_parent_scope: bool = False,
+        fallback_value: Optional[Value] = None,
+    ) -> Value:
         self._add_composite(varname)
         ctx = _LookupContext(varname, fallback_value, node, state)
         if from_parent_scope:
@@ -690,7 +721,7 @@ class FunctionScope(Scope):
         return self._get_value_from_nodes(definers, ctx)
 
     @contextlib.contextmanager
-    def subscope(self):
+    def subscope(self) -> Iterable[NCDN]:
         """Create a new subscope, to be used for conditional branches."""
         # Ignore LEAVES_SCOPE if it's already there, so that we type check code after the
         # assert False correctly. Without this, test_after_assert_false fails.
@@ -708,7 +739,7 @@ class FunctionScope(Scope):
             yield new_name_to_nodes
 
     @contextlib.contextmanager
-    def loop_scope(self):
+    def loop_scope(self) -> Iterable[None]:
         loop_scopes = []
         with self.subscope() as main_scope:
             loop_scopes.append(main_scope)
@@ -721,7 +752,7 @@ class FunctionScope(Scope):
             ]
         )
 
-    def get_combined_scope(self, scopes):
+    def get_combined_scope(self, scopes: Iterable[NCDN]) -> NCDN:
         new_scopes = []
         for scope in scopes:
             if LEAVES_LOOP in scope:
@@ -738,10 +769,10 @@ class FunctionScope(Scope):
             for varname in all_variables
         }
 
-    def combine_subscopes(self, scopes):
+    def combine_subscopes(self, scopes: Iterable[NCDN]) -> None:
         self.name_to_current_definition_nodes.update(self.get_combined_scope(scopes))
 
-    def _resolve_value(self, val, ctx):
+    def _resolve_value(self, val: Value, ctx: _LookupContext) -> Value:
         if isinstance(val, _ConstrainedValue):
             # Cache repeated resolutions of the same ConstrainedValue, because otherwise
             # lots of nested constraints can lead to exponential performance (see the
@@ -761,7 +792,12 @@ class FunctionScope(Scope):
         else:
             return val
 
-    def _get_value_from_nodes(self, nodes, ctx, constraints=()):
+    def _get_value_from_nodes(
+        self,
+        nodes: Iterable[Node],
+        ctx: _LookupContext,
+        constraints: Iterable[Constraint] = (),
+    ) -> Value:
         # If the variable is a nonlocal or composite, "uninitialized" doesn't make sense;
         # instead use an empty constraint to point to the parent scope.
         should_use_unconstrained = (
@@ -778,7 +814,7 @@ class FunctionScope(Scope):
         ]
         return _constrain_value(values, constraints, fallback_value=ctx.fallback_value)
 
-    def _add_composite(self, varname):
+    def _add_composite(self, varname: str) -> None:
         if isinstance(varname, CompositeVariable):
             self.name_to_composites[varname.varname].add(varname)
             if len(varname.attributes) > 1:
@@ -791,7 +827,7 @@ class FunctionScope(Scope):
     def items(self):
         raise NotImplementedError
 
-    def __contains__(self, varname):
+    def __contains__(self, varname: str) -> bool:
         return varname in self.name_to_all_definition_nodes
 
 
@@ -804,7 +840,7 @@ class StackedScopes:
         None,
     )
 
-    def __init__(self, module):
+    def __init__(self, module: ModuleType) -> None:
         if module is None:
             module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
         else:
@@ -822,7 +858,12 @@ class StackedScopes:
         ]
 
     @contextlib.contextmanager
-    def add_scope(self, scope_type, scope_node, scope_object=None):
+    def add_scope(
+        self,
+        scope_type: ScopeType,
+        scope_node: Node,
+        scope_object: Optional[object] = None,
+    ) -> Iterable[None]:
         """Contextmanager that temporarily adds a scope of this type to the top of the stack."""
         if scope_type is ScopeType.function_scope:
             scope = FunctionScope(self.scopes[-1], scope_node)
@@ -837,7 +878,7 @@ class StackedScopes:
             self.scopes.pop()
 
     @contextlib.contextmanager
-    def ignore_topmost_scope(self):
+    def ignore_topmost_scope(self) -> Iterable[None]:
         """Context manager that temporarily ignores the topmost scope."""
         scope = self.scopes.pop()
         try:
@@ -845,7 +886,7 @@ class StackedScopes:
         finally:
             self.scopes.append(scope)
 
-    def get(self, varname, node, state):
+    def get(self, varname: str, node: Node, state: VisitorState) -> Value:
         """Gets a variable of the given name from the current scope stack.
 
         Arguments:
@@ -866,7 +907,9 @@ class StackedScopes:
         value, _ = self.get_with_scope(varname, node, state)
         return value
 
-    def get_with_scope(self, varname, node, state):
+    def get_with_scope(
+        self, varname: str, node: Node, state: VisitorState
+    ) -> Tuple[Value, Optional[Scope]]:
         """Like get(), but also returns the scope object the name was found in.
 
         Returns a (Value, Scope) tuple. The Scope is None if the name was not found.
@@ -874,7 +917,7 @@ class StackedScopes:
         """
         return self.scopes[-1].get(varname, node, state)
 
-    def get_nonlocal_scope(self, varname, using_scope):
+    def get_nonlocal_scope(self, varname: str, using_scope: Scope) -> Optional[Scope]:
         """Gets the defining scope of a non-local variable."""
         for scope in reversed(self.scopes):
             if scope.scope_type is not ScopeType.function_scope:
@@ -886,7 +929,7 @@ class StackedScopes:
         else:
             return None
 
-    def set(self, varname, value, node, state):
+    def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
         """Records an assignment to this variable.
 
         value is the value that is being assigned to varname. It should be an instance of
@@ -907,23 +950,23 @@ class StackedScopes:
         """Merges a number of subscopes back into their parent scope."""
         self.scopes[-1].combine_subscopes(scopes)
 
-    def scope_type(self):
+    def scope_type(self) -> ScopeType:
         """Returns the type of the current scope."""
         return self.scopes[-1].scope_type
 
-    def current_scope(self):
+    def current_scope(self) -> Scope:
         """Returns the current scope dictionary."""
         return self.scopes[-1]
 
-    def module_scope(self):
+    def module_scope(self) -> Scope:
         """Returns the module scope of the current scope."""
         return self.scopes[1]
 
-    def contains_scope_of_type(self, scope_type):
+    def contains_scope_of_type(self, scope_type: ScopeType) -> bool:
         """Returns whether any scope in the stack is of this type."""
         return any(scope.scope_type == scope_type for scope in self.scopes)
 
-    def is_nested_function(self):
+    def is_nested_function(self) -> bool:
         """Returns whether we're currently in a nested function."""
         return (
             len(self.scopes) > 1
@@ -932,7 +975,7 @@ class StackedScopes:
         )
 
 
-def constrain_value(value, constraint):
+def constrain_value(value: Value, constraint: AbstractConstraint) -> Value:
     """Create a version of this value with the constraint applied."""
     return _constrain_value([value], constraint.apply())
 
@@ -942,21 +985,25 @@ def uniq_chain(iterables: Iterable[Iterable[T]]) -> List[T]:
     return list(OrderedDict.fromkeys(chain.from_iterable(iterables)))
 
 
-def _safe_equals(left, right):
+def _safe_equals(left: object, right: object) -> bool:
     try:
         return bool(left == right)
     except Exception:
         return False
 
 
-def _safe_issubclass(value, typ):
+def _safe_issubclass(value: type, typ: type) -> bool:
     try:
         return issubclass(value, typ)
     except Exception:
         return False
 
 
-def _constrain_value(values, constraints, fallback_value=None):
+def _constrain_value(
+    values: Iterable[Value],
+    constraints: Iterable[Constraint],
+    fallback_value: Optional[Value] = None,
+) -> Value:
     # Flatten MultiValuedValue so that we can apply constraints.
     values = [val for val_or_mvv in values for val in flatten_values(val_or_mvv)]
     if not values and fallback_value is not None:
