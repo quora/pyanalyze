@@ -337,7 +337,7 @@ class TestSubclasses(TestNameCheckVisitorBase):
 
 class TestGenericMutators(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_append(self):
+    def test_list_append(self):
         from typing import List
 
         def capybara(x: int):
@@ -353,11 +353,197 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.append("y")
             assert_is_value(lst, GenericValue(list, [TypedValue(str)]))
 
+            lst = ["x"]
+            assert_is_value(lst, KnownValue(["x"]))
+            lst.append(3)
+            assert_is_value(
+                lst, SequenceIncompleteValue(list, [KnownValue("x"), KnownValue(3)])
+            )
+
     @assert_fails(ErrorCode.incompatible_argument)
-    def test_append_wrong_type(self):
+    def test_list_append_wrong_type(self):
         from typing import List
 
         def capybara():
             lst: List[str] = ["x"]
             assert_is_value(lst, GenericValue(list, [TypedValue(str)]))
             lst.append(1)
+
+    @assert_passes()
+    def test_set_add(self):
+        from typing import Set
+
+        def capybara(x: int):
+            lst = {x}
+            assert_is_value(lst, SequenceIncompleteValue(set, [TypedValue(int)]))
+            lst.add(1)
+            assert_is_value(
+                lst, SequenceIncompleteValue(set, [TypedValue(int), KnownValue(1)])
+            )
+
+            lst: Set[str] = {"x"}
+            assert_is_value(lst, GenericValue(set, [TypedValue(str)]))
+            lst.add("y")
+            assert_is_value(lst, GenericValue(set, [TypedValue(str)]))
+
+    @assert_passes()
+    def test_list_add(self):
+        from typing import List
+
+        def capybara(x: int, y: str) -> None:
+            assert_is_value(
+                [x] + [y],
+                SequenceIncompleteValue(list, [TypedValue(int), TypedValue(str)]),
+            )
+            assert_is_value(
+                [x] + [1],
+                SequenceIncompleteValue(list, [TypedValue(int), KnownValue(1)]),
+            )
+            left: List[int] = []
+            right: List[str] = []
+            assert_is_value(
+                left + right,
+                GenericValue(
+                    list, [MultiValuedValue([TypedValue(int), TypedValue(str)])]
+                ),
+            )
+            assert_is_value(left + left, GenericValue(list, [TypedValue(int)]))
+
+            union_list1 = left if x else right
+            union_list2 = left if y else right
+            assert_is_value(
+                # need to call list.__add__ directly because we just give up on unions
+                # in the binop implementation
+                list.__add__(union_list1, union_list2),
+                MultiValuedValue(
+                    [
+                        GenericValue(list, [TypedValue(int)]),
+                        GenericValue(
+                            list, [MultiValuedValue([TypedValue(int), TypedValue(str)])]
+                        ),
+                        GenericValue(
+                            list, [MultiValuedValue([TypedValue(str), TypedValue(int)])]
+                        ),
+                        GenericValue(list, [TypedValue(str)]),
+                    ]
+                ),
+            )
+
+    @assert_passes()
+    def test_list_extend(self):
+        from typing import List
+
+        def capybara(x: int, y: str) -> None:
+            lst = [x]
+            assert_is_value(lst, SequenceIncompleteValue(list, [TypedValue(int)]))
+            lst.extend([y])
+            assert_is_value(
+                lst, SequenceIncompleteValue(list, [TypedValue(int), TypedValue(str)])
+            )
+            # If we extend with a set, don't use a SequenceIncompleteValue any more,
+            # because we don't know how many values were added or in what order.
+            # (Technically we do know for a one-element set, but that doesn't seem worth
+            # writing a special case for.)
+            lst.extend({float(1.0)})
+            assert_is_value(
+                lst,
+                GenericValue(
+                    list,
+                    [
+                        MultiValuedValue(
+                            [TypedValue(int), TypedValue(str), TypedValue(float)]
+                        )
+                    ],
+                ),
+            )
+
+            lst: List[int] = [3]
+            assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
+            lst.extend([x])
+            assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_list_extend_wrong_type(self):
+        from typing import List
+
+        def capybara():
+            lst: List[int] = [3]
+            lst.extend([str(3)])
+
+
+class TestDictSetItem(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_typeddict_setitem_valid(self):
+        from typing_extensions import TypedDict
+
+        class TD(TypedDict):
+            x: int
+
+        def capybara(td: TD) -> None:
+            td["x"] = 42
+
+    @assert_fails(ErrorCode.invalid_typeddict_key)
+    def test_typeddict_non_literal_key(self):
+        from typing_extensions import TypedDict
+
+        class TD(TypedDict):
+            x: int
+
+        def capybara(td: TD) -> None:
+            td[41] = 42
+
+    @assert_fails(ErrorCode.invalid_typeddict_key)
+    def test_typeddict_unrecognized_key(self):
+        from typing_extensions import TypedDict
+
+        class TD(TypedDict):
+            x: int
+
+        def capybara(td: TD) -> None:
+            td["y"] = 42
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_typeddict_bad_value(self):
+        from typing_extensions import TypedDict
+
+        class TD(TypedDict):
+            x: int
+
+        def capybara(td: TD) -> None:
+            td["x"] = "y"
+
+    @assert_passes()
+    def test_incomplete_value(self):
+        def capybara(x: int, y: str) -> None:
+            dct = {}
+            assert_is_value(dct, KnownValue({}))
+            dct["x"] = x
+            assert_is_value(
+                dct, DictIncompleteValue([(KnownValue("x"), TypedValue(int))])
+            )
+            dct[y] = "x"
+            assert_is_value(
+                dct,
+                DictIncompleteValue(
+                    [
+                        (KnownValue("x"), TypedValue(int)),
+                        (TypedValue(str), KnownValue("x")),
+                    ]
+                ),
+            )
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_bad_key_type(self):
+        from typing import Dict
+
+        def capybara() -> None:
+            dct: Dict[str, int] = {}
+            dct[1] = 1
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_bad_value_type(self):
+        from typing import Dict
+
+        def capybara() -> None:
+            dct: Dict[str, int] = {}
+            dct["1"] = "1"
