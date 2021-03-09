@@ -11,7 +11,9 @@ from collections.abc import (
     Set,
 )
 import contextlib
+import io
 import time
+import typing
 from typing import Generic, TypeVar
 
 from .test_config import TestConfig
@@ -432,4 +434,18 @@ class TestGetGenericBases:
                 collections.abc.Container: [int_tv],
             },
             self.get_generic_bases(dict, [int_tv, str_tv]),
+        )
+
+    def test_io(self):
+        assert_eq(
+            {
+                io.BytesIO: [],
+                io.BufferedIOBase: [],
+                io.IOBase: [],
+                typing.BinaryIO: [],
+                typing.IO: [TypedValue(bytes)],
+                collections.abc.Iterator: [TypedValue(bytes)],
+                collections.abc.Iterable: [TypedValue(bytes)],
+            },
+            self.get_generic_bases(io.BytesIO, []),
         )
