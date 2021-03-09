@@ -265,6 +265,33 @@ def _sequence_impl(
     return TypedValue(typ)
 
 
+def _list_append_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
+) -> ImplementationFnReturn:
+    lst = variables["self"]
+    element = variables["object"]
+    varname = visitor.varname_for_self_constraint(node)
+    if isinstance(lst, SequenceIncompleteValue):
+        no_return_unless = Constraint(
+            varname,
+            ConstraintType.is_value_object,
+            True,
+            SequenceIncompleteValue(list, (*lst.members, element)),
+        )
+        return KnownValue(None), NULL_CONSTRAINT, no_return_unless
+    elif isinstance(lst, GenericValue):
+        list_args = lst.get_generic_args_for_type(list, visitor)
+        if list_args:
+            expected_type = list_args[0]
+            if not expected_type.is_assignable(element, visitor):
+                visitor.show_error(
+                    node,
+                    f"Cannot append value of type {element!r} to list of {expected_type!r}",
+                    ErrorCode.incompatible_argument,
+                )
+    return KnownValue(None)
+
+
 def _assert_is_value_impl(
     variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
 ) -> ImplementationFnReturn:
@@ -480,6 +507,11 @@ def get_default_argspecs():
             [Parameter("iterable", default_value=_NO_ARG_SENTINEL)],
             name="list",
             implementation=_list_impl,
+        ),
+        list.append: ExtendedArgSpec(
+            [Parameter("self", typ=TypedValue(list)), Parameter("object")],
+            name="list.append",
+            implementation=_list_append_impl,
         ),
         set: ExtendedArgSpec(
             [Parameter("iterable", default_value=_NO_ARG_SENTINEL)],

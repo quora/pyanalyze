@@ -333,3 +333,31 @@ class TestSubclasses(TestNameCheckVisitorBase):
                 typ.__subclasses__(), GenericValue(list, [TypedValue(type)])
             )
             assert_is_value(Parent.__subclasses__(), KnownValue([Child]))
+
+
+class TestGenericMutators(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_append(self):
+        from typing import List
+
+        def capybara(x: int):
+            lst = [x]
+            assert_is_value(lst, SequenceIncompleteValue(list, [TypedValue(int)]))
+            lst.append(1)
+            assert_is_value(
+                lst, SequenceIncompleteValue(list, [TypedValue(int), KnownValue(1)])
+            )
+
+            lst: List[str] = ["x"]
+            assert_is_value(lst, GenericValue(list, [TypedValue(str)]))
+            lst.append("y")
+            assert_is_value(lst, GenericValue(list, [TypedValue(str)]))
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_append_wrong_type(self):
+        from typing import List
+
+        def capybara():
+            lst: List[str] = ["x"]
+            assert_is_value(lst, GenericValue(list, [TypedValue(str)]))
+            lst.append(1)

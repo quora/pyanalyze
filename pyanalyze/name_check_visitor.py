@@ -3136,6 +3136,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             return None
 
+    def varname_for_self_constraint(
+        self, node: ast.Call
+    ) -> Union[None, str, CompositeVariable]:
+        """Helper for constraints on self from method calls.
+
+        Given a Call node representing a method call, return the variable name
+        to be used for a constraint on the self object.
+
+        """
+        if isinstance(node.func, ast.Attribute):
+            return self.varname_for_constraint(node.func.value)
+        else:
+            return None
+
     def _should_ignore_val(self, node):
         if node is not None:
             path = self._get_attribute_path(node)
