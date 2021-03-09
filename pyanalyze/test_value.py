@@ -1,6 +1,8 @@
 import collections.abc
+import io
 from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
 from typing import NewType, Sequence, Dict
+import typing
 import types
 from unittest import mock
 
@@ -346,3 +348,9 @@ def test_new_type_value():
     # This should eventually return False
     assert_can_assign(nt1_val, TypedValue(int))
     assert_can_assign(TypedValue(int), nt1_val)
+
+
+def test_io():
+    assert_can_assign(
+        GenericValue(typing.IO, [UNRESOLVED_VALUE]), TypedValue(io.BytesIO)
+    )

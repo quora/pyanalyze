@@ -318,6 +318,24 @@ class TypedValue(Value):
             return unify_typevar_maps(tv_maps)
         return None
 
+    def get_generic_args_for_type(
+        self, typ: Union[type, super], ctx: CanAssignContext
+    ) -> Optional[List[Value]]:
+        if isinstance(self, GenericValue):
+            args = self.args
+        else:
+            args = ()
+        generic_bases = ctx.get_generic_bases(self.typ, args)
+        return generic_bases.get(typ)
+
+    def get_generic_arg_for_type(
+        self, typ: Union[type, super], ctx: CanAssignContext, index: int
+    ) -> Value:
+        args = self.get_generic_args_for_type(typ, ctx)
+        if args and index < len(args):
+            return args[index]
+        return UNRESOLVED_VALUE
+
     def is_type(self, typ: type) -> bool:
         return self.type_object.is_assignable_to_type(typ)
 
@@ -382,22 +400,15 @@ class GenericValue(TypedValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, TypedValue) and isinstance(other.typ, type):
-            if isinstance(other, GenericValue):
-                args = other.args
-            else:
-                args = ()
-            generic_bases = ctx.get_generic_bases(other.typ, args)
-            try:
-                generic_args = generic_bases[self.typ]
-            except KeyError:
-                # If we don't think it's a generic base, try super;
-                # runtime isinstance() may disagree.
+            generic_args = other.get_generic_args_for_type(self.typ, ctx)
+            # If we don't think it's a generic base, try super;
+            # runtime isinstance() may disagree.
+            if generic_args is None or len(self.args) != len(generic_args):
                 return super().can_assign(other, ctx)
-            if len(self.args) != len(generic_args):
-                return super().can_assign(other, ctx)
-            tv_maps = [super().can_assign(other, ctx)]
-            for arg1, arg2 in zip(self.args, generic_args):
-                tv_maps.append(arg1.can_assign(arg2, ctx))
+            tv_maps = [
+                arg1.can_assign(arg2, ctx)
+                for arg1, arg2 in zip(self.args, generic_args)
+            ]
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
 

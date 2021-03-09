@@ -680,6 +680,11 @@ class TypeshedFinder(object):
             module = obj.__module__
             if module is None:
                 module = "builtins"
+            # Objects like io.BytesIO are technically in the _io module,
+            # but typeshed puts them in io, which at runtime just re-exports
+            # them.
+            if module == "_io":
+                module = "io"
             fq_name = ".".join([module, obj.__qualname__])
             return _TYPING_ALIASES.get(fq_name, fq_name)
         except (AttributeError, TypeError):
