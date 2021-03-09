@@ -1176,17 +1176,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             ]
             return defaults, kw_defaults
 
-    def is_value_compatible(self, val1: Value, val2: Value) -> bool:
-        try:
-            return val1.is_value_compatible(val2)
-        except Exception:
-            # is_value_compatible() can call into some user code
-            # (e.g. __eq__ and __subclasscheck__), so ignore any errors
-            self.log(
-                logging.DEBUG, "is_value_compatible failed", traceback.format_exc()
-            )
-            return True
-
     def _get_evaled_function(self, node, decorators) -> Value:
         to_apply = []
         for decorator, applied_decorator in decorators:
