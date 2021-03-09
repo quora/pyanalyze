@@ -243,7 +243,7 @@ def _sequence_impl(
             if iterable.val is not None:
                 visitor.show_error(
                     node,
-                    "Object %r is not iterable" % (iterable.val,),
+                    f"Object {iterable.val!r} is not iterable",
                     ErrorCode.unsupported_operation,
                 )
             return TypedValue(typ)
@@ -257,7 +257,7 @@ def _sequence_impl(
         ) and not visitor._should_ignore_type(iterable.typ):
             visitor.show_error(
                 node,
-                "Object of type %r is not iterable" % (iterable.typ,),
+                f"Object of type {iterable.typ} is not iterable",
                 ErrorCode.unsupported_operation,
             )
         if isinstance(iterable, GenericValue):
@@ -275,15 +275,14 @@ def _assert_is_value_impl(
     if not isinstance(expected_value, KnownValue):
         visitor.show_error(
             node,
-            "Value argument to assert_is_value must be a KnownValue (got %r) %r"
-            % (expected_value, obj),
+            f"Value argument to assert_is_value must be a KnownValue (got {expected_value}) {obj}",
             ErrorCode.inference_failure,
         )
     else:
         if obj != expected_value.val:
             visitor.show_error(
                 node,
-                "Bad value inference: expected %r, got %r" % (expected_value.val, obj),
+                f"Bad value inference: expected {expected_value.val}, got {obj}",
                 ErrorCode.inference_failure,
             )
     return KnownValue(None)
@@ -294,7 +293,7 @@ def _dump_value_impl(
 ) -> ImplementationFnReturn:
     if visitor._is_checking():
         visitor.show_error(
-            node, "value: %r" % variables["value"], ErrorCode.inference_failure
+            node, f"Value: {variables['value']}", ErrorCode.inference_failure
         )
     return KnownValue(None)
 
