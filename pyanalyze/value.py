@@ -405,9 +405,10 @@ class GenericValue(TypedValue):
             # runtime isinstance() may disagree.
             if generic_args is None or len(self.args) != len(generic_args):
                 return super().can_assign(other, ctx)
-            tv_maps = [super().can_assign(other, ctx)]
-            for arg1, arg2 in zip(self.args, generic_args):
-                tv_maps.append(arg1.can_assign(arg2, ctx))
+            tv_maps = [
+                arg1.can_assign(arg2, ctx)
+                for arg1, arg2 in zip(self.args, generic_args)
+            ]
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
 
