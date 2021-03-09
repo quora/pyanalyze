@@ -455,15 +455,16 @@ def _list_extend_impl(
             return KnownValue(None), NULL_CONSTRAINT, no_return_unless
         elif isinstance(lst, GenericValue):
             expected_type = lst.get_generic_arg_for_type(list, visitor, 0)
-            actual_type = iterable.get_generic_arg_for_type(
-                collections.abc.Iterable, visitor, 0
-            )
-            if not expected_type.is_assignable(actual_type, visitor):
-                visitor.show_error(
-                    node,
-                    f"Cannot extend list of {expected_type} with values of type {actual_type}",
-                    ErrorCode.incompatible_argument,
+            if isinstance(iterable, TypedValue):
+                actual_type = iterable.get_generic_arg_for_type(
+                    collections.abc.Iterable, visitor, 0
                 )
+                if not expected_type.is_assignable(actual_type, visitor):
+                    visitor.show_error(
+                        node,
+                        f"Cannot extend list of {expected_type} with values of type {actual_type}",
+                        ErrorCode.incompatible_argument,
+                    )
         return KnownValue(None)
 
     return flatten_unions(inner, variables["self"], variables["iterable"])
