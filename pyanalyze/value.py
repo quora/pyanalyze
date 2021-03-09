@@ -59,17 +59,6 @@ class CanAssignContext:
 class Value:
     """Class that represents the value of a variable."""
 
-    def is_value_compatible(self, val: "Value") -> bool:
-        """Returns whether the given value is compatible with this value.
-
-        val must be a more precise type than (or the same type as) self.
-
-        Callers should always go through NameCheckVisitor.is_value_compatible,
-        because this function may raise errors since it can call into user code.
-
-        """
-        return True
-
     def is_type(self, typ: type) -> bool:
         """Returns whether this value is an instance of the given type."""
         return False
@@ -160,10 +149,6 @@ class NoReturnValue(Value):
     def __str__(self) -> str:
         return "NoReturn"
 
-    def is_value_compatible(self, val: Value) -> bool:
-        # You can't assign anything to NoReturn
-        return False
-
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         # You can't assign anything to NoReturn
         return None
@@ -180,20 +165,6 @@ class KnownValue(Value):
     source_node: Optional[ast.AST] = field(
         default=None, repr=False, hash=False, compare=False
     )
-
-    def is_value_compatible(self, val: Value) -> bool:
-        if isinstance(val, TypeVarValue):
-            val = val.get_fallback_value()
-        if isinstance(val, KnownValue):
-            return self.val == val.val
-        elif isinstance(val, TypedValue):
-            return val.type_object.is_assignable_to_type(type(self.val))
-        elif isinstance(val, MultiValuedValue):
-            return all(self.is_value_compatible(v) for v in val.vals)
-        elif isinstance(val, SubclassValue):
-            return isinstance(self.val, type) and issubclass(self.val, val.typ)
-        else:
-            return True
 
     def is_type(self, typ: type) -> bool:
         return self.get_type_object().is_assignable_to_type(typ)
@@ -308,43 +279,6 @@ class TypedValue(Value):
     def __post_init__(self) -> None:
         self.type_object = TypeObject.make(self.typ)
 
-    def is_value_compatible(self, val: Value) -> bool:
-        if isinstance(val, TypeVarValue):
-            val = val.get_fallback_value()
-        if self.type_object.is_thrift_enum:
-            # Special case: Thrift enums. These are conceptually like
-            # enums, but they are ints at runtime.
-            return self.is_value_compatible_thrift_enum(val)
-        elif isinstance(val, KnownValue):
-            return TypeObject.make(type(val.val)).is_assignable_to_type(self.typ)
-        elif isinstance(val, TypedValue):
-            return val.type_object.is_assignable_to_type(self.typ)
-        elif isinstance(val, MultiValuedValue):
-            return all(self.is_value_compatible(v) for v in val.vals)
-        elif isinstance(val, SubclassValue):
-            # Valid only if self.typ is a metaclass of val.typ.
-            return isinstance(val.typ, self.typ)
-        else:
-            return True
-
-    def is_value_compatible_thrift_enum(self, val: Value) -> bool:
-        if isinstance(val, KnownValue):
-            if not isinstance(val.val, int):
-                return False
-            return val.val in self.typ._VALUES_TO_NAMES
-        elif isinstance(val, TypedValue):
-            return val.type_object.is_assignable_to_type(
-                self.typ
-            ) or val.type_object.is_assignable_to_type(int)
-        elif isinstance(val, MultiValuedValue):
-            return all(self.is_value_compatible_thrift_enum(v) for v in val.vals)
-        elif isinstance(val, (SubclassValue, UnboundMethodValue)):
-            return False
-        elif val is UNRESOLVED_VALUE or val is NO_RETURN_VALUE:
-            return True
-        else:
-            return False
-
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if self.type_object.is_thrift_enum:
             # Special case: Thrift enums. These are conceptually like
@@ -413,12 +347,6 @@ class NewTypeValue(TypedValue):
         self.name = newtype.__name__
         self.newtype = newtype
 
-    def is_value_compatible(self, val: Value) -> bool:
-        if isinstance(val, NewTypeValue):
-            return self.newtype is val.newtype
-        else:
-            return super(NewTypeValue, self).is_value_compatible(val)
-
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, NewTypeValue):
             if self.newtype is other.newtype:
@@ -451,21 +379,6 @@ class GenericValue(TypedValue):
             args = self.args
         args_str = ", ".join(str(arg) for arg in args)
         return f"{_stringify_type(self.typ)}[{args_str}]"
-
-    def is_value_compatible(self, val: Value) -> bool:
-        if isinstance(val, TypeVarValue):
-            val = val.get_fallback_value()
-        if isinstance(val, GenericValue):
-            if not super(GenericValue, self).is_value_compatible(val):
-                return False
-            # For now we treat all generics as covariant and
-            # assume that their type arguments match.
-            for arg1, arg2 in zip(self.args, val.args):
-                if not arg1.is_value_compatible(arg2):
-                    return False
-            return True
-        else:
-            return super(GenericValue, self).is_value_compatible(val)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, TypedValue) and isinstance(other.typ, type):
@@ -523,19 +436,6 @@ class SequenceIncompleteValue(GenericValue):
             args = (UNRESOLVED_VALUE,)
         super().__init__(typ, args)
         self.members = tuple(members)
-
-    def is_value_compatible(self, val: Value) -> bool:
-        if isinstance(val, SequenceIncompleteValue):
-            if not issubclass(val.typ, self.typ):
-                return False
-            if len(val.members) != len(self.members):
-                return False
-            return all(
-                my_member.is_value_compatible(other_member)
-                for my_member, other_member in zip(self.members, val.members)
-            )
-        else:
-            return super(SequenceIncompleteValue, self).is_value_compatible(val)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, SequenceIncompleteValue):
@@ -617,41 +517,6 @@ class TypedDictValue(GenericValue):
             value_type = UNRESOLVED_VALUE
         super().__init__(dict, (TypedValue(str), value_type))
         self.items = items
-
-    def is_value_compatible(self, val: Value) -> bool:
-        if isinstance(val, DictIncompleteValue):
-            if len(val.items) < len(self.items):
-                return False
-            known_part = {
-                key.val: value
-                for key, value in val.items
-                if isinstance(key, KnownValue) and isinstance(key.val, str)
-            }
-            has_unknowns = len(known_part) < len(val.items)
-            for key, value in self.items.items():
-                if key not in known_part:
-                    if not has_unknowns:
-                        return False
-                else:
-                    if not value.is_value_compatible(known_part[key]):
-                        return False
-            return True
-        elif isinstance(val, TypedDictValue):
-            for key, value in self.items.items():
-                if key not in val.items:
-                    return False
-                if not value.is_value_compatible(val.items[key]):
-                    return False
-            return True
-        elif isinstance(val, KnownValue) and isinstance(val.val, dict):
-            for key, value in self.items.items():
-                if key not in val.val:
-                    return False
-                if not value.is_value_compatible(KnownValue(val.val[key])):
-                    return False
-            return True
-        else:
-            return super(TypedDictValue, self).is_value_compatible(val)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, DictIncompleteValue):
@@ -744,31 +609,6 @@ class SubclassValue(Value):
         except Exception:
             return False
 
-    def is_value_compatible(self, val: Value) -> bool:
-        if isinstance(val, TypeVarValue):
-            val = val.get_fallback_value()
-        if isinstance(val, MultiValuedValue):
-            return all(self.is_value_compatible(subval) for subval in val.vals)
-        elif isinstance(val, SubclassValue):
-            return issubclass(val.typ, self.typ)
-        elif isinstance(val, KnownValue):
-            if isinstance(val.val, type):
-                return issubclass(val.val, self.typ)
-            else:
-                return False
-        elif isinstance(val, TypedValue):
-            if val.typ is type:
-                return True
-            elif issubclass(val.typ, type):
-                # metaclass
-                return isinstance(self.typ, val.typ)
-            else:
-                return False
-        elif val is UNRESOLVED_VALUE or val is NO_RETURN_VALUE:
-            return True
-        else:
-            return False
-
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, SubclassValue):
             if issubclass(other.typ, self.typ):
@@ -807,15 +647,6 @@ class MultiValuedValue(Value):
             "vals",
             tuple(chain.from_iterable(flatten_values(val) for val in raw_vals)),
         )
-
-    def is_value_compatible(self, val: Value) -> bool:
-        if isinstance(val, MultiValuedValue):
-            return all(
-                any(subval.is_value_compatible(other_subval) for subval in self.vals)
-                for other_subval in val.vals
-            )
-        else:
-            return any(subval.is_value_compatible(val) for subval in self.vals)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return MultiValuedValue(
@@ -905,7 +736,7 @@ class VariableNameValue(Value):
 
     For example, any variable named 'uid' will get resolved into a VariableNameValue of type uid,
     and if it gets passed into a function that takes an argument called 'aid',
-    is_value_compatible will return False.
+    can_assign will return None.
 
     This was created for a legacy codebase without type annotations. If possible, prefer
     using NewTypes or other more explicit types.
@@ -913,11 +744,6 @@ class VariableNameValue(Value):
     """
 
     varnames: List[str]
-
-    def is_value_compatible(self, val: Value) -> bool:
-        if not isinstance(val, VariableNameValue):
-            return True
-        return val == self
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if not isinstance(other, VariableNameValue):

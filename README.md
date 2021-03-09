@@ -341,7 +341,7 @@ The following subclasses of `Value` exist:
 -   `SubclassValue` represents a class object of a class or its subclass. For example, in a classmethod, the type of the `cls` argument is a `SubclassValue` of the class the classmethod is defined in. At runtime, it is either this class or a subclass.
 -   `NoReturnValue` indicates that a function will never return (e.g., because it always throws an error), corresponding to [`typing.NoReturn`](https://docs.python.org/3/library/typing.html#typing.NoReturn).
 
-Each `Value` object has a method `is_value_compatible` that checks whether types are correct. The call `X.is_value_compatible(Y)` essentially answers the question: if we expect a value `X`, is it legal to pass a value `Y` instead? For example, `TypedValue(int).is_value_compatible(KnownValue(1))` will return True, because `1` is a valid `int`, but `TypedValue(int).is_value_compatible(KnownValue("1"))` will return False, because `"1"` is not.
+Each `Value` object has a method `can_assign` that checks whether types are correct. The call `X.can_assign(Y, ctx)` essentially answers the question: if we expect a value `X`, is it legal to pass a value `Y` instead? For example, `TypedValue(int).can_assign(KnownValue(1), ctx)` will succeed, because `1` is a valid `int`, but `TypedValue(int).can_assign(KnownValue("1"), ctx)` will fail, because `"1"` is not. In order to help with type checking generics, the return value of `can_assign` is a (possibly empty) dictionary of type variables mapping to their values.
 
 ### Call compatibility
 
