@@ -213,7 +213,6 @@ def test_generic_value():
 
 def test_sequence_incomplete_value():
     val = value.SequenceIncompleteValue(tuple, [TypedValue(int), TypedValue(str)])
-    assert_eq("tuple[int, str]", str(val))
     assert_can_assign(val, TypedValue(tuple))
     assert_can_assign(
         val, GenericValue(tuple, [MultiValuedValue([TypedValue(int), TypedValue(str)])])
@@ -246,6 +245,20 @@ def test_sequence_incomplete_value():
     assert val.is_value_compatible(
         value.SequenceIncompleteValue(tuple, [TypedValue(bool), TypedValue(str)])
     )
+
+    assert_eq("tuple[int, str]", str(val))
+    assert_eq(
+        "tuple[int]", str(value.SequenceIncompleteValue(tuple, [TypedValue(int)]))
+    )
+    assert_eq(
+        "<list containing [int]>",
+        str(value.SequenceIncompleteValue(list, [TypedValue(int)])),
+    )
+
+
+def test_dict_incomplete_value():
+    val = value.DictIncompleteValue([(TypedValue(int), KnownValue("x"))])
+    assert_eq("<dict containing {int: Literal['x']}>", str(val))
 
 
 def test_multi_valued_value():

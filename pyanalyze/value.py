@@ -446,13 +446,11 @@ class GenericValue(TypedValue):
 
     def __str__(self) -> str:
         if self.typ is tuple:
-            args = list(self.args) + ["..."]
+            args = [*self.args, "..."]
         else:
             args = self.args
-        return "%s[%s]" % (
-            _stringify_type(self.typ),
-            ", ".join(str(arg) for arg in args),
-        )
+        args_str = ", ".join(str(arg) for arg in args)
+        return f"{_stringify_type(self.typ)}[{args_str}]"
 
     def is_value_compatible(self, val: Value) -> bool:
         if isinstance(val, TypeVarValue):
@@ -558,12 +556,10 @@ class SequenceIncompleteValue(GenericValue):
         )
 
     def __str__(self) -> str:
+        members = ", ".join(str(m) for m in self.members)
         if self.typ is tuple:
-            return "tuple[%s]" % (", ".join(str(m) for m in self.members))
-        return "<%s containing [%s]>" % (
-            _stringify_type(self.typ),
-            ", ".join(map(str, self.members)),
-        )
+            return f"tuple[{members}]"
+        return f"<{_stringify_type(self.typ)} containing [{members}]>"
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -592,10 +588,8 @@ class DictIncompleteValue(GenericValue):
         self.items = items
 
     def __str__(self) -> str:
-        return "<%s containing {%s}>" % (
-            _stringify_type(self.typ),
-            ", ".join("%s: %s" % (key, value) for key, value in self.items),
-        )
+        items = ", ".join("%s: %s" % (key, value) for key, value in self.items)
+        return f"<{_stringify_type(self.typ)} containing {{{items}}}>"
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
