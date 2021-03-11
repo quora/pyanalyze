@@ -106,6 +106,7 @@ from pyanalyze.value import (
 
 T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
+AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 
 OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.Add: ("addition", "__add__", "__iadd__", "__radd__"),
@@ -2271,8 +2272,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def visit_Await(self, node: ast.Await) -> Value:
         value = self.visit(node.value)
-        if isinstance(value, GenericValue) and value.typ is Awaitable:
-            return value.args[0]
+        tv_map = AwaitableValue.can_assign(value, self)
+        if tv_map is not None:
+            return tv_map.get(T, UNRESOLVED_VALUE)
         else:
             return self._check_dunder_call(node.value, value, "__await__", [])
 
