@@ -171,24 +171,24 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
                 for key, value in val.__annotations__.items()
             }
         )
-    elif typing_inspect.is_callable_type(val):
-        return TypedValue(Callable)
     elif val is InitVar:
         # On 3.6 and 3.7, InitVar[T] just returns InitVar at runtime, so we can't
         # get the actual type out.
         return UNRESOLVED_VALUE
     elif isinstance(val, InitVar):
         return type_from_runtime(val.type)
+    elif GenericAlias is not None and isinstance(val, GenericAlias):
+        origin = get_origin(val)
+        args = get_args(val)
+        return _value_of_origin_args(origin, args, val, ctx)
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
         if getattr(val, "_special", False):
             args = []  # distinguish List from List[T] on 3.7 and 3.8
         return _value_of_origin_args(origin, args, val, ctx)
-    elif GenericAlias is not None and isinstance(val, GenericAlias):
-        origin = get_origin(val)
-        args = get_args(val)
-        return _value_of_origin_args(origin, args, val, ctx)
+    elif typing_inspect.is_callable_type(val):
+        return TypedValue(Callable)
     elif isinstance(val, type):
         return _maybe_typed_value(val)
     elif val is None:
