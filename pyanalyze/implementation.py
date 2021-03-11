@@ -350,7 +350,7 @@ def _dict_setitem_impl(
     self_value = replace_known_sequence_value(variables["self"])
     key = variables["k"]
     value = variables["v"]
-    # apparently for a[b] = c we get passed the AST for node for a
+    # apparently for a[b] = c we get passed the AST node for a
     varname = visitor.varname_for_constraint(node)
     if isinstance(self_value, TypedDictValue):
         if not isinstance(key, KnownValue) or not isinstance(key.val, str):
@@ -400,6 +400,70 @@ def _dict_setitem_impl(
                 ErrorCode.incompatible_argument,
             )
     return KnownValue(None)
+
+
+def _dict_getitem_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
+    def inner(key: Value) -> Value:
+        self_value = variables["self"]
+        if isinstance(key, KnownValue):
+            try:
+                hash(key.val)
+            except Exception:
+                visitor.show_error(
+                    node,
+                    f"Dictionary key {key} is not hashable",
+                    ErrorCode.unhashable_key,
+                )
+                return UNRESOLVED_VALUE
+        if isinstance(self_value, KnownValue):
+            if isinstance(key, KnownValue):
+                try:
+                    return_value = self_value.val[key.val]
+                except Exception:
+                    # No error here, the key may have been added where we couldn't see it.
+                    return UNRESOLVED_VALUE
+                else:
+                    return KnownValue(return_value)
+            # else just treat it together with DictIncompleteValue
+            self_value = replace_known_sequence_value(self_value)
+        if isinstance(self_value, TypedDictValue):
+            if not TypedValue(str).is_assignable(key, visitor):
+                visitor.show_error(
+                    node,
+                    f"TypedDict key must be str, not {key}",
+                    ErrorCode.invalid_typeddict_key,
+                )
+                return UNRESOLVED_VALUE
+            elif isinstance(key, KnownValue):
+                try:
+                    return self_value.items[key.val]
+                # probably KeyError, but catch anything in case it's an
+                # unhashable str subclass or something
+                except Exception:
+                    # No error here; TypedDicts may have additional keys at runtime.
+                    pass
+            # TODO strictly we should throw an error for any non-Literal or unknown key:
+            # https://www.python.org/dev/peps/pep-0589/#supported-and-unsupported-operations
+            # Don't do that yet because it may cause too much disruption.
+            return UNRESOLVED_VALUE
+        elif isinstance(self_value, DictIncompleteValue):
+            possible_values = [
+                dict_value
+                for dict_key, dict_value in self_value.items
+                if dict_key.is_assignable(key, visitor)
+            ]
+            if not possible_values:
+                # No error here, the key may have been added where we couldn't see it.
+                return UNRESOLVED_VALUE
+            return unite_values(*possible_values)
+        elif isinstance(self_value, TypedValue):
+            return self_value.get_generic_arg_for_type(dict, visitor, 1)
+        else:
+            return UNRESOLVED_VALUE
+
+    return flatten_unions(inner, variables["k"])
 
 
 def _list_add_impl(
@@ -743,6 +807,11 @@ def get_default_argspecs():
             [Parameter("self", typ=TypedValue(dict)), Parameter("k"), Parameter("v")],
             name="dict.__setitem__",
             implementation=_dict_setitem_impl,
+        ),
+        dict.__getitem__: ExtendedArgSpec(
+            [Parameter("self", typ=TypedValue(dict)), Parameter("k")],
+            name="dict.__getitem__",
+            implementation=_dict_getitem_impl,
         ),
         set: ExtendedArgSpec(
             [Parameter("iterable", default_value=_NO_ARG_SENTINEL)],

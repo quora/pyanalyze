@@ -277,7 +277,7 @@ class ArgSpecCache:
             ):
                 module = sys.modules[module_name]
                 *class_names, function_name = qualname.split(".")
-                class_obj = module
+                class_obj: Any = module
                 for class_name in class_names:
                     class_obj = getattr(class_obj, class_name, None)
                     if class_obj is None:

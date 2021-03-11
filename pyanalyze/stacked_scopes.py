@@ -26,7 +26,18 @@ import qcore
 from itertools import chain
 import builtins
 from types import ModuleType
-from typing import Any, Dict, Iterable, List, Sequence, Optional, Set, Tuple, TypeVar
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Sequence,
+    Optional,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 from .safe import safe_equals, safe_issubclass
 from .value import (
@@ -51,7 +62,7 @@ _UNINITIALIZED = qcore.MarkerObject("uninitialized")
 
 # Nodes as used in scopes can be any object, as long as they are hashable.
 Node = object
-NCDN = Dict[str, List[Node]]
+NCDN = Dict[Union[str, "CompositeVariable"], List[Node]]
 
 
 class VisitorState(enum.Enum):

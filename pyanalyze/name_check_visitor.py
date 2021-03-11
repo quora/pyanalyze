@@ -98,7 +98,6 @@ from pyanalyze.value import (
     SequenceIncompleteValue,
     AsyncTaskIncompleteValue,
     GenericValue,
-    TypedDictValue,
     Value,
     TypeVarValue,
     CanAssignContext,
@@ -2929,22 +2928,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 node.value, value, "__setitem__", [index, self.being_assigned]
             )
         elif isinstance(node.ctx, ast.Load):
-            if isinstance(value, TypedDictValue):
-                if not TypedValue(str).is_assignable(index, self):
-                    self._show_error_if_checking(
-                        node.slice.value,
-                        "dict key must be str, not %s" % (index,),
-                        error_code=ErrorCode.invalid_typeddict_key,
-                    )
-                    return UNRESOLVED_VALUE
-                elif isinstance(index, KnownValue):
-                    try:
-                        return value.items[index.val]
-                    # probably KeyError, but catch anything in case it's an
-                    # unhashable str subclass or something
-                    except Exception:
-                        # No error here; TypedDicts may have additional keys at runtime.
-                        pass
             if isinstance(value, SequenceIncompleteValue):
                 if isinstance(index, KnownValue):
                     if isinstance(index.val, int) and -len(
@@ -2954,26 +2937,27 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     # Don't error if it's out of range; the object may be mutated at runtime.
                     # TODO: handle slices; error for things that aren't ints or slices.
 
-            with self.catch_errors() as getitem_errors:
-                return_value = self._check_dunder_call(
-                    node.value, value, "__getitem__", [index], allow_call=True
+            with self.catch_errors():
+                getitem = self._get_dunder(node.value, value, "__getitem__")
+            if getitem is not UNINITIALIZED_VALUE:
+                return_value, _ = self._get_argspec_and_check_call(
+                    node.value, getitem, [value, index], allow_call=True
                 )
-            if getitem_errors:
-                with self.catch_errors() as class_getitem_errors:
-                    cgi = self.get_attribute(node.value, "__class_getitem__", value)
-                    if cgi is UNINITIALIZED_VALUE:
-                        self._show_error_if_checking(
-                            node,
-                            "Object %s does not support subscripting" % (value,),
-                            error_code=ErrorCode.unsupported_operation,
-                        )
-                        cgi = UNRESOLVED_VALUE
+            else:
+                # If there was no __getitem__, try __class_getitem__
+                cgi = self.get_attribute(node.value, "__class_getitem__", value)
+                if cgi is UNINITIALIZED_VALUE:
+                    self._show_error_if_checking(
+                        node,
+                        "Object %s does not support subscripting" % (value,),
+                        error_code=ErrorCode.unsupported_operation,
+                    )
+                    return_value = UNRESOLVED_VALUE
+                else:
                     return_value, _ = self._get_argspec_and_check_call(
                         node.value, cgi, [index], allow_call=True
                     )
-                if class_getitem_errors:
-                    # if __class_getitem__ didn't work either, show __getitem__ errors
-                    self.show_caught_errors(getitem_errors)
+
             if (
                 return_value is UNRESOLVED_VALUE
                 and isinstance(index, KnownValue)
@@ -2995,9 +2979,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
             return UNRESOLVED_VALUE
 
-    def _check_dunder_call(self, node, callee_val, method_name, args, allow_call=False):
+    def _get_dunder(self, node: ast.AST, callee_val: Value, method_name: str) -> Value:
         lookup_val = callee_val.get_type_value()
-
         method_object = self.get_attribute(node, method_name, lookup_val)
         if method_object is UNINITIALIZED_VALUE:
             self.show_error(
@@ -3005,7 +2988,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 "Object of type %s does not support %r" % (callee_val, method_name),
                 error_code=ErrorCode.unsupported_operation,
             )
-            method_object = UNRESOLVED_VALUE
+        return method_object
+
+    def _check_dunder_call(self, node, callee_val, method_name, args, allow_call=False):
+        method_object = self._get_dunder(node, callee_val, method_name)
+        if method_object is UNINITIALIZED_VALUE:
+            return UNRESOLVED_VALUE
         return_value, _ = self._get_argspec_and_check_call(
             node, method_object, [callee_val] + args, allow_call=allow_call
         )
@@ -3063,7 +3051,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self.show_error(node, "Unknown context", ErrorCode.unexpected_node)
             return UNRESOLVED_VALUE
 
-    def get_attribute(self, node: ast.Attribute, attr: str, root_value: Value) -> Value:
+    def get_attribute(self, node: ast.AST, attr: str, root_value: Value) -> Value:
         """Get an attribute of this value.
 
         Returns UninitializedValue if the attribute cannot be found.
