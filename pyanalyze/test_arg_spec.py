@@ -1,6 +1,6 @@
 # static analysis: ignore
 from asynq import asynq
-from qcore.asserts import assert_eq
+from qcore.asserts import assert_eq, assert_is
 from qcore.testing import Anything
 import collections.abc
 from collections.abc import (
@@ -12,6 +12,7 @@ from collections.abc import (
 )
 import contextlib
 import io
+import itertools
 import time
 import typing
 from typing import Generic, TypeVar
@@ -296,6 +297,8 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         assert_eq(
             [GenericValue(Collection, (TypeVarValue(Anything),))], tsf.get_bases(Set)
         )
+        # make sure this doesn't crash (it's defined as a function in typeshed)
+        assert_is(None, tsf.get_bases(itertools.zip_longest))
 
 
 class Parent(Generic[T]):

@@ -639,9 +639,16 @@ class TypeshedFinder(object):
                 else:
                     return [val]
             elif isinstance(
-                info.ast, (typeshed_client.OverloadedName, typeshed_client.ImportedName)
+                info.ast,
+                (
+                    # overloads are not supported yet
+                    typeshed_client.OverloadedName,
+                    typeshed_client.ImportedName,
+                    # typeshed pretends the class is a function
+                    ast3.FunctionDef,
+                ),
             ):
-                return None  # overloads are not supported yet
+                return None
             else:
                 raise NotImplementedError(ast3.dump(info.ast))
         return None
