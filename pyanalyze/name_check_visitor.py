@@ -39,6 +39,7 @@ from typing import (
     Set,
     Tuple,
     Sequence,
+    TypeVar,
 )
 
 import asynq
@@ -99,8 +100,12 @@ from pyanalyze.value import (
     GenericValue,
     TypedDictValue,
     Value,
+    TypeVarValue,
     CanAssignContext,
 )
+
+T = TypeVar("T")
+IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.Add: ("addition", "__add__", "__iadd__", "__radd__"),
@@ -2537,7 +2542,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self._generic_visit_list(orelse)
         self.scopes.combine_subscopes([body_scope, else_scope])
 
-    def _member_value_of_iterator(self, node, is_async=False):
+    def _member_value_of_iterator(
+        self, node: ast.AST, is_async: bool = False
+    ) -> Tuple[Value, Optional[int]]:
         """Analyze an iterator AST node.
 
         Returns a tuple of two values:
@@ -2550,11 +2557,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return self._member_value_of_async_iterator_val(iterated, node)
         return self._member_value_of_iterator_val(iterated, node)
 
-    def _member_value_of_async_iterator_val(self, iterated, node):
+    def _member_value_of_async_iterator_val(
+        self, iterated: Value, node: ast.AST
+    ) -> Tuple[Value, None]:
         iterator = self._check_dunder_call(node, iterated, "__aiter__", [])
         return self._check_dunder_call(node, iterator, "__anext__", []), None
 
-    def _member_value_of_iterator_val(self, iterated, node):
+    def _member_value_of_iterator_val(
+        self, iterated: Value, node: ast.AST
+    ) -> Tuple[Value, Optional[int]]:
         if isinstance(iterated, KnownValue):
             if iterated.val is not None and not is_iterable(iterated.val):
                 self._show_error_if_checking(
@@ -2584,17 +2595,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 unite_values(*[key for key, _ in iterated.items]),
                 len(iterated.items),
             )
-        elif isinstance(iterated, TypedValue):
-            if not iterated.is_type(
-                collections.abc.Iterable
-            ) and not self._should_ignore_type(iterated.typ):
-                self._show_error_if_checking(
-                    node,
-                    "Object of type %r is not iterable" % (iterated.typ,),
-                    ErrorCode.unsupported_operation,
-                )
-            if isinstance(iterated, GenericValue):
-                return iterated.get_arg(0), None
         elif isinstance(iterated, MultiValuedValue):
             vals, nums = zip(
                 *[
@@ -2604,6 +2604,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
             num = nums[0] if len(set(nums)) == 1 else None
             return unite_values(*vals), num
+        else:
+            tv_map = IterableValue.can_assign(iterated, self)
+            if tv_map is None:
+                if not self._should_ignore_type(iterated.typ):
+                    self._show_error_if_checking(
+                        node,
+                        "Object of type %r is not iterable" % (iterated.typ,),
+                        ErrorCode.unsupported_operation,
+                    )
+                return UNRESOLVED_VALUE, None
+            return tv_map.get(T, UNRESOLVED_VALUE), None
         return UNRESOLVED_VALUE, None
 
     def visit_try_except(self, node: ast.Try) -> None:
