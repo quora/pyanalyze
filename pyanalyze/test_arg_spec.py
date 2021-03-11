@@ -32,7 +32,14 @@ from .arg_spec import (
     is_dot_asynq_function,
 )
 from .tests import l0cached_async_fn
-from .value import KnownValue, TypedValue, GenericValue, TypeVarValue, UNRESOLVED_VALUE
+from .value import (
+    KnownValue,
+    TypedValue,
+    GenericValue,
+    TypeVarValue,
+    UNRESOLVED_VALUE,
+    SequenceIncompleteValue,
+)
 
 T = TypeVar("T")
 
@@ -300,6 +307,16 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         # make sure this doesn't crash (it's defined as a function in typeshed)
         assert_is(None, tsf.get_bases(itertools.zip_longest))
 
+    @assert_passes()
+    def test_generic_self(self):
+        from typing import Dict
+
+        def capybara(x: Dict[int, str]):
+            assert_is_value(
+                {k: v for k, v in x.items()},
+                GenericValue(dict, [TypedValue(int), TypedValue(str)]),
+            )
+
 
 class Parent(Generic[T]):
     pass
@@ -367,6 +384,7 @@ class TestGetGenericBases:
     def test_collections(self):
         int_tv = TypedValue(int)
         str_tv = TypedValue(str)
+        int_str_tuple = SequenceIncompleteValue(tuple, [int_tv, str_tv])
         assert_eq(
             {
                 collections.abc.ValuesView: [int_tv],
@@ -376,6 +394,19 @@ class TestGetGenericBases:
             },
             self.get_generic_bases(collections.abc.ValuesView, [int_tv]),
         )
+        assert_eq(
+            {
+                collections.abc.ItemsView: [int_tv, str_tv],
+                collections.abc.MappingView: [],
+                collections.abc.Sized: [],
+                collections.abc.Set: [int_str_tuple],
+                collections.abc.Collection: [int_str_tuple],
+                collections.abc.Iterable: [int_str_tuple],
+                collections.abc.Container: [int_str_tuple],
+            },
+            self.get_generic_bases(collections.abc.ItemsView, [int_tv, str_tv]),
+        )
+
         assert_eq(
             {
                 collections.deque: [int_tv],
