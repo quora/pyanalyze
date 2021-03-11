@@ -64,6 +64,32 @@ ImplementationFn = Callable[
 NON_IDENTIFIER_CHARS = re.compile(r"[^a-zA-Z_\d]")
 
 
+def clean_up_implementation_fn_return(
+    return_value: ImplementationFnReturn,
+) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+    if return_value is None:
+        return_value = UNRESOLVED_VALUE
+    # Implementation functions may return a pair of (value, constraint)
+    # or a three-tuple of (value, constraint, NoReturn unless)
+    if isinstance(return_value, tuple):
+        if len(return_value) == 2:
+            return_value, constraint = return_value
+            no_return_unless = NULL_CONSTRAINT
+        elif len(return_value) == 3:
+            return_value, constraint, no_return_unless = return_value
+        else:
+            assert (
+                False
+            ), f"implementation must return a 2- or 3-tuple, not {return_value}"
+    else:
+        constraint = no_return_unless = NULL_CONSTRAINT
+    # this indicates a bug in test_scope, so using assert
+    assert isinstance(
+        return_value, Value
+    ), f"implementation did not return a Value: {return_value}"
+    return return_value, constraint, no_return_unless
+
+
 @dataclass
 class Parameter:
     """Class representing a function parameter.
@@ -353,30 +379,7 @@ def %(name)s(%(arguments)s):
 
         if self.implementation is not None:
             return_value = self.implementation(variables, visitor, node)
-            if return_value is None:
-                return_value = UNRESOLVED_VALUE
-            # Implementation functions may return a pair of (value, constraint)
-            # or a three-tuple of (value, constraint, NoReturn unless)
-            if isinstance(return_value, tuple):
-                if len(return_value) == 2:
-                    return_value, constraint = return_value
-                    no_return_unless = NULL_CONSTRAINT
-                elif len(return_value) == 3:
-                    return_value, constraint, no_return_unless = return_value
-                else:
-                    assert (
-                        False
-                    ), "%s implementation must return a 2- or 3-tuple, not %s" % (
-                        self,
-                        return_value,
-                    )
-            else:
-                constraint = no_return_unless = NULL_CONSTRAINT
-            # this indicates a bug in test_scope, so using assert
-            assert isinstance(return_value, Value), (
-                "%s implementation did not return a Value" % self
-            )
-            return return_value, constraint, no_return_unless
+            return clean_up_implementation_fn_return(return_value)
         else:
             return return_value, NULL_CONSTRAINT, NULL_CONSTRAINT
 

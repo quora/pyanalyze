@@ -3,27 +3,43 @@ from .error_code import ErrorCode
 from .find_unused import used
 from .format_strings import parse_format_string
 from .safe import safe_hasattr
-from .stacked_scopes import NULL_CONSTRAINT, Constraint, ConstraintType, OrConstraint
-from .signature import ExtendedArgSpec, Parameter, ImplementationFnReturn, VarsDict
+from .stacked_scopes import (
+    NULL_CONSTRAINT,
+    AbstractConstraint,
+    Constraint,
+    ConstraintType,
+    OrConstraint,
+)
+from .signature import (
+    ExtendedArgSpec,
+    Parameter,
+    ImplementationFnReturn,
+    VarsDict,
+    clean_up_implementation_fn_return,
+)
 from .value import (
     TypedValue,
     SubclassValue,
     GenericValue,
     DictIncompleteValue,
     SequenceIncompleteValue,
+    TypedDictValue,
     KnownValue,
     MultiValuedValue,
     UNRESOLVED_VALUE,
     Value,
+    unite_values,
+    flatten_values,
 )
 
 import ast
 from functools import reduce
 import collections.abc
+from itertools import product
 import qcore
 import inspect
 import warnings
-from typing import cast, NewType, TYPE_CHECKING
+from typing import cast, NewType, TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -52,6 +68,44 @@ def dump_value(value: object) -> None:
 
     """
     pass
+
+
+def _maybe_or_constraint(
+    left: AbstractConstraint, right: AbstractConstraint
+) -> AbstractConstraint:
+    if left is NULL_CONSTRAINT or right is NULL_CONSTRAINT:
+        return NULL_CONSTRAINT
+    return OrConstraint(left, right)
+
+
+def flatten_unions(
+    callable: Callable[..., ImplementationFnReturn], *values: Value
+) -> ImplementationFnReturn:
+    value_lists = [flatten_values(val) for val in values]
+    return_values, constraints, no_return_unless = zip(
+        *[
+            clean_up_implementation_fn_return(callable(*vals))
+            for vals in product(*value_lists)
+        ]
+    )
+    return (
+        unite_values(*return_values),
+        reduce(_maybe_or_constraint, constraints),
+        reduce(_maybe_or_constraint, no_return_unless),
+    )
+
+
+def replace_known_sequence_value(value: Value) -> Value:
+    if isinstance(value, KnownValue):
+        if isinstance(value.val, (list, tuple, set)):
+            return SequenceIncompleteValue(
+                type(value.val), [KnownValue(elt) for elt in value.val]
+            )
+        elif isinstance(value.val, dict):
+            return DictIncompleteValue(
+                [(KnownValue(k), KnownValue(v)) for k, v in value.val.items()]
+            )
+    return value
 
 
 # Implementations of some important functions for use in their ExtendedArgSpecs (see above). These
@@ -263,6 +317,184 @@ def _sequence_impl(
         if isinstance(iterable, GenericValue):
             return GenericValue(typ, [iterable.get_arg(0)])
     return TypedValue(typ)
+
+
+def _list_append_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
+) -> ImplementationFnReturn:
+    lst = replace_known_sequence_value(variables["self"])
+    element = variables["object"]
+    varname = visitor.varname_for_self_constraint(node)
+    if isinstance(lst, SequenceIncompleteValue):
+        no_return_unless = Constraint(
+            varname,
+            ConstraintType.is_value_object,
+            True,
+            SequenceIncompleteValue(list, (*lst.members, element)),
+        )
+        return KnownValue(None), NULL_CONSTRAINT, no_return_unless
+    elif isinstance(lst, GenericValue):
+        expected_type = lst.get_generic_arg_for_type(list, visitor, 0)
+        if not expected_type.is_assignable(element, visitor):
+            visitor.show_error(
+                node,
+                f"Cannot append value of type {element} to list of {expected_type}",
+                ErrorCode.incompatible_argument,
+            )
+    return KnownValue(None)
+
+
+def _dict_setitem_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
+    self_value = replace_known_sequence_value(variables["self"])
+    key = variables["k"]
+    value = variables["v"]
+    # apparently for a[b] = c we get passed the AST for node for a
+    varname = visitor.varname_for_constraint(node)
+    if isinstance(self_value, TypedDictValue):
+        if not isinstance(key, KnownValue) or not isinstance(key.val, str):
+            visitor.show_error(
+                node,
+                f"TypedDict key must be a string literal (got {key})",
+                ErrorCode.invalid_typeddict_key,
+            )
+        elif key.val not in self_value.items:
+            visitor.show_error(
+                node,
+                f"Key {key.val!r} does not exist in {self_value}",
+                ErrorCode.invalid_typeddict_key,
+            )
+        else:
+            expected_type = self_value.items[key.val]
+            if not expected_type.is_assignable(value, visitor):
+                visitor.show_error(
+                    node,
+                    f"Value for key {key.val!r} must be {expected_type}, not {value}",
+                    ErrorCode.incompatible_argument,
+                )
+        return KnownValue(None)
+    elif isinstance(self_value, DictIncompleteValue):
+        no_return_unless = Constraint(
+            varname,
+            ConstraintType.is_value_object,
+            True,
+            # This might create a duplicate but searching for that would
+            # be O(n^2) and doesn't seem too useful.
+            DictIncompleteValue([*self_value.items, (key, value)]),
+        )
+        return KnownValue(None), NULL_CONSTRAINT, no_return_unless
+    elif isinstance(self_value, TypedValue):
+        key_type = self_value.get_generic_arg_for_type(dict, visitor, 0)
+        if not key_type.is_assignable(key, visitor):
+            visitor.show_error(
+                node,
+                f"Cannot set key of type {key} (expecting {key_type})",
+                ErrorCode.incompatible_argument,
+            )
+        value_type = self_value.get_generic_arg_for_type(dict, visitor, 1)
+        if not value_type.is_assignable(value, visitor):
+            visitor.show_error(
+                node,
+                f"Cannot set value of type {value} (expecting {value_type})",
+                ErrorCode.incompatible_argument,
+            )
+    return KnownValue(None)
+
+
+def _list_add_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
+) -> ImplementationFnReturn:
+    def inner(left: Value, right: Value) -> ImplementationFnReturn:
+        left = replace_known_sequence_value(left)
+        right = replace_known_sequence_value(right)
+        if isinstance(left, SequenceIncompleteValue) and isinstance(
+            right, SequenceIncompleteValue
+        ):
+            return SequenceIncompleteValue(list, [*left.members, *right.members])
+        elif isinstance(left, TypedValue) and isinstance(right, TypedValue):
+            left_args = left.get_generic_args_for_type(list, visitor)
+            left_arg = left_args[0] if left_args else UNRESOLVED_VALUE
+            right_args = right.get_generic_args_for_type(list, visitor)
+            right_arg = right_args[0] if right_args else UNRESOLVED_VALUE
+            return GenericValue(list, [unite_values(left_arg, right_arg)])
+        else:
+            return TypedValue(list)
+
+    return flatten_unions(inner, variables["self"], variables["x"])
+
+
+def _list_extend_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
+) -> ImplementationFnReturn:
+    varname = visitor.varname_for_self_constraint(node)
+
+    def inner(lst: Value, iterable: Value) -> ImplementationFnReturn:
+        lst = replace_known_sequence_value(lst)
+        iterable = replace_known_sequence_value(iterable)
+        if isinstance(lst, SequenceIncompleteValue):
+            if isinstance(iterable, SequenceIncompleteValue) and issubclass(
+                iterable.typ, (list, tuple)
+            ):
+                constrained_value = SequenceIncompleteValue(
+                    list, (*lst.members, *iterable.members)
+                )
+            else:
+                if isinstance(iterable, TypedValue):
+                    arg_type = iterable.get_generic_arg_for_type(
+                        collections.abc.Iterable, visitor, 0
+                    )
+                else:
+                    arg_type = UNRESOLVED_VALUE
+                constrained_value = GenericValue(
+                    list, [unite_values(*lst.members, arg_type)]
+                )
+            no_return_unless = Constraint(
+                varname, ConstraintType.is_value_object, True, constrained_value
+            )
+            return KnownValue(None), NULL_CONSTRAINT, no_return_unless
+        elif isinstance(lst, GenericValue):
+            expected_type = lst.get_generic_arg_for_type(list, visitor, 0)
+            if isinstance(iterable, TypedValue):
+                actual_type = iterable.get_generic_arg_for_type(
+                    collections.abc.Iterable, visitor, 0
+                )
+                if not expected_type.is_assignable(actual_type, visitor):
+                    visitor.show_error(
+                        node,
+                        f"Cannot extend list of {expected_type} with values of type {actual_type}",
+                        ErrorCode.incompatible_argument,
+                    )
+        return KnownValue(None)
+
+    return flatten_unions(inner, variables["self"], variables["iterable"])
+
+
+def _set_add_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
+) -> ImplementationFnReturn:
+    set_value = replace_known_sequence_value(variables["self"])
+    element = variables["object"]
+    varname = visitor.varname_for_self_constraint(node)
+    if isinstance(set_value, SequenceIncompleteValue):
+        no_return_unless = Constraint(
+            varname,
+            ConstraintType.is_value_object,
+            True,
+            SequenceIncompleteValue(set, (*set_value.members, element)),
+        )
+        return KnownValue(None), NULL_CONSTRAINT, no_return_unless
+    elif isinstance(set_value, GenericValue):
+        set_args = set_value.get_generic_args_for_type(set, visitor)
+        if set_args:
+            expected_type = set_args[0]
+            if not expected_type.is_assignable(element, visitor):
+                visitor.show_error(
+                    node,
+                    f"Cannot add value of type {element} to set of {expected_type}",
+                    ErrorCode.incompatible_argument,
+                )
+    return KnownValue(None)
 
 
 def _assert_is_value_impl(
@@ -480,6 +712,37 @@ def get_default_argspecs():
             [Parameter("iterable", default_value=_NO_ARG_SENTINEL)],
             name="list",
             implementation=_list_impl,
+        ),
+        list.append: ExtendedArgSpec(
+            [Parameter("self", typ=TypedValue(list)), Parameter("object")],
+            name="list.append",
+            implementation=_list_append_impl,
+        ),
+        list.__add__: ExtendedArgSpec(
+            [
+                Parameter("self", typ=TypedValue(list)),
+                Parameter("x", typ=TypedValue(list)),
+            ],
+            name="list.__add__",
+            implementation=_list_add_impl,
+        ),
+        list.extend: ExtendedArgSpec(
+            [
+                Parameter("self", typ=TypedValue(list)),
+                Parameter("iterable", typ=TypedValue(collections.abc.Iterable)),
+            ],
+            name="list.extend",
+            implementation=_list_extend_impl,
+        ),
+        set.add: ExtendedArgSpec(
+            [Parameter("self", typ=TypedValue(set)), Parameter("object")],
+            name="set.add",
+            implementation=_set_add_impl,
+        ),
+        dict.__setitem__: ExtendedArgSpec(
+            [Parameter("self", typ=TypedValue(dict)), Parameter("k"), Parameter("v")],
+            name="dict.__setitem__",
+            implementation=_dict_setitem_impl,
         ),
         set: ExtendedArgSpec(
             [Parameter("iterable", default_value=_NO_ARG_SENTINEL)],

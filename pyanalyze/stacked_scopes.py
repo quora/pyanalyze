@@ -89,6 +89,9 @@ class ConstraintType(enum.Enum):
     one_of = 4
     # all of several other constraints on varname are true
     all_of = 5
+    # constraint.varname should be typed as a Value object. Naming of this
+    # and is_value is confusing, and ideally we'd come up with better names.
+    is_value_object = 6
 
 
 class AbstractConstraint:
@@ -133,7 +136,7 @@ class Constraint(AbstractConstraint):
       for an is_truthy constraint, "if x" would lead to a positive and "if not x"
       to a negative constraint)
     - value: type for an is_instance constraint; value identical to the variable
-      for is_value; unused for is_truthy.
+      for is_value; unused for is_truthy; Value object for is_value_object.
 
     For example:
 
@@ -227,6 +230,13 @@ class Constraint(AbstractConstraint):
                         yield known_val
             else:
                 if not (isinstance(value, KnownValue) and value.val is self.value):
+                    yield value
+
+        elif self.constraint_type == ConstraintType.is_value_object:
+            if self.positive:
+                yield self.value
+            else:
+                if value != self.value:
                     yield value
 
         elif self.constraint_type == ConstraintType.is_truthy:
