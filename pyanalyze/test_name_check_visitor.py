@@ -1281,6 +1281,21 @@ class TestIterationTarget(TestNameCheckVisitorBase):
                 )
 
     @assert_passes()
+    def test_generic_iterable(self):
+        from typing import Iterable, TypeVar, Tuple
+
+        T = TypeVar("T")
+        U = TypeVar("U")
+
+        class ItemsView(Iterable[Tuple[T, U]]):
+            pass
+
+        def capybara(it: ItemsView[int, str]):
+            for k, v in it:
+                assert_is_value(k, TypedValue(int))
+                assert_is_value(v, TypedValue(str))
+
+    @assert_passes()
     def test_incomplete(self):
         def capybara(x):
             lst = [1, 2, int(x)]
