@@ -1693,6 +1693,19 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
             await None
 
     @assert_passes()
+    def test_exotic_awaitable(self):
+        from typing import TypeVar, Awaitable, Iterable
+
+        T = TypeVar("T")
+        U = TypeVar("U")
+
+        class Aww(Iterable[T], Awaitable[U]):
+            pass
+
+        async def capybara(aw: Aww[int, str]) -> None:
+            assert_is_value(await aw, TypedValue(str))
+
+    @assert_passes()
     def test_async_comprehension(self):
         class ANext:
             def __anext__(self) -> int:
