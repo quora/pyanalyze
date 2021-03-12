@@ -2963,6 +2963,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     f"Object {value} does not support subscripting",
                     error_code=ErrorCode.unsupported_operation,
                 )
+                return_value = UNRESOLVED_VALUE
 
             if (
                 return_value is UNRESOLVED_VALUE
