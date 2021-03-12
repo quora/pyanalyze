@@ -9,15 +9,19 @@ from .stacked_scopes import NULL_CONSTRAINT, AbstractConstraint
 from .value import (
     TypedValue,
     KnownValue,
+    SequenceIncompleteValue,
+    DictIncompleteValue,
     UNRESOLVED_VALUE,
     Value,
     TypeVarMap,
     extract_typevars,
+    stringify_object,
 )
 
 import ast
 import builtins
 from dataclasses import dataclass, field, InitVar
+import inspect
 import qcore
 import logging
 import re
@@ -36,6 +40,7 @@ from typing import (
     Tuple,
     TYPE_CHECKING,
 )
+from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -62,8 +67,16 @@ VarsDict = Dict[str, Any]
 ImplementationFn = Callable[
     [VarsDict, "NameCheckVisitor", ast.AST], ImplementationFnReturn
 ]
-
+Logger = Callable[[int, str, object], object]
+EMPTY = inspect.Parameter.empty
 NON_IDENTIFIER_CHARS = re.compile(r"[^a-zA-Z_\d]")
+
+ARGS = qcore.MarkerObject("*args")
+KWARGS = qcore.MarkerObject("**kwargs")
+# Representation of a single argument to a call. Second member is
+# None for positional args, str for keyword args, ARGS for *args, KWARGS
+# for **kwargs.
+Argument = Tuple[Value, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 
 def clean_up_implementation_fn_return(
@@ -90,6 +103,217 @@ def clean_up_implementation_fn_return(
         return_value, Value
     ), f"implementation did not return a Value: {return_value}"
     return return_value, constraint, no_return_unless
+
+
+class SigParameter(inspect.Parameter):
+    """Wrapper around inspect.Parameter that stores annotations as Value objects."""
+
+    def __init__(
+        self,
+        name: str,
+        kind: inspect._ParameterKind = inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        *,
+        default: Optional[Value] = None,
+        annotation: Optional[Value] = None,
+    ):
+        if default is None:
+            default = EMPTY
+        if annotation is None:
+            annotation = EMPTY
+        super().__init__(name, kind, default=default, annotation=annotation)
+
+
+@dataclass
+class Signature:
+    _return_key: ClassVar[str] = "%return"
+
+    signature: inspect.Signature
+    implementation: Optional[ImplementationFn] = None
+    callable: Optional[object] = None
+    logger: Optional[Logger] = field(repr=False, default=None, compare=False)
+    typevars_of_params: Dict[str, List["TypeVar"]] = field(
+        init=False, default_factory=dict, repr=False, compare=False
+    )
+    all_typevars: Set["TypeVar"] = field(
+        init=False, default_factory=set, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        for param_name, param in self.signature.parameters.items():
+            if param.annotation is EMPTY:
+                continue
+            typevars = list(extract_typevars(param.annotation))
+            if typevars:
+                self.typevars_of_params[param_name] = typevars
+        if self.signature.return_annotation is not EMPTY:
+            return_typevars = list(extract_typevars(self.signature.return_annotation))
+            if return_typevars:
+                self.typevars_of_params[self._return_key] = return_typevars
+        self.all_typevars = {
+            typevar
+            for tv_list in self.typevars_of_params.values()
+            for typevar in tv_list
+        }
+
+    def log(self, level: int, label: str, value: object) -> None:
+        if self.logger is not None:
+            self.logger(level, label, value)
+
+    def _check_param_type_compatibility(
+        self,
+        param: SigParameter,
+        var_value: Value,
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+        typevar_map: TypeVarMap,
+    ) -> None:
+        if param.annotation is not EMPTY and var_value is not param.default:
+            if typevar_map:
+                param_typ = param.annotation.substitute_typevars(typevar_map)
+            else:
+                param_typ = param.annotation
+            compatible = param_typ.can_assign(var_value, visitor)
+            if compatible is None:
+                visitor.show_error(
+                    node,
+                    "Incompatible argument type for %s: expected %s but got %s"
+                    % (param.name, param_typ, var_value),
+                    ErrorCode.incompatible_argument,
+                )
+
+    def _translate_bound_arg(self, argument: Any) -> Value:
+        if argument is EMPTY:
+            return UNRESOLVED_VALUE
+        elif isinstance(argument, tuple):
+            return SequenceIncompleteValue(tuple, argument)
+        elif isinstance(argument, dict):
+            return DictIncompleteValue(
+                [(KnownValue(key), value) for key, value in argument.items()]
+            )
+        else:
+            return argument
+
+    def check_call(
+        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+        """Tries to call this object with the given arguments and keyword arguments.
+
+        Raises a TypeError if something goes wrong.
+
+        This is done by calling the function generated by generate_function(), and then examining
+        the local variables to validate types and keyword-only arguments.
+
+        """
+        call_args = []
+        call_kwargs = {}
+        for arg, label in args:
+            if label is None:
+                call_args.append(arg)
+            elif isinstance(label, str):
+                call_kwargs[label] = arg
+            elif label is ARGS or label is KWARGS:
+                # TODO handle these:
+                # - type check that they are iterables/mappings
+                # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
+                # - else do something smart to still typecheck the call
+                self.log(logging.DEBUG, "Ignoring call with *args/**kwargs", arg)
+                return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+        try:
+            bound_args = self.signature.bind(*call_args, **call_kwargs)
+        except TypeError as e:
+            if self.callable is not None:
+                message = f"In call to {stringify_object(self.callable)}: {e}"
+            else:
+                message = str(e)
+            visitor.show_error(node, message, ErrorCode.incompatible_call)
+            return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+        bound_args.apply_defaults()
+        variables = {
+            name: self._translate_bound_arg(value)
+            for name, value in bound_args.arguments.items()
+        }
+        return_value = self.signature.return_annotation
+        typevar_values: Dict[TypeVar, Value] = {}
+        if self.all_typevars:
+            for param_name in self.typevars_of_params:
+                if param_name == self._return_key:
+                    continue
+                var_value = variables[param_name]
+                param = self.signature.parameters[param_name]
+                if param.annotation is EMPTY:
+                    continue
+                tv_map = param.annotation.can_assign(var_value, visitor)
+                if tv_map:
+                    # For now, the first assignment wins.
+                    for typevar, value in tv_map.items():
+                        typevar_values.setdefault(typevar, value)
+            for typevar in self.all_typevars:
+                typevar_values.setdefault(typevar, UNRESOLVED_VALUE)
+            if self._return_key in self.typevars_of_params:
+                return_value = return_value.substitute_typevars(typevar_values)
+
+        for name, var_value in variables.items():
+            param = self.signature.parameters[name]
+            self._check_param_type_compatibility(
+                param, var_value, visitor, node, typevar_values
+            )
+
+        if self.implementation is not None:
+            return_value = self.implementation(variables, visitor, node)
+            return clean_up_implementation_fn_return(return_value)
+        else:
+            return return_value, NULL_CONSTRAINT, NULL_CONSTRAINT
+
+    @classmethod
+    def make(
+        cls,
+        parameters: Iterable[SigParameter],
+        return_annotation: Optional[Value] = None,
+        implementation: Optional[ImplementationFn] = None,
+        callable: Optional[object] = None,
+    ) -> "Signature":
+        # We can't annotate it as EMPTY because that breaks typechecking
+        # pyanalyze itself.
+        if return_annotation is None:
+            return_annotation = EMPTY
+        return cls(
+            signature=inspect.Signature(
+                parameters, return_annotation=return_annotation
+            ),
+            implementation=implementation,
+            callable=callable,
+        )
+
+    # TODO: do we need these?
+    def has_return_value(self) -> bool:
+        return self.signature.return_annotation is not EMPTY
+
+    @property
+    def return_value(self):
+        return self.signature.return_annotation
+
+
+@dataclass
+class BoundMethodSignature:
+    signature: Signature
+    self_value: Value
+
+    def check_call(
+        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+        return self.signature.check_call(
+            [(self.self_value, None), *args], visitor, node
+        )
+
+    def has_return_value(self) -> bool:
+        return self.signature.has_return_value()
+
+    @property
+    def return_value(self) -> Value:
+        return self.signature.return_value
+
+
+MaybeSignature = Union[None, Signature, BoundMethodSignature]
 
 
 @dataclass
@@ -169,9 +393,6 @@ class PropertyArgSpec:
 
     def has_return_value(self) -> bool:
         return self.return_value is not UNRESOLVED_VALUE
-
-
-Logger = Callable[[int, str, object], object]
 
 
 @dataclass
@@ -392,3 +613,14 @@ def %(name)s(%(arguments)s):
 
 
 MaybeArgspec = Union[None, ExtendedArgSpec, PropertyArgSpec, BoundMethodArgSpecWrapper]
+
+
+def make_bound_method(
+    argspec: Union[MaybeArgspec, MaybeSignature], self_value: Value
+) -> Union[None, BoundMethodSignature, BoundMethodArgSpecWrapper]:
+    if argspec is None:
+        return None
+    if isinstance(argspec, Signature):
+        return BoundMethodSignature(argspec, self_value)
+    else:
+        return BoundMethodArgSpecWrapper(argspec, self_value)

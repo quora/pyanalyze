@@ -346,7 +346,7 @@ class TypedValue(Value):
         return KnownValue(self.typ)
 
     def __str__(self) -> str:
-        return _stringify_type(self.typ)
+        return stringify_object(self.typ)
 
 
 @dataclass(unsafe_hash=True, init=False)
@@ -373,7 +373,7 @@ class NewTypeValue(TypedValue):
         return super().can_assign(other, ctx)
 
     def __str__(self) -> str:
-        return "NewType(%r, %s)" % (self.name, _stringify_type(self.typ))
+        return "NewType(%r, %s)" % (self.name, stringify_object(self.typ))
 
 
 @dataclass(unsafe_hash=True, init=False)
@@ -396,7 +396,7 @@ class GenericValue(TypedValue):
         else:
             args = self.args
         args_str = ", ".join(str(arg) for arg in args)
-        return f"{_stringify_type(self.typ)}[{args_str}]"
+        return f"{stringify_object(self.typ)}[{args_str}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, TypedValue) and isinstance(other.typ, type):
@@ -470,7 +470,7 @@ class SequenceIncompleteValue(GenericValue):
         members = ", ".join(str(m) for m in self.members)
         if self.typ is tuple:
             return f"tuple[{members}]"
-        return f"<{_stringify_type(self.typ)} containing [{members}]>"
+        return f"<{stringify_object(self.typ)} containing [{members}]>"
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -500,7 +500,7 @@ class DictIncompleteValue(GenericValue):
 
     def __str__(self) -> str:
         items = ", ".join("%s: %s" % (key, value) for key, value in self.items)
-        return f"<{_stringify_type(self.typ)} containing {{{items}}}>"
+        return f"<{stringify_object(self.typ)} containing {{{items}}}>"
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -642,7 +642,7 @@ class SubclassValue(Value):
         return KnownValue(type(self.typ))
 
     def __str__(self) -> str:
-        return "Type[%s]" % (_stringify_type(self.typ),)
+        return "Type[%s]" % (stringify_object(self.typ),)
 
 
 @dataclass(frozen=True, order=False)
@@ -867,13 +867,17 @@ def substitute_typevars(values: Iterable[Value], tv_map: TypeVarMap):
     return [value.substitute_typevars(tv_map) for value in values]
 
 
-def _stringify_type(typ: type) -> str:
+def stringify_object(obj: Any) -> str:
+    """Stringify arbitrary Python objects such as methods and types."""
     try:
-        if typ.__module__ == BUILTIN_MODULE:
-            return typ.__name__
-        elif hasattr(typ, "__qualname__"):
-            return "%s.%s" % (typ.__module__, typ.__qualname__)
+        objclass = getattr(obj, "__objclass__", None)
+        if objclass is not None:
+            return f"{stringify_object(objclass)}.{obj.__name__}"
+        if obj.__module__ == BUILTIN_MODULE:
+            return obj.__name__
+        elif hasattr(obj, "__qualname__"):
+            return f"{obj.__module__}.{obj.__qualname__}"
         else:
-            return "%s.%s" % (typ.__module__, typ.__name__)
+            return f"{obj.__module__}.{obj.__name__}"
     except Exception:
-        return repr(typ)
+        return repr(obj)

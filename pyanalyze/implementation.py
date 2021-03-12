@@ -13,6 +13,8 @@ from .stacked_scopes import (
 from .signature import (
     ExtendedArgSpec,
     Parameter,
+    SigParameter,
+    Signature,
     ImplementationFnReturn,
     VarsDict,
     clean_up_implementation_fn_return,
@@ -720,15 +722,25 @@ _ENCODING_PARAMETER = Parameter("encoding", typ=TypedValue(str), default_value="
 
 
 def get_default_argspecs():
-    return {
-        assert_is_value: ExtendedArgSpec(
-            [Parameter("obj"), Parameter("value", typ=TypedValue(Value))],
+    signatures = [
+        Signature.make(
+            [SigParameter("self", SigParameter.POSITIONAL_ONLY)],
+            callable=type.__subclasses__,
+            implementation=_subclasses_impl,
+        ),
+        Signature.make(
+            [SigParameter("obj"), SigParameter("value", annotation=TypedValue(Value))],
             implementation=_assert_is_value_impl,
-            name="assert_is_value",
+            callable=assert_is_value,
         ),
-        dump_value: ExtendedArgSpec(
-            [Parameter("value")], implementation=_dump_value_impl, name="dump_value"
+        Signature.make(
+            [SigParameter("value")],
+            implementation=_dump_value_impl,
+            callable=dump_value,
         ),
+    ]
+    return {
+        **{sig.callable: sig for sig in signatures},
         # builtins
         isinstance: ExtendedArgSpec(
             [Parameter("obj"), Parameter("class_or_tuple")],
@@ -891,10 +903,5 @@ def get_default_argspecs():
         NewType: ExtendedArgSpec(
             [Parameter("name", typ=TypedValue(str)), Parameter(name="tp")],
             name="NewType",
-        ),
-        type.__subclasses__: ExtendedArgSpec(
-            [Parameter("self")],
-            name="type.__subclasses__",
-            implementation=_subclasses_impl,
         ),
     }

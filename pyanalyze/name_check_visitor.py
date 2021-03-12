@@ -49,11 +49,7 @@ from qcore.helpers import safe_str
 from pyanalyze.analysis_lib import safe_in, is_iterable
 from pyanalyze import attributes, node_visitor
 from pyanalyze.annotations import type_from_value, is_typing_name
-from pyanalyze.arg_spec import (
-    ArgSpecCache,
-    BoundMethodArgSpecWrapper,
-    is_dot_asynq_function,
-)
+from pyanalyze.arg_spec import ArgSpecCache, is_dot_asynq_function
 from pyanalyze.config import Config
 from pyanalyze.error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from pyanalyze.find_unused import UnusedObjectFinder, used
@@ -77,6 +73,13 @@ from pyanalyze.stacked_scopes import (
     LEAVES_LOOP,
     LEAVES_SCOPE,
     constrain_value,
+)
+from pyanalyze.signature import (
+    MaybeSignature,
+    MaybeArgspec,
+    BoundMethodSignature,
+    BoundMethodArgSpecWrapper,
+    Signature,
 )
 from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from pyanalyze.yield_checker import YieldChecker
@@ -2611,10 +2614,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             tv_map = IterableValue.can_assign(iterated, self)
             if tv_map is None:
-                if not self._should_ignore_type(iterated.typ):
+                if not (
+                    isinstance(iterated, TypedValue)
+                    and self._should_ignore_type(iterated.typ)
+                ):
                     self._show_error_if_checking(
                         node,
-                        "Object of type %r is not iterable" % (iterated.typ,),
+                        f"{iterated} is not iterable",
                         ErrorCode.unsupported_operation,
                     )
                 return UNRESOLVED_VALUE, None
@@ -3195,7 +3201,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def constraint_from_call(self, node):
         callee_wrapped = self.visit(node.func)
         args = self._generic_visit_list(node.args)
-        keywords = self._generic_visit_list(node.keywords)
+        if node.keywords:
+            keywords = [self.visit_keyword(kw) for kw in node.keywords]
+        else:
+            keywords = []
 
         has_args_kwargs = any(isinstance(arg, ast.Starred) for arg in node.args) or any(
             kw.arg is None for kw in node.keywords
@@ -3276,13 +3285,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _get_argspec_and_check_call(
         self,
-        node,
-        callee_wrapped,
-        args,
-        keywords=[],
-        has_args_kwargs=False,
-        allow_call=False,
-    ):
+        node: ast.AST,
+        callee_wrapped: Value,
+        args: Iterable[Value],
+        keywords: Iterable[Tuple[str, Value]] = [],
+        has_args_kwargs: bool = False,
+        allow_call: bool = False,
+    ) -> Tuple[Value, AbstractConstraint]:
         if not isinstance(callee_wrapped, (KnownValue, TypedValue, UnboundMethodValue)):
             return UNRESOLVED_VALUE, NULL_CONSTRAINT
 
@@ -3292,21 +3301,41 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self.log(logging.INFO, "Ignoring callee", callee_wrapped)
             return UNRESOLVED_VALUE, NULL_CONSTRAINT
 
+        if isinstance(callee_wrapped, UnboundMethodValue):
+            args = [callee_wrapped.typ, *args]
+
         extended_argspec = self._get_argspec_from_value(callee_wrapped, node)
 
         if extended_argspec is None:
             return_value = UNRESOLVED_VALUE
             constraint = NULL_CONSTRAINT
+            no_return_unless = NULL_CONSTRAINT
 
         elif has_args_kwargs:
             # TODO(jelle): handle this better
             return_value = UNRESOLVED_VALUE
             constraint = NULL_CONSTRAINT
+            no_return_unless = NULL_CONSTRAINT
+
+        elif isinstance(extended_argspec, (Signature, BoundMethodSignature)):
+            arguments = [(arg, None) for arg in args] + [
+                (value, keyword) for keyword, value in keywords
+            ]
+            if self._is_checking():
+                (
+                    return_value,
+                    constraint,
+                    no_return_unless,
+                ) = extended_argspec.check_call(arguments, self, node)
+            else:
+                with self.catch_errors():
+                    (
+                        return_value,
+                        constraint,
+                        no_return_unless,
+                    ) = extended_argspec.check_call(arguments, self, node)
 
         else:
-            if isinstance(callee_wrapped, UnboundMethodValue):
-                args = [callee_wrapped.typ] + args
-
             if self._is_checking():
                 (
                     return_value,
@@ -3321,14 +3350,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         no_return_unless,
                     ) = extended_argspec.check_call(args, keywords, self, node)
 
-            if no_return_unless is not NULL_CONSTRAINT:
-                self.add_constraint(node, no_return_unless)
+        if no_return_unless is not NULL_CONSTRAINT:
+            self.add_constraint(node, no_return_unless)
 
-            if (
-                not extended_argspec.has_return_value()
-                and id(extended_argspec) in self._argspec_to_retval
-            ):
-                return_value = self._argspec_to_retval[id(extended_argspec)]
+        if (
+            extended_argspec is not None
+            and not extended_argspec.has_return_value()
+            and id(extended_argspec) in self._argspec_to_retval
+        ):
+            return_value = self._argspec_to_retval[id(extended_argspec)]
 
         if (
             allow_call
@@ -3385,7 +3415,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return TypedValue(task_cls), constraint
             return return_value, constraint
 
-    def _get_argspec_from_value(self, callee_wrapped, node):
+    def _get_argspec_from_value(
+        self, callee_wrapped: Value, node: ast.AST
+    ) -> Union[MaybeSignature, MaybeArgspec]:
         if isinstance(callee_wrapped, KnownValue):
             try:
                 name = callee_wrapped.val.__name__
@@ -3415,10 +3447,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             argspec = self._get_argspec(call_fn, node, name=name)
             if argspec is None:
                 return None
+            if isinstance(argspec, Signature):
+                return BoundMethodSignature(argspec, callee_wrapped)
             return BoundMethodArgSpecWrapper(argspec, callee_wrapped)
         return None
 
-    def _get_argspec(self, obj, node, name=None):
+    def _get_argspec(
+        self, obj: object, node: ast.AST, name: Optional[str] = None
+    ) -> Union[MaybeSignature, MaybeArgspec]:
         """Given a Python object obj retrieved from node, try to get its argspec."""
         try:
             return self.arg_spec_cache.get_argspec(obj, name=name, logger=self.log)

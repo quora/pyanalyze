@@ -16,9 +16,10 @@ from .signature import (
     Parameter,
     Logger,
     ImplementationFn,
-    BoundMethodArgSpecWrapper,
     MaybeArgspec,
+    MaybeSignature,
     PropertyArgSpec,
+    make_bound_method,
 )
 from .value import (
     TypedValue,
@@ -295,7 +296,7 @@ class ArgSpecCache:
         name: Optional[str] = None,
         logger: Optional[Logger] = None,
         implementation: Optional[ImplementationFn] = None,
-    ) -> MaybeArgspec:
+    ) -> Union[MaybeArgspec, MaybeSignature]:
         """Constructs the ExtendedArgSpec for a Python object."""
         kwargs = {"name": name, "logger": logger, "implementation": implementation}
         argspec = self._cached_get_argspec(obj, kwargs)
@@ -303,7 +304,7 @@ class ArgSpecCache:
 
     def _cached_get_argspec(
         self, obj: object, kwargs: Mapping[str, Any]
-    ) -> MaybeArgspec:
+    ) -> Union[MaybeArgspec, MaybeSignature]:
         try:
             if obj in self.known_argspecs:
                 return self.known_argspecs[obj]
@@ -322,7 +323,7 @@ class ArgSpecCache:
 
     def _uncached_get_argspec(
         self, obj: Any, kwargs: Mapping[str, Any]
-    ) -> MaybeArgspec:
+    ) -> Union[MaybeArgspec, MaybeSignature]:
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause
 
@@ -337,9 +338,7 @@ class ArgSpecCache:
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
             argspec = self._cached_get_argspec(obj.__func__, kwargs)
-            if argspec is None:
-                return None
-            return BoundMethodArgSpecWrapper(argspec, KnownValue(obj.__self__))
+            return make_bound_method(argspec, KnownValue(obj.__self__))
 
         if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
             # many decorators put the original function in the .fn attribute
@@ -378,7 +377,7 @@ class ArgSpecCache:
             argspec = self._cached_get_argspec(obj.decorator, kwargs)
             # wrap if it's a bound method
             if obj.instance is not None and argspec is not None:
-                return BoundMethodArgSpecWrapper(argspec, KnownValue(obj.instance))
+                return make_bound_method(argspec, KnownValue(obj.instance))
             return argspec
 
         if inspect.isclass(obj):
@@ -403,9 +402,7 @@ class ArgSpecCache:
             argspec = self.from_argspec(
                 argspec, function_object=constructor, kwonly_args=kwonly_args, **kwargs
             )
-            if argspec is None:
-                return None
-            return BoundMethodArgSpecWrapper(argspec, TypedValue(obj))
+            return make_bound_method(argspec, TypedValue(obj))
 
         if inspect.isbuiltin(obj):
             if hasattr(obj, "__self__"):
@@ -417,9 +414,7 @@ class ArgSpecCache:
                 if method == obj:
                     return None
                 argspec = self._cached_get_argspec(method, kwargs)
-                if argspec is None:
-                    return None
-                return BoundMethodArgSpecWrapper(argspec, KnownValue(obj.__self__))
+                return make_bound_method(argspec, KnownValue(obj.__self__))
             return None
 
         if hasattr(obj, "__call__"):
