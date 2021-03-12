@@ -395,6 +395,7 @@ class PropertyArgSpec:
         return self.return_value is not UNRESOLVED_VALUE
 
 
+# TODO replace this with Signature
 @dataclass
 class ExtendedArgSpec:
     """A richer version of the standard inspect.ArgSpec object.

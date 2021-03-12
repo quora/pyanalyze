@@ -11,8 +11,6 @@ from .stacked_scopes import (
     OrConstraint,
 )
 from .signature import (
-    ExtendedArgSpec,
-    Parameter,
     SigParameter,
     Signature,
     ImplementationFnReturn,
@@ -23,6 +21,7 @@ from .value import (
     TypedValue,
     SubclassValue,
     GenericValue,
+    NewTypeValue,
     DictIncompleteValue,
     SequenceIncompleteValue,
     TypedDictValue,
@@ -47,7 +46,7 @@ from typing import cast, NewType, TYPE_CHECKING, Callable, TypeVar
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
 
-_NO_ARG_SENTINEL = qcore.MarkerObject("no argument given")
+_NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
 
 T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
@@ -190,7 +189,7 @@ def _super_impl(
 ) -> ImplementationFnReturn:
     typ = variables["type"]
     obj = variables["obj"]
-    if typ == KnownValue(None):
+    if typ is _NO_ARG_SENTINEL:
         # Zero-argument super()
         if visitor.in_comprehension_body:
             visitor.show_error(
@@ -294,7 +293,7 @@ def _sequence_impl(
     typ: type, variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
 ) -> ImplementationFnReturn:
     iterable = variables["iterable"]
-    if iterable == KnownValue(_NO_ARG_SENTINEL):
+    if iterable is _NO_ARG_SENTINEL:
         return KnownValue(typ())
     elif isinstance(iterable, KnownValue):
         try:
@@ -605,8 +604,19 @@ def _str_format_impl(
     self = variables["self"]
     if not isinstance(self, KnownValue):
         return TypedValue(str)
-    args = variables["args"]
-    kwargs = variables["kwargs"]
+    args_value = replace_known_sequence_value(variables["args"])
+    if not isinstance(args_value, SequenceIncompleteValue):
+        return TypedValue(str)
+    args = args_value.members
+    kwargs_value = replace_known_sequence_value(variables["kwargs"])
+    if not isinstance(kwargs_value, DictIncompleteValue):
+        return TypedValue(str)
+    kwargs = {}
+    for key_value, value_value in kwargs_value.items:
+        if isinstance(key_value, KnownValue) and isinstance(key_value.val, str):
+            kwargs[key_value.val] = value_value
+        else:
+            return TypedValue(str)
     template = self.val
     used_indices = set()
     used_kwargs = set()
@@ -718,16 +728,15 @@ def _qcore_assert_impl(
     return KnownValue(None), NULL_CONSTRAINT, no_return_unless
 
 
-_ENCODING_PARAMETER = Parameter("encoding", typ=TypedValue(str), default_value="")
+_POS_ONLY = SigParameter.POSITIONAL_ONLY
+_ENCODING_PARAMETER = SigParameter(
+    "encoding", annotation=TypedValue(str), default=KnownValue("")
+)
 
 
 def get_default_argspecs():
     signatures = [
-        Signature.make(
-            [SigParameter("self", SigParameter.POSITIONAL_ONLY)],
-            callable=type.__subclasses__,
-            implementation=_subclasses_impl,
-        ),
+        # pyanalyze helpers
         Signature.make(
             [SigParameter("obj"), SigParameter("value", annotation=TypedValue(Value))],
             implementation=_assert_is_value_impl,
@@ -738,170 +747,201 @@ def get_default_argspecs():
             implementation=_dump_value_impl,
             callable=dump_value,
         ),
-    ]
-    return {
-        **{sig.callable: sig for sig in signatures},
         # builtins
-        isinstance: ExtendedArgSpec(
-            [Parameter("obj"), Parameter("class_or_tuple")],
-            name="isinstance",
+        Signature.make(
+            [SigParameter("self", _POS_ONLY)],
+            callable=type.__subclasses__,
+            implementation=_subclasses_impl,
+        ),
+        Signature.make(
+            [SigParameter("obj", _POS_ONLY), SigParameter("class_or_tuple", _POS_ONLY)],
             implementation=_isinstance_impl,
+            callable=isinstance,
         ),
-        getattr: ExtendedArgSpec(
+        Signature.make(
             [
-                Parameter("object"),
-                Parameter("name", typ=TypedValue(str)),
-                Parameter("default", default_value=None),
+                SigParameter("object", _POS_ONLY),
+                SigParameter("name", _POS_ONLY, annotation=TypedValue(str)),
+                SigParameter("default", _POS_ONLY, default=_NO_ARG_SENTINEL),
             ],
-            name="getattr",
+            UNRESOLVED_VALUE,
+            callable=getattr,
         ),
-        hasattr: ExtendedArgSpec(
-            [Parameter("object"), Parameter("name", typ=TypedValue(str))],
-            return_value=TypedValue(bool),
-            name="hasattr",
+        Signature.make(
+            [
+                SigParameter("object", _POS_ONLY),
+                SigParameter("name", _POS_ONLY, annotation=TypedValue(str)),
+            ],
             implementation=_hasattr_impl,
+            callable=hasattr,
         ),
-        setattr: ExtendedArgSpec(
+        Signature.make(
             [
-                Parameter("object"),
-                Parameter("name", typ=TypedValue(str)),
-                Parameter("value"),
+                SigParameter("object", _POS_ONLY),
+                SigParameter("name", _POS_ONLY, annotation=TypedValue(str)),
+                SigParameter("value", _POS_ONLY),
             ],
-            return_value=KnownValue(None),
-            name="setattr",
             implementation=_setattr_impl,
+            callable=setattr,
         ),
-        super: ExtendedArgSpec(
+        Signature.make(
             [
-                Parameter(
-                    "type",
-                    default_value=None,
-                ),
-                Parameter("obj", default_value=None),
+                SigParameter("type", _POS_ONLY, default=_NO_ARG_SENTINEL),
+                SigParameter("obj", _POS_ONLY, default=_NO_ARG_SENTINEL),
             ],
-            name="super",
             implementation=_super_impl,
+            callable=super,
         ),
-        tuple: ExtendedArgSpec(
-            [Parameter("iterable", default_value=_NO_ARG_SENTINEL)],
-            name="tuple",
+        Signature.make(
+            [SigParameter("iterable", _POS_ONLY, default=_NO_ARG_SENTINEL)],
             implementation=_tuple_impl,
+            callable=tuple,
         ),
-        list: ExtendedArgSpec(
-            [Parameter("iterable", default_value=_NO_ARG_SENTINEL)],
-            name="list",
+        Signature.make(
+            [SigParameter("iterable", _POS_ONLY, default=_NO_ARG_SENTINEL)],
+            implementation=_tuple_impl,
+            callable=tuple,
+        ),
+        Signature.make(
+            [SigParameter("iterable", _POS_ONLY, default=_NO_ARG_SENTINEL)],
             implementation=_list_impl,
+            callable=list,
         ),
-        list.append: ExtendedArgSpec(
-            [Parameter("self", typ=TypedValue(list)), Parameter("object")],
-            name="list.append",
+        Signature.make(
+            [SigParameter("iterable", _POS_ONLY, default=_NO_ARG_SENTINEL)],
+            implementation=_set_impl,
+            callable=set,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(list)),
+                SigParameter("object", _POS_ONLY),
+            ],
+            callable=list.append,
             implementation=_list_append_impl,
         ),
-        list.__add__: ExtendedArgSpec(
+        Signature.make(
             [
-                Parameter("self", typ=TypedValue(list)),
-                Parameter("x", typ=TypedValue(list)),
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(list)),
+                SigParameter("x", _POS_ONLY, annotation=TypedValue(list)),
             ],
-            name="list.__add__",
+            callable=list.__add__,
             implementation=_list_add_impl,
         ),
-        list.extend: ExtendedArgSpec(
+        Signature.make(
             [
-                Parameter("self", typ=TypedValue(list)),
-                Parameter("iterable", typ=TypedValue(collections.abc.Iterable)),
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(list)),
+                SigParameter(
+                    "iterable",
+                    _POS_ONLY,
+                    annotation=TypedValue(collections.abc.Iterable),
+                ),
             ],
-            name="list.extend",
+            callable=list.extend,
             implementation=_list_extend_impl,
         ),
-        set.add: ExtendedArgSpec(
-            [Parameter("self", typ=TypedValue(set)), Parameter("object")],
-            name="set.add",
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(set)),
+                SigParameter("object", _POS_ONLY),
+            ],
+            callable=set.add,
             implementation=_set_add_impl,
         ),
-        dict.__setitem__: ExtendedArgSpec(
-            [Parameter("self", typ=TypedValue(dict)), Parameter("k"), Parameter("v")],
-            name="dict.__setitem__",
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter("k", _POS_ONLY),
+                SigParameter("v", _POS_ONLY),
+            ],
+            callable=dict.__setitem__,
             implementation=_dict_setitem_impl,
         ),
-        dict.__getitem__: ExtendedArgSpec(
-            [Parameter("self", typ=TypedValue(dict)), Parameter("k")],
-            name="dict.__getitem__",
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter("k", _POS_ONLY),
+            ],
+            callable=dict.__getitem__,
             implementation=_dict_getitem_impl,
         ),
-        set: ExtendedArgSpec(
-            [Parameter("iterable", default_value=_NO_ARG_SENTINEL)],
-            name="set",
-            implementation=_set_impl,
-        ),
-        bytes.decode: ExtendedArgSpec(
+        Signature.make(
             [
-                Parameter("self", typ=TypedValue(bytes)),
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(bytes)),
                 _ENCODING_PARAMETER,
-                Parameter("errors", typ=TypedValue(str), default_value=""),
+                SigParameter(
+                    "errors", annotation=TypedValue(str), default=KnownValue("")
+                ),
             ],
-            name="bytes.decode",
-            return_value=TypedValue(str),
+            TypedValue(str),
+            callable=bytes.decode,
         ),
-        str.encode: ExtendedArgSpec(
+        Signature.make(
             [
-                Parameter("self", typ=TypedValue(str)),
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(str)),
                 _ENCODING_PARAMETER,
-                Parameter("errors", typ=TypedValue(str), default_value=""),
+                SigParameter(
+                    "errors", annotation=TypedValue(str), default=KnownValue("")
+                ),
             ],
-            name="str.encode",
-            return_value=TypedValue(bytes),
+            TypedValue(bytes),
+            callable=str.encode,
         ),
-        str.format: ExtendedArgSpec(
-            [Parameter("self", typ=TypedValue(str))],
-            starargs="args",
-            kwargs="kwargs",
-            name="str.format",
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(str)),
+                SigParameter("args", SigParameter.VAR_POSITIONAL),
+                SigParameter("kwargs", SigParameter.VAR_KEYWORD),
+            ],
             implementation=_str_format_impl,
+            callable=str.format,
         ),
-        cast: ExtendedArgSpec(
-            [Parameter("typ"), Parameter("val")],
-            name="typing.cast",
+        Signature.make(
+            [SigParameter("typ"), SigParameter("val")],
+            callable=cast,
             implementation=_cast_impl,
         ),
         # workaround for https://github.com/python/typeshed/pull/3501
-        warnings.warn: ExtendedArgSpec(
+        Signature.make(
             [
-                Parameter(
+                SigParameter(
                     "message",
-                    typ=MultiValuedValue([TypedValue(str), TypedValue(Warning)]),
+                    annotation=MultiValuedValue([TypedValue(str), TypedValue(Warning)]),
                 ),
-                Parameter("category", typ=UNRESOLVED_VALUE, default_value=None),
-                Parameter("stacklevel", typ=TypedValue(int), default_value=1),
+                SigParameter("category", default=KnownValue(None)),
+                SigParameter(
+                    "stacklevel", annotation=TypedValue(int), default=KnownValue(1)
+                ),
             ],
-            name="warnings.warn",
-            return_value=KnownValue(None),
+            KnownValue(None),
+            callable=warnings.warn,
         ),
-        # qcore/asynq
         # just so we can infer the return value
-        qcore.utime: ExtendedArgSpec([], name="utime", return_value=TypedValue(int)),
-        qcore.asserts.assert_is: ExtendedArgSpec(
+        Signature.make([], NewTypeValue(qcore.Utime), callable=qcore.utime),
+        Signature.make(
             [
-                Parameter("expected"),
-                Parameter("actual"),
-                Parameter("message", default_value=None),
-                Parameter("extra", default_value=None),
+                SigParameter("expected"),
+                SigParameter("actual"),
+                SigParameter("message", default=KnownValue(None)),
+                SigParameter("extra", default=KnownValue(None)),
             ],
-            name="assert_is",
+            callable=qcore.asserts.assert_is,
             implementation=_assert_is_impl,
         ),
-        qcore.asserts.assert_is_not: ExtendedArgSpec(
+        Signature.make(
             [
-                Parameter("expected"),
-                Parameter("actual"),
-                Parameter("message", default_value=None),
-                Parameter("extra", default_value=None),
+                SigParameter("expected"),
+                SigParameter("actual"),
+                SigParameter("message", default=KnownValue(None)),
+                SigParameter("extra", default=KnownValue(None)),
             ],
-            name="assert_is_not",
+            callable=qcore.asserts.assert_is_not,
             implementation=_assert_is_not_impl,
         ),
         # Need to override this because the type for the tp parameter in typeshed is too strict
-        NewType: ExtendedArgSpec(
-            [Parameter("name", typ=TypedValue(str)), Parameter(name="tp")],
-            name="NewType",
+        Signature.make(
+            [SigParameter("name", annotation=TypedValue(str)), SigParameter(name="tp")],
+            callable=NewType,
         ),
-    }
+    ]
+    return {sig.callable: sig for sig in signatures}
