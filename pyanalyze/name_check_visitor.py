@@ -2943,13 +2943,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return_value, _ = self._get_argspec_and_check_call(
                     node.value, getitem, [value, index], allow_call=True
                 )
-            else:
-                # If there was no __getitem__, try __class_getitem__
+            elif sys.version_info >= (3, 7):
+                # If there was no __getitem__, try __class_getitem__ in 3.7+
                 cgi = self.get_attribute(node.value, "__class_getitem__", value)
                 if cgi is UNINITIALIZED_VALUE:
                     self._show_error_if_checking(
                         node,
-                        "Object %s does not support subscripting" % (value,),
+                        f"Object {value} does not support subscripting",
                         error_code=ErrorCode.unsupported_operation,
                     )
                     return_value = UNRESOLVED_VALUE
@@ -2957,6 +2957,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_value, _ = self._get_argspec_and_check_call(
                         node.value, cgi, [index], allow_call=True
                     )
+            else:
+                self._show_error_if_checking(
+                    node,
+                    f"Object {value} does not support subscripting",
+                    error_code=ErrorCode.unsupported_operation,
+                )
 
             if (
                 return_value is UNRESOLVED_VALUE
