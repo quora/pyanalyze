@@ -78,8 +78,8 @@ from pyanalyze.signature import (
     MaybeSignature,
     MaybeArgspec,
     BoundMethodSignature,
-    BoundMethodArgSpecWrapper,
     Signature,
+    make_bound_method,
 )
 from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from pyanalyze.yield_checker import YieldChecker
@@ -3445,11 +3445,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return None
             call_fn = typ.__call__
             argspec = self._get_argspec(call_fn, node, name=name)
-            if argspec is None:
-                return None
-            if isinstance(argspec, Signature):
-                return BoundMethodSignature(argspec, callee_wrapped)
-            return BoundMethodArgSpecWrapper(argspec, callee_wrapped)
+            return make_bound_method(argspec, callee_wrapped)
         return None
 
     def _get_argspec(
