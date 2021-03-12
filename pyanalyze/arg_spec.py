@@ -4,13 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .annotations import (
-    type_from_runtime,
-    Context,
-    type_from_ast,
-    is_typing_name,
-    type_from_maybe_generic,
-)
+from .annotations import type_from_runtime, Context, type_from_ast, is_typing_name
 from .config import Config
 from .error_code import ErrorCode
 from .find_unused import used
@@ -287,7 +281,10 @@ class ArgSpecCache:
                     and inspect.getattr_static(class_obj, function_name, None)
                     is function_object
                 ):
-                    return type_from_maybe_generic(class_obj)
+                    generic_bases = self._get_generic_bases_cached(class_obj)
+                    if generic_bases and generic_bases.get(class_obj):
+                        return GenericValue(class_obj, generic_bases[class_obj])
+                    return TypedValue(class_obj)
         return VariableNameValue.from_varname(
             parameter.name, self.config.varname_value_map()
         )
@@ -586,7 +583,7 @@ class TypeshedFinder(object):
                 return None
             info = self._get_info_for_name(fq_name)
             argspec = self._get_method_argspec_from_info(
-                info, obj, fq_name, objclass.__module__
+                info, obj, fq_name, objclass.__module__, objclass
             )
             if argspec is not None:
                 self.log("Found argspec", (obj, argspec))
@@ -659,18 +656,21 @@ class TypeshedFinder(object):
         obj: object,
         fq_name: str,
         mod: str,
+        objclass: type,
     ) -> Optional[ExtendedArgSpec]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_method_argspec_from_info(
-                info.info, obj, fq_name, ".".join(info.source_module)
+                info.info, obj, fq_name, ".".join(info.source_module), objclass
             )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
             if obj.__name__ in info.child_nodes:
                 child_info = info.child_nodes[obj.__name__]
-                return self._get_argspec_from_info(child_info, obj, fq_name, mod)
+                return self._get_argspec_from_info(
+                    child_info, obj, fq_name, mod, objclass
+                )
             else:
                 return None
         else:
@@ -704,22 +704,23 @@ class TypeshedFinder(object):
         obj: object,
         fq_name: str,
         mod: str,
+        objclass: Optional[type] = None,
     ) -> Optional[ExtendedArgSpec]:
         if isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, ast3.FunctionDef):
                 return self._get_argspec_from_func_def(
-                    info.ast, obj, mod, is_async_fn=False
+                    info.ast, obj, mod, objclass, is_async_fn=False
                 )
             elif isinstance(info.ast, ast3.AsyncFunctionDef):
                 return self._get_argspec_from_func_def(
-                    info.ast, obj, mod, is_async_fn=True
+                    info.ast, obj, mod, objclass, is_async_fn=True
                 )
             else:
                 self.log("Ignoring unrecognized AST", (fq_name, info))
                 return None
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_argspec_from_info(
-                info.info, obj, fq_name, ".".join(info.source_module)
+                info.info, obj, fq_name, ".".join(info.source_module), objclass
             )
         elif info is None:
             return None
@@ -736,6 +737,8 @@ class TypeshedFinder(object):
         node: Union[ast3.FunctionDef, ast3.AsyncFunctionDef],
         obj: object,
         mod: str,
+        objclass: Optional[type] = None,
+        *,
         is_async_fn: bool,
     ) -> Optional[ExtendedArgSpec]:
         if node.decorator_list:
@@ -745,6 +748,9 @@ class TypeshedFinder(object):
             return_value = UNRESOLVED_VALUE
         else:
             return_value = self._parse_expr(node.returns, mod)
+        # ignore self type for class and static methods
+        if node.decorator_list:
+            objclass = None
         args = node.args
         if args.vararg is None:
             starargs = None
@@ -756,7 +762,7 @@ class TypeshedFinder(object):
             kwargs = args.kwarg.arg
         num_without_defaults = len(args.args) - len(args.defaults)
         defaults = [None] * num_without_defaults + args.defaults
-        arguments = list(self._parse_param_list(args.args, defaults, mod))
+        arguments = list(self._parse_param_list(args.args, defaults, mod, objclass))
         kwonly = list(self._parse_param_list(args.kwonlyargs, args.kw_defaults, mod))
         return ExtendedArgSpec(
             arguments,
@@ -774,11 +780,24 @@ class TypeshedFinder(object):
         args: Iterable[ast3.arg],
         defaults: Iterable[Optional[ast3.AST]],
         module: str,
+        objclass: Optional[type] = None,
     ) -> Iterable[Parameter]:
-        for arg, default in zip(args, defaults):
+        for i, (arg, default) in enumerate(zip(args, defaults)):
             typ = None
             if arg.annotation is not None:
                 typ = self._parse_expr(arg.annotation, module)
+            elif i == 0 and objclass is not None:
+                bases = self.get_bases(objclass)
+                if bases is None:
+                    typ = TypedValue(objclass)
+                else:
+                    typevars = uniq_chain(extract_typevars(base) for base in bases)
+                    if typevars:
+                        typ = GenericValue(
+                            objclass, [TypeVarValue(tv) for tv in typevars]
+                        )
+                    else:
+                        typ = TypedValue(objclass)
 
             if default is None:
                 yield Parameter(arg.arg, typ=typ)

@@ -115,15 +115,6 @@ def type_from_value(
     return _type_from_value(value, ctx)
 
 
-def type_from_maybe_generic(typ: type) -> Value:
-    """Given a type, return either a TypedValue or a GenericValue."""
-    if typing_inspect.is_generic_type(typ):
-        return GenericValue(
-            typ, [TypeVarValue(tv) for tv in typing_inspect.get_parameters(typ)]
-        )
-    return TypedValue(typ)
-
-
 def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
     val = _Visitor(ctx).visit(node)
     if val is None:
