@@ -229,7 +229,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
         async def capybara():
             # annotated as def ... -> Future in typeshed
             assert_is_value(
-                asyncio.sleep(3), GenericValue(asyncio.Future, [KnownValue(None)])
+                asyncio.sleep(3), GenericValue(asyncio.Future, [UNRESOLVED_VALUE])
             )
             return 42
 
