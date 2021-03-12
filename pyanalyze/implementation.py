@@ -314,7 +314,7 @@ def _sequence_impl(
         if tv_map is None:
             visitor.show_error(
                 node,
-                f"Object of type {iterable.typ} is not iterable",
+                f"{iterable} is not iterable",
                 ErrorCode.unsupported_operation,
             )
         elif T in tv_map:
