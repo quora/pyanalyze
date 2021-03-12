@@ -2324,7 +2324,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(value, AsyncTaskIncompleteValue):
             return value.value
         elif isinstance(value, TypedValue) and (
-            value.is_type(list) or value.is_type(tuple)
+            # asynq only supports exactly list and tuple, not subclasses
+            # https://github.com/quora/asynq/blob/b07682d8b11e53e4ee5c585020cc9033e239c7eb/asynq/async_task.py#L446
+            value.typ is list
+            or value.typ is tuple
         ):
             if isinstance(value, SequenceIncompleteValue):
                 values = [
@@ -2335,8 +2338,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 member_value = self._unwrap_yield_result(node, value.get_arg(0))
                 return GenericValue(value.typ, [member_value])
             else:
-                return value
-        elif isinstance(value, TypedValue) and value.is_type(dict):
+                return TypedValue(value.typ)
+        elif isinstance(value, TypedValue) and value.typ is dict:
             if isinstance(value, DictIncompleteValue):
                 values = [
                     (key, self._unwrap_yield_result(node, val))
@@ -2347,7 +2350,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 val = self._unwrap_yield_result(node, value.get_arg(1))
                 return GenericValue(value.typ, [value.get_arg(0), val])
             else:
-                return value
+                return TypedValue(dict)
         elif isinstance(value, KnownValue) and isinstance(value.val, asynq.ConstFuture):
             return KnownValue(value.val.value())
         elif isinstance(value, KnownValue) and value.val is None:
@@ -2576,12 +2579,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     ErrorCode.unsupported_operation,
                 )
                 return UNRESOLVED_VALUE, None
-            if iterated.is_type(range):
+            if isinstance(iterated.val, range):
                 return TypedValue(int), len(iterated.val)
             # if the thing we're iterating over is e.g. a file or an infinite generator, calling
             # list() may hang the process
-            if not any(
-                iterated.is_type(typ) for typ in (list, set, tuple, dict, str, bytes)
+            if not isinstance(
+                iterated.val, (list, set, tuple, dict, str, bytes, frozenset)
             ):
                 return UNRESOLVED_VALUE, None
             try:
