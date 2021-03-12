@@ -548,7 +548,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 # four columns for the line number
                 # app/view/question/__init__.py is 6900 lines
                 context += "%4d: %s" % (i, lines[i - 1])
-                if i == lineno:
+                if i == lineno and col_offset is not None:
                     # caret to indicate the position of the error
                     context += " " * (6 + col_offset) + "^\n"
             message += context
