@@ -471,6 +471,77 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.extend([str(3)])
 
 
+class TestDictGetItem(TestNameCheckVisitorBase):
+    @assert_fails(ErrorCode.unhashable_key)
+    def test_unhashable(self):
+        def capybara():
+            d = {}
+            d[{}]
+
+    @assert_fails(ErrorCode.invalid_typeddict_key)
+    def test_invalid_typeddict_key(self):
+        from typing_extensions import TypedDict
+
+        class TD(TypedDict):
+            a: int
+
+        def capybara(td: TD):
+            td[1]
+
+    @assert_passes()
+    def test_incomplete_value(self):
+        def capybara(a: int, unresolved):
+            incomplete_value = {a: 1, "b": 2, "c": "s"}
+            assert_is_value(
+                incomplete_value,
+                DictIncompleteValue(
+                    [
+                        (TypedValue(int), KnownValue(1)),
+                        (KnownValue("b"), KnownValue(2)),
+                        (KnownValue("c"), KnownValue("s")),
+                    ]
+                ),
+            )
+
+            assert_is_value(incomplete_value["b"], KnownValue(2))
+            assert_is_value(incomplete_value[1], KnownValue(1))
+            assert_is_value(
+                incomplete_value[unresolved],
+                MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue("s")]),
+            )
+            # unknown key
+            assert_is_value(incomplete_value["other string"], UNRESOLVED_VALUE)
+
+            # MultiValuedValue
+            key = "b" if unresolved else "c"
+            assert_is_value(
+                incomplete_value[key],
+                MultiValuedValue([KnownValue(2), KnownValue("s")]),
+            )
+
+    @assert_passes()
+    def test(self):
+        from typing import Dict, Generic, TypeVar
+        from typing_extensions import TypedDict
+
+        K = TypeVar("K")
+        V = TypeVar("V")
+
+        class ReversedDict(Generic[V, K], Dict[K, V]):
+            pass
+
+        class TD(TypedDict):
+            a: int
+
+        def capybara(td: TD, dct: Dict[str, int], rev: ReversedDict[str, int]):
+            d = {1: 2}
+            assert_is_value(d[1], KnownValue(2))
+            assert_is_value(td["a"], TypedValue(int))
+
+            assert_is_value(dct["key"], TypedValue(int))
+            assert_is_value(rev[1], TypedValue(str))
+
+
 class TestDictSetItem(TestNameCheckVisitorBase):
     @assert_passes()
     def test_typeddict_setitem_valid(self):

@@ -56,7 +56,9 @@ ImplementationFnReturn = Union[
     Tuple[Value, AbstractConstraint],
     Tuple[Value, AbstractConstraint, AbstractConstraint],
 ]
-VarsDict = Dict[str, Value]
+# Values should be of type Value, but currently *args/**kwargs are entered
+# as tuples and dicts. TODO: fix this.
+VarsDict = Dict[str, Any]
 ImplementationFn = Callable[
     [VarsDict, "NameCheckVisitor", ast.AST], ImplementationFnReturn
 ]
@@ -255,7 +257,7 @@ class ExtendedArgSpec:
 
         """
         argument_strings = []
-        scope = {
+        scope: Dict[str, Any] = {
             "_default_value": self._default_value,
             # so that we can call locals() from inside the function even if a function argument is
             # called locals
