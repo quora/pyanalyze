@@ -26,6 +26,7 @@ from .value import (
     TypedDictValue,
     KnownValue,
     MultiValuedValue,
+    TypeVarValue,
     UNRESOLVED_VALUE,
     Value,
     unite_values,
@@ -39,12 +40,15 @@ from itertools import product
 import qcore
 import inspect
 import warnings
-from typing import cast, NewType, TYPE_CHECKING, Callable
+from typing import cast, NewType, TYPE_CHECKING, Callable, TypeVar
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
 
 _NO_ARG_SENTINEL = qcore.MarkerObject("no argument given")
+
+T = TypeVar("T")
+IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
 @used  # exposed as an API
@@ -305,18 +309,17 @@ def _sequence_impl(
         return SequenceIncompleteValue(typ, iterable.members)
     elif isinstance(iterable, DictIncompleteValue):
         return SequenceIncompleteValue(typ, [key for key, _ in iterable.items])
-    elif isinstance(iterable, TypedValue):
-        if not iterable.is_type(
-            collections.abc.Iterable
-        ) and not visitor._should_ignore_type(iterable.typ):
+    else:
+        tv_map = IterableValue.can_assign(iterable, visitor)
+        if tv_map is None:
             visitor.show_error(
                 node,
                 f"Object of type {iterable.typ} is not iterable",
                 ErrorCode.unsupported_operation,
             )
-        if isinstance(iterable, GenericValue):
-            return GenericValue(typ, [iterable.get_arg(0)])
-    return TypedValue(typ)
+        elif T in tv_map:
+            return GenericValue(typ, [tv_map[T]])
+        return TypedValue(typ)
 
 
 def _list_append_impl(

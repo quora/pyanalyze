@@ -203,7 +203,7 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
             assert_is_value(tuple(x), TypedValue(tuple))
 
             # argument that is iterable but does not have __iter__
-            assert_is_value(tuple(str(x)), TypedValue(tuple))
+            assert_is_value(tuple(str(x)), GenericValue(tuple, [TypedValue(str)]))
 
     @assert_fails(ErrorCode.unsupported_operation)
     def test_tuple_known_int(self):
