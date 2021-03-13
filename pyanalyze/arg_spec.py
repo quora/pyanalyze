@@ -446,21 +446,12 @@ class ArgSpecCache:
         try:
             # follow_wrapped=True leads to problems with decorators that
             # mess with the arguments, such as mock.patch.
-            sig = inspect.signature(obj, follow_wrapped=False)
+            return inspect.signature(obj, follow_wrapped=False)
         except (TypeError, ValueError, AttributeError):
             # TypeError if signature() does not support the object, ValueError
             # if it cannot provide a signature, and AttributeError if we're on
             # Python 2.
             return None
-        else:
-            # Signature preserves the return annotation for wrapped functions,
-            # because @functools.wraps copies the __annotations__ of the wrapped function. We
-            # don't want that, because the wrapper may have changed the return type.
-            # This caused problems with @contextlib.contextmanager.
-            if safe_hasattr(obj, "__wrapped__"):
-                return sig.replace(return_annotation=inspect.Signature.empty)
-            else:
-                return sig
 
     def get_generic_bases(
         self, typ: type, generic_args: Sequence[Value] = ()
