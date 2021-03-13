@@ -185,8 +185,13 @@ class ArgSpecCache:
         if sig is None:
             return None
         func_globals = getattr(function_object, "__globals__", None)
+        # Signature preserves the return annotation for wrapped functions,
+        # because @functools.wraps copies the __annotations__ of the wrapped function. We
+        # don't want that, because the wrapper may have changed the return type.
+        # This caused problems with @contextlib.contextmanager.
+        is_wrapped = safe_hasattr(function_object, "__wrapped__")
 
-        if sig.return_annotation is inspect.Signature.empty:
+        if is_wrapped or sig.return_annotation is inspect.Signature.empty:
             returns = UNRESOLVED_VALUE
             has_return_annotation = False
         else:
@@ -201,7 +206,9 @@ class ArgSpecCache:
                 parameters += kwonly_args
                 kwonly_args = []
             parameters.append(
-                self._make_sig_parameter(parameter, func_globals, function_object, i)
+                self._make_sig_parameter(
+                    parameter, func_globals, function_object, is_wrapped, i
+                )
             )
         parameters += kwonly_args
 
@@ -219,12 +226,16 @@ class ArgSpecCache:
         parameter: inspect.Parameter,
         func_globals: Optional[Mapping[str, object]],
         function_object: Optional[object],
+        is_wrapped: bool,
         index: int,
     ) -> SigParameter:
         """Given an inspect.Parameter, returns a Parameter object."""
-        typ = self._get_type_for_parameter(
-            parameter, func_globals, function_object, index
-        )
+        if is_wrapped:
+            typ = UNRESOLVED_VALUE
+        else:
+            typ = self._get_type_for_parameter(
+                parameter, func_globals, function_object, index
+            )
         if parameter.default is SigParameter.empty:
             default = None
         else:
@@ -435,21 +446,12 @@ class ArgSpecCache:
         try:
             # follow_wrapped=True leads to problems with decorators that
             # mess with the arguments, such as mock.patch.
-            sig = inspect.signature(obj, follow_wrapped=False)
+            return inspect.signature(obj, follow_wrapped=False)
         except (TypeError, ValueError, AttributeError):
             # TypeError if signature() does not support the object, ValueError
             # if it cannot provide a signature, and AttributeError if we're on
             # Python 2.
             return None
-        else:
-            # Signature preserves the return annotation for wrapped functions,
-            # because @functools.wraps copies the __annotations__ of the wrapped function. We
-            # don't want that, because the wrapper may have changed the return type.
-            # This caused problems with @contextlib.contextmanager.
-            if safe_hasattr(obj, "__wrapped__"):
-                return sig.replace(return_annotation=inspect.Signature.empty)
-            else:
-                return sig
 
     def get_generic_bases(
         self, typ: type, generic_args: Sequence[Value] = ()

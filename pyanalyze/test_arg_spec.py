@@ -11,6 +11,7 @@ from collections.abc import (
     Set,
 )
 import contextlib
+import functools
 import io
 import itertools
 import time
@@ -85,6 +86,18 @@ def function(capybara, hutia=3, *tucotucos, **proechimys):
 @asynq()
 def async_function(x, y):
     pass
+
+
+def wrapped(args: int, kwargs: str) -> None:
+    pass
+
+
+def decorator(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        return fn(*args, **kwargs)
+
+    return wrapper
 
 
 def test_get_argspec():
@@ -238,6 +251,33 @@ def test_get_argspec():
                 KnownValue(ClassWithCall),
             ),
             ArgSpecCache(config).get_argspec(ClassWithCall.classmethod_before_async),
+        )
+
+        assert_eq(
+            Signature.make(
+                [
+                    SigParameter("args", annotation=TypedValue(int)),
+                    SigParameter("kwargs", annotation=TypedValue(str)),
+                ],
+                KnownValue(None),
+                callable=wrapped,
+            ),
+            ArgSpecCache(config).get_argspec(wrapped),
+        )
+        decorated = decorator(wrapped)
+        assert_eq(
+            Signature.make(
+                [
+                    SigParameter(
+                        "args", SigParameter.VAR_POSITIONAL, annotation=UNRESOLVED_VALUE
+                    ),
+                    SigParameter(
+                        "kwargs", SigParameter.VAR_KEYWORD, annotation=UNRESOLVED_VALUE
+                    ),
+                ],
+                callable=decorated,
+            ),
+            ArgSpecCache(config).get_argspec(decorated),
         )
 
 
