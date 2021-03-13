@@ -12,11 +12,8 @@ from . import implementation
 from .safe import safe_hasattr
 from .stacked_scopes import uniq_chain
 from .signature import (
-    ExtendedArgSpec,
-    Parameter,
     Logger,
     ImplementationFn,
-    MaybeArgspec,
     MaybeSignature,
     PropertyArgSpec,
     make_bound_method,
@@ -106,8 +103,13 @@ def with_implementation(
         )
         if argspec is None:
             # builtin or something, just use a generic argspec
-            argspec = ExtendedArgSpec(
-                [], starargs="args", kwargs="kwargs", implementation=implementation_fn
+            argspec = Signature.make(
+                [
+                    SigParameter("args", SigParameter.VAR_POSITIONAL),
+                    SigParameter("kwargs", SigParameter.VAR_KEYWORD),
+                ],
+                callable=fn,
+                implementation=implementation_fn,
             )
         known_argspecs = dict(ArgSpecCache.DEFAULT_ARGSPECS)
         known_argspecs[fn] = argspec
@@ -159,110 +161,96 @@ class ArgSpecCache:
         # Don't pickle the actual argspecs, which are frequently unpicklable.
         return self.__class__, (self.config,)
 
-    def from_argspec(
+    def from_signature(
         self,
-        argspec: inspect.Signature,
+        sig: Optional[inspect.Signature],
         *,
-        kwonly_args: Any = None,
-        name: Optional[str] = None,
+        kwonly_args: Sequence[SigParameter] = (),
         logger: Optional[Logger] = None,
         implementation: Optional[ImplementationFn] = None,
-        function_object: Optional[object] = None,
-    ) -> ExtendedArgSpec:
-        """Constructs an ExtendedArgSpec from a standard argspec.
-
-        argspec is an inspect.Signature.
+        function_object: object,
+        is_async: bool = False,
+    ) -> Optional[Signature]:
+        """Constructs a pyanalyze Signature from an inspect.Signature.
 
         kwonly_args may be a list of custom keyword-only arguments added to the argspec or None.
-
-        name is the name of the function. This is used for better error messages.
 
         logger is the log function to be used.
 
         implementation is an implementation function for this object.
 
-        TODO: do we need support for non-Signature argspecs and for the separate kwonly_args
-        argument?
+        function_object is the underlying callable.
 
         """
-        if kwonly_args is None:
-            kwonly_args = []
-        else:
-            kwonly_args = list(kwonly_args)
+        if sig is None:
+            return None
         func_globals = getattr(function_object, "__globals__", None)
 
-        # inspect.Signature object
-        starargs = None
-        kwargs = None
-        args = []
-        if argspec.return_annotation is argspec.empty:
-            return_value = UNRESOLVED_VALUE
+        if sig.return_annotation is inspect.Signature.empty:
+            returns = UNRESOLVED_VALUE
+            has_return_annotation = False
         else:
-            return_value = type_from_runtime(
-                argspec.return_annotation, globals=func_globals
+            returns = type_from_runtime(sig.return_annotation, globals=func_globals)
+            has_return_annotation = True
+        if is_async:
+            returns = GenericValue(Awaitable, [returns])
+
+        parameters = []
+        for i, parameter in enumerate(sig.parameters.values()):
+            if kwonly_args and parameter.kind is SigParameter.VAR_KEYWORD:
+                parameters += kwonly_args
+                kwonly_args = []
+            parameters.append(
+                self._make_sig_parameter(parameter, func_globals, function_object, i)
             )
-        for i, parameter in enumerate(argspec.parameters.values()):
-            if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
-                starargs = parameter.name
-            elif parameter.kind == inspect.Parameter.VAR_KEYWORD:
-                kwargs = parameter.name
-            elif parameter.kind == inspect.Parameter.KEYWORD_ONLY:
-                kwonly_args.append(
-                    self._parameter_from_signature(
-                        parameter, func_globals, function_object, i
-                    )
-                )
-            else:
-                # positional or positional-or-keyword
-                args.append(
-                    self._parameter_from_signature(
-                        parameter, func_globals, function_object, i
-                    )
-                )
-        return ExtendedArgSpec(
-            args,
-            starargs=starargs,
-            kwargs=kwargs,
-            kwonly_args=kwonly_args,
-            return_value=return_value,
-            name=name,
-            logger=logger,
+        parameters += kwonly_args
+
+        return Signature.make(
+            parameters,
+            returns,
             implementation=implementation,
+            callable=function_object,
+            logger=logger,
+            has_return_annotation=has_return_annotation,
         )
 
-    def _parameter_from_signature(
+    def _make_sig_parameter(
         self,
         parameter: inspect.Parameter,
-        func_globals: Mapping[str, object],
+        func_globals: Optional[Mapping[str, object]],
         function_object: Optional[object],
         index: int,
-    ) -> Parameter:
+    ) -> SigParameter:
         """Given an inspect.Parameter, returns a Parameter object."""
         typ = self._get_type_for_parameter(
             parameter, func_globals, function_object, index
         )
-        if parameter.default is inspect.Parameter.empty:
-            default_value = Parameter.no_default_value
-        elif parameter.default is Parameter.no_default_value:
-            # hack to prevent errors in code that use Parameter
-            default_value = object()
+        if parameter.default is SigParameter.empty:
+            default = None
         else:
-            default_value = parameter.default
-        return Parameter(parameter.name, default_value=default_value, typ=typ)
+            default = KnownValue(parameter.default)
+        return SigParameter(
+            parameter.name, parameter.kind, default=default, annotation=typ
+        )
 
     def _get_type_for_parameter(
         self,
         parameter: inspect.Parameter,
-        func_globals: Mapping[str, object],
+        func_globals: Optional[Mapping[str, object]],
         function_object: Optional[object],
         index: int,
     ) -> Optional[Value]:
-        if parameter.annotation is not inspect.Parameter.empty:
-            return type_from_runtime(parameter.annotation, globals=func_globals)
+        if parameter.annotation is not SigParameter.empty:
+            typ = type_from_runtime(parameter.annotation, globals=func_globals)
+            if parameter.kind is SigParameter.VAR_POSITIONAL:
+                return GenericValue(tuple, [typ])
+            elif parameter.kind is SigParameter.VAR_KEYWORD:
+                return GenericValue(dict, [TypedValue(str), typ])
+            return typ
         # If this is the self argument of a method, try to infer the self type.
         elif index == 0 and parameter.kind in (
-            inspect.Parameter.POSITIONAL_ONLY,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            SigParameter.POSITIONAL_ONLY,
+            SigParameter.POSITIONAL_OR_KEYWORD,
         ):
             module_name = getattr(function_object, "__module__", None)
             qualname = getattr(function_object, "__qualname__", None)
@@ -288,9 +276,15 @@ class ArgSpecCache:
                     if generic_bases and generic_bases.get(class_obj):
                         return GenericValue(class_obj, generic_bases[class_obj])
                     return TypedValue(class_obj)
-        return VariableNameValue.from_varname(
-            parameter.name, self.config.varname_value_map()
-        )
+        if parameter.kind in (
+            SigParameter.POSITIONAL_ONLY,
+            SigParameter.POSITIONAL_OR_KEYWORD,
+            SigParameter.KEYWORD_ONLY,
+        ):
+            return VariableNameValue.from_varname(
+                parameter.name, self.config.varname_value_map()
+            )
+        return None
 
     def get_argspec(
         self,
@@ -298,15 +292,15 @@ class ArgSpecCache:
         name: Optional[str] = None,
         logger: Optional[Logger] = None,
         implementation: Optional[ImplementationFn] = None,
-    ) -> Union[MaybeArgspec, MaybeSignature]:
-        """Constructs the ExtendedArgSpec for a Python object."""
-        kwargs = {"name": name, "logger": logger, "implementation": implementation}
+    ) -> MaybeSignature:
+        """Constructs the Signature for a Python object."""
+        kwargs = {"logger": logger, "implementation": implementation}
         argspec = self._cached_get_argspec(obj, kwargs)
         return argspec
 
     def _cached_get_argspec(
         self, obj: object, kwargs: Mapping[str, Any]
-    ) -> Union[MaybeArgspec, MaybeSignature]:
+    ) -> MaybeSignature:
         try:
             if obj in self.known_argspecs:
                 return self.known_argspecs[obj]
@@ -325,7 +319,7 @@ class ArgSpecCache:
 
     def _uncached_get_argspec(
         self, obj: Any, kwargs: Mapping[str, Any]
-    ) -> Union[MaybeArgspec, MaybeSignature]:
+    ) -> MaybeSignature:
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause
 
@@ -355,11 +349,6 @@ class ArgSpecCache:
 
         argspec = self.ts_finder.get_argspec(obj)
         if argspec is not None:
-            if (
-                asyncio.iscoroutinefunction(obj)
-                and argspec.return_value is UNRESOLVED_VALUE
-            ):
-                argspec.return_value = GenericValue(Awaitable, [UNRESOLVED_VALUE])
             return argspec
 
         if inspect.isfunction(obj):
@@ -367,12 +356,12 @@ class ArgSpecCache:
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
                 return self._cached_get_argspec(obj.inner, kwargs)
 
-            argspec = self.from_argspec(
-                self._safe_get_argspec(obj), function_object=obj, **kwargs
+            return self.from_signature(
+                self._safe_get_signature(obj),
+                function_object=obj,
+                is_async=asyncio.iscoroutinefunction(obj),
+                **kwargs
             )
-            if asyncio.iscoroutinefunction(obj):
-                argspec.return_value = GenericValue(Awaitable, [argspec.return_value])
-            return argspec
 
         # decorator binders
         if _is_qcore_decorator(obj):
@@ -391,7 +380,7 @@ class ArgSpecCache:
             else:
                 # old-style class
                 return None
-            argspec = self._safe_get_argspec(constructor)
+            argspec = self._safe_get_signature(constructor)
             if argspec is None:
                 return None
 
@@ -399,9 +388,15 @@ class ArgSpecCache:
             for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
                 if issubclass(obj, cls_):
                     kwonly_args += [
-                        Parameter(param_name, default_value=None) for param_name in args
+                        SigParameter(
+                            param_name,
+                            SigParameter.KEYWORD_ONLY,
+                            default=KnownValue(None),
+                            annotation=UNRESOLVED_VALUE,
+                        )
+                        for param_name in args
                     ]
-            argspec = self.from_argspec(
+            argspec = self.from_signature(
                 argspec, function_object=constructor, kwonly_args=kwonly_args, **kwargs
             )
             return make_bound_method(argspec, TypedValue(obj))
@@ -435,7 +430,7 @@ class ArgSpecCache:
 
         raise TypeError("%r object is not callable" % (obj,))
 
-    def _safe_get_argspec(self, obj: Any) -> Optional[inspect.Signature]:
+    def _safe_get_signature(self, obj: Any) -> Optional[inspect.Signature]:
         """Wrapper around inspect.getargspec that catches TypeErrors."""
         try:
             # follow_wrapped=True leads to problems with decorators that

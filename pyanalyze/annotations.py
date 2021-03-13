@@ -260,7 +260,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             return unite_values(*[_type_from_value(elt, ctx) for elt in value.members])
         elif is_typing_name(root, "Literal"):
             if all(isinstance(elt, KnownValue) for elt in value.members):
-                return unite_values(value.members)
+                return unite_values(*value.members)
             else:
                 ctx.show_error(
                     "Arguments to Literal[] must be literals, not %s" % (value.members,)

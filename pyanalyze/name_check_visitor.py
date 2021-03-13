@@ -74,13 +74,7 @@ from pyanalyze.stacked_scopes import (
     LEAVES_SCOPE,
     constrain_value,
 )
-from pyanalyze.signature import (
-    MaybeSignature,
-    MaybeArgspec,
-    BoundMethodSignature,
-    Signature,
-    make_bound_method,
-)
+from pyanalyze.signature import MaybeSignature, make_bound_method
 from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from pyanalyze.yield_checker import YieldChecker
 from pyanalyze.type_object import get_mro
@@ -3317,7 +3311,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             constraint = NULL_CONSTRAINT
             no_return_unless = NULL_CONSTRAINT
 
-        elif isinstance(extended_argspec, (Signature, BoundMethodSignature)):
+        else:
             arguments = [(arg, None) for arg in args] + [
                 (value, keyword) for keyword, value in keywords
             ]
@@ -3334,21 +3328,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         constraint,
                         no_return_unless,
                     ) = extended_argspec.check_call(arguments, self, node)
-
-        else:
-            if self._is_checking():
-                (
-                    return_value,
-                    constraint,
-                    no_return_unless,
-                ) = extended_argspec.check_call(args, keywords, self, node)
-            else:
-                with self.catch_errors():
-                    (
-                        return_value,
-                        constraint,
-                        no_return_unless,
-                    ) = extended_argspec.check_call(args, keywords, self, node)
 
         if no_return_unless is not NULL_CONSTRAINT:
             self.add_constraint(node, no_return_unless)
@@ -3417,7 +3396,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _get_argspec_from_value(
         self, callee_wrapped: Value, node: ast.AST
-    ) -> Union[MaybeSignature, MaybeArgspec]:
+    ) -> MaybeSignature:
         if isinstance(callee_wrapped, KnownValue):
             try:
                 name = callee_wrapped.val.__name__
@@ -3450,7 +3429,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _get_argspec(
         self, obj: object, node: ast.AST, name: Optional[str] = None
-    ) -> Union[MaybeSignature, MaybeArgspec]:
+    ) -> MaybeSignature:
         """Given a Python object obj retrieved from node, try to get its argspec."""
         try:
             return self.arg_spec_cache.get_argspec(obj, name=name, logger=self.log)
