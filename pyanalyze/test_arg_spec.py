@@ -23,14 +23,8 @@ from .test_name_check_visitor import (
     ConfiguredNameCheckVisitor,
 )
 from .test_node_visitor import assert_passes
-from .arg_spec import (
-    ArgSpecCache,
-    BoundMethodArgSpecWrapper,
-    ExtendedArgSpec,
-    Parameter,
-    TypeshedFinder,
-    is_dot_asynq_function,
-)
+from .signature import BoundMethodArgSpecWrapper, ExtendedArgSpec, Parameter
+from .arg_spec import ArgSpecCache, TypeshedFinder, is_dot_asynq_function
 from .tests import l0cached_async_fn
 from .value import (
     KnownValue,
@@ -235,7 +229,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
         async def capybara():
             # annotated as def ... -> Future in typeshed
             assert_is_value(
-                asyncio.sleep(3), GenericValue(asyncio.Future, [KnownValue(None)])
+                asyncio.sleep(3), GenericValue(asyncio.Future, [UNRESOLVED_VALUE])
             )
             return 42
 

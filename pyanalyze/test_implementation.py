@@ -360,6 +360,13 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 lst, SequenceIncompleteValue(list, [KnownValue("x"), KnownValue(3)])
             )
 
+    @assert_fails(ErrorCode.incompatible_call)
+    def test_list_append_pos_only(self):
+        from typing import List
+
+        def capybara(lst: List[int]) -> None:
+            lst.append(object=42)
+
     @assert_fails(ErrorCode.incompatible_argument)
     def test_list_append_wrong_type(self):
         from typing import List

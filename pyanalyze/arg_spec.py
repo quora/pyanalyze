@@ -16,9 +16,12 @@ from .signature import (
     Parameter,
     Logger,
     ImplementationFn,
-    BoundMethodArgSpecWrapper,
     MaybeArgspec,
+    MaybeSignature,
     PropertyArgSpec,
+    make_bound_method,
+    SigParameter,
+    Signature,
 )
 from .value import (
     TypedValue,
@@ -295,7 +298,7 @@ class ArgSpecCache:
         name: Optional[str] = None,
         logger: Optional[Logger] = None,
         implementation: Optional[ImplementationFn] = None,
-    ) -> MaybeArgspec:
+    ) -> Union[MaybeArgspec, MaybeSignature]:
         """Constructs the ExtendedArgSpec for a Python object."""
         kwargs = {"name": name, "logger": logger, "implementation": implementation}
         argspec = self._cached_get_argspec(obj, kwargs)
@@ -303,7 +306,7 @@ class ArgSpecCache:
 
     def _cached_get_argspec(
         self, obj: object, kwargs: Mapping[str, Any]
-    ) -> MaybeArgspec:
+    ) -> Union[MaybeArgspec, MaybeSignature]:
         try:
             if obj in self.known_argspecs:
                 return self.known_argspecs[obj]
@@ -322,7 +325,7 @@ class ArgSpecCache:
 
     def _uncached_get_argspec(
         self, obj: Any, kwargs: Mapping[str, Any]
-    ) -> MaybeArgspec:
+    ) -> Union[MaybeArgspec, MaybeSignature]:
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause
 
@@ -337,9 +340,7 @@ class ArgSpecCache:
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
             argspec = self._cached_get_argspec(obj.__func__, kwargs)
-            if argspec is None:
-                return None
-            return BoundMethodArgSpecWrapper(argspec, KnownValue(obj.__self__))
+            return make_bound_method(argspec, KnownValue(obj.__self__))
 
         if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
             # many decorators put the original function in the .fn attribute
@@ -378,7 +379,7 @@ class ArgSpecCache:
             argspec = self._cached_get_argspec(obj.decorator, kwargs)
             # wrap if it's a bound method
             if obj.instance is not None and argspec is not None:
-                return BoundMethodArgSpecWrapper(argspec, KnownValue(obj.instance))
+                return make_bound_method(argspec, KnownValue(obj.instance))
             return argspec
 
         if inspect.isclass(obj):
@@ -403,9 +404,7 @@ class ArgSpecCache:
             argspec = self.from_argspec(
                 argspec, function_object=constructor, kwonly_args=kwonly_args, **kwargs
             )
-            if argspec is None:
-                return None
-            return BoundMethodArgSpecWrapper(argspec, TypedValue(obj))
+            return make_bound_method(argspec, TypedValue(obj))
 
         if inspect.isbuiltin(obj):
             if hasattr(obj, "__self__"):
@@ -417,9 +416,7 @@ class ArgSpecCache:
                 if method == obj:
                     return None
                 argspec = self._cached_get_argspec(method, kwargs)
-                if argspec is None:
-                    return None
-                return BoundMethodArgSpecWrapper(argspec, KnownValue(obj.__self__))
+                return make_bound_method(argspec, KnownValue(obj.__self__))
             return None
 
         if hasattr(obj, "__call__"):
@@ -575,19 +572,19 @@ class TypeshedFinder(object):
             return
         print("%s: %r" % (message, obj))
 
-    def get_argspec(self, obj: object) -> Optional[ExtendedArgSpec]:
+    def get_argspec(self, obj: object) -> Optional[Signature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
             if fq_name is None:
                 return None
             info = self._get_info_for_name(fq_name)
-            argspec = self._get_method_argspec_from_info(
+            sig = self._get_method_signature_from_info(
                 info, obj, fq_name, objclass.__module__, objclass
             )
-            if argspec is not None:
-                self.log("Found argspec", (obj, argspec))
-            return argspec
+            if sig is not None:
+                self.log("Found signature", (obj, sig))
+            return sig
 
         if inspect.ismethod(obj):
             self.log("Ignoring method", obj)
@@ -597,10 +594,10 @@ class TypeshedFinder(object):
             return None
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
-        argspec = self._get_argspec_from_info(info, obj, fq_name, mod)
-        if argspec is not None:
-            self.log("Found argspec", (fq_name, argspec))
-        return argspec
+        sig = self._get_signature_from_info(info, obj, fq_name, mod)
+        if sig is not None:
+            self.log("Found signature", (fq_name, sig))
+        return sig
 
     def get_bases(self, typ: type) -> Optional[List[Value]]:
         # The way AbstractSet/Set is handled between collections and typing is
@@ -650,25 +647,25 @@ class TypeshedFinder(object):
                 raise NotImplementedError(ast3.dump(info.ast))
         return None
 
-    def _get_method_argspec_from_info(
+    def _get_method_signature_from_info(
         self,
         info: typeshed_client.resolver.ResolvedName,
         obj: object,
         fq_name: str,
         mod: str,
         objclass: type,
-    ) -> Optional[ExtendedArgSpec]:
+    ) -> Optional[Signature]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_method_argspec_from_info(
+            return self._get_method_signature_from_info(
                 info.info, obj, fq_name, ".".join(info.source_module), objclass
             )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
             if obj.__name__ in info.child_nodes:
                 child_info = info.child_nodes[obj.__name__]
-                return self._get_argspec_from_info(
+                return self._get_signature_from_info(
                     child_info, obj, fq_name, mod, objclass
                 )
             else:
@@ -698,28 +695,28 @@ class TypeshedFinder(object):
             self.log("Ignoring object without module or qualname", obj)
             return None
 
-    def _get_argspec_from_info(
+    def _get_signature_from_info(
         self,
         info: typeshed_client.resolver.ResolvedName,
         obj: object,
         fq_name: str,
         mod: str,
         objclass: Optional[type] = None,
-    ) -> Optional[ExtendedArgSpec]:
+    ) -> Optional[Signature]:
         if isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, ast3.FunctionDef):
-                return self._get_argspec_from_func_def(
+                return self._get_signature_from_func_def(
                     info.ast, obj, mod, objclass, is_async_fn=False
                 )
             elif isinstance(info.ast, ast3.AsyncFunctionDef):
-                return self._get_argspec_from_func_def(
+                return self._get_signature_from_func_def(
                     info.ast, obj, mod, objclass, is_async_fn=True
                 )
             else:
                 self.log("Ignoring unrecognized AST", (fq_name, info))
                 return None
         elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_argspec_from_info(
+            return self._get_signature_from_info(
                 info.info, obj, fq_name, ".".join(info.source_module), objclass
             )
         elif info is None:
@@ -732,7 +729,7 @@ class TypeshedFinder(object):
     def _get_info_for_name(self, fq_name: str) -> typeshed_client.resolver.ResolvedName:
         return self.resolver.get_fully_qualified_name(fq_name)
 
-    def _get_argspec_from_func_def(
+    def _get_signature_from_func_def(
         self,
         node: Union[ast3.FunctionDef, ast3.AsyncFunctionDef],
         obj: object,
@@ -740,7 +737,7 @@ class TypeshedFinder(object):
         objclass: Optional[type] = None,
         *,
         is_async_fn: bool,
-    ) -> Optional[ExtendedArgSpec]:
+    ) -> Optional[Signature]:
         if node.decorator_list:
             # might be @overload or something else we don't recognize
             return None
@@ -752,27 +749,36 @@ class TypeshedFinder(object):
         if node.decorator_list:
             objclass = None
         args = node.args
-        if args.vararg is None:
-            starargs = None
-        else:
-            starargs = args.vararg.arg
-        if args.kwarg is None:
-            kwargs = None
-        else:
-            kwargs = args.kwarg.arg
+
         num_without_defaults = len(args.args) - len(args.defaults)
         defaults = [None] * num_without_defaults + args.defaults
-        arguments = list(self._parse_param_list(args.args, defaults, mod, objclass))
-        kwonly = list(self._parse_param_list(args.kwonlyargs, args.kw_defaults, mod))
-        return ExtendedArgSpec(
+        arguments = list(
+            self._parse_param_list(
+                args.args, defaults, mod, SigParameter.POSITIONAL_OR_KEYWORD, objclass
+            )
+        )
+
+        if args.vararg is not None:
+            vararg_param = self._parse_param(
+                args.vararg, None, mod, SigParameter.VAR_POSITIONAL
+            )
+            annotation = GenericValue(tuple, [vararg_param.annotation])
+            arguments.append(vararg_param.replace(annotation=annotation))
+        arguments += self._parse_param_list(
+            args.kwonlyargs, args.kw_defaults, mod, SigParameter.KEYWORD_ONLY
+        )
+        if args.kwarg is not None:
+            kwarg_param = self._parse_param(
+                args.kwarg, None, mod, SigParameter.VAR_KEYWORD
+            )
+            annotation = GenericValue(dict, [TypedValue(str), kwarg_param.annotation])
+            arguments.append(kwarg_param.replace(annotation=annotation))
+        return Signature.make(
             arguments,
-            starargs=starargs,
-            kwargs=kwargs,
-            kwonly_args=kwonly,
-            return_value=GenericValue(Awaitable, [return_value])
+            callable=obj,
+            return_annotation=GenericValue(Awaitable, [return_value])
             if is_async_fn
             else return_value,
-            name=obj.__name__,
         )
 
     def _parse_param_list(
@@ -780,30 +786,52 @@ class TypeshedFinder(object):
         args: Iterable[ast3.arg],
         defaults: Iterable[Optional[ast3.AST]],
         module: str,
+        kind: inspect._ParameterKind,
         objclass: Optional[type] = None,
-    ) -> Iterable[Parameter]:
+    ) -> Iterable[SigParameter]:
         for i, (arg, default) in enumerate(zip(args, defaults)):
-            typ = None
-            if arg.annotation is not None:
-                typ = self._parse_expr(arg.annotation, module)
-            elif i == 0 and objclass is not None:
-                bases = self.get_bases(objclass)
-                if bases is None:
-                    typ = TypedValue(objclass)
-                else:
-                    typevars = uniq_chain(extract_typevars(base) for base in bases)
-                    if typevars:
-                        typ = GenericValue(
-                            objclass, [TypeVarValue(tv) for tv in typevars]
-                        )
-                    else:
-                        typ = TypedValue(objclass)
+            yield self._parse_param(
+                arg, default, module, kind, objclass if i == 0 else None
+            )
 
-            if default is None:
-                yield Parameter(arg.arg, typ=typ)
+    def _parse_param(
+        self,
+        arg: ast3.arg,
+        default: Optional[ast3.arg],
+        module: str,
+        kind: inspect._ParameterKind,
+        objclass: Optional[type] = None,
+    ) -> SigParameter:
+        typ = UNRESOLVED_VALUE
+        if arg.annotation is not None:
+            typ = self._parse_expr(arg.annotation, module)
+        elif objclass is not None:
+            bases = self.get_bases(objclass)
+            if bases is None:
+                typ = TypedValue(objclass)
             else:
-                # doesn't matter what the default is
-                yield Parameter(arg.arg, typ=typ, default_value=None)
+                typevars = uniq_chain(extract_typevars(base) for base in bases)
+                if typevars:
+                    typ = GenericValue(objclass, [TypeVarValue(tv) for tv in typevars])
+                else:
+                    typ = TypedValue(objclass)
+
+        name = arg.arg
+        # Arguments that start with __ are positional-only in typeshed
+        if kind is SigParameter.POSITIONAL_OR_KEYWORD and name.startswith("__"):
+            kind = SigParameter.POSITIONAL_ONLY
+            name = name[2:]
+        # Mark self as positional-only. objclass should be given only if we believe
+        # it's the "self" parameter.
+        if objclass is not None:
+            kind = SigParameter.POSITIONAL_ONLY
+        if default is None:
+            return SigParameter(name, kind, annotation=typ)
+        else:
+            default = self._parse_expr(default, module)
+            if default == KnownValue(...):
+                default = UNRESOLVED_VALUE
+            return SigParameter(name, kind, annotation=typ, default=default)
 
     def _parse_expr(self, node: ast3.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
