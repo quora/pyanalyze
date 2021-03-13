@@ -773,8 +773,18 @@ class TypeshedFinder(object):
             )
             annotation = GenericValue(dict, [TypedValue(str), kwarg_param.annotation])
             arguments.append(kwarg_param.replace(annotation=annotation))
+        # some typeshed types have a positional-only after a normal argument,
+        # and Signature doesn't like that
+        seen_non_positional = False
+        cleaned_arguments = []
+        for arg in arguments:
+            if arg.kind is not SigParameter.POSITIONAL_ONLY:
+                seen_non_positional = True
+            elif seen_non_positional:
+                arg = arg.replace(kind=SigParameter.POSITIONAL_OR_KEYWORD)
+            cleaned_arguments.append(arg)
         return Signature.make(
-            arguments,
+            cleaned_arguments,
             callable=obj,
             return_annotation=GenericValue(Awaitable, [return_value])
             if is_async_fn
