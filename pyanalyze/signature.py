@@ -268,6 +268,8 @@ class Signature:
         if not had_error and self.implementation is not None:
             return_value = self.implementation(variables, visitor, node)
             return clean_up_implementation_fn_return(return_value)
+        elif return_value is EMPTY:
+            return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         else:
             return return_value, NULL_CONSTRAINT, NULL_CONSTRAINT
 
