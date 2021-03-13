@@ -223,11 +223,17 @@ def test_get_argspec():
             ArgSpecCache(config).get_argspec(ClassWithCall.pure_async_classmethod),
         )
 
+        # This behaves differently in 3.9 (decorator) than in 3.6-3.8 (__func__). Not
+        # sure why.
+        if hasattr(ClassWithCall.classmethod_before_async, "decorator"):
+            callable = ClassWithCall.classmethod_before_async.decorator.fn
+        else:
+            callable = ClassWithCall.classmethod_before_async.__func__.fn
+
         assert_eq(
             BoundMethodSignature(
                 Signature.make(
-                    [SigParameter("cls"), SigParameter("ac")],
-                    callable=ClassWithCall.classmethod_before_async.decorator.fn,
+                    [SigParameter("cls"), SigParameter("ac")], callable=callable
                 ),
                 KnownValue(ClassWithCall),
             ),
