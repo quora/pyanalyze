@@ -166,7 +166,7 @@ class Signature:
         visitor: "NameCheckVisitor",
         node: ast.AST,
         typevar_map: TypeVarMap,
-    ) -> None:
+    ) -> bool:
         if param.annotation is not EMPTY and var_value is not param.default:
             if typevar_map:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
@@ -180,6 +180,8 @@ class Signature:
                     % (param.name, param_typ, var_value),
                     ErrorCode.incompatible_argument,
                 )
+                return False
+        return True
 
     def _translate_bound_arg(self, argument: Any) -> Value:
         if argument is EMPTY:
@@ -252,13 +254,18 @@ class Signature:
             if self._return_key in self.typevars_of_params:
                 return_value = return_value.substitute_typevars(typevar_values)
 
+        had_error = False
         for name, var_value in variables.items():
             param = self.signature.parameters[name]
-            self._check_param_type_compatibility(
+            if not self._check_param_type_compatibility(
                 param, var_value, visitor, node, typevar_values
-            )
+            ):
+                had_error = True
 
-        if self.implementation is not None:
+        # don't call the implementation function if we had an error, so that
+        # the implementation function doesn't have to worry about basic
+        # type checking
+        if not had_error and self.implementation is not None:
             return_value = self.implementation(variables, visitor, node)
             return clean_up_implementation_fn_return(return_value)
         else:
