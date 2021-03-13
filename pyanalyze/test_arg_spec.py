@@ -311,6 +311,11 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
                 GenericValue(dict, [TypedValue(int), TypedValue(str)]),
             )
 
+    @assert_passes()
+    def test_str_find(self):
+        def capybara(s: str) -> None:
+            assert_is_value(s.find("x"), TypedValue(int))
+
 
 class Parent(Generic[T]):
     pass
