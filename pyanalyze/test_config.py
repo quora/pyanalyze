@@ -3,7 +3,7 @@
 Configuration file specific to tests.
 
 """
-from .arg_spec import ExtendedArgSpec, Parameter
+from .arg_spec import Signature, SigParameter
 from .config import Config
 from . import tests
 from . import value
@@ -34,10 +34,16 @@ class TestConfig(Config):
 
     def get_known_argspecs(self, arg_spec_cache):
         return {
-            tests.takes_kwonly_argument: ExtendedArgSpec(
-                [Parameter("a")],
-                name="takes_kwonly_argument",
-                kwonly_args=[Parameter("kwonly_arg", typ=value.TypedValue(bool))],
+            tests.takes_kwonly_argument: Signature.make(
+                [
+                    SigParameter("a"),
+                    SigParameter(
+                        "kwonly_arg",
+                        SigParameter.KEYWORD_ONLY,
+                        annotation=value.TypedValue(bool),
+                    ),
+                ],
+                callable=tests.takes_kwonly_argument,
             )
         }
 
