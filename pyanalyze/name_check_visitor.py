@@ -19,6 +19,7 @@ import imp
 import inspect
 from itertools import chain
 import logging
+import operator
 import os.path
 import pickle
 import random
@@ -70,6 +71,7 @@ from pyanalyze.stacked_scopes import (
     ScopeType,
     StackedScopes,
     VisitorState,
+    PredicateProvider,
     LEAVES_LOOP,
     LEAVES_SCOPE,
     constrain_value,
@@ -128,6 +130,28 @@ if hasattr(ast, "MatMult"):
         "__imatmul__",
         "__rmatmul__",
     )
+
+
+def _in(a: Any, b: Any):
+    return operator.contains(b, a)
+
+
+def _not_in(a: Any, b: Any):
+    return not operator.contains(b, a)
+
+
+COMPARATOR_TO_OPERATOR = {
+    ast.Eq: (operator.eq, operator.ne),
+    ast.NotEq: (operator.ne, operator.eq),
+    ast.Lt: (operator.lt, operator.ge),
+    ast.LtE: (operator.le, operator.gt),
+    ast.Gt: (operator.gt, operator.le),
+    ast.GtE: (operator.ge, operator.lt),
+    ast.Is: (operator.is_, operator.is_not),
+    ast.IsNot: (operator.is_not, operator.is_),
+    ast.In: (_in, _not_in),
+    ast.NotIn: (_not_in, _in),
+}
 
 
 @dataclass
@@ -2119,26 +2143,86 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         val, _ = self.constraint_from_compare(node)
         return val
 
-    def constraint_from_compare(self, node):
+    def constraint_from_compare(
+        self, node: ast.Compare
+    ) -> Tuple[Value, AbstractConstraint]:
         if len(node.ops) != 1:
             # TODO handle multi-comparison properly
             self.generic_visit(node)
             return UNRESOLVED_VALUE, NULL_CONSTRAINT
         op = node.ops[0]
-        self.visit(node.left)
-        rhs = self.visit(node.comparators[0])
-        val = UNRESOLVED_VALUE
-        constraint = NULL_CONSTRAINT
+        lhs, lhs_constraint = self._visit_possible_constraint(node.left)
+        rhs, rhs_constraint = self._visit_possible_constraint(node.comparators[0])
+        if isinstance(lhs_constraint, PredicateProvider) and isinstance(
+            rhs, KnownValue
+        ):
+            return self._constraint_from_predicate_provider(lhs_constraint, rhs.val, op)
+        elif isinstance(rhs_constraint, PredicateProvider) and isinstance(
+            lhs, KnownValue
+        ):
+            return self._constraint_from_predicate_provider(rhs_constraint, lhs.val, op)
+        elif isinstance(rhs, KnownValue):
+            constraint = self._constraint_from_compare_op(node.left, rhs.val, op)
+        elif isinstance(lhs, KnownValue):
+            constraint = self._constraint_from_compare_op(
+                node.comparators[0], lhs.val, op
+            )
+        else:
+            constraint = NULL_CONSTRAINT
         if isinstance(op, (ast.Is, ast.IsNot)):
             val = TypedValue(bool)
-            if isinstance(rhs, KnownValue):
-                varname = self.varname_for_constraint(node.left)
-                if varname is not None:
-                    positive = isinstance(op, ast.Is)
-                    constraint = Constraint(
-                        varname, ConstraintType.is_value, positive, rhs.val
-                    )
+        else:
+            val = UNRESOLVED_VALUE
         return val, constraint
+
+    def _constraint_from_compare_op(
+        self, constrained_node: ast.AST, other_val: object, op: ast.AST
+    ) -> AbstractConstraint:
+        varname = self.varname_for_constraint(constrained_node)
+        if varname is None:
+            return NULL_CONSTRAINT
+        if isinstance(op, (ast.Is, ast.IsNot)):
+            positive = isinstance(op, ast.Is)
+            return Constraint(varname, ConstraintType.is_value, positive, other_val)
+        else:
+            positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
+
+            def predicate_func(value: Value, positive: bool) -> Optional[Value]:
+                op = positive_operator if positive else negative_operator
+                if isinstance(value, KnownValue):
+                    try:
+                        result = op(value.val, other_val)
+                    except Exception:
+                        pass
+                    else:
+                        if not result:
+                            return None
+                return value
+
+            return Constraint(varname, ConstraintType.predicate, True, predicate_func)
+
+    def _constraint_from_predicate_provider(
+        self, pred: PredicateProvider, other_val: object, op: ast.AST
+    ) -> Tuple[Value, AbstractConstraint]:
+        positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
+
+        def predicate_func(value: Value, positive: bool) -> Optional[Value]:
+            predicate_value = pred.provider(value)
+            if isinstance(predicate_value, KnownValue):
+                op = positive_operator if positive else negative_operator
+                try:
+                    result = op(predicate_value.val, other_val)
+                except Exception:
+                    pass
+                else:
+                    if not result:
+                        return None
+            return value
+
+        constraint = Constraint(
+            pred.varname, ConstraintType.predicate, True, predicate_func
+        )
+        return UNRESOLVED_VALUE, constraint
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Value:
         val, _ = self.constraint_from_unary_op(node)

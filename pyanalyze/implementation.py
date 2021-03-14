@@ -8,6 +8,7 @@ from .stacked_scopes import (
     AbstractConstraint,
     Constraint,
     ConstraintType,
+    PredicateProvider,
     OrConstraint,
 )
 from .signature import (
@@ -728,6 +729,32 @@ def _qcore_assert_impl(
     return KnownValue(None), NULL_CONSTRAINT, no_return_unless
 
 
+def len_of_value(val: Value) -> Value:
+    if isinstance(val, SequenceIncompleteValue):
+        return KnownValue(len(val.members))
+    elif isinstance(val, DictIncompleteValue):
+        return KnownValue(len(val.items))
+    elif isinstance(val, KnownValue):
+        try:
+            return KnownValue(len(val.val))
+        except Exception:
+            return TypedValue(int)
+    return TypedValue(int)
+
+
+def _len_impl(
+    variables: VarsDict,
+    visitor: "NameCheckVisitor",
+    node: ast.AST,
+) -> ImplementationFnReturn:
+    varname = visitor.varname_for_constraint(node.args[0])
+    if varname is None:
+        constraint = NULL_CONSTRAINT
+    else:
+        constraint = PredicateProvider(varname, len_of_value)
+    return len_of_value(variables["obj"]), constraint
+
+
 _POS_ONLY = SigParameter.POSITIONAL_ONLY
 _ENCODING_PARAMETER = SigParameter(
     "encoding", annotation=TypedValue(str), default=KnownValue("")
@@ -942,6 +969,17 @@ def get_default_argspecs():
         Signature.make(
             [SigParameter("name", annotation=TypedValue(str)), SigParameter(name="tp")],
             callable=NewType,
+        ),
+        Signature.make(
+            [
+                SigParameter(
+                    "obj",
+                    SigParameter.POSITIONAL_ONLY,
+                    annotation=TypedValue(collections.abc.Sized),
+                )
+            ],
+            callable=len,
+            implementation=_len_impl,
         ),
     ]
     return {sig.callable: sig for sig in signatures}

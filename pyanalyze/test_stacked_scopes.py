@@ -1348,6 +1348,20 @@ class TestConstraints(TestNameCheckVisitorBase):
                     ),
                 )
 
+    @assert_passes()
+    def test_operator_constraints(self):
+        def capybara(cond):
+            x = 1 if cond else 2
+            assert_is_value(x, MultiValuedValue([KnownValue(1), KnownValue(2)]))
+            if x == 1:
+                assert_is_value(x, KnownValue(1))
+            else:
+                assert_is_value(x, KnownValue(2))
+            if x in (2,):
+                assert_is_value(x, KnownValue(2))
+            else:
+                assert_is_value(x, KnownValue(1))
+
 
 class TestComposite(TestNameCheckVisitorBase):
     @assert_passes()

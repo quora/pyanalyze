@@ -28,6 +28,7 @@ import builtins
 from types import ModuleType
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterable,
     List,
@@ -60,10 +61,6 @@ LEAVES_SCOPE = "%LEAVES_SCOPE"
 LEAVES_LOOP = "%LEAVES_LOOP"
 _UNINITIALIZED = qcore.MarkerObject("uninitialized")
 
-# Nodes as used in scopes can be any object, as long as they are hashable.
-Node = object
-NCDN = Dict[Union[str, "CompositeVariable"], List[Node]]
-
 
 class VisitorState(enum.Enum):
     collect_names = 1
@@ -78,8 +75,31 @@ class ScopeType(enum.Enum):
 
 
 @dataclass(frozen=True)
-class _LookupContext:
+class CompositeVariable:
+    """Fake variable used to implement constraints on instance variables.
+
+    For example, access to "self.x" would make us use
+    CompositeVariable('self', ('x',)). If a function contains a check for
+    isinstance(self.x, int), we would put a Constraint on this CompositeVariable.
+
+    """
+
     varname: str
+    attributes: Sequence[str]
+
+
+Varname = Union[str, CompositeVariable]
+# Nodes as used in scopes can be any object, as long as they are hashable.
+Node = object
+NCDN = Dict[Varname, List[Node]]
+
+# Type for Constraint.value if constraint type is predicate
+# PredicateFunc = Callable[[Value, bool], Optional[Value]]
+
+
+@dataclass(frozen=True)
+class _LookupContext:
+    varname: Varname
     fallback_value: Optional[Value]
     node: Node
     state: VisitorState
@@ -103,6 +123,8 @@ class ConstraintType(enum.Enum):
     # constraint.varname should be typed as a Value object. Naming of this
     # and is_value is confusing, and ideally we'd come up with better names.
     is_value_object = 6
+    # constraint.value is a PredicateFunc
+    predicate = 7
 
 
 class AbstractConstraint:
@@ -159,7 +181,7 @@ class Constraint(AbstractConstraint):
 
     """
 
-    varname: str
+    varname: Varname
     constraint_type: ConstraintType
     positive: bool
     value: Any
@@ -258,6 +280,11 @@ class Constraint(AbstractConstraint):
                 if boolean_value(value) is not True:
                     yield value
 
+        elif self.constraint_type == ConstraintType.predicate:
+            new_value = self.value(value, self.positive)
+            if new_value is not None:
+                yield value
+
         elif self.constraint_type == ConstraintType.one_of:
             for constraint in self.value:
                 for val in constraint.apply_to_value(value):
@@ -290,6 +317,19 @@ class NullConstraint(AbstractConstraint):
 
 
 NULL_CONSTRAINT = NullConstraint()
+
+
+@dataclass(frozen=True)
+class PredicateProvider(AbstractConstraint):
+    varname: Varname
+    provider: Callable[[Value], Value]
+
+    def apply(self) -> Iterable[Constraint]:
+        return []
+
+    def invert(self) -> AbstractConstraint:
+        # inverting is meaningless
+        return NULL_CONSTRAINT
 
 
 @dataclass(frozen=True)
@@ -334,7 +374,9 @@ class OrConstraint(AbstractConstraint):
                     ],
                 )
 
-    def _constraint_from_list(self, varname: str, constraints: Sequence[Constraint]):
+    def _constraint_from_list(
+        self, varname: Varname, constraints: Sequence[Constraint]
+    ):
         if len(constraints) == 1:
             return constraints[0]
         else:
@@ -351,20 +393,6 @@ class OrConstraint(AbstractConstraint):
     def invert(self) -> AndConstraint:
         # ~(A or B) -> ~A and ~B
         return AndConstraint(self.left.invert(), self.right.invert())
-
-
-@dataclass(frozen=True)
-class CompositeVariable:
-    """Fake variable used to implement constraints on instance variables.
-
-    For example, access to "self.x" would make us use
-    CompositeVariable('self', ('x',)). If a function contains a check for
-    isinstance(self.x, int), we would put a Constraint on this CompositeVariable.
-
-    """
-
-    varname: str
-    attributes: Sequence[str]
 
 
 class _ConstrainedValue(Value):
@@ -836,7 +864,7 @@ class FunctionScope(Scope):
         ]
         return _constrain_value(values, constraints, fallback_value=ctx.fallback_value)
 
-    def _add_composite(self, varname: str) -> None:
+    def _add_composite(self, varname: Varname) -> None:
         if isinstance(varname, CompositeVariable):
             self.name_to_composites[varname.varname].add(varname)
             if len(varname.attributes) > 1:

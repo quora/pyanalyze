@@ -50,7 +50,8 @@ if TYPE_CHECKING:
 # They return either a single Value object, indicating what the function returns, or a tuple of two
 # or three elements:
 # - The return value
-# - A Constraint indicating things that are true if the function returns a truthy value
+# - A Constraint indicating things that are true if the function returns a truthy value,
+#   or a PredicateProvider
 # - A Constraint indicating things that are true unless the function does not return
 ImplementationFnReturn = Union[
     Value,

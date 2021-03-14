@@ -289,11 +289,25 @@ class TestLen(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
         def capybara(x):
-            assert_is_value(len("a"), TypedValue(int))
+            assert_is_value(len("a"), KnownValue(1))
             assert_is_value(len(list(x)), TypedValue(int))
 
             # if we don't know the type, there should be no error
             len(x)
+
+    @assert_passes()
+    def test_narrowing(self):
+        def capybara(cond):
+            lst = [] if cond else [1]
+            assert_is_value(lst, MultiValuedValue([KnownValue([]), KnownValue([1])]))
+            if len(lst) == 1:
+                assert_is_value(lst, KnownValue([1]))
+            else:
+                assert_is_value(lst, KnownValue([]))
+            if len(lst) > 0:
+                assert_is_value(lst, KnownValue([1]))
+            else:
+                assert_is_value(lst, KnownValue([]))
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_wrong_type(self):
