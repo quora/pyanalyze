@@ -76,7 +76,7 @@ from pyanalyze.stacked_scopes import (
     LEAVES_SCOPE,
     constrain_value,
 )
-from pyanalyze.signature import MaybeSignature, make_bound_method
+from pyanalyze.signature import MaybeSignature, make_bound_method, ARGS, KWARGS
 from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from pyanalyze.yield_checker import YieldChecker
 from pyanalyze.type_object import get_mro
@@ -152,6 +152,22 @@ COMPARATOR_TO_OPERATOR = {
     ast.In: (_in, _not_in),
     ast.NotIn: (_not_in, _in),
 }
+
+
+@dataclass
+class StarredValue(Value):
+    """Helper Value to represent the result of "*x".
+
+    Should not escape this file.
+
+    """
+
+    value: Value
+    node: ast.AST
+
+    def __init__(self, value: Value, node: ast.AST) -> None:
+        self.value = value
+        self.node = node
 
 
 @dataclass
@@ -2970,6 +2986,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
             return None
 
+    def visit_Starred(self, node: ast.Starred) -> Value:
+        val = self.visit(node.value)
+        return StarredValue(val, node.value)
+
     def visit_arg(self, node: ast.arg) -> None:
         self.yield_checker.record_assignment(node.arg)
         self._set_name_in_scope(node.arg, node, value=self.being_assigned)
@@ -3263,7 +3283,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     # Call nodes
 
-    def visit_keyword(self, node: ast.keyword) -> Tuple[str, Value]:
+    def visit_keyword(self, node: ast.keyword) -> Tuple[Optional[str], Value]:
         return (node.arg, self.visit(node.value))
 
     def visit_Call(self, node: ast.Call) -> Value:
@@ -3284,12 +3304,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             keywords = []
 
-        has_args_kwargs = any(isinstance(arg, ast.Starred) for arg in node.args) or any(
-            kw.arg is None for kw in node.keywords
-        )
-
         return_value, constraint = self._get_argspec_and_check_call(
-            node, callee_wrapped, args, keywords, has_args_kwargs
+            node, callee_wrapped, args, keywords
         )
 
         if self._is_checking():
@@ -3366,8 +3382,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         node: ast.AST,
         callee_wrapped: Value,
         args: Iterable[Value],
-        keywords: Iterable[Tuple[str, Value]] = [],
-        has_args_kwargs: bool = False,
+        keywords: Iterable[Tuple[Optional[str], Value]] = [],
         allow_call: bool = False,
     ) -> Tuple[Value, AbstractConstraint]:
         if not isinstance(callee_wrapped, (KnownValue, TypedValue, UnboundMethodValue)):
@@ -3389,15 +3404,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             constraint = NULL_CONSTRAINT
             no_return_unless = NULL_CONSTRAINT
 
-        elif has_args_kwargs:
-            # TODO(jelle): handle this better
-            return_value = UNRESOLVED_VALUE
-            constraint = NULL_CONSTRAINT
-            no_return_unless = NULL_CONSTRAINT
-
         else:
-            arguments = [(arg, None) for arg in args] + [
-                (value, keyword) for keyword, value in keywords
+            arguments = [
+                (arg.value, ARGS) if isinstance(arg, StarredValue) else (arg, None)
+                for arg in args
+            ] + [
+                (value, KWARGS) if keyword is None else (value, keyword)
+                for keyword, value in keywords
             ]
             if self._is_checking():
                 (
