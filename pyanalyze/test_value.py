@@ -375,3 +375,42 @@ def test_concrete_values_from_iterable():
         TypedValue(int),
         concrete_values_from_iterable(GenericValue(list, [TypedValue(int)]), _CTX),
     )
+    assert_eq(
+        [
+            MultiValuedValue([KnownValue(1), KnownValue(3)]),
+            MultiValuedValue([KnownValue(2), KnownValue(4)]),
+        ],
+        concrete_values_from_iterable(
+            MultiValuedValue(
+                [
+                    SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                    KnownValue((3, 4)),
+                ]
+            ),
+            _CTX,
+        ),
+    )
+    assert_eq(
+        MultiValuedValue([KnownValue(1), KnownValue(2), TypedValue(int)]),
+        concrete_values_from_iterable(
+            MultiValuedValue(
+                [
+                    SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                    GenericValue(list, [TypedValue(int)]),
+                ]
+            ),
+            _CTX,
+        ),
+    )
+    assert_eq(
+        MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue(3)]),
+        concrete_values_from_iterable(
+            MultiValuedValue(
+                [
+                    SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                    KnownValue((3,)),
+                ]
+            ),
+            _CTX,
+        ),
+    )

@@ -877,6 +877,19 @@ def concrete_values_from_iterable(
     - int -> None
 
     """
+    if isinstance(value, MultiValuedValue):
+        subvals = [concrete_values_from_iterable(val, ctx) for val in value.vals]
+        if any(subval is None for subval in subvals):
+            return None
+        value_subvals = [subval for subval in subvals if isinstance(subval, Value)]
+        seq_subvals = [
+            subval
+            for subval in subvals
+            if subval is not None and not isinstance(subval, Value)
+        ]
+        if not value_subvals and len(set(map(len, seq_subvals))) == 1:
+            return [unite_values(*vals) for vals in zip(*seq_subvals)]
+        return unite_values(*value_subvals, *chain.from_iterable(seq_subvals))
     value = replace_known_sequence_value(value)
     if isinstance(value, SequenceIncompleteValue):
         return value.members

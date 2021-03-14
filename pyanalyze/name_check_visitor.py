@@ -2072,7 +2072,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             being_assigned = concrete_values_from_iterable(self.being_assigned, self)
             if being_assigned is None:
                 self.show_error(
-                    node, "Unpacking assignment of a non-iterable", ErrorCode.bad_unpack
+                    node, f"{self.being_assigned} is not iterable", ErrorCode.bad_unpack
                 )
                 with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
                     return self.generic_visit(node)
