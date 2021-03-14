@@ -406,9 +406,20 @@ def run():
 
     @assert_passes()
     def test_correct_unpack(self):
-        def run():
+        from typing import List
+
+        def run(lst: List[int]):
             a, b = 1, 2
-            return a, b
+            assert_is_value(a, KnownValue(1))
+            assert_is_value(b, KnownValue(2))
+
+            c, d = lst
+            assert_is_value(c, TypedValue(int))
+            assert_is_value(d, TypedValue(int))
+
+            e, f = [lst, 42]
+            assert_is_value(e, GenericValue(list, [TypedValue(int)]))
+            assert_is_value(f, KnownValue(42))
 
     @assert_fails(ErrorCode.not_callable)
     def test_unpack_int(self):
@@ -416,13 +427,6 @@ def run():
             a, b = 1, 2
             a()
             return a, b
-
-    @assert_passes()
-    def test_unpack_inference(self):
-        def run(s):
-            a, b = 1, int(s)
-            assert_is_value(a, KnownValue(1))
-            assert_is_value(b, TypedValue(int))
 
     @assert_fails(ErrorCode.undefined_name)
     def test_nested_classes(self):
@@ -533,6 +537,7 @@ def run():
             assert_is_value(
                 y, SequenceIncompleteValue(tuple, [UNRESOLVED_VALUE, KnownValue(2)])
             )
+
             s = {a, b}
             assert_is_value(
                 s, SequenceIncompleteValue(set, [UNRESOLVED_VALUE, UNRESOLVED_VALUE])
@@ -2028,10 +2033,28 @@ class TestUnpackingGeneralizations(TestNameCheckVisitorBase):
             assert_is_value(d2, TypedValue(dict))
 
     @assert_passes()
-    def test_tuple_unpacking(self):
+    def test_iterable_unpacking(self):
         def capybara(x):
             degu = (1, *x)
-            assert_is_value(degu, TypedValue(tuple))
+            assert_is_value(
+                degu,
+                GenericValue(
+                    tuple, [MultiValuedValue([KnownValue(1), UNRESOLVED_VALUE])]
+                ),
+            )
+
+            z = [1, *(2, 3)]
+            assert_is_value(
+                z,
+                SequenceIncompleteValue(
+                    list, [KnownValue(1), KnownValue(2), KnownValue(3)]
+                ),
+            )
+
+    @assert_fails(ErrorCode.unsupported_operation)
+    def test_not_iterable(self):
+        def capybara(x: int):
+            (*x,)
 
 
 class TestUnusedIgnore(TestNameCheckVisitorBase):

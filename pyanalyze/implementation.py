@@ -35,6 +35,7 @@ from .value import (
     Value,
     unite_values,
     flatten_values,
+    replace_known_sequence_value,
 )
 
 import ast
@@ -102,19 +103,6 @@ def flatten_unions(
         reduce(_maybe_or_constraint, constraints),
         reduce(_maybe_or_constraint, no_return_unless),
     )
-
-
-def replace_known_sequence_value(value: Value) -> Value:
-    if isinstance(value, KnownValue):
-        if isinstance(value.val, (list, tuple, set)):
-            return SequenceIncompleteValue(
-                type(value.val), [KnownValue(elt) for elt in value.val]
-            )
-        elif isinstance(value.val, dict):
-            return DictIncompleteValue(
-                [(KnownValue(k), KnownValue(v)) for k, v in value.val.items()]
-            )
-    return value
 
 
 # Implementations of some important functions for use in their ExtendedArgSpecs (see above). These
