@@ -2076,6 +2076,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
                 with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
                     return self.generic_visit(node)
+            elif any(isinstance(elt, ast.Starred) for elt in node.elts):
+                # TODO handle * assignment in the left hand side
+                with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
+                    return self.generic_visit(node)
             elif isinstance(being_assigned, Value):
                 with qcore.override(self, "being_assigned", being_assigned):
                     return self.generic_visit(node)
@@ -2084,8 +2088,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 if len(assign_to) != len(being_assigned):
                     self.show_error(
                         node,
-                        f"Length mismatch in unpacking assignment: "
-                        "expected {len(assign_to)} elements but got {self.being_assigned}",
+                        "Length mismatch in unpacking assignment: "
+                        f"expected {len(assign_to)} elements but got {self.being_assigned}",
                         ErrorCode.bad_unpack,
                     )
                     with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
