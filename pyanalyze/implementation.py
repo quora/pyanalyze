@@ -30,6 +30,7 @@ from .value import (
     MultiValuedValue,
     TypeVarValue,
     UNRESOLVED_VALUE,
+    NO_RETURN_VALUE,
     Value,
     unite_values,
     flatten_values,
@@ -88,12 +89,13 @@ def flatten_unions(
     callable: Callable[..., ImplementationFnReturn], *values: Value
 ) -> ImplementationFnReturn:
     value_lists = [flatten_values(val) for val in values]
-    return_values, constraints, no_return_unless = zip(
-        *[
-            clean_up_implementation_fn_return(callable(*vals))
-            for vals in product(*value_lists)
-        ]
-    )
+    results = [
+        clean_up_implementation_fn_return(callable(*vals))
+        for vals in product(*value_lists)
+    ]
+    if not results:
+        return NO_RETURN_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+    return_values, constraints, no_return_unless = zip(*results)
     return (
         unite_values(*return_values),
         reduce(_maybe_or_constraint, constraints),

@@ -584,7 +584,7 @@ class YieldChecker(object):
         return asynq.is_async_fn(obj)
 
 
-def _camel_case_to_snake_case(s):
+def _camel_case_to_snake_case(s: str) -> str:
     """Converts a CamelCase string to snake_case."""
     out = []
     last_was_uppercase = False

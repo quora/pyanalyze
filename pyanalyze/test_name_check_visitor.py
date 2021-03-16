@@ -33,6 +33,7 @@ from .value import (
     SequenceIncompleteValue,
     TypedValue,
     UnboundMethodValue,
+    NO_RETURN_VALUE,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     VariableNameValue,
@@ -133,6 +134,7 @@ def _make_module(code_str):
         TypedDictValue=TypedDictValue,
         dump_value=dump_value,
         UNINITIALIZED_VALUE=UNINITIALIZED_VALUE,
+        NO_RETURN_VALUE=NO_RETURN_VALUE,
         __name__=module_name,
     )
     exec (code_str, scope)
@@ -671,6 +673,8 @@ def run():
         def capybara():
             assert x
 
+
+class TestNoReturn(TestNameCheckVisitorBase):
     @assert_passes()
     def test_no_return(self):
         from typing_extensions import NoReturn
@@ -683,6 +687,16 @@ def run():
             if x is None:
                 f()
             assert_is_value(x, TypedValue(int))
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_no_return_parameter(self):
+        from typing_extensions import NoReturn
+
+        def assert_unreachable(x: NoReturn) -> None:
+            pass
+
+        def capybara():
+            assert_unreachable(1)
 
 
 class TestSubclassValue(TestNameCheckVisitorBase):
