@@ -593,9 +593,13 @@ def _dump_value_impl(
     variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
 ) -> ImplementationFnReturn:
     if visitor._is_checking():
-        visitor.show_error(
-            node, f"Value: {variables['value']}", ErrorCode.inference_failure
-        )
+        value = variables["value"]
+        message = f"Value: {value}"
+        if isinstance(value, KnownValue):
+            sig = visitor.arg_spec_cache.get_argspec(value.val)
+            if sig is not None:
+                message += f", signature: {sig}"
+        visitor.show_error(node, message, ErrorCode.inference_failure)
     return KnownValue(None)
 
 
