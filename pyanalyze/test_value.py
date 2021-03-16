@@ -1,4 +1,5 @@
 import collections.abc
+import enum
 import io
 from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
 from typing import NewType, Sequence, Dict
@@ -338,6 +339,11 @@ def test_typeddict_value():
     )
 
 
+class Capybara(enum.IntEnum):
+    hydrochaeris = 1
+    isthmius = 2
+
+
 def test_new_type_value():
     nt1 = NewType("nt1", int)
     nt1_val = value.NewTypeValue(nt1)
@@ -348,6 +354,8 @@ def test_new_type_value():
     # This should eventually return False
     assert_can_assign(nt1_val, TypedValue(int))
     assert_can_assign(TypedValue(int), nt1_val)
+    assert_cannot_assign(nt1_val, TypedValue(Capybara))
+    assert_cannot_assign(nt1_val, KnownValue(Capybara.hydrochaeris))
 
 
 def test_io():
