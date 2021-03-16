@@ -119,3 +119,21 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara():
             x = Row()
             return x.capybaras
+
+    @assert_passes()
+    def test_union(self):
+        from typing import Union
+        from dataclasses import dataclass
+
+        @dataclass
+        class Capybara:
+            attr: int
+
+        @dataclass
+        class Paca:
+            attr: str
+
+        def test(x: Union[Capybara, Paca]) -> None:
+            assert_is_value(
+                x.attr, MultiValuedValue([TypedValue(int), TypedValue(str)])
+            )

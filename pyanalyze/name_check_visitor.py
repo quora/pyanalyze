@@ -3203,51 +3203,60 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> Value:
         result = self.get_attribute(node, attr, root_value)
         if result is UNINITIALIZED_VALUE:
-            # We don't throw an error in many
-            # cases where we're not quite sure whether an attribute
-            # will exist.
-            if isinstance(root_value, UnboundMethodValue):
-                if self._should_ignore_val(node):
-                    return UNRESOLVED_VALUE
-            elif isinstance(root_value, KnownValue):
-                # super calls on mixin classes may use attributes that are defined only on child classes
-                if isinstance(root_value.val, super):
-                    subclasses = qcore.inspection.get_subclass_tree(
-                        root_value.val.__thisclass__
-                    )
-                    if any(
-                        hasattr(cls, attr)
-                        for cls in subclasses
-                        if cls is not root_value.val.__thisclass__
-                    ):
-                        return UNRESOLVED_VALUE
-
-                # Ignore objects that override __getattr__
-                if (
-                    _static_hasattr(root_value.val, "__getattr__")
-                    or self._should_ignore_val(node)
-                    or safe_getattr(
-                        root_value.val, "_pyanalyze_is_nested_function", False
-                    )
-                ):
-                    return UNRESOLVED_VALUE
-            elif isinstance(root_value, (TypedValue, SubclassValue)):
-                root_type = root_value.typ
-                # namedtuples have only static attributes
-                if not (
-                    isinstance(root_type, type)
-                    and issubclass(root_type, tuple)
-                    and not hasattr(root_type, "__getattr__")
-                ):
-                    return self._maybe_get_attr_value(root_type, attr)
-            self._show_error_if_checking(
-                node,
-                "%s has no attribute %r" % (root_value, attr),
-                ErrorCode.undefined_attribute,
-            )
-            return UNRESOLVED_VALUE
-
+            return self._get_attribute_fallback(node, attr, root_value)
         return result
+
+    def _get_attribute_fallback(
+        self, node: ast.Attribute, attr: str, root_value: Value
+    ) -> Value:
+        # We don't throw an error in many
+        # cases where we're not quite sure whether an attribute
+        # will exist.
+        if isinstance(root_value, UnboundMethodValue):
+            if self._should_ignore_val(node):
+                return UNRESOLVED_VALUE
+        elif isinstance(root_value, KnownValue):
+            # super calls on mixin classes may use attributes that are defined only on child classes
+            if isinstance(root_value.val, super):
+                subclasses = qcore.inspection.get_subclass_tree(
+                    root_value.val.__thisclass__
+                )
+                if any(
+                    hasattr(cls, attr)
+                    for cls in subclasses
+                    if cls is not root_value.val.__thisclass__
+                ):
+                    return UNRESOLVED_VALUE
+
+            # Ignore objects that override __getattr__
+            if (
+                _static_hasattr(root_value.val, "__getattr__")
+                or self._should_ignore_val(node)
+                or safe_getattr(root_value.val, "_pyanalyze_is_nested_function", False)
+            ):
+                return UNRESOLVED_VALUE
+        elif isinstance(root_value, (TypedValue, SubclassValue)):
+            root_type = root_value.typ
+            # namedtuples have only static attributes
+            if not (
+                isinstance(root_type, type)
+                and issubclass(root_type, tuple)
+                and not hasattr(root_type, "__getattr__")
+            ):
+                return self._maybe_get_attr_value(root_type, attr)
+        elif isinstance(root_value, MultiValuedValue):
+            return unite_values(
+                *[
+                    self._get_attribute_fallback(node, attr, val)
+                    for val in root_value.vals
+                ]
+            )
+        self._show_error_if_checking(
+            node,
+            "%s has no attribute %r" % (root_value, attr),
+            ErrorCode.undefined_attribute,
+        )
+        return UNRESOLVED_VALUE
 
     def _visit_set_attribute(self, node, root_value):
         typ = root_value.get_type()
