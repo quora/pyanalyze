@@ -257,29 +257,34 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def check_all_files(cls, include_tests=False, assert_passes=True, **kwargs):
-        """Runs the check for all files in a/ or changed files if we are test-local."""
+        """Runs the check for all files in scope or changed files if we are test-local."""
         if "settings" not in kwargs:
             kwargs["settings"] = cls._get_default_settings()
         all_failures = []
-        if cls.should_check_environ_for_files:
-            environ_files = get_files_to_check_from_environ()
-        else:
-            environ_files = None
-        if environ_files is not None:
-            files = [
-                filename
-                for filename in environ_files
-                if not cls._should_ignore_module(filename)
-                and not filename.endswith(".so")
-            ]
-        else:
-            files = set(cls._get_all_python_files(include_tests=include_tests))
+        files = cls.get_files_to_check(include_tests)
         all_failures = cls._run_on_files(files, **kwargs)
         if assert_passes:
             assert not all_failures, "".join(
                 failure["message"] for failure in all_failures
             )
         return all_failures
+
+    @classmethod
+    def get_files_to_check(cls, include_tests: bool) -> List[str]:
+        """Produce the list of files to check."""
+        if cls.should_check_environ_for_files:
+            environ_files = get_files_to_check_from_environ()
+        else:
+            environ_files = None
+        if environ_files is not None:
+            return [
+                filename
+                for filename in environ_files
+                if not cls._should_ignore_module(filename)
+                and not filename.endswith(".so")
+            ]
+        else:
+            return sorted(set(cls._get_all_python_files(include_tests=include_tests)))
 
     @classmethod
     def main(cls):
