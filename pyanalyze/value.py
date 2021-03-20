@@ -6,7 +6,7 @@ Implementation of value classes, which represent values found while analyzing an
 
 import ast
 import collections.abc
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field, InitVar
 import inspect
 from itertools import chain
@@ -29,6 +29,7 @@ from .type_object import TypeObject
 
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
+KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 
 TypeVarMap = Mapping["TypeVar", "Value"]
 
@@ -845,7 +846,10 @@ def boolean_value(value: Optional[Value]) -> Optional[bool]:
     """
     if isinstance(value, KnownValue):
         try:
-            return bool(value.val)
+            # don't pretend to know the boolean value of mutable types
+            # since we may have missed a change
+            if not isinstance(value.val, KNOWN_MUTABLE_TYPES):
+                return bool(value.val)
         except Exception:
             # Its __bool__ threw an exception. Just give up.
             return None

@@ -31,6 +31,7 @@ from .value import (
     TypeVarValue,
     UNRESOLVED_VALUE,
     NO_RETURN_VALUE,
+    KNOWN_MUTABLE_TYPES,
     Value,
     unite_values,
     flatten_values,
@@ -736,13 +737,14 @@ def _qcore_assert_impl(
 
 
 def len_of_value(val: Value) -> Value:
-    if isinstance(val, SequenceIncompleteValue):
+    if isinstance(val, SequenceIncompleteValue) and not issubclass(
+        val.typ, KNOWN_MUTABLE_TYPES
+    ):
         return KnownValue(len(val.members))
-    elif isinstance(val, DictIncompleteValue):
-        return KnownValue(len(val.items))
     elif isinstance(val, KnownValue):
         try:
-            return KnownValue(len(val.val))
+            if not isinstance(val.val, KNOWN_MUTABLE_TYPES):
+                return KnownValue(len(val.val))
         except Exception:
             return TypedValue(int)
     return TypedValue(int)

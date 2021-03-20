@@ -3,7 +3,7 @@
 "Safe" operations that call into user code and catch any excxeptions.
 
 """
-from typing import Any
+from typing import Any, Tuple, Union
 
 
 def safe_hasattr(item: object, member: str) -> bool:
@@ -30,7 +30,7 @@ def safe_equals(left: object, right: object) -> bool:
         return False
 
 
-def safe_issubclass(value: type, typ: type) -> bool:
+def safe_issubclass(value: type, typ: Union[type, Tuple[type, ...]]) -> bool:
     try:
         return issubclass(value, typ)
     except Exception:
