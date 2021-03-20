@@ -23,6 +23,7 @@ from .signature import (
 from .value import (
     TypedValue,
     GenericValue,
+    NewTypeValue,
     KnownValue,
     UNRESOLVED_VALUE,
     Value,
@@ -366,6 +367,22 @@ class ArgSpecCache:
             if hasattr(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
                 return self._cached_get_argspec(obj.inner, kwargs)
+
+            # NewTypes, but we don't currently know how to handle NewTypes over more
+            # complicated types.
+            if hasattr(obj, "__supertype__") and isinstance(obj.__supertype__, type):
+                # NewType
+                return Signature.make(
+                    [
+                        SigParameter(
+                            "x",
+                            SigParameter.POSITIONAL_ONLY,
+                            annotation=type_from_runtime(obj.__supertype__),
+                        )
+                    ],
+                    NewTypeValue(obj),
+                    callable=obj,
+                )
 
             return self.from_signature(
                 self._safe_get_signature(obj),
