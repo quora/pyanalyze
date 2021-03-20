@@ -806,7 +806,7 @@ def unify_typevar_maps(tv_maps: Sequence[Optional[TypeVarMap]]) -> Optional[Type
 
 def unite_values(*values: Value) -> Value:
     if not values:
-        return UNRESOLVED_VALUE
+        return NO_RETURN_VALUE
     # Make sure order is consistent; conceptually this is a set but
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()

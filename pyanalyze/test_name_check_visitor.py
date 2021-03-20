@@ -1344,6 +1344,21 @@ class TestIterationTarget(TestNameCheckVisitorBase):
             for key in dct:
                 assert_is_value(key, mvv)
 
+    @assert_passes()
+    def test_maybe_empty(self):
+        def capybara(cond):
+            lst = []
+            if cond:
+                lst.append("x")
+            assert_is_value(
+                lst,
+                MultiValuedValue(
+                    [SequenceIncompleteValue(list, [KnownValue("x")]), KnownValue([])]
+                ),
+            )
+            for c in lst:
+                assert_is_value(c, KnownValue("x"))
+
 
 class TestAddImports(TestNameCheckVisitorBase):
     def test_top_level(self):
