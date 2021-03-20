@@ -6,7 +6,7 @@ Implementation of value classes, which represent values found while analyzing an
 
 import ast
 import collections.abc
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field, InitVar
 import inspect
 from itertools import chain
@@ -29,6 +29,7 @@ from .type_object import TypeObject
 
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
+KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 
 TypeVarMap = Mapping["TypeVar", "Value"]
 
@@ -86,11 +87,7 @@ class Value:
         return None.
 
         """
-        if (
-            other is UNRESOLVED_VALUE
-            or other is NO_RETURN_VALUE
-            or isinstance(other, VariableNameValue)
-        ):
+        if other is UNRESOLVED_VALUE or isinstance(other, VariableNameValue):
             return {}
         elif isinstance(other, MultiValuedValue):
             tv_maps = [self.can_assign(val, ctx) for val in other.vals]
@@ -140,21 +137,6 @@ class UninitializedValue(Value):
 
 
 UNINITIALIZED_VALUE = UninitializedValue()
-
-
-@dataclass(frozen=True)
-class NoReturnValue(Value):
-    """Value that indicates that a function will never return."""
-
-    def __str__(self) -> str:
-        return "NoReturn"
-
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
-        # You can't assign anything to NoReturn
-        return None
-
-
-NO_RETURN_VALUE = NoReturnValue()
 
 
 @dataclass(frozen=True)
@@ -301,7 +283,7 @@ class TypedValue(Value):
     def can_assign_thrift_enum(
         self, other: Value, ctx: CanAssignContext
     ) -> Optional[TypeVarMap]:
-        if other is UNRESOLVED_VALUE or other is NO_RETURN_VALUE:
+        if other is UNRESOLVED_VALUE:
             return {}
         elif isinstance(other, KnownValue):
             if not isinstance(other.val, int):
@@ -660,6 +642,8 @@ class MultiValuedValue(Value):
         )
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        if not self.vals:
+            return self
         return MultiValuedValue(
             [val.substitute_typevars(typevars) for val in self.vals]
         )
@@ -685,6 +669,8 @@ class MultiValuedValue(Value):
             }
 
     def get_type_value(self) -> Value:
+        if not self.vals:
+            return self
         return MultiValuedValue([val.get_type_value() for val in self.vals])
 
     def __eq__(self, other: Value) -> Union[bool, type(NotImplemented)]:
@@ -705,12 +691,17 @@ class MultiValuedValue(Value):
         return not (self == other)
 
     def __str__(self) -> str:
+        if not self.vals:
+            return "NoReturn"
         return "Union[%s]" % ", ".join(map(str, self.vals))
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
         for val in self.vals:
             yield from val.walk_values()
+
+
+NO_RETURN_VALUE = MultiValuedValue([])
 
 
 @dataclass(frozen=True)
@@ -801,7 +792,9 @@ def flatten_values(val: Value) -> Iterable[Value]:
         yield val
 
 
-def unify_typevar_maps(tv_maps: Iterable[Optional[TypeVarMap]]) -> Optional[TypeVarMap]:
+def unify_typevar_maps(tv_maps: Sequence[Optional[TypeVarMap]]) -> Optional[TypeVarMap]:
+    if not tv_maps:
+        return None
     raw_map = defaultdict(list)
     for tv_map in tv_maps:
         if tv_map is None:
@@ -813,7 +806,7 @@ def unify_typevar_maps(tv_maps: Iterable[Optional[TypeVarMap]]) -> Optional[Type
 
 def unite_values(*values: Value) -> Value:
     if not values:
-        return UNRESOLVED_VALUE
+        return NO_RETURN_VALUE
     # Make sure order is consistent; conceptually this is a set but
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
@@ -836,7 +829,10 @@ def unite_values(*values: Value) -> Value:
                 except Exception:
                     uncomparable_vals.append(subval)
     existing = list(hashable_vals) + unhashable_vals + uncomparable_vals
-    if len(existing) == 1:
+    num = len(existing)
+    if num == 0:
+        return NO_RETURN_VALUE
+    if num == 1:
         return existing[0]
     else:
         return MultiValuedValue(existing)
@@ -850,7 +846,10 @@ def boolean_value(value: Optional[Value]) -> Optional[bool]:
     """
     if isinstance(value, KnownValue):
         try:
-            return bool(value.val)
+            # don't pretend to know the boolean value of mutable types
+            # since we may have missed a change
+            if not isinstance(value.val, KNOWN_MUTABLE_TYPES):
+                return bool(value.val)
         except Exception:
             # Its __bool__ threw an exception. Just give up.
             return None

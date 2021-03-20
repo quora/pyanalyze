@@ -615,6 +615,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     error_code_enum = ErrorCode
     config = Config()  # subclasses may override this with a more specific config
 
+    being_assigned: Value
+    current_class: Optional[type]
+    current_function_name: Optional[str]
+    current_enum_members: Optional[Dict[object, str]]
+    _name_node_to_statement: Optional[Dict[ast.AST, Optional[ast.AST]]]
+    import_name_to_node: Dict[str, ast.AST]
+
     def __init__(
         self,
         filename,
@@ -813,7 +820,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             ret = UNRESOLVED_VALUE
         finally:
             self.node_context.contexts.pop()
-        if ret is None:
+        if ret is NO_RETURN_VALUE:
+            self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
+        elif ret is None:
             ret = UNRESOLVED_VALUE
         if self.annotate:
             node.inferred_value = ret
@@ -1427,7 +1436,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         all_unused_nodes = all_def_nodes - all_used_def_nodes
         for unused in all_unused_nodes:
             # Ignore names not defined through a Name node (e.g., some function arguments)
-            if not isinstance(unused, ast.Name):
+            if not isinstance(unused, ast.Name) or not self._is_write_ctx(unused.ctx):
                 continue
             # Ignore names that are meant to be ignored
             if unused.id.startswith("_"):
@@ -1520,7 +1529,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     and not function_info.is_staticmethod
                     and not isinstance(node, ast.Lambda)
                 )
-                if getattr(arg, "annotation", None) is not None:
+                if arg.annotation is not None:
                     value = self._value_of_annotated_arg(arg)
                     if default is not None and not value.is_assignable(default, self):
                         self._show_error_if_checking(
@@ -1574,7 +1583,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return args
 
     def _value_of_annotated_arg(self, arg: ast.arg) -> Value:
-        if not hasattr(arg, "annotation") or arg.annotation is None:
+        if arg.annotation is None:
             return UNRESOLVED_VALUE
         # Evaluate annotations in the surrounding scope,
         # not the function's scope.
@@ -2059,6 +2068,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _visit_display(self, node, typ):
         if self._is_write_ctx(node.ctx):
+            if any(isinstance(elt, ast.Starred) for elt in node.elts):
+                # TODO handle * assignment in the left hand side
+                with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
+                    return self.generic_visit(node)
+
             if isinstance(self.being_assigned, KnownValue) and isinstance(
                 self.being_assigned.val, (list, tuple)
             ):
@@ -2482,6 +2496,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             method_return_type.check_return_value(
                 node, self, value, self.current_function_name
             )
+        if value is NO_RETURN_VALUE:
+            return
         self.return_values.append(value)
         self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
         if (
@@ -2696,6 +2712,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 unite_values(*[key for key, _ in iterated.items]),
                 len(iterated.items),
             )
+        elif iterated is NO_RETURN_VALUE:
+            return NO_RETURN_VALUE, None
         elif isinstance(iterated, MultiValuedValue):
             vals, nums = zip(
                 *[
@@ -2863,8 +2881,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self._show_error_if_checking(
                 node, error_code=ErrorCode.missing_await, replacement=replacement
             )
-        if value is NO_RETURN_VALUE:
-            self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
         return value
 
     # Assignments

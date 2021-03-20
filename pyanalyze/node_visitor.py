@@ -122,6 +122,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     _changes_for_fixer = collections.defaultdict(list)
 
+    tree: Optional[ast.AST]
+
     def __init__(
         self,
         filename,

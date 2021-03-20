@@ -30,6 +30,8 @@ from .value import (
     MultiValuedValue,
     TypeVarValue,
     UNRESOLVED_VALUE,
+    NO_RETURN_VALUE,
+    KNOWN_MUTABLE_TYPES,
     Value,
     unite_values,
     flatten_values,
@@ -88,12 +90,13 @@ def flatten_unions(
     callable: Callable[..., ImplementationFnReturn], *values: Value
 ) -> ImplementationFnReturn:
     value_lists = [flatten_values(val) for val in values]
-    return_values, constraints, no_return_unless = zip(
-        *[
-            clean_up_implementation_fn_return(callable(*vals))
-            for vals in product(*value_lists)
-        ]
-    )
+    results = [
+        clean_up_implementation_fn_return(callable(*vals))
+        for vals in product(*value_lists)
+    ]
+    if not results:
+        return NO_RETURN_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+    return_values, constraints, no_return_unless = zip(*results)
     return (
         unite_values(*return_values),
         reduce(_maybe_or_constraint, constraints),
@@ -734,13 +737,14 @@ def _qcore_assert_impl(
 
 
 def len_of_value(val: Value) -> Value:
-    if isinstance(val, SequenceIncompleteValue):
+    if isinstance(val, SequenceIncompleteValue) and not issubclass(
+        val.typ, KNOWN_MUTABLE_TYPES
+    ):
         return KnownValue(len(val.members))
-    elif isinstance(val, DictIncompleteValue):
-        return KnownValue(len(val.items))
     elif isinstance(val, KnownValue):
         try:
-            return KnownValue(len(val.val))
+            if not isinstance(val.val, KNOWN_MUTABLE_TYPES):
+                return KnownValue(len(val.val))
         except Exception:
             return TypedValue(int)
     return TypedValue(int)
