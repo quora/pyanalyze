@@ -2068,6 +2068,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _visit_display(self, node, typ):
         if self._is_write_ctx(node.ctx):
+            if any(isinstance(elt, ast.Starred) for elt in node.elts):
+                # TODO handle * assignment in the left hand side
+                with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
+                    return self.generic_visit(node)
+
             if isinstance(self.being_assigned, KnownValue) and isinstance(
                 self.being_assigned.val, (list, tuple)
             ):
