@@ -16,7 +16,7 @@ import io
 import itertools
 import time
 import typing
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, NewType
 
 from .test_config import TestConfig
 from .test_name_check_visitor import (
@@ -29,6 +29,7 @@ from .arg_spec import ArgSpecCache, TypeshedFinder, is_dot_asynq_function
 from .tests import l0cached_async_fn
 from .value import (
     KnownValue,
+    NewTypeValue,
     TypedValue,
     GenericValue,
     TypeVarValue,
@@ -37,6 +38,7 @@ from .value import (
 )
 
 T = TypeVar("T")
+NT = NewType("NT", int)
 
 
 class ClassWithCall(object):
@@ -278,6 +280,18 @@ def test_get_argspec():
                 callable=decorated,
             ),
             ArgSpecCache(config).get_argspec(decorated),
+        )
+        assert_eq(
+            Signature.make(
+                [
+                    SigParameter(
+                        "x", SigParameter.POSITIONAL_ONLY, annotation=TypedValue(int)
+                    )
+                ],
+                NewTypeValue(NT),
+                callable=NT,
+            ),
+            ArgSpecCache(config).get_argspec(NT),
         )
 
 
