@@ -3377,11 +3377,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _can_perform_call(self, node, args, keywords):
         """Returns whether all of the arguments were inferred successfully."""
-        return (
-            node.starargs is None
-            and node.kwargs is None
-            and all(isinstance(arg, KnownValue) for arg in args)
-            and all(isinstance(arg, KnownValue) for _, arg in keywords)
+        return all(isinstance(arg, KnownValue) for arg in args) and all(
+            isinstance(arg, KnownValue) for _, arg in keywords
         )
 
     def _try_perform_call(self, callee_val, node, args, keywords, fallback_return):
