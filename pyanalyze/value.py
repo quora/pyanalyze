@@ -856,6 +856,64 @@ def boolean_value(value: Optional[Value]) -> Optional[bool]:
     return None
 
 
+T = TypeVar("T")
+IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
+
+
+def concrete_values_from_iterable(
+    value: Value, ctx: CanAssignContext
+) -> Union[None, Value, Sequence[Value]]:
+    """Return the exact values that can be extracted from an iterable.
+
+    Three possible return types:
+    - None if the argument is not iterable
+    - A sequence of Values if we know the exact types in the iterable
+    - A single Value if we just know that the iterable contains this
+      value, but not the precise number of them.
+
+    Examples:
+    - tuple[int, str] -> (int, str)
+    - tuple[int, ...] -> int
+    - int -> None
+
+    """
+    if isinstance(value, MultiValuedValue):
+        subvals = [concrete_values_from_iterable(val, ctx) for val in value.vals]
+        if any(subval is None for subval in subvals):
+            return None
+        value_subvals = [subval for subval in subvals if isinstance(subval, Value)]
+        seq_subvals = [
+            subval
+            for subval in subvals
+            if subval is not None and not isinstance(subval, Value)
+        ]
+        if not value_subvals and len(set(map(len, seq_subvals))) == 1:
+            return [unite_values(*vals) for vals in zip(*seq_subvals)]
+        return unite_values(*value_subvals, *chain.from_iterable(seq_subvals))
+    value = replace_known_sequence_value(value)
+    if isinstance(value, SequenceIncompleteValue):
+        return value.members
+    elif isinstance(value, DictIncompleteValue):
+        return [key for key, _ in value.items]
+    tv_map = IterableValue.can_assign(value, ctx)
+    if tv_map is not None:
+        return tv_map.get(T, UNRESOLVED_VALUE)
+    return None
+
+
+def replace_known_sequence_value(value: Value) -> Value:
+    if isinstance(value, KnownValue):
+        if isinstance(value.val, (list, tuple, set)):
+            return SequenceIncompleteValue(
+                type(value.val), [KnownValue(elt) for elt in value.val]
+            )
+        elif isinstance(value.val, dict):
+            return DictIncompleteValue(
+                [(KnownValue(k), KnownValue(v)) for k, v in value.val.items()]
+            )
+    return value
+
+
 def extract_typevars(value: Value) -> Iterable["TypeVar"]:
     for val in value.walk_values():
         if isinstance(val, TypeVarValue):
