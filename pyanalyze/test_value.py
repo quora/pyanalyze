@@ -18,8 +18,10 @@ from .value import (
     MultiValuedValue,
     SubclassValue,
     CanAssignContext,
+    SequenceIncompleteValue,
     TypeVarMap,
     UNRESOLVED_VALUE,
+    concrete_values_from_iterable,
 )
 
 
@@ -353,4 +355,62 @@ def test_new_type_value():
 def test_io():
     assert_can_assign(
         GenericValue(typing.IO, [UNRESOLVED_VALUE]), TypedValue(io.BytesIO)
+    )
+
+
+def test_concrete_values_from_iterable():
+    assert_is(None, concrete_values_from_iterable(KnownValue(1), _CTX))
+    assert_eq((), concrete_values_from_iterable(KnownValue([]), _CTX))
+    assert_eq(
+        (KnownValue(1), KnownValue(2)),
+        concrete_values_from_iterable(KnownValue((1, 2)), _CTX),
+    )
+    assert_eq(
+        (KnownValue(1), KnownValue(2)),
+        concrete_values_from_iterable(
+            SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]), _CTX
+        ),
+    )
+    assert_eq(
+        TypedValue(int),
+        concrete_values_from_iterable(GenericValue(list, [TypedValue(int)]), _CTX),
+    )
+    assert_eq(
+        [
+            MultiValuedValue([KnownValue(1), KnownValue(3)]),
+            MultiValuedValue([KnownValue(2), KnownValue(4)]),
+        ],
+        concrete_values_from_iterable(
+            MultiValuedValue(
+                [
+                    SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                    KnownValue((3, 4)),
+                ]
+            ),
+            _CTX,
+        ),
+    )
+    assert_eq(
+        MultiValuedValue([KnownValue(1), KnownValue(2), TypedValue(int)]),
+        concrete_values_from_iterable(
+            MultiValuedValue(
+                [
+                    SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                    GenericValue(list, [TypedValue(int)]),
+                ]
+            ),
+            _CTX,
+        ),
+    )
+    assert_eq(
+        MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue(3)]),
+        concrete_values_from_iterable(
+            MultiValuedValue(
+                [
+                    SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                    KnownValue((3,)),
+                ]
+            ),
+            _CTX,
+        ),
     )

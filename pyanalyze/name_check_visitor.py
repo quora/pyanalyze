@@ -100,6 +100,7 @@ from pyanalyze.value import (
     Value,
     TypeVarValue,
     CanAssignContext,
+    concrete_values_from_iterable,
 )
 
 T = TypeVar("T")
@@ -2068,52 +2069,41 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _visit_display(self, node, typ):
         if self._is_write_ctx(node.ctx):
-            if any(isinstance(elt, ast.Starred) for elt in node.elts):
+            being_assigned = concrete_values_from_iterable(self.being_assigned, self)
+            if being_assigned is None:
+                self.show_error(
+                    node, f"{self.being_assigned} is not iterable", ErrorCode.bad_unpack
+                )
+                with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
+                    return self.generic_visit(node)
+            elif any(isinstance(elt, ast.Starred) for elt in node.elts):
                 # TODO handle * assignment in the left hand side
                 with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
                     return self.generic_visit(node)
-
-            if isinstance(self.being_assigned, KnownValue) and isinstance(
-                self.being_assigned.val, (list, tuple)
-            ):
-                being_assigned = [KnownValue(val) for val in self.being_assigned.val]
-            elif isinstance(self.being_assigned, SequenceIncompleteValue):
-                being_assigned = self.being_assigned.members
+            elif isinstance(being_assigned, Value):
+                with qcore.override(self, "being_assigned", being_assigned):
+                    return self.generic_visit(node)
             else:
-                # TODO handle other cases; error if the object is not iterable
-                being_assigned = None
-
-            if being_assigned is not None:
                 assign_to = node.elts
                 if len(assign_to) != len(being_assigned):
-                    # if being_assigned was empty
-                    if len(being_assigned) > 0:
-                        self.show_error(
-                            node,
-                            "Length mismatch in unpacking assignment",
-                            ErrorCode.bad_unpack,
-                        )
+                    self.show_error(
+                        node,
+                        "Length mismatch in unpacking assignment: "
+                        f"expected {len(assign_to)} elements but got {self.being_assigned}",
+                        ErrorCode.bad_unpack,
+                    )
                     with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
                         self.generic_visit(node)
                 else:
                     for target, value in zip(assign_to, being_assigned):
                         with qcore.override(self, "being_assigned", value):
                             self.visit(target)
-            else:
-                with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
-                    return self.generic_visit(node)
         else:
             return self._visit_display_read(node, typ)
 
     def _visit_display_read(self, node, typ):
         elts = [self.visit(elt) for elt in node.elts]
-        # If we have something like [*a], give up on identifying the type.
-        if hasattr(ast, "Starred") and any(
-            isinstance(elt, ast.Starred) for elt in node.elts
-        ):
-            return TypedValue(typ)
-        else:
-            return self._maybe_make_sequence(typ, elts, node)
+        return self._maybe_make_sequence(typ, elts, node)
 
     def _maybe_make_sequence(
         self, typ: type, elts: Sequence[Value], node: ast.AST
@@ -2128,7 +2118,31 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return TypedValue(typ)
             return KnownValue(obj)
         else:
-            return SequenceIncompleteValue(typ, elts)
+            values = []
+            has_unknown_value = False
+            for elt in elts:
+                if isinstance(elt, StarredValue):
+                    vals = concrete_values_from_iterable(elt.value, self)
+                    if vals is None:
+                        self.show_error(
+                            elt.node,
+                            f"{elt.value} is not iterable",
+                            ErrorCode.unsupported_operation,
+                        )
+                        values.append(UNRESOLVED_VALUE)
+                        has_unknown_value = True
+                    elif isinstance(vals, Value):
+                        # single value
+                        has_unknown_value = True
+                        values.append(vals)
+                    else:
+                        values += vals
+                else:
+                    values.append(elt)
+            if has_unknown_value:
+                return GenericValue(typ, [unite_values(*values)])
+            else:
+                return SequenceIncompleteValue(typ, values)
 
     # Operations
 
