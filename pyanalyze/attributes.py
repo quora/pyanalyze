@@ -5,7 +5,7 @@ Code for retrieving the value of attributes.
 """
 import ast
 import asynq
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import inspect
 import qcore
 import types
@@ -24,7 +24,6 @@ from .value import (
     TypedValue,
     TypeVarValue,
     VariableNameValue,
-    unite_values,
 )
 
 # these don't appear to be in the standard types module
@@ -69,10 +68,7 @@ def get_attribute(ctx: AttrContext) -> Value:
     elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
         return UNRESOLVED_VALUE
     elif isinstance(root_value, MultiValuedValue):
-        # TODO: actually check this
-        return unite_values(
-            *[get_attribute(replace(ctx, root_value=val)) for val in root_value.vals]
-        )
+        raise TypeError("caller should unwrap MultiValuedValue")
     else:
         return UNINITIALIZED_VALUE
 

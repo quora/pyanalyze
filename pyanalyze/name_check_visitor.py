@@ -3195,13 +3195,35 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         Returns UninitializedValue if the attribute cannot be found.
 
         """
+        if isinstance(root_value, MultiValuedValue):
+            values = [
+                self._get_attribute_no_mvv(node, attr, subval)
+                for subval in root_value.vals
+            ]
+            if any(value is UNINITIALIZED_VALUE for value in values):
+                return UNINITIALIZED_VALUE
+            return unite_values(*values)
+        return self._get_attribute_no_mvv(node, attr, root_value)
+
+    def _get_attribute_no_mvv(
+        self, node: ast.AST, attr: str, root_value: Value
+    ) -> Value:
+        """Get an attribute. root_value must not be a MultiValuedValue."""
         ctx = _AttrContext(root_value, attr, node, self)
         return attributes.get_attribute(ctx)
 
     def _get_attribute_with_fallback(
         self, node: ast.Attribute, attr: str, root_value: Value
     ) -> Value:
-        result = self.get_attribute(node, attr, root_value)
+        if isinstance(root_value, MultiValuedValue):
+            results = []
+            for subval in root_value.vals:
+                subresult = self._get_attribute_no_mvv(node, attr, subval)
+                if subresult is UNINITIALIZED_VALUE:
+                    subresult = self._get_attribute_fallback(node, attr, subval)
+                results.append(subresult)
+            return unite_values(*results)
+        result = self._get_attribute_no_mvv(node, attr, root_value)
         if result is UNINITIALIZED_VALUE:
             return self._get_attribute_fallback(node, attr, root_value)
         return result
