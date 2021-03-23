@@ -123,14 +123,8 @@ OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.Invert: ("inversion", "__invert__", None, None),
     ast.UAdd: ("unary positive", "__pos__", None, None),
     ast.USub: ("unary negation", "__neg__", None, None),
+    ast.MatMult: ("matrix multiplication", "__matmul__", "__imatmul__", "__rmatmul__"),
 }
-if hasattr(ast, "MatMult"):
-    OPERATION_TO_DESCRIPTION_AND_METHOD[ast.MatMult] = (
-        "matrix multiplication",
-        "__matmul__",
-        "__imatmul__",
-        "__rmatmul__",
-    )
 
 
 def _in(a: Any, b: Any):
@@ -1037,8 +1031,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def visit_ClassDef(self, node: ast.ClassDef) -> Value:
         self._generic_visit_list(node.decorator_list)
         self._generic_visit_list(node.bases)
-        if hasattr(node, "keywords"):
-            self._generic_visit_list(node.keywords)
+        self._generic_visit_list(node.keywords)
         value = self._visit_class_and_get_value(node)
         self._set_name_in_scope(node.name, node, value)
         return value
@@ -1117,7 +1110,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if isinstance(evaled_function, KnownValue):
                 potential_function = evaled_function.val
 
-        if hasattr(node, "returns") and node.returns is not None:
+        if node.returns is not None:
             return_annotation = self._visit_annotation(node.returns)
             expected_return_value = self._value_of_annotation_type(
                 return_annotation, node.returns
@@ -1245,18 +1238,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             else:
                 to_apply.append(applied_decorator.val)
         scope = {}
-        kwargs = {
-            "args": [self._strip_annotation(arg) for arg in node.args.args],
-            "vararg": self._strip_annotation(node.args.vararg),
-            "kwarg": self._strip_annotation(node.args.kwarg),
-            "defaults": [ast.Name(id="None") for _ in node.args.defaults],
-        }
-        if hasattr(node.args, "kwonlyargs"):
-            kwargs["kwonlyargs"] = [
-                self._strip_annotation(arg) for arg in node.args.kwonlyargs
-            ]
-            kwargs["kw_defaults"] = [ast.Name(id="None") for _ in node.args.kw_defaults]
-        new_args = ast.arguments(**kwargs)
+        new_args = ast.arguments(
+            args=[self._strip_annotation(arg) for arg in node.args.args],
+            vararg=self._strip_annotation(node.args.vararg),
+            kwarg=self._strip_annotation(node.args.kwarg),
+            defaults=[ast.Name(id="None") for _ in node.args.defaults],
+            kwonlyargs=[self._strip_annotation(arg) for arg in node.args.kwonlyargs],
+            kw_defaults=[ast.Name(id="None") for _ in node.args.kw_defaults],
+        )
         new_node = ast.FunctionDef(
             name=node.name, args=new_args, body=[ast.Pass()], decorator_list=[]
         )
@@ -1497,8 +1486,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                             ast.Name(id="_", ctx=ast.Store()),
                             enclosing_statement,
                         )
-                elif hasattr(ast, "AnnAssign") and isinstance(statement, ast.AnnAssign):
-                    # (Python 3.6+ only) ignore assignments in AnnAssign nodes, which don't actually
+                elif isinstance(statement, ast.AnnAssign):
+                    # ignore assignments in AnnAssign nodes, which don't actually
                     # bind the name
                     continue
             self._show_error_if_checking(
@@ -1515,12 +1504,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._check_method_first_arg(node, function_info=function_info)
 
         num_without_defaults = len(node.args.args) - len(defaults)
-        defaults = [None] * num_without_defaults + defaults
-        args = node.args.args
-
-        if hasattr(node.args, "kwonlyargs"):
-            args = args + node.args.kwonlyargs
-            defaults = defaults + kw_defaults
+        defaults = [None] * num_without_defaults + defaults + kw_defaults
+        args = node.args.args + node.args.kwonlyargs
 
         with qcore.override(self, "state", VisitorState.check_names):
             for idx, (arg, default) in enumerate(zip(args, defaults)):
@@ -1572,13 +1557,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self.scopes.set(vararg, value, vararg, self.state)
             if node.args.kwarg is not None:
                 value = GenericValue(dict, [TypedValue(str), UNRESOLVED_VALUE])
-                if hasattr(node.args.kwarg, "arg"):
-                    kwarg = node.args.kwarg.arg
-                    arg_value = self._value_of_annotated_arg(node.args.kwarg)
-                    if arg_value is not UNRESOLVED_VALUE:
-                        value = GenericValue(dict, [TypedValue(str), arg_value])
-                else:
-                    kwarg = node.args.kwarg
+                kwarg = node.args.kwarg.arg
+                arg_value = self._value_of_annotated_arg(node.args.kwarg)
+                if arg_value is not UNRESOLVED_VALUE:
+                    value = GenericValue(dict, [TypedValue(str), arg_value])
                 self.scopes.set(kwarg, value, kwarg, self.state)
 
         return args
@@ -1854,7 +1836,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Value:
         return self._visit_comprehension(node, types.GeneratorType)
 
-    def visit_comprehension(self, node, iterable_type=None):
+    def visit_comprehension(
+        self, node: ast.comprehension, iterable_type: Optional[Value] = None
+    ) -> None:
         if iterable_type is None:
             iterable_type = self._member_value_of_generator(node)
         with qcore.override(self, "in_comprehension_body", True):
@@ -1864,14 +1848,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 _, constraint = self.constraint_from_condition(cond)
                 self.add_constraint(cond, constraint)
 
-    def _member_value_of_generator(self, comprehension_node):
-        is_async = getattr(comprehension_node, "is_async", False)
+    def _member_value_of_generator(
+        self, comprehension_node: ast.comprehension
+    ) -> Value:
         iterable_type, _ = self._member_value_of_iterator(
-            comprehension_node.iter, is_async
+            comprehension_node.iter, comprehension_node.is_async
         )
         return iterable_type
 
-    def _visit_comprehension(self, node, typ, should_create_scope=True):
+    def _visit_comprehension(
+        self,
+        node: Union[ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp],
+        typ: type,
+    ) -> Value:
         # the iteree of the first generator is executed in the enclosing scope
         iterable_type = self._member_value_of_generator(node.generators[0])
         if self.state == VisitorState.collect_names:
@@ -1899,7 +1888,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
         return ret
 
-    def _visit_comprehension_inner(self, node, typ, iterable_type):
+    def _visit_comprehension_inner(
+        self,
+        node: Union[ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp],
+        typ: type,
+        iterable_type: Value,
+    ) -> Value:
         # need to visit the generator expression first so that we know of variables
         # created in them
         for i, generator in enumerate(node.generators):
@@ -3383,11 +3377,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _can_perform_call(self, node, args, keywords):
         """Returns whether all of the arguments were inferred successfully."""
-        return (
-            getattr(node, "starargs", None) is None
-            and getattr(node, "kwargs", None) is None
-            and all(isinstance(arg, KnownValue) for arg in args)
-            and all(isinstance(arg, KnownValue) for _, arg in keywords)
+        return all(isinstance(arg, KnownValue) for arg in args) and all(
+            isinstance(arg, KnownValue) for _, arg in keywords
         )
 
     def _try_perform_call(self, callee_val, node, args, keywords, fallback_return):
