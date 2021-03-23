@@ -677,7 +677,7 @@ class TypeshedFinder(object):
             )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
-            if obj.__name__ in info.child_nodes:
+            if info.child_nodes and obj.__name__ in info.child_nodes:
                 child_info = info.child_nodes[obj.__name__]
                 return self._get_signature_from_info(
                     child_info, obj, fq_name, mod, objclass
