@@ -589,7 +589,9 @@ def run():
         def fn(item):
             if False:
                 item = None
-            print(item["id"])
+            assert_is_value(
+                item, MultiValuedValue([KnownValue(None), UNRESOLVED_VALUE])
+            )
 
     @assert_fails(ErrorCode.undefined_attribute)
     def test_bad_attribute_of_global(self):
