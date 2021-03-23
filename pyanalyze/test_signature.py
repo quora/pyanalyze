@@ -320,6 +320,20 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(gen.get_one(), TypedValue(int))
             assert_is_value(gen.get_another(), TypedValue(int))
 
+    @assert_passes()
+    def test_union_math(self):
+        from typing import TypeVar, Optional
+
+        T = TypeVar("T")
+
+        def assert_not_none(arg: Optional[T]) -> T:
+            assert arg is not None
+            return arg
+
+        def capybara(x: Optional[int]):
+            assert_is_value(x, MultiValuedValue([KnownValue(None), TypedValue(int)]))
+            assert_is_value(assert_not_none(x), TypedValue(int))
+
     @assert_fails(ErrorCode.incompatible_argument)
     def test_only_T(self):
         from typing import Generic, TypeVar
