@@ -3671,6 +3671,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def _run_on_files(
         cls,
         files,
+        *,
         find_unused=False,
         settings=None,
         find_unused_attributes=False,
@@ -3678,7 +3679,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         unused_finder=None,
         **kwargs
     ):
-        attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
+        if settings is None:
+            attribute_checker_enabled = True
+        else:
+            attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
         if "arg_spec_cache" not in kwargs:
             kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
         if attribute_checker is None:
