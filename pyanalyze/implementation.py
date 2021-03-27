@@ -628,8 +628,7 @@ def _str_format_impl(
             if current_index >= len(args):
                 visitor.show_error(
                     node,
-                    "Too few arguments to format string (expected at least %s)"
-                    % (current_index,),
+                    f"Too few arguments to format string (expected at least {current_index})",
                     error_code=ErrorCode.incompatible_call,
                 )
             used_indices.add(current_index)
@@ -639,7 +638,7 @@ def _str_format_impl(
             if index >= len(args):
                 visitor.show_error(
                     node,
-                    "Numbered argument %s to format string is out of range" % (index,),
+                    f"Numbered argument {index} to format string is out of range",
                     error_code=ErrorCode.incompatible_call,
                 )
             used_indices.add(index)
@@ -647,8 +646,7 @@ def _str_format_impl(
             if field.arg_name not in kwargs:
                 visitor.show_error(
                     node,
-                    "Named argument %s to format string was not given"
-                    % (field.arg_name,),
+                    f"Named argument {field.arg_name} to format string was not given",
                     error_code=ErrorCode.incompatible_call,
                 )
             used_kwargs.add(field.arg_name)

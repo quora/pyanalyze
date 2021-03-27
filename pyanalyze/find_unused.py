@@ -76,7 +76,7 @@ class UnusedObject(object):
     message: str
 
     def __str__(self):
-        return "%s.%s: %s" % (self.module.__name__, self.attribute, self.message)
+        return f"{self.module.__name__}.{self.attribute}: {self.message}"
 
 
 class UnusedObjectFinder(object):

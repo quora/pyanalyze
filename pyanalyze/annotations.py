@@ -196,7 +196,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
             # TODO figure out how to make NewTypes over tuples work
             return UNRESOLVED_VALUE
         else:
-            ctx.show_error("Invalid NewType %s" % (val,))
+            ctx.show_error(f"Invalid NewType {val}")
             return UNRESOLVED_VALUE
     elif typing_inspect.is_typevar(val):
         return TypeVarValue(cast(TypeVar, val))
@@ -212,7 +212,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
                 code = ast.parse(val.__forward_arg__)
             except SyntaxError:
                 ctx.show_error(
-                    "Syntax error in forward reference: %s" % (val.__forward_arg__,)
+                    f"Syntax error in forward reference: {val.__forward_arg__}"
                 )
                 return UNRESOLVED_VALUE
             return _type_from_ast(code.body[0], ctx)
@@ -226,7 +226,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
         origin = get_origin(val)
         if isinstance(origin, type):
             return _maybe_typed_value(origin)
-        ctx.show_error("Invalid type annotation %s" % (val,))
+        ctx.show_error(f"Invalid type annotation {val}")
         return UNRESOLVED_VALUE
 
 
@@ -234,7 +234,7 @@ def _eval_forward_ref(val: str, ctx: Context) -> Value:
     try:
         tree = ast.parse(val, mode="eval")
     except SyntaxError:
-        ctx.show_error("Syntax error in type annotation: %s" % (val,))
+        ctx.show_error(f"Syntax error in type annotation: {val}")
         return UNRESOLVED_VALUE
     else:
         return _type_from_ast(tree.body, ctx)
@@ -253,7 +253,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                     [_type_from_value(member, ctx) for member in value.members],
                 )
         if not isinstance(value.root, KnownValue):
-            ctx.show_error("Cannot resolve subscripted annotation: %s" % (value.root,))
+            ctx.show_error(f"Cannot resolve subscripted annotation: {value.root}")
             return UNRESOLVED_VALUE
         root = value.root.val
         if root is typing.Union:
@@ -263,7 +263,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 return unite_values(*value.members)
             else:
                 ctx.show_error(
-                    "Arguments to Literal[] must be literals, not %s" % (value.members,)
+                    f"Arguments to Literal[] must be literals, not {value.members}"
                 )
                 return UNRESOLVED_VALUE
         elif root is typing.Tuple or root is tuple:
@@ -311,7 +311,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 return GenericValue(
                     origin, [_type_from_value(elt, ctx) for elt in value.members]
                 )
-            ctx.show_error("Unrecognized subscripted annotation: %s" % (root,))
+            ctx.show_error(f"Unrecognized subscripted annotation: {root}")
             return UNRESOLVED_VALUE
     else:
         return UNRESOLVED_VALUE

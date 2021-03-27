@@ -119,7 +119,7 @@ class VarnameGenerator(object):
             if camel_cased != node.id:
                 return camel_cased
             else:
-                return "%s_result" % node.id
+                return f"{node.id}_result"
         elif isinstance(node, ast.Attribute):
             if node.attr == "async" or node.attr == "asynq":
                 return self._get_candidate(node.value)
@@ -151,7 +151,7 @@ class VarnameGenerator(object):
             return varname
         else:
             for i in itertools.count(2):
-                next_varname = "%s%d" % (varname, i)
+                next_varname = f"{varname}{i}"
                 if self.is_available(next_varname):
                     return next_varname
 
@@ -363,9 +363,7 @@ class YieldChecker(object):
             )
         else:
             unused_str = ", ".join(map(str, unused))
-            message = (
-                "Unnecessary yield: %s were not used before this yield" % unused_str
-            )
+            message = f"Unnecessary yield: {unused_str} were not used before this yield"
         replacement = self._create_replacement_for_yield_nodes(node, current_statement)
         self.visitor.show_error(
             node, message, ErrorCode.unnecessary_yield, replacement=replacement

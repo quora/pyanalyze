@@ -549,7 +549,7 @@ class _AnnotationContext(Context):
         self.finder.log(message, ())
 
     def get_name(self, node: ast.AST) -> Value:
-        info = self.finder._get_info_for_name("%s.%s" % (self.module, node.id))
+        info = self.finder._get_info_for_name(f"{self.module}.{node.id}")
         if info is not None:
             return self.finder._value_from_info(info, self.module)
         elif hasattr(builtins, node.id):

@@ -233,7 +233,7 @@ class UnboundMethodValue(Value):
     def __str__(self) -> str:
         return "<method %s%s on %s>" % (
             self.attr_name,
-            ".%s" % (self.secondary_attr_name,) if self.secondary_attr_name else "",
+            f".{self.secondary_attr_name}" if self.secondary_attr_name else "",
             self.typ,
         )
 
@@ -481,7 +481,7 @@ class DictIncompleteValue(GenericValue):
         self.items = items
 
     def __str__(self) -> str:
-        items = ", ".join("%s: %s" % (key, value) for key, value in self.items)
+        items = ", ".join(f"{key}: {value}" for key, value in self.items)
         return f"<{stringify_object(self.typ)} containing {{{items}}}>"
 
     def walk_values(self) -> Iterable["Value"]:
@@ -554,7 +554,7 @@ class TypedDictValue(GenericValue):
         )
 
     def __str__(self) -> str:
-        items = ['"%s": %s' % (key, value) for key, value in self.items.items()]
+        items = [f'"{key}": {value}' for key, value in self.items.items()]
         return "TypedDict({%s})" % ", ".join(items)
 
     def __hash__(self) -> int:
@@ -712,7 +712,7 @@ class ReferencingValue(Value):
     name: str
 
     def __str__(self) -> str:
-        return "<reference to %s>" % (self.name,)
+        return f"<reference to {self.name}>"
 
 
 @dataclass(frozen=True)
