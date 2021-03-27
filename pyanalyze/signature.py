@@ -173,8 +173,7 @@ class Signature:
             if compatible is None:
                 visitor.show_error(
                     node,
-                    "Incompatible argument type for %s: expected %s but got %s"
-                    % (param.name, param_typ, var_value),
+                    f"Incompatible argument type for {param.name}: expected {param_typ} but got {var_value}",
                     ErrorCode.incompatible_argument,
                 )
                 return False

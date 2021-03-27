@@ -298,7 +298,7 @@ class Constraint(AbstractConstraint):
                 yield applied
 
         else:
-            assert False, "unknown constraint type %s" % (self.constraint_type,)
+            assert False, f"unknown constraint type {self.constraint_type}"
 
 
 TRUTHY_CONSTRAINT = Constraint("%unused", ConstraintType.is_truthy, True, None)

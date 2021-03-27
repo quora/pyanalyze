@@ -15,6 +15,7 @@ class PyanalyzeConfig(pyanalyze.config.Config):
     ENABLED_ERRORS = {
         ErrorCode.condition_always_true,
         ErrorCode.possibly_undefined_name,
+        ErrorCode.use_fstrings,
     }
 
 

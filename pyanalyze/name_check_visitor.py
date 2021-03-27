@@ -446,7 +446,7 @@ class ClassAttributeChecker:
         if (
             attr_name.startswith("__")
             and hasattr(typ, "__name__")
-            and hasattr(typ, "_%s%s" % (typ.__name__, attr_name))
+            and hasattr(typ, f"_{typ.__name__}{attr_name}")
         ):
             return
 
@@ -523,7 +523,7 @@ class ClassAttributeChecker:
 
         message = visitor.show_error(
             node,
-            "Attribute %s of type %s probably does not exist" % (attr_name, typ),
+            f"Attribute {attr_name} of type {typ} probably does not exist",
             ErrorCode.attribute_is_never_set,
         )
         # message can be None if the error is intercepted by error code settings or ignore
@@ -927,16 +927,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             else:
                 self._maybe_show_missing_import_error(node)
                 self._show_error_if_checking(
-                    error_node,
-                    "Undefined name: %s" % (node.id,),
-                    ErrorCode.undefined_name,
+                    error_node, f"Undefined name: {node.id}", ErrorCode.undefined_name
                 )
             return UNRESOLVED_VALUE
         if isinstance(value, MultiValuedValue):
             if any(subval is UNINITIALIZED_VALUE for subval in value.vals):
                 self._show_error_if_checking(
                     error_node,
-                    "%s may be used uninitialized" % node.id,
+                    f"{node.id} may be used uninitialized",
                     ErrorCode.possibly_undefined_name,
                 )
                 return MultiValuedValue(
@@ -975,13 +973,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return  # no import nodes, you're on your own
             lineno = target_node.lineno
             if target is None:
-                new_line = "import %s\n" % (node.id,)
+                new_line = f"import {node.id}\n"
             else:
-                new_line = "from %s import %s\n" % (target, node.id)
+                new_line = f"from {target} import {node.id}\n"
             new_lines = [new_line, self._lines()[lineno - 1]]
             self._show_error_if_checking(
                 target_node,
-                "add an import for %s" % (node.id,),
+                f"add an import for {node.id}",
                 error_code=ErrorCode.add_import,
                 replacement=node_visitor.Replacement([lineno], new_lines),
             )
@@ -998,7 +996,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             new_code = decompile(new_node)
             self._show_error_if_checking(
                 existing,
-                "add an import for %s" % (node.id,),
+                f"add an import for {node.id}",
                 error_code=ErrorCode.add_import,
                 replacement=node_visitor.Replacement([existing.lineno], [new_code]),
             )
@@ -1520,8 +1518,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     if default is not None and not value.is_assignable(default, self):
                         self._show_error_if_checking(
                             arg,
-                            "Default value for argument %s incompatible with declared type %s"
-                            % (arg.arg, value),
+                            f"Default value for argument {arg.arg} incompatible with declared type {value}",
                             error_code=ErrorCode.incompatible_default,
                         )
                 elif is_self:
@@ -1609,7 +1606,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         elif node.args.args[0].arg != first_must_be:
             self.show_error(
                 node,
-                "First argument to method should be %s" % (first_must_be,),
+                f"First argument to method should be {first_must_be}",
                 ErrorCode.method_first_arg,
             )
 
@@ -2307,8 +2304,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             else:
                 self._show_error_if_checking(
                     source_node,
-                    "Unsupported operands for | in annotation: %s and %s"
-                    % (left, right),
+                    f"Unsupported operands for | in annotation: {left} and {right}",
                     error_code=ErrorCode.unsupported_operation,
                 )
                 return UNRESOLVED_VALUE
@@ -2359,7 +2355,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         self.show_error(
             source_node,
-            "Unsupported operands for %s: %s and %s" % (description, left, right),
+            f"Unsupported operands for {description}: {left} and {right}",
             error_code=ErrorCode.unsupported_operation,
         )
         return UNRESOLVED_VALUE
@@ -2404,7 +2400,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ) and not TypedValue(Awaitable).is_assignable(value, self):
             self._show_error_if_checking(
                 node,
-                "Cannot use %s in yield from" % (value,),
+                f"Cannot use {value} in yield from",
                 error_code=ErrorCode.bad_yield_from,
             )
         return UNRESOLVED_VALUE
@@ -2516,8 +2512,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             self._show_error_if_checking(
                 node,
-                "Declared return type %s is incompatible with actual return type %s"
-                % (self.expected_return_value, value),
+                f"Declared return type {self.expected_return_value} is incompatible with actual return type {value}",
                 error_code=ErrorCode.incompatible_return_value,
             )
         elif self.expected_return_value == KnownValue(None) and value != KnownValue(
@@ -2951,8 +2946,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if not expected_type.is_assignable(value, self):
                 self._show_error_if_checking(
                     node.value,
-                    "Incompatible assignment: expected %s, got %s"
-                    % (expected_type, value),
+                    f"Incompatible assignment: expected {expected_type}, got {value}",
                     error_code=ErrorCode.incompatible_assignment,
                 )
 
@@ -3005,9 +2999,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return None
         else:
             # not sure when (if ever) the other contexts can happen
-            self.show_error(
-                node, "Bad context: %s" % (node.ctx,), ErrorCode.unexpected_node
-            )
+            self.show_error(node, f"Bad context: {node.ctx}", ErrorCode.unexpected_node)
             return None
 
     def visit_Starred(self, node: ast.Starred) -> Value:
@@ -3112,7 +3104,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             self.show_error(
                 node,
-                "Unexpected subscript context: %s" % (node.ctx,),
+                f"Unexpected subscript context: {node.ctx}",
                 ErrorCode.unexpected_node,
             )
             return UNRESOLVED_VALUE
@@ -3146,7 +3138,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         """
 
         if isinstance(node.value, ast.Name):
-            attr_str = "%s.%s" % (node.value.id, node.attr)
+            attr_str = f"{node.value.id}.{node.attr}"
             if self._is_write_ctx(node.ctx):
                 self.yield_checker.record_assignment(attr_str)
             else:
@@ -3474,7 +3466,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 if result is NotImplemented:
                     self.show_error(
                         node,
-                        "Call to %s is not supported" % (callee_wrapped.val,),
+                        f"Call to {callee_wrapped.val} is not supported",
                         error_code=ErrorCode.incompatible_call,
                     )
                 return_value = KnownValue(result)

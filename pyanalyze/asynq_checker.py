@@ -181,7 +181,7 @@ class AsynqChecker:
         if replacement_call is None:
             message = "impure async call (you should yield it)"
         else:
-            message = "impure async call (you should yield %s)" % replacement_call
+            message = f"impure async call (you should yield {replacement_call})"
         if self.current_async_kind not in (
             AsyncFunctionKind.normal,
             AsyncFunctionKind.pure,
@@ -215,7 +215,7 @@ def is_impure_async_fn(value: Value) -> bool:
 
 def get_pure_async_equivalent(value: Value) -> str:
     """Returns the pure-async equivalent of an async function."""
-    assert is_impure_async_fn(value), "%s is not an impure async function" % value
+    assert is_impure_async_fn(value), f"{value} is not an impure async function"
     if isinstance(value, KnownValue):
         return "%s.asynq" % (_stringify_obj(value.val),)
     elif isinstance(value, UnboundMethodValue):
@@ -223,7 +223,7 @@ def get_pure_async_equivalent(value: Value) -> str:
             UnboundMethodValue(value.attr_name, value.typ, "asynq")
         )
     else:
-        assert False, "cannot get pure async equivalent of %s" % value
+        assert False, f"cannot get pure async equivalent of {value}"
 
 
 def _stringify_async_fn(value: Value) -> str:
@@ -232,7 +232,7 @@ def _stringify_async_fn(value: Value) -> str:
     elif isinstance(value, UnboundMethodValue):
         ret = "%s.%s" % (_stringify_obj(value.typ.get_type()), value.attr_name)
         if value.secondary_attr_name is not None:
-            ret += ".%s" % value.secondary_attr_name
+            ret += f".{value.secondary_attr_name}"
         return ret
     else:
         return str(value)
@@ -254,7 +254,7 @@ def _stringify_obj(obj: Any) -> str:
         # self might not always be correct, but it's close enough
         return "super(%s, self)" % _stringify_obj(obj.__self_class__)
     else:
-        return "%s.%s" % (obj.__module__, obj.__name__)
+        return f"{obj.__module__}.{obj.__name__}"
 
 
 def replace_func_on_call_node(node: ast.Call, new_func: ast.expr) -> ast.Call:

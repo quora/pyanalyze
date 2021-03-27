@@ -197,9 +197,10 @@ class BaseNodeVisitor(ast.NodeVisitor):
         for i, line in enumerate(self._lines()):
             if not line.startswith("#"):
                 return False
-            if line.strip() == ignore_comment or (
-                error_code is not None
-                and line.strip() == "%s[%s]" % (ignore_comment, error_code.name)
+            if (
+                line.strip() == ignore_comment
+                or error_code is not None
+                and line.strip() == f"{ignore_comment}[{error_code.name}]"
             ):
                 self.used_ignores.add(i)
                 return True
@@ -337,7 +338,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 if num_iterations != 1 and iteration >= num_iterations:
                     break
                 assert iteration <= ITERATION_LIMIT, "Iteration Limit Exceeded!"
-                print("Running iteration %s" % iteration)
+                print(f"Running iteration {iteration}")
             failures = []
         elif run_fixer or autofix:
             failures = cls._run_and_apply_changes(kwargs, autofix=autofix)
@@ -372,7 +373,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                         f.write("* line %s: `%s`\n" % (failure.get("lineno"), lines[0]))
                         f.write("```\n")
                         for line in lines[1:]:
-                            f.write("%s\n" % (line,))
+                            f.write(f"{line}\n")
                         f.write("```\n")
                     else:
                         f.write("* `%s`" % (failure["message"],))
@@ -518,29 +519,31 @@ class BaseNodeVisitor(ast.NodeVisitor):
             lineno = col_offset = None
 
         error = {"description": str(e), "filename": self.filename}
-        message = "\n%s" % e
+        message = f"\n{e}"
         if error_code is not None:
             error["code"] = error_code
-            message += " (code: %s)" % (error_code.name)
+            message += f" (code: {error_code.name})"
         if lineno is not None:
             error["lineno"] = lineno
-            message += "\nIn %s at line %d:\n" % (self.filename, lineno)
+            message += f"\nIn {self.filename} at line {lineno}\n"
         else:
-            message += "\n In %s" % (self.filename,)
+            message += f"\n In {self.filename}"
         lines = self._lines()
 
         if obey_ignore and lineno is not None:
             this_line = lines[lineno - 1]
-            if re.search(r"%s(?!\[)" % (re.escape(ignore_comment),), this_line) or (
-                error_code is not None
-                and "%s[%s]" % (ignore_comment, error_code.name) in this_line
+            if (
+                re.search("%s(?!\\[)" % (re.escape(ignore_comment),), this_line)
+                or error_code is not None
+                and f"{ignore_comment}[{error_code.name}]" in this_line
             ):
                 self.used_ignores.add(lineno - 1)
                 return
             prev_line = lines[lineno - 2].strip()
-            if prev_line == ignore_comment or (
-                error_code is not None
-                and prev_line == "%s[%s]" % (ignore_comment, error_code.name)
+            if (
+                prev_line == ignore_comment
+                or error_code is not None
+                and prev_line == f"{ignore_comment}[{error_code.name}]"
             ):
                 self.used_ignores.add(lineno - 2)
                 return
@@ -566,7 +569,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 this_line = lines[lineno - 1]
                 indentation = analysis_lib.get_indentation(this_line)
                 if error_code is not None:
-                    ignore = "%s[%s]" % (ignore_comment, error_code.name)
+                    ignore = f"{ignore_comment}[{error_code.name}]"
                 else:
                     ignore = ignore_comment
                 replacement = Replacement(
@@ -798,7 +801,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def get_description_for_error_code(cls, code):
-        return "Error: %s" % code
+        return f"Error: {code}"
 
     @classmethod
     def get_default_modules(cls):
@@ -841,10 +844,10 @@ class BaseNodeVisitor(ast.NodeVisitor):
             if cls._should_ignore_module(module_name):
                 continue
             if module_name in enclosing_module_names or any(
-                module_name.startswith("%s." % enclosing_module_name)
+                module_name.startswith(f"{enclosing_module_name}.")
                 for enclosing_module_name in enclosing_module_names
             ):
-                yield module.__file__.rstrip("c")  # to go .pyc -> .py
+                yield module.__file__.rstrip("c")
 
         if include_tests:
             for module in modules:
