@@ -10,6 +10,7 @@ from .stacked_scopes import (
     ConstraintType,
     PredicateProvider,
     OrConstraint,
+    Varname,
 )
 from .signature import (
     SigParameter,
@@ -45,7 +46,7 @@ from itertools import product
 import qcore
 import inspect
 import warnings
-from typing import cast, NewType, TYPE_CHECKING, Callable, TypeVar
+from typing import cast, NewType, TYPE_CHECKING, Callable, TypeVar, Optional
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -111,18 +112,22 @@ def _isinstance_impl(
     variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
 ) -> ImplementationFnReturn:
     class_or_tuple = variables["class_or_tuple"]
-    if not isinstance(class_or_tuple, KnownValue):
-        return TypedValue(bool), NULL_CONSTRAINT
     if len(node.args) < 1:
         return TypedValue(bool), NULL_CONSTRAINT
     _, varname = visitor.composite_from_node(node.args[0])
+    return TypedValue(bool), _constraint_from_isinstance(varname, class_or_tuple)
+
+
+def _constraint_from_isinstance(
+    varname: Optional[Varname], class_or_tuple: Value
+) -> Constraint:
     if varname is None:
-        return TypedValue(bool), NULL_CONSTRAINT
+        return NULL_CONSTRAINT
+    if not isinstance(class_or_tuple, KnownValue):
+        return NULL_CONSTRAINT
+
     if isinstance(class_or_tuple.val, type):
-        return (
-            TypedValue(bool),
-            Constraint(varname, ConstraintType.is_instance, True, class_or_tuple.val),
-        )
+        return Constraint(varname, ConstraintType.is_instance, True, class_or_tuple.val)
     elif isinstance(class_or_tuple.val, tuple) and all(
         isinstance(elt, type) for elt in class_or_tuple.val
     ):
@@ -130,9 +135,23 @@ def _isinstance_impl(
             Constraint(varname, ConstraintType.is_instance, True, elt)
             for elt in class_or_tuple.val
         ]
-        return TypedValue(bool), reduce(OrConstraint, constraints)
+        return reduce(OrConstraint, constraints)
     else:
-        return TypedValue(bool), NULL_CONSTRAINT
+        return NULL_CONSTRAINT
+
+
+def _assert_is_instance_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+) -> ImplementationFnReturn:
+    if len(node.args) < 0:
+        return KnownValue(None)
+    class_or_tuple = variables["types"]
+    _, varname = visitor.composite_from_node(node.args[0])
+    return (
+        KnownValue(None),
+        NULL_CONSTRAINT,
+        _constraint_from_isinstance(varname, class_or_tuple),
+    )
 
 
 def _hasattr_impl(
@@ -958,6 +977,16 @@ def get_default_argspecs():
             ],
             callable=qcore.asserts.assert_is_not,
             implementation=_assert_is_not_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("value"),
+                SigParameter("types"),
+                SigParameter("message", default=KnownValue(None)),
+                SigParameter("extra", default=KnownValue(None)),
+            ],
+            callable=qcore.asserts.assert_is_instance,
+            implementation=_assert_is_instance_impl,
         ),
         # Need to override this because the type for the tp parameter in typeshed is too strict
         Signature.make(
