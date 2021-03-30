@@ -120,7 +120,7 @@ def _isinstance_impl(
 
 def _constraint_from_isinstance(
     varname: Optional[Varname], class_or_tuple: Value
-) -> Constraint:
+) -> AbstractConstraint:
     if varname is None:
         return NULL_CONSTRAINT
     if not isinstance(class_or_tuple, KnownValue):
