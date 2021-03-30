@@ -143,10 +143,9 @@ UNINITIALIZED_VALUE = UninitializedValue()
 class KnownValue(Value):
     """Variable with a known value."""
 
+    __slots__ = ("val",)
+
     val: Any
-    source_node: Optional[ast.AST] = field(
-        default=None, repr=False, hash=False, compare=False
-    )
 
     def is_type(self, typ: type) -> bool:
         return self.get_type_object().is_assignable_to_type(typ)
