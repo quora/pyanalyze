@@ -4,7 +4,6 @@ Implementation of value classes, which represent values found while analyzing an
 
 """
 
-import ast
 import collections.abc
 from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field, InitVar
