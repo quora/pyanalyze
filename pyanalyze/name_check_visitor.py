@@ -2581,11 +2581,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> Tuple[Value, AbstractConstraint]:
         if isinstance(node, ast.Compare):
             return self.constraint_from_compare(node)
-        elif isinstance(node, ast.Name):
-            constraint = Constraint(node.id, ConstraintType.is_truthy, True, None)
-            return self.visit(node), constraint
-        elif isinstance(node, ast.Attribute):
-            val, varname = self.composite_from_attribute(node)
+        elif isinstance(node, (ast.Name, ast.Attribute, ast.Subscript)):
+            val, varname = self.composite_from_node(node)
             if varname is not None:
                 constraint = Constraint(varname, ConstraintType.is_truthy, True, None)
                 return val, constraint
@@ -3042,8 +3039,23 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return TypedValue(typ)
 
     def visit_Subscript(self, node: ast.Subscript) -> Value:
-        value = self.visit(node.value)
+        value, _ = self.composite_from_subscript(node)
+        return value
+
+    def composite_from_subscript(
+        self, node: ast.Subscript
+    ) -> Tuple[Value, Optional[Varname]]:
+        value, root_composite = self.composite_from_node(node.value)
         index = self.visit(node.slice)
+        if root_composite is not None and isinstance(index, KnownValue):
+            if isinstance(root_composite, str):
+                composite = CompositeVariable(root_composite, (index,))
+            else:
+                composite = CompositeVariable(
+                    root_composite.varname, (*root_composite.attributes, index)
+                )
+        else:
+            composite = None
 
         if any(
             value.is_type(typ) for typ in (list, tuple, str, bytes)
@@ -3053,8 +3065,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
 
         if isinstance(node.ctx, ast.Store):
-            return self._check_dunder_call(
-                node.value, value, "__setitem__", [index, self.being_assigned]
+            if (
+                composite is not None
+                and self.scopes.scope_type() == ScopeType.function_scope
+            ):
+                self.scopes.set(composite, self.being_assigned, node, self.state)
+            return (
+                self._check_dunder_call(
+                    node.value, value, "__setitem__", [index, self.being_assigned]
+                ),
+                composite,
             )
         elif isinstance(node.ctx, ast.Load):
             if isinstance(value, SequenceIncompleteValue):
@@ -3062,7 +3082,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     if isinstance(index.val, int) and -len(
                         value.members
                     ) <= index.val < len(value.members):
-                        return value.members[index.val]
+                        return value.members[index.val], composite
                     # Don't error if it's out of range; the object may be mutated at runtime.
                     # TODO: handle slices; error for things that aren't ints or slices.
 
@@ -3104,16 +3124,26 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
                 if varname_value is not None:
                     return_value = varname_value
-            return return_value
+            if (
+                composite is not None
+                and self.scopes.scope_type() == ScopeType.function_scope
+            ):
+                local_value = self._get_composite(composite, node, return_value)
+                if local_value is not UNINITIALIZED_VALUE:
+                    return_value = local_value
+            return return_value, composite
         elif isinstance(node.ctx, ast.Del):
-            return self._check_dunder_call(node.value, value, "__delitem__", [index])
+            return (
+                self._check_dunder_call(node.value, value, "__delitem__", [index]),
+                composite,
+            )
         else:
             self.show_error(
                 node,
                 f"Unexpected subscript context: {node.ctx}",
                 ErrorCode.unexpected_node,
             )
-            return UNRESOLVED_VALUE
+            return UNRESOLVED_VALUE, composite
 
     def _get_dunder(self, node: ast.AST, callee_val: Value, method_name: str) -> Value:
         lookup_val = callee_val.get_type_value()
@@ -3134,6 +3164,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             node, method_object, [callee_val] + args, allow_call=allow_call
         )
         return return_value
+
+    def _get_composite(self, composite: Varname, node: ast.AST, value: Value) -> Value:
+        local_value = self.scopes.current_scope().get_local(
+            composite, node, self.state, fallback_value=value
+        )
+        if isinstance(local_value, MultiValuedValue):
+            vals = [val for val in local_value.vals if val is not UNINITIALIZED_VALUE]
+            if vals:
+                return unite_values(*vals)
+            else:
+                return UNINITIALIZED_VALUE
+        return local_value
 
     def visit_Attribute(self, node: ast.Attribute) -> Value:
         value, _ = self.composite_from_attribute(node)
@@ -3190,19 +3232,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 composite is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
-                local_value = self.scopes.current_scope().get_local(
-                    composite, node, self.state, fallback_value=value
-                )
-                if isinstance(local_value, MultiValuedValue):
-                    vals = [
-                        val
-                        for val in local_value.vals
-                        if val is not UNINITIALIZED_VALUE
-                    ]
-                    if vals:
-                        local_value = unite_values(*vals)
-                    else:
-                        local_value = UNINITIALIZED_VALUE
+                local_value = self._get_composite(composite, node, value)
                 if local_value is not UNINITIALIZED_VALUE:
                     value = local_value
             value = self._maybe_use_hardcoded_type(value, node.attr)
@@ -3276,11 +3306,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return self.composite_from_attribute(node)
         elif isinstance(node, ast.Name):
             return self.composite_from_name(node)
+        elif isinstance(node, ast.Subscript):
+            return self.composite_from_subscript(node)
         else:
             return self.visit(node), None
 
     def varname_for_constraint(self, node):
         """Given a node, returns a variable name that could be used in a local scope."""
+        # TODO replace with composite_from_node(). This is currently used only by
+        # implementation functions.
         if isinstance(node, ast.Attribute):
             attribute_path = self._get_attribute_path(node)
             if attribute_path:

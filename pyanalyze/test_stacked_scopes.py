@@ -1417,6 +1417,19 @@ class TestComposite(TestNameCheckVisitorBase):
                 if isinstance(self.x, int):
                     assert_is_value(self.x, TypedValue(int))
 
+    @assert_passes()
+    def test_subscript(self):
+        from typing import Any, Dict
+
+        def capybara(x: Dict[str, Any]) -> None:
+            assert_is_value(x["a"], UNRESOLVED_VALUE)
+            x["a"] = 1
+            assert_is_value(x["a"], KnownValue(1))
+            if isinstance(x["c"], int):
+                assert_is_value(x["c"], TypedValue(int))
+            if x["b"] is None:
+                assert_is_value(x["b"], KnownValue(None))
+
 
 def test_uniq_chain():
     assert_eq([], uniq_chain([]))
