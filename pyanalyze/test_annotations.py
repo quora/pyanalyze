@@ -33,6 +33,9 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def complex() -> Union[List[str], Set[int], Dict[float, List[str]], int]:
             return []
 
+        def union_in_subscript() -> List[Union[str, int]]:
+            return []
+
         def check() -> None:
             assert_is_value(
                 capybara(), MultiValuedValue([TypedValue(int), TypedValue(str)])
@@ -52,6 +55,12 @@ class TestAnnotations(TestNameCheckVisitorBase):
                         ),
                         TypedValue(int),
                     ]
+                ),
+            )
+            assert_is_value(
+                union_in_subscript(),
+                GenericValue(
+                    list, [MultiValuedValue([TypedValue(str), TypedValue(int)])]
                 ),
             )
 
