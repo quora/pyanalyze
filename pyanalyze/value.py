@@ -144,6 +144,8 @@ UNINITIALIZED_VALUE = UninitializedValue()
 class KnownValue(Value):
     """Variable with a known value."""
 
+    __slots__ = ("val",)
+
     val: Any
 
     def is_type(self, typ: type) -> bool:
