@@ -82,10 +82,14 @@ class CompositeVariable:
     CompositeVariable('self', ('x',)). If a function contains a check for
     isinstance(self.x, int), we would put a Constraint on this CompositeVariable.
 
+    Also used for subscripts. Access to "a[1]" uses
+    CompositeVariable('a', (KnownValue(1),)). These can be mixed: "a[1].b"
+    corresponds to CompositeVariable('a', (KnownValue(1), 'b')).
+
     """
 
     varname: str
-    attributes: Sequence[str]
+    attributes: Sequence[Union[str, KnownValue]]
 
 
 Varname = Union[str, CompositeVariable]
@@ -416,7 +420,7 @@ class Scope:
     """
 
     scope_type: ScopeType
-    variables: Dict[str, Value] = field(default_factory=dict)
+    variables: Dict[Varname, Value] = field(default_factory=dict)
     parent_scope: Optional["Scope"] = None
     scope_node: Optional[Node] = None
     scope_object: Optional[object] = None
@@ -450,7 +454,7 @@ class Scope:
 
     def get_local(
         self,
-        varname: str,
+        varname: Varname,
         node: Node,
         state: VisitorState,
         from_parent_scope: bool = False,
@@ -461,7 +465,9 @@ class Scope:
         else:
             return UNINITIALIZED_VALUE
 
-    def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
+    def set(
+        self, varname: Varname, value: Value, node: Node, state: VisitorState
+    ) -> None:
         if varname not in self:
             self.variables[varname] = value
         elif value is UNRESOLVED_VALUE or not safe_equals(
@@ -480,10 +486,10 @@ class Scope:
             else:
                 self.variables[varname] = unite_values(existing, value)
 
-    def items(self) -> Iterable[Tuple[str, Value]]:
+    def items(self) -> Iterable[Tuple[Varname, Value]]:
         return self.variables.items()
 
-    def __contains__(self, varname: str) -> bool:
+    def __contains__(self, varname: Varname) -> bool:
         return varname in self.variables
 
     # no real subscopes in non-function scopes, just dummy implementations
@@ -667,8 +673,8 @@ class FunctionScope(Scope):
     definition_node_to_value: Dict[Node, Value]
     name_to_all_definition_nodes: Dict[str, Set[Node]]
     name_to_composites: Dict[str, Set[CompositeVariable]]
-    referencing_value_vars: Dict[str, Value]
-    accessed_from_special_nodes: Set[str]
+    referencing_value_vars: Dict[Varname, Value]
+    accessed_from_special_nodes: Set[Varname]
     current_loop_scopes: List[NCDN]
 
     def __init__(self, parent_scope: Scope, scope_node: Optional[Node] = None) -> None:
@@ -714,7 +720,9 @@ class FunctionScope(Scope):
             self.name_to_current_definition_nodes[constraint.varname] = [node]
             self._add_composite(constraint.varname)
 
-    def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
+    def set(
+        self, varname: Varname, value: Value, node: Node, state: VisitorState
+    ) -> None:
         if isinstance(value, ReferencingValue):
             self.referencing_value_vars[varname] = value
             return
@@ -877,7 +885,7 @@ class FunctionScope(Scope):
     def items(self):
         raise NotImplementedError
 
-    def __contains__(self, varname: str) -> bool:
+    def __contains__(self, varname: Varname) -> bool:
         return varname in self.name_to_all_definition_nodes
 
 
@@ -936,7 +944,7 @@ class StackedScopes:
         finally:
             self.scopes.append(scope)
 
-    def get(self, varname: str, node: Node, state: VisitorState) -> Value:
+    def get(self, varname: Varname, node: Node, state: VisitorState) -> Value:
         """Gets a variable of the given name from the current scope stack.
 
         Arguments:
@@ -958,7 +966,7 @@ class StackedScopes:
         return value
 
     def get_with_scope(
-        self, varname: str, node: Node, state: VisitorState
+        self, varname: Varname, node: Node, state: VisitorState
     ) -> Tuple[Value, Optional[Scope]]:
         """Like get(), but also returns the scope object the name was found in.
 
@@ -967,7 +975,9 @@ class StackedScopes:
         """
         return self.scopes[-1].get(varname, node, state)
 
-    def get_nonlocal_scope(self, varname: str, using_scope: Scope) -> Optional[Scope]:
+    def get_nonlocal_scope(
+        self, varname: Varname, using_scope: Scope
+    ) -> Optional[Scope]:
         """Gets the defining scope of a non-local variable."""
         for scope in reversed(self.scopes):
             if scope.scope_type is not ScopeType.function_scope:
@@ -979,7 +989,9 @@ class StackedScopes:
         else:
             return None
 
-    def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
+    def set(
+        self, varname: Varname, value: Value, node: Node, state: VisitorState
+    ) -> None:
         """Records an assignment to this variable.
 
         value is the value that is being assigned to varname. It should be an instance of

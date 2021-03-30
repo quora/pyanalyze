@@ -115,7 +115,7 @@ def _isinstance_impl(
         return TypedValue(bool), NULL_CONSTRAINT
     if len(node.args) < 1:
         return TypedValue(bool), NULL_CONSTRAINT
-    varname = visitor.varname_for_constraint(node.args[0])
+    _, varname = visitor.composite_from_node(node.args[0])
     if varname is None:
         return TypedValue(bool), NULL_CONSTRAINT
     if isinstance(class_or_tuple.val, type):
