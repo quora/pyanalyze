@@ -59,6 +59,8 @@ class CanAssignContext:
 class Value:
     """Class that represents the value of a variable."""
 
+    __slots__ = ()
+
     def is_type(self, typ: type) -> bool:
         """Returns whether this value is an instance of the given type."""
         return False
@@ -141,8 +143,6 @@ UNINITIALIZED_VALUE = UninitializedValue()
 @dataclass(frozen=True)
 class KnownValue(Value):
     """Variable with a known value."""
-
-    __slots__ = ("val",)
 
     val: Any
 

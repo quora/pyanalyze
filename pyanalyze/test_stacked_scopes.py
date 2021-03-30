@@ -1323,13 +1323,21 @@ class TestConstraints(TestNameCheckVisitorBase):
                 pass
 
         class InlineEditor:
-            def init(self, input, valuee, is_qtext=False):
+            def init(self, input, is_qtext=False):
                 if is_qtext:
                     value = input
                 else:
                     value = ""
 
+                assert_is_value(
+                    value, MultiValuedValue([UNRESOLVED_VALUE, KnownValue("")])
+                )
+
                 self.value = value
+
+                assert_is_value(
+                    self.value, MultiValuedValue([UNRESOLVED_VALUE, KnownValue("")])
+                )
 
             def tree(self):
                 assert_is_value(
