@@ -35,3 +35,12 @@ def safe_issubclass(value: type, typ: Union[type, Tuple[type, ...]]) -> bool:
         return issubclass(value, typ)
     except Exception:
         return False
+
+
+def is_hashable(obj: object) -> bool:
+    try:
+        hash(obj)
+    except Exception:
+        return False
+    else:
+        return True

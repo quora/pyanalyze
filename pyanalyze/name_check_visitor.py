@@ -57,7 +57,7 @@ from pyanalyze.find_unused import UnusedObjectFinder, used
 from pyanalyze import format_strings
 from pyanalyze import importer
 from pyanalyze import method_return_type
-from pyanalyze.safe import safe_getattr
+from pyanalyze.safe import safe_getattr, is_hashable
 from pyanalyze.stacked_scopes import (
     AbstractConstraint,
     CompositeVariable,
@@ -2899,12 +2899,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self.current_enum_members is not None
             and self.current_function is None
             and isinstance(value, KnownValue)
+            and is_hashable(value.val)
         ):
-            try:
-                hash(value.val)
-            except TypeError:
-                return
-
             names = [
                 target.id for target in node.targets if isinstance(target, ast.Name)
             ]
@@ -3047,7 +3043,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> Tuple[Value, Optional[Varname]]:
         value, root_composite = self.composite_from_node(node.value)
         index = self.visit(node.slice)
-        if root_composite is not None and isinstance(index, KnownValue):
+        if (
+            root_composite is not None
+            and isinstance(index, KnownValue)
+            and is_hashable(index.val)
+        ):
             if isinstance(root_composite, str):
                 composite = CompositeVariable(root_composite, (index,))
             else:

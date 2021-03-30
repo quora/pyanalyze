@@ -1430,6 +1430,13 @@ class TestComposite(TestNameCheckVisitorBase):
             if x["b"] is None:
                 assert_is_value(x["b"], KnownValue(None))
 
+    @assert_passes()
+    def test_unhashable_subscript(self):
+        def capybara(df):
+            # make sure this doesn't crash
+            df[["a", "b"]] = 42
+            print(df[["a", "b"]])
+
 
 def test_uniq_chain():
     assert_eq([], uniq_chain([]))
