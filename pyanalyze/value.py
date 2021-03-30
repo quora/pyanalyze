@@ -4,7 +4,6 @@ Implementation of value classes, which represent values found while analyzing an
 
 """
 
-import ast
 import collections.abc
 from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field, InitVar
@@ -59,6 +58,8 @@ class CanAssignContext:
 
 class Value:
     """Class that represents the value of a variable."""
+
+    __slots__ = ()
 
     def is_type(self, typ: type) -> bool:
         """Returns whether this value is an instance of the given type."""
@@ -144,9 +145,6 @@ class KnownValue(Value):
     """Variable with a known value."""
 
     val: Any
-    source_node: Optional[ast.AST] = field(
-        default=None, repr=False, hash=False, compare=False
-    )
 
     def is_type(self, typ: type) -> bool:
         return self.get_type_object().is_assignable_to_type(typ)

@@ -1,5 +1,6 @@
 import collections.abc
 import io
+import pickle
 from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
 from typing import NewType, Sequence, Dict
 import typing
@@ -414,3 +415,13 @@ def test_concrete_values_from_iterable():
             _CTX,
         ),
     )
+
+
+def _assert_pickling_roundtrip(obj: object) -> None:
+    assert_eq(obj, pickle.loads(pickle.dumps(obj)))
+
+
+def test_pickling() -> None:
+    _assert_pickling_roundtrip(KnownValue(1))
+    _assert_pickling_roundtrip(TypedValue(int))
+    _assert_pickling_roundtrip(MultiValuedValue([KnownValue(None), TypedValue(str)]))
