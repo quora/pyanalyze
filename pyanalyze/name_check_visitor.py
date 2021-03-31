@@ -3077,53 +3077,55 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 composite,
             )
         elif isinstance(node.ctx, ast.Load):
-            if isinstance(value, SequenceIncompleteValue):
-                if isinstance(index, KnownValue):
-                    if isinstance(index.val, int) and -len(
-                        value.members
-                    ) <= index.val < len(value.members):
-                        return value.members[index.val], composite
-                    # Don't error if it's out of range; the object may be mutated at runtime.
-                    # TODO: handle slices; error for things that aren't ints or slices.
-
-            with self.catch_errors():
-                getitem = self._get_dunder(node.value, value, "__getitem__")
-            if getitem is not UNINITIALIZED_VALUE:
-                return_value, _ = self._get_argspec_and_check_call(
-                    node.value, getitem, [value, index], allow_call=True
-                )
-            elif sys.version_info >= (3, 7):
-                # If there was no __getitem__, try __class_getitem__ in 3.7+
-                cgi = self.get_attribute(node.value, "__class_getitem__", value)
-                if cgi is UNINITIALIZED_VALUE:
+            if (
+                isinstance(value, SequenceIncompleteValue)
+                and isinstance(index, KnownValue)
+                and isinstance(index.val, int)
+                and -len(value.members) <= index.val < len(value.members)
+            ):
+                # Don't error if it's out of range; the object may be mutated at runtime.
+                # TODO: handle slices; error for things that aren't ints or slices.
+                return_value = value.members[index.val]
+            else:
+                with self.catch_errors():
+                    getitem = self._get_dunder(node.value, value, "__getitem__")
+                if getitem is not UNINITIALIZED_VALUE:
+                    return_value, _ = self._get_argspec_and_check_call(
+                        node.value, getitem, [value, index], allow_call=True
+                    )
+                elif sys.version_info >= (3, 7):
+                    # If there was no __getitem__, try __class_getitem__ in 3.7+
+                    cgi = self.get_attribute(node.value, "__class_getitem__", value)
+                    if cgi is UNINITIALIZED_VALUE:
+                        self._show_error_if_checking(
+                            node,
+                            f"Object {value} does not support subscripting",
+                            error_code=ErrorCode.unsupported_operation,
+                        )
+                        return_value = UNRESOLVED_VALUE
+                    else:
+                        return_value, _ = self._get_argspec_and_check_call(
+                            node.value, cgi, [index], allow_call=True
+                        )
+                else:
                     self._show_error_if_checking(
                         node,
                         f"Object {value} does not support subscripting",
                         error_code=ErrorCode.unsupported_operation,
                     )
                     return_value = UNRESOLVED_VALUE
-                else:
-                    return_value, _ = self._get_argspec_and_check_call(
-                        node.value, cgi, [index], allow_call=True
-                    )
-            else:
-                self._show_error_if_checking(
-                    node,
-                    f"Object {value} does not support subscripting",
-                    error_code=ErrorCode.unsupported_operation,
-                )
-                return_value = UNRESOLVED_VALUE
 
-            if (
-                return_value is UNRESOLVED_VALUE
-                and isinstance(index, KnownValue)
-                and isinstance(index.val, str)
-            ):
-                varname_value = VariableNameValue.from_varname(
-                    index.val, self.config.varname_value_map()
-                )
-                if varname_value is not None:
-                    return_value = varname_value
+                if (
+                    return_value is UNRESOLVED_VALUE
+                    and isinstance(index, KnownValue)
+                    and isinstance(index.val, str)
+                ):
+                    varname_value = VariableNameValue.from_varname(
+                        index.val, self.config.varname_value_map()
+                    )
+                    if varname_value is not None:
+                        return_value = varname_value
+
             if (
                 composite is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
