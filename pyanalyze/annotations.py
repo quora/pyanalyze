@@ -505,6 +505,8 @@ def _value_of_origin_args(
         else:
             args_vals = [_type_from_runtime(arg, ctx) for arg in args]
             return SequenceIncompleteValue(tuple, args_vals)
+    elif origin is typing.Union:
+        return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
     elif isinstance(origin, type):
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
