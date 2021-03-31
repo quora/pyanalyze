@@ -894,7 +894,7 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_qcore_asserts(self):
-        from qcore.asserts import assert_is, assert_is_not
+        from qcore.asserts import assert_is, assert_is_not, assert_is_instance
 
         def capybara(cond):
             if cond:
@@ -925,6 +925,14 @@ class TestConstraints(TestNameCheckVisitorBase):
             assert_is_not(True, y)
             assert_is_value(x, KnownValue(False))
             assert_is_value(y, KnownValue(False))
+
+        def mara(cond, cond2):
+            assert_is_value(cond, UNRESOLVED_VALUE)
+            assert_is_instance(cond, int)
+            assert_is_value(cond, TypedValue(int))
+
+            assert_is_instance(cond2, (int, str))
+            assert_is_value(cond2, MultiValuedValue([TypedValue(int), TypedValue(str)]))
 
     @assert_passes()
     def test_is_or_is_not(self):
