@@ -4,7 +4,7 @@ from qcore.asserts import assert_eq, assert_in, assert_not_in, assert_is
 from .error_code import ErrorCode
 from .stacked_scopes import ScopeType, StackedScopes, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes
+from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .value import (
     DictIncompleteValue,
     KnownValue,
@@ -1311,6 +1311,49 @@ class TestConstraints(TestNameCheckVisitorBase):
             )
             lst2 = [elt for elt in lst if elt]
             assert_is_value(lst2, GenericValue(list, [TypedValue(int)]))
+
+    # TODO: enable in 3.6 after union fix deploys
+    @skip_before((3, 7))
+    @assert_passes()
+    def test_comprehension_composite(self):
+        from dataclasses import dataclass
+        from typing import Optional, Tuple, List
+
+        @dataclass
+        class Capybara:
+            x: Optional[int]
+
+        def use_attr(c: List[Capybara]) -> None:
+            assert_is_value(
+                [elt.x for elt in c],
+                GenericValue(
+                    list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
+                ),
+            )
+            assert_is_value(
+                [elt.x for elt in c if elt.x is not None],
+                GenericValue(list, [TypedValue(int)]),
+            )
+            assert_is_value(
+                [elt.x for elt in c if elt.x],
+                GenericValue(list, [TypedValue(int)]),
+            )
+
+        def use_subscript(d: List[Tuple[int, Optional[int]]]) -> None:
+            assert_is_value(
+                [pair[1] for pair in d],
+                GenericValue(
+                    list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
+                ),
+            )
+            assert_is_value(
+                [pair[1] for pair in d if pair[1] is not None],
+                GenericValue(list, [TypedValue(int)]),
+            )
+            assert_is_value(
+                [pair[1] for pair in d if pair[1]],
+                GenericValue(list, [TypedValue(int)]),
+            )
 
     @assert_passes()
     def test_while(self):
