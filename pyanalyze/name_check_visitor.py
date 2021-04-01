@@ -622,7 +622,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     current_function_name: Optional[str]
     current_enum_members: Optional[Dict[object, str]]
     _name_node_to_statement: Optional[Dict[ast.AST, Optional[ast.AST]]]
-    import_name_to_node: Dict[str, ast.AST]
+    import_name_to_node: Dict[str, Union[ast.Import, ast.ImportFrom]]
 
     def __init__(
         self,
