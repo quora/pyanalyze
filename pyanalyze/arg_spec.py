@@ -661,7 +661,7 @@ class TypeshedFinder(object):
                     if isinstance(child_info, typeshed_client.NameInfo):
                         if isinstance(child_info.ast, ast3.AnnAssign):
                             return self._parse_expr(child_info.ast.annotation, mod)
-                        return UNRESOLVED_VALUE
+                        return UNINITIALIZED_VALUE
                 return UNINITIALIZED_VALUE
             elif isinstance(info.ast, ast3.Assign):
                 val = self._parse_expr(info.ast.value, mod)
