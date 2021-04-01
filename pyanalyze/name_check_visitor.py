@@ -1073,7 +1073,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if isinstance(cls_obj, KnownValue):
                 return cls_obj
 
-        return TypedValue(type)
+        return UNRESOLVED_VALUE
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Value:
         return self.visit_FunctionDef(node, is_coroutine=True)

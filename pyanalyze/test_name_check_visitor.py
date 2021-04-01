@@ -1427,7 +1427,8 @@ class TestNestedFunction(TestNameCheckVisitorBase):
                 pass
 
             assert_is_value(nested, KnownValue(nested))
-            assert_is_value(NestedClass, TypedValue(type))
+            # Should ideally be something more specific
+            assert_is_value(NestedClass, UNRESOLVED_VALUE)
 
     @assert_passes()
     def test_usage_in_nested_scope():
