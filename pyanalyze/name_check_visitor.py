@@ -204,6 +204,9 @@ class _AttrContext(attributes.AttrContext):
         return UNRESOLVED_VALUE
 
     def get_attribute_from_typeshed(self, typ: type) -> Value:
+        # these lead to lots of false positives, ignore for now
+        if typ is type or typ is super:
+            return UNRESOLVED_VALUE
         return self.visitor.arg_spec_cache.ts_finder.get_attribute(typ, self.attr)
 
 
