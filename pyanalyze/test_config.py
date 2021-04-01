@@ -54,5 +54,5 @@ class TestConfig(Config):
             and issubclass(cls, tests.Wrapper)
             and cls is not tests.Wrapper
         ):
-            return cls.base
+            return cls.base  # static analysis: ignore[undefined_attribute]
         return cls

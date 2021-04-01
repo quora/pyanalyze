@@ -109,7 +109,7 @@ def flatten_unions(
 # Implementations of some important functions for use in their ExtendedArgSpecs (see above). These
 # are called when the test_scope checker encounters call to these functions.
 def _isinstance_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     class_or_tuple = variables["class_or_tuple"]
     if len(node.args) < 1:
@@ -141,7 +141,7 @@ def _constraint_from_isinstance(
 
 
 def _assert_is_instance_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     if len(node.args) < 0:
         return KnownValue(None)
@@ -705,13 +705,13 @@ def _subclasses_impl(
 
 
 def _assert_is_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _qcore_assert_impl(variables, visitor, node, ConstraintType.is_value, True)
 
 
 def _assert_is_not_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _qcore_assert_impl(variables, visitor, node, ConstraintType.is_value, False)
 
@@ -719,7 +719,7 @@ def _assert_is_not_impl(
 def _qcore_assert_impl(
     variables: VarsDict,
     visitor: "NameCheckVisitor",
-    node: ast.AST,
+    node: ast.Call,
     constraint_type: ConstraintType,
     positive: bool,
 ) -> ImplementationFnReturn:
@@ -758,7 +758,7 @@ def len_of_value(val: Value) -> Value:
 def _len_impl(
     variables: VarsDict,
     visitor: "NameCheckVisitor",
-    node: ast.AST,
+    node: ast.Call,
 ) -> ImplementationFnReturn:
     varname = visitor.varname_for_constraint(node.args[0])
     if varname is None:

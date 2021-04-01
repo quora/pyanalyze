@@ -1,7 +1,8 @@
 # static analysis: ignore
+from .error_code import ErrorCode
 from .implementation import assert_is_value
 from .value import KnownValue, MultiValuedValue, TypedValue, UNRESOLVED_VALUE
-from .test_node_visitor import assert_passes
+from .test_node_visitor import assert_passes, assert_fails
 from .test_name_check_visitor import TestNameCheckVisitorBase
 
 
@@ -119,3 +120,13 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara():
             x = Row()
             return x.capybaras
+
+    @assert_passes()
+    def test_typeshed(self):
+        def capybara(c: staticmethod):
+            assert_is_value(c.__isabstractmethod__, TypedValue(bool))
+
+    @assert_fails(ErrorCode.undefined_attribute)
+    def test_no_attribute_for_typeshed_class():
+        def capybara(c: staticmethod):
+            c.no_such_attribute

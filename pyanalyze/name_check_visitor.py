@@ -203,6 +203,9 @@ class _AttrContext(attributes.AttrContext):
                 return self.visitor._argspec_to_retval[id(argspec)]
         return UNRESOLVED_VALUE
 
+    def get_attribute_from_typeshed(self, typ: type) -> Value:
+        return self.visitor.arg_spec_cache.ts_finder.get_attribute(typ, self.attr)
+
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
 _DEFAULT_FUNCTION_INFO = FunctionInfo(AsyncFunctionKind.normal, False, False, False, [])
@@ -901,7 +904,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def resolve_name(
         self,
-        node: ast.AST,
+        node: ast.Name,
         error_node: Optional[ast.AST] = None,
         suppress_errors: bool = False,
     ) -> Value:
@@ -1850,7 +1853,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, comprehension_node: ast.comprehension
     ) -> Value:
         iterable_type, _ = self._member_value_of_iterator(
-            comprehension_node.iter, comprehension_node.is_async
+            comprehension_node.iter, bool(comprehension_node.is_async)
         )
         return iterable_type
 
@@ -2376,11 +2379,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             return TypedValue(slice)
 
+    # These two are unused in 3.8 and higher, and the typeshed stubs reflect
+    # that their .dims and .value attributes don't exist.
     def visit_ExtSlice(self, node: ast.ExtSlice) -> Value:
+        # static analysis: ignore[undefined_attribute]
         dims = [self.visit(dim) for dim in node.dims]
         return self._maybe_make_sequence(tuple, dims, node)
 
     def visit_Index(self, node: ast.Index) -> Value:
+        # static analysis: ignore[undefined_attribute]
         return self.visit(node.value)
 
     # Control flow
@@ -3292,7 +3299,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     isinstance(root_type, type)
                     and issubclass(root_type, tuple)
                     and not hasattr(root_type, "__getattr__")
-                ):
+                ) and not self.arg_spec_cache.ts_finder.has_stubs(root_type):
                     return self._maybe_get_attr_value(root_type, attr)
             self._show_error_if_checking(
                 node,
