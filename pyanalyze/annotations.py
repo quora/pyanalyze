@@ -512,7 +512,9 @@ def _value_of_origin_args(
     elif isinstance(origin, type):
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
-        origin = getattr(origin, "__extra__", origin)
+        extra_origin = getattr(origin, "__extra__", None)
+        if extra_origin is not None:
+            origin = extra_origin
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(val is UNRESOLVED_VALUE for val in args_vals):
