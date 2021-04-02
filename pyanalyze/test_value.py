@@ -3,6 +3,7 @@ import io
 import pickle
 from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
 from typing import NewType, Sequence, Dict
+from typing_extensions import Protocol, runtime_checkable
 import typing
 import types
 from unittest import mock
@@ -127,6 +128,30 @@ def test_typed_value():
 
     assert_cannot_assign(float_val, SubclassValue(float))
     assert_can_assign(TypedValue(type), SubclassValue(float))
+
+
+@runtime_checkable
+class Proto(Protocol):
+    def asynq(self) -> None:
+        ...
+
+
+def test_protocol():
+    tv = TypedValue(Proto)
+
+    def fn():
+        pass
+
+    assert_cannot_assign(tv, KnownValue(fn))
+    fn.asynq = lambda: None
+    assert_can_assign(tv, KnownValue(fn))
+
+    class X:
+        def asynq(self):
+            pass
+
+    assert_can_assign(tv, TypedValue(X))
+    assert_can_assign(tv, KnownValue(X()))
 
 
 def test_callable():

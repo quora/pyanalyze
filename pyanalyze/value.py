@@ -265,6 +265,8 @@ class TypedValue(Value):
             # enums, but they are ints at runtime.
             return self.can_assign_thrift_enum(other, ctx)
         elif isinstance(other, KnownValue):
+            if isinstance(other.val, self.typ):
+                return {}
             if ctx.make_type_object(type(other.val)).is_assignable_to_type(self.typ):
                 return {}
         elif isinstance(other, TypedValue):
