@@ -24,6 +24,7 @@ from typing import (
     TypeVar,
 )
 
+from .safe import safe_isinstance
 from .type_object import TypeObject
 
 # __builtin__ in Python 2 and builtins in Python 3
@@ -265,6 +266,8 @@ class TypedValue(Value):
             # enums, but they are ints at runtime.
             return self.can_assign_thrift_enum(other, ctx)
         elif isinstance(other, KnownValue):
+            if safe_isinstance(other.val, self.typ):
+                return {}
             if ctx.make_type_object(type(other.val)).is_assignable_to_type(self.typ):
                 return {}
         elif isinstance(other, TypedValue):
