@@ -168,6 +168,9 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
         # get the actual type out.
         return UNRESOLVED_VALUE
     elif isinstance(val, InitVar):
+        # val.type exists only on 3.8+, but on earlier versions
+        # InitVar instances aren't being created
+        # static analysis: ignore[undefined_attribute]
         return type_from_runtime(val.type)
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
