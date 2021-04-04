@@ -578,7 +578,14 @@ _TYPING_ALIASES = {
 class TypeshedFinder(object):
     def __init__(self, verbose: bool = True) -> None:
         self.verbose = verbose
-        self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
+        # Dealing with upcoming typeshed-client change; TODO require the new version
+        # once it is released.
+        try:
+            # static analysis: ignore[incompatible_call]
+            resolver = typeshed_client.Resolver(version=sys.version_info[:2])
+        except TypeError:
+            resolver = typeshed_client.Resolver()
+        self.resolver = resolver
         self._assignment_cache = {}
 
     def log(self, message: str, obj: object) -> None:
