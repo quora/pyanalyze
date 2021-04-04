@@ -3601,11 +3601,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, obj: object, node: ast.AST, name: Optional[str] = None
     ) -> MaybeSignature:
         """Given a Python object obj retrieved from node, try to get its argspec."""
-        try:
-            return self.arg_spec_cache.get_argspec(obj, name=name, logger=self.log)
-        except TypeError as e:
-            self._show_error_if_checking(node, e, ErrorCode.not_callable)
-            return None
+        return self.arg_spec_cache.get_argspec(obj, name=name, logger=self.log)
 
     # Attribute checking
 
