@@ -3518,7 +3518,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             try:
                 result = callee_wrapped.val(
                     *[arg.val for arg in args],
-                    **{key: value.val for key, value in keywords}
+                    **{key: value.val for key, value in keywords},
                 )
             except Exception as e:
                 self.log(logging.INFO, "exception calling", (callee_wrapped, e))
@@ -3578,7 +3578,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if argspec is None:
                 method_object = self.get_attribute(node, "__call__", callee_wrapped)
                 if method_object is UNINITIALIZED_VALUE:
-                    self._show_error_if_checking(node, f"{callee_wrapped} is not callable", ErrorCode.not_callable)
+                    self._show_error_if_checking(
+                        node,
+                        f"{callee_wrapped} is not callable",
+                        ErrorCode.not_callable,
+                    )
             return argspec
         elif isinstance(callee_wrapped, UnboundMethodValue):
             method = callee_wrapped.get_method()
@@ -3698,7 +3702,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         find_unused_attributes=False,
         attribute_checker=None,
         unused_finder=None,
-        **kwargs
+        **kwargs,
     ):
         attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
         if "arg_spec_cache" not in kwargs:
@@ -3726,7 +3730,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else inner_attribute_checker,
                 unused_finder=inner_unused_finder,
                 settings=settings,
-                **kwargs
+                **kwargs,
             )
         if unused_finder is not None:
             for unused_object in unused_finder.get_unused_objects():

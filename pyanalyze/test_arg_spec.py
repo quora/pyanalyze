@@ -1,20 +1,17 @@
 # static analysis: ignore
 from asynq import asynq
-from qcore.asserts import assert_eq, assert_is
+from qcore.asserts import assert_eq, assert_is, assert_is_instance
 from qcore.testing import Anything
 import collections.abc
-from collections.abc import (
-    MutableSequence,
-    Sequence,
-    Collection,
-    Reversible,
-    Set,
-)
+from collections.abc import MutableSequence, Sequence, Collection, Reversible, Set
 import contextlib
 import functools
 import io
 import itertools
+from pathlib import Path
+import tempfile
 import time
+from typeshed_client import Resolver, get_search_context
 import typing
 from typing import Generic, TypeVar, NewType
 
@@ -396,6 +393,42 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         )
         # make sure this doesn't crash (it's defined as a function in typeshed)
         assert_is(None, tsf.get_bases(itertools.zip_longest))
+
+    def test_newtype(self):
+        with tempfile.TemporaryDirectory() as temp_dir_str:
+            temp_dir = Path(temp_dir_str)
+            (temp_dir / "typing.pyi").write_text("def NewType(a, b): pass\n")
+            (temp_dir / "newt.pyi").write_text(
+                """
+from typing import NewType
+
+NT = NewType("NT", int)
+
+def f(x: NT) -> None:
+    pass
+"""
+            )
+            (temp_dir / "VERSIONS").write_text("newt: 3.5\ntyping: 3.5\n")
+            tsf = TypeshedFinder(verbose=True)
+            search_context = get_search_context(typeshed=temp_dir, search_path=[])
+            tsf.resolver = Resolver(search_context)
+
+            def runtime_f():
+                pass
+
+            sig = tsf.get_argspec_for_fully_qualified_name("newt.f", runtime_f)
+            ntv = next(iter(tsf._assignment_cache.values()))
+            assert_is_instance(ntv, NewTypeValue)
+            assert_eq("NT", ntv.name)
+            assert_eq(int, ntv.typ)
+            assert_eq(
+                Signature.make(
+                    [SigParameter("x", annotation=ntv)],
+                    KnownValue(None),
+                    callable=runtime_f,
+                ),
+                sig,
+            )
 
     @assert_passes()
     def test_generic_self(self):
