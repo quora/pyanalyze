@@ -17,6 +17,7 @@ from typing import (
     TypeVar,
     ContextManager,
     Mapping,
+    NewType,
     Sequence,
     Optional,
     Union,
@@ -429,7 +430,9 @@ class _Visitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Optional[Value]:
         func = self.visit(node.func)
-        if func == KnownValue(TypeVar):
+        if not isinstance(func, KnownValue):
+            return None
+        if func.val in (NewType, TypeVar):
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             args = []
@@ -452,14 +455,13 @@ class _Visitor(ast.NodeVisitor):
                         kwargs[name] = kwarg_value.val
                     else:
                         return None
-            typevar = TypeVar(*args, **kwargs)
-            return KnownValue(typevar)
-        elif isinstance(func, KnownValue) and isinstance(func.val, type):
+            return KnownValue(func.val(*args, **kwargs))
+        elif isinstance(func.val, type):
             if func.val is object:
                 return UNRESOLVED_VALUE
             return TypedValue(func.val)
         else:
-            raise NotImplementedError(ast.dump(node))
+            return None
 
 
 def is_typing_name(obj: object, name: str) -> bool:

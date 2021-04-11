@@ -388,7 +388,7 @@ class ArgSpecCache:
                 self._safe_get_signature(obj),
                 function_object=obj,
                 is_async=asyncio.iscoroutinefunction(obj),
-                **kwargs
+                **kwargs,
             )
 
         # decorator binders
@@ -456,7 +456,7 @@ class ArgSpecCache:
                     return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
             return PropertyArgSpec(obj)
 
-        raise TypeError("%r object is not callable" % (obj,))
+        return None
 
     def _safe_get_signature(self, obj: Any) -> Optional[inspect.Signature]:
         """Wrapper around inspect.getargspec that catches TypeErrors."""
@@ -578,7 +578,14 @@ _TYPING_ALIASES = {
 class TypeshedFinder(object):
     def __init__(self, verbose: bool = True) -> None:
         self.verbose = verbose
-        self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
+        # Dealing with upcoming typeshed-client change; TODO require the new version
+        # once it is released.
+        try:
+            # static analysis: ignore[incompatible_call]
+            resolver = typeshed_client.Resolver(version=sys.version_info[:2])
+        except TypeError:
+            resolver = typeshed_client.Resolver()
+        self.resolver = resolver
         self._assignment_cache = {}
 
     def log(self, message: str, obj: object) -> None:
@@ -606,6 +613,11 @@ class TypeshedFinder(object):
         fq_name = self._get_fq_name(obj)
         if fq_name is None:
             return None
+        return self.get_argspec_for_fully_qualified_name(fq_name, obj)
+
+    def get_argspec_for_fully_qualified_name(
+        self, fq_name: str, obj: object
+    ) -> Optional[Signature]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         sig = self._get_signature_from_info(info, obj, fq_name, mod)
@@ -864,6 +876,23 @@ class TypeshedFinder(object):
             self.log("Got UNRESOLVED_VALUE", (ast3.dump(node), module))
         return typ
 
+    def _parse_call_assignment(
+        self, info: typeshed_client.NameInfo, module: str
+    ) -> Value:
+        try:
+            __import__(module)
+            mod = sys.modules[module]
+            return KnownValue(getattr(mod, info.name))
+        except Exception:
+            pass
+
+        if not isinstance(info.ast, ast3.Assign) or not isinstance(
+            info.ast.value, ast3.Call
+        ):
+            return UNRESOLVED_VALUE
+        ctx = _AnnotationContext(finder=self, module=module)
+        return type_from_ast(cast(ast.AST, info.ast.value), ctx=ctx)
+
     def _value_from_info(
         self, info: typeshed_client.resolver.ResolvedName, module: str
     ) -> Value:
@@ -884,7 +913,10 @@ class TypeshedFinder(object):
                 key = (module, info.ast)
                 if key in self._assignment_cache:
                     return self._assignment_cache[key]
-                value = self._parse_expr(info.ast.value, module)
+                if isinstance(info.ast.value, ast3.Call):
+                    value = self._parse_call_assignment(info, module)
+                else:
+                    value = self._parse_expr(info.ast.value, module)
                 self._assignment_cache[key] = value
                 return value
             try:
