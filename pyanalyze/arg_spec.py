@@ -59,7 +59,6 @@ from typing import (
     Dict,
     List,
     TypeVar,
-    NewType,
 )
 from typing_extensions import Protocol
 import typing_inspect
