@@ -51,7 +51,7 @@ if __name__ == "__main__":
             "qcore>=0.5.1",
             "ast_decompiler>=0.4.0",
             "six>=1.10.0",
-            "typeshed_client>=0.4.1,<1.0",
+            "typeshed_client==1.0.0rc1",
             "typing_inspect>=0.5.0",
             "typing_extensions",
             "mypy_extensions",

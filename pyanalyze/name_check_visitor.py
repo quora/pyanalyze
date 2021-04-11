@@ -3574,7 +3574,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # other exceptions from __getattr__.
             except Exception:
                 name = None
-            return self._get_argspec(callee_wrapped.val, node, name=name)
+            argspec = self._get_argspec(callee_wrapped.val, node, name=name)
+            if argspec is None:
+                method_object = self.get_attribute(node, "__call__", callee_wrapped)
+                if method_object is UNINITIALIZED_VALUE:
+                    self._show_error_if_checking(node, f"{callee_wrapped} is not callable", ErrorCode.not_callable)
+            return argspec
         elif isinstance(callee_wrapped, UnboundMethodValue):
             method = callee_wrapped.get_method()
             if method is not None:

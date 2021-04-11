@@ -456,7 +456,7 @@ class ArgSpecCache:
                     return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
             return PropertyArgSpec(obj)
 
-        raise TypeError("%r object is not callable" % (obj,))
+        return None
 
     def _safe_get_signature(self, obj: Any) -> Optional[inspect.Signature]:
         """Wrapper around inspect.getargspec that catches TypeErrors."""
