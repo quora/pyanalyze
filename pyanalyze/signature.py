@@ -104,6 +104,8 @@ def clean_up_implementation_fn_return(
 class SigParameter(inspect.Parameter):
     """Wrapper around inspect.Parameter that stores annotations as Value objects."""
 
+    __slots__ = ()
+
     def __init__(
         self,
         name: str,
@@ -111,7 +113,7 @@ class SigParameter(inspect.Parameter):
         *,
         default: Optional[Value] = None,
         annotation: Optional[Value] = None,
-    ):
+    ) -> None:
         if default is None:
             default = EMPTY
         if annotation is None:
@@ -297,7 +299,7 @@ class Signature:
         return self.has_return_annotation
 
     @property
-    def return_value(self):
+    def return_value(self) -> Value:
         return self.signature.return_annotation
 
 

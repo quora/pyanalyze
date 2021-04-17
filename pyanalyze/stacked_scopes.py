@@ -29,8 +29,10 @@ from types import ModuleType
 from typing import (
     Any,
     Callable,
+    ContextManager,
     Dict,
     Iterable,
+    Iterator,
     List,
     Sequence,
     Optional,
@@ -380,7 +382,7 @@ class OrConstraint(AbstractConstraint):
 
     def _constraint_from_list(
         self, varname: Varname, constraints: Sequence[Constraint]
-    ):
+    ) -> Constraint:
         if len(constraints) == 1:
             return constraints[0]
         else:
@@ -402,7 +404,9 @@ class OrConstraint(AbstractConstraint):
 class _ConstrainedValue(Value):
     """Helper class, only used within a FunctionScope."""
 
-    def __init__(self, definition_nodes, constraints):
+    def __init__(
+        self, definition_nodes: Set[Node], constraints: Sequence[Constraint]
+    ) -> None:
         self.definition_nodes = definition_nodes
         self.constraints = constraints
         self.resolution_cache = {}
@@ -435,7 +439,13 @@ class Scope:
         """Constraints are ignored outside of function scopes."""
         pass
 
-    def get(self, varname, node, state, from_parent_scope=False):
+    def get(
+        self,
+        varname: Varname,
+        node: object,
+        state: VisitorState,
+        from_parent_scope: bool = False,
+    ) -> Tuple[Value, Optional["Scope"]]:
         local_value = self.get_local(
             varname, node, state, from_parent_scope=from_parent_scope
         )
@@ -494,16 +504,16 @@ class Scope:
 
     # no real subscopes in non-function scopes, just dummy implementations
     @contextlib.contextmanager
-    def subscope(self):
+    def subscope(self) -> Iterator[None]:
         yield
 
     @contextlib.contextmanager
-    def loop_scope(self):
+    def loop_scope(self) -> Iterator[None]:
         """Context manager for the subscope associated with a loop."""
         yield
 
     def combine_subscopes(
-        self, scopes: Iterable[Dict[str, Any]], *, ignore_leaves_scope: bool = False
+        self, scopes: Iterable[SubScope], *, ignore_leaves_scope: bool = False
     ) -> None:
         pass
 
@@ -890,7 +900,7 @@ class FunctionScope(Scope):
                     )
                     self.name_to_composites[composite].add(varname)
 
-    def items(self):
+    def items(self) -> Iterable[Tuple[Varname, Value]]:
         raise NotImplementedError
 
     def __contains__(self, varname: Varname) -> bool:
@@ -906,7 +916,7 @@ class StackedScopes:
         None,
     )
 
-    def __init__(self, module: ModuleType) -> None:
+    def __init__(self, module: Optional[ModuleType]) -> None:
         if module is None:
             module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
         else:
@@ -1008,15 +1018,17 @@ class StackedScopes:
         """
         self.scopes[-1].set(varname, value, node, state)
 
-    def subscope(self):
+    def subscope(self) -> ContextManager[SubScope]:
         """Creates a new subscope (see the FunctionScope docstring)."""
         return self.scopes[-1].subscope()
 
-    def loop_scope(self):
+    def loop_scope(self) -> ContextManager[None]:
         """Creates a new loop scope (see the FunctionScope docstring)."""
         return self.scopes[-1].loop_scope()
 
-    def combine_subscopes(self, scopes, *, ignore_leaves_scope: bool = False):
+    def combine_subscopes(
+        self, scopes: Iterable[SubScope], *, ignore_leaves_scope: bool = False
+    ) -> None:
         """Merges a number of subscopes back into their parent scope."""
         self.scopes[-1].combine_subscopes(
             scopes, ignore_leaves_scope=ignore_leaves_scope

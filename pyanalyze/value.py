@@ -921,7 +921,7 @@ def extract_typevars(value: Value) -> Iterable["TypeVar"]:
             yield val.typevar
 
 
-def substitute_typevars(values: Iterable[Value], tv_map: TypeVarMap):
+def substitute_typevars(values: Iterable[Value], tv_map: TypeVarMap) -> List[Value]:
     return [value.substitute_typevars(tv_map) for value in values]
 
 

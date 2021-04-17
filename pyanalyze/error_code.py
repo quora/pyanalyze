@@ -76,9 +76,19 @@ class ErrorCode(enum.Enum):
     invalid_annotation = 59
     bare_ignore = 60
     duplicate_enum_member = 61
+    missing_return_annotation = 62
+    missing_parameter_annotation = 63
+
+
+# Allow testing unannotated functions without too much fuss
+DISABLED_IN_TESTS = {
+    ErrorCode.missing_return_annotation,
+    ErrorCode.missing_parameter_annotation,
+}
 
 
 DISABLED_BY_DEFAULT = {
+    *DISABLED_IN_TESTS,
     ErrorCode.method_first_arg,
     # This is harmless and it has false positives when things are overridden in child classes
     ErrorCode.condition_always_true,
@@ -146,11 +156,13 @@ ERROR_DESCRIPTION = {
     ErrorCode.invalid_annotation: "Invalid type annotation",
     ErrorCode.bare_ignore: "Ignore comment without an error code",
     ErrorCode.duplicate_enum_member: "Duplicate enum member",
+    ErrorCode.missing_return_annotation: "Missing function return annotation",
+    ErrorCode.missing_parameter_annotation: "Missing function parameter annotation",
 }
 
 
 @used  # exposed as an API
-def register_error_code(name, description):
+def register_error_code(name: str, description: str) -> ErrorCode:
     """Register an additional error code. For use in extensions."""
     value = max(member.value for member in ErrorCode) + 1
     extend_enum(ErrorCode, name, value)

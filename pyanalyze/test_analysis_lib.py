@@ -1,10 +1,11 @@
 import ast
+from typing import Iterable
 from qcore.asserts import assert_eq
 
-from pyanalyze.analysis_lib import get_indentation, get_line_range_for_node, is_iterable
+from .analysis_lib import get_indentation, get_line_range_for_node, is_iterable
 
 
-def test_get_indentation():
+def test_get_indentation() -> None:
     assert_eq(0, get_indentation("\n"))
     assert_eq(0, get_indentation(""))
     assert_eq(4, get_indentation("    pass\n"))
@@ -16,14 +17,14 @@ CODE = r'''from qcore.asserts import assert_eq
 from pyanalyze.analysis_lib import get_indentation
 
 
-def test_get_indentation():
+def test_get_indentation() -> None:
     assert_eq(0, get_indentation('\n'))
     assert_eq(0, get_indentation(''))
     assert_eq(4, get_indentation('    pass\n'))
     assert_eq(1, get_indentation(' hello'))
 
 
-def test_get_line_range_for_node():
+def test_get_line_range_for_node() -> None:
     pass
 
 x = """
@@ -35,7 +36,7 @@ string
 '''
 
 
-def test_get_line_range_for_node():
+def test_get_line_range_for_node() -> None:
     lines = CODE.splitlines()
     tree = ast.parse(CODE)
     assert_eq([1], get_line_range_for_node(tree.body[0], lines))
@@ -45,30 +46,30 @@ def test_get_line_range_for_node():
     assert_eq([16, 17, 18, 19, 20, 21], get_line_range_for_node(tree.body[4], lines))
 
 
-def test_is_iterable():
-    def gen():
+def test_is_iterable() -> None:
+    def gen() -> Iterable[None]:
         yield
 
     class NoSpecialMethods(object):
         pass
 
     class HasIter(object):
-        def __iter__(self):
+        def __iter__(self) -> Iterable[int]:
             yield 1
 
     class HasGetItemAndLen(object):
-        def __getitem__(self, i):
+        def __getitem__(self, i: int) -> int:
             return i ** 2
 
-        def __len__(self):
+        def __len__(self) -> int:
             return 1 << 15
 
     class HasGetItem(object):
-        def __getitem__(self, i):
+        def __getitem__(self, i: int) -> int:
             raise KeyError("tricked you, I am not iterable")
 
     class HasLen(object):
-        def __len__(self, i):
+        def __len__(self) -> int:
             return -1
 
     assert is_iterable("")
