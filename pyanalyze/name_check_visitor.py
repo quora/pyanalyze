@@ -2781,6 +2781,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self.scopes.combine_subscopes(subscopes)
             self._generic_visit_list(node.finalbody)
         else:
+            # Life is much simpler without finally
             subscopes = self.visit_try_except(node)
             self.scopes.combine_subscopes(subscopes)
         self.yield_checker.reset_yield_checks()
