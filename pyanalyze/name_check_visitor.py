@@ -76,6 +76,7 @@ from pyanalyze.stacked_scopes import (
     LEAVES_LOOP,
     LEAVES_SCOPE,
     constrain_value,
+    SubScope,
 )
 from pyanalyze.signature import MaybeSignature, make_bound_method, ARGS, KWARGS
 from pyanalyze.asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
@@ -2739,7 +2740,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return tv_map.get(T, UNRESOLVED_VALUE), None
         return UNRESOLVED_VALUE, None
 
-    def visit_try_except(self, node: ast.Try) -> None:
+    def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
         # try and the except block
         with self.scopes.subscope():
@@ -2758,20 +2759,32 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     self.yield_checker.reset_yield_checks()
                     self.visit(handler)
 
+        return [try_scope] + except_scopes
         self.scopes.combine_subscopes([try_scope] + except_scopes)
         self.yield_checker.reset_yield_checks()
 
     def visit_Try(self, node: ast.Try) -> None:
         # py3 combines the Try and Try/Finally nodes
         if node.finalbody:
-            with self.scopes.subscope() as try_scope:
-                self.visit_try_except(node)
-                self._generic_visit_list(node.finalbody)
+            subscopes = self.visit_try_except(node)
+
+            # For the case where nothing in the try-except block is executed
             with self.scopes.subscope():
                 self._generic_visit_list(node.finalbody)
-            self.scopes.combine_subscopes([try_scope])
+
+            # For the case where something in the try-except exits the scope
+            with self.scopes.subscope():
+                self.scopes.combine_subscopes(subscopes, ignore_leaves_scope=True)
+                self._generic_visit_list(node.finalbody)
+
+            # For the case where execution continues after the try-finally
+            self.scopes.combine_subscopes(subscopes)
+            self._generic_visit_list(node.finalbody)
         else:
-            self.visit_try_except(node)
+            # Life is much simpler without finally
+            subscopes = self.visit_try_except(node)
+            self.scopes.combine_subscopes(subscopes)
+        self.yield_checker.reset_yield_checks()
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.type is not None:
