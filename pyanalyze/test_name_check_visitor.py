@@ -2184,6 +2184,41 @@ class TestSequenceIndex(TestNameCheckVisitorBase):
             assert_is_value(tpl[2], TypedValue(float))
 
 
+_AnnotSettings = {
+    ErrorCode.missing_parameter_annotation: True,
+    ErrorCode.missing_return_annotation: True,
+}
+
+
+class TestRequireAnnotations(TestNameCheckVisitorBase):
+    @assert_fails(ErrorCode.missing_parameter_annotation, settings=_AnnotSettings)
+    def test_missing_parameter_annotation(self):
+        def f(x) -> None:
+            pass
+
+    @assert_fails(ErrorCode.missing_return_annotation, settings=_AnnotSettings)
+    def test_missing_parameter_annotation(self):
+        def f(x: object):
+            pass
+
+    @assert_fails(ErrorCode.missing_return_annotation, settings=_AnnotSettings)
+    def test_missing_parameter_annotation_method(self):
+        class Capybara:
+            def f(self, x) -> None:
+                pass
+
+    @assert_passes(settings=_AnnotSettings)
+    def test_dont_annotate_self():
+        def f() -> None:
+            class X:
+                def method(self) -> None:
+                    pass
+
+        class X:
+            def f(self) -> None:
+                pass
+
+
 class HasGetattr(object):
     def __getattr__(self, attr):
         return 42

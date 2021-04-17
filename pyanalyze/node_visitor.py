@@ -158,7 +158,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         tree: ast.AST,
         settings: Optional[Mapping[Enum, bool]] = None,
         fail_after_first: bool = False,
-        verbosity=logging.CRITICAL,
+        verbosity: int = logging.CRITICAL,
         collect_failures: bool = False,
         add_ignores: bool = False,
     ) -> None:
@@ -276,7 +276,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         filename: str,
         assert_passes: bool = True,
         include_tests: bool = False,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> List[Failure]:
         """Run checks on a single file.
 

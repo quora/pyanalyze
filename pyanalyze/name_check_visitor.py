@@ -1246,7 +1246,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             ]
             return defaults, kw_defaults
 
-    def _get_evaled_function(self, node, decorators) -> Value:
+    def _get_evaled_function(
+        self,
+        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        decorators: Sequence[Tuple[Value, Value]],
+    ) -> Value:
         to_apply = []
         for decorator, applied_decorator in decorators:
             if (
@@ -1351,7 +1355,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         function_info: FunctionInfo = _DEFAULT_FUNCTION_INFO,
         name: Optional[str] = None,
         defaults: Sequence[Optional[Value]],
-        kw_defaults: Sequence[Optional[Value]]
+        kw_defaults: Sequence[Optional[Value]],
     ) -> Tuple[Value, bool, bool]:
         is_collecting = self._is_collecting()
         if is_collecting and not self.scopes.contains_scope_of_type(
@@ -1570,7 +1574,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         # normal method
                         value = TypedValue(self.current_class)
                 else:
-                    if not isinstance(node, ast.Lambda):
+                    # This is meant to exclude methods in nested classes. It's a bit too conservative
+                    # for cases such as a function nested in a method nested in a class nested in a function.
+                    if not isinstance(node, ast.Lambda) and not (
+                        idx == 0
+                        and not function_info.is_staticmethod
+                        and self.node_context.includes(ast.ClassDef)
+                    ):
                         self._show_error_if_checking(
                             node,
                             f"Missing type annotation for parameter {arg.arg}",
@@ -3879,7 +3889,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         cls,
         filename: str,
         attribute_checker: Optional[ClassAttributeChecker] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> Tuple[List[node_visitor.Failure], Any]:
         failures = cls.check_file(
             filename, attribute_checker=attribute_checker, **kwargs
@@ -3891,7 +3901,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         cls,
         extra_data: Any,
         attribute_checker: Optional[ClassAttributeChecker] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
         if attribute_checker is None:
             return

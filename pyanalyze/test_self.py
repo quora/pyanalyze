@@ -17,7 +17,7 @@ class PyanalyzeConfig(pyanalyze.config.Config):
         ErrorCode.possibly_undefined_name,
         ErrorCode.use_fstrings,
         ErrorCode.missing_return_annotation,
-        # ErrorCode.missing_parameter_annotation,
+        ErrorCode.missing_parameter_annotation,
     }
 
 
