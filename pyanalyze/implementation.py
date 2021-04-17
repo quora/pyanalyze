@@ -46,7 +46,7 @@ from itertools import product
 import qcore
 import inspect
 import warnings
-from typing import cast, NewType, TYPE_CHECKING, Callable, TypeVar, Optional
+from typing import cast, Dict, NewType, TYPE_CHECKING, Callable, TypeVar, Optional
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -774,7 +774,7 @@ _ENCODING_PARAMETER = SigParameter(
 )
 
 
-def get_default_argspecs():
+def get_default_argspecs() -> Dict[object, Signature]:
     signatures = [
         # pyanalyze helpers
         Signature.make(

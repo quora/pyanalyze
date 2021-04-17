@@ -12,7 +12,18 @@ import numbers
 import re
 import sys
 from collections.abc import Mapping
-from typing import Iterable, Optional, Sequence, Union, List, Tuple
+from typing import (
+    Callable,
+    Dict,
+    Iterable,
+    Match,
+    Optional,
+    Sequence,
+    Union,
+    List,
+    Tuple,
+)
+from typing_extensions import Literal
 
 from .error_code import ErrorCode
 from .value import (
@@ -22,6 +33,7 @@ from .value import (
     TypedValue,
     MultiValuedValue,
     UNRESOLVED_VALUE,
+    Value,
     VariableNameValue,
 )
 
@@ -60,13 +72,15 @@ class ConversionSpecifier:
     conversion_type: str
     mapping_key: Optional[str] = None
     conversion_flags: Optional[str] = None
-    field_width: Optional[int] = None
+    field_width: Union[int, Literal["*"], None] = None
     precision: Optional[int] = None
     length_modifier: Optional[str] = None
     is_bytes: bool = False
 
     @classmethod
-    def from_match(cls, match):
+    def from_match(
+        cls, match: Union[Match[bytes], Match[str]]
+    ) -> "ConversionSpecifier":
         """Argument is a match returned by _FORMAT_STRING_REGEX."""
         conversion_type = match.group("conversion_type")
         is_bytes = isinstance(conversion_type, bytes)
@@ -81,7 +95,9 @@ class ConversionSpecifier:
             precision = cls._parse_int_field(precision[1:])
         return cls(
             conversion_type=cls._maybe_decode(conversion_type),
-            mapping_key=cls._maybe_decode(mapping_key),
+            mapping_key=cls._maybe_decode(mapping_key)
+            if mapping_key is not None
+            else None,
             conversion_flags=cls._maybe_decode(match.group("conversion_flags")),
             field_width=field_width,
             precision=precision,
@@ -90,7 +106,7 @@ class ConversionSpecifier:
         )
 
     @classmethod
-    def _maybe_decode(cls, string):
+    def _maybe_decode(cls, string: Union[str, bytes]) -> str:
         """We want to treat all fields as text even on a bytes pattern for simplicity."""
         if isinstance(string, bytes):
             return string.decode("ascii")
@@ -98,16 +114,16 @@ class ConversionSpecifier:
             return string
 
     @classmethod
-    def _parse_int_field(cls, raw):
+    def _parse_int_field(cls, raw: Union[str, bytes]) -> Union[int, Literal["*"]]:
         """Helper for parsing match results for the field_width and precision fields."""
         if isinstance(raw, bytes):
             raw = raw.decode("ascii")
         if raw == "*":
-            return raw
+            return "*"
         else:
             return int(raw)
 
-    def lint(self):
+    def lint(self) -> Iterable[str]:
         """Finds any errors in this specifier."""
         if self.conversion_type == "%":
             if any(
@@ -127,7 +143,7 @@ class ConversionSpecifier:
             if not self.is_bytes:
                 yield "the %b conversion specifier works only on Python 3 bytes patterns"
 
-    def accept(self, arg):
+    def accept(self, arg: Value) -> Iterable[str]:
         """Produces any errors from passing the given object to this specifier."""
         if arg is UNRESOLVED_VALUE or isinstance(arg, MultiValuedValue):
             return
@@ -145,7 +161,7 @@ class ConversionSpecifier:
             # accepts anything
             pass
         elif self.conversion_type == "c":
-            if arg.is_type((int, str)):
+            if arg.is_type(int) or arg.is_type(str):
                 if self.is_bytes and arg.is_type(str):
                     yield "%c on a bytes pattern requires an integer or a byte, not {!r}".format(
                         arg
@@ -171,10 +187,10 @@ class ConversionSpecifier:
             assert False, "unhandled conversion type {}".format(self.conversion_type)
 
 
-class StarConversionSpecifier(object):
+class StarConversionSpecifier:
     """Fake conversion specifier for the '*' special cases for field width and precision."""
 
-    def accept(self, arg):
+    def accept(self, arg: Value) -> Iterable[str]:
         # it doesn't accept longs in Python 2
         if arg is not UNRESOLVED_VALUE and not arg.is_type(int):
             yield "'*' special specifier only accepts ints, not {}".format(arg)
@@ -197,7 +213,7 @@ class PercentFormatString:
     raw_pieces: Sequence[str] = ()
 
     @classmethod
-    def from_pattern(cls, pattern):
+    def from_pattern(cls, pattern: Union[str, bytes]) -> "PercentFormatString":
         """Creates a parsed PercentFormatString from a raw string."""
         if isinstance(pattern, bytes):
             is_bytes = True
@@ -230,7 +246,7 @@ class PercentFormatString:
         """Returns whether this format string requires a mapping as an argument."""
         return any(cs.mapping_key is not None for cs in self.specifiers)
 
-    def lint(self):
+    def lint(self) -> Iterable[str]:
         """Finds errors in the pattern itself."""
         needs_mapping = self.needs_mapping()
         for cs in self.specifiers:
@@ -247,7 +263,7 @@ class PercentFormatString:
             if (b"%" in piece) if self.is_bytes else ("%" in piece):
                 yield "invalid conversion specifier in {}".format(piece)
 
-    def accept(self, args):
+    def accept(self, args: Value) -> Iterable[str]:
         """Checks whether this format string can accept the given Value as arguments."""
         if not self.specifiers:
             # if there are no conversion specifiers and we're doing % formatting anyway, throw an
@@ -258,13 +274,11 @@ class PercentFormatString:
             if args != KnownValue(()) and args != KnownValue({}):
                 yield "use of % on string with no conversion specifiers"
         elif self.needs_mapping():
-            for err in self.accept_mapping_args(args):
-                yield err
+            yield from self.accept_mapping_args(args)
         else:
-            for err in self.accept_tuple_args(args):
-                yield err
+            yield from self.accept_tuple_args(args)
 
-    def get_specifier_mapping(self):
+    def get_specifier_mapping(self) -> Dict[str, List[ConversionSpecifier]]:
         """Return a mapping from mapping key to conversion specifiers for that mapping key."""
         out = defaultdict(list)
         for specifier in self.specifiers:
@@ -272,26 +286,26 @@ class PercentFormatString:
                 out[specifier.mapping_key].append(specifier)
         return out
 
-    def accept_mapping_args(self, args):
+    def accept_mapping_args(self, args: Value) -> Iterable[str]:
         cs_map = self.get_specifier_mapping()
         if isinstance(args, KnownValue):
             if isinstance(args.val, Mapping):
                 for key, value in args.val.items():
                     for specifier in cs_map[key]:
-                        for err in specifier.accept(KnownValue(value)):
-                            yield err
+                        yield from specifier.accept(KnownValue(value))
             else:
                 yield "% string requires a mapping, not {}".format(args)
         elif isinstance(args, DictIncompleteValue):
             for key, value in args.items:
                 if isinstance(key, KnownValue):
                     for specifier in cs_map[key.val]:
-                        for err in specifier.accept(value):
-                            yield err
+                        yield from specifier.accept(value)
         elif args is not UNRESOLVED_VALUE and not args.is_type(Mapping):
             yield "% string requires a mapping, not {}".format(args)
 
-    def get_serial_specifiers(self):
+    def get_serial_specifiers(
+        self,
+    ) -> Iterable[Union[ConversionSpecifier, StarConversionSpecifier]]:
         """Returns all specifiers to use when formatting with a tuple."""
         for specifier in self.specifiers:
             if specifier.field_width == "*":
@@ -301,7 +315,7 @@ class PercentFormatString:
             if specifier.conversion_type != "%":
                 yield specifier
 
-    def accept_tuple_args(self, args):
+    def accept_tuple_args(self, args: Value) -> Iterable[str]:
         specifiers = list(self.get_serial_specifiers())
         if args.is_type(tuple):
             if isinstance(args, SequenceIncompleteValue):
@@ -332,11 +346,16 @@ class PercentFormatString:
             )
         else:
             for arg, specifier in zip(all_args, specifiers):
-                for err in specifier.accept(arg):
-                    yield err
+                yield from specifier.accept(arg)
 
 
-def check_string_format(node, format_str, args_node, args, on_error):
+def check_string_format(
+    node: ast.AST,
+    format_str: Union[str, bytes],
+    args_node: ast.AST,
+    args: Value,
+    on_error: Callable[..., None],
+) -> Tuple[Value, Optional[ast.AST]]:
     """Checks that arguments to %-formatted strings are correct."""
     fs = PercentFormatString.from_pattern(format_str)
     for err in fs.lint():
@@ -346,11 +365,13 @@ def check_string_format(node, format_str, args_node, args, on_error):
     return TypedValue(type(format_str)), maybe_replace_with_fstring(fs, args_node)
 
 
-def maybe_replace_with_fstring(fs, args_node):
+def maybe_replace_with_fstring(
+    fs: PercentFormatString, args_node: ast.AST
+) -> Optional[ast.AST]:
     """If appropriate, emits an error to replace this % format with an f-string."""
     # otherwise there are no f-strings
     if sys.version_info < (3, 6):
-        return
+        return None
     # there are no bytes f-strings
     if isinstance(fs.pattern, bytes):
         return None
@@ -402,7 +423,7 @@ def maybe_replace_with_fstring(fs, args_node):
     return ast.JoinedStr(values=parts)
 
 
-def _is_simple_enough(node):
+def _is_simple_enough(node: ast.AST) -> bool:
     """Returns whether a node is simple enough to be substituted into an f-string."""
     if isinstance(node, ast.Name):
         return True
@@ -448,8 +469,7 @@ class FormatString:
         """Iterator over all child replacement fields."""
         for child in self.children:
             if isinstance(child, ReplacementField):
-                for field in child.iter_replacement_fields():
-                    yield field
+                yield from child.iter_replacement_fields()
 
 
 class IndexOrAttribute(enum.Enum):
@@ -487,8 +507,7 @@ class ReplacementField:
         if self.format_spec:
             for child in self.format_spec.children:
                 if isinstance(child, ReplacementField):
-                    for field in child.iter_replacement_fields():
-                        yield field
+                    yield from child.iter_replacement_fields()
 
 
 def parse_format_string(string: str) -> Tuple[FormatString, FormatErrors]:

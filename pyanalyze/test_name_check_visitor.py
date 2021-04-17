@@ -21,7 +21,7 @@ from .name_check_visitor import (
 )
 from .arg_spec import ArgSpecCache
 from .implementation import assert_is_value, dump_value
-from .error_code import ErrorCode
+from .error_code import DISABLED_IN_TESTS, ErrorCode
 from .test_config import TestConfig
 from .value import (
     AsyncTaskIncompleteValue,
@@ -78,7 +78,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         # This can happen in Python 2.
         if isinstance(code_str, bytes):
             code_str = code_str.decode("utf-8")
-        default_settings = {code: True for code in ErrorCode}
+        default_settings = {code: code not in DISABLED_IN_TESTS for code in ErrorCode}
         if settings is not None:
             default_settings.update(settings)
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))

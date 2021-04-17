@@ -13,6 +13,7 @@ import ast
 import builtins
 from collections.abc import Callable
 from typing import (
+    Any,
     cast,
     TypeVar,
     ContextManager,
@@ -20,6 +21,7 @@ from typing import (
     NewType,
     Sequence,
     Optional,
+    Tuple,
     Union,
     TYPE_CHECKING,
 )
@@ -50,10 +52,10 @@ try:
 except ImportError:
     GenericAlias = None
 
-    def get_origin(obj):
+    def get_origin(obj: object) -> Any:
         return None
 
-    def get_args(obj):
+    def get_args(obj: object) -> Tuple[Any, ...]:
         return ()
 
 

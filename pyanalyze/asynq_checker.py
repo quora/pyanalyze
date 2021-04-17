@@ -41,7 +41,7 @@ class FunctionInfo:
 @dataclass
 class AsynqChecker:
     config: Config
-    module: types.ModuleType
+    module: Optional[types.ModuleType]
     lines: Sequence[str]
     on_error: Callable[..., Any]
     log: Callable[..., Any]

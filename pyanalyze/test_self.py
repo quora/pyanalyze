@@ -16,6 +16,8 @@ class PyanalyzeConfig(pyanalyze.config.Config):
         ErrorCode.condition_always_true,
         ErrorCode.possibly_undefined_name,
         ErrorCode.use_fstrings,
+        ErrorCode.missing_return_annotation,
+        # ErrorCode.missing_parameter_annotation,
     }
 
 
@@ -24,7 +26,7 @@ class PyanalyzeVisitor(pyanalyze.name_check_visitor.NameCheckVisitor):
     should_check_environ_for_files = False
 
 
-def test_all():
+def test_all() -> None:
     PyanalyzeVisitor.check_all_files()
 
 

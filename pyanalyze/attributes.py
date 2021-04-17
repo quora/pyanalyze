@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import inspect
 import qcore
 import types
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional
 
 from .annotations import type_from_runtime
 from .value import (
@@ -201,7 +201,9 @@ def _get_attribute_from_known(obj: Any, ctx: AttrContext) -> Value:
     return result
 
 
-def _get_attribute_from_unbound(root_value: UnboundMethodValue, ctx: AttrContext):
+def _get_attribute_from_unbound(
+    root_value: UnboundMethodValue, ctx: AttrContext
+) -> Value:
     method = root_value.get_method()
     if method is None:
         return UNRESOLVED_VALUE
@@ -254,7 +256,7 @@ def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
     return UNINITIALIZED_VALUE, False
 
 
-def _static_hasattr(value, attr):
+def _static_hasattr(value: object, attr: str) -> bool:
     """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
     try:
         object.__getattribute__(value, attr)
@@ -264,7 +266,7 @@ def _static_hasattr(value, attr):
         return True
 
 
-def get_attrs_attribute(typ, attr):
+def get_attrs_attribute(typ: Any, attr: str) -> Optional[Value]:
     try:
         if hasattr(typ, "__attrs_attrs__"):
             for attr_attr in typ.__attrs_attrs__:

@@ -12,6 +12,7 @@ import collections
 from contextlib import contextmanager
 import concurrent.futures
 from dataclasses import dataclass
+from enum import Enum
 import qcore
 import cProfile
 import logging
@@ -23,7 +24,21 @@ import sys
 import tempfile
 import builtins
 from builtins import print as real_print
-from typing import List, Optional, Sequence
+from types import ModuleType
+from typing_extensions import TypedDict
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    cast,
+)
 
 from . import analysis_lib
 
@@ -46,20 +61,22 @@ IGNORE_COMMENT = "# static analysis: ignore"
 # to guard against infinite loop
 ITERATION_LIMIT = 150
 
+UNUSED_OBJECT_FILENAME = "<unused>"
+
 
 class _PatchWithDescription(codemod.Patch):
     def __init__(
         self,
-        start_line_number,
-        end_line_number=None,
-        new_lines=None,
-        path=None,
-        description=None,
-    ):
+        start_line_number: int,
+        end_line_number: Optional[int] = None,
+        new_lines: Optional[List[str]] = None,
+        path: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> None:
         super().__init__(start_line_number, end_line_number, new_lines, path)
         self.description = description
 
-    def render_range(self):
+    def render_range(self) -> str:
         text = super(_PatchWithDescription, self).render_range()
         if self.description is not None:
             return text + ": " + self.description
@@ -72,16 +89,16 @@ class _Query:
 
     patches: List[_PatchWithDescription]
 
-    def generate_patches(self):
+    def generate_patches(self) -> List[_PatchWithDescription]:
         return self.patches
 
 
 class VisitorError(Exception):
-    def __init__(self, message, error_code=None):
+    def __init__(self, message: str, error_code: Optional[Enum] = None) -> None:
         self.message = message
         self.error_code = error_code
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.message
 
 
@@ -110,6 +127,15 @@ class FileNotFoundError(Exception):
     pass
 
 
+class Failure(TypedDict, total=False):
+    description: str
+    filename: str
+    code: Enum
+    lineno: int
+    context: str
+    message: str
+
+
 class BaseNodeVisitor(ast.NodeVisitor):
     """Base Visitor class that can run on all files in a/ and show detailed error messages."""
 
@@ -123,18 +149,19 @@ class BaseNodeVisitor(ast.NodeVisitor):
     _changes_for_fixer = collections.defaultdict(list)
 
     tree: Optional[ast.AST]
+    all_failures: List[Failure]
 
     def __init__(
         self,
-        filename,
-        contents,
-        tree,
-        settings=None,
-        fail_after_first=False,
+        filename: str,
+        contents: str,
+        tree: ast.AST,
+        settings: Optional[Mapping[Enum, bool]] = None,
+        fail_after_first: bool = False,
         verbosity=logging.CRITICAL,
-        collect_failures=False,
-        add_ignores=False,
-    ):
+        collect_failures: bool = False,
+        add_ignores: bool = False,
+    ) -> None:
         """Constructor.
 
         filename: name of the file to run on (to show in error messages)
@@ -160,13 +187,13 @@ class BaseNodeVisitor(ast.NodeVisitor):
         self.add_ignores = add_ignores
         self.caught_errors = None
 
-    def check(self):
+    def check(self) -> List[Failure]:
         """Runs the class's checks on a tree."""
         self.log(logging.INFO, "Check file", self.filename)
         self.visit(self.tree)
         return self.all_failures
 
-    def check_for_test(self, apply_changes=False):
+    def check_for_test(self, apply_changes: bool = False) -> Any:
         """Entry point for testing. Also applies all changes if apply_changes is on."""
         if not apply_changes:
             return self.check()
@@ -178,7 +205,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             lines = self._apply_changes_to_lines(changes[self.filename], lines)
         return result, "".join(lines)
 
-    def log(self, level, label, value):
+    def log(self, level: int, label: str, value: object) -> None:
         if level < self._logging_level:
             return
         self.logger.log(
@@ -187,11 +214,13 @@ class BaseNodeVisitor(ast.NodeVisitor):
         )
 
     @qcore.caching.cached_per_instance()
-    def _lines(self):
+    def _lines(self) -> List[str]:
         return [line + "\n" for line in self.contents.splitlines()]
 
     @qcore.caching.cached_per_instance()
-    def has_file_level_ignore(self, error_code=None, ignore_comment=IGNORE_COMMENT):
+    def has_file_level_ignore(
+        self, error_code: Optional[Enum] = None, ignore_comment: str = IGNORE_COMMENT
+    ) -> bool:
         # if the IGNORE_COMMENT occurs before any non-comment line, all errors in the file are
         # ignored
         for i, line in enumerate(self._lines()):
@@ -206,7 +235,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 return True
         return False
 
-    def get_unused_ignores(self):
+    def get_unused_ignores(self) -> List[Tuple[int, str]]:
         """Returns line numbers and lines that have unused ignore comments."""
         return [
             (i, line)
@@ -214,7 +243,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             if IGNORE_COMMENT in line and i not in self.used_ignores
         ]
 
-    def show_errors_for_unused_ignores(self, error_code):
+    def show_errors_for_unused_ignores(self, error_code: Enum) -> None:
         """Shows errors for any unused ignore comments."""
         for i, line in self.get_unused_ignores():
             node = _FakeNode(i + 1, line.index(IGNORE_COMMENT))
@@ -231,7 +260,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 node, error_code=error_code, replacement=replacement, obey_ignore=False
             )
 
-    def show_errors_for_bare_ignores(self, error_code):
+    def show_errors_for_bare_ignores(self, error_code: Enum) -> None:
         """Shows errors for ignore comments without an error code."""
         if self.has_file_level_ignore():
             # file-level ignores are allowed to be blanket ignores
@@ -242,7 +271,13 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 self.show_error(node, error_code=error_code, obey_ignore=False)
 
     @classmethod
-    def check_file(cls, filename, assert_passes=True, include_tests=False, **kwargs):
+    def check_file(
+        cls,
+        filename: str,
+        assert_passes: bool = True,
+        include_tests: bool = False,
+        **kwargs: Any
+    ) -> List[Failure]:
         """Run checks on a single file.
 
         include_tests and assert_passes are arguments here for compatibility with check_all_files.
@@ -259,7 +294,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return cls(filename, contents, tree, **kwargs).check()
 
     @classmethod
-    def check_all_files(cls, include_tests=False, assert_passes=True, **kwargs):
+    def check_all_files(
+        cls, include_tests: bool = False, assert_passes: bool = True, **kwargs: Any
+    ) -> List[Failure]:
         """Runs the check for all files in scope or changed files if we are test-local."""
         if "settings" not in kwargs:
             kwargs["settings"] = cls._get_default_settings()
@@ -290,7 +327,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             return sorted(set(cls._get_all_python_files(include_tests=include_tests)))
 
     @classmethod
-    def main(cls):
+    def main(cls) -> int:
         """Can be used as a main function. Calls the checker on files given on the command line."""
         args = cls._get_argument_parser().parse_args()
 
@@ -344,31 +381,32 @@ class BaseNodeVisitor(ast.NodeVisitor):
             failures = cls._run_and_apply_changes(kwargs, autofix=autofix)
         else:
             failures = cls._run(**kwargs)
-        if markdown_output is not None and failures:
-            cls._write_markdown_report(markdown_output, failures)
+            if markdown_output is not None and failures:
+                cls._write_markdown_report(markdown_output, failures)
         return 1 if failures else 0
 
     @classmethod
-    def _write_markdown_report(cls, output_file, failures):
+    def _write_markdown_report(cls, output_file: str, failures: List[Failure]) -> None:
         by_file = collections.defaultdict(list)
         for failure in failures:
             by_file[failure["filename"]].append(failure)
 
-        prefix = os.path.commonpath(list(by_file.keys()))
+        prefix = os.path.commonpath(
+            [key for key in by_file if key != UNUSED_OBJECT_FILENAME]
+        )
 
         with open(output_file, "w") as f:
             f.write("%d total failures in %d files\n\n" % (len(failures), len(by_file)))
 
             for filename, file_failures in sorted(by_file.items()):
-                f.write(
-                    "\n### %s (%d failures)\n\n"
-                    % (filename[len(prefix) :], len(file_failures))
-                )
+                if filename != UNUSED_OBJECT_FILENAME:
+                    filename = filename[len(prefix) :]
+                f.write(f"\n### {filename} ({len(file_failures)} failures)\n\n")
 
                 for failure in sorted(
                     file_failures, key=lambda failure: failure.get("lineno", 0)
                 ):
-                    if "\n" in failure["message"]:
+                    if "\n" in failure["message"].strip():
                         lines = failure["message"].splitlines()[1:]
                         f.write("* line %s: `%s`\n" % (failure.get("lineno"), lines[0]))
                         f.write("```\n")
@@ -376,10 +414,12 @@ class BaseNodeVisitor(ast.NodeVisitor):
                             f.write(f"{line}\n")
                         f.write("```\n")
                     else:
-                        f.write("* `%s`" % (failure["message"],))
+                        f.write("* `%s`" % (failure["message"].strip(),))
 
     @classmethod
-    def _run_and_apply_changes(cls, kwargs, autofix=False):
+    def _run_and_apply_changes(
+        cls, kwargs: Dict[str, Any], autofix: bool = False
+    ) -> bool:
         changes = collections.defaultdict(list)
         with qcore.override(cls, "_changes_for_fixer", changes):
             try:
@@ -415,7 +455,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return had_failure
 
     @classmethod
-    def _apply_changes(cls, changes):
+    def _apply_changes(cls, changes: Dict[str, List[Replacement]]) -> None:
         for filename, changeset in changes.items():
             with open(filename, "r") as f:
                 lines = f.readlines()
@@ -424,7 +464,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 f.write("".join(lines))
 
     @classmethod
-    def _apply_changes_to_lines(cls, changes, lines):
+    def _apply_changes_to_lines(
+        cls, changes: List[Replacement], lines: Sequence[str]
+    ) -> Sequence[str]:
         # only apply the first change because that change might affect other fixes
         # that test_scope came up for that file. So we break after finding first applicable fix.
         for change in changes:
@@ -443,7 +485,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return lines
 
     @classmethod
-    def _get_default_settings(cls):
+    def _get_default_settings(cls) -> Optional[Dict[Enum, bool]]:
         if cls.error_code_enum is None:
             return None
         else:
@@ -452,24 +494,24 @@ class BaseNodeVisitor(ast.NodeVisitor):
             }
 
     @contextmanager
-    def catch_errors(self):
+    def catch_errors(self) -> Iterator[List[Tuple[Any, ...]]]:
         caught_errors = []
         with qcore.override(self, "caught_errors", caught_errors):
             yield caught_errors
 
-    def show_caught_errors(self, errors):
+    def show_caught_errors(self, errors: Iterable[Tuple[Any, ...]]) -> None:
         for error in errors:
             self.show_error(*error)
 
     def show_error(
         self,
-        node,
-        e=None,
-        error_code=None,
-        replacement=None,
-        obey_ignore=True,
-        ignore_comment=IGNORE_COMMENT,
-    ):
+        node: Union[ast.AST, _FakeNode, None],
+        e: Optional[str] = None,
+        error_code: Optional[Enum] = None,
+        replacement: Optional[Replacement] = None,
+        obey_ignore: bool = True,
+        ignore_comment: str = IGNORE_COMMENT,
+    ) -> Optional[Failure]:
         """Shows an error associated with this node.
 
         Arguments:
@@ -490,20 +532,20 @@ class BaseNodeVisitor(ast.NodeVisitor):
             self.caught_errors.append(
                 (node, e, error_code, replacement, obey_ignore, ignore_comment)
             )
-            return
+            return None
 
         # check if error was disabled
         if self.settings is not None and error_code is not None:
             if not self.settings.get(error_code, True):
-                return
+                return None
 
         if self.has_file_level_ignore(error_code, ignore_comment):
-            return
+            return None
 
         key = (node, error_code or e)
         if key in self.seen_errors:
             self.logger.info("Ignoring duplicate error %s", key)
-            return
+            return None
         self.seen_errors.add(key)
 
         if e is None:
@@ -518,7 +560,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             lineno = col_offset = None
 
-        error = {"description": str(e), "filename": self.filename}
+        # https://github.com/quora/pyanalyze/issues/112
+        error = cast(Failure, {"description": str(e), "filename": self.filename})
         message = f"\n{e}"
         if error_code is not None:
             error["code"] = error_code
@@ -592,7 +635,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             raise VisitorError(message, error_code)
         return error
 
-    def _get_attribute_path(self, node):
+    def _get_attribute_path(self, node: ast.AST) -> Optional[List[str]]:
         """Gets the full path of an attribute lookup.
 
         For example, the code string "a.model.question.Question" will resolve to the path
@@ -612,7 +655,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
             return None
 
     @classmethod
-    def _run(cls, profile=False, num_iterations=1, **kwargs):
+    def _run(
+        cls, profile: bool = False, num_iterations: int = 1, **kwargs: Any
+    ) -> Optional[List[Failure]]:
         result = None
         for _ in range(num_iterations):
             if profile:
@@ -623,7 +668,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return result
 
     @classmethod
-    def _run_on_files_or_all(cls, files, **kwargs):
+    def _run_on_files_or_all(
+        cls, files: Optional[Sequence[str]], **kwargs: Any
+    ) -> List[Failure]:
         files = files or cls.get_default_directories()
         if not files:
             return cls.check_all_files(**kwargs)
@@ -631,7 +678,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             return cls._run_on_files(_get_all_files(files), **kwargs)
 
     @classmethod
-    def _run_on_files(cls, files, **kwargs):
+    def _run_on_files(cls, files: Iterable[str], **kwargs: Any) -> List[Failure]:
         all_failures = []
         args = [(filename, kwargs) for filename in sorted(files)]
         if kwargs.pop("parallel", False):
@@ -647,7 +694,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return all_failures
 
     @classmethod
-    def _check_file_single_arg(cls, args):
+    def _check_file_single_arg(cls, args: Tuple[str, Dict[str, Any]]) -> List[Failure]:
         filename, kwargs = args
         main_module = sys.modules["__main__"]
         try:
@@ -657,7 +704,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
             sys.modules["__main__"] = main_module
 
     @classmethod
-    def check_file_in_worker(cls, filename, **kwargs):
+    def check_file_in_worker(
+        cls, filename: str, **kwargs: Any
+    ) -> Tuple[List[Failure], Any]:
         """Checks a single file in a parallel worker.
 
         Returns a tuple of (failures, extra data). The extra data will be passed to
@@ -671,12 +720,12 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return failures, None
 
     @classmethod
-    def merge_extra_data(cls, extra_data, **kwargs):
+    def merge_extra_data(cls, extra_data: object, **kwargs: Any) -> None:
         """Override this to aggregate data passed from parallel workers."""
         pass
 
     @classmethod
-    def _get_argument_parser(cls):
+    def _get_argument_parser(cls) -> argparse.ArgumentParser:
         """Returns an argument parser for this visitor.
 
         Override this to add additional arguments. Arguments are passed as kwargs
@@ -796,25 +845,27 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return parser
 
     @classmethod
-    def is_enabled_by_default(cls, code):
+    def is_enabled_by_default(cls, code: Enum) -> bool:
         return True
 
     @classmethod
-    def get_description_for_error_code(cls, code):
+    def get_description_for_error_code(cls, code: Enum) -> str:
         return f"Error: {code}"
 
     @classmethod
-    def get_default_modules(cls):
+    def get_default_modules(cls) -> Sequence[ModuleType]:
         if cls.default_module is not None:
             return (cls.default_module,)
         return ()
 
     @classmethod
-    def get_default_directories(cls):
+    def get_default_directories(cls) -> Sequence[str]:
         return ()
 
     @classmethod
-    def _get_all_python_files(cls, include_tests=False, modules=None):
+    def _get_all_python_files(
+        cls, include_tests: bool = False, modules: Optional[Iterable[ModuleType]] = None
+    ) -> Iterable[str]:
         """Gets Python files inside of the given modules that should be tested.
 
         This includes modules imported as submodules of the module and (if include_tests) test
@@ -857,7 +908,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                     yield filename
 
     @classmethod
-    def _should_ignore_module(cls, module_name):
+    def _should_ignore_module(cls, module_name: str) -> bool:
         """Override this to ignore some modules."""
         return False
 
@@ -870,7 +921,7 @@ class NodeTransformer(ast.NodeVisitor):
 
     """
 
-    def generic_visit(self, node):
+    def generic_visit(self, node: ast.AST) -> ast.AST:
         attributes = {}
         for field, old_value in ast.iter_fields(node):
             old_value = getattr(node, field, None)
@@ -895,25 +946,30 @@ class NodeTransformer(ast.NodeVisitor):
 
 
 class ReplaceNodeTransformer(NodeTransformer):
-    def __init__(self, node_to_replace, replacement):
+    def __init__(self, node_to_replace: ast.AST, replacement: ast.AST) -> None:
         self.node_to_replace = node_to_replace
         self.replacement = replacement
-        super(ReplaceNodeTransformer, self).__init__()
+        super().__init__()
 
-    def generic_visit(self, node):
+    def generic_visit(self, node: ast.AST) -> ast.AST:
         if node == self.node_to_replace:
             return self.replacement
-        return super(ReplaceNodeTransformer, self).generic_visit(node)
+        return super().generic_visit(node)
 
 
 class ReplacingNodeVisitor(BaseNodeVisitor):
     """A NodeVisitor that enables replacing AST nodes directly in errors."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super(ReplacingNodeVisitor, self).__init__(*args, **kwargs)
         self.current_statement = None
 
-    def replace_node(self, current_node, new_node, current_statement=None):
+    def replace_node(
+        self,
+        current_node: ast.AST,
+        new_node: ast.AST,
+        current_statement: Optional[ast.stmt] = None,
+    ) -> Optional[Replacement]:
         if current_statement is None:
             current_statement = self.current_statement
         if current_statement is None:
@@ -930,7 +986,9 @@ class ReplacingNodeVisitor(BaseNodeVisitor):
         lines_to_add = [line + "\n" for line in parent_lines]
         return Replacement(lines_to_remove, lines_to_add)
 
-    def remove_node(self, current_node, current_statement=None):
+    def remove_node(
+        self, current_node: ast.AST, current_statement: Optional[ast.stmt] = None
+    ) -> Optional[Replacement]:
         if current_statement is None:
             current_statement = self.current_statement
         if current_statement is None:
@@ -939,17 +997,19 @@ class ReplacingNodeVisitor(BaseNodeVisitor):
         lines_to_remove = analysis_lib.get_line_range_for_node(current_statement, lines)
         return Replacement(lines_to_remove, [])
 
-    def visit(self, node):
+    def visit(self, node: ast.AST) -> Any:
         """Save the node if it is a statement."""
         # This code is also inlined in NameCheckVisitor (a subclass of this class) for speed.
         if isinstance(node, ast.stmt):
             with qcore.override(self, "current_statement", node):
-                return super(ReplacingNodeVisitor, self).visit(node)
+                return super().visit(node)
         else:
-            return super(ReplacingNodeVisitor, self).visit(node)
+            return super().visit(node)
 
 
-def get_files_to_check_from_environ(environ_key=FILE_ENVIRON_KEY):
+def get_files_to_check_from_environ(
+    environ_key: str = FILE_ENVIRON_KEY,
+) -> Optional[List[str]]:
     """Returns any files to run on specified in the FILE_ENVIRON_KEY that we should run on.
 
     If the key isn't in the environ, return None.
@@ -962,7 +1022,7 @@ def get_files_to_check_from_environ(environ_key=FILE_ENVIRON_KEY):
         return None
 
 
-def _get_all_files(lst):
+def _get_all_files(lst: Iterable[str]) -> Iterable[str]:
     """Finds all Python files from a list of command-line arguments."""
     for entry in lst:
         if os.path.isdir(entry):
@@ -974,7 +1034,7 @@ def _get_all_files(lst):
             yield entry
 
 
-def _flushing_print(*args, **kwargs):
+def _flushing_print(*args: Any, **kwargs: Any) -> None:
     kwargs.setdefault("flush", True)
     real_print(*args, **kwargs)
 
@@ -982,13 +1042,13 @@ def _flushing_print(*args, **kwargs):
 class _Profile(object):
     """Context for profiling an arbitrary block of code."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.prof = cProfile.Profile()
 
-    def __enter__(self):
+    def __enter__(self) -> None:
         self.prof.enable()
 
-    def __exit__(self, typ, value, traceback):
+    def __exit__(self, typ: object, value: object, traceback: object) -> None:
         self.prof.disable()
         self.filename = tempfile.mktemp()
         self.prof.dump_stats(self.filename)
