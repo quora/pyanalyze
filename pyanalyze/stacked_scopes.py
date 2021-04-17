@@ -95,7 +95,7 @@ class CompositeVariable:
 Varname = Union[str, CompositeVariable]
 # Nodes as used in scopes can be any object, as long as they are hashable.
 Node = object
-NCDN = Dict[Varname, List[Node]]
+SubScope = Dict[Varname, List[Node]]
 
 # Type for Constraint.value if constraint type is predicate
 # PredicateFunc = Callable[[Value, bool], Optional[Value]]
@@ -502,7 +502,9 @@ class Scope:
         """Context manager for the subscope associated with a loop."""
         yield
 
-    def combine_subscopes(self, scopes: Iterable[Dict[str, Any]]) -> None:
+    def combine_subscopes(
+        self, scopes: Iterable[Dict[str, Any]], *, ignore_leaves_scope: bool = False
+    ) -> None:
         pass
 
     def resolve_reference(self, value: Value, state: VisitorState) -> Value:
@@ -668,14 +670,14 @@ class FunctionScope(Scope):
 
     """
 
-    name_to_current_definition_nodes: NCDN
+    name_to_current_definition_nodes: SubScope
     usage_to_definition_nodes: Dict[Node, List[Node]]
     definition_node_to_value: Dict[Node, Value]
     name_to_all_definition_nodes: Dict[str, Set[Node]]
     name_to_composites: Dict[str, Set[CompositeVariable]]
     referencing_value_vars: Dict[Varname, Value]
     accessed_from_special_nodes: Set[Varname]
-    current_loop_scopes: List[NCDN]
+    current_loop_scopes: List[SubScope]
 
     def __init__(self, parent_scope: Scope, scope_node: Optional[Node] = None) -> None:
         super().__init__(ScopeType.function_scope, {}, parent_scope, scope_node)
@@ -779,7 +781,7 @@ class FunctionScope(Scope):
         return self._get_value_from_nodes(definers, ctx)
 
     @contextlib.contextmanager
-    def subscope(self) -> Iterable[NCDN]:
+    def subscope(self) -> Iterable[SubScope]:
         """Create a new subscope, to be used for conditional branches."""
         # Ignore LEAVES_SCOPE if it's already there, so that we type check code after the
         # assert False correctly. Without this, test_after_assert_false fails.
@@ -810,12 +812,14 @@ class FunctionScope(Scope):
             ]
         )
 
-    def get_combined_scope(self, scopes: Iterable[NCDN]) -> NCDN:
+    def get_combined_scope(
+        self, scopes: Iterable[SubScope], *, ignore_leaves_scope: bool = False
+    ) -> SubScope:
         new_scopes = []
         for scope in scopes:
             if LEAVES_LOOP in scope:
                 self.current_loop_scopes.append(scope)
-            elif LEAVES_SCOPE not in scope:
+            elif LEAVES_SCOPE not in scope or ignore_leaves_scope:
                 new_scopes.append(scope)
         if not new_scopes:
             return {LEAVES_SCOPE: [UNRESOLVED_VALUE]}
@@ -827,8 +831,12 @@ class FunctionScope(Scope):
             for varname in all_variables
         }
 
-    def combine_subscopes(self, scopes: Iterable[NCDN]) -> None:
-        self.name_to_current_definition_nodes.update(self.get_combined_scope(scopes))
+    def combine_subscopes(
+        self, scopes: Iterable[SubScope], *, ignore_leaves_scope: bool = False
+    ) -> None:
+        self.name_to_current_definition_nodes.update(
+            self.get_combined_scope(scopes, ignore_leaves_scope=ignore_leaves_scope)
+        )
 
     def _resolve_value(self, val: Value, ctx: _LookupContext) -> Value:
         if isinstance(val, _ConstrainedValue):
@@ -1008,9 +1016,11 @@ class StackedScopes:
         """Creates a new loop scope (see the FunctionScope docstring)."""
         return self.scopes[-1].loop_scope()
 
-    def combine_subscopes(self, scopes):
+    def combine_subscopes(self, scopes, *, ignore_leaves_scope: bool = False):
         """Merges a number of subscopes back into their parent scope."""
-        self.scopes[-1].combine_subscopes(scopes)
+        self.scopes[-1].combine_subscopes(
+            scopes, ignore_leaves_scope=ignore_leaves_scope
+        )
 
     def scope_type(self) -> ScopeType:
         """Returns the type of the current scope."""

@@ -318,7 +318,7 @@ class TestTry(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(4))
             assert_is_value(x, KnownValue(4))
 
-    @assert_passes(settings={ErrorCode.use_fstrings: False})
+    @assert_passes()
     def test_finally_plus_if(self):
         # here an approach that simply ignores the assignments in the try block while examining the
         # finally block would fail
@@ -329,7 +329,19 @@ class TestTry(TestNameCheckVisitorBase):
                 x = 1
                 assert_is_value(x, KnownValue(1))
             finally:
-                print("%d" % x)  # x is a number
+                assert_is_value(x, MultiValuedValue([KnownValue(0), KnownValue(1)]))
+
+    @assert_passes()
+    def test_finally_plus_return(self):
+        def capybara():
+            x = 0
+            assert_is_value(x, KnownValue(0))
+            try:
+                x = 1
+                assert_is_value(x, KnownValue(1))
+                return
+            finally:
+                assert_is_value(x, MultiValuedValue([KnownValue(0), KnownValue(1)]))
 
     @assert_fails(ErrorCode.bad_except_handler)
     def test_bad_except_handler(self):
