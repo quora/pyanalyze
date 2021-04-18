@@ -27,6 +27,7 @@ from typing_extensions import Literal
 
 from .error_code import ErrorCode
 from .value import (
+    AnnotatedValue,
     KnownValue,
     DictIncompleteValue,
     SequenceIncompleteValue,
@@ -145,6 +146,8 @@ class ConversionSpecifier:
 
     def accept(self, arg: Value) -> Iterable[str]:
         """Produces any errors from passing the given object to this specifier."""
+        if isinstance(arg, AnnotatedValue):
+            arg = arg.value
         if arg is UNRESOLVED_VALUE or isinstance(arg, MultiValuedValue):
             return
         if self.conversion_type in _NUMERIC_CONVERSION_TYPES:
@@ -317,6 +320,8 @@ class PercentFormatString:
 
     def accept_tuple_args(self, args: Value) -> Iterable[str]:
         specifiers = list(self.get_serial_specifiers())
+        if isinstance(args, AnnotatedValue):
+            args = args.value
         if args.is_type(tuple):
             if isinstance(args, SequenceIncompleteValue):
                 all_args = args.members

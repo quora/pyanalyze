@@ -4,10 +4,20 @@ Wrappers around Signature objects.
 
 """
 
+from functools import reduce
 from .error_code import ErrorCode
-from .stacked_scopes import NULL_CONSTRAINT, AbstractConstraint
+from .stacked_scopes import (
+    AndConstraint,
+    Composite,
+    Constraint,
+    ConstraintType,
+    NULL_CONSTRAINT,
+    AbstractConstraint,
+)
 from .value import (
+    AnnotatedValue,
     KnownValue,
+    ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
     UNRESOLVED_VALUE,
@@ -72,7 +82,7 @@ KWARGS = qcore.MarkerObject("**kwargs")
 # Representation of a single argument to a call. Second member is
 # None for positional args, str for keyword args, ARGS for *args, KWARGS
 # for **kwargs.
-Argument = Tuple[Value, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
+Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 
 def clean_up_implementation_fn_return(
@@ -111,14 +121,18 @@ class SigParameter(inspect.Parameter):
         name: str,
         kind: inspect._ParameterKind = inspect.Parameter.POSITIONAL_OR_KEYWORD,
         *,
-        default: Optional[Value] = None,
+        default: Union[None, Value, Literal[EMPTY]] = None,
         annotation: Optional[Value] = None,
     ) -> None:
         if default is None:
-            default = EMPTY
+            default_composite = EMPTY
+        elif isinstance(default, Value):
+            default_composite = Composite(default, None)
+        else:
+            default_composite = default
         if annotation is None:
             annotation = EMPTY
-        super().__init__(name, kind, default=default, annotation=annotation)
+        super().__init__(name, kind, default=default_composite, annotation=annotation)
 
 
 @dataclass
@@ -166,7 +180,9 @@ class Signature:
         node: ast.AST,
         typevar_map: TypeVarMap,
     ) -> bool:
-        if param.annotation is not EMPTY and var_value is not param.default:
+        if param.annotation is not EMPTY and not (
+            isinstance(param.default, Composite) and var_value is param.default.value
+        ):
             if typevar_map:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
             else:
@@ -184,14 +200,46 @@ class Signature:
     def _translate_bound_arg(self, argument: Any) -> Value:
         if argument is EMPTY:
             return UNRESOLVED_VALUE
+        elif isinstance(argument, Composite):
+            return argument.value
         elif isinstance(argument, tuple):
-            return SequenceIncompleteValue(tuple, argument)
+            return SequenceIncompleteValue(
+                tuple, [composite.value for composite in argument]
+            )
         elif isinstance(argument, dict):
             return DictIncompleteValue(
-                [(KnownValue(key), value) for key, value in argument.items()]
+                [
+                    (KnownValue(key), composite.value)
+                    for key, composite in argument.items()
+                ]
             )
         else:
-            return argument
+            raise TypeError(repr(argument))
+
+    def _apply_annotated_constraints(
+        self, return_value: Value, bound_args: inspect.BoundArguments
+    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+        constraints = []
+        if isinstance(return_value, AnnotatedValue):
+            for guard in return_value.get_metadata_of_type(ParameterTypeGuardExtension):
+                if guard.varname in bound_args.arguments:
+                    composite = bound_args.arguments[guard.varname]
+                    if (
+                        isinstance(composite, Composite)
+                        and composite.varname is not None
+                    ):
+                        constraint = Constraint(
+                            composite.varname,
+                            ConstraintType.is_value_object,
+                            True,
+                            guard.guarded_type,
+                        )
+                        constraints.append(constraint)
+        if constraints:
+            constraint = reduce(AndConstraint, constraints)
+        else:
+            constraint = NULL_CONSTRAINT
+        return return_value, constraint, NULL_CONSTRAINT
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
@@ -206,17 +254,17 @@ class Signature:
         """
         call_args = []
         call_kwargs = {}
-        for arg, label in args:
+        for composite, label in args:
             if label is None:
-                call_args.append(arg)
+                call_args.append(composite)
             elif isinstance(label, str):
-                call_kwargs[label] = arg
+                call_kwargs[label] = composite
             elif label is ARGS or label is KWARGS:
                 # TODO handle these:
                 # - type check that they are iterables/mappings
                 # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
                 # - else do something smart to still typecheck the call
-                self.log(logging.DEBUG, "Ignoring call with *args/**kwargs", arg)
+                self.log(logging.DEBUG, "Ignoring call with *args/**kwargs", composite)
                 return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         try:
             bound_args = self.signature.bind(*call_args, **call_kwargs)
@@ -269,7 +317,7 @@ class Signature:
         elif return_value is EMPTY:
             return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         else:
-            return return_value, NULL_CONSTRAINT, NULL_CONSTRAINT
+            return self._apply_annotated_constraints(return_value, bound_args)
 
     @classmethod
     def make(
@@ -312,7 +360,10 @@ class BoundMethodSignature:
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
         return self.signature.check_call(
-            [(self.self_value, None), *args], visitor, node
+            # TODO get a composite
+            [(Composite(self.self_value, None), None), *args],
+            visitor,
+            node,
         )
 
     def has_return_value(self) -> bool:

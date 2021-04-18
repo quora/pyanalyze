@@ -14,6 +14,7 @@ import __future__
 
 from .analysis_lib import safe_in
 from .config import Config
+from . import extensions
 
 T = TypeVar("T")
 
@@ -45,6 +46,7 @@ def test_helper(obj: T) -> T:
 # so it doesn't itself get marked as unused
 used(used)
 used(test_helper)
+used(extensions)
 
 
 class _UsageKind(enum.IntEnum):

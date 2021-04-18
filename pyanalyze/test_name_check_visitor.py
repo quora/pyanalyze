@@ -24,6 +24,7 @@ from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
 from .test_config import TestConfig
 from .value import (
+    AnnotatedValue,
     AsyncTaskIncompleteValue,
     DictIncompleteValue,
     KnownValue,
@@ -123,6 +124,7 @@ def _make_module(code_str):
         GenericValue=GenericValue,
         KnownValue=KnownValue,
         MultiValuedValue=MultiValuedValue,
+        AnnotatedValue=AnnotatedValue,
         SequenceIncompleteValue=SequenceIncompleteValue,
         TypedValue=TypedValue,
         UnboundMethodValue=UnboundMethodValue,
@@ -514,10 +516,10 @@ def run():
     def test_cls_type_inference(self):
         class OldStyle:
             def __init_subclass__(cls):
-                assert_is_value(cls, SubclassValue(OldStyle))
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
             def __new__(cls):
-                assert_is_value(cls, SubclassValue(OldStyle))
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
     @assert_passes()
     def test_cls_type_inference(self):
@@ -714,10 +716,9 @@ class TestSubclassValue(TestNameCheckVisitorBase):
         TI = Type[int]
 
         def capybara(x: TI, y: str):
-            assert_is_value(x, SubclassValue(int))
+            assert_is_value(x, SubclassValue(TypedValue(int)))
             assert_is_value(y, TypedValue(str))
 
-    @only_before((3, 7))
     @assert_passes()
     def test_type_any(self):
         from typing import Any, Type
@@ -739,6 +740,36 @@ class TestSubclassValue(TestNameCheckVisitorBase):
             def call_on_instance(cls, instance):
                 assert_is_value(cls.run, KnownValue(A.run))
                 cls.run(instance)
+
+    @assert_passes()
+    def test_metaclass_method(self):
+        from typing import Type
+
+        class EnumMeta(type):
+            def __getitem__(self, x: str) -> float:
+                return 42.0
+
+        class Enum(metaclass=EnumMeta):
+            pass
+
+        def capybara(enum: Type[Enum]) -> None:
+            assert_is_value(enum["x"], TypedValue(float))
+
+    @assert_passes()
+    def test_type_union(self):
+        from typing import Type, Union
+
+        def capybara(x: Type[Union[int, str]]) -> None:
+            assert_is_value(
+                x,
+                MultiValuedValue(
+                    [SubclassValue(TypedValue(int)), SubclassValue(TypedValue(str))]
+                ),
+            )
+
+        def caller() -> None:
+            capybara(int)
+            capybara(str)
 
 
 class TestConditionAlwaysTrue(TestNameCheckVisitorBase):

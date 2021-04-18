@@ -5,7 +5,10 @@ Commonly useful components for static analysis tools.
 """
 import ast
 import os
-from typing import List, Callable, Optional, Set, TypeVar, Container
+from typing import List, Callable, Optional, Set, TypeVar, Container, Type, Iterable
+from typing_extensions import Annotated
+
+from .extensions import ParameterTypeGuard
 
 T = TypeVar("T")
 
@@ -99,3 +102,10 @@ def safe_in(item: T, collection: Container[T]) -> bool:
         return item in collection
     except Exception:
         return False
+
+
+def all_of_type(
+    elts: Iterable[object], typ: Type[T]
+) -> Annotated[bool, ParameterTypeGuard["elts", Iterable[T]]]:
+    """Returns whether all elements of elts are instances of typ."""
+    return all(isinstance(elt, typ) for elt in elts)

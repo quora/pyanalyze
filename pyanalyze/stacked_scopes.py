@@ -34,6 +34,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    NamedTuple,
     Sequence,
     Optional,
     Set,
@@ -101,6 +102,11 @@ SubScope = Dict[Varname, List[Node]]
 
 # Type for Constraint.value if constraint type is predicate
 # PredicateFunc = Callable[[Value, bool], Optional[Value]]
+
+
+class Composite(NamedTuple):
+    value: Value
+    varname: Optional[Varname]
 
 
 @dataclass(frozen=True)
@@ -244,11 +250,13 @@ class Constraint(AbstractConstraint):
                     if not safe_issubclass(value.typ, self.value):
                         yield value
             elif isinstance(value, SubclassValue):
-                if self.positive:
-                    if isinstance(value.typ, self.value):
+                if not isinstance(value.typ, TypedValue):
+                    yield value
+                elif self.positive:
+                    if isinstance(value.typ.typ, self.value):
                         yield value
                 else:
-                    if not isinstance(value.typ, self.value):
+                    if not isinstance(value.typ.typ, self.value):
                         yield value
 
         elif self.constraint_type == ConstraintType.is_value:
@@ -263,8 +271,10 @@ class Constraint(AbstractConstraint):
                     if isinstance(self.value, value.typ):
                         yield known_val
                 elif isinstance(value, SubclassValue):
-                    if isinstance(self.value, type) and safe_issubclass(
-                        self.value, value.typ
+                    if (
+                        isinstance(value.typ, TypedValue)
+                        and isinstance(self.value, type)
+                        and safe_issubclass(self.value, value.typ.typ)
                     ):
                         yield known_val
             else:

@@ -225,8 +225,10 @@ def _super_impl(
                 )
                 return UNRESOLVED_VALUE
             else:
-                if isinstance(first_arg, SubclassValue):
-                    return KnownValue(super(current_class, first_arg.typ))
+                if isinstance(first_arg, SubclassValue) and isinstance(
+                    first_arg.typ, TypedValue
+                ):
+                    return KnownValue(super(current_class, first_arg.typ.typ))
                 elif isinstance(first_arg, KnownValue):
                     return KnownValue(super(current_class, first_arg.val))
                 elif isinstance(first_arg, TypedValue):
@@ -251,8 +253,8 @@ def _super_impl(
     if isinstance(obj, TypedValue) and obj.typ is not type:
         instance_type = obj.typ
         is_value = True
-    elif isinstance(obj, SubclassValue):
-        instance_type = obj.typ
+    elif isinstance(obj, SubclassValue) and isinstance(obj.typ, TypedValue):
+        instance_type = obj.typ.typ
         is_value = False
     else:
         return UNRESOLVED_VALUE
