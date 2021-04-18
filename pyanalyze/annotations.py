@@ -29,7 +29,6 @@ from typing import (
 from .error_code import ErrorCode
 from .extensions import HasAttrGuard, ParameterTypeGuard
 from .value import (
-    AnnotatedValue,
     Extension,
     HasAttrGuardExtension,
     KnownValue,
