@@ -73,7 +73,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         check_attributes=True,
         apply_changes=False,
         settings=None,
-        **kwargs
+        **kwargs,
     ):
         # This can happen in Python 2.
         if isinstance(code_str, bytes):
@@ -95,7 +95,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 settings=default_settings,
                 verbosity=verbosity,
                 arg_spec_cache=ArgSpecCache(self.visitor_cls.config),
-                **kwargs
+                **kwargs,
             ).check_for_test(apply_changes=apply_changes)
 
 
@@ -137,7 +137,7 @@ def _make_module(code_str):
         NO_RETURN_VALUE=NO_RETURN_VALUE,
         __name__=module_name,
     )
-    exec (code_str, scope)
+    exec(code_str, scope)
     sys.modules[module_name] = mod
     return mod
 
@@ -153,7 +153,7 @@ def test_annotation():
         args = args + (None, None)
     tree = ast.Call(*args)
     ConfiguredNameCheckVisitor(
-        "<test input>", u"int()", tree, module=ast, annotate=True
+        "<test input>", "int()", tree, module=ast, annotate=True
     ).check()
     assert_eq(TypedValue(int), tree.inferred_value)
 
@@ -1619,12 +1619,12 @@ class TestPython3Compatibility(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.mixing_bytes_and_text)
     def test_bytes_and_text(self):
         def capybara():
-            return b"foo" + u"bar"
+            return b"foo" + "bar"
 
     @assert_fails(ErrorCode.mixing_bytes_and_text)
     def test_text_and_bytes(self):
         def capybara():
-            return u"foo" + b"bar"
+            return "foo" + b"bar"
 
 
 class TestOperators(TestNameCheckVisitorBase):
@@ -1645,7 +1645,7 @@ class TestOperators(TestNameCheckVisitorBase):
         def capybara(x):
             assert_is_value(1 + int(x), TypedValue(int))
             assert_is_value(3 * int(x), TypedValue(int))
-            assert_is_value(u"foo" + str(x), TypedValue(str))
+            assert_is_value("foo" + str(x), TypedValue(str))
             assert_is_value(1 + float(x), TypedValue(float))
             assert_is_value(1.0 + int(x), TypedValue(float))
             assert_is_value(3 * 3.0 + 1, KnownValue(10.0))

@@ -58,5 +58,5 @@ if __name__ == "__main__":
             "aenum>=2.2.3",
             "codemod",
         ],
-        **setup_kwargs
+        **setup_kwargs,
     )
