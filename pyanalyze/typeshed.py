@@ -29,7 +29,17 @@ import qcore
 import inspect
 import sys
 from types import GeneratorType
-from typing import cast, Any, Iterable, Optional, Union, Callable, List, TypeVar
+from typing import (
+    cast,
+    Any,
+    Generic,
+    Iterable,
+    Optional,
+    Union,
+    Callable,
+    List,
+    TypeVar,
+)
 from typing_extensions import Protocol
 import typeshed_client
 from typed_ast import ast3
@@ -130,11 +140,11 @@ class TypeshedFinder(object):
 
     def get_bases(self, typ: type) -> Optional[List[Value]]:
         # The way AbstractSet/Set is handled between collections and typing is
-        # too confusing, just hardcode it.
+        # too confusing, just hardcode it. Same for (Abstract)ContextManager.
         if typ is AbstractSet:
             return [GenericValue(Collection, (TypeVarValue(T_co),))]
         if typ is AbstractContextManager:
-            return [GenericValue(AbstractContextManager, (TypeVarValue(T_co),))]
+            return [GenericValue(Generic, (TypeVarValue(T_co),))]
         if typ is Callable or typ is collections.abc.Callable:
             return None
         fq_name = self._get_fq_name(typ)
