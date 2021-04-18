@@ -3,7 +3,7 @@
 "Safe" operations that call into user code and catch any excxeptions.
 
 """
-from typing import Any, Tuple, Union, Container, TypeVar, Iterable
+from typing import Any, Tuple, Union, Container, Type, TypeVar, Iterable
 from typing_extensions import Annotated
 
 from .extensions import ParameterTypeGuard
