@@ -13,21 +13,28 @@ import ast
 import builtins
 from collections.abc import Callable
 from typing import (
+    Any,
     cast,
     TypeVar,
     ContextManager,
     Mapping,
+    NewType,
     Sequence,
     Optional,
+    Tuple,
     Union,
     TYPE_CHECKING,
 )
 
 from .error_code import ErrorCode
+from .extensions import ParameterTypeGuard
 from .find_unused import used
 from .value import (
+    AnnotatedValue,
+    Extension,
     KnownValue,
     NO_RETURN_VALUE,
+    ParameterTypeGuardExtension,
     UNRESOLVED_VALUE,
     TypedValue,
     SequenceIncompleteValue,
@@ -49,10 +56,10 @@ try:
 except ImportError:
     GenericAlias = None
 
-    def get_origin(obj):
+    def get_origin(obj: object) -> Any:
         return None
 
-    def get_args(obj):
+    def get_args(obj: object) -> Tuple[Any, ...]:
         return ()
 
 
@@ -172,6 +179,19 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
         origin = get_origin(val)
         args = get_args(val)
         return _value_of_origin_args(origin, args, val, ctx)
+    elif is_instance_of_typing_name(val, "AnnotatedMeta"):
+        # Annotated in 3.6's typing_extensions
+        origin, metadata = val.__args__
+        return _make_annotated(
+            _type_from_runtime(origin, ctx), [KnownValue(v) for v in metadata], ctx
+        )
+    elif is_instance_of_typing_name(val, "_AnnotatedAlias"):
+        # Annotated in typing and newer typing_extensions
+        return _make_annotated(
+            _type_from_runtime(val.__origin__, ctx),
+            [KnownValue(v) for v in val.__metadata__],
+            ctx,
+        )
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
@@ -196,7 +216,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
             # TODO figure out how to make NewTypes over tuples work
             return UNRESOLVED_VALUE
         else:
-            ctx.show_error("Invalid NewType %s" % (val,))
+            ctx.show_error(f"Invalid NewType {val}")
             return UNRESOLVED_VALUE
     elif typing_inspect.is_typevar(val):
         return TypeVarValue(cast(TypeVar, val))
@@ -212,7 +232,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
                 code = ast.parse(val.__forward_arg__)
             except SyntaxError:
                 ctx.show_error(
-                    "Syntax error in forward reference: %s" % (val.__forward_arg__,)
+                    f"Syntax error in forward reference: {val.__forward_arg__}"
                 )
                 return UNRESOLVED_VALUE
             return _type_from_ast(code.body[0], ctx)
@@ -226,7 +246,7 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
         origin = get_origin(val)
         if isinstance(origin, type):
             return _maybe_typed_value(origin)
-        ctx.show_error("Invalid type annotation %s" % (val,))
+        ctx.show_error(f"Invalid type annotation {val}")
         return UNRESOLVED_VALUE
 
 
@@ -234,7 +254,7 @@ def _eval_forward_ref(val: str, ctx: Context) -> Value:
     try:
         tree = ast.parse(val, mode="eval")
     except SyntaxError:
-        ctx.show_error("Syntax error in type annotation: %s" % (val,))
+        ctx.show_error(f"Syntax error in type annotation: {val}")
         return UNRESOLVED_VALUE
     else:
         return _type_from_ast(tree.body, ctx)
@@ -253,7 +273,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                     [_type_from_value(member, ctx) for member in value.members],
                 )
         if not isinstance(value.root, KnownValue):
-            ctx.show_error("Cannot resolve subscripted annotation: %s" % (value.root,))
+            ctx.show_error(f"Cannot resolve subscripted annotation: {value.root}")
             return UNRESOLVED_VALUE
         root = value.root.val
         if root is typing.Union:
@@ -263,7 +283,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 return unite_values(*value.members)
             else:
                 ctx.show_error(
-                    "Arguments to Literal[] must be literals, not %s" % (value.members,)
+                    f"Arguments to Literal[] must be literals, not {value.members}"
                 )
                 return UNRESOLVED_VALUE
         elif root is typing.Tuple or root is tuple:
@@ -280,14 +300,15 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             return unite_values(
                 KnownValue(None), _type_from_value(value.members[0], ctx)
             )
-        elif root is typing.Type:
+        elif root is typing.Type or root is type:
             if len(value.members) != 1:
                 ctx.show_error("Type[] takes only one argument")
                 return UNRESOLVED_VALUE
             argument = _type_from_value(value.members[0], ctx)
-            if isinstance(argument, TypedValue) and isinstance(argument.typ, type):
-                return SubclassValue(argument.typ)
-            return TypedValue(type)
+            return SubclassValue.make(argument)
+        elif is_typing_name(root, "Annotated"):
+            origin, *metadata = value.members
+            return _make_annotated(_type_from_value(origin, ctx), metadata, ctx)
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
             if origin is None:
@@ -311,7 +332,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 return GenericValue(
                     origin, [_type_from_value(elt, ctx) for elt in value.members]
                 )
-            ctx.show_error("Unrecognized subscripted annotation: %s" % (root,))
+            ctx.show_error(f"Unrecognized subscripted annotation: {root}")
             return UNRESOLVED_VALUE
     else:
         return UNRESOLVED_VALUE
@@ -429,7 +450,9 @@ class _Visitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> Optional[Value]:
         func = self.visit(node.func)
-        if func == KnownValue(TypeVar):
+        if not isinstance(func, KnownValue):
+            return None
+        if func.val in (NewType, TypeVar):
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             args = []
@@ -452,14 +475,13 @@ class _Visitor(ast.NodeVisitor):
                         kwargs[name] = kwarg_value.val
                     else:
                         return None
-            typevar = TypeVar(*args, **kwargs)
-            return KnownValue(typevar)
-        elif isinstance(func, KnownValue) and isinstance(func.val, type):
+            return KnownValue(func.val(*args, **kwargs))
+        elif isinstance(func.val, type):
             if func.val is object:
                 return UNRESOLVED_VALUE
             return TypedValue(func.val)
         else:
-            raise NotImplementedError(ast.dump(node))
+            return None
 
 
 def is_typing_name(obj: object, name: str) -> bool:
@@ -490,13 +512,7 @@ def _value_of_origin_args(
     origin: object, args: Sequence[object], val: object, ctx: Context
 ) -> Value:
     if origin is typing.Type or origin is type:
-        if isinstance(args[0], type):
-            return SubclassValue(args[0])
-        elif args[0] is typing.Any:
-            return TypedValue(type)
-        else:
-            # Perhaps a forward reference
-            return UNRESOLVED_VALUE
+        return SubclassValue.make(_type_from_runtime(args[0], ctx))
     elif origin is typing.Tuple or origin is tuple:
         if not args:
             return TypedValue(tuple)
@@ -505,6 +521,8 @@ def _value_of_origin_args(
         else:
             args_vals = [_type_from_runtime(arg, ctx) for arg in args]
             return SequenceIncompleteValue(tuple, args_vals)
+    elif origin is typing.Union:
+        return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
     elif isinstance(origin, type):
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
@@ -537,3 +555,22 @@ def _maybe_typed_value(val: type) -> Value:
         return UNRESOLVED_VALUE
     else:
         return TypedValue(val)
+
+
+def _make_annotated(
+    origin: Value, metadata: Sequence[Value], ctx: Context
+) -> AnnotatedValue:
+    metadata = [_value_from_metadata(entry, ctx) for entry in metadata]
+    if isinstance(origin, AnnotatedValue):
+        # Flatten it
+        return AnnotatedValue(origin.value, [*origin.metadata, *metadata])
+    return AnnotatedValue(origin, metadata)
+
+
+def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
+    if isinstance(entry, KnownValue):
+        if isinstance(entry.val, ParameterTypeGuard):
+            return ParameterTypeGuardExtension(
+                entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
+            )
+    return entry

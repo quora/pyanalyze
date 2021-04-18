@@ -4,9 +4,8 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .annotations import type_from_runtime, Context, type_from_ast, is_typing_name
+from .annotations import type_from_runtime, is_typing_name
 from .config import Config
-from .error_code import ErrorCode
 from .find_unused import used
 from . import implementation
 from .safe import safe_hasattr
@@ -20,9 +19,11 @@ from .signature import (
     SigParameter,
     Signature,
 )
+from .typeshed import TypeshedFinder
 from .value import (
     TypedValue,
     GenericValue,
+    NewTypeValue,
     KnownValue,
     UNRESOLVED_VALUE,
     Value,
@@ -33,42 +34,22 @@ from .value import (
 )
 
 import asyncio
-import ast
 import asynq
-import builtins
-from collections.abc import Awaitable, Collection, Set as AbstractSet, Sized
-from contextlib import AbstractContextManager
-from dataclasses import dataclass
-import collections.abc
+from collections.abc import Awaitable
 import contextlib
 import qcore
 import inspect
 import sys
-from types import GeneratorType
 from typing import (
-    cast,
     Any,
     Sequence,
     Generic,
     Iterable,
     Mapping,
     Optional,
-    Union,
-    Callable,
     Dict,
-    List,
-    TypeVar,
 )
-from typing_extensions import Protocol
 import typing_inspect
-import typeshed_client
-from typed_ast import ast3
-
-
-T_co = TypeVar("T_co", covariant=True)
-
-
-IS_PRE_38 = sys.version_info < (3, 8)
 
 
 @used  # exposed as an API
@@ -367,11 +348,27 @@ class ArgSpecCache:
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
                 return self._cached_get_argspec(obj.inner, kwargs)
 
+            # NewTypes, but we don't currently know how to handle NewTypes over more
+            # complicated types.
+            if hasattr(obj, "__supertype__") and isinstance(obj.__supertype__, type):
+                # NewType
+                return Signature.make(
+                    [
+                        SigParameter(
+                            "x",
+                            SigParameter.POSITIONAL_ONLY,
+                            annotation=type_from_runtime(obj.__supertype__),
+                        )
+                    ],
+                    NewTypeValue(obj),
+                    callable=obj,
+                )
+
             return self.from_signature(
                 self._safe_get_signature(obj),
                 function_object=obj,
                 is_async=asyncio.iscoroutinefunction(obj),
-                **kwargs
+                **kwargs,
             )
 
         # decorator binders
@@ -439,7 +436,7 @@ class ArgSpecCache:
                     return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
             return PropertyArgSpec(obj)
 
-        raise TypeError("%r object is not callable" % (obj,))
+        return None
 
     def _safe_get_signature(self, obj: Any) -> Optional[inspect.Signature]:
         """Wrapper around inspect.getargspec that catches TypeErrors."""
@@ -519,375 +516,6 @@ class ArgSpecCache:
         if typing_inspect.is_generic_type(typ):
             return typing_inspect.get_generic_bases(typ)
         return typ.__bases__
-
-
-@dataclass
-class _AnnotationContext(Context):
-    finder: "TypeshedFinder"
-    module: str
-
-    def show_error(
-        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
-    ) -> None:
-        self.finder.log(message, ())
-
-    def get_name(self, node: ast.AST) -> Value:
-        info = self.finder._get_info_for_name("%s.%s" % (self.module, node.id))
-        if info is not None:
-            return self.finder._value_from_info(info, self.module)
-        elif hasattr(builtins, node.id):
-            val = getattr(builtins, node.id)
-            if val is None or isinstance(val, type):
-                return KnownValue(val)
-        return UNRESOLVED_VALUE
-
-
-# These are specified as just "List = _Alias()" in typing.pyi. Redirect
-# them to the proper runtime equivalent.
-_TYPING_ALIASES = {
-    "typing.List": "builtins.list",
-    "typing.Dict": "builtins.dict",
-    "typing.DefaultDict": "collections.defaultdict",
-    "typing.Set": "builtins.set",
-    "typing.Frozenzet": "builtins.frozenset",
-    "typing.Counter": "collections.Counter",
-    "typing.Deque": "collections.deque",
-    "typing.ChainMap": "collections.ChainMap",
-    "typing.OrderedDict": "collections.OrderedDict",
-    "typing.Tuple": "builtins.tuple",
-}
-
-
-class TypeshedFinder(object):
-    def __init__(self, verbose: bool = True) -> None:
-        self.verbose = verbose
-        self.resolver = typeshed_client.Resolver(version=sys.version_info[:2])
-        self._assignment_cache = {}
-
-    def log(self, message: str, obj: object) -> None:
-        if not self.verbose:
-            return
-        print("%s: %r" % (message, obj))
-
-    def get_argspec(self, obj: object) -> Optional[Signature]:
-        if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
-            objclass = obj.__objclass__
-            fq_name = self._get_fq_name(objclass)
-            if fq_name is None:
-                return None
-            info = self._get_info_for_name(fq_name)
-            sig = self._get_method_signature_from_info(
-                info, obj, fq_name, objclass.__module__, objclass
-            )
-            if sig is not None:
-                self.log("Found signature", (obj, sig))
-            return sig
-
-        if inspect.ismethod(obj):
-            self.log("Ignoring method", obj)
-            return None
-        fq_name = self._get_fq_name(obj)
-        if fq_name is None:
-            return None
-        info = self._get_info_for_name(fq_name)
-        mod, _ = fq_name.rsplit(".", maxsplit=1)
-        sig = self._get_signature_from_info(info, obj, fq_name, mod)
-        if sig is not None:
-            self.log("Found signature", (fq_name, sig))
-        return sig
-
-    def get_bases(self, typ: type) -> Optional[List[Value]]:
-        # The way AbstractSet/Set is handled between collections and typing is
-        # too confusing, just hardcode it.
-        if typ is AbstractSet:
-            return [GenericValue(Collection, (TypeVarValue(T_co),))]
-        if typ is AbstractContextManager:
-            return [GenericValue(Generic, (TypeVarValue(T_co),))]
-        if typ is Callable or typ is collections.abc.Callable:
-            return None
-        fq_name = self._get_fq_name(typ)
-        if fq_name is None:
-            return None
-        info = self._get_info_for_name(fq_name)
-        mod, _ = fq_name.rsplit(".", maxsplit=1)
-        return self._get_bases_from_info(info, mod)
-
-    def _get_bases_from_info(
-        self, info: typeshed_client.resolver.ResolvedName, mod: str
-    ) -> Optional[List[Value]]:
-        if info is None:
-            return None
-        elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_bases_from_info(info.info, ".".join(info.source_module))
-        elif isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, ast3.ClassDef):
-                bases = info.ast.bases
-                return [self._parse_expr(base, mod) for base in bases]
-            elif isinstance(info.ast, ast3.Assign):
-                val = self._parse_expr(info.ast.value, mod)
-                if isinstance(val, KnownValue) and isinstance(val.val, type):
-                    return self.get_bases(val.val)
-                else:
-                    return [val]
-            elif isinstance(
-                info.ast,
-                (
-                    # overloads are not supported yet
-                    typeshed_client.OverloadedName,
-                    typeshed_client.ImportedName,
-                    # typeshed pretends the class is a function
-                    ast3.FunctionDef,
-                ),
-            ):
-                return None
-            else:
-                raise NotImplementedError(ast3.dump(info.ast))
-        return None
-
-    def _get_method_signature_from_info(
-        self,
-        info: typeshed_client.resolver.ResolvedName,
-        obj: object,
-        fq_name: str,
-        mod: str,
-        objclass: type,
-    ) -> Optional[Signature]:
-        if info is None:
-            return None
-        elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_method_signature_from_info(
-                info.info, obj, fq_name, ".".join(info.source_module), objclass
-            )
-        elif isinstance(info, typeshed_client.NameInfo):
-            # Note that this doesn't handle names inherited from base classes
-            if obj.__name__ in info.child_nodes:
-                child_info = info.child_nodes[obj.__name__]
-                return self._get_signature_from_info(
-                    child_info, obj, fq_name, mod, objclass
-                )
-            else:
-                return None
-        else:
-            self.log("Ignoring unrecognized info", (fq_name, info))
-            return None
-
-    def _get_fq_name(self, obj: Any) -> Optional[str]:
-        if obj is GeneratorType:
-            return "typing.Generator"
-        if IS_PRE_38:
-            if obj is Sized:
-                return "typing.Sized"
-        try:
-            module = obj.__module__
-            if module is None:
-                module = "builtins"
-            # Objects like io.BytesIO are technically in the _io module,
-            # but typeshed puts them in io, which at runtime just re-exports
-            # them.
-            if module == "_io":
-                module = "io"
-            fq_name = ".".join([module, obj.__qualname__])
-            return _TYPING_ALIASES.get(fq_name, fq_name)
-        except (AttributeError, TypeError):
-            self.log("Ignoring object without module or qualname", obj)
-            return None
-
-    def _get_signature_from_info(
-        self,
-        info: typeshed_client.resolver.ResolvedName,
-        obj: object,
-        fq_name: str,
-        mod: str,
-        objclass: Optional[type] = None,
-    ) -> Optional[Signature]:
-        if isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, ast3.FunctionDef):
-                return self._get_signature_from_func_def(
-                    info.ast, obj, mod, objclass, is_async_fn=False
-                )
-            elif isinstance(info.ast, ast3.AsyncFunctionDef):
-                return self._get_signature_from_func_def(
-                    info.ast, obj, mod, objclass, is_async_fn=True
-                )
-            else:
-                self.log("Ignoring unrecognized AST", (fq_name, info))
-                return None
-        elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_signature_from_info(
-                info.info, obj, fq_name, ".".join(info.source_module), objclass
-            )
-        elif info is None:
-            return None
-        else:
-            self.log("Ignoring unrecognized info", (fq_name, info))
-            return None
-
-    @qcore.caching.cached_per_instance()
-    def _get_info_for_name(self, fq_name: str) -> typeshed_client.resolver.ResolvedName:
-        return self.resolver.get_fully_qualified_name(fq_name)
-
-    def _get_signature_from_func_def(
-        self,
-        node: Union[ast3.FunctionDef, ast3.AsyncFunctionDef],
-        obj: object,
-        mod: str,
-        objclass: Optional[type] = None,
-        *,
-        is_async_fn: bool,
-    ) -> Optional[Signature]:
-        if node.decorator_list:
-            # might be @overload or something else we don't recognize
-            return None
-        if node.returns is None:
-            return_value = UNRESOLVED_VALUE
-        else:
-            return_value = self._parse_expr(node.returns, mod)
-        # ignore self type for class and static methods
-        if node.decorator_list:
-            objclass = None
-        args = node.args
-
-        num_without_defaults = len(args.args) - len(args.defaults)
-        defaults = [None] * num_without_defaults + args.defaults
-        arguments = list(
-            self._parse_param_list(
-                args.args, defaults, mod, SigParameter.POSITIONAL_OR_KEYWORD, objclass
-            )
-        )
-
-        if args.vararg is not None:
-            vararg_param = self._parse_param(
-                args.vararg, None, mod, SigParameter.VAR_POSITIONAL
-            )
-            annotation = GenericValue(tuple, [vararg_param.annotation])
-            arguments.append(vararg_param.replace(annotation=annotation))
-        arguments += self._parse_param_list(
-            args.kwonlyargs, args.kw_defaults, mod, SigParameter.KEYWORD_ONLY
-        )
-        if args.kwarg is not None:
-            kwarg_param = self._parse_param(
-                args.kwarg, None, mod, SigParameter.VAR_KEYWORD
-            )
-            annotation = GenericValue(dict, [TypedValue(str), kwarg_param.annotation])
-            arguments.append(kwarg_param.replace(annotation=annotation))
-        # some typeshed types have a positional-only after a normal argument,
-        # and Signature doesn't like that
-        seen_non_positional = False
-        cleaned_arguments = []
-        for arg in arguments:
-            if arg.kind is not SigParameter.POSITIONAL_ONLY:
-                seen_non_positional = True
-            elif seen_non_positional:
-                arg = arg.replace(kind=SigParameter.POSITIONAL_OR_KEYWORD)
-            cleaned_arguments.append(arg)
-        return Signature.make(
-            cleaned_arguments,
-            callable=obj,
-            return_annotation=GenericValue(Awaitable, [return_value])
-            if is_async_fn
-            else return_value,
-        )
-
-    def _parse_param_list(
-        self,
-        args: Iterable[ast3.arg],
-        defaults: Iterable[Optional[ast3.AST]],
-        module: str,
-        kind: inspect._ParameterKind,
-        objclass: Optional[type] = None,
-    ) -> Iterable[SigParameter]:
-        for i, (arg, default) in enumerate(zip(args, defaults)):
-            yield self._parse_param(
-                arg, default, module, kind, objclass if i == 0 else None
-            )
-
-    def _parse_param(
-        self,
-        arg: ast3.arg,
-        default: Optional[ast3.arg],
-        module: str,
-        kind: inspect._ParameterKind,
-        objclass: Optional[type] = None,
-    ) -> SigParameter:
-        typ = UNRESOLVED_VALUE
-        if arg.annotation is not None:
-            typ = self._parse_expr(arg.annotation, module)
-        elif objclass is not None:
-            bases = self.get_bases(objclass)
-            if bases is None:
-                typ = TypedValue(objclass)
-            else:
-                typevars = uniq_chain(extract_typevars(base) for base in bases)
-                if typevars:
-                    typ = GenericValue(objclass, [TypeVarValue(tv) for tv in typevars])
-                else:
-                    typ = TypedValue(objclass)
-
-        name = arg.arg
-        # Arguments that start with __ are positional-only in typeshed
-        if kind is SigParameter.POSITIONAL_OR_KEYWORD and name.startswith("__"):
-            kind = SigParameter.POSITIONAL_ONLY
-            name = name[2:]
-        # Mark self as positional-only. objclass should be given only if we believe
-        # it's the "self" parameter.
-        if objclass is not None:
-            kind = SigParameter.POSITIONAL_ONLY
-        if default is None:
-            return SigParameter(name, kind, annotation=typ)
-        else:
-            default = self._parse_expr(default, module)
-            if default == KnownValue(...):
-                default = UNRESOLVED_VALUE
-            return SigParameter(name, kind, annotation=typ, default=default)
-
-    def _parse_expr(self, node: ast3.AST, module: str) -> Value:
-        ctx = _AnnotationContext(finder=self, module=module)
-        typ = type_from_ast(cast(ast.AST, node), ctx=ctx)
-        if self.verbose and typ is UNRESOLVED_VALUE:
-            self.log("Got UNRESOLVED_VALUE", (ast3.dump(node), module))
-        return typ
-
-    def _value_from_info(
-        self, info: typeshed_client.resolver.ResolvedName, module: str
-    ) -> Value:
-        if isinstance(info, typeshed_client.ImportedInfo):
-            return self._value_from_info(info.info, ".".join(info.source_module))
-        elif isinstance(info, typeshed_client.NameInfo):
-            fq_name = f"{module}.{info.name}"
-            if fq_name in _TYPING_ALIASES:
-                new_fq_name = _TYPING_ALIASES[fq_name]
-                info = self._get_info_for_name(new_fq_name)
-                return self._value_from_info(
-                    info, new_fq_name.rsplit(".", maxsplit=1)[0]
-                )
-            elif IS_PRE_38:
-                if fq_name in ("typing.Protocol", "typing_extensions.Protocol"):
-                    return KnownValue(Protocol)
-            if isinstance(info.ast, ast3.Assign):
-                key = (module, info.ast)
-                if key in self._assignment_cache:
-                    return self._assignment_cache[key]
-                value = self._parse_expr(info.ast.value, module)
-                self._assignment_cache[key] = value
-                return value
-            try:
-                __import__(module)
-                mod = sys.modules[module]
-                return KnownValue(getattr(mod, info.name))
-            except Exception:
-                self.log("Unable to import", (module, info))
-                return UNRESOLVED_VALUE
-        elif isinstance(info, tuple):
-            module_path = ".".join(info)
-            try:
-                __import__(module_path)
-                return KnownValue(sys.modules[module_path])
-            except Exception:
-                self.log("Unable to import", module_path)
-                return UNRESOLVED_VALUE
-        else:
-            self.log("Ignoring info", info)
-            return UNRESOLVED_VALUE
 
 
 def _is_qcore_decorator(obj: object) -> bool:

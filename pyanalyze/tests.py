@@ -1,3 +1,4 @@
+# static analysis: ignore
 """
 
 Functions to be used in test_scope unit tests.

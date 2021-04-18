@@ -21,9 +21,10 @@ from .name_check_visitor import (
 )
 from .arg_spec import ArgSpecCache
 from .implementation import assert_is_value, dump_value
-from .error_code import ErrorCode
+from .error_code import DISABLED_IN_TESTS, ErrorCode
 from .test_config import TestConfig
 from .value import (
+    AnnotatedValue,
     AsyncTaskIncompleteValue,
     DictIncompleteValue,
     KnownValue,
@@ -33,6 +34,7 @@ from .value import (
     SequenceIncompleteValue,
     TypedValue,
     UnboundMethodValue,
+    NO_RETURN_VALUE,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     VariableNameValue,
@@ -72,12 +74,12 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         check_attributes=True,
         apply_changes=False,
         settings=None,
-        **kwargs
+        **kwargs,
     ):
         # This can happen in Python 2.
         if isinstance(code_str, bytes):
             code_str = code_str.decode("utf-8")
-        default_settings = {code: True for code in ErrorCode}
+        default_settings = {code: code not in DISABLED_IN_TESTS for code in ErrorCode}
         if settings is not None:
             default_settings.update(settings)
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
@@ -94,7 +96,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 settings=default_settings,
                 verbosity=verbosity,
                 arg_spec_cache=ArgSpecCache(self.visitor_cls.config),
-                **kwargs
+                **kwargs,
             ).check_for_test(apply_changes=apply_changes)
 
 
@@ -122,6 +124,7 @@ def _make_module(code_str):
         GenericValue=GenericValue,
         KnownValue=KnownValue,
         MultiValuedValue=MultiValuedValue,
+        AnnotatedValue=AnnotatedValue,
         SequenceIncompleteValue=SequenceIncompleteValue,
         TypedValue=TypedValue,
         UnboundMethodValue=UnboundMethodValue,
@@ -133,9 +136,10 @@ def _make_module(code_str):
         TypedDictValue=TypedDictValue,
         dump_value=dump_value,
         UNINITIALIZED_VALUE=UNINITIALIZED_VALUE,
+        NO_RETURN_VALUE=NO_RETURN_VALUE,
         __name__=module_name,
     )
-    exec (code_str, scope)
+    exec(code_str, scope)
     sys.modules[module_name] = mod
     return mod
 
@@ -151,7 +155,7 @@ def test_annotation():
         args = args + (None, None)
     tree = ast.Call(*args)
     ConfiguredNameCheckVisitor(
-        "<test input>", u"int()", tree, module=ast, annotate=True
+        "<test input>", "int()", tree, module=ast, annotate=True
     ).check()
     assert_eq(TypedValue(int), tree.inferred_value)
 
@@ -404,9 +408,20 @@ def run():
 
     @assert_passes()
     def test_correct_unpack(self):
-        def run():
+        from typing import List
+
+        def run(lst: List[int]):
             a, b = 1, 2
-            return a, b
+            assert_is_value(a, KnownValue(1))
+            assert_is_value(b, KnownValue(2))
+
+            c, d = lst
+            assert_is_value(c, TypedValue(int))
+            assert_is_value(d, TypedValue(int))
+
+            e, f = [lst, 42]
+            assert_is_value(e, GenericValue(list, [TypedValue(int)]))
+            assert_is_value(f, KnownValue(42))
 
     @assert_fails(ErrorCode.not_callable)
     def test_unpack_int(self):
@@ -414,13 +429,6 @@ def run():
             a, b = 1, 2
             a()
             return a, b
-
-    @assert_passes()
-    def test_unpack_inference(self):
-        def run(s):
-            a, b = 1, int(s)
-            assert_is_value(a, KnownValue(1))
-            assert_is_value(b, TypedValue(int))
 
     @assert_fails(ErrorCode.undefined_name)
     def test_nested_classes(self):
@@ -508,10 +516,10 @@ def run():
     def test_cls_type_inference(self):
         class OldStyle:
             def __init_subclass__(cls):
-                assert_is_value(cls, SubclassValue(OldStyle))
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
             def __new__(cls):
-                assert_is_value(cls, SubclassValue(OldStyle))
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
     @assert_passes()
     def test_cls_type_inference(self):
@@ -531,6 +539,7 @@ def run():
             assert_is_value(
                 y, SequenceIncompleteValue(tuple, [UNRESOLVED_VALUE, KnownValue(2)])
             )
+
             s = {a, b}
             assert_is_value(
                 s, SequenceIncompleteValue(set, [UNRESOLVED_VALUE, UNRESOLVED_VALUE])
@@ -671,6 +680,8 @@ def run():
         def capybara():
             assert x
 
+
+class TestNoReturn(TestNameCheckVisitorBase):
     @assert_passes()
     def test_no_return(self):
         from typing_extensions import NoReturn
@@ -684,6 +695,16 @@ def run():
                 f()
             assert_is_value(x, TypedValue(int))
 
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_no_return_parameter(self):
+        from typing_extensions import NoReturn
+
+        def assert_unreachable(x: NoReturn) -> None:
+            pass
+
+        def capybara():
+            assert_unreachable(1)
+
 
 class TestSubclassValue(TestNameCheckVisitorBase):
     # In 3.7 the behavior of Type[] changed.
@@ -695,10 +716,9 @@ class TestSubclassValue(TestNameCheckVisitorBase):
         TI = Type[int]
 
         def capybara(x: TI, y: str):
-            assert_is_value(x, SubclassValue(int))
+            assert_is_value(x, SubclassValue(TypedValue(int)))
             assert_is_value(y, TypedValue(str))
 
-    @only_before((3, 7))
     @assert_passes()
     def test_type_any(self):
         from typing import Any, Type
@@ -720,6 +740,36 @@ class TestSubclassValue(TestNameCheckVisitorBase):
             def call_on_instance(cls, instance):
                 assert_is_value(cls.run, KnownValue(A.run))
                 cls.run(instance)
+
+    @assert_passes()
+    def test_metaclass_method(self):
+        from typing import Type
+
+        class EnumMeta(type):
+            def __getitem__(self, x: str) -> float:
+                return 42.0
+
+        class Enum(metaclass=EnumMeta):
+            pass
+
+        def capybara(enum: Type[Enum]) -> None:
+            assert_is_value(enum["x"], TypedValue(float))
+
+    @assert_passes()
+    def test_type_union(self):
+        from typing import Type, Union
+
+        def capybara(x: Type[Union[int, str]]) -> None:
+            assert_is_value(
+                x,
+                MultiValuedValue(
+                    [SubclassValue(TypedValue(int)), SubclassValue(TypedValue(str))]
+                ),
+            )
+
+        def caller() -> None:
+            capybara(int)
+            capybara(str)
 
 
 class TestConditionAlwaysTrue(TestNameCheckVisitorBase):
@@ -1330,6 +1380,21 @@ class TestIterationTarget(TestNameCheckVisitorBase):
             for key in dct:
                 assert_is_value(key, mvv)
 
+    @assert_passes()
+    def test_maybe_empty(self):
+        def capybara(cond):
+            lst = []
+            if cond:
+                lst.append("x")
+            assert_is_value(
+                lst,
+                MultiValuedValue(
+                    [SequenceIncompleteValue(list, [KnownValue("x")]), KnownValue([])]
+                ),
+            )
+            for c in lst:
+                assert_is_value(c, KnownValue("x"))
+
 
 class TestAddImports(TestNameCheckVisitorBase):
     def test_top_level(self):
@@ -1393,7 +1458,8 @@ class TestNestedFunction(TestNameCheckVisitorBase):
                 pass
 
             assert_is_value(nested, KnownValue(nested))
-            assert_is_value(NestedClass, TypedValue(type))
+            # Should ideally be something more specific
+            assert_is_value(NestedClass, UNRESOLVED_VALUE)
 
     @assert_passes()
     def test_usage_in_nested_scope():
@@ -1584,12 +1650,12 @@ class TestPython3Compatibility(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.mixing_bytes_and_text)
     def test_bytes_and_text(self):
         def capybara():
-            return b"foo" + u"bar"
+            return b"foo" + "bar"
 
     @assert_fails(ErrorCode.mixing_bytes_and_text)
     def test_text_and_bytes(self):
         def capybara():
-            return u"foo" + b"bar"
+            return "foo" + b"bar"
 
 
 class TestOperators(TestNameCheckVisitorBase):
@@ -1610,7 +1676,7 @@ class TestOperators(TestNameCheckVisitorBase):
         def capybara(x):
             assert_is_value(1 + int(x), TypedValue(int))
             assert_is_value(3 * int(x), TypedValue(int))
-            assert_is_value(u"foo" + str(x), TypedValue(str))
+            assert_is_value("foo" + str(x), TypedValue(str))
             assert_is_value(1 + float(x), TypedValue(float))
             assert_is_value(1.0 + int(x), TypedValue(float))
             assert_is_value(3 * 3.0 + 1, KnownValue(10.0))
@@ -1999,10 +2065,28 @@ class TestUnpackingGeneralizations(TestNameCheckVisitorBase):
             assert_is_value(d2, TypedValue(dict))
 
     @assert_passes()
-    def test_tuple_unpacking(self):
+    def test_iterable_unpacking(self):
         def capybara(x):
             degu = (1, *x)
-            assert_is_value(degu, TypedValue(tuple))
+            assert_is_value(
+                degu,
+                GenericValue(
+                    tuple, [MultiValuedValue([KnownValue(1), UNRESOLVED_VALUE])]
+                ),
+            )
+
+            z = [1, *(2, 3)]
+            assert_is_value(
+                z,
+                SequenceIncompleteValue(
+                    list, [KnownValue(1), KnownValue(2), KnownValue(3)]
+                ),
+            )
+
+    @assert_fails(ErrorCode.unsupported_operation)
+    def test_not_iterable(self):
+        def capybara(x: int):
+            (*x,)
 
 
 class TestUnusedIgnore(TestNameCheckVisitorBase):
@@ -2129,6 +2213,41 @@ class TestSequenceIndex(TestNameCheckVisitorBase):
             assert_is_value(tpl[0], TypedValue(int))
             assert_is_value(tpl[-2], TypedValue(str))
             assert_is_value(tpl[2], TypedValue(float))
+
+
+_AnnotSettings = {
+    ErrorCode.missing_parameter_annotation: True,
+    ErrorCode.missing_return_annotation: True,
+}
+
+
+class TestRequireAnnotations(TestNameCheckVisitorBase):
+    @assert_fails(ErrorCode.missing_parameter_annotation, settings=_AnnotSettings)
+    def test_missing_parameter_annotation(self):
+        def f(x) -> None:
+            pass
+
+    @assert_fails(ErrorCode.missing_return_annotation, settings=_AnnotSettings)
+    def test_missing_parameter_annotation(self):
+        def f(x: object):
+            pass
+
+    @assert_fails(ErrorCode.missing_parameter_annotation, settings=_AnnotSettings)
+    def test_missing_parameter_annotation_method(self):
+        class Capybara:
+            def f(self, x) -> None:
+                pass
+
+    @assert_passes(settings=_AnnotSettings)
+    def test_dont_annotate_self():
+        def f() -> None:
+            class X:
+                def method(self) -> None:
+                    pass
+
+        class X:
+            def f(self) -> None:
+                pass
 
 
 class HasGetattr(object):

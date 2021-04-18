@@ -271,13 +271,13 @@ class TestEncodeDecode(TestNameCheckVisitorBase):
         import six
 
         def capybara():
-            assert_is_value(u"".encode("utf-8"), TypedValue(bytes))
+            assert_is_value("".encode("utf-8"), TypedValue(bytes))
             assert_is_value(b"".decode("utf-8"), TypedValue(six.text_type))
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_encode_wrong_type(self):
         def capybara():
-            u"".encode(42)
+            "".encode(42)
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_decode_wrong_type(self):
@@ -298,16 +298,16 @@ class TestLen(TestNameCheckVisitorBase):
     @assert_passes()
     def test_narrowing(self):
         def capybara(cond):
-            lst = [] if cond else [1]
-            assert_is_value(lst, MultiValuedValue([KnownValue([]), KnownValue([1])]))
+            lst = () if cond else (1,)
+            assert_is_value(lst, MultiValuedValue([KnownValue(()), KnownValue((1,))]))
             if len(lst) == 1:
-                assert_is_value(lst, KnownValue([1]))
+                assert_is_value(lst, KnownValue((1,)))
             else:
-                assert_is_value(lst, KnownValue([]))
+                assert_is_value(lst, KnownValue(()))
             if len(lst) > 0:
-                assert_is_value(lst, KnownValue([1]))
+                assert_is_value(lst, KnownValue((1,)))
             else:
-                assert_is_value(lst, KnownValue([]))
+                assert_is_value(lst, KnownValue(()))
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_wrong_type(self):

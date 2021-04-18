@@ -8,9 +8,14 @@ import enum
 import qcore
 from unittest import mock
 import asyncio
-from typing import Set, Union
+from types import ModuleType
+from typing import Dict, Set, TYPE_CHECKING, Union
 
 from . import value
+
+if TYPE_CHECKING:
+    from .arg_spec import ArgSpecCache
+    from .signature import Signature
 
 
 class Config(object):
@@ -26,7 +31,7 @@ class Config(object):
     # file paths to run on by default
     DEFAULT_DIRS = ()
 
-    def unwrap_cls(self, cls):
+    def unwrap_cls(self, cls: type) -> type:
         """Does any application-specific unwrapping logic for wrapper classes."""
         return cls
 
@@ -129,7 +134,7 @@ class Config(object):
     for assert_helper in qcore.asserts.__all__:
         NAMES_TO_IMPORTS[assert_helper] = "qcore.asserts"
 
-    def should_ignore_class_attribute(self, cls_val):
+    def should_ignore_class_attribute(self, cls_val: object) -> bool:
         return cls_val is None or cls_val is NotImplemented
 
     # Set of dunder methods (e.g., '{"__lshift__"}') that pyanalyze is not allowed to call on
@@ -149,7 +154,7 @@ class Config(object):
     VARIABLE_NAME_VALUES = []
 
     @qcore.caching.cached_per_instance()
-    def varname_value_map(self):
+    def varname_value_map(self) -> Dict[str, value.VariableNameValue]:
         """Returns a map of variable name to applicable VariableNameValue object."""
         ret = {}
         for val in self.VARIABLE_NAME_VALUES:
@@ -171,7 +176,7 @@ class Config(object):
     # attributes
     USED_BASE_CLASSES = set()
 
-    def registered_values(self):
+    def registered_values(self) -> Set[object]:
         """Returns a set of objects that are registered by various decorators.
 
         These are excluded from the find_unused check.
@@ -179,7 +184,9 @@ class Config(object):
         """
         return set()
 
-    def should_ignore_unused(self, module, attribute, object):
+    def should_ignore_unused(
+        self, module: ModuleType, attribute: str, object: object
+    ) -> bool:
         """If this returns True, we will exclude this object from the unused object check.
 
         The arguments are the module the object was found in, the attribute used to
@@ -251,15 +258,13 @@ class Config(object):
     # Tuple of classes for which we should look at their .init to find the argspec
     CLASSES_USING_INIT = ()
 
-    def get_known_argspecs(self, arg_spec_cache):
-        """Initialize any hardcoded argspecs.
-
-        Returns a dictionary of {function: ExtendedArgSpec} object.
-
-        """
+    def get_known_argspecs(
+        self, arg_spec_cache: "ArgSpecCache"
+    ) -> Dict[object, "Signature"]:
+        """Initialize any hardcoded argspecs."""
         return {}
 
-    def should_check_class_for_duplicate_values(self, cls):
+    def should_check_class_for_duplicate_values(self, cls: type) -> bool:
         """Whether we should produce an error if this class contains duplicate values.
 
         Used for the duplicate_enum check.
