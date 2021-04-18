@@ -13,6 +13,7 @@ from . import value
 from .arg_spec import ArgSpecCache
 from .test_config import TestConfig
 from .value import (
+    AnnotatedValue,
     Value,
     GenericValue,
     KnownValue,
@@ -48,7 +49,7 @@ def assert_can_assign(left: Value, right: Value, typevar_map: TypeVarMap = {}) -
     assert_eq({}, left.can_assign(right, _CTX))
 
 
-def test_UNRESOLVED_VALUE():
+def test_UNRESOLVED_VALUE() -> None:
     assert not UNRESOLVED_VALUE.is_type(int)
     assert_can_assign(UNRESOLVED_VALUE, KnownValue(1))
     assert_can_assign(UNRESOLVED_VALUE, TypedValue(int))
@@ -57,7 +58,7 @@ def test_UNRESOLVED_VALUE():
     )
 
 
-def test_known_value():
+def test_known_value() -> None:
     val = KnownValue(3)
     assert_eq(3, val.val)
     assert_eq("Literal[3]", str(val))
@@ -70,10 +71,10 @@ def test_known_value():
     assert_cannot_assign(val, TypedValue(int))
     assert_can_assign(val, MultiValuedValue([val, UNRESOLVED_VALUE]))
     assert_cannot_assign(val, MultiValuedValue([val, TypedValue(int)]))
-    assert_cannot_assign(KnownValue(int), SubclassValue(int))
+    assert_cannot_assign(KnownValue(int), SubclassValue(TypedValue(int)))
 
 
-def test_unbound_method_value():
+def test_unbound_method_value() -> None:
     val = value.UnboundMethodValue(
         "get_prop_with_get", value.TypedValue(tests.PropertyObject)
     )
@@ -103,7 +104,7 @@ def test_unbound_method_value():
     assert not val.is_type(str)
 
 
-def test_typed_value():
+def test_typed_value() -> None:
     val = TypedValue(str)
     assert_is(str, val.typ)
     assert_eq("str", str(val))
@@ -126,8 +127,8 @@ def test_typed_value():
     assert_cannot_assign(float_val, TypedValue(str))
     assert_can_assign(float_val, TypedValue(mock.Mock))
 
-    assert_cannot_assign(float_val, SubclassValue(float))
-    assert_can_assign(TypedValue(type), SubclassValue(float))
+    assert_cannot_assign(float_val, SubclassValue(TypedValue(float)))
+    assert_can_assign(TypedValue(type), SubclassValue(TypedValue(float)))
 
 
 @runtime_checkable
@@ -136,10 +137,10 @@ class Proto(Protocol):
         ...
 
 
-def test_protocol():
+def test_protocol() -> None:
     tv = TypedValue(Proto)
 
-    def fn():
+    def fn() -> None:
         pass
 
     assert_cannot_assign(tv, KnownValue(fn))
@@ -147,14 +148,14 @@ def test_protocol():
     assert_can_assign(tv, KnownValue(fn))
 
     class X:
-        def asynq(self):
+        def asynq(self) -> None:
             pass
 
     assert_can_assign(tv, TypedValue(X))
     assert_can_assign(tv, KnownValue(X()))
 
 
-def test_callable():
+def test_callable() -> None:
     cval = TypedValue(collections.abc.Callable)
     assert_can_assign(cval, cval)
 
@@ -164,23 +165,24 @@ def test_callable():
     assert_can_assign(gen_val, gen_val)
 
 
-def test_subclass_value():
-    val = SubclassValue(int)
+def test_subclass_value() -> None:
+    val = SubclassValue(TypedValue(int))
     assert_can_assign(val, KnownValue(int))
     assert_can_assign(val, KnownValue(bool))
     assert_cannot_assign(val, KnownValue(str))
     assert_can_assign(val, TypedValue(type))
     assert_cannot_assign(val, TypedValue(int))
-    assert_can_assign(val, SubclassValue(bool))
-    assert_cannot_assign(val, SubclassValue(str))
-    val = value.SubclassValue(str)
+    assert_can_assign(val, SubclassValue(TypedValue(bool)))
+    assert_can_assign(val, TypedValue(type))
+    assert_cannot_assign(val, SubclassValue(TypedValue(str)))
+    val = SubclassValue(TypedValue(str))
     assert_eq("Type[str]", str(val))
-    assert_is(str, val.typ)
+    assert_eq(TypedValue(str), val.typ)
     assert val.is_type(str)
     assert not val.is_type(int)
 
 
-def test_generic_value():
+def test_generic_value() -> None:
     val = GenericValue(list, [TypedValue(int)])
     assert_eq("list[int]", str(val))
     assert_can_assign(val, TypedValue(list))
@@ -200,7 +202,7 @@ def test_generic_value():
     )
 
 
-def test_sequence_incomplete_value():
+def test_sequence_incomplete_value() -> None:
     val = value.SequenceIncompleteValue(tuple, [TypedValue(int), TypedValue(str)])
     assert_can_assign(val, TypedValue(tuple))
     assert_can_assign(
@@ -227,12 +229,12 @@ def test_sequence_incomplete_value():
     )
 
 
-def test_dict_incomplete_value():
+def test_dict_incomplete_value() -> None:
     val = value.DictIncompleteValue([(TypedValue(int), KnownValue("x"))])
     assert_eq("<dict containing {int: Literal['x']}>", str(val))
 
 
-def test_multi_valued_value():
+def test_multi_valued_value() -> None:
     val = MultiValuedValue([TypedValue(int), KnownValue(None)])
     assert_eq("Union[int, None]", str(val))
     assert_can_assign(val, KnownValue(1))
@@ -261,7 +263,7 @@ class ThriftEnum(object):
     _NAMES_TO_VALUES = {"X": 0, "Y": 1}
 
 
-def test_can_assign_thrift_enum():
+def test_can_assign_thrift_enum() -> None:
     val = TypedValue(ThriftEnum)
     assert_can_assign(val, KnownValue(0))
     assert_cannot_assign(val, KnownValue(2))
@@ -272,7 +274,7 @@ def test_can_assign_thrift_enum():
     assert_cannot_assign(val, TypedValue(str))
 
 
-def test_variable_name_value():
+def test_variable_name_value() -> None:
     uid_val = value.VariableNameValue(["uid", "viewer"])
     varname_map = {
         "uid": uid_val,
@@ -293,7 +295,7 @@ def test_variable_name_value():
     assert_can_assign(val, KnownValue(1))
 
 
-def test_typeddict_value():
+def test_typeddict_value() -> None:
     val = value.TypedDictValue({"a": TypedValue(int), "b": TypedValue(str)})
     # dict iteration order in some Python versions is not deterministic
     assert_in(
@@ -366,7 +368,7 @@ def test_typeddict_value():
     )
 
 
-def test_new_type_value():
+def test_new_type_value() -> None:
     nt1 = NewType("nt1", int)
     nt1_val = value.NewTypeValue(nt1)
     nt2 = NewType("nt2", int)
@@ -378,13 +380,19 @@ def test_new_type_value():
     assert_can_assign(TypedValue(int), nt1_val)
 
 
-def test_io():
+def test_annotated_value() -> None:
+    tv_int = TypedValue(int)
+    assert_can_assign(AnnotatedValue(tv_int, [tv_int]), tv_int)
+    assert_can_assign(tv_int, AnnotatedValue(tv_int, [tv_int]))
+
+
+def test_io() -> None:
     assert_can_assign(
         GenericValue(typing.IO, [UNRESOLVED_VALUE]), TypedValue(io.BytesIO)
     )
 
 
-def test_concrete_values_from_iterable():
+def test_concrete_values_from_iterable() -> None:
     assert_is(None, concrete_values_from_iterable(KnownValue(1), _CTX))
     assert_eq((), concrete_values_from_iterable(KnownValue([]), _CTX))
     assert_eq(

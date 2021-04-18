@@ -4,6 +4,7 @@ from .test_node_visitor import skip_before, assert_passes, assert_fails
 from .implementation import assert_is_value
 from .error_code import ErrorCode
 from .value import (
+    AnnotatedValue,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
@@ -384,8 +385,8 @@ def f(x: int, y: List[str]):
         from typing import Type
 
         def capybara(x: Type[str], y: "Type[int]"):
-            assert_is_value(x, SubclassValue(str))
-            assert_is_value(y, SubclassValue(int))
+            assert_is_value(x, SubclassValue(TypedValue(str)))
+            assert_is_value(y, SubclassValue(TypedValue(int)))
 
     @skip_before((3, 9))
     @assert_passes()
@@ -432,3 +433,102 @@ def capybara(x: int | None, y: int | str) -> None:
 
         def f():
             Capybara(x=3)
+
+
+class TestAnnotated(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_typing_extensions(self):
+        from typing_extensions import Annotated
+
+        obj = object()
+
+        def capybara(
+            x: Annotated[int, "stuff"],
+            y: Annotated[int, obj],
+            quoted: "Annotated[int, int, str]",
+            nested: Annotated[Annotated[int, 1], 2],
+            nested_quoted: "Annotated[Annotated[int, 1], 2]",
+        ) -> None:
+            assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue("stuff")]))
+            assert_is_value(y, AnnotatedValue(TypedValue(int), [KnownValue(obj)]))
+            assert_is_value(
+                quoted,
+                AnnotatedValue(TypedValue(int), [KnownValue(int), KnownValue(str)]),
+            )
+            assert_is_value(
+                nested, AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)])
+            )
+            assert_is_value(
+                nested_quoted,
+                AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)]),
+            )
+
+    @skip_before((3, 9))
+    @assert_passes()
+    def test_typing(self):
+        from typing import Annotated
+
+        obj = object()
+
+        def capybara(
+            x: Annotated[int, "stuff"],
+            y: Annotated[int, obj],
+            quoted: "Annotated[int, int, str]",
+            nested: Annotated[Annotated[int, 1], 2],
+            nested_quoted: "Annotated[Annotated[int, 1], 2]",
+        ) -> None:
+            assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue("stuff")]))
+            assert_is_value(y, AnnotatedValue(TypedValue(int), [KnownValue(obj)]))
+            assert_is_value(
+                quoted,
+                AnnotatedValue(TypedValue(int), [KnownValue(int), KnownValue(str)]),
+            )
+            assert_is_value(
+                nested, AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)])
+            )
+            assert_is_value(
+                nested_quoted,
+                AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)]),
+            )
+
+
+class TestParameterTypeGuard(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        from pyanalyze.extensions import ParameterTypeGuard
+        from typing_extensions import Annotated
+
+        def is_int(x: object) -> Annotated[bool, ParameterTypeGuard["x", int]]:
+            return isinstance(x, int)
+
+        def capybara(x: object) -> None:
+            assert_is_value(x, TypedValue(object))
+            if is_int(x):
+                assert_is_value(x, TypedValue(int))
+
+    @assert_passes()
+    def test_generic(self):
+        import collections.abc
+        from pyanalyze.extensions import ParameterTypeGuard
+        from typing_extensions import Annotated
+        from typing import TypeVar, Type, Iterable, Union
+
+        T = TypeVar("T")
+
+        def all_of_type(
+            elts: Iterable[object], typ: Type[T]
+        ) -> Annotated[bool, ParameterTypeGuard["elts", Iterable[T]]]:
+            return all(isinstance(elt, typ) for elt in elts)
+
+        def capybara(elts: Iterable[Union[int, str]]) -> None:
+            assert_is_value(
+                elts,
+                GenericValue(
+                    collections.abc.Iterable,
+                    [MultiValuedValue([TypedValue(int), TypedValue(str)])],
+                ),
+            )
+            if all_of_type(elts, int):
+                assert_is_value(
+                    elts, GenericValue(collections.abc.Iterable, [TypedValue(int)])
+                )

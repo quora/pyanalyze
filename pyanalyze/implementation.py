@@ -46,7 +46,7 @@ from itertools import product
 import qcore
 import inspect
 import warnings
-from typing import cast, NewType, TYPE_CHECKING, Callable, TypeVar, Optional
+from typing import cast, Dict, NewType, TYPE_CHECKING, Callable, TypeVar, Optional
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -155,7 +155,7 @@ def _assert_is_instance_impl(
 
 
 def _hasattr_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     obj = variables["object"]
     name = variables["name"]
@@ -180,7 +180,7 @@ def _hasattr_impl(
 
 
 def _setattr_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     # if we set an attribute on a value of known type, record it to the attribute checker so we
     # don't say the attribute is undefined
@@ -196,7 +196,7 @@ def _setattr_impl(
 
 
 def _super_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     typ = variables["type"]
     obj = variables["obj"]
@@ -225,8 +225,10 @@ def _super_impl(
                 )
                 return UNRESOLVED_VALUE
             else:
-                if isinstance(first_arg, SubclassValue):
-                    return KnownValue(super(current_class, first_arg.typ))
+                if isinstance(first_arg, SubclassValue) and isinstance(
+                    first_arg.typ, TypedValue
+                ):
+                    return KnownValue(super(current_class, first_arg.typ.typ))
                 elif isinstance(first_arg, KnownValue):
                     return KnownValue(super(current_class, first_arg.val))
                 elif isinstance(first_arg, TypedValue):
@@ -251,8 +253,8 @@ def _super_impl(
     if isinstance(obj, TypedValue) and obj.typ is not type:
         instance_type = obj.typ
         is_value = True
-    elif isinstance(obj, SubclassValue):
-        instance_type = obj.typ
+    elif isinstance(obj, SubclassValue) and isinstance(obj.typ, TypedValue):
+        instance_type = obj.typ.typ
         is_value = False
     else:
         return UNRESOLVED_VALUE
@@ -283,25 +285,25 @@ def _super_impl(
 
 
 def _tuple_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _sequence_impl(tuple, variables, visitor, node)
 
 
 def _list_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _sequence_impl(list, variables, visitor, node)
 
 
 def _set_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _sequence_impl(set, variables, visitor, node)
 
 
 def _sequence_impl(
-    typ: type, variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    typ: type, variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     iterable = variables["iterable"]
     if iterable is _NO_ARG_SENTINEL:
@@ -774,7 +776,7 @@ _ENCODING_PARAMETER = SigParameter(
 )
 
 
-def get_default_argspecs():
+def get_default_argspecs() -> Dict[object, Signature]:
     signatures = [
         # pyanalyze helpers
         Signature.make(
