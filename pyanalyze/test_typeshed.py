@@ -18,6 +18,7 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .signature import SigParameter, Signature
 from .arg_spec import ArgSpecCache
+from .test_arg_spec import ClassWithCall
 from .typeshed import TypeshedFinder
 from .value import (
     KnownValue,
@@ -25,6 +26,7 @@ from .value import (
     TypedValue,
     GenericValue,
     TypeVarValue,
+    UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     SequenceIncompleteValue,
 )
@@ -120,6 +122,18 @@ def f(x: NT) -> None:
     def test_str_find(self):
         def capybara(s: str) -> None:
             assert_is_value(s.find("x"), TypedValue(int))
+
+    def test_has_stubs(self) -> None:
+        tsf = TypeshedFinder(verbose=True)
+        assert tsf.has_stubs(object)
+        assert not tsf.has_stubs(ClassWithCall)
+
+    def test_get_attribute(self) -> None:
+        tsf = TypeshedFinder(verbose=True)
+        assert_is(UNINITIALIZED_VALUE, tsf.get_attribute(object, "nope"))
+        assert_eq(
+            TypedValue(bool), tsf.get_attribute(staticmethod, "__isabstractmethod__")
+        )
 
 
 class Parent(Generic[T]):

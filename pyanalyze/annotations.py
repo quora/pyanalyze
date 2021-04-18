@@ -130,7 +130,7 @@ def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
     return _type_from_value(val, ctx)
 
 
-def _type_from_runtime(val: object, ctx: Context) -> Value:
+def _type_from_runtime(val: Any, ctx: Context) -> Value:
     if isinstance(val, str):
         return _eval_forward_ref(val, ctx)
     elif isinstance(val, tuple):
@@ -174,6 +174,9 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
         # get the actual type out.
         return UNRESOLVED_VALUE
     elif isinstance(val, InitVar):
+        # val.type exists only on 3.8+, but on earlier versions
+        # InitVar instances aren't being created
+        # static analysis: ignore[undefined_attribute]
         return type_from_runtime(val.type)
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
@@ -356,7 +359,7 @@ class _DefaultContext(Context):
         if self.visitor is not None and self.node is not None:
             self.visitor.show_error(self.node, message, error_code)
 
-    def get_name(self, node: ast.AST) -> Value:
+    def get_name(self, node: ast.Name) -> Value:
         if self.visitor is not None:
             return self.visitor.resolve_name(
                 node,
@@ -417,7 +420,8 @@ class _Visitor(ast.NodeVisitor):
         return SequenceIncompleteValue(list, elts)
 
     def visit_Index(self, node: ast.Index) -> Value:
-        return self.visit(node.value)
+        # class is unused in 3.9
+        return self.visit(node.value)  # static analysis: ignore[undefined_attribute]
 
     def visit_Ellipsis(self, node: ast.Ellipsis) -> Value:
         return KnownValue(Ellipsis)
@@ -526,8 +530,9 @@ def _value_of_origin_args(
     elif isinstance(origin, type):
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
-        if getattr(origin, "__extra__", None) is not None:
-            origin = origin.__extra__
+        extra_origin = getattr(origin, "__extra__", None)
+        if extra_origin is not None:
+            origin = extra_origin
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(val is UNRESOLVED_VALUE for val in args_vals):

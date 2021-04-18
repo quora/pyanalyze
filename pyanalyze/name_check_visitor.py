@@ -642,7 +642,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     current_function_name: Optional[str]
     current_enum_members: Optional[Dict[object, str]]
     _name_node_to_statement: Optional[Dict[ast.AST, Optional[ast.AST]]]
-    import_name_to_node: Dict[str, ast.AST]
+    import_name_to_node: Dict[str, Union[ast.Import, ast.ImportFrom]]
 
     def __init__(
         self,
@@ -1927,7 +1927,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, comprehension_node: ast.comprehension
     ) -> Value:
         iterable_type, _ = self._member_value_of_iterator(
-            comprehension_node.iter, comprehension_node.is_async
+            comprehension_node.iter, bool(comprehension_node.is_async)
         )
         return iterable_type
 
@@ -2483,11 +2483,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             return TypedValue(slice)
 
+    # These two are unused in 3.8 and higher, and the typeshed stubs reflect
+    # that their .dims and .value attributes don't exist.
     def visit_ExtSlice(self, node: ast.ExtSlice) -> Value:
+        # static analysis: ignore[undefined_attribute]
         dims = [self.visit(dim) for dim in node.dims]
         return self._maybe_make_sequence(tuple, dims, node)
 
     def visit_Index(self, node: ast.Index) -> Value:
+        # static analysis: ignore[undefined_attribute]
         return self.visit(node.value)
 
     # Control flow
