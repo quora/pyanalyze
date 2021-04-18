@@ -3,7 +3,12 @@
 "Safe" operations that call into user code and catch any excxeptions.
 
 """
-from typing import Any, Tuple, Union
+from typing import Any, Tuple, Union, Container, TypeVar, Iterable
+from typing_extensions import Annotated
+
+from .extensions import ParameterTypeGuard
+
+T = TypeVar("T")
 
 
 def safe_hasattr(item: object, member: str) -> bool:
@@ -44,6 +49,16 @@ def safe_isinstance(value: object, typ: Union[type, Tuple[type, ...]]) -> bool:
         return False
 
 
+def safe_in(item: T, collection: Container[T]) -> bool:
+    """Safely check whether item is in collection. Defaults to returning false."""
+    # Workaround against mock objects sometimes throwing ValueError if you compare them,
+    # and against objects throwing other kinds of errors if you use in.
+    try:
+        return item in collection
+    except Exception:
+        return False
+
+
 def is_hashable(obj: object) -> bool:
     try:
         hash(obj)
@@ -51,3 +66,18 @@ def is_hashable(obj: object) -> bool:
         return False
     else:
         return True
+
+
+def is_iterable(obj: object) -> bool:
+    """Returns whether a Python object is iterable."""
+    typ = type(obj)
+    if hasattr(typ, "__iter__"):
+        return True
+    return hasattr(typ, "__getitem__") and hasattr(typ, "__len__")
+
+
+def all_of_type(
+    elts: Iterable[object], typ: Type[T]
+) -> Annotated[bool, ParameterTypeGuard["elts", Iterable[T]]]:
+    """Returns whether all elements of elts are instances of typ."""
+    return all(isinstance(elt, typ) for elt in elts)

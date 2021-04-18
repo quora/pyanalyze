@@ -5,12 +5,7 @@ Commonly useful components for static analysis tools.
 """
 import ast
 import os
-from typing import List, Callable, Optional, Set, TypeVar, Type, Iterable
-from typing_extensions import Annotated
-
-from .extensions import ParameterTypeGuard
-
-T = TypeVar("T")
+from typing import List, Callable, Optional, Set
 
 
 def _all_files(
@@ -84,10 +79,3 @@ def get_line_range_for_node(node: ast.AST, lines: List[str]) -> List[int]:
     ):
         last_lineno += 1
     return list(range(first_lineno, last_lineno))
-
-
-def all_of_type(
-    elts: Iterable[object], typ: Type[T]
-) -> Annotated[bool, ParameterTypeGuard["elts", Iterable[T]]]:
-    """Returns whether all elements of elts are instances of typ."""
-    return all(isinstance(elt, typ) for elt in elts)
