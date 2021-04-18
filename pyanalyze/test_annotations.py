@@ -88,6 +88,13 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(z, TypedValue(SupportsInt))
 
     @assert_passes()
+    def test_supports_int_accepted(self):
+        from typing import SupportsInt
+
+        def capybara(z: SupportsInt) -> None:
+            print(z)  # just test that this doesn't get rejected
+
+    @assert_passes()
     def test_self_type(self):
         class Capybara:
             def f(self: int) -> None:
@@ -319,6 +326,11 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def f(x: "NoSuchType"):
             pass
 
+    @assert_fails(ErrorCode.undefined_name)
+    def test_forward_ref_bad_attribute(self):
+        def f(x: "collections.defalutdict"):
+            pass
+
     @assert_passes()
     def test_forward_ref_optional(self):
         import typing
@@ -433,6 +445,16 @@ def capybara(x: int | None, y: int | str) -> None:
 
         def f():
             Capybara(x=3)
+
+    @assert_passes()
+    def test_classvar(self):
+        from typing import ClassVar
+
+        class Capybara:
+            x: ClassVar[str]
+
+        def caller(c: Capybara):
+            assert_is_value(c.x, TypedValue(str))
 
 
 class TestAnnotated(TestNameCheckVisitorBase):

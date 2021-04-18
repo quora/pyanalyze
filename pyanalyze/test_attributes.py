@@ -1,6 +1,12 @@
 # static analysis: ignore
-from .implementation import assert_is_value
-from .value import KnownValue, MultiValuedValue, TypedValue, UNRESOLVED_VALUE
+from .implementation import assert_is_value, dump_value
+from .value import (
+    KnownValue,
+    MultiValuedValue,
+    TypeVarMap,
+    TypedValue,
+    UNRESOLVED_VALUE,
+)
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
 
@@ -137,3 +143,40 @@ class TestAttributes(TestNameCheckVisitorBase):
             assert_is_value(
                 x.attr, MultiValuedValue([TypedValue(int), TypedValue(str)])
             )
+
+
+class TestHasAttrExtension(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_hasattr(self):
+        from typing_extensions import Literal
+
+        def capybara(x: Literal[1]) -> None:
+            if hasattr(x, "x"):
+                assert_is_value(x.x, UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_user_hasattr(self):
+        from typing import TypeVar, Any
+        from typing_extensions import Annotated, Literal
+        from pyanalyze.extensions import HasAttrGuard
+
+        T = TypeVar("T", bound=str)
+
+        def my_hasattr(
+            obj: object, name: T
+        ) -> Annotated[bool, HasAttrGuard["obj", T, Any]]:
+            return hasattr(obj, name)
+
+        def has_int_attr(
+            obj: object, name: T
+        ) -> Annotated[bool, HasAttrGuard["obj", T, int]]:
+            val = getattr(obj, name, None)
+            return isinstance(val, int)
+
+        def capybara(x: Literal[1]) -> None:
+            if my_hasattr(x, "x"):
+                assert_is_value(x.x, UNRESOLVED_VALUE)
+
+        def inty_capybara(x: Literal[1]) -> None:
+            if has_int_attr(x, "inty"):
+                assert_is_value(x.inty, TypedValue(int))

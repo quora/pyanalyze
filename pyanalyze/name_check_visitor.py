@@ -3439,6 +3439,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         # We don't throw an error in many
         # cases where we're not quite sure whether an attribute
         # will exist.
+        if isinstance(root_value, AnnotatedValue):
+            root_value = root_value.value
         if isinstance(root_value, UnboundMethodValue):
             if self._should_ignore_val(node):
                 return UNRESOLVED_VALUE

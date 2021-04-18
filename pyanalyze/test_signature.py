@@ -2,7 +2,6 @@
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .error_code import ErrorCode
-from .value import KnownValue, TypedValue, UNRESOLVED_VALUE
 
 
 class TestProperty(TestNameCheckVisitorBase):
@@ -135,9 +134,21 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_return_value(self):
+        from pyanalyze.value import HasAttrGuardExtension
+
         def capybara(x):
             l = hasattr(x, "foo")
-            assert_is_value(l, TypedValue(bool))
+            assert_is_value(
+                l,
+                AnnotatedValue(
+                    TypedValue(bool),
+                    [
+                        HasAttrGuardExtension(
+                            "object", KnownValue("foo"), UNRESOLVED_VALUE
+                        )
+                    ],
+                ),
+            )
 
     @assert_passes()
     def test_required_kwonly_args(self):

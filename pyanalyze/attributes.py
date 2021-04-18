@@ -14,6 +14,7 @@ from typing import Any, Tuple, Optional
 from .annotations import type_from_runtime
 from .value import (
     AnnotatedValue,
+    HasAttrExtension,
     Value,
     KnownValue,
     GenericValue,
@@ -64,24 +65,31 @@ def get_attribute(ctx: AttrContext) -> Value:
     elif isinstance(root_value, AnnotatedValue):
         root_value = root_value.value
     if isinstance(root_value, KnownValue):
-        return _get_attribute_from_known(root_value.val, ctx)
+        attribute_value = _get_attribute_from_known(root_value.val, ctx)
     elif isinstance(root_value, TypedValue):
-        return _get_attribute_from_typed(root_value.typ, ctx)
+        attribute_value = _get_attribute_from_typed(root_value.typ, ctx)
     elif isinstance(root_value, SubclassValue):
         if isinstance(root_value.typ, TypedValue):
-            return _get_attribute_from_subclass(root_value.typ.typ, ctx)
+            attribute_value = _get_attribute_from_subclass(root_value.typ.typ, ctx)
         elif root_value.typ is UNRESOLVED_VALUE:
-            return UNRESOLVED_VALUE
+            attribute_value = UNRESOLVED_VALUE
         else:
-            return _get_attribute_from_known(type, ctx)
+            attribute_value = _get_attribute_from_known(type, ctx)
     elif isinstance(root_value, UnboundMethodValue):
-        return _get_attribute_from_unbound(root_value, ctx)
+        attribute_value = _get_attribute_from_unbound(root_value, ctx)
     elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
-        return UNRESOLVED_VALUE
+        attribute_value = UNRESOLVED_VALUE
     elif isinstance(root_value, MultiValuedValue):
         raise TypeError("caller should unwrap MultiValuedValue")
     else:
-        return UNINITIALIZED_VALUE
+        attribute_value = UNINITIALIZED_VALUE
+    if (
+        attribute_value is UNRESOLVED_VALUE or attribute_value is UNINITIALIZED_VALUE
+    ) and isinstance(ctx.root_value, AnnotatedValue):
+        for guard in ctx.root_value.get_metadata_of_type(HasAttrExtension):
+            if guard.attribute_name == KnownValue(ctx.attr):
+                return guard.attribute_type
+    return attribute_value
 
 
 def _get_attribute_from_subclass(

@@ -20,6 +20,8 @@ from .signature import (
     clean_up_implementation_fn_return,
 )
 from .value import (
+    AnnotatedValue,
+    HasAttrGuardExtension,
     TypedValue,
     SubclassValue,
     GenericValue,
@@ -159,24 +161,26 @@ def _hasattr_impl(
 ) -> ImplementationFnReturn:
     obj = variables["object"]
     name = variables["name"]
-    if not isinstance(name, KnownValue):
+    if not isinstance(name, KnownValue) or not isinstance(name.val, str):
         return TypedValue(bool)
     if not isinstance(obj, (TypedValue, KnownValue)):
-        return TypedValue(bool)
-
-    typ = obj.typ if isinstance(obj, TypedValue) else type(obj.val)
-    # interpret a hasattr check as a sign that the object (somehow) has the attribute
-    visitor._record_type_attr_set(typ, name.val, node, UNRESOLVED_VALUE)
-
-    # if the value exists on the type or instance, hasattr should return True
-    # don't interpret the opposite to mean it should return False, as the attribute may
-    # exist on a child class or get assigned at runtime
-    if isinstance(obj, TypedValue) and safe_hasattr(obj.typ, name.val):
-        return KnownValue(True)
-    elif isinstance(obj, KnownValue) and safe_hasattr(obj.val, name.val):
-        return KnownValue(True)
+        return_value = TypedValue(bool)
     else:
-        return TypedValue(bool)
+        typ = obj.typ if isinstance(obj, TypedValue) else type(obj.val)
+        # interpret a hasattr check as a sign that the object (somehow) has the attribute
+        visitor._record_type_attr_set(typ, name.val, node, UNRESOLVED_VALUE)
+
+        # if the value exists on the type or instance, hasattr should return True
+        # don't interpret the opposite to mean it should return False, as the attribute may
+        # exist on a child class or get assigned at runtime
+        if isinstance(obj, TypedValue) and safe_hasattr(obj.typ, name.val):
+            return_value = KnownValue(True)
+        elif isinstance(obj, KnownValue) and safe_hasattr(obj.val, name.val):
+            return_value = KnownValue(True)
+        else:
+            return_value = TypedValue(bool)
+    metadata = [HasAttrGuardExtension("object", name, UNRESOLVED_VALUE)]
+    return AnnotatedValue(return_value, metadata)
 
 
 def _setattr_impl(

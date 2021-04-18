@@ -27,17 +27,18 @@ from typing import (
 )
 
 from .error_code import ErrorCode
-from .extensions import ParameterTypeGuard
-from .find_unused import used
+from .extensions import HasAttrGuard, ParameterTypeGuard
 from .value import (
-    AnnotatedValue,
     Extension,
+    HasAttrGuardExtension,
     KnownValue,
+    MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
     UNRESOLVED_VALUE,
     TypedValue,
     SequenceIncompleteValue,
+    annotate_value,
     unite_values,
     Value,
     GenericValue,
@@ -85,7 +86,6 @@ class Context:
         return UNRESOLVED_VALUE
 
 
-@used  # part of the API of this module; low cost even if currently unused
 def type_from_ast(
     ast_node: ast.AST,
     visitor: Optional["NameCheckVisitor"] = None,
@@ -125,7 +125,7 @@ def type_from_value(
 def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
     val = _Visitor(ctx).visit(node)
     if val is None:
-        # TODO show an error here
+        ctx.show_error("Invalid type annotation")
         return UNRESOLVED_VALUE
     return _type_from_value(val, ctx)
 
@@ -204,7 +204,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     elif typing_inspect.is_callable_type(val):
         return TypedValue(Callable)
     elif isinstance(val, type):
-        return _maybe_typed_value(val)
+        return _maybe_typed_value(val, ctx)
     elif val is None:
         return KnownValue(None)
     elif is_typing_name(val, "NoReturn"):
@@ -224,7 +224,11 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     elif typing_inspect.is_typevar(val):
         return TypeVarValue(cast(TypeVar, val))
     elif typing_inspect.is_classvar(val):
-        return UNRESOLVED_VALUE
+        if hasattr(val, "__type__"):
+            typ = val.__type__
+        else:
+            typ = val.__args__[0]
+        return _type_from_runtime(typ, ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
         val, "ForwardRef"
     ):
@@ -248,7 +252,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
-            return _maybe_typed_value(origin)
+            return _maybe_typed_value(origin, ctx)
         ctx.show_error(f"Invalid type annotation {val}")
         return UNRESOLVED_VALUE
 
@@ -268,6 +272,8 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         return _type_from_runtime(value.val, ctx)
     elif isinstance(value, (TypeVarValue, TypedValue)):
         return value
+    elif isinstance(value, MultiValuedValue):
+        return unite_values(*[_type_from_value(val, ctx) for val in value.vals])
     elif isinstance(value, _SubscriptedValue):
         if isinstance(value.root, GenericValue):
             if len(value.root.args) == len(value.members):
@@ -337,7 +343,10 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 )
             ctx.show_error(f"Unrecognized subscripted annotation: {root}")
             return UNRESOLVED_VALUE
+    elif value is UNRESOLVED_VALUE:
+        return UNRESOLVED_VALUE
     else:
+        ctx.show_error(f"Unrecognized annotation {value}")
         return UNRESOLVED_VALUE
 
 
@@ -371,10 +380,12 @@ class _DefaultContext(Context):
                 return KnownValue(self.globals[node.id])
             elif hasattr(builtins, node.id):
                 return KnownValue(getattr(builtins, node.id))
-            else:
-                return UNRESOLVED_VALUE
-        else:
+        if self.should_suppress_undefined_names:
             return UNRESOLVED_VALUE
+        self.show_error(
+            f"Undefined name {node.id!r} used in annotation", ErrorCode.undefined_name
+        )
+        return UNRESOLVED_VALUE
 
 
 @dataclass
@@ -408,8 +419,13 @@ class _Visitor(ast.NodeVisitor):
             try:
                 return KnownValue(getattr(root_value.val, node.attr))
             except AttributeError:
-                return None
-        return None
+                self.ctx.show_error(
+                    f"{root_value.val!r} has no attribute {node.attr!r}"
+                )
+                return UNRESOLVED_VALUE
+        elif root_value is not UNRESOLVED_VALUE:
+            self.ctx.show_error(f"Cannot resolve annotation {root_value}")
+        return UNRESOLVED_VALUE
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
         elts = [self.visit(elt) for elt in node.elts]
@@ -536,18 +552,21 @@ def _value_of_origin_args(
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(val is UNRESOLVED_VALUE for val in args_vals):
-                return _maybe_typed_value(origin)
+                return _maybe_typed_value(origin, ctx)
             return GenericValue(origin, args_vals)
         else:
-            return _maybe_typed_value(origin)
+            return _maybe_typed_value(origin, ctx)
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
-        return _maybe_typed_value(val)
+        return _maybe_typed_value(val, ctx)
     else:
+        ctx.show_error(
+            f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]"
+        )
         return UNRESOLVED_VALUE
 
 
-def _maybe_typed_value(val: type) -> Value:
+def _maybe_typed_value(val: type, ctx: Context) -> Value:
     if val is type(None):
         return KnownValue(None)
     try:
@@ -562,14 +581,9 @@ def _maybe_typed_value(val: type) -> Value:
         return TypedValue(val)
 
 
-def _make_annotated(
-    origin: Value, metadata: Sequence[Value], ctx: Context
-) -> AnnotatedValue:
+def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:
     metadata = [_value_from_metadata(entry, ctx) for entry in metadata]
-    if isinstance(origin, AnnotatedValue):
-        # Flatten it
-        return AnnotatedValue(origin.value, [*origin.metadata, *metadata])
-    return AnnotatedValue(origin, metadata)
+    return annotate_value(origin, metadata)
 
 
 def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
@@ -577,5 +591,11 @@ def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
         if isinstance(entry.val, ParameterTypeGuard):
             return ParameterTypeGuardExtension(
                 entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
+            )
+        elif isinstance(entry.val, HasAttrGuard):
+            return HasAttrGuardExtension(
+                entry.val.varname,
+                _type_from_runtime(entry.val.attribute_name, ctx),
+                _type_from_runtime(entry.val.attribute_type, ctx),
             )
     return entry
