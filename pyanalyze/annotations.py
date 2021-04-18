@@ -179,12 +179,12 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
     elif is_instance_of_typing_name(val, "AnnotatedMeta"):
         # Annotated in 3.6's typing_extensions
         origin, metadata = val.__args__
-        return AnnotatedValue(
+        return _make_annotated(
             _type_from_runtime(origin, ctx), [KnownValue(v) for v in metadata]
         )
     elif is_instance_of_typing_name(val, "_AnnotatedAlias"):
         # Annotated in typing and newer typing_extensions
-        return AnnotatedValue(
+        return _make_annotated(
             _type_from_runtime(val.__origin__, ctx),
             [KnownValue(v) for v in val.__metadata__],
         )
@@ -306,13 +306,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             return TypedValue(type)
         elif is_typing_name(root, "Annotated"):
             origin, *metadata = value.members
-            origin_value = _type_from_value(origin, ctx)
-            if isinstance(origin_value, AnnotatedValue):
-                # Flatten it
-                return AnnotatedValue(
-                    origin_value.value, [*origin_value.metadata, *metadata]
-                )
-            return AnnotatedValue(origin_value, metadata)
+            return _make_annotated(_type_from_value(origin, ctx), metadata)
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
             if origin is None:
@@ -565,3 +559,10 @@ def _maybe_typed_value(val: type) -> Value:
         return UNRESOLVED_VALUE
     else:
         return TypedValue(val)
+
+
+def _make_annotated(origin: Value, metadata: Sequence[Value]) -> AnnotatedValue:
+    if isinstance(origin, AnnotatedValue):
+        # Flatten it
+        return AnnotatedValue(origin.value, [*origin.metadata, *metadata])
+    return AnnotatedValue(origin, metadata)
