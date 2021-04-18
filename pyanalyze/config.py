@@ -111,7 +111,12 @@ class Config(object):
     # test_scope will instantiate instances of these classes if it can infer the value of all of
     # their arguments. This is useful mostly for classes that are commonly instantiated with static
     # arguments.
-    CLASSES_SAFE_TO_INSTANTIATE = (value.Value, asynq.ConstFuture, range)
+    CLASSES_SAFE_TO_INSTANTIATE = (
+        value.Value,
+        value.Extension,
+        asynq.ConstFuture,
+        range,
+    )
 
     # Similarly, these functions will be called
     FUNCTIONS_SAFE_TO_CALL = (

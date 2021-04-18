@@ -787,11 +787,75 @@ class TypeVarValue(Value):
 class Extension:
     __slots__ = ()
 
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Extension":
+        return self
+
+    def walk_values(self) -> Iterable[Value]:
+        return []
+
 
 @dataclass
 class ParameterTypeGuardExtension(Extension):
     varname: str
     guarded_type: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
+        guarded_type = self.guarded_type.substitute_typevars(typevars)
+        return ParameterTypeGuardExtension(self.varname, guarded_type)
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.guarded_type.walk_values()
+
+
+@dataclass
+class HasAttrGuardExtension(Extension):
+    """Returned by a function to indicate that varname has the given attribute."""
+
+    varname: str
+    attribute_name: Value
+    attribute_type: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
+        return HasAttrGuardExtension(
+            self.varname,
+            self.attribute_name.substitute_typevars(typevars),
+            self.attribute_type.substitute_typevars(typevars),
+        )
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.attribute_name.walk_values()
+        yield from self.attribute_type.walk_values()
+
+
+@dataclass
+class HasAttrExtension(Extension):
+    """Attached to a function to indicate that it has the given attribute.
+
+    These cannot be created directly from user code, only through the
+    HasAttrGuard mechanism. The main reason is that in code like this:
+
+        def f(x: Annotated[object, HasAttr["y", int]]) -> None:
+            return x.y
+
+    We would correctly type check the function body, but we currently
+    have no way to enforce that it is only called with arguments that
+    obey the constraint. If we fix that, we might as well fully implement
+    Protocols.
+
+    """
+
+    attribute_name: Value
+    attribute_type: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
+        return HasAttrExtension(
+            self.attribute_name.substitute_typevars(typevars),
+            self.attribute_type.substitute_typevars(typevars),
+        )
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.attribute_name.walk_values()
+        yield from self.attribute_type.walk_values()
 
 
 @dataclass(frozen=True)
@@ -807,19 +871,8 @@ class AnnotatedValue(Value):
     def get_type(self) -> Optional[type]:
         return self.value.get_type()
 
-    def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
-        metadata = []
-        for val in self.metadata:
-            if isinstance(val, Extension):
-                if isinstance(val, ParameterTypeGuardExtension):
-                    guarded_type = val.guarded_type.substitute_typevars(typevars)
-                    metadata.append(
-                        ParameterTypeGuardExtension(val.varname, guarded_type)
-                    )
-                else:
-                    metadata.append(val)
-            else:
-                metadata.append(val.substitute_typevars(typevars))
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        metadata = [val.substitute_typevars(typevars) for val in self.metadata]
         return AnnotatedValue(self.value.substitute_typevars(typevars), metadata)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
@@ -829,11 +882,7 @@ class AnnotatedValue(Value):
         yield self
         yield from self.value.walk_values()
         for val in self.metadata:
-            if isinstance(val, Extension):
-                if isinstance(val, ParameterTypeGuardExtension):
-                    yield from val.guarded_type.walk_values()
-            else:
-                yield from val.walk_values()
+            yield from val.walk_values()
 
     def get_metadata_of_type(self, typ: Type[T]) -> Iterable[T]:
         for data in self.metadata:
@@ -915,6 +964,15 @@ def unify_typevar_maps(tv_maps: Sequence[Optional[TypeVarMap]]) -> Optional[Type
         for tv, value in tv_map.items():
             raw_map[tv].append(value)
     return {tv: unite_values(*values) for tv, values in raw_map.items()}
+
+
+def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:
+    if not metadata:
+        return origin
+    if isinstance(origin, AnnotatedValue):
+        # Flatten it
+        return AnnotatedValue(origin.value, [*origin.metadata, *metadata])
+    return AnnotatedValue(origin, metadata)
 
 
 def unite_values(*values: Value) -> Value:

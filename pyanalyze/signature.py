@@ -16,6 +16,8 @@ from .stacked_scopes import (
 )
 from .value import (
     AnnotatedValue,
+    HasAttrExtension,
+    HasAttrGuardExtension,
     KnownValue,
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
@@ -217,9 +219,15 @@ class Signature:
             raise TypeError(repr(argument))
 
     def _apply_annotated_constraints(
-        self, return_value: Value, bound_args: inspect.BoundArguments
+        self,
+        return_value: Value,
+        bound_args: inspect.BoundArguments,
+        constraint: AbstractConstraint = NULL_CONSTRAINT,
+        no_return_unless: AbstractConstraint = NULL_CONSTRAINT,
     ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
         constraints = []
+        if constraint is not NULL_CONSTRAINT:
+            constraints.append(constraint)
         if isinstance(return_value, AnnotatedValue):
             for guard in return_value.get_metadata_of_type(ParameterTypeGuardExtension):
                 if guard.varname in bound_args.arguments:
@@ -235,11 +243,27 @@ class Signature:
                             guard.guarded_type,
                         )
                         constraints.append(constraint)
+            for guard in return_value.get_metadata_of_type(HasAttrGuardExtension):
+                if guard.varname in bound_args.arguments:
+                    composite = bound_args.arguments[guard.varname]
+                    if (
+                        isinstance(composite, Composite)
+                        and composite.varname is not None
+                    ):
+                        constraint = Constraint(
+                            composite.varname,
+                            ConstraintType.add_annotation,
+                            True,
+                            HasAttrExtension(
+                                guard.attribute_name, guard.attribute_type
+                            ),
+                        )
+                        constraints.append(constraint)
         if constraints:
             constraint = reduce(AndConstraint, constraints)
         else:
             constraint = NULL_CONSTRAINT
-        return return_value, constraint, NULL_CONSTRAINT
+        return return_value, constraint, no_return_unless
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
@@ -313,7 +337,10 @@ class Signature:
         # type checking
         if not had_error and self.implementation is not None:
             return_value = self.implementation(variables, visitor, node)
-            return clean_up_implementation_fn_return(return_value)
+            rv, cons, nru = clean_up_implementation_fn_return(return_value)
+            return self._apply_annotated_constraints(
+                rv, bound_args, constraint=cons, no_return_unless=nru
+            )
         elif return_value is EMPTY:
             return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         else:
