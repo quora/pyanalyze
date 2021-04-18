@@ -3573,7 +3573,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 # if all arguments are KnownValues and the class is whitelisted, instantiate it
                 if issubclass(
                     callee_val, self.config.CLASSES_SAFE_TO_INSTANTIATE
-                ) and self._can_perform_call( arg_values, kw_values):
+                ) and self._can_perform_call(arg_values, kw_values):
                     return_value = self._try_perform_call(
                         # TODO make these unnecessary
                         callee_val,
@@ -3587,7 +3587,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_value = TypedValue(callee_val)
             elif safe_in(
                 callee_val, self.config.FUNCTIONS_SAFE_TO_CALL
-            ) and self._can_perform_call( arg_values, kw_values):
+            ) and self._can_perform_call(arg_values, kw_values):
                 return_value = self._try_perform_call(
                     callee_val,
                     node,
@@ -3696,10 +3696,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             return_value = self._argspec_to_retval[id(extended_argspec)]
 
-        if (
-            allow_call
-            and isinstance(callee_wrapped, KnownValue)
-        ):
+        if allow_call and isinstance(callee_wrapped, KnownValue):
             arg_values = [arg.value for arg in args]
             kw_values = [(kw, composite.value) for kw, composite in keywords]
             if self._can_perform_call(arg_values, kw_values):
