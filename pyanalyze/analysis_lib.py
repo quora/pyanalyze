@@ -5,12 +5,7 @@ Commonly useful components for static analysis tools.
 """
 import ast
 import os
-from typing import List, Callable, Optional, Set, TypeVar, Container, Type, Iterable
-from typing_extensions import Annotated
-
-from .extensions import ParameterTypeGuard
-
-T = TypeVar("T")
+from typing import List, Callable, Optional, Set
 
 
 def _all_files(
@@ -84,28 +79,3 @@ def get_line_range_for_node(node: ast.AST, lines: List[str]) -> List[int]:
     ):
         last_lineno += 1
     return list(range(first_lineno, last_lineno))
-
-
-def is_iterable(obj: object) -> bool:
-    """Returns whether a Python object is iterable."""
-    typ = type(obj)
-    if hasattr(typ, "__iter__"):
-        return True
-    return hasattr(typ, "__getitem__") and hasattr(typ, "__len__")
-
-
-def safe_in(item: T, collection: Container[T]) -> bool:
-    """Safely checks whethe item is in collection. Defaults to returning false."""
-    # Workaround against mock objects sometimes throwing ValueError if you compare them,
-    # and against objects throwing other kinds of errors if you use in.
-    try:
-        return item in collection
-    except Exception:
-        return False
-
-
-def all_of_type(
-    elts: Iterable[object], typ: Type[T]
-) -> Annotated[bool, ParameterTypeGuard["elts", Iterable[T]]]:
-    """Returns whether all elements of elts are instances of typ."""
-    return all(isinstance(elt, typ) for elt in elts)

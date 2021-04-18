@@ -52,7 +52,6 @@ import asynq
 import qcore
 from qcore.helpers import safe_str
 
-from .analysis_lib import all_of_type, safe_in, is_iterable
 from . import attributes, format_strings, node_visitor, importer, method_return_type
 from .annotations import type_from_value, is_typing_name
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
@@ -60,7 +59,7 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard
 from .find_unused import UnusedObjectFinder, used
-from .safe import safe_getattr, is_hashable
+from .safe import safe_getattr, is_hashable, safe_in, is_iterable, all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
     CompositeVariable,

@@ -12,7 +12,7 @@ import qcore
 from types import ModuleType, TracebackType
 import __future__
 
-from .analysis_lib import safe_in
+from .safe import safe_in
 from .config import Config
 from . import extensions
 
