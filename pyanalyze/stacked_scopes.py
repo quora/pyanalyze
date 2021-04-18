@@ -29,9 +29,12 @@ from types import ModuleType
 from typing import (
     Any,
     Callable,
+    ContextManager,
     Dict,
     Iterable,
+    Iterator,
     List,
+    NamedTuple,
     Sequence,
     Optional,
     Set,
@@ -82,19 +85,28 @@ class CompositeVariable:
     CompositeVariable('self', ('x',)). If a function contains a check for
     isinstance(self.x, int), we would put a Constraint on this CompositeVariable.
 
+    Also used for subscripts. Access to "a[1]" uses
+    CompositeVariable('a', (KnownValue(1),)). These can be mixed: "a[1].b"
+    corresponds to CompositeVariable('a', (KnownValue(1), 'b')).
+
     """
 
     varname: str
-    attributes: Sequence[str]
+    attributes: Sequence[Union[str, KnownValue]]
 
 
 Varname = Union[str, CompositeVariable]
 # Nodes as used in scopes can be any object, as long as they are hashable.
 Node = object
-NCDN = Dict[Varname, List[Node]]
+SubScope = Dict[Varname, List[Node]]
 
 # Type for Constraint.value if constraint type is predicate
 # PredicateFunc = Callable[[Value, bool], Optional[Value]]
+
+
+class Composite(NamedTuple):
+    value: Value
+    varname: Optional[Varname]
 
 
 @dataclass(frozen=True)
@@ -238,11 +250,13 @@ class Constraint(AbstractConstraint):
                     if not safe_issubclass(value.typ, self.value):
                         yield value
             elif isinstance(value, SubclassValue):
-                if self.positive:
-                    if isinstance(value.typ, self.value):
+                if not isinstance(value.typ, TypedValue):
+                    yield value
+                elif self.positive:
+                    if isinstance(value.typ.typ, self.value):
                         yield value
                 else:
-                    if not isinstance(value.typ, self.value):
+                    if not isinstance(value.typ.typ, self.value):
                         yield value
 
         elif self.constraint_type == ConstraintType.is_value:
@@ -257,8 +271,10 @@ class Constraint(AbstractConstraint):
                     if isinstance(self.value, value.typ):
                         yield known_val
                 elif isinstance(value, SubclassValue):
-                    if isinstance(self.value, type) and safe_issubclass(
-                        self.value, value.typ
+                    if (
+                        isinstance(value.typ, TypedValue)
+                        and isinstance(self.value, type)
+                        and safe_issubclass(self.value, value.typ.typ)
                     ):
                         yield known_val
             else:
@@ -298,7 +314,7 @@ class Constraint(AbstractConstraint):
                 yield applied
 
         else:
-            assert False, "unknown constraint type %s" % (self.constraint_type,)
+            assert False, f"unknown constraint type {self.constraint_type}"
 
 
 TRUTHY_CONSTRAINT = Constraint("%unused", ConstraintType.is_truthy, True, None)
@@ -376,7 +392,7 @@ class OrConstraint(AbstractConstraint):
 
     def _constraint_from_list(
         self, varname: Varname, constraints: Sequence[Constraint]
-    ):
+    ) -> Constraint:
         if len(constraints) == 1:
             return constraints[0]
         else:
@@ -398,7 +414,9 @@ class OrConstraint(AbstractConstraint):
 class _ConstrainedValue(Value):
     """Helper class, only used within a FunctionScope."""
 
-    def __init__(self, definition_nodes, constraints):
+    def __init__(
+        self, definition_nodes: Set[Node], constraints: Sequence[Constraint]
+    ) -> None:
         self.definition_nodes = definition_nodes
         self.constraints = constraints
         self.resolution_cache = {}
@@ -416,7 +434,7 @@ class Scope:
     """
 
     scope_type: ScopeType
-    variables: Dict[str, Value] = field(default_factory=dict)
+    variables: Dict[Varname, Value] = field(default_factory=dict)
     parent_scope: Optional["Scope"] = None
     scope_node: Optional[Node] = None
     scope_object: Optional[object] = None
@@ -431,7 +449,13 @@ class Scope:
         """Constraints are ignored outside of function scopes."""
         pass
 
-    def get(self, varname, node, state, from_parent_scope=False):
+    def get(
+        self,
+        varname: Varname,
+        node: object,
+        state: VisitorState,
+        from_parent_scope: bool = False,
+    ) -> Tuple[Value, Optional["Scope"]]:
         local_value = self.get_local(
             varname, node, state, from_parent_scope=from_parent_scope
         )
@@ -450,7 +474,7 @@ class Scope:
 
     def get_local(
         self,
-        varname: str,
+        varname: Varname,
         node: Node,
         state: VisitorState,
         from_parent_scope: bool = False,
@@ -461,7 +485,9 @@ class Scope:
         else:
             return UNINITIALIZED_VALUE
 
-    def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
+    def set(
+        self, varname: Varname, value: Value, node: Node, state: VisitorState
+    ) -> None:
         if varname not in self:
             self.variables[varname] = value
         elif value is UNRESOLVED_VALUE or not safe_equals(
@@ -480,23 +506,25 @@ class Scope:
             else:
                 self.variables[varname] = unite_values(existing, value)
 
-    def items(self) -> Iterable[Tuple[str, Value]]:
+    def items(self) -> Iterable[Tuple[Varname, Value]]:
         return self.variables.items()
 
-    def __contains__(self, varname: str) -> bool:
+    def __contains__(self, varname: Varname) -> bool:
         return varname in self.variables
 
     # no real subscopes in non-function scopes, just dummy implementations
     @contextlib.contextmanager
-    def subscope(self):
+    def subscope(self) -> Iterator[None]:
         yield
 
     @contextlib.contextmanager
-    def loop_scope(self):
+    def loop_scope(self) -> Iterator[None]:
         """Context manager for the subscope associated with a loop."""
         yield
 
-    def combine_subscopes(self, scopes: Iterable[Dict[str, Any]]) -> None:
+    def combine_subscopes(
+        self, scopes: Iterable[SubScope], *, ignore_leaves_scope: bool = False
+    ) -> None:
         pass
 
     def resolve_reference(self, value: Value, state: VisitorState) -> Value:
@@ -662,14 +690,14 @@ class FunctionScope(Scope):
 
     """
 
-    name_to_current_definition_nodes: NCDN
+    name_to_current_definition_nodes: SubScope
     usage_to_definition_nodes: Dict[Node, List[Node]]
     definition_node_to_value: Dict[Node, Value]
     name_to_all_definition_nodes: Dict[str, Set[Node]]
     name_to_composites: Dict[str, Set[CompositeVariable]]
-    referencing_value_vars: Dict[str, Value]
-    accessed_from_special_nodes: Set[str]
-    current_loop_scopes: List[NCDN]
+    referencing_value_vars: Dict[Varname, Value]
+    accessed_from_special_nodes: Set[Varname]
+    current_loop_scopes: List[SubScope]
 
     def __init__(self, parent_scope: Scope, scope_node: Optional[Node] = None) -> None:
         super().__init__(ScopeType.function_scope, {}, parent_scope, scope_node)
@@ -714,7 +742,9 @@ class FunctionScope(Scope):
             self.name_to_current_definition_nodes[constraint.varname] = [node]
             self._add_composite(constraint.varname)
 
-    def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
+    def set(
+        self, varname: Varname, value: Value, node: Node, state: VisitorState
+    ) -> None:
         if isinstance(value, ReferencingValue):
             self.referencing_value_vars[varname] = value
             return
@@ -771,7 +801,7 @@ class FunctionScope(Scope):
         return self._get_value_from_nodes(definers, ctx)
 
     @contextlib.contextmanager
-    def subscope(self) -> Iterable[NCDN]:
+    def subscope(self) -> Iterable[SubScope]:
         """Create a new subscope, to be used for conditional branches."""
         # Ignore LEAVES_SCOPE if it's already there, so that we type check code after the
         # assert False correctly. Without this, test_after_assert_false fails.
@@ -802,12 +832,14 @@ class FunctionScope(Scope):
             ]
         )
 
-    def get_combined_scope(self, scopes: Iterable[NCDN]) -> NCDN:
+    def get_combined_scope(
+        self, scopes: Iterable[SubScope], *, ignore_leaves_scope: bool = False
+    ) -> SubScope:
         new_scopes = []
         for scope in scopes:
             if LEAVES_LOOP in scope:
                 self.current_loop_scopes.append(scope)
-            elif LEAVES_SCOPE not in scope:
+            elif LEAVES_SCOPE not in scope or ignore_leaves_scope:
                 new_scopes.append(scope)
         if not new_scopes:
             return {LEAVES_SCOPE: [UNRESOLVED_VALUE]}
@@ -819,8 +851,12 @@ class FunctionScope(Scope):
             for varname in all_variables
         }
 
-    def combine_subscopes(self, scopes: Iterable[NCDN]) -> None:
-        self.name_to_current_definition_nodes.update(self.get_combined_scope(scopes))
+    def combine_subscopes(
+        self, scopes: Iterable[SubScope], *, ignore_leaves_scope: bool = False
+    ) -> None:
+        self.name_to_current_definition_nodes.update(
+            self.get_combined_scope(scopes, ignore_leaves_scope=ignore_leaves_scope)
+        )
 
     def _resolve_value(self, val: Value, ctx: _LookupContext) -> Value:
         if isinstance(val, _ConstrainedValue):
@@ -874,10 +910,10 @@ class FunctionScope(Scope):
                     )
                     self.name_to_composites[composite].add(varname)
 
-    def items(self):
+    def items(self) -> Iterable[Tuple[Varname, Value]]:
         raise NotImplementedError
 
-    def __contains__(self, varname: str) -> bool:
+    def __contains__(self, varname: Varname) -> bool:
         return varname in self.name_to_all_definition_nodes
 
 
@@ -890,7 +926,7 @@ class StackedScopes:
         None,
     )
 
-    def __init__(self, module: ModuleType) -> None:
+    def __init__(self, module: Optional[ModuleType]) -> None:
         if module is None:
             module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
         else:
@@ -936,7 +972,7 @@ class StackedScopes:
         finally:
             self.scopes.append(scope)
 
-    def get(self, varname: str, node: Node, state: VisitorState) -> Value:
+    def get(self, varname: Varname, node: Node, state: VisitorState) -> Value:
         """Gets a variable of the given name from the current scope stack.
 
         Arguments:
@@ -958,7 +994,7 @@ class StackedScopes:
         return value
 
     def get_with_scope(
-        self, varname: str, node: Node, state: VisitorState
+        self, varname: Varname, node: Node, state: VisitorState
     ) -> Tuple[Value, Optional[Scope]]:
         """Like get(), but also returns the scope object the name was found in.
 
@@ -967,7 +1003,9 @@ class StackedScopes:
         """
         return self.scopes[-1].get(varname, node, state)
 
-    def get_nonlocal_scope(self, varname: str, using_scope: Scope) -> Optional[Scope]:
+    def get_nonlocal_scope(
+        self, varname: Varname, using_scope: Scope
+    ) -> Optional[Scope]:
         """Gets the defining scope of a non-local variable."""
         for scope in reversed(self.scopes):
             if scope.scope_type is not ScopeType.function_scope:
@@ -979,7 +1017,9 @@ class StackedScopes:
         else:
             return None
 
-    def set(self, varname: str, value: Value, node: Node, state: VisitorState) -> None:
+    def set(
+        self, varname: Varname, value: Value, node: Node, state: VisitorState
+    ) -> None:
         """Records an assignment to this variable.
 
         value is the value that is being assigned to varname. It should be an instance of
@@ -988,17 +1028,21 @@ class StackedScopes:
         """
         self.scopes[-1].set(varname, value, node, state)
 
-    def subscope(self):
+    def subscope(self) -> ContextManager[SubScope]:
         """Creates a new subscope (see the FunctionScope docstring)."""
         return self.scopes[-1].subscope()
 
-    def loop_scope(self):
+    def loop_scope(self) -> ContextManager[None]:
         """Creates a new loop scope (see the FunctionScope docstring)."""
         return self.scopes[-1].loop_scope()
 
-    def combine_subscopes(self, scopes):
+    def combine_subscopes(
+        self, scopes: Iterable[SubScope], *, ignore_leaves_scope: bool = False
+    ) -> None:
         """Merges a number of subscopes back into their parent scope."""
-        self.scopes[-1].combine_subscopes(scopes)
+        self.scopes[-1].combine_subscopes(
+            scopes, ignore_leaves_scope=ignore_leaves_scope
+        )
 
     def scope_type(self) -> ScopeType:
         """Returns the type of the current scope."""

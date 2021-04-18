@@ -4,21 +4,25 @@ Implementation of unused object detection.
 
 """
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import enum
 import inspect
+from typing import Set, List, Dict, Type, Iterable, Optional, TypeVar
 import qcore
-from types import ModuleType
+from types import ModuleType, TracebackType
 import __future__
 
-from .analysis_lib import safe_in
+from .safe import safe_in
+from .config import Config
+from . import extensions
 
+T = TypeVar("T")
 
 _used_objects = set()
 _test_helper_objects = set()
 
 
-def used(obj):
+def used(obj: T) -> T:
     """Decorator indicating that an object is being used.
 
     This stops the UnusedObjectFinder from marking it as unused.
@@ -28,7 +32,7 @@ def used(obj):
     return obj
 
 
-def test_helper(obj):
+def test_helper(obj: T) -> T:
     """Decorator indicating that an object is intended as a helper for tests.
 
     If the object is used only in tests, this stops the UnusedObjectFinder from
@@ -42,6 +46,7 @@ def test_helper(obj):
 # so it doesn't itself get marked as unused
 used(used)
 used(test_helper)
+used(extensions)
 
 
 class _UsageKind(enum.IntEnum):
@@ -50,7 +55,7 @@ class _UsageKind(enum.IntEnum):
     used = 3
 
     @classmethod
-    def classify(cls, module_name):
+    def classify(cls, module_name: str) -> "_UsageKind":
         if "." not in module_name:
             return cls.used
         own_name = module_name.rsplit(".", maxsplit=1)[1]
@@ -60,26 +65,27 @@ class _UsageKind(enum.IntEnum):
             return cls.used
 
     @classmethod
-    def aggregate(cls, usages):
+    def aggregate(cls, usages: Iterable["_UsageKind"]) -> "_UsageKind":
         return max(usages, default=cls.unused)
 
     @classmethod
-    def aggregate_modules(cls, module_names):
+    def aggregate_modules(cls, module_names: Iterable[str]) -> "_UsageKind":
         return cls.aggregate(cls.classify(module_name) for module_name in module_names)
 
 
 @dataclass
-class UnusedObject(object):
+class UnusedObject:
     module: ModuleType
     attribute: str
     value: object
     message: str
 
-    def __str__(self):
-        return "%s.%s: %s" % (self.module.__name__, self.attribute, self.message)
+    def __str__(self) -> str:
+        return f"{self.module.__name__}.{self.attribute}: {self.message}"
 
 
-class UnusedObjectFinder(object):
+@dataclass
+class UnusedObjectFinder:
     """Context to find unused objects.
 
     This records all accesses for Python functions and classes and prints out all existing
@@ -87,31 +93,41 @@ class UnusedObjectFinder(object):
 
     """
 
-    def __init__(self, config, enabled=False, print_output=True, print_all=False):
-        self.config = config
-        self.enabled = enabled
-        self.print_output = print_output
-        self.print_all = print_all
-        self.usages = defaultdict(lambda: defaultdict(set))
-        self.import_stars = defaultdict(set)
-        self.module_to_import_stars = defaultdict(set)
-        self.visited_modules = []
-        self._recursive_stack = set()
+    config: Config
+    enabled: bool = False
+    print_output: bool = True
+    print_all: bool = False
+    usages: Dict[ModuleType, Dict[str, Set[str]]] = field(
+        default_factory=lambda: defaultdict(lambda: defaultdict(set)), init=False
+    )
+    import_stars: Dict[ModuleType, Set[ModuleType]] = field(
+        default_factory=lambda: defaultdict(set), init=False
+    )
+    module_to_import_stars: Dict[ModuleType, Set[ModuleType]] = field(
+        default_factory=lambda: defaultdict(set), init=False
+    )
+    visited_modules: List[ModuleType] = field(default_factory=list)
+    recursive_stack: Set[ModuleType] = field(default_factory=set)
 
-    def __enter__(self):
+    def __enter__(self) -> Optional["UnusedObjectFinder"]:
         if self.enabled:
             return self
         else:
             return None
 
-    def __exit__(self, exc_typ, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_typ: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         if not self.enabled or not self.print_output:
             return
 
         for unused_object in self.get_unused_objects():
             print(unused_object)
 
-    def record(self, owner, attr, using_module):
+    def record(self, owner: ModuleType, attr: str, using_module: str) -> None:
         if not self.enabled:
             return
         try:
@@ -119,19 +135,21 @@ class UnusedObjectFinder(object):
         except Exception:
             pass
 
-    def record_import_star(self, imported_module, importing_module):
+    def record_import_star(
+        self, imported_module: ModuleType, importing_module: ModuleType
+    ) -> None:
         self.import_stars[imported_module].add(importing_module)
         self.module_to_import_stars[importing_module].add(imported_module)
 
-    def record_module_visited(self, module):
+    def record_module_visited(self, module: ModuleType) -> None:
         self.visited_modules.append(module)
 
-    def get_unused_objects(self):
+    def get_unused_objects(self) -> Iterable[UnusedObject]:
         for module in sorted(self.visited_modules, key=lambda mod: mod.__name__):
             for obj in self._get_unused_from_module(module):
                 yield obj
 
-    def _get_unused_from_module(self, module):
+    def _get_unused_from_module(self, module: ModuleType) -> Iterable[UnusedObject]:
         is_test_module = any(
             part.startswith("test") for part in module.__name__.split(".")
         )
@@ -165,14 +183,14 @@ class UnusedObjectFinder(object):
             else:
                 yield UnusedObject(module, attr, value, "unused")
 
-    def _has_import_star_usage(self, module, attr):
-        with qcore.override(self, "_recursive_stack", set()):
+    def _has_import_star_usage(self, module: ModuleType, attr: str) -> _UsageKind:
+        with qcore.override(self, "recursive_stack", set()):
             return self._has_import_star_usage_inner(module, attr)
 
-    def _has_import_star_usage_inner(self, module, attr):
-        if module in self._recursive_stack:
+    def _has_import_star_usage_inner(self, module: ModuleType, attr: str) -> _UsageKind:
+        if module in self.recursive_stack:
             return _UsageKind.unused
-        self._recursive_stack.add(module)
+        self.recursive_stack.add(module)
         usage = _UsageKind.aggregate_modules(self.usages[module][attr])
         if usage is _UsageKind.used:
             return _UsageKind.used
@@ -183,7 +201,9 @@ class UnusedObjectFinder(object):
         )
         return _UsageKind.aggregate([usage, recursive_usage])
 
-    def _should_record_as_unused(self, module, attr, value):
+    def _should_record_as_unused(
+        self, module: ModuleType, attr: str, value: object
+    ) -> bool:
         if self.config.should_ignore_unused(module, attr, value):
             return False
         if inspect.ismodule(value):

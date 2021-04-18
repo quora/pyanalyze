@@ -10,6 +10,7 @@ from .stacked_scopes import (
     ConstraintType,
     PredicateProvider,
     OrConstraint,
+    Varname,
 )
 from .signature import (
     SigParameter,
@@ -45,7 +46,7 @@ from itertools import product
 import qcore
 import inspect
 import warnings
-from typing import cast, NewType, TYPE_CHECKING, Callable, TypeVar
+from typing import cast, Dict, NewType, TYPE_CHECKING, Callable, TypeVar, Optional
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -108,21 +109,25 @@ def flatten_unions(
 # Implementations of some important functions for use in their ExtendedArgSpecs (see above). These
 # are called when the test_scope checker encounters call to these functions.
 def _isinstance_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     class_or_tuple = variables["class_or_tuple"]
-    if not isinstance(class_or_tuple, KnownValue):
-        return TypedValue(bool), NULL_CONSTRAINT
     if len(node.args) < 1:
         return TypedValue(bool), NULL_CONSTRAINT
-    varname = visitor.varname_for_constraint(node.args[0])
+    _, varname = visitor.composite_from_node(node.args[0])
+    return TypedValue(bool), _constraint_from_isinstance(varname, class_or_tuple)
+
+
+def _constraint_from_isinstance(
+    varname: Optional[Varname], class_or_tuple: Value
+) -> AbstractConstraint:
     if varname is None:
-        return TypedValue(bool), NULL_CONSTRAINT
+        return NULL_CONSTRAINT
+    if not isinstance(class_or_tuple, KnownValue):
+        return NULL_CONSTRAINT
+
     if isinstance(class_or_tuple.val, type):
-        return (
-            TypedValue(bool),
-            Constraint(varname, ConstraintType.is_instance, True, class_or_tuple.val),
-        )
+        return Constraint(varname, ConstraintType.is_instance, True, class_or_tuple.val)
     elif isinstance(class_or_tuple.val, tuple) and all(
         isinstance(elt, type) for elt in class_or_tuple.val
     ):
@@ -130,13 +135,27 @@ def _isinstance_impl(
             Constraint(varname, ConstraintType.is_instance, True, elt)
             for elt in class_or_tuple.val
         ]
-        return TypedValue(bool), reduce(OrConstraint, constraints)
+        return reduce(OrConstraint, constraints)
     else:
-        return TypedValue(bool), NULL_CONSTRAINT
+        return NULL_CONSTRAINT
+
+
+def _assert_is_instance_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
+) -> ImplementationFnReturn:
+    if len(node.args) < 0:
+        return KnownValue(None)
+    class_or_tuple = variables["types"]
+    _, varname = visitor.composite_from_node(node.args[0])
+    return (
+        KnownValue(None),
+        NULL_CONSTRAINT,
+        _constraint_from_isinstance(varname, class_or_tuple),
+    )
 
 
 def _hasattr_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     obj = variables["object"]
     name = variables["name"]
@@ -161,7 +180,7 @@ def _hasattr_impl(
 
 
 def _setattr_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     # if we set an attribute on a value of known type, record it to the attribute checker so we
     # don't say the attribute is undefined
@@ -177,7 +196,7 @@ def _setattr_impl(
 
 
 def _super_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     typ = variables["type"]
     obj = variables["obj"]
@@ -206,8 +225,10 @@ def _super_impl(
                 )
                 return UNRESOLVED_VALUE
             else:
-                if isinstance(first_arg, SubclassValue):
-                    return KnownValue(super(current_class, first_arg.typ))
+                if isinstance(first_arg, SubclassValue) and isinstance(
+                    first_arg.typ, TypedValue
+                ):
+                    return KnownValue(super(current_class, first_arg.typ.typ))
                 elif isinstance(first_arg, KnownValue):
                     return KnownValue(super(current_class, first_arg.val))
                 elif isinstance(first_arg, TypedValue):
@@ -232,8 +253,8 @@ def _super_impl(
     if isinstance(obj, TypedValue) and obj.typ is not type:
         instance_type = obj.typ
         is_value = True
-    elif isinstance(obj, SubclassValue):
-        instance_type = obj.typ
+    elif isinstance(obj, SubclassValue) and isinstance(obj.typ, TypedValue):
+        instance_type = obj.typ.typ
         is_value = False
     else:
         return UNRESOLVED_VALUE
@@ -264,25 +285,25 @@ def _super_impl(
 
 
 def _tuple_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _sequence_impl(tuple, variables, visitor, node)
 
 
 def _list_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _sequence_impl(list, variables, visitor, node)
 
 
 def _set_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _sequence_impl(set, variables, visitor, node)
 
 
 def _sequence_impl(
-    typ: type, variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    typ: type, variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     iterable = variables["iterable"]
     if iterable is _NO_ARG_SENTINEL:
@@ -628,8 +649,7 @@ def _str_format_impl(
             if current_index >= len(args):
                 visitor.show_error(
                     node,
-                    "Too few arguments to format string (expected at least %s)"
-                    % (current_index,),
+                    f"Too few arguments to format string (expected at least {current_index})",
                     error_code=ErrorCode.incompatible_call,
                 )
             used_indices.add(current_index)
@@ -639,7 +659,7 @@ def _str_format_impl(
             if index >= len(args):
                 visitor.show_error(
                     node,
-                    "Numbered argument %s to format string is out of range" % (index,),
+                    f"Numbered argument {index} to format string is out of range",
                     error_code=ErrorCode.incompatible_call,
                 )
             used_indices.add(index)
@@ -647,8 +667,7 @@ def _str_format_impl(
             if field.arg_name not in kwargs:
                 visitor.show_error(
                     node,
-                    "Named argument %s to format string was not given"
-                    % (field.arg_name,),
+                    f"Named argument {field.arg_name} to format string was not given",
                     error_code=ErrorCode.incompatible_call,
                 )
             used_kwargs.add(field.arg_name)
@@ -688,13 +707,13 @@ def _subclasses_impl(
 
 
 def _assert_is_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _qcore_assert_impl(variables, visitor, node, ConstraintType.is_value, True)
 
 
 def _assert_is_not_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _qcore_assert_impl(variables, visitor, node, ConstraintType.is_value, False)
 
@@ -702,7 +721,7 @@ def _assert_is_not_impl(
 def _qcore_assert_impl(
     variables: VarsDict,
     visitor: "NameCheckVisitor",
-    node: ast.AST,
+    node: ast.Call,
     constraint_type: ConstraintType,
     positive: bool,
 ) -> ImplementationFnReturn:
@@ -741,7 +760,7 @@ def len_of_value(val: Value) -> Value:
 def _len_impl(
     variables: VarsDict,
     visitor: "NameCheckVisitor",
-    node: ast.AST,
+    node: ast.Call,
 ) -> ImplementationFnReturn:
     varname = visitor.varname_for_constraint(node.args[0])
     if varname is None:
@@ -757,7 +776,7 @@ _ENCODING_PARAMETER = SigParameter(
 )
 
 
-def get_default_argspecs():
+def get_default_argspecs() -> Dict[object, Signature]:
     signatures = [
         # pyanalyze helpers
         Signature.make(
@@ -960,6 +979,16 @@ def get_default_argspecs():
             ],
             callable=qcore.asserts.assert_is_not,
             implementation=_assert_is_not_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("value"),
+                SigParameter("types"),
+                SigParameter("message", default=KnownValue(None)),
+                SigParameter("extra", default=KnownValue(None)),
+            ],
+            callable=qcore.asserts.assert_is_instance,
+            implementation=_assert_is_instance_impl,
         ),
         # Need to override this because the type for the tp parameter in typeshed is too strict
         Signature.make(

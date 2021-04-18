@@ -5,9 +5,7 @@ Commonly useful components for static analysis tools.
 """
 import ast
 import os
-from typing import List, Callable, Optional, Set, TypeVar, Container
-
-T = TypeVar("T")
+from typing import List, Callable, Optional, Set
 
 
 def _all_files(
@@ -50,8 +48,9 @@ def get_line_range_for_node(node: ast.AST, lines: List[str]) -> List[int]:
     # iterate through all childnodes and find the max lineno
     last_lineno = first_lineno + 1
     for childnode in ast.walk(node):
-        if hasattr(childnode, "end_lineno"):
-            last_lineno = max(last_lineno, childnode.end_lineno)
+        end_lineno = getattr(childnode, "end_lineno", None)
+        if end_lineno is not None:
+            last_lineno = max(last_lineno, end_lineno)
         elif hasattr(childnode, "lineno"):
             last_lineno = max(last_lineno, childnode.lineno)
 
@@ -81,21 +80,3 @@ def get_line_range_for_node(node: ast.AST, lines: List[str]) -> List[int]:
     ):
         last_lineno += 1
     return list(range(first_lineno, last_lineno))
-
-
-def is_iterable(obj: object) -> bool:
-    """Returns whether a Python object is iterable."""
-    typ = type(obj)
-    if hasattr(typ, "__iter__"):
-        return True
-    return hasattr(typ, "__getitem__") and hasattr(typ, "__len__")
-
-
-def safe_in(item: T, collection: Container[T]) -> bool:
-    """Safely checks whethe item is in collection. Defaults to returning false."""
-    # Workaround against mock objects sometimes throwing ValueError if you compare them,
-    # and against objects throwing other kinds of errors if you use in.
-    try:
-        return item in collection
-    except Exception:
-        return False

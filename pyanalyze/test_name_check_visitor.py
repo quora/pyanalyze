@@ -21,9 +21,10 @@ from .name_check_visitor import (
 )
 from .arg_spec import ArgSpecCache
 from .implementation import assert_is_value, dump_value
-from .error_code import ErrorCode
+from .error_code import DISABLED_IN_TESTS, ErrorCode
 from .test_config import TestConfig
 from .value import (
+    AnnotatedValue,
     AsyncTaskIncompleteValue,
     DictIncompleteValue,
     KnownValue,
@@ -73,12 +74,12 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         check_attributes=True,
         apply_changes=False,
         settings=None,
-        **kwargs
+        **kwargs,
     ):
         # This can happen in Python 2.
         if isinstance(code_str, bytes):
             code_str = code_str.decode("utf-8")
-        default_settings = {code: True for code in ErrorCode}
+        default_settings = {code: code not in DISABLED_IN_TESTS for code in ErrorCode}
         if settings is not None:
             default_settings.update(settings)
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
@@ -95,7 +96,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 settings=default_settings,
                 verbosity=verbosity,
                 arg_spec_cache=ArgSpecCache(self.visitor_cls.config),
-                **kwargs
+                **kwargs,
             ).check_for_test(apply_changes=apply_changes)
 
 
@@ -123,6 +124,7 @@ def _make_module(code_str):
         GenericValue=GenericValue,
         KnownValue=KnownValue,
         MultiValuedValue=MultiValuedValue,
+        AnnotatedValue=AnnotatedValue,
         SequenceIncompleteValue=SequenceIncompleteValue,
         TypedValue=TypedValue,
         UnboundMethodValue=UnboundMethodValue,
@@ -137,7 +139,7 @@ def _make_module(code_str):
         NO_RETURN_VALUE=NO_RETURN_VALUE,
         __name__=module_name,
     )
-    exec (code_str, scope)
+    exec(code_str, scope)
     sys.modules[module_name] = mod
     return mod
 
@@ -153,7 +155,7 @@ def test_annotation():
         args = args + (None, None)
     tree = ast.Call(*args)
     ConfiguredNameCheckVisitor(
-        "<test input>", u"int()", tree, module=ast, annotate=True
+        "<test input>", "int()", tree, module=ast, annotate=True
     ).check()
     assert_eq(TypedValue(int), tree.inferred_value)
 
@@ -516,10 +518,10 @@ def run():
     def test_cls_type_inference(self):
         class OldStyle:
             def __init_subclass__(cls):
-                assert_is_value(cls, SubclassValue(OldStyle))
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
             def __new__(cls):
-                assert_is_value(cls, SubclassValue(OldStyle))
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
     @assert_passes()
     def test_cls_type_inference(self):
@@ -718,10 +720,9 @@ class TestSubclassValue(TestNameCheckVisitorBase):
         TI = Type[int]
 
         def capybara(x: TI, y: str):
-            assert_is_value(x, SubclassValue(int))
+            assert_is_value(x, SubclassValue(TypedValue(int)))
             assert_is_value(y, TypedValue(str))
 
-    @only_before((3, 7))
     @assert_passes()
     def test_type_any(self):
         from typing import Any, Type
@@ -743,6 +744,36 @@ class TestSubclassValue(TestNameCheckVisitorBase):
             def call_on_instance(cls, instance):
                 assert_is_value(cls.run, KnownValue(A.run))
                 cls.run(instance)
+
+    @assert_passes()
+    def test_metaclass_method(self):
+        from typing import Type
+
+        class EnumMeta(type):
+            def __getitem__(self, x: str) -> float:
+                return 42.0
+
+        class Enum(metaclass=EnumMeta):
+            pass
+
+        def capybara(enum: Type[Enum]) -> None:
+            assert_is_value(enum["x"], TypedValue(float))
+
+    @assert_passes()
+    def test_type_union(self):
+        from typing import Type, Union
+
+        def capybara(x: Type[Union[int, str]]) -> None:
+            assert_is_value(
+                x,
+                MultiValuedValue(
+                    [SubclassValue(TypedValue(int)), SubclassValue(TypedValue(str))]
+                ),
+            )
+
+        def caller() -> None:
+            capybara(int)
+            capybara(str)
 
 
 class TestConditionAlwaysTrue(TestNameCheckVisitorBase):
@@ -1431,7 +1462,8 @@ class TestNestedFunction(TestNameCheckVisitorBase):
                 pass
 
             assert_is_value(nested, KnownValue(nested))
-            assert_is_value(NestedClass, TypedValue(type))
+            # Should ideally be something more specific
+            assert_is_value(NestedClass, UNRESOLVED_VALUE)
 
     @assert_passes()
     def test_usage_in_nested_scope():
@@ -1622,12 +1654,12 @@ class TestPython3Compatibility(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.mixing_bytes_and_text)
     def test_bytes_and_text(self):
         def capybara():
-            return b"foo" + u"bar"
+            return b"foo" + "bar"
 
     @assert_fails(ErrorCode.mixing_bytes_and_text)
     def test_text_and_bytes(self):
         def capybara():
-            return u"foo" + b"bar"
+            return "foo" + b"bar"
 
 
 class TestOperators(TestNameCheckVisitorBase):
@@ -1648,7 +1680,7 @@ class TestOperators(TestNameCheckVisitorBase):
         def capybara(x):
             assert_is_value(1 + int(x), TypedValue(int))
             assert_is_value(3 * int(x), TypedValue(int))
-            assert_is_value(u"foo" + str(x), TypedValue(str))
+            assert_is_value("foo" + str(x), TypedValue(str))
             assert_is_value(1 + float(x), TypedValue(float))
             assert_is_value(1.0 + int(x), TypedValue(float))
             assert_is_value(3 * 3.0 + 1, KnownValue(10.0))
@@ -2185,6 +2217,41 @@ class TestSequenceIndex(TestNameCheckVisitorBase):
             assert_is_value(tpl[0], TypedValue(int))
             assert_is_value(tpl[-2], TypedValue(str))
             assert_is_value(tpl[2], TypedValue(float))
+
+
+_AnnotSettings = {
+    ErrorCode.missing_parameter_annotation: True,
+    ErrorCode.missing_return_annotation: True,
+}
+
+
+class TestRequireAnnotations(TestNameCheckVisitorBase):
+    @assert_fails(ErrorCode.missing_parameter_annotation, settings=_AnnotSettings)
+    def test_missing_parameter_annotation(self):
+        def f(x) -> None:
+            pass
+
+    @assert_fails(ErrorCode.missing_return_annotation, settings=_AnnotSettings)
+    def test_missing_parameter_annotation(self):
+        def f(x: object):
+            pass
+
+    @assert_fails(ErrorCode.missing_parameter_annotation, settings=_AnnotSettings)
+    def test_missing_parameter_annotation_method(self):
+        class Capybara:
+            def f(self, x) -> None:
+                pass
+
+    @assert_passes(settings=_AnnotSettings)
+    def test_dont_annotate_self():
+        def f() -> None:
+            class X:
+                def method(self) -> None:
+                    pass
+
+        class X:
+            def f(self) -> None:
+                pass
 
 
 class HasGetattr(object):

@@ -318,7 +318,7 @@ class TestTry(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(4))
             assert_is_value(x, KnownValue(4))
 
-    @assert_passes(settings={ErrorCode.use_fstrings: False})
+    @assert_passes()
     def test_finally_plus_if(self):
         # here an approach that simply ignores the assignments in the try block while examining the
         # finally block would fail
@@ -329,7 +329,19 @@ class TestTry(TestNameCheckVisitorBase):
                 x = 1
                 assert_is_value(x, KnownValue(1))
             finally:
-                print("%d" % x)  # x is a number
+                assert_is_value(x, MultiValuedValue([KnownValue(0), KnownValue(1)]))
+
+    @assert_passes()
+    def test_finally_plus_return(self):
+        def capybara():
+            x = 0
+            assert_is_value(x, KnownValue(0))
+            try:
+                x = 1
+                assert_is_value(x, KnownValue(1))
+                return
+            finally:
+                assert_is_value(x, MultiValuedValue([KnownValue(0), KnownValue(1)]))
 
     @assert_fails(ErrorCode.bad_except_handler)
     def test_bad_except_handler(self):
@@ -894,7 +906,7 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_qcore_asserts(self):
-        from qcore.asserts import assert_is, assert_is_not
+        from qcore.asserts import assert_is, assert_is_not, assert_is_instance
 
         def capybara(cond):
             if cond:
@@ -925,6 +937,14 @@ class TestConstraints(TestNameCheckVisitorBase):
             assert_is_not(True, y)
             assert_is_value(x, KnownValue(False))
             assert_is_value(y, KnownValue(False))
+
+        def mara(cond, cond2):
+            assert_is_value(cond, UNRESOLVED_VALUE)
+            assert_is_instance(cond, int)
+            assert_is_value(cond, TypedValue(int))
+
+            assert_is_instance(cond2, (int, str))
+            assert_is_value(cond2, MultiValuedValue([TypedValue(int), TypedValue(str)]))
 
     @assert_passes()
     def test_is_or_is_not(self):
@@ -1305,6 +1325,47 @@ class TestConstraints(TestNameCheckVisitorBase):
             assert_is_value(lst2, GenericValue(list, [TypedValue(int)]))
 
     @assert_passes()
+    def test_comprehension_composite(self):
+        from dataclasses import dataclass
+        from typing import Optional, Tuple, List
+
+        @dataclass
+        class Capybara:
+            x: Optional[int]
+
+        def use_attr(c: List[Capybara]) -> None:
+            assert_is_value(
+                [elt.x for elt in c],
+                GenericValue(
+                    list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
+                ),
+            )
+            assert_is_value(
+                [elt.x for elt in c if elt.x is not None],
+                GenericValue(list, [TypedValue(int)]),
+            )
+            assert_is_value(
+                [elt.x for elt in c if elt.x],
+                GenericValue(list, [TypedValue(int)]),
+            )
+
+        def use_subscript(d: List[Tuple[int, Optional[int]]]) -> None:
+            assert_is_value(
+                [pair[1] for pair in d],
+                GenericValue(
+                    list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
+                ),
+            )
+            assert_is_value(
+                [pair[1] for pair in d if pair[1] is not None],
+                GenericValue(list, [TypedValue(int)]),
+            )
+            assert_is_value(
+                [pair[1] for pair in d if pair[1]],
+                GenericValue(list, [TypedValue(int)]),
+            )
+
+    @assert_passes()
     def test_while(self):
         def capybara(x):
             if x:
@@ -1323,13 +1384,21 @@ class TestConstraints(TestNameCheckVisitorBase):
                 pass
 
         class InlineEditor:
-            def init(self, input, valuee, is_qtext=False):
+            def init(self, input, is_qtext=False):
                 if is_qtext:
                     value = input
                 else:
                     value = ""
 
+                assert_is_value(
+                    value, MultiValuedValue([UNRESOLVED_VALUE, KnownValue("")])
+                )
+
                 self.value = value
+
+                assert_is_value(
+                    self.value, MultiValuedValue([UNRESOLVED_VALUE, KnownValue("")])
+                )
 
             def tree(self):
                 assert_is_value(
@@ -1408,6 +1477,26 @@ class TestComposite(TestNameCheckVisitorBase):
             def eat_no_assign(self):
                 if isinstance(self.x, int):
                     assert_is_value(self.x, TypedValue(int))
+
+    @assert_passes()
+    def test_subscript(self):
+        from typing import Any, Dict
+
+        def capybara(x: Dict[str, Any]) -> None:
+            assert_is_value(x["a"], UNRESOLVED_VALUE)
+            x["a"] = 1
+            assert_is_value(x["a"], KnownValue(1))
+            if isinstance(x["c"], int):
+                assert_is_value(x["c"], TypedValue(int))
+            if x["b"] is None:
+                assert_is_value(x["b"], KnownValue(None))
+
+    @assert_passes()
+    def test_unhashable_subscript(self):
+        def capybara(df):
+            # make sure this doesn't crash
+            df[["a", "b"]] = 42
+            print(df[["a", "b"]])
 
 
 def test_uniq_chain():

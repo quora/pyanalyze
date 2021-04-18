@@ -3,7 +3,9 @@
 Configuration file specific to tests.
 
 """
-from .arg_spec import Signature, SigParameter
+from typing import Any, Dict
+
+from .arg_spec import ArgSpecCache, Signature, SigParameter
 from .config import Config
 from . import tests
 from . import value
@@ -32,7 +34,9 @@ class TestConfig(Config):
 
     CLASS_TO_KEYWORD_ONLY_ARGUMENTS = {tests.KeywordOnlyArguments: ["kwonly_arg"]}
 
-    def get_known_argspecs(self, arg_spec_cache):
+    def get_known_argspecs(
+        self, arg_spec_cache: ArgSpecCache
+    ) -> Dict[object, Signature]:
         return {
             tests.takes_kwonly_argument: Signature.make(
                 [
@@ -47,12 +51,12 @@ class TestConfig(Config):
             )
         }
 
-    def unwrap_cls(self, cls):
+    def unwrap_cls(self, cls: Any) -> type:
         """Does any application-specific unwrapping logic for wrapper classes."""
         if (
             isinstance(cls, type)
             and issubclass(cls, tests.Wrapper)
             and cls is not tests.Wrapper
         ):
-            return cls.base
+            return cls.base  # static analysis: ignore[undefined_attribute]
         return cls

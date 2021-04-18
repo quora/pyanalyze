@@ -9,6 +9,8 @@ import nose.config
 import nose.importer
 import os.path
 import sys
+from typing import Container, Optional, Tuple, Optional
+from types import ModuleType
 
 _importer = nose.importer.Importer(config=nose.config.Config(addPaths=False))
 
@@ -16,7 +18,9 @@ _importer = nose.importer.Importer(config=nose.config.Config(addPaths=False))
 nose.importer.log.setLevel(logging.INFO)
 
 
-def load_module_from_file(filename, excluded_paths=frozenset()):
+def load_module_from_file(
+    filename: str, excluded_paths: Container[str] = frozenset()
+) -> Tuple[Optional[ModuleType], bool]:
     # Attempt to get the location of the module relative to sys.path so we can import it
     # somewhat properly
     abspath = os.path.abspath(filename)
@@ -61,7 +65,7 @@ def load_module_from_file(filename, excluded_paths=frozenset()):
         return module, module.__file__.endswith(".so")
 
 
-def is_ignorable_importerror(e):
+def is_ignorable_importerror(e: BaseException) -> bool:
     """Returns whether the given exception indicates that the module can be ignored.
 
     This is used to ignore files compiled for the wrong Python version or platform.
