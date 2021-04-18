@@ -180,7 +180,7 @@ class TypeshedFinder(object):
             )
         elif isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, ast3.ClassDef):
-                if attr in info.child_nodes:
+                if info.child_nodes and attr in info.child_nodes:
                     child_info = info.child_nodes[attr]
                     if isinstance(child_info, typeshed_client.NameInfo):
                         if isinstance(child_info.ast, ast3.AnnAssign):

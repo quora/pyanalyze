@@ -518,7 +518,7 @@ class YieldChecker:
                 lines_to_add += second_assign_lines
                 lines_for_second_yield = replace_second.lines_to_add
 
-            lines_to_add += replace_first.lines_to_add
+            lines_to_add += replace_first.lines_to_add or []
             lines_to_add += lines[
                 first_yield.line_range[-1] : second_yield.line_range[0] - 1
             ]
