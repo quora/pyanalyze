@@ -4065,6 +4065,8 @@ def _is_coroutine_function(obj: object) -> bool:
 
 def _has_annotation_for_attr(typ: type, attr: str) -> bool:
     try:
+        # TODO maybe type.__annotations__ should be added to typeshed?
+        # static analysis: ignore[undefined_attribute]
         return attr in typ.__annotations__
     except Exception:
         # __annotations__ doesn't exist or isn't a dict

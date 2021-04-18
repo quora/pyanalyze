@@ -382,7 +382,7 @@ class ArgSpecCache:
         if inspect.isclass(obj):
             obj = self.config.unwrap_cls(obj)
             if issubclass(obj, self.config.CLASSES_USING_INIT):
-                constructor = obj.init
+                constructor = obj.init  # static analysis: ignore[undefined_attribute]
             elif hasattr(obj, "__init__"):
                 constructor = obj.__init__
             else:
