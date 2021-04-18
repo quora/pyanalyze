@@ -305,7 +305,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 ctx.show_error("Type[] takes only one argument")
                 return UNRESOLVED_VALUE
             argument = _type_from_value(value.members[0], ctx)
-            return SubclassValue(argument)
+            return SubclassValue.make(argument)
         elif is_typing_name(root, "Annotated"):
             origin, *metadata = value.members
             return _make_annotated(_type_from_value(origin, ctx), metadata, ctx)
@@ -512,7 +512,7 @@ def _value_of_origin_args(
     origin: object, args: Sequence[object], val: object, ctx: Context
 ) -> Value:
     if origin is typing.Type or origin is type:
-        return SubclassValue(_type_from_runtime(args[0], ctx))
+        return SubclassValue.make(_type_from_runtime(args[0], ctx))
     elif origin is typing.Tuple or origin is tuple:
         if not args:
             return TypedValue(tuple)

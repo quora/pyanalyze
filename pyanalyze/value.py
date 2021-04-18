@@ -605,10 +605,10 @@ class AsyncTaskIncompleteValue(GenericValue):
 class SubclassValue(Value):
     """Value that is either a type or its subclass."""
 
-    typ: Value
+    typ: Union[TypedValue, "TypeVarValue"]
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return SubclassValue(self.typ.substitute_typevars(typevars))
+        return self.make(self.typ.substitute_typevars(typevars))
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -624,19 +624,7 @@ class SubclassValue(Value):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, SubclassValue):
-            if isinstance(self.typ, TypedValue):
-                if isinstance(other.typ, TypedValue) and issubclass(
-                    other.typ.typ, self.typ.typ
-                ):
-                    return {}
-                elif (
-                    isinstance(other.typ, TypeVarValue) or other.typ is UNRESOLVED_VALUE
-                ):
-                    return {}
-            elif isinstance(self.typ, TypeVarValue):
-                return {self.typ.typevar: other.typ}
-            elif self.typ is UNRESOLVED_VALUE:
-                return {}
+            return self.typ.can_assign(other.typ, ctx)
         elif isinstance(other, KnownValue):
             if isinstance(other.val, type):
                 if isinstance(self.typ, TypedValue) and issubclass(
@@ -645,8 +633,6 @@ class SubclassValue(Value):
                     return {}
                 elif isinstance(self.typ, TypeVarValue):
                     return {self.typ.typevar: TypedValue(other.val)}
-                elif self.typ is UNRESOLVED_VALUE:
-                    return {}
         elif isinstance(other, TypedValue):
             if other.typ is type:
                 return {}
@@ -657,19 +643,37 @@ class SubclassValue(Value):
                     and isinstance(self.typ.typ, other.typ)
                 )
                 or isinstance(self.typ, (TypeVarValue))
-                or self.typ is UNRESOLVED_VALUE
             ):
                 return {}
         return super().can_assign(other, ctx)
 
-    def get_type(self) -> type:
-        return type(self.typ)
+    def get_type(self) -> Optional[type]:
+        if isinstance(self.typ, TypedValue):
+            return type(self.typ.typ)
+        else:
+            return None
 
     def get_type_value(self) -> Value:
-        return KnownValue(type(self.typ))
+        typ = self.get_type()
+        if typ is not None:
+            return KnownValue(typ)
+        else:
+            return UNRESOLVED_VALUE
 
     def __str__(self) -> str:
         return f"Type[{self.typ}]"
+
+    @classmethod
+    def make(cls, origin: Value) -> Value:
+        if isinstance(origin, MultiValuedValue):
+            return unite_values(*[cls.make(val) for val in origin.vals])
+        elif origin is UNRESOLVED_VALUE:
+            # Type[Any] is equivalent to plain type
+            return TypedValue(type)
+        elif isinstance(origin, (TypeVarValue, TypedValue)):
+            return cls(origin)
+        else:
+            return UNRESOLVED_VALUE
 
 
 @dataclass(frozen=True, order=False)

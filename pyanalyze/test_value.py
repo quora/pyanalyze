@@ -173,7 +173,7 @@ def test_subclass_value() -> None:
     assert_can_assign(val, TypedValue(type))
     assert_cannot_assign(val, TypedValue(int))
     assert_can_assign(val, SubclassValue(TypedValue(bool)))
-    assert_can_assign(val, SubclassValue(UNRESOLVED_VALUE))
+    assert_can_assign(val, TypedValue(type))
     assert_cannot_assign(val, SubclassValue(TypedValue(str)))
     val = SubclassValue(TypedValue(str))
     assert_eq("Type[str]", str(val))
