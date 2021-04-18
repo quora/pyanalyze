@@ -522,7 +522,8 @@ class YieldChecker:
             lines_to_add += lines[
                 first_yield.line_range[-1] : second_yield.line_range[0] - 1
             ]
-            lines_to_add += lines_for_second_yield
+            if lines_for_second_yield:
+                lines_to_add += lines_for_second_yield
 
             linenos_to_delete = list(
                 range(first_yield.line_range[0], second_yield.line_range[-1] + 1)
