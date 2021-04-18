@@ -517,7 +517,7 @@ class ArgSpecCache:
             return typing_inspect.get_generic_bases(typ)
         return typ.__bases__
 
-      
+
 def _is_qcore_decorator(obj: Any) -> bool:
     try:
         return (
