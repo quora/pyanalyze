@@ -27,10 +27,11 @@ from typing import (
 )
 
 from .error_code import ErrorCode
-from .extensions import ParameterTypeGuard
+from .extensions import HasAttrGuard, ParameterTypeGuard
 from .value import (
     AnnotatedValue,
     Extension,
+    HasAttrGuardExtension,
     KnownValue,
     MultiValuedValue,
     NO_RETURN_VALUE,
@@ -38,6 +39,7 @@ from .value import (
     UNRESOLVED_VALUE,
     TypedValue,
     SequenceIncompleteValue,
+    annotate_value,
     unite_values,
     Value,
     GenericValue,
@@ -580,14 +582,9 @@ def _maybe_typed_value(val: type, ctx: Context) -> Value:
         return TypedValue(val)
 
 
-def _make_annotated(
-    origin: Value, metadata: Sequence[Value], ctx: Context
-) -> AnnotatedValue:
+def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:
     metadata = [_value_from_metadata(entry, ctx) for entry in metadata]
-    if isinstance(origin, AnnotatedValue):
-        # Flatten it
-        return AnnotatedValue(origin.value, [*origin.metadata, *metadata])
-    return AnnotatedValue(origin, metadata)
+    return annotate_value(origin, metadata)
 
 
 def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
@@ -595,5 +592,11 @@ def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
         if isinstance(entry.val, ParameterTypeGuard):
             return ParameterTypeGuardExtension(
                 entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
+            )
+        elif isinstance(entry.val, HasAttrGuard):
+            return HasAttrGuardExtension(
+                entry.val.varname,
+                _type_from_runtime(entry.val.attribute_name, ctx),
+                _type_from_runtime(entry.val.attribute_type, ctx),
             )
     return entry
