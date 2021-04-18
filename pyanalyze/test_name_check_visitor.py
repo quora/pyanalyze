@@ -24,6 +24,7 @@ from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
 from .test_config import TestConfig
 from .value import (
+    AnnotatedValue,
     AsyncTaskIncompleteValue,
     DictIncompleteValue,
     KnownValue,
@@ -123,6 +124,7 @@ def _make_module(code_str):
         GenericValue=GenericValue,
         KnownValue=KnownValue,
         MultiValuedValue=MultiValuedValue,
+        AnnotatedValue=AnnotatedValue,
         SequenceIncompleteValue=SequenceIncompleteValue,
         TypedValue=TypedValue,
         UnboundMethodValue=UnboundMethodValue,

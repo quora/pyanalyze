@@ -13,6 +13,7 @@ from . import value
 from .arg_spec import ArgSpecCache
 from .test_config import TestConfig
 from .value import (
+    AnnotatedValue,
     Value,
     GenericValue,
     KnownValue,
@@ -376,6 +377,12 @@ def test_new_type_value() -> None:
     # This should eventually return False
     assert_can_assign(nt1_val, TypedValue(int))
     assert_can_assign(TypedValue(int), nt1_val)
+
+
+def test_annotated_value() -> None:
+    tv_int = TypedValue(int)
+    assert_can_assign(AnnotatedValue(tv_int, [tv_int]), tv_int)
+    assert_can_assign(tv_int, AnnotatedValue(tv_int, [tv_int]))
 
 
 def test_io() -> None:

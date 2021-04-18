@@ -29,6 +29,7 @@ from typing import (
 from .error_code import ErrorCode
 from .find_unused import used
 from .value import (
+    AnnotatedValue,
     KnownValue,
     NO_RETURN_VALUE,
     UNRESOLVED_VALUE,
@@ -175,6 +176,18 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
         origin = get_origin(val)
         args = get_args(val)
         return _value_of_origin_args(origin, args, val, ctx)
+    elif is_instance_of_typing_name(val, "AnnotatedMeta"):
+        # Annotated in 3.6's typing_extensions
+        origin, metadata = val.__args__
+        return AnnotatedValue(
+            _type_from_runtime(origin, ctx), [KnownValue(v) for v in metadata]
+        )
+    elif is_instance_of_typing_name(val, "_AnnotatedAlias"):
+        # Annotated in typing and newer typing_extensions
+        return AnnotatedValue(
+            _type_from_runtime(val.__origin__, ctx),
+            [KnownValue(v) for v in val.__metadata__],
+        )
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
@@ -291,6 +304,15 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             if isinstance(argument, TypedValue) and isinstance(argument.typ, type):
                 return SubclassValue(argument.typ)
             return TypedValue(type)
+        elif is_typing_name(root, "Annotated"):
+            origin, *metadata = value.members
+            origin_value = _type_from_value(origin, ctx)
+            if isinstance(origin_value, AnnotatedValue):
+                # Flatten it
+                return AnnotatedValue(
+                    origin_value.value, [*origin_value.metadata, *metadata]
+                )
+            return AnnotatedValue(origin_value, metadata)
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
             if origin is None:

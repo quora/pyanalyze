@@ -94,6 +94,8 @@ class Value:
         elif isinstance(other, MultiValuedValue):
             tv_maps = [self.can_assign(val, ctx) for val in other.vals]
             return unify_typevar_maps(tv_maps)
+        elif isinstance(other, AnnotatedValue):
+            return self.can_assign(other.value, ctx)
         elif isinstance(other, TypeVarValue):
             return self.can_assign(other.get_fallback_value(), ctx)
         elif (
@@ -299,6 +301,8 @@ class TypedValue(Value):
         elif isinstance(other, MultiValuedValue):
             tv_maps = [self.can_assign(val, ctx) for val in other.vals]
             return unify_typevar_maps(tv_maps)
+        elif isinstance(other, AnnotatedValue):
+            return self.can_assign_thrift_enum(other.value, ctx)
         return None
 
     def get_generic_args_for_type(
@@ -653,6 +657,8 @@ class MultiValuedValue(Value):
         if isinstance(other, MultiValuedValue):
             tv_maps = [self.can_assign(val, ctx) for val in other.vals]
             return unify_typevar_maps(tv_maps)
+        elif isinstance(other, AnnotatedValue):
+            return self.can_assign(other.value, ctx)
         else:
             tv_maps = [val.can_assign(other, ctx) for val in self.vals]
             # Ignore any branches that don't match
@@ -734,6 +740,29 @@ class TypeVarValue(Value):
 
 
 @dataclass(frozen=True)
+class AnnotatedValue(Value):
+    """Value representing a PEP 593 Annotated object."""
+
+    value: Value
+    metadata: Sequence[Value]
+
+    def is_type(self, typ: type) -> bool:
+        return self.value.is_type(typ)
+
+    def get_type(self) -> Optional[type]:
+        return self.value.get_type()
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
+        return AnnotatedValue(self.value.substitute_typevars(typevars), self.metadata)
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        return self.value.can_assign(other, ctx)
+
+    def __str__(self) -> str:
+        return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
+
+
+@dataclass(frozen=True)
 class VariableNameValue(Value):
     """Value that is stored in a variable associated with a particular kind of value.
 
@@ -787,8 +816,9 @@ def flatten_values(val: Value) -> Iterable[Value]:
 
     """
     if isinstance(val, MultiValuedValue):
-        for subval in val.vals:
-            yield subval
+        yield from val.vals
+    elif isinstance(val, AnnotatedValue) and isinstance(val.value, MultiValuedValue):
+        yield from val.value.vals
     else:
         yield val
 
@@ -816,6 +846,8 @@ def unite_values(*values: Value) -> Value:
     for value in values:
         if isinstance(value, MultiValuedValue):
             subvals = value.vals
+        elif isinstance(value, AnnotatedValue) and isinstance(value.value, MultiValuedValue):
+            subvals = value.value.vals
         else:
             subvals = [value]
         for subval in subvals:
@@ -891,6 +923,8 @@ def concrete_values_from_iterable(
         if not value_subvals and len(set(map(len, seq_subvals))) == 1:
             return [unite_values(*vals) for vals in zip(*seq_subvals)]
         return unite_values(*value_subvals, *chain.from_iterable(seq_subvals))
+    elif isinstance(value, AnnotatedValue):
+        return concrete_values_from_iterable(value.value, ctx)
     value = replace_known_sequence_value(value)
     if isinstance(value, SequenceIncompleteValue):
         return value.members

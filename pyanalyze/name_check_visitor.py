@@ -86,6 +86,7 @@ from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from .yield_checker import YieldChecker
 from .type_object import get_mro
 from .value import (
+    AnnotatedValue,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
@@ -955,18 +956,31 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
             return UNRESOLVED_VALUE
         if isinstance(value, MultiValuedValue):
-            if any(subval is UNINITIALIZED_VALUE for subval in value.vals):
+            subvals = value.vals
+        elif isinstance(value, AnnotatedValue) and isinstance(
+            (value.value), MultiValuedValue
+        ):
+            subvals = value.value.vals
+        else:
+            subvals = None
+
+        if subvals is not None:
+            if any(subval is UNINITIALIZED_VALUE for subval in subvals):
                 self._show_error_if_checking(
                     error_node,
                     f"{node.id} may be used uninitialized",
                     ErrorCode.possibly_undefined_name,
                 )
-                return MultiValuedValue(
+                new_mvv = MultiValuedValue(
                     [
                         UNRESOLVED_VALUE if subval is UNINITIALIZED_VALUE else subval
-                        for subval in value.vals
+                        for subval in subvals
                     ]
                 )
+                if isinstance(value, AnnotatedValue):
+                    return AnnotatedValue(new_mvv, value.metadata)
+                else:
+                    return new_mvv
         return value
 
     def _maybe_show_missing_import_error(self, node: ast.Name) -> None:
@@ -2554,6 +2568,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return KnownValue(values)
         elif value is UNRESOLVED_VALUE:
             return UNRESOLVED_VALUE
+        elif isinstance(value, AnnotatedValue):
+            return self._unwrap_yield_result(node, value.value)
         elif isinstance(value, MultiValuedValue):
             return unite_values(
                 *[self._unwrap_yield_result(node, val) for val in value.vals]
@@ -2806,6 +2822,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
             num = nums[0] if len(set(nums)) == 1 else None
             return unite_values(*vals), num
+        elif isinstance(iterated, AnnotatedValue):
+            return self._member_value_of_generator(iterated.value, node)
         else:
             tv_map = IterableValue.can_assign(iterated, self)
             if tv_map is None:
