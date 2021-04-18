@@ -32,6 +32,7 @@ from .value import (
     AnnotatedValue,
     Extension,
     KnownValue,
+    MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
     UNRESOLVED_VALUE,
@@ -270,6 +271,8 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         return _type_from_runtime(value.val, ctx)
     elif isinstance(value, (TypeVarValue, TypedValue)):
         return value
+    elif isinstance(value, MultiValuedValue):
+        return unite_values(*[_type_from_runtime(val, ctx) for val in value.vals])
     elif isinstance(value, _SubscriptedValue):
         if isinstance(value.root, GenericValue):
             if len(value.root.args) == len(value.members):
