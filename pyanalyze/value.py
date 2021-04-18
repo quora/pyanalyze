@@ -844,14 +844,17 @@ class HasAttrExtension(Extension):
 
     """
 
-    attribute_name: str
+    attribute_name: Value
     attribute_type: Value
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
-        attribute_type = self.attribute_type.substitute_typevars(typevars)
-        return HasAttrExtension(self.attribute_name, attribute_type)
+        return HasAttrExtension(
+            self.attribute_name.substitute_typevars(typevars),
+            self.attribute_type.substitute_typevars(typevars),
+        )
 
     def walk_values(self) -> Iterable[Value]:
+        yield from self.attribute_name.walk_values()
         yield from self.attribute_type.walk_values()
 
 
