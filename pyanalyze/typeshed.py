@@ -12,6 +12,7 @@ from .value import (
     TypedValue,
     GenericValue,
     KnownValue,
+    UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     Value,
     TypeVarValue,
@@ -60,7 +61,7 @@ class _AnnotationContext(Context):
     ) -> None:
         self.finder.log(message, ())
 
-    def get_name(self, node: ast.AST) -> Value:
+    def get_name(self, node: ast.Name) -> Value:
         info = self.finder._get_info_for_name(f"{self.module}.{node.id}")
         if info is not None:
             return self.finder._value_from_info(info, self.module)
@@ -105,7 +106,7 @@ class TypeshedFinder(object):
             return
         print("%s: %r" % (message, obj))
 
-    def get_argspec(self, obj: object) -> Optional[Signature]:
+    def get_argspec(self, obj: Any) -> Optional[Signature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
@@ -152,6 +153,49 @@ class TypeshedFinder(object):
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._get_bases_from_info(info, mod)
+
+    def get_attribute(self, typ: type, attr: str) -> Value:
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return UNINITIALIZED_VALUE
+        info = self._get_info_for_name(fq_name)
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
+        return self._get_attribute_from_info(info, mod, attr)
+
+    def has_stubs(self, typ: type) -> bool:
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return False
+        info = self._get_info_for_name(fq_name)
+        return info is not None
+
+    def _get_attribute_from_info(
+        self, info: typeshed_client.resolver.ResolvedName, mod: str, attr: str
+    ) -> Value:
+        if info is None:
+            return UNINITIALIZED_VALUE
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._get_attribute_from_info(
+                info.info, ".".join(info.source_module), attr
+            )
+        elif isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.ClassDef):
+                if attr in info.child_nodes:
+                    child_info = info.child_nodes[attr]
+                    if isinstance(child_info, typeshed_client.NameInfo):
+                        if isinstance(child_info.ast, ast3.AnnAssign):
+                            return self._parse_expr(child_info.ast.annotation, mod)
+                        return UNINITIALIZED_VALUE
+                return UNINITIALIZED_VALUE
+            elif isinstance(info.ast, ast3.Assign):
+                val = self._parse_expr(info.ast.value, mod)
+                if isinstance(val, KnownValue) and isinstance(val.val, type):
+                    return self.get_attribute(val.val, attr)
+                else:
+                    return UNINITIALIZED_VALUE
+            else:
+                return UNINITIALIZED_VALUE
+        return UNINITIALIZED_VALUE
 
     def _get_bases_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str

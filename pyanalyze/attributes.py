@@ -53,6 +53,9 @@ class AttrContext:
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         return UNRESOLVED_VALUE
 
+    def get_attribute_from_typeshed(self, typ: type) -> Value:
+        return UNINITIALIZED_VALUE
+
 
 def get_attribute(ctx: AttrContext) -> Value:
     root_value = ctx.root_value
@@ -235,6 +238,10 @@ def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
         pass
     else:
         for base_cls in mro:
+            typeshed_type = ctx.get_attribute_from_typeshed(base_cls)
+            if typeshed_type is not UNINITIALIZED_VALUE:
+                return typeshed_type, False
+
             try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.

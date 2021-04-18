@@ -109,7 +109,7 @@ def flatten_unions(
 # Implementations of some important functions for use in their ExtendedArgSpecs (see above). These
 # are called when the test_scope checker encounters call to these functions.
 def _isinstance_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     class_or_tuple = variables["class_or_tuple"]
     if len(node.args) < 1:
@@ -141,7 +141,7 @@ def _constraint_from_isinstance(
 
 
 def _assert_is_instance_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     if len(node.args) < 0:
         return KnownValue(None)
@@ -155,7 +155,7 @@ def _assert_is_instance_impl(
 
 
 def _hasattr_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     obj = variables["object"]
     name = variables["name"]
@@ -180,7 +180,7 @@ def _hasattr_impl(
 
 
 def _setattr_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     # if we set an attribute on a value of known type, record it to the attribute checker so we
     # don't say the attribute is undefined
@@ -196,7 +196,7 @@ def _setattr_impl(
 
 
 def _super_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     typ = variables["type"]
     obj = variables["obj"]
@@ -285,25 +285,25 @@ def _super_impl(
 
 
 def _tuple_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _sequence_impl(tuple, variables, visitor, node)
 
 
 def _list_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _sequence_impl(list, variables, visitor, node)
 
 
 def _set_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _sequence_impl(set, variables, visitor, node)
 
 
 def _sequence_impl(
-    typ: type, variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    typ: type, variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     iterable = variables["iterable"]
     if iterable is _NO_ARG_SENTINEL:
@@ -707,13 +707,13 @@ def _subclasses_impl(
 
 
 def _assert_is_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _qcore_assert_impl(variables, visitor, node, ConstraintType.is_value, True)
 
 
 def _assert_is_not_impl(
-    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.AST
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
     return _qcore_assert_impl(variables, visitor, node, ConstraintType.is_value, False)
 
@@ -721,7 +721,7 @@ def _assert_is_not_impl(
 def _qcore_assert_impl(
     variables: VarsDict,
     visitor: "NameCheckVisitor",
-    node: ast.AST,
+    node: ast.Call,
     constraint_type: ConstraintType,
     positive: bool,
 ) -> ImplementationFnReturn:
@@ -760,7 +760,7 @@ def len_of_value(val: Value) -> Value:
 def _len_impl(
     variables: VarsDict,
     visitor: "NameCheckVisitor",
-    node: ast.AST,
+    node: ast.Call,
 ) -> ImplementationFnReturn:
     varname = visitor.varname_for_constraint(node.args[0])
     if varname is None:

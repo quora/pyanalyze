@@ -48,8 +48,9 @@ def get_line_range_for_node(node: ast.AST, lines: List[str]) -> List[int]:
     # iterate through all childnodes and find the max lineno
     last_lineno = first_lineno + 1
     for childnode in ast.walk(node):
-        if hasattr(childnode, "end_lineno"):
-            last_lineno = max(last_lineno, childnode.end_lineno)
+        end_lineno = getattr(childnode, "end_lineno", None)
+        if end_lineno is not None:
+            last_lineno = max(last_lineno, end_lineno)
         elif hasattr(childnode, "lineno"):
             last_lineno = max(last_lineno, childnode.lineno)
 
