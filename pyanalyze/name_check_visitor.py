@@ -1279,7 +1279,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             name=node.name, args=new_args, body=[ast.Pass()], decorator_list=[]
         )
         code = decompile(new_node)
-        exec (code, scope, scope)
+        exec(code, scope, scope)
         fn = scope[node.name]
         for decorator in reversed(to_apply):
             fn = decorator(fn)

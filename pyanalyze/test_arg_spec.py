@@ -100,7 +100,7 @@ def decorator(fn):
 
 
 def test_get_argspec():
-    visitor = ConfiguredNameCheckVisitor(__file__, u"", {}, fail_after_first=False)
+    visitor = ConfiguredNameCheckVisitor(__file__, "", {}, fail_after_first=False)
     config = visitor.config
     cwc_typed = TypedValue(ClassWithCall)
     cwc_self = SigParameter("self", annotation=cwc_typed)
