@@ -455,9 +455,12 @@ class TestAnnotated(TestNameCheckVisitorBase):
                 quoted,
                 AnnotatedValue(TypedValue(int), [KnownValue(int), KnownValue(str)]),
             )
-            assert_is_value(nested, AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)]))
             assert_is_value(
-                nested_quoted, AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)])
+                nested, AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)])
+            )
+            assert_is_value(
+                nested_quoted,
+                AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)]),
             )
 
     @skip_before((3, 9))
@@ -480,7 +483,10 @@ class TestAnnotated(TestNameCheckVisitorBase):
                 quoted,
                 AnnotatedValue(TypedValue(int), [KnownValue(int), KnownValue(str)]),
             )
-            assert_is_value(nested, AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)]))
             assert_is_value(
-                nested_quoted, AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)])
+                nested, AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)])
+            )
+            assert_is_value(
+                nested_quoted,
+                AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)]),
             )

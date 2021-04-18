@@ -2823,7 +2823,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             num = nums[0] if len(set(nums)) == 1 else None
             return unite_values(*vals), num
         elif isinstance(iterated, AnnotatedValue):
-            return self._member_value_of_generator(iterated.value, node)
+            return self._member_value_of_iterator_val(iterated.value, node)
         else:
             tv_map = IterableValue.can_assign(iterated, self)
             if tv_map is None:

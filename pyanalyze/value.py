@@ -846,7 +846,9 @@ def unite_values(*values: Value) -> Value:
     for value in values:
         if isinstance(value, MultiValuedValue):
             subvals = value.vals
-        elif isinstance(value, AnnotatedValue) and isinstance(value.value, MultiValuedValue):
+        elif isinstance(value, AnnotatedValue) and isinstance(
+            value.value, MultiValuedValue
+        ):
             subvals = value.value.vals
         else:
             subvals = [value]

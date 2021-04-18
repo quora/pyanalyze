@@ -58,6 +58,8 @@ def get_attribute(ctx: AttrContext) -> Value:
     root_value = ctx.root_value
     if isinstance(root_value, TypeVarValue):
         root_value = root_value.get_fallback_value()
+    elif isinstance(root_value, AnnotatedValue):
+        root_value = root_value.value
     if isinstance(root_value, KnownValue):
         return _get_attribute_from_known(root_value.val, ctx)
     elif isinstance(root_value, TypedValue):
@@ -66,8 +68,6 @@ def get_attribute(ctx: AttrContext) -> Value:
         return _get_attribute_from_subclass(root_value.typ, ctx)
     elif isinstance(root_value, UnboundMethodValue):
         return _get_attribute_from_unbound(root_value, ctx)
-    elif isinstance(root_value, AnnotatedValue):
-        return get_attribute(root_value.value, ctx)
     elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
         return UNRESOLVED_VALUE
     elif isinstance(root_value, MultiValuedValue):
