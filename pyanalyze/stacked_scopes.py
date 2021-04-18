@@ -34,6 +34,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    NamedTuple,
     Sequence,
     Optional,
     Set,
@@ -101,6 +102,11 @@ SubScope = Dict[Varname, List[Node]]
 
 # Type for Constraint.value if constraint type is predicate
 # PredicateFunc = Callable[[Value, bool], Optional[Value]]
+
+
+class Composite(NamedTuple):
+    value: Value
+    varname: Optional[Varname]
 
 
 @dataclass(frozen=True)

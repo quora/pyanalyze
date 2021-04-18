@@ -21,12 +21,14 @@ from typing import (
     Set,
     Tuple,
     Union,
+    Type,
     TypeVar,
 )
 
 from .safe import safe_isinstance
 from .type_object import TypeObject
 
+T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
@@ -766,6 +768,11 @@ class AnnotatedValue(Value):
         yield from self.value.walk_values()
         for val in self.metadata:
             yield from val.walk_values()
+
+    def get_metadata_of_type(self, typ: Type[T]) -> Iterable[T]:
+        for data in self.metadata:
+            if isinstance(data, KnownValue) and isinstance(data.val, typ):
+                yield typ
 
     def __str__(self) -> str:
         return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
