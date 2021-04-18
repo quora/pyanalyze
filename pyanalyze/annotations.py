@@ -419,7 +419,8 @@ class _Visitor(ast.NodeVisitor):
                     f"{root_value.val!r} has no attribute {node.attr!r}"
                 )
                 return UNRESOLVED_VALUE
-        self.ctx.show_error(f"Cannot resolve annotation {root_value}")
+        elif root_value is not UNRESOLVED_VALUE:
+            self.ctx.show_error(f"Cannot resolve annotation {root_value}")
         return UNRESOLVED_VALUE
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
