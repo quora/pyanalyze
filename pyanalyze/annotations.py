@@ -572,7 +572,6 @@ def _maybe_typed_value(val: type, ctx: Context) -> Value:
         # a Protocol
         if is_typing_name(val, "Protocol"):
             return TypedValue(typing_extensions.Protocol)
-        ctx.show_error(f"Unrecognized type {val!r}")
         return UNRESOLVED_VALUE
     else:
         return TypedValue(val)

@@ -88,6 +88,13 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(z, TypedValue(SupportsInt))
 
     @assert_passes()
+    def test_supports_int_accepted(self):
+        from typing import SupportsInt
+
+        def capybara(z: SupportsInt) -> None:
+            print(z)  # just test that this doesn't get rejected
+
+    @assert_passes()
     def test_self_type(self):
         class Capybara:
             def f(self: int) -> None:
