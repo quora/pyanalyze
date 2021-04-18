@@ -135,6 +135,7 @@ def f(x: NT) -> None:
             TypedValue(bool), tsf.get_attribute(staticmethod, "__isabstractmethod__")
         )
 
+
 class Parent(Generic[T]):
     pass
 
