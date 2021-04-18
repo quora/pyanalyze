@@ -24,7 +24,6 @@ from typing import (
     Tuple,
     Union,
     TYPE_CHECKING,
-    Any,
 )
 
 from .error_code import ErrorCode

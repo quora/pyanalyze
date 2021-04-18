@@ -25,7 +25,6 @@ from .value import (
     GenericValue,
     NewTypeValue,
     KnownValue,
-    UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     Value,
     VariableNameValue,

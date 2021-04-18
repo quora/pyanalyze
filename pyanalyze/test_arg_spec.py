@@ -18,7 +18,6 @@ from .value import (
     TypedValue,
     GenericValue,
     UNRESOLVED_VALUE,
-    UNINITIALIZED_VALUE,
     SequenceIncompleteValue,
 )
 
