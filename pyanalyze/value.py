@@ -753,10 +753,19 @@ class AnnotatedValue(Value):
         return self.value.get_type()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
-        return AnnotatedValue(self.value.substitute_typevars(typevars), self.metadata)
+        return AnnotatedValue(
+            self.value.substitute_typevars(typevars),
+            [value.substitute_typevars(typevars) for value in self.metadata],
+        )
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         return self.value.can_assign(other, ctx)
+
+    def walk_values(self) -> Iterable[Value]:
+        yield self
+        yield from self.value.walk_values()
+        for val in self.metadata:
+            yield from val.walk_values()
 
     def __str__(self) -> str:
         return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
