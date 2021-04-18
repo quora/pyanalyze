@@ -24,6 +24,7 @@ from typing import (
     Type,
     TypeVar,
 )
+from typing_extensions import Literal
 
 from .safe import safe_isinstance
 from .type_object import TypeObject
@@ -724,7 +725,7 @@ class MultiValuedValue(Value):
             return self
         return MultiValuedValue([val.get_type_value() for val in self.vals])
 
-    def __eq__(self, other: Value) -> Union[bool, type(NotImplemented)]:
+    def __eq__(self, other: Value) -> Union[bool, Literal[NotImplemented]]:
         if not isinstance(other, MultiValuedValue):
             return NotImplemented
         if self.vals == other.vals:

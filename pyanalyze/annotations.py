@@ -28,7 +28,6 @@ from typing import (
 
 from .error_code import ErrorCode
 from .extensions import ParameterTypeGuard
-from .find_unused import used
 from .value import (
     AnnotatedValue,
     Extension,
@@ -85,7 +84,6 @@ class Context:
         return UNRESOLVED_VALUE
 
 
-@used  # part of the API of this module; low cost even if currently unused
 def type_from_ast(
     ast_node: ast.AST,
     visitor: Optional["NameCheckVisitor"] = None,
@@ -122,10 +120,11 @@ def type_from_value(
     return _type_from_value(value, ctx)
 
 
+
 def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
     val = _Visitor(ctx).visit(node)
     if val is None:
-        # TODO show an error here
+        ctx.show_error("Invalid type annotation")
         return UNRESOLVED_VALUE
     return _type_from_value(val, ctx)
 
@@ -204,7 +203,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     elif typing_inspect.is_callable_type(val):
         return TypedValue(Callable)
     elif isinstance(val, type):
-        return _maybe_typed_value(val)
+        return _maybe_typed_value(val, ctx)
     elif val is None:
         return KnownValue(None)
     elif is_typing_name(val, "NoReturn"):
@@ -224,7 +223,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     elif typing_inspect.is_typevar(val):
         return TypeVarValue(cast(TypeVar, val))
     elif typing_inspect.is_classvar(val):
-        return UNRESOLVED_VALUE
+        return _type_from_runtime(val.__args__[0], ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
         val, "ForwardRef"
     ):
@@ -248,7 +247,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
-            return _maybe_typed_value(origin)
+            return _maybe_typed_value(origin, ctx)
         ctx.show_error(f"Invalid type annotation {val}")
         return UNRESOLVED_VALUE
 
@@ -337,7 +336,10 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 )
             ctx.show_error(f"Unrecognized subscripted annotation: {root}")
             return UNRESOLVED_VALUE
+    elif value is UNRESOLVED_VALUE:
+        return UNRESOLVED_VALUE
     else:
+        ctx.show_error(f"Unrecognized annotation {value}")
         return UNRESOLVED_VALUE
 
 
@@ -371,11 +373,10 @@ class _DefaultContext(Context):
                 return KnownValue(self.globals[node.id])
             elif hasattr(builtins, node.id):
                 return KnownValue(getattr(builtins, node.id))
-            else:
-                return UNRESOLVED_VALUE
-        else:
+        if self.should_suppress_undefined_names:
             return UNRESOLVED_VALUE
-
+        self.show_error(f"Undefined name {node.id!r} used in annotation", ErrorCode.undefined_name)
+        return UNRESOLVED_VALUE
 
 @dataclass
 class _SubscriptedValue(Value):
@@ -536,18 +537,19 @@ def _value_of_origin_args(
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(val is UNRESOLVED_VALUE for val in args_vals):
-                return _maybe_typed_value(origin)
+                return _maybe_typed_value(origin, ctx)
             return GenericValue(origin, args_vals)
         else:
-            return _maybe_typed_value(origin)
+            return _maybe_typed_value(origin, ctx)
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
-        return _maybe_typed_value(val)
+        return _maybe_typed_value(val, ctx)
     else:
+        ctx.show_error(f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]")
         return UNRESOLVED_VALUE
 
 
-def _maybe_typed_value(val: type) -> Value:
+def _maybe_typed_value(val: type, ctx: Context) -> Value:
     if val is type(None):
         return KnownValue(None)
     try:
@@ -557,6 +559,7 @@ def _maybe_typed_value(val: type) -> Value:
         # a Protocol
         if is_typing_name(val, "Protocol"):
             return TypedValue(typing_extensions.Protocol)
+        ctx.show_error(f"Unrecognized type {val!r}")
         return UNRESOLVED_VALUE
     else:
         return TypedValue(val)
