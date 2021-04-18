@@ -319,6 +319,11 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def f(x: "NoSuchType"):
             pass
 
+    @assert_fails(ErrorCode.undefined_name)
+    def test_forward_ref_bad_attribute(self):
+        def f(x: "collections.defalutdict"):
+            pass
+
     @assert_passes()
     def test_forward_ref_optional(self):
         import typing
