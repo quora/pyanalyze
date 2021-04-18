@@ -278,7 +278,11 @@ class TypedValue(Value):
             if ctx.make_type_object(other.typ).is_assignable_to_type(self.typ):
                 return {}
         elif isinstance(other, SubclassValue):
-            if isinstance(other.typ, self.typ):
+            if isinstance(other.typ, TypedValue) and isinstance(
+                other.typ.typ, self.typ
+            ):
+                return {}
+            elif isinstance(other.typ, TypeVarValue) or other.typ is UNRESOLVED_VALUE:
                 return {}
         elif isinstance(other, UnboundMethodValue):
             if self.typ in {Callable, collections.abc.Callable, object}:
@@ -601,26 +605,60 @@ class AsyncTaskIncompleteValue(GenericValue):
 class SubclassValue(Value):
     """Value that is either a type or its subclass."""
 
-    typ: type
+    typ: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return SubclassValue(self.typ.substitute_typevars(typevars))
+
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        yield from self.typ.walk_values()
 
     def is_type(self, typ: type) -> bool:
-        try:
-            return issubclass(self.typ, typ)
-        except Exception:
-            return False
+        if isinstance(self.typ, TypedValue):
+            try:
+                return issubclass(self.typ.typ, typ)
+            except Exception:
+                return False
+        return False
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         if isinstance(other, SubclassValue):
-            if issubclass(other.typ, self.typ):
+            if isinstance(self.typ, TypedValue):
+                if isinstance(other.typ, TypedValue) and issubclass(
+                    other.typ.typ, self.typ.typ
+                ):
+                    return {}
+                elif (
+                    isinstance(other.typ, TypeVarValue) or other.typ is UNRESOLVED_VALUE
+                ):
+                    return {}
+            elif isinstance(self.typ, TypeVarValue):
+                return {self.typ.typevar: other.typ}
+            elif self.typ is UNRESOLVED_VALUE:
                 return {}
         elif isinstance(other, KnownValue):
-            if isinstance(other.val, type) and issubclass(other.val, self.typ):
-                return {}
+            if isinstance(other.val, type):
+                if isinstance(self.typ, TypedValue) and issubclass(
+                    other.val, self.typ.typ
+                ):
+                    return {}
+                elif isinstance(self.typ, TypeVarValue):
+                    return {self.typ.typevar: TypedValue(other.val)}
+                elif self.typ is UNRESOLVED_VALUE:
+                    return {}
         elif isinstance(other, TypedValue):
             if other.typ is type:
                 return {}
             # metaclass
-            elif issubclass(other.typ, type) and isinstance(self.typ, other.typ):
+            elif issubclass(other.typ, type) and (
+                (
+                    isinstance(self.typ, TypedValue)
+                    and isinstance(self.typ.typ, other.typ)
+                )
+                or isinstance(self.typ, (TypeVarValue))
+                or self.typ is UNRESOLVED_VALUE
+            ):
                 return {}
         return super().can_assign(other, ctx)
 
@@ -631,7 +669,7 @@ class SubclassValue(Value):
         return KnownValue(type(self.typ))
 
     def __str__(self) -> str:
-        return "Type[%s]" % (stringify_object(self.typ),)
+        return f"Type[{self.typ}]"
 
 
 @dataclass(frozen=True, order=False)

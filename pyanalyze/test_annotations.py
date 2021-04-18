@@ -1,5 +1,4 @@
 # static analysis: ignore
-from typing import Annotated
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
 from .implementation import assert_is_value
@@ -386,8 +385,8 @@ def f(x: int, y: List[str]):
         from typing import Type
 
         def capybara(x: Type[str], y: "Type[int]"):
-            assert_is_value(x, SubclassValue(str))
-            assert_is_value(y, SubclassValue(int))
+            assert_is_value(x, SubclassValue(TypedValue(str)))
+            assert_is_value(y, SubclassValue(TypedValue(int)))
 
     @skip_before((3, 9))
     @assert_passes()

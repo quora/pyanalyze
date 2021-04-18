@@ -516,10 +516,10 @@ def run():
     def test_cls_type_inference(self):
         class OldStyle:
             def __init_subclass__(cls):
-                assert_is_value(cls, SubclassValue(OldStyle))
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
             def __new__(cls):
-                assert_is_value(cls, SubclassValue(OldStyle))
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
     @assert_passes()
     def test_cls_type_inference(self):
@@ -716,7 +716,7 @@ class TestSubclassValue(TestNameCheckVisitorBase):
         TI = Type[int]
 
         def capybara(x: TI, y: str):
-            assert_is_value(x, SubclassValue(int))
+            assert_is_value(x, SubclassValue(TypedValue(int)))
             assert_is_value(y, TypedValue(str))
 
     @only_before((3, 7))

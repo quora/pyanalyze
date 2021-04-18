@@ -300,14 +300,12 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             return unite_values(
                 KnownValue(None), _type_from_value(value.members[0], ctx)
             )
-        elif root is typing.Type:
+        elif root is typing.Type or root is type:
             if len(value.members) != 1:
                 ctx.show_error("Type[] takes only one argument")
                 return UNRESOLVED_VALUE
             argument = _type_from_value(value.members[0], ctx)
-            if isinstance(argument, TypedValue) and isinstance(argument.typ, type):
-                return SubclassValue(argument.typ)
-            return TypedValue(type)
+            return SubclassValue(argument)
         elif is_typing_name(root, "Annotated"):
             origin, *metadata = value.members
             return _make_annotated(_type_from_value(origin, ctx), metadata, ctx)
@@ -514,13 +512,7 @@ def _value_of_origin_args(
     origin: object, args: Sequence[object], val: object, ctx: Context
 ) -> Value:
     if origin is typing.Type or origin is type:
-        if isinstance(args[0], type):
-            return SubclassValue(args[0])
-        elif args[0] is typing.Any:
-            return TypedValue(type)
-        else:
-            # Perhaps a forward reference
-            return UNRESOLVED_VALUE
+        return SubclassValue(_type_from_runtime(args[0], ctx))
     elif origin is typing.Tuple or origin is tuple:
         if not args:
             return TypedValue(tuple)

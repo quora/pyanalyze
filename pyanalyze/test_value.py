@@ -71,7 +71,7 @@ def test_known_value() -> None:
     assert_cannot_assign(val, TypedValue(int))
     assert_can_assign(val, MultiValuedValue([val, UNRESOLVED_VALUE]))
     assert_cannot_assign(val, MultiValuedValue([val, TypedValue(int)]))
-    assert_cannot_assign(KnownValue(int), SubclassValue(int))
+    assert_cannot_assign(KnownValue(int), SubclassValue(TypedValue(int)))
 
 
 def test_unbound_method_value() -> None:
@@ -127,8 +127,8 @@ def test_typed_value() -> None:
     assert_cannot_assign(float_val, TypedValue(str))
     assert_can_assign(float_val, TypedValue(mock.Mock))
 
-    assert_cannot_assign(float_val, SubclassValue(float))
-    assert_can_assign(TypedValue(type), SubclassValue(float))
+    assert_cannot_assign(float_val, SubclassValue(TypedValue(float)))
+    assert_can_assign(TypedValue(type), SubclassValue(TypedValue(float)))
 
 
 @runtime_checkable
@@ -166,17 +166,18 @@ def test_callable() -> None:
 
 
 def test_subclass_value() -> None:
-    val = SubclassValue(int)
+    val = SubclassValue(TypedValue(int))
     assert_can_assign(val, KnownValue(int))
     assert_can_assign(val, KnownValue(bool))
     assert_cannot_assign(val, KnownValue(str))
     assert_can_assign(val, TypedValue(type))
     assert_cannot_assign(val, TypedValue(int))
-    assert_can_assign(val, SubclassValue(bool))
-    assert_cannot_assign(val, SubclassValue(str))
-    val = value.SubclassValue(str)
+    assert_can_assign(val, SubclassValue(TypedValue(bool)))
+    assert_can_assign(val, SubclassValue(UNRESOLVED_VALUE))
+    assert_cannot_assign(val, SubclassValue(TypedValue(str)))
+    val = SubclassValue(TypedValue(str))
     assert_eq("Type[str]", str(val))
-    assert_is(str, val.typ)
+    assert_eq(TypedValue(str), val.typ)
     assert val.is_type(str)
     assert not val.is_type(int)
 

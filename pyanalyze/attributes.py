@@ -65,7 +65,12 @@ def get_attribute(ctx: AttrContext) -> Value:
     elif isinstance(root_value, TypedValue):
         return _get_attribute_from_typed(root_value.typ, ctx)
     elif isinstance(root_value, SubclassValue):
-        return _get_attribute_from_subclass(root_value.typ, ctx)
+        if isinstance(root_value.typ, TypedValue):
+            return _get_attribute_from_subclass(root_value.typ.typ, ctx)
+        elif root_value.typ is UNRESOLVED_VALUE:
+            return UNRESOLVED_VALUE
+        else:
+            return _get_attribute_from_known(type, ctx)
     elif isinstance(root_value, UnboundMethodValue):
         return _get_attribute_from_unbound(root_value, ctx)
     elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
@@ -89,7 +94,7 @@ def _get_attribute_from_subclass(
     elif ctx.attr == "__dict__":
         return TypedValue(dict)
     elif ctx.attr == "__bases__":
-        return GenericValue(tuple, [SubclassValue(object)])
+        return GenericValue(tuple, [SubclassValue(TypedValue(object))])
     result, should_unwrap = _get_attribute_from_mro(typ, ctx)
     if should_unwrap:
         result = _unwrap_value_from_subclass(result, ctx)

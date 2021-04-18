@@ -4,9 +4,7 @@ Extensions to the type system supported by pyanalyze.
 
 """
 from dataclasses import dataclass
-from typing import Tuple, TypeVar
-
-_T = TypeVar("_T")
+from typing import Tuple
 
 
 class _ParameterTypeGuardMeta(type):

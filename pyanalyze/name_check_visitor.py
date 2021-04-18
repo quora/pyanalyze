@@ -1585,7 +1585,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         "__new__",
                     ):
                         assert self.current_class is not None
-                        value = SubclassValue(self.current_class)
+                        value = SubclassValue(TypedValue(self.current_class))
                     else:
                         # normal method
                         value = TypedValue(self.current_class)
@@ -3432,7 +3432,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     )
                 ):
                     return UNRESOLVED_VALUE
-            elif isinstance(root_value, (TypedValue, SubclassValue)):
+            elif isinstance(root_value, TypedValue):
                 root_type = root_value.typ
                 # namedtuples have only static attributes
                 if not (
@@ -3441,6 +3441,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     and not hasattr(root_type, "__getattr__")
                 ):
                     return self._maybe_get_attr_value(root_type, attr)
+            elif isinstance(root_value, SubclassValue):
+                if isinstance(root_value.typ, TypedValue):
+                    root_type = root_value.typ.typ
+                    # namedtuples have only static attributes
+                    if not (
+                        isinstance(root_type, type)
+                        and issubclass(root_type, tuple)
+                        and not hasattr(root_type, "__getattr__")
+                    ):
+                        return self._maybe_get_attr_value(root_type, attr)
+                else:
+                    return UNRESOLVED_VALUE
             self._show_error_if_checking(
                 node,
                 "%s has no attribute %r" % (root_value, attr),

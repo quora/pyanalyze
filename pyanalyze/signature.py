@@ -253,7 +253,6 @@ class Signature:
         the local variables to validate types and keyword-only arguments.
 
         """
-        print("SIG", self)
         call_args = []
         call_kwargs = {}
         for composite, label in args:
