@@ -14,9 +14,7 @@ import typing
 from typing import Generic, TypeVar, NewType
 
 from .test_config import TestConfig
-from .test_name_check_visitor import (
-    TestNameCheckVisitorBase
-)
+from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .signature import SigParameter, Signature
 from .arg_spec import ArgSpecCache
@@ -33,6 +31,7 @@ from .value import (
 
 T = TypeVar("T")
 NT = NewType("NT", int)
+
 
 class TestTypeshedClient(TestNameCheckVisitorBase):
     @assert_passes()

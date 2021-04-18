@@ -342,4 +342,3 @@ class TestCoroutines(TestNameCheckVisitorBase):
 
         async def g():
             assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
-
