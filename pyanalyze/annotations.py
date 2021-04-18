@@ -120,7 +120,6 @@ def type_from_value(
     return _type_from_value(value, ctx)
 
 
-
 def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
     val = _Visitor(ctx).visit(node)
     if val is None:
@@ -223,7 +222,11 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     elif typing_inspect.is_typevar(val):
         return TypeVarValue(cast(TypeVar, val))
     elif typing_inspect.is_classvar(val):
-        return _type_from_runtime(val.__args__[0], ctx)
+        if hasattr(val, "__type__"):
+            typ = val.__type__
+        else:
+            typ = val.__args__[0]
+        return _type_from_runtime(typ, ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
         val, "ForwardRef"
     ):
@@ -375,8 +378,11 @@ class _DefaultContext(Context):
                 return KnownValue(getattr(builtins, node.id))
         if self.should_suppress_undefined_names:
             return UNRESOLVED_VALUE
-        self.show_error(f"Undefined name {node.id!r} used in annotation", ErrorCode.undefined_name)
+        self.show_error(
+            f"Undefined name {node.id!r} used in annotation", ErrorCode.undefined_name
+        )
         return UNRESOLVED_VALUE
+
 
 @dataclass
 class _SubscriptedValue(Value):
@@ -409,8 +415,12 @@ class _Visitor(ast.NodeVisitor):
             try:
                 return KnownValue(getattr(root_value.val, node.attr))
             except AttributeError:
-                return None
-        return None
+                self.ctx.show_error(
+                    f"{root_value.val!r} has no attribute {node.attr!r}"
+                )
+                return UNRESOLVED_VALUE
+        self.ctx.show_error(f"Cannot resolve annotation {root_value}")
+        return UNRESOLVED_VALUE
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
         elts = [self.visit(elt) for elt in node.elts]
@@ -545,7 +555,9 @@ def _value_of_origin_args(
         # This happens for SupportsInt in 3.7.
         return _maybe_typed_value(val, ctx)
     else:
-        ctx.show_error(f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]")
+        ctx.show_error(
+            f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]"
+        )
         return UNRESOLVED_VALUE
 
 

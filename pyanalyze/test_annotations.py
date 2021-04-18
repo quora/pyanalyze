@@ -434,6 +434,16 @@ def capybara(x: int | None, y: int | str) -> None:
         def f():
             Capybara(x=3)
 
+    @assert_passes()
+    def test_classvar(self):
+        from typing import ClassVar
+
+        class Capybara:
+            x: ClassVar[str]
+
+        def caller(c: Capybara):
+            assert_is_value(c.x, TypedValue(str))
+
 
 class TestAnnotated(TestNameCheckVisitorBase):
     @assert_passes()
