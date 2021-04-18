@@ -29,17 +29,7 @@ import qcore
 import inspect
 import sys
 from types import GeneratorType
-from typing import (
-    cast,
-    Any,
-    Generic,
-    Iterable,
-    Optional,
-    Union,
-    Callable,
-    List,
-    TypeVar,
-)
+from typing import cast, Any, Iterable, Optional, Union, Callable, List, TypeVar
 from typing_extensions import Protocol
 import typeshed_client
 from typed_ast import ast3
@@ -144,7 +134,7 @@ class TypeshedFinder(object):
         if typ is AbstractSet:
             return [GenericValue(Collection, (TypeVarValue(T_co),))]
         if typ is AbstractContextManager:
-            return [GenericValue(Generic, (TypeVarValue(T_co),))]
+            return [GenericValue(AbstractContextManager, (TypeVarValue(T_co),))]
         if typ is Callable or typ is collections.abc.Callable:
             return None
         fq_name = self._get_fq_name(typ)
@@ -245,7 +235,7 @@ class TypeshedFinder(object):
             )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
-            if obj.__name__ in info.child_nodes:
+            if info.child_nodes and obj.__name__ in info.child_nodes:
                 child_info = info.child_nodes[obj.__name__]
                 return self._get_signature_from_info(
                     child_info, obj, fq_name, mod, objclass
