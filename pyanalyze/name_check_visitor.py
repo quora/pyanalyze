@@ -2793,7 +2793,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, iterated: Composite, node: ast.AST
     ) -> Tuple[Value, None]:
         iterator = self._check_dunder_call(node, iterated, "__aiter__", [])
-        return self._check_dunder_call(node, Composite(iterator, None), "__anext__", []), None
+        return (
+            self._check_dunder_call(node, Composite(iterator, None), "__anext__", []),
+            None,
+        )
 
     def _member_value_of_iterator_val(
         self, iterated: Value, node: ast.AST
@@ -3573,7 +3576,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 callee_val, self.config.FUNCTIONS_SAFE_TO_CALL
             ) and self._can_perform_call(node, arg_values, kw_values):
                 return_value = self._try_perform_call(
-                    callee_val, node, cast(Any, arg_values), cast(Any, kw_values), return_value
+                    callee_val,
+                    node,
+                    cast(Any, arg_values),
+                    cast(Any, kw_values),
+                    return_value,
                 )
 
         return return_value, constraint

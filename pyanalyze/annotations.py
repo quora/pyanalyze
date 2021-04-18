@@ -27,11 +27,14 @@ from typing import (
 )
 
 from .error_code import ErrorCode
+from .extensions import ParameterTypeGuard
 from .find_unused import used
 from .value import (
     AnnotatedValue,
+    Extension,
     KnownValue,
     NO_RETURN_VALUE,
+    ParameterTypeGuardExtension,
     UNRESOLVED_VALUE,
     TypedValue,
     SequenceIncompleteValue,
@@ -180,13 +183,14 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
         # Annotated in 3.6's typing_extensions
         origin, metadata = val.__args__
         return _make_annotated(
-            _type_from_runtime(origin, ctx), [KnownValue(v) for v in metadata]
+            _type_from_runtime(origin, ctx), [KnownValue(v) for v in metadata], ctx
         )
     elif is_instance_of_typing_name(val, "_AnnotatedAlias"):
         # Annotated in typing and newer typing_extensions
         return _make_annotated(
             _type_from_runtime(val.__origin__, ctx),
             [KnownValue(v) for v in val.__metadata__],
+            ctx,
         )
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
@@ -306,7 +310,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             return TypedValue(type)
         elif is_typing_name(root, "Annotated"):
             origin, *metadata = value.members
-            return _make_annotated(_type_from_value(origin, ctx), metadata)
+            return _make_annotated(_type_from_value(origin, ctx), metadata, ctx)
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
             if origin is None:
@@ -561,8 +565,20 @@ def _maybe_typed_value(val: type) -> Value:
         return TypedValue(val)
 
 
-def _make_annotated(origin: Value, metadata: Sequence[Value]) -> AnnotatedValue:
+def _make_annotated(
+    origin: Value, metadata: Sequence[Value], ctx: Context
+) -> AnnotatedValue:
+    metadata = [_value_from_metadata(entry, ctx) for entry in metadata]
     if isinstance(origin, AnnotatedValue):
         # Flatten it
         return AnnotatedValue(origin.value, [*origin.metadata, *metadata])
     return AnnotatedValue(origin, metadata)
+
+
+def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
+    if isinstance(entry, KnownValue):
+        if isinstance(entry.val, ParameterTypeGuard):
+            return ParameterTypeGuardExtension(
+                entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
+            )
+    return entry

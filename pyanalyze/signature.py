@@ -5,7 +5,6 @@ Wrappers around Signature objects.
 """
 
 from functools import reduce
-from .extensions import ParameterTypeGuard
 from .error_code import ErrorCode
 from .stacked_scopes import (
     AndConstraint,
@@ -13,11 +12,12 @@ from .stacked_scopes import (
     Constraint,
     ConstraintType,
     NULL_CONSTRAINT,
-    AbstractConstraint
+    AbstractConstraint,
 )
 from .value import (
     AnnotatedValue,
     KnownValue,
+    ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
     UNRESOLVED_VALUE,
@@ -180,7 +180,9 @@ class Signature:
         node: ast.AST,
         typevar_map: TypeVarMap,
     ) -> bool:
-        if param.annotation is not EMPTY and not (isinstance(param.default, Composite) and var_value is param.default.value):
+        if param.annotation is not EMPTY and not (
+            isinstance(param.default, Composite) and var_value is param.default.value
+        ):
             if typevar_map:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
             else:
@@ -219,7 +221,8 @@ class Signature:
     ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
         constraints = []
         if isinstance(return_value, AnnotatedValue):
-            for guard in return_value.get_metadata_of_type(ParameterTypeGuard):
+            for guard in return_value.get_metadata_of_type(ParameterTypeGuardExtension):
+                print("GUARD", guard)
                 if guard.varname in bound_args.arguments:
                     composite = bound_args.arguments[guard.varname]
                     if (
@@ -230,7 +233,7 @@ class Signature:
                             composite.varname,
                             ConstraintType.is_value_object,
                             True,
-                            guard.value,
+                            guard.guarded_type,
                         )
                         constraints.append(constraint)
         if constraints:
@@ -250,6 +253,7 @@ class Signature:
         the local variables to validate types and keyword-only arguments.
 
         """
+        print("SIG", self)
         call_args = []
         call_kwargs = {}
         for composite, label in args:

@@ -741,12 +741,22 @@ class TypeVarValue(Value):
         return UNRESOLVED_VALUE
 
 
+class Extension:
+    __slots__ = ()
+
+
+@dataclass
+class ParameterTypeGuardExtension(Extension):
+    varname: str
+    guarded_type: Value
+
+
 @dataclass(frozen=True)
 class AnnotatedValue(Value):
     """Value representing a PEP 593 Annotated object."""
 
     value: Value
-    metadata: Sequence[Value]
+    metadata: Sequence[Union[Value, Extension]]
 
     def is_type(self, typ: type) -> bool:
         return self.value.is_type(typ)
@@ -755,10 +765,19 @@ class AnnotatedValue(Value):
         return self.value.get_type()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
-        return AnnotatedValue(
-            self.value.substitute_typevars(typevars),
-            [value.substitute_typevars(typevars) for value in self.metadata],
-        )
+        metadata = []
+        for val in self.metadata:
+            if isinstance(val, Extension):
+                if isinstance(val, ParameterTypeGuardExtension):
+                    guarded_type = val.guarded_type.substitute_typevars(typevars)
+                    metadata.append(
+                        ParameterTypeGuardExtension(val.varname, guarded_type)
+                    )
+                else:
+                    metadata.append(val)
+            else:
+                metadata.append(val.substitute_typevars(typevars))
+        return AnnotatedValue(self.value.substitute_typevars(typevars), metadata)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         return self.value.can_assign(other, ctx)
@@ -767,12 +786,16 @@ class AnnotatedValue(Value):
         yield self
         yield from self.value.walk_values()
         for val in self.metadata:
-            yield from val.walk_values()
+            if isinstance(val, Extension):
+                if isinstance(val, ParameterTypeGuardExtension):
+                    yield from val.guarded_type.walk_values()
+            else:
+                yield from val.walk_values()
 
     def get_metadata_of_type(self, typ: Type[T]) -> Iterable[T]:
         for data in self.metadata:
-            if isinstance(data, KnownValue) and isinstance(data.val, typ):
-                yield typ
+            if isinstance(data, typ):
+                yield data
 
     def __str__(self) -> str:
         return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
