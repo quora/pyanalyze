@@ -33,7 +33,6 @@ import types
 from typing import (
     Iterator,
     Mapping,
-    cast,
     Iterable,
     Dict,
     Union,
@@ -47,17 +46,19 @@ from typing import (
     TypeVar,
     Container,
 )
+from typing_extensions import Annotated
 
 import asynq
 import qcore
 from qcore.helpers import safe_str
 
-from .analysis_lib import safe_in, is_iterable
+from .analysis_lib import all_of_type, safe_in, is_iterable
 from . import attributes, format_strings, node_visitor, importer, method_return_type
 from .annotations import type_from_value, is_typing_name
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
+from .extensions import ParameterTypeGuard
 from .find_unused import UnusedObjectFinder, used
 from .safe import safe_getattr, is_hashable
 from .stacked_scopes import (
@@ -2182,8 +2183,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def _maybe_make_sequence(
         self, typ: type, elts: Sequence[Value], node: ast.AST
     ) -> Value:
-        if all(isinstance(elt, KnownValue) for elt in elts):
-            vals = [elt.val for elt in cast(Sequence[KnownValue], elts)]
+        if all_of_type(elts, KnownValue):
+            vals = [elt.val for elt in elts]
             try:
                 obj = typ(vals)
             except TypeError as e:
@@ -3572,13 +3573,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 # if all arguments are KnownValues and the class is whitelisted, instantiate it
                 if issubclass(
                     callee_val, self.config.CLASSES_SAFE_TO_INSTANTIATE
-                ) and self._can_perform_call(node, arg_values, kw_values):
+                ) and self._can_perform_call( arg_values, kw_values):
                     return_value = self._try_perform_call(
                         # TODO make these unnecessary
                         callee_val,
                         node,
-                        cast(Any, arg_values),
-                        cast(Any, kw_values),
+                        arg_values,
+                        kw_values,
                         TypedValue(callee_val),
                     )
                 else:
@@ -3586,12 +3587,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_value = TypedValue(callee_val)
             elif safe_in(
                 callee_val, self.config.FUNCTIONS_SAFE_TO_CALL
-            ) and self._can_perform_call(node, arg_values, kw_values):
+            ) and self._can_perform_call( arg_values, kw_values):
                 return_value = self._try_perform_call(
                     callee_val,
                     node,
-                    cast(Any, arg_values),
-                    cast(Any, kw_values),
+                    arg_values,
+                    kw_values,
                     return_value,
                 )
 
@@ -3599,13 +3600,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _can_perform_call(
         self,
-        node: ast.AST,
         args: Iterable[Value],
         keywords: Iterable[Tuple[Optional[str], Value]],
-    ) -> bool:
+    ) -> Annotated[
+        bool,
+        ParameterTypeGuard["args", Iterable[KnownValue]],
+        ParameterTypeGuard["keywords", Iterable[Tuple[str, KnownValue]]],
+    ]:
         """Returns whether all of the arguments were inferred successfully."""
         return all(isinstance(arg, KnownValue) for arg in args) and all(
-            isinstance(arg, KnownValue) for _, arg in keywords
+            keyword is not None and isinstance(arg, KnownValue)
+            for keyword, arg in keywords
         )
 
     def _try_perform_call(
@@ -3694,24 +3699,25 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if (
             allow_call
             and isinstance(callee_wrapped, KnownValue)
-            and all(isinstance(arg.value, KnownValue) for arg in args)
-            and all(isinstance(value.value, KnownValue) for key, value in keywords)
         ):
-            try:
-                result = callee_wrapped.val(
-                    *[arg.value.val for arg in args],
-                    **{key: value.value.val for key, value in keywords},
-                )
-            except Exception as e:
-                self.log(logging.INFO, "exception calling", (callee_wrapped, e))
-            else:
-                if result is NotImplemented:
-                    self.show_error(
-                        node,
-                        f"Call to {callee_wrapped.val} is not supported",
-                        error_code=ErrorCode.incompatible_call,
+            arg_values = [arg.value for arg in args]
+            kw_values = [(kw, composite.value) for kw, composite in keywords]
+            if self._can_perform_call(arg_values, kw_values):
+                try:
+                    result = callee_wrapped.val(
+                        *[arg.val for arg in arg_values],
+                        **{key: value.val for key, value in kw_values},
                     )
-                return_value = KnownValue(result)
+                except Exception as e:
+                    self.log(logging.INFO, "exception calling", (callee_wrapped, e))
+                else:
+                    if result is NotImplemented:
+                        self.show_error(
+                            node,
+                            f"Call to {callee_wrapped.val} is not supported",
+                            error_code=ErrorCode.incompatible_call,
+                        )
+                    return_value = KnownValue(result)
 
         # for .asynq functions, we use the argspec for the underlying function, but that means
         # that the return value is not wrapped in AsyncTask, so we do that manually here

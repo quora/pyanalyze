@@ -222,7 +222,6 @@ class Signature:
         constraints = []
         if isinstance(return_value, AnnotatedValue):
             for guard in return_value.get_metadata_of_type(ParameterTypeGuardExtension):
-                print("GUARD", guard)
                 if guard.varname in bound_args.arguments:
                     composite = bound_args.arguments[guard.varname]
                     if (
