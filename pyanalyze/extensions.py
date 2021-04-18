@@ -19,7 +19,7 @@ class _ParameterTypeGuardMeta(type):
         return ParameterTypeGuard(params[0], params[1])
 
 
-@dataclass
+@dataclass(frozen=True)
 class ParameterTypeGuard(metaclass=_ParameterTypeGuardMeta):
     """A guard on an arbitrary parameter.
 
