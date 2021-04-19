@@ -774,9 +774,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return None, False
 
     def load_module(self, filename: str) -> Tuple[Optional[types.ModuleType], bool]:
-        return importer.load_module_from_file(
-            filename, self.config.PATHS_EXCLUDED_FROM_IMPORT
-        )
+        return importer.load_module_from_file(filename)
 
     def check(self) -> List[node_visitor.Failure]:
         """Runs the visitor on this module."""
