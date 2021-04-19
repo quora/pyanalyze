@@ -12,7 +12,7 @@ from types import ModuleType
 
 
 def load_module_from_file(
-    filename: str, verbose: bool = True
+    filename: str, verbose: bool = False
 ) -> Tuple[Optional[ModuleType], bool]:
     # Attempt to get the location of the module relative to sys.path so we can import it
     # somewhat properly
@@ -54,4 +54,8 @@ def load_module_from_file(
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_path] = module
     spec.loader.exec_module(module)
+    if "." in module_path:
+        parent_module_path, child_name = module_path.rsplit(".", maxsplit=1)
+        parent_module = importlib.import_module(parent_module_path)
+        setattr(parent_module, child_name, module)
     return module, False
