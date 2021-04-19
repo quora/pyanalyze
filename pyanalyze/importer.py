@@ -17,7 +17,7 @@ def load_module_from_file(
     # Attempt to get the location of the module relative to sys.path so we can import it
     # somewhat properly
     abspath = Path(filename).resolve()
-    module_path = None
+    candidate_paths = []
     for sys_path_entry in sys.path:
         if not sys_path_entry:
             continue
@@ -33,29 +33,35 @@ def load_module_from_file(
         if parts[-1] == "__init__":
             parts = parts[:-1]
 
-        new_module_path = ".".join(parts)
-        if module_path is None or len(new_module_path) > len(module_path):
-            module_path = new_module_path
+        candidate_paths.append(".".join(parts))
 
-    if module_path is None:
-        return None, False
-
-    if module_path in sys.modules:
-        existing = cast(ModuleType, sys.modules[module_path])
-        is_compiled = getattr(existing, "__file__", None) != str(abspath)
+    for module_path in candidate_paths:  # use sys.path order
+        if module_path in sys.modules:
+            existing = cast(ModuleType, sys.modules[module_path])
+            is_compiled = getattr(existing, "__file__", None) != str(abspath)
+            if verbose:
+                print(
+                    f"found {abspath} already present as {module_path} (is_compiled: {is_compiled})"
+                )
+            return existing, is_compiled
         if verbose:
-            print(
-                f"found {abspath} already present as {module_path} (is_compiled: {is_compiled})"
-            )
-        return existing, is_compiled
-    if verbose:
-        print(f"importing {abspath} as {module_path}")
-    spec = importlib.util.spec_from_file_location(module_path, abspath)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_path] = module
-    spec.loader.exec_module(module)
-    if "." in module_path:
-        parent_module_path, child_name = module_path.rsplit(".", maxsplit=1)
-        parent_module = importlib.import_module(parent_module_path)
-        setattr(parent_module, child_name, module)
-    return module, False
+            print(f"importing {abspath} as {module_path}")
+
+        if "." in module_path:
+            parent_module_path, child_name = module_path.rsplit(".", maxsplit=1)
+            try:
+                parent_module = importlib.import_module(parent_module_path)
+            except ImportError:
+                continue
+        else:
+            parent_module = child_name = None
+
+        spec = importlib.util.spec_from_file_location(module_path, abspath)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_path] = module
+        spec.loader.exec_module(module)
+        if parent_module is not None and child_name is not None:
+            setattr(parent_module, child_name, module)
+        return module, False
+
+    return None, False
