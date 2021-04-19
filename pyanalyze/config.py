@@ -52,11 +52,6 @@ class Config(object):
     # some bugs but also remove some annoying false positives.
     FOR_LOOP_ALWAYS_ENTERED = False
 
-    # when you run test_scope in a package's directory, that directory is part of the sys.path, but
-    # some submodules of the package may not react kindly to being imported as global modules
-    # instead of submodules, so you can exclude the directory
-    PATHS_EXCLUDED_FROM_IMPORT = set()
-
     # Attribute accesses on these do not result in errors
     IGNORED_PATHS = []
 
