@@ -30,6 +30,8 @@ def load_module_from_file(
         parts = [*relative_path.parts[:-1], relative_path.stem]
         if not all(part.isidentifier() for part in parts):
             continue
+        if parts[-1] == "__init__":
+            parts = parts[:-1]
 
         new_module_path = ".".join(parts)
         if module_path is None or len(new_module_path) > len(module_path):
