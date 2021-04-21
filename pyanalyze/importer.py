@@ -55,7 +55,9 @@ def load_module_from_file(
                 return existing, is_compiled
             if restrict_init:
                 missing_init = False
-                for parent in abspath.relative_to(import_path).parents:
+                for parent in abspath.parents:
+                    if parent == import_path:
+                        break
                     if not directory_has_init(parent):
                         missing_init = True
                         break
