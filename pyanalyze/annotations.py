@@ -27,14 +27,16 @@ from typing import (
 )
 
 from .error_code import ErrorCode
-from .extensions import HasAttrGuard, ParameterTypeGuard
+from .extensions import HasAttrGuard, ParameterTypeGuard, TypeGuard
 from .value import (
+    AnnotatedValue,
     Extension,
     HasAttrGuardExtension,
     KnownValue,
     MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
+    TypeGuardExtension,
     UNRESOLVED_VALUE,
     TypedValue,
     SequenceIncompleteValue,
@@ -249,6 +251,11 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     elif is_instance_of_typing_name(val, "_TypeAlias"):
         # typing.Pattern and Match, which are not normal generic types for some reason
         return GenericValue(val.impl_type, [_type_from_runtime(val.type_var, ctx)])
+    elif isinstance(val, TypeGuard):
+        return AnnotatedValue(
+            TypedValue(bool),
+            [TypeGuardExtension(_type_from_runtime(val.guarded_type, ctx))],
+        )
     else:
         origin = get_origin(val)
         if isinstance(origin, type):

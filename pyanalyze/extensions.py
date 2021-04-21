@@ -73,3 +73,22 @@ class HasAttrGuard(metaclass=_HasAttrGuardMeta):
     varname: str
     attribute_name: object
     attribute_type: object
+
+
+class _TypeGuardMeta(type):
+    def __getitem__(self, params: object) -> "TypeGuard":
+        return TypeGuard(params)
+
+
+@dataclass(frozen=True)
+class TypeGuard(metaclass=_TypeGuardMeta):
+    """Type guards, as defined in PEP 647.
+
+    Example usage:
+
+        def is_int_list(arg: list[Any]) -> list[int]:
+            return all(isinstance(elt, int) for elt in arg)
+
+    """
+
+    guarded_type: object

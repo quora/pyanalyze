@@ -22,6 +22,7 @@ from .value import (
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
+    TypeGuardExtension,
     UNRESOLVED_VALUE,
     Value,
     TypeVarMap,
@@ -243,6 +244,16 @@ class Signature:
                             guard.guarded_type,
                         )
                         constraints.append(constraint)
+            for guard in return_value.get_metadata_of_type(TypeGuardExtension):
+                composite = bound_args.args[0]
+                if isinstance(composite, Composite) and composite.varname is not None:
+                    constraint = Constraint(
+                        composite.varname,
+                        ConstraintType.is_value_object,
+                        True,
+                        guard.guarded_type,
+                    )
+                    constraints.append(constraint)
             for guard in return_value.get_metadata_of_type(HasAttrGuardExtension):
                 if guard.varname in bound_args.arguments:
                     composite = bound_args.arguments[guard.varname]
