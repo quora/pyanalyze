@@ -6,12 +6,14 @@ Code for retrieving the value of attributes.
 import ast
 import asynq
 from dataclasses import dataclass
+from enum import Enum
 import inspect
 import qcore
 import types
 from typing import Any, Tuple, Optional
 
 from .annotations import type_from_runtime
+from .safe import safe_issubclass
 from .value import (
     AnnotatedValue,
     HasAttrExtension,
@@ -244,6 +246,15 @@ def _get_attribute_from_unbound(
 
 def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
     # Then go through the MRO and find base classes that may define the attribute.
+    if safe_issubclass(typ, Enum):
+        # Special case, to avoid picking an attribute of Enum instances (e.g., name)
+        # over an Enum member. Ideally we'd have a more principled way to support this
+        # but I haven't thought of one.
+        try:
+            return KnownValue(getattr(typ, ctx.attr)), True
+        except Exception:
+            pass
+
     try:
         mro = list(typ.mro())
     except Exception:
