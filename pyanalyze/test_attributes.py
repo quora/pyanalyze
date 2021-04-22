@@ -130,3 +130,40 @@ class TestAttributes(TestNameCheckVisitorBase):
     def test_no_attribute_for_typeshed_class():
         def capybara(c: staticmethod):
             c.no_such_attribute
+
+
+class TestHasAttrExtension(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_hasattr(self):
+        from typing_extensions import Literal
+
+        def capybara(x: Literal[1]) -> None:
+            if hasattr(x, "x"):
+                assert_is_value(x.x, UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_user_hasattr(self):
+        from typing import TypeVar, Any
+        from typing_extensions import Annotated, Literal
+        from pyanalyze.extensions import HasAttrGuard
+
+        T = TypeVar("T", bound=str)
+
+        def my_hasattr(
+            obj: object, name: T
+        ) -> Annotated[bool, HasAttrGuard["obj", T, Any]]:
+            return hasattr(obj, name)
+
+        def has_int_attr(
+            obj: object, name: T
+        ) -> Annotated[bool, HasAttrGuard["obj", T, int]]:
+            val = getattr(obj, name, None)
+            return isinstance(val, int)
+
+        def capybara(x: Literal[1]) -> None:
+            if my_hasattr(x, "x"):
+                assert_is_value(x.x, UNRESOLVED_VALUE)
+
+        def inty_capybara(x: Literal[1]) -> None:
+            if has_int_attr(x, "inty"):
+                assert_is_value(x.inty, TypedValue(int))

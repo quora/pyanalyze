@@ -780,9 +780,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return None, False
 
     def load_module(self, filename: str) -> Tuple[Optional[types.ModuleType], bool]:
-        return importer.load_module_from_file(
-            filename, self.config.PATHS_EXCLUDED_FROM_IMPORT
-        )
+        return importer.load_module_from_file(filename)
 
     def check(self) -> List[node_visitor.Failure]:
         """Runs the visitor on this module."""
@@ -3417,6 +3415,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # We don't throw an error in many
             # cases where we're not quite sure whether an attribute
             # will exist.
+            if isinstance(root_value, AnnotatedValue):
+                root_value = root_value.value
             if isinstance(root_value, UnboundMethodValue):
                 if self._should_ignore_val(node):
                     return UNRESOLVED_VALUE

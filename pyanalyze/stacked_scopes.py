@@ -50,6 +50,7 @@ from .value import (
     SubclassValue,
     TypedValue,
     Value,
+    annotate_value,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
@@ -137,6 +138,8 @@ class ConstraintType(enum.Enum):
     is_value_object = 6
     # constraint.value is a PredicateFunc
     predicate = 7
+    # self.value is an Extension to annotate the value with
+    add_annotation = 8
 
 
 class AbstractConstraint:
@@ -285,8 +288,9 @@ class Constraint(AbstractConstraint):
             if self.positive:
                 yield self.value
             else:
-                if value != self.value:
-                    yield value
+                # PEP 647 specifies that type narrowing should not happen
+                # in the negative case.
+                yield value
 
         elif self.constraint_type == ConstraintType.is_truthy:
             if self.positive:
@@ -299,6 +303,12 @@ class Constraint(AbstractConstraint):
         elif self.constraint_type == ConstraintType.predicate:
             new_value = self.value(value, self.positive)
             if new_value is not None:
+                yield value
+
+        elif self.constraint_type == ConstraintType.add_annotation:
+            if self.positive:
+                yield annotate_value(value, [self.value])
+            else:
                 yield value
 
         elif self.constraint_type == ConstraintType.one_of:

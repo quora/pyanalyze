@@ -52,11 +52,6 @@ class Config(object):
     # some bugs but also remove some annoying false positives.
     FOR_LOOP_ALWAYS_ENTERED = False
 
-    # when you run test_scope in a package's directory, that directory is part of the sys.path, but
-    # some submodules of the package may not react kindly to being imported as global modules
-    # instead of submodules, so you can exclude the directory
-    PATHS_EXCLUDED_FROM_IMPORT = set()
-
     # Attribute accesses on these do not result in errors
     IGNORED_PATHS = []
 
@@ -111,7 +106,12 @@ class Config(object):
     # test_scope will instantiate instances of these classes if it can infer the value of all of
     # their arguments. This is useful mostly for classes that are commonly instantiated with static
     # arguments.
-    CLASSES_SAFE_TO_INSTANTIATE = (value.Value, asynq.ConstFuture, range)
+    CLASSES_SAFE_TO_INSTANTIATE = (
+        value.Value,
+        value.Extension,
+        asynq.ConstFuture,
+        range,
+    )
 
     # Similarly, these functions will be called
     FUNCTIONS_SAFE_TO_CALL = (

@@ -336,10 +336,11 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 settings = {code: True for code in cls.error_code_enum}
             else:
                 settings = cls._get_default_settings()
-                for setting in args.enable:
-                    settings[cls.error_code_enum[setting]] = True
-                for setting in args.disable:
-                    settings[cls.error_code_enum[setting]] = False
+                if settings is not None:
+                    for setting in args.enable:
+                        settings[cls.error_code_enum[setting]] = True
+                    for setting in args.disable:
+                        settings[cls.error_code_enum[setting]] = False
             kwargs = {
                 key: value
                 for key, value in args.__dict__.items()
