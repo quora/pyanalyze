@@ -217,7 +217,7 @@ class _AttrContext(attributes.AttrContext):
         )
         if (
             typeshed_type is UNINITIALIZED_VALUE
-            and attributes.may_have_dynamic_attributes(type)
+            and attributes.may_have_dynamic_attributes(typ)
         ):
             return UNRESOLVED_VALUE
         return typeshed_type
