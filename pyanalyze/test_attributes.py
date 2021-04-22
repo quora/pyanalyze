@@ -131,6 +131,19 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara(c: staticmethod):
             c.no_such_attribute
 
+    @assert_passes()
+    def test_allow_function(self):
+        def decorator(f):
+            return f
+
+        def capybara():
+            @decorator
+            def f():
+                pass
+
+            f.attr = 42
+            print(f.attr)
+
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
     @assert_passes()

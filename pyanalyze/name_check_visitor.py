@@ -212,10 +212,15 @@ class _AttrContext(attributes.AttrContext):
         return UNRESOLVED_VALUE
 
     def get_attribute_from_typeshed(self, typ: type) -> Value:
+        typeshed_type = self.visitor.arg_spec_cache.ts_finder.get_attribute(
+            typ, self.attr
+        )
         # these lead to lots of false positives, ignore for now
-        if typ is type or typ is super:
+        if typeshed_type is UNINITIALIZED_VALUE and (
+            typ is type or typ is super or typ is types.FunctionType
+        ):
             return UNRESOLVED_VALUE
-        return self.visitor.arg_spec_cache.ts_finder.get_attribute(typ, self.attr)
+        return typeshed_type
 
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
