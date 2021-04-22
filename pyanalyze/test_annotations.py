@@ -554,3 +554,37 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
                 assert_is_value(
                     elts, GenericValue(collections.abc.Iterable, [TypedValue(int)])
                 )
+
+
+class TestTypeGuard(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from pyanalyze.extensions import TypeGuard
+        from typing import Union
+
+        def is_int(x: Union[int, str]) -> TypeGuard[int]:
+            return x == 42
+
+        def capybara(x: Union[int, str]):
+            if is_int(x):
+                assert_is_value(x, TypedValue(int))
+            else:
+                assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+
+    @assert_passes()
+    def test_method(self) -> None:
+        from pyanalyze.extensions import TypeGuard
+        from typing import Union
+
+        class Cls:
+            def is_int(self, x: Union[int, str]) -> TypeGuard[int]:
+                return x == 43
+
+        def capybara(x: Union[int, str]):
+            cls = Cls()
+            if cls.is_int(x):
+                assert_is_value(x, TypedValue(int))
+                assert_is_value(cls, TypedValue(Cls))
+            else:
+                assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+                assert_is_value(cls, TypedValue(Cls))
