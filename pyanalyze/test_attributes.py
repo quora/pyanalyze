@@ -144,6 +144,18 @@ class TestAttributes(TestNameCheckVisitorBase):
             f.attr = 42
             print(f.attr)
 
+    @assert_passes()
+    def test_enum_name(self):
+        import enum
+
+        class E(enum.Enum):
+            name = 1
+            no_name = 2
+
+        def capybara():
+            assert_is_value(E.no_name, KnownValue(E.no_name))
+            assert_is_value(E.name, KnownValue(E.name))
+
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
     @assert_passes()
