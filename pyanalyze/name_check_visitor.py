@@ -3449,25 +3449,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return UNRESOLVED_VALUE
             elif isinstance(root_value, TypedValue):
                 root_type = root_value.typ
-                # namedtuples have only static attributes
-                if not (
-                    isinstance(root_type, type)
-                    and issubclass(root_type, tuple)
-                    and not hasattr(root_type, "__getattr__")
-                ) and not (
-                    self.arg_spec_cache.ts_finder.has_stubs(root_type)
-                    and not attributes.may_have_dynamic_attributes(root_type)
-                ):
+                if not self._has_only_known_attributes(root_type):
                     return self._maybe_get_attr_value(root_type, attr)
             elif isinstance(root_value, SubclassValue):
                 if isinstance(root_value.typ, TypedValue):
                     root_type = root_value.typ.typ
-                    # namedtuples have only static attributes
-                    if not (
-                        isinstance(root_type, type)
-                        and issubclass(root_type, tuple)
-                        and not hasattr(root_type, "__getattr__")
-                    ):
+                    if not self._has_only_known_attributes(root_type):
                         return self._maybe_get_attr_value(root_type, attr)
                 else:
                     return UNRESOLVED_VALUE
@@ -3479,6 +3466,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return UNRESOLVED_VALUE
 
         return result
+
+    def _has_only_known_attributes(self, typ: type) -> bool:
+        if (
+            isinstance(typ, type)
+            and issubclass(typ, tuple)
+            and not hasattr(typ, "__getattr__")
+        ):
+            # namedtuple
+            return True
+        if self.arg_spec_cache.ts_finder.has_stubs(
+            typ
+        ) and not attributes.may_have_dynamic_attributes(typ):
+            return True
+        return False
 
     def composite_from_node(self, node: ast.AST) -> Composite:
         if isinstance(node, ast.Attribute):
