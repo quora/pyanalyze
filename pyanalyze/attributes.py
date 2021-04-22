@@ -93,6 +93,11 @@ def get_attribute(ctx: AttrContext) -> Value:
     return attribute_value
 
 
+def may_have_dynamic_attributes(typ: type) -> bool:
+    """These types have typeshed stubs, but instances may have other attributes."""
+    return typ is type or typ is super or typ is types.FunctionType
+
+
 def _get_attribute_from_subclass(
     typ: type,
     ctx: AttrContext,

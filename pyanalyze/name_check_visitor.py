@@ -215,9 +215,9 @@ class _AttrContext(attributes.AttrContext):
         typeshed_type = self.visitor.arg_spec_cache.ts_finder.get_attribute(
             typ, self.attr
         )
-        # these lead to lots of false positives, ignore for now
-        if typeshed_type is UNINITIALIZED_VALUE and (
-            typ is type or typ is super or typ is types.FunctionType
+        if (
+            typeshed_type is UNINITIALIZED_VALUE
+            and attributes.may_have_dynamic_attributes(type)
         ):
             return UNRESOLVED_VALUE
         return typeshed_type
@@ -3454,7 +3454,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     isinstance(root_type, type)
                     and issubclass(root_type, tuple)
                     and not hasattr(root_type, "__getattr__")
-                ) and not self.arg_spec_cache.ts_finder.has_stubs(root_type):
+                ) and not (
+                    self.arg_spec_cache.ts_finder.has_stubs(root_type)
+                    and not attributes.may_have_dynamic_attributes(root_type)
+                ):
                     return self._maybe_get_attr_value(root_type, attr)
             elif isinstance(root_value, SubclassValue):
                 if isinstance(root_value.typ, TypedValue):
