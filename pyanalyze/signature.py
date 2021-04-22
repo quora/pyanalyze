@@ -4,7 +4,6 @@ Wrappers around Signature objects.
 
 """
 
-from functools import reduce
 from .error_code import ErrorCode
 from .stacked_scopes import (
     AndConstraint,
@@ -22,6 +21,7 @@ from .value import (
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
+    TypeGuardExtension,
     UNRESOLVED_VALUE,
     Value,
     TypeVarMap,
@@ -31,6 +31,8 @@ from .value import (
 
 import ast
 from dataclasses import dataclass, field
+from functools import reduce
+from types import MethodType, FunctionType
 import inspect
 import qcore
 import logging
@@ -243,6 +245,25 @@ class Signature:
                             guard.guarded_type,
                         )
                         constraints.append(constraint)
+            for guard in return_value.get_metadata_of_type(TypeGuardExtension):
+                # This might miss some cases where we should use the second argument instead. We'll
+                # have to come up with additional heuristics if that comes up.
+                if isinstance(self.callable, MethodType) or (
+                    isinstance(self.callable, FunctionType)
+                    and self.callable.__name__ != self.callable.__qualname__
+                ):
+                    index = 1
+                else:
+                    index = 0
+                composite = bound_args.args[index]
+                if isinstance(composite, Composite) and composite.varname is not None:
+                    constraint = Constraint(
+                        composite.varname,
+                        ConstraintType.is_value_object,
+                        True,
+                        guard.guarded_type,
+                    )
+                    constraints.append(constraint)
             for guard in return_value.get_metadata_of_type(HasAttrGuardExtension):
                 if guard.varname in bound_args.arguments:
                     composite = bound_args.arguments[guard.varname]

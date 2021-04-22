@@ -288,8 +288,9 @@ class Constraint(AbstractConstraint):
             if self.positive:
                 yield self.value
             else:
-                if value != self.value:
-                    yield value
+                # PEP 647 specifies that type narrowing should not happen
+                # in the negative case.
+                yield value
 
         elif self.constraint_type == ConstraintType.is_truthy:
             if self.positive:

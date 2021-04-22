@@ -808,6 +808,18 @@ class ParameterTypeGuardExtension(Extension):
 
 
 @dataclass
+class TypeGuardExtension(Extension):
+    guarded_type: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
+        guarded_type = self.guarded_type.substitute_typevars(typevars)
+        return TypeGuardExtension(guarded_type)
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.guarded_type.walk_values()
+
+
+@dataclass
 class HasAttrGuardExtension(Extension):
     """Returned by a function to indicate that varname has the given attribute."""
 
