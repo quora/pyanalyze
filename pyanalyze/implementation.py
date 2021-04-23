@@ -22,6 +22,7 @@ from .signature import (
 from .value import (
     AnnotatedValue,
     HasAttrGuardExtension,
+    ParameterTypeGuardExtension,
     TypedValue,
     SubclassValue,
     GenericValue,
@@ -110,6 +111,28 @@ def flatten_unions(
 
 # Implementations of some important functions for use in their ExtendedArgSpecs (see above). These
 # are called when the test_scope checker encounters call to these functions.
+
+
+def _issubclass_impl(
+    variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
+) -> ImplementationFnReturn:
+    class_or_tuple = variables["class_or_tuple"]
+    extension = None
+    if isinstance(class_or_tuple, KnownValue):
+        if isinstance(class_or_tuple.val, type):
+            extension = ParameterTypeGuardExtension(
+                "cls", SubclassValue(TypedValue(class_or_tuple.val))
+            )
+        elif isinstance(class_or_tuple.val, tuple) and all(
+            isinstance(elt, type) for elt in class_or_tuple.val
+        ):
+            vals = [SubclassValue(TypedValue(elt)) for elt in class_or_tuple.val]
+            extension = ParameterTypeGuardExtension("cls", MultiValuedValue(vals))
+    if extension is not None:
+        return AnnotatedValue(TypedValue(bool), [extension])
+    return TypedValue(bool)
+
+
 def _isinstance_impl(
     variables: VarsDict, visitor: "NameCheckVisitor", node: ast.Call
 ) -> ImplementationFnReturn:
@@ -803,6 +826,20 @@ def get_default_argspecs() -> Dict[object, Signature]:
             [SigParameter("obj", _POS_ONLY), SigParameter("class_or_tuple", _POS_ONLY)],
             implementation=_isinstance_impl,
             callable=isinstance,
+        ),
+        Signature.make(
+            [
+                SigParameter("cls", _POS_ONLY, annotation=TypedValue(type)),
+                SigParameter(
+                    "class_or_tuple",
+                    _POS_ONLY,
+                    annotation=MultiValuedValue(
+                        [TypedValue(type), GenericValue(tuple, [TypedValue(type)])]
+                    ),
+                ),
+            ],
+            implementation=_issubclass_impl,
+            callable=issubclass,
         ),
         Signature.make(
             [
