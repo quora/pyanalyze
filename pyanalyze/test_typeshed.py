@@ -12,6 +12,7 @@ import time
 from typeshed_client import Resolver, get_search_context
 import typing
 from typing import Generic, TypeVar, NewType
+from urllib.error import HTTPError
 
 from .test_config import TestConfig
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -313,3 +314,7 @@ class TestAttribute:
     def test_property(self) -> None:
         tsf = TypeshedFinder(verbose=True)
         assert_eq(TypedValue(int), tsf.get_attribute(int, "real"))
+
+    def test_http_error(self) -> None:
+        tsf = TypeshedFinder(verbose=True)
+        assert_is(True, tsf.has_attribute(HTTPError, "read"))
