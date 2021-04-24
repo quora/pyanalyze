@@ -180,7 +180,7 @@ class TypeshedFinder(object):
         bases = self.get_bases(typ)
         if bases is not None:
             for base in bases:
-                if isinstance(base, TypedValue) and self._has_own_attribute(
+                if isinstance(base, TypedValue) and self.has_attribute(
                     base.typ, attr
                 ):
                     return True
