@@ -194,6 +194,7 @@ class TypeshedFinder(object):
                                 TypedValue(property)
                             ]:
                                 return self._parse_expr(child_info.ast.returns, mod)
+                            return UNINITIALIZED_VALUE  # a method
                     assert False, repr(child_info)
                 return UNINITIALIZED_VALUE
             elif isinstance(info.ast, ast3.Assign):
