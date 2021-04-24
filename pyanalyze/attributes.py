@@ -12,7 +12,7 @@ import qcore
 import types
 from typing import Any, Tuple, Optional
 
-from .annotations import type_from_runtime
+from .annotations import is_typing_name, type_from_runtime
 from .safe import safe_issubclass
 from .value import (
     AnnotatedValue,
@@ -99,6 +99,8 @@ def may_have_dynamic_attributes(typ: type) -> bool:
     """These types have typeshed stubs, but instances may have other attributes."""
     if typ is type or typ is super or typ is types.FunctionType:
         return True
+    if is_typing_name(typ, "_SpecialGenericAlias"):
+        return False
     if hasattr(typ, "__getattr__"):
         return True
     return False
