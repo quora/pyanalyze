@@ -132,6 +132,18 @@ class TestAttributes(TestNameCheckVisitorBase):
             c.no_such_attribute
 
     @assert_passes()
+    def test_typeshed_getattr(self):
+        # has __getattribute__ in typeshed
+        from types import SimpleNamespace
+
+        # has __getattr__
+        from codecs import StreamWriter
+
+        def capybara(sn: SimpleNamespace, sw: StreamWriter):
+            assert_is_value(sn.whatever, UNRESOLVED_VALUE)
+            assert_is_value(sw.whatever, UNRESOLVED_VALUE)
+
+    @assert_passes()
     def test_allow_function(self):
         def decorator(f):
             return f

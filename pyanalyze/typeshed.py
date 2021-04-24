@@ -139,6 +139,7 @@ class TypeshedFinder(object):
         return sig
 
     def get_bases(self, typ: type) -> Optional[List[Value]]:
+        """Return the base classes for this type, including generic bases."""
         # The way AbstractSet/Set is handled between collections and typing is
         # too confusing, just hardcode it. Same for (Abstract)ContextManager.
         if typ is AbstractSet:
@@ -155,12 +156,35 @@ class TypeshedFinder(object):
         return self._get_bases_from_info(info, mod)
 
     def get_attribute(self, typ: type, attr: str) -> Value:
+        """Return the stub for this attribute.
+
+        Does not look at parent classes. Returns UNINITIALIZED_VALUE if no
+        stub can be found.
+
+        """
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
             return UNINITIALIZED_VALUE
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._get_attribute_from_info(info, mod, attr)
+
+    def has_attribute(self, typ: type, attr: str) -> bool:
+        """Whether this type has this attribute in the stubs.
+
+        Also looks at base classes.
+
+        """
+        if self._has_own_attribute(typ, attr):
+            return True
+        bases = self.get_bases(typ)
+        if bases is not None:
+            for base in bases:
+                if isinstance(base, TypedValue) and self._has_own_attribute(
+                    base.typ, attr
+                ):
+                    return True
+        return False
 
     def has_stubs(self, typ: type) -> bool:
         fq_name = self._get_fq_name(typ)
@@ -195,6 +219,8 @@ class TypeshedFinder(object):
                             ]:
                                 return self._parse_expr(child_info.ast.returns, mod)
                             return UNINITIALIZED_VALUE  # a method
+                        elif isinstance(child_info.ast, ast3.AsyncFunctionDef):
+                            return UNINITIALIZED_VALUE
                     assert False, repr(child_info)
                 return UNINITIALIZED_VALUE
             elif isinstance(info.ast, ast3.Assign):
@@ -206,6 +232,41 @@ class TypeshedFinder(object):
             else:
                 return UNINITIALIZED_VALUE
         return UNINITIALIZED_VALUE
+
+    def _has_own_attribute(self, typ: type, attr: str) -> bool:
+        # Special case since otherwise we think every object has every attribute
+        if typ is object and attr == "__getattribute__":
+            return False
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return False
+        info = self._get_info_for_name(fq_name)
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
+        return self._has_attribute_from_info(info, mod, attr)
+
+    def _has_attribute_from_info(
+        self, info: typeshed_client.resolver.ResolvedName, mod: str, attr: str
+    ) -> bool:
+        if info is None:
+            return False
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._has_attribute_from_info(
+                info.info, ".".join(info.source_module), attr
+            )
+        elif isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.ClassDef):
+                if info.child_nodes and attr in info.child_nodes:
+                    return True
+                return False
+            elif isinstance(info.ast, ast3.Assign):
+                val = self._parse_expr(info.ast.value, mod)
+                if isinstance(val, KnownValue) and isinstance(val.val, type):
+                    return self.has_attribute(val.val, attr)
+                else:
+                    return False
+            else:
+                return False
+        return False
 
     def _get_bases_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str

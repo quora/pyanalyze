@@ -3489,9 +3489,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             # namedtuple
             return True
-        if self.arg_spec_cache.ts_finder.has_stubs(
-            typ
-        ) and not attributes.may_have_dynamic_attributes(typ):
+        ts_finder = self.arg_spec_cache.ts_finder
+        if (
+            ts_finder.has_stubs(typ)
+            and not ts_finder.has_attribute(typ, "__getattr__")
+            and not ts_finder.has_attribute(typ, "__getattribute__")
+            and not attributes.may_have_dynamic_attributes(typ)
+        ):
             return True
         return False
 
