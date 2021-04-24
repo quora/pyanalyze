@@ -3495,6 +3495,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and not ts_finder.has_attribute(typ, "__getattr__")
             and not ts_finder.has_attribute(typ, "__getattribute__")
             and not attributes.may_have_dynamic_attributes(typ)
+            and not hasattr(typ, "__getattr__")
         ):
             return True
         return False
