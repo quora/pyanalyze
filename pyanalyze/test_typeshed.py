@@ -12,6 +12,7 @@ import time
 from typeshed_client import Resolver, get_search_context
 import typing
 from typing import Generic, TypeVar, NewType
+from urllib.error import HTTPError
 
 from .test_config import TestConfig
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -69,8 +70,6 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         assert_eq(
             [GenericValue(Collection, (TypeVarValue(Anything),))], tsf.get_bases(Set)
         )
-        # make sure this doesn't crash (it's defined as a function in typeshed)
-        assert_is(None, tsf.get_bases(itertools.zip_longest))
 
     def test_newtype(self):
         with tempfile.TemporaryDirectory() as temp_dir_str:
@@ -301,3 +300,19 @@ class TestGetGenericBases:
             },
             self.get_generic_bases(io.BytesIO, []),
         )
+
+
+class TestAttribute:
+    def test_basic(self) -> None:
+        tsf = TypeshedFinder(verbose=True)
+        assert_eq(
+            TypedValue(bool), tsf.get_attribute(staticmethod, "__isabstractmethod__")
+        )
+
+    def test_property(self) -> None:
+        tsf = TypeshedFinder(verbose=True)
+        assert_eq(TypedValue(int), tsf.get_attribute(int, "real"))
+
+    def test_http_error(self) -> None:
+        tsf = TypeshedFinder(verbose=True)
+        assert_is(True, tsf.has_attribute(HTTPError, "read"))

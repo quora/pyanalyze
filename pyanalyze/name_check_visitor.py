@@ -211,6 +211,17 @@ class _AttrContext(attributes.AttrContext):
                 return self.visitor._argspec_to_retval[id(argspec)]
         return UNRESOLVED_VALUE
 
+    def get_attribute_from_typeshed(self, typ: type) -> Value:
+        typeshed_type = self.visitor.arg_spec_cache.ts_finder.get_attribute(
+            typ, self.attr
+        )
+        if (
+            typeshed_type is UNINITIALIZED_VALUE
+            and attributes.may_have_dynamic_attributes(typ)
+        ):
+            return UNRESOLVED_VALUE
+        return typeshed_type
+
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
 _DEFAULT_FUNCTION_INFO = FunctionInfo(AsyncFunctionKind.normal, False, False, False, [])
@@ -2445,8 +2456,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 [right_composite],
                 allow_call=allow_call,
             )
-        if not left_errors:
-            return left_result
 
         with self.catch_errors() as right_errors:
             right_result = self._check_dunder_call(
@@ -2456,15 +2465,31 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 [left_composite],
                 allow_call=allow_call,
             )
-        if not right_errors:
+        if left_errors:
+            if right_errors:
+                self.show_error(
+                    source_node,
+                    f"Unsupported operands for {description}: {left} and {right}",
+                    error_code=ErrorCode.unsupported_operation,
+                )
+                return UNRESOLVED_VALUE
             return right_result
-
-        self.show_error(
-            source_node,
-            f"Unsupported operands for {description}: {left} and {right}",
-            error_code=ErrorCode.unsupported_operation,
-        )
-        return UNRESOLVED_VALUE
+        else:
+            if right_errors:
+                return left_result
+            # The interesting case: neither threw an error. Naively we might
+            # want to return the left result, but that fails in a case like
+            # this:
+            #     df: Any
+            #     1 + df
+            # because this would return "int" (which is what int.__add__ returns),
+            # and "df" might be an object that implements __radd__.
+            # Instead, we return Any if that's the right_result. This handles
+            # the case above but might return the wrong result in some other rare
+            # cases.
+            if right_result is UNRESOLVED_VALUE:
+                return UNRESOLVED_VALUE
+            return left_result
 
     # Indexing
 
@@ -3438,22 +3463,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return UNRESOLVED_VALUE
             elif isinstance(root_value, TypedValue):
                 root_type = root_value.typ
-                # namedtuples have only static attributes
-                if not (
-                    isinstance(root_type, type)
-                    and issubclass(root_type, tuple)
-                    and not hasattr(root_type, "__getattr__")
-                ):
+                if not self._has_only_known_attributes(root_type):
                     return self._maybe_get_attr_value(root_type, attr)
             elif isinstance(root_value, SubclassValue):
                 if isinstance(root_value.typ, TypedValue):
                     root_type = root_value.typ.typ
-                    # namedtuples have only static attributes
-                    if not (
-                        isinstance(root_type, type)
-                        and issubclass(root_type, tuple)
-                        and not hasattr(root_type, "__getattr__")
-                    ):
+                    if not self._has_only_known_attributes(root_type):
                         return self._maybe_get_attr_value(root_type, attr)
                 else:
                     return UNRESOLVED_VALUE
@@ -3465,6 +3480,25 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return UNRESOLVED_VALUE
 
         return result
+
+    def _has_only_known_attributes(self, typ: type) -> bool:
+        if (
+            isinstance(typ, type)
+            and issubclass(typ, tuple)
+            and not hasattr(typ, "__getattr__")
+        ):
+            # namedtuple
+            return True
+        ts_finder = self.arg_spec_cache.ts_finder
+        if (
+            ts_finder.has_stubs(typ)
+            and not ts_finder.has_attribute(typ, "__getattr__")
+            and not ts_finder.has_attribute(typ, "__getattribute__")
+            and not attributes.may_have_dynamic_attributes(typ)
+            and not hasattr(typ, "__getattr__")
+        ):
+            return True
+        return False
 
     def composite_from_node(self, node: ast.AST) -> Composite:
         if isinstance(node, ast.Attribute):
@@ -4059,6 +4093,8 @@ def _is_coroutine_function(obj: object) -> bool:
 
 def _has_annotation_for_attr(typ: type, attr: str) -> bool:
     try:
+        # TODO maybe type.__annotations__ should be added to typeshed?
+        # static analysis: ignore[undefined_attribute]
         return attr in typ.__annotations__
     except Exception:
         # __annotations__ doesn't exist or isn't a dict

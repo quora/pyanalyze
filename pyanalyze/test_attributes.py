@@ -1,13 +1,8 @@
 # static analysis: ignore
-from .implementation import assert_is_value, dump_value
-from .value import (
-    KnownValue,
-    MultiValuedValue,
-    TypeVarMap,
-    TypedValue,
-    UNRESOLVED_VALUE,
-)
-from .test_node_visitor import assert_passes
+from .error_code import ErrorCode
+from .implementation import assert_is_value
+from .value import KnownValue, MultiValuedValue, TypedValue, UNRESOLVED_VALUE
+from .test_node_visitor import assert_passes, assert_fails
 from .test_name_check_visitor import TestNameCheckVisitorBase
 
 
@@ -125,6 +120,53 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara():
             x = Row()
             return x.capybaras
+
+    @assert_passes()
+    def test_typeshed(self):
+        def capybara(c: staticmethod):
+            assert_is_value(c.__isabstractmethod__, TypedValue(bool))
+
+    @assert_fails(ErrorCode.undefined_attribute)
+    def test_no_attribute_for_typeshed_class():
+        def capybara(c: staticmethod):
+            c.no_such_attribute
+
+    @assert_passes()
+    def test_typeshed_getattr(self):
+        # has __getattribute__ in typeshed
+        from types import SimpleNamespace
+
+        # has __getattr__
+        from codecs import StreamWriter
+
+        def capybara(sn: SimpleNamespace, sw: StreamWriter):
+            assert_is_value(sn.whatever, UNRESOLVED_VALUE)
+            assert_is_value(sw.whatever, UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_allow_function(self):
+        def decorator(f):
+            return f
+
+        def capybara():
+            @decorator
+            def f():
+                pass
+
+            f.attr = 42
+            print(f.attr)
+
+    @assert_passes()
+    def test_enum_name(self):
+        import enum
+
+        class E(enum.Enum):
+            name = 1
+            no_name = 2
+
+        def capybara():
+            assert_is_value(E.no_name, KnownValue(E.no_name))
+            assert_is_value(E.name, KnownValue(E.name))
 
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
