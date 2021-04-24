@@ -185,7 +185,16 @@ class TypeshedFinder(object):
                     if isinstance(child_info, typeshed_client.NameInfo):
                         if isinstance(child_info.ast, ast3.AnnAssign):
                             return self._parse_expr(child_info.ast.annotation, mod)
-                        return UNINITIALIZED_VALUE
+                        elif isinstance(child_info.ast, ast3.FunctionDef):
+                            decorators = [
+                                self._parse_expr(decorator, mod)
+                                for decorator in child_info.ast.decorator_list
+                            ]
+                            if child_info.ast.returns and decorators == [
+                                TypedValue(property)
+                            ]:
+                                return self._parse_expr(child_info.ast.returns, mod)
+                    assert False, repr(child_info)
                 return UNINITIALIZED_VALUE
             elif isinstance(info.ast, ast3.Assign):
                 val = self._parse_expr(info.ast.value, mod)

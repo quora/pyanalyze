@@ -301,3 +301,15 @@ class TestGetGenericBases:
             },
             self.get_generic_bases(io.BytesIO, []),
         )
+
+
+class TestAttribute:
+    def test_basic(self) -> None:
+        tsf = TypeshedFinder(verbose=True)
+        assert_eq(
+            TypedValue(bool), tsf.get_attribute(staticmethod, "__isabstractmethod__")
+        )
+
+    def test_property(self) -> None:
+        tsf = TypeshedFinder(verbose=True)
+        assert_eq(TypedValue(int), tsf.get_attribute(int, "real"))
