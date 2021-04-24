@@ -137,6 +137,7 @@ class TypeshedFinder(object):
         if sig is not None:
             self.log("Found signature", (fq_name, sig))
         return sig
+
     def get_bases(self, typ: type) -> Optional[List[Value]]:
         """Return the base classes for this type, including generic bases."""
         # The way AbstractSet/Set is handled between collections and typing is
