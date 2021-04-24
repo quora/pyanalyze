@@ -1691,6 +1691,13 @@ class TestOperators(TestNameCheckVisitorBase):
             def __radd__(self, other: int) -> "HasRadd":
                 raise NotImplementedError
 
+        class HasBoth:
+            def __add__(self, other: "HasBoth") -> "HasBoth":
+                raise NotImplementedError
+
+            def __radd__(self, other: "HasBoth") -> int:
+                raise NotImplementedError
+
         def capybara(x):
             ha = HasAdd()
             hr = HasRadd()
@@ -1698,6 +1705,7 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(x + hr, UNRESOLVED_VALUE)
             assert_is_value(ha + 1, TypedValue(HasAdd))
             assert_is_value(ha + x, UNRESOLVED_VALUE)
+            assert_is_value(HasBoth() + HasBoth(), TypedValue(HasBoth))
 
     @assert_fails(ErrorCode.unsupported_operation)
     def test_unsupported_unary_op(self):
