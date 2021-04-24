@@ -70,8 +70,6 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         assert_eq(
             [GenericValue(Collection, (TypeVarValue(Anything),))], tsf.get_bases(Set)
         )
-        # make sure this doesn't crash (it's defined as a function in typeshed)
-        assert_is(None, tsf.get_bases(itertools.zip_longest))
 
     def test_newtype(self):
         with tempfile.TemporaryDirectory() as temp_dir_str:
