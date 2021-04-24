@@ -2456,8 +2456,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 [right_composite],
                 allow_call=allow_call,
             )
-        if not left_errors:
-            return left_result
 
         with self.catch_errors() as right_errors:
             right_result = self._check_dunder_call(
@@ -2467,15 +2465,31 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 [left_composite],
                 allow_call=allow_call,
             )
-        if not right_errors:
+        if left_errors:
+            if right_errors:
+                self.show_error(
+                    source_node,
+                    f"Unsupported operands for {description}: {left} and {right}",
+                    error_code=ErrorCode.unsupported_operation,
+                )
+                return UNRESOLVED_VALUE
             return right_result
-
-        self.show_error(
-            source_node,
-            f"Unsupported operands for {description}: {left} and {right}",
-            error_code=ErrorCode.unsupported_operation,
-        )
-        return UNRESOLVED_VALUE
+        else:
+            if right_errors:
+                return left_result
+            # The interesting case: neither threw an error. Naively we might
+            # want to return the left result, but that fails in a case like
+            # this:
+            #     df: Any
+            #     1 + df
+            # because this would return "int" (which is what int.__add__ returns),
+            # and "df" might be an object that implements __radd__.
+            # Instead, we return Any if that's the right_result. This handles
+            # the case above but might return the wrong result in some other rare
+            # cases.
+            if right_result is UNRESOLVED_VALUE:
+                return UNRESOLVED_VALUE
+            return left_result
 
     # Indexing
 
