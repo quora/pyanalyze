@@ -280,14 +280,17 @@ class ArgSpecCache:
         self,
         obj: object,
         implementation: Optional[ImplementationFn] = None,
-        impl: Optional[Impl] = None
+        impl: Optional[Impl] = None,
     ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
         argspec = self._cached_get_argspec(obj, implementation, impl)
         return argspec
 
     def _cached_get_argspec(
-        self, obj: object, implementation: Optional[ImplementationFn], impl: Optional[Impl]
+        self,
+        obj: object,
+        implementation: Optional[ImplementationFn],
+        impl: Optional[Impl],
     ) -> MaybeSignature:
         try:
             if obj in self.known_argspecs:
