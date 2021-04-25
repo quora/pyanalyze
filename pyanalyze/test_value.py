@@ -38,15 +38,15 @@ class Context(CanAssignContext):
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
 
 
-_CTX = Context()
+CTX = Context()
 
 
 def assert_cannot_assign(left: Value, right: Value) -> None:
-    assert_is(None, left.can_assign(right, _CTX))
+    assert_is(None, left.can_assign(right, CTX))
 
 
 def assert_can_assign(left: Value, right: Value, typevar_map: TypeVarMap = {}) -> None:
-    assert_eq({}, left.can_assign(right, _CTX))
+    assert_eq({}, left.can_assign(right, CTX))
 
 
 def test_UNRESOLVED_VALUE() -> None:
@@ -393,21 +393,21 @@ def test_io() -> None:
 
 
 def test_concrete_values_from_iterable() -> None:
-    assert_is(None, concrete_values_from_iterable(KnownValue(1), _CTX))
-    assert_eq((), concrete_values_from_iterable(KnownValue([]), _CTX))
+    assert_is(None, concrete_values_from_iterable(KnownValue(1), CTX))
+    assert_eq((), concrete_values_from_iterable(KnownValue([]), CTX))
     assert_eq(
         (KnownValue(1), KnownValue(2)),
-        concrete_values_from_iterable(KnownValue((1, 2)), _CTX),
+        concrete_values_from_iterable(KnownValue((1, 2)), CTX),
     )
     assert_eq(
         (KnownValue(1), KnownValue(2)),
         concrete_values_from_iterable(
-            SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]), _CTX
+            SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]), CTX
         ),
     )
     assert_eq(
         TypedValue(int),
-        concrete_values_from_iterable(GenericValue(list, [TypedValue(int)]), _CTX),
+        concrete_values_from_iterable(GenericValue(list, [TypedValue(int)]), CTX),
     )
     assert_eq(
         [
@@ -421,7 +421,7 @@ def test_concrete_values_from_iterable() -> None:
                     KnownValue((3, 4)),
                 ]
             ),
-            _CTX,
+            CTX,
         ),
     )
     assert_eq(
@@ -433,7 +433,7 @@ def test_concrete_values_from_iterable() -> None:
                     GenericValue(list, [TypedValue(int)]),
                 ]
             ),
-            _CTX,
+            CTX,
         ),
     )
     assert_eq(
@@ -445,7 +445,7 @@ def test_concrete_values_from_iterable() -> None:
                     KnownValue((3,)),
                 ]
             ),
-            _CTX,
+            CTX,
         ),
     )
 

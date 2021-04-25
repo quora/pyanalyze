@@ -15,6 +15,7 @@ from .stacked_scopes import (
 )
 from .value import (
     AnnotatedValue,
+    CanAssignContext,
     HasAttrExtension,
     HasAttrGuardExtension,
     KnownValue,
@@ -27,6 +28,7 @@ from .value import (
     TypeVarMap,
     extract_typevars,
     stringify_object,
+    unify_typevar_maps,
 )
 
 import ast
@@ -146,6 +148,7 @@ class Signature:
     signature: inspect.Signature
     implementation: Optional[ImplementationFn] = None
     callable: Optional[object] = None
+    is_asynq: bool = False
     has_return_annotation: bool = True
     logger: Optional[Logger] = field(repr=False, default=None, compare=False)
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
@@ -366,6 +369,189 @@ class Signature:
             return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         else:
             return self._apply_annotated_constraints(return_value, bound_args)
+
+    def can_assign(
+        self, other: "Signature", ctx: CanAssignContext
+    ) -> Union[str, TypeVarMap]:
+        """Equivalent of Value.can_assign.
+
+        If the other signature is incompatible with this signature, return a string
+        explaining the discrepancy.
+
+        """
+        if self.is_asynq and not other.is_asynq:
+            return "callable is not asynq"
+        their_return = other.signature.return_annotation
+        my_return = self.signature.return_annotation
+        return_tv_map = my_return.can_assign(their_return, ctx)
+        if return_tv_map is None:
+            return (
+                f"return annotation {their_return} is not compatible with {my_return}"
+            )
+        tv_maps = [return_tv_map]
+        their_params = list(other.signature.parameters.values())
+        their_args = other.get_param_of_kind(SigParameter.VAR_POSITIONAL)
+        their_kwargs = other.get_param_of_kind(SigParameter.VAR_KEYWORD)
+        consumed_positional = set()
+        consumed_keyword = set()
+        for i, my_param in enumerate(self.signature.parameters.values()):
+            if my_param.kind is SigParameter.POSITIONAL_ONLY:
+                if i < len(their_params) and their_params[i].kind in (
+                    SigParameter.POSITIONAL_ONLY,
+                    SigParameter.POSITIONAL_OR_KEYWORD,
+                ):
+                    tv_map = their_params[i].annotation.can_assign(
+                        my_param.annotation, ctx
+                    )
+                    if tv_map is None:
+                        return (
+                            f"type of positional-only parameter {my_param.name!r} is incompatible: "
+                            f"{their_params[i].annotation} is incompatible with {my_param.annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                    consumed_positional.add(their_params[i].name)
+                elif their_args is not None:
+                    tv_map = their_args.annotation.can_assign(my_param.annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of positional-only parameter {my_param.name!r} is incompatible: "
+                            f"*args type {their_args.annotation} is incompatible with {my_param.annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                else:
+                    return f"positional-only parameter {i} is not accepted"
+            elif my_param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
+                if (
+                    i < len(their_params)
+                    and their_params[i].kind is SigParameter.POSITIONAL_OR_KEYWORD
+                ):
+                    if my_param.name != their_params[i].name:
+                        return f"param name {their_params[i].name!r} does not match {my_param.name!r}"
+                    tv_map = their_params[i].annotation.can_assign(
+                        my_param.annotation, ctx
+                    )
+                    if tv_map is None:
+                        return (
+                            f"type of parameter {my_param.name!r} is incompatible: "
+                            f"{their_params[i].annotation} is incompatible with {my_param.annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                    consumed_positional.add(their_params[i])
+                    consumed_keyword.add(their_params[i])
+                elif (
+                    i < len(their_params)
+                    and their_params[i].kind is SigParameter.POSITIONAL_ONLY
+                ):
+                    return f"parameter {my_param.name!r} is not accepted as a keyword argument"
+                elif their_args is not None and their_kwargs is not None:
+                    tv_map = their_args.annotation.can_assign(my_param.annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of parameter {my_param.name!r} is incompatible: "
+                            f"*args type {their_args.annotation} is incompatible with {my_param.annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                    tv_map = their_kwargs.annotation.can_assign(
+                        my_param.annotation, ctx
+                    )
+                    if tv_map is None:
+                        return (
+                            f"type of parameter {my_param.name!r} is incompatible: "
+                            f"**kwargs type {their_kwargs.annotation} is incompatible with {my_param.annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                else:
+                    return f"parameter {my_param.name!r} is not accepted"
+            elif my_param.kind is SigParameter.KEYWORD_ONLY:
+                their_param = other.signature.parameters.get(my_param.name)
+                if their_param is not None and their_param.kind in (
+                    SigParameter.POSITIONAL_OR_KEYWORD,
+                    SigParameter.KEYWORD_ONLY,
+                ):
+                    tv_map = their_param.annotation.can_assign(my_param.annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of parameter {my_param.name!r} is incompatible: "
+                            f"{their_param.annotation} is incompatible with {my_param.annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                    consumed_keyword.add(their_param.name)
+                elif their_kwargs is not None:
+                    tv_map = their_kwargs.annotation.can_assign(
+                        my_param.annotation, ctx
+                    )
+                    if tv_map is None:
+                        return (
+                            f"type of parameter {my_param.name!r} is incompatible: "
+                            f"**kwargs type {their_kwargs.annotation} is incompatible with {my_param.annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                else:
+                    return f"parameter {my_param.name!r} is not accepted"
+            elif my_param.kind is SigParameter.VAR_POSITIONAL:
+                if their_args is None:
+                    return "*args are not accepted"
+                tv_map = their_args.annotation.can_assign(my_param.annotation, ctx)
+                if tv_map is None:
+                    return (
+                        f"type of *args is incompatible: "
+                        f"{their_args.annotation} is incompatible with {my_param.annotation}"
+                    )
+                tv_maps.append(tv_map)
+                extra_positional = [
+                    param
+                    for param in their_params
+                    if param.name not in consumed_positional
+                    and param.kind
+                    in (
+                        SigParameter.POSITIONAL_ONLY,
+                        SigParameter.POSITIONAL_OR_KEYWORD,
+                    )
+                ]
+                for extra_param in extra_positional:
+                    tv_map = extra_param.annotation.can_assign(my_param.annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of param {extra_param.name!r} is incompatible with "
+                            f"*args type {their_args.annotation}"
+                        )
+                    tv_maps.append(tv_map)
+            elif my_param.kind is SigParameter.VAR_KEYWORD:
+                if their_kwargs is None:
+                    return "**kwargs are not accepted"
+                tv_map = their_kwargs.annotation.can_assign(my_param.annotation, ctx)
+                if tv_map is None:
+                    return (
+                        f"type of **kwargs is incompatible: "
+                        f"{their_kwargs.annotation} is incompatible with {my_param.annotation}"
+                    )
+                tv_maps.append(tv_map)
+                extra_keyword = [
+                    param
+                    for param in their_params
+                    if param.name not in consumed_keyword
+                    and param.kind
+                    in (SigParameter.KEYWORD_ONLY, SigParameter.POSITIONAL_OR_KEYWORD)
+                ]
+                for extra_param in extra_keyword:
+                    tv_map = extra_param.annotation.can_assign(my_param.annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of param {extra_param.name!r} is incompatible with "
+                            f"**kwargs type {their_kwargs.annotation}"
+                        )
+                    tv_maps.append(tv_map)
+
+        final_tv_map = unify_typevar_maps(tv_maps)
+        if final_tv_map is None:
+            return "callables are incompatible"
+        return final_tv_map
+
+    def get_param_of_kind(self, kind: inspect._ParameterKind) -> Optional[SigParameter]:
+        for param in self.signature.parameters.values():
+            if param.kind is kind:
+                return param
+        return None
 
     @classmethod
     def make(
