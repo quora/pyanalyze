@@ -1,7 +1,8 @@
 # static analysis: ignore
+from typing import Type
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
-from .implementation import assert_is_value
+from .implementation import assert_is_value, dump_value
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
@@ -517,21 +518,22 @@ class TestAnnotated(TestNameCheckVisitorBase):
 class TestCallable(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
-        from typing import Callable, TypeVar
+        from typing import Callable, Sequence, TypeVar
 
         T = TypeVar("T")
 
         def capybara(
-            x: Callable[..., int], y: Callable[[int], str], id_func: Callable[[T], T]
+            x: Callable[..., int], y: Callable[[int], str], id_func: Callable[[T], T], takes_seq: Callable[[Sequence[T]], T]
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
             assert_is_value(y(1), TypedValue(str))
             assert_is_value(id_func(1), KnownValue(1))
+            assert_is_value(takes_seq([int("1")]), TypedValue(int))
 
     @assert_passes()
     def test_stringified(self):
-        from typing import Callable, TypeVar
+        from typing import Callable, Sequence, TypeVar
 
         T = TypeVar("T")
 
@@ -539,27 +541,30 @@ class TestCallable(TestNameCheckVisitorBase):
             x: "Callable[..., int]",
             y: "Callable[[int], str]",
             id_func: "Callable[[T], T]",
+            takes_seq: "Callable[[Sequence[T]], T]",
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
             assert_is_value(y(1), TypedValue(str))
             assert_is_value(id_func(1), KnownValue(1))
+            assert_is_value(takes_seq([int("1")]), TypedValue(int))
 
     @skip_before((3, 9))
     @assert_passes()
     def test_abc_callable(self):
         from typing import TypeVar
-        from collections.abc import Callable
+        from collections.abc import Callable, Sequence
 
         T = TypeVar("T")
 
         def capybara(
-            x: Callable[..., int], y: Callable[[int], str], id_func: Callable[[T], T]
+            x: Callable[..., int], y: Callable[[int], str], id_func: Callable[[T], T], takes_seq: Callable[[Sequence[T]], T]
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
             assert_is_value(y(1), TypedValue(str))
             assert_is_value(id_func(1), KnownValue(1))
+            assert_is_value(takes_seq([int("1")]), TypedValue(int))
 
     @assert_passes()
     def test_known_value(self):

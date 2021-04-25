@@ -587,7 +587,7 @@ def _value_of_origin_args(
         elif len(args) == 0:
             return TypedValue(Callable)
         *arg_types, return_type = args
-        if len(arg_types) == 1 and isinstance(arg_types[0], (list, tuple)):
+        if len(arg_types) == 1 and isinstance(arg_types[0], list):
             arg_types = arg_types[0]
         params = [
             SigParameter(
