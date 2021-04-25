@@ -483,12 +483,12 @@ class Signature:
         if their_args is not None:
             args_annotation = their_args.get_annotation()
         else:
-            args_annotation = UNRESOLVED_VALUE
+            args_annotation = None
         their_kwargs = other.get_param_of_kind(SigParameter.VAR_KEYWORD)
         if their_kwargs is not None:
             kwargs_annotation = their_kwargs.get_annotation()
         else:
-            kwargs_annotation = UNRESOLVED_VALUE
+            kwargs_annotation = None
         consumed_positional = set()
         consumed_keyword = set()
         for i, my_param in enumerate(self.signature.parameters.values()):
@@ -505,9 +505,7 @@ class Signature:
                         return f"positional-only param {my_param.name!r} has no default"
 
                     their_annotation = their_params[i].get_annotation()
-                    tv_map = their_annotation.can_assign(
-                        my_annotation, ctx
-                    )
+                    tv_map = their_annotation.can_assign(my_annotation, ctx)
                     if tv_map is None:
                         return (
                             f"type of positional-only parameter {my_param.name!r} is incompatible: "
@@ -538,9 +536,7 @@ class Signature:
                     ):
                         return f"param {my_param.name!r} has no default"
                     their_annotation = their_params[i].get_annotation()
-                    tv_map = their_annotation.can_assign(
-                        my_annotation, ctx
-                    )
+                    tv_map = their_annotation.can_assign(my_annotation, ctx)
                     if tv_map is None:
                         return (
                             f"type of parameter {my_param.name!r} is incompatible: "
@@ -562,9 +558,7 @@ class Signature:
                             f"*args type {args_annotation} is incompatible with {my_annotation}"
                         )
                     tv_maps.append(tv_map)
-                    tv_map = kwargs_annotation.can_assign(
-                        my_annotation, ctx
-                    )
+                    tv_map = kwargs_annotation.can_assign(my_annotation, ctx)
                     if tv_map is None:
                         return (
                             f"type of parameter {my_param.name!r} is incompatible: "
@@ -579,10 +573,7 @@ class Signature:
                     SigParameter.POSITIONAL_OR_KEYWORD,
                     SigParameter.KEYWORD_ONLY,
                 ):
-                    if (
-                        my_param.default is not EMPTY
-                        and their_param.default is EMPTY
-                    ):
+                    if my_param.default is not EMPTY and their_param.default is EMPTY:
                         return f"keyword-only param {my_param.name!r} has no default"
                     their_annotation = their_param.get_annotation()
                     tv_map = their_annotation.can_assign(my_annotation, ctx)
@@ -594,9 +585,7 @@ class Signature:
                     tv_maps.append(tv_map)
                     consumed_keyword.add(their_param.name)
                 elif kwargs_annotation is not None:
-                    tv_map = kwargs_annotation.can_assign(
-                        my_annotation, ctx
-                    )
+                    tv_map = kwargs_annotation.can_assign(my_annotation, ctx)
                     if tv_map is None:
                         return (
                             f"type of parameter {my_param.name!r} is incompatible: "

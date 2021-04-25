@@ -146,6 +146,7 @@ UNARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.USub: ("unary negation", "__neg__"),
 }
 
+
 def _in(a: Any, b: Any) -> bool:
     return operator.contains(b, a)
 
@@ -2447,9 +2448,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
             return value
 
-        description, method, imethod, rmethod = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[
-            type(op)
-        ]
+        (
+            description,
+            method,
+            imethod,
+            rmethod,
+        ) = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(op)]
         allow_call = method not in self.config.DISALLOW_CALLS_TO_DUNDERS
 
         if is_inplace:

@@ -584,8 +584,10 @@ def _value_of_origin_args(
                     [], _type_from_runtime(args[1], ctx), is_ellipsis_args=True
                 )
             )
+        elif len(args) == 0:
+            return TypedValue(Callable)
         *arg_types, return_type = args
-        if len(arg_types) == 1:
+        if len(arg_types) == 1 and isinstance(arg_types[0], (list, tuple)):
             arg_types = arg_types[0]
         params = [
             SigParameter(
