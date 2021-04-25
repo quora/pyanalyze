@@ -1,7 +1,186 @@
 # static analysis: ignore
+from .value import TypedValue, UNRESOLVED_VALUE
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .error_code import ErrorCode
+from .signature import Signature, SigParameter as P
+from .test_value import CTX
+
+
+class TestCanAssign:
+    def can(self, left: Signature, right: Signature) -> None:
+        tv_map = left.can_assign(right, CTX)
+        assert isinstance(
+            tv_map, dict
+        ), f"cannot assign {right} to {left} due to {tv_map}"
+
+    def cannot(self, left: Signature, right: Signature) -> None:
+        tv_map = left.can_assign(right, CTX)
+        assert isinstance(tv_map, str), f"can assign {right} to {left}"
+
+    def test_return_value(self) -> None:
+        self.can(
+            Signature.make([], UNRESOLVED_VALUE), Signature.make([], TypedValue(int))
+        )
+        self.can(
+            Signature.make([], TypedValue(int)), Signature.make([], TypedValue(int))
+        )
+        self.can(
+            Signature.make([], TypedValue(int)), Signature.make([], TypedValue(bool))
+        )
+        self.cannot(
+            Signature.make([], TypedValue(bool)), Signature.make([], TypedValue(int))
+        )
+
+    def test_pos_only(self):
+        pos_only_int = P("x", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY)
+        pos_only_object = P("y", annotation=TypedValue(object), kind=P.POSITIONAL_ONLY)
+        pos_only_bool = P("z", annotation=TypedValue(bool), kind=P.POSITIONAL_ONLY)
+        pos_kw_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_OR_KEYWORD)
+        pos_only_sig = Signature.make([pos_only_int])
+        self.can(pos_only_sig, pos_only_sig)
+        self.can(pos_only_sig, Signature.make([pos_kw_int]))
+        self.can(pos_only_sig, Signature.make([pos_only_object]))
+        self.cannot(pos_only_sig, Signature.make([pos_only_bool]))
+        self.cannot(
+            pos_only_sig,
+            Signature.make([P("x", annotation=TypedValue(int), kind=P.KEYWORD_ONLY)]),
+        )
+
+        # *args interaction
+        self.can(
+            pos_only_sig,
+            Signature.make(
+                [P("whatever", annotation=TypedValue(int), kind=P.VAR_POSITIONAL)]
+            ),
+        )
+        self.cannot(
+            pos_only_sig,
+            Signature.make(
+                [P("x", annotation=TypedValue(bool), kind=P.VAR_POSITIONAL)]
+            ),
+        )
+
+    def test_pos_or_keyword(self) -> None:
+        pos_kw_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_OR_KEYWORD)
+        pos_kw_int_b = P("b", annotation=TypedValue(int), kind=P.POSITIONAL_OR_KEYWORD)
+        pos_kw_object = P(
+            "a", annotation=TypedValue(object), kind=P.POSITIONAL_OR_KEYWORD
+        )
+        pos_kw_bool = P("a", annotation=TypedValue(bool), kind=P.POSITIONAL_OR_KEYWORD)
+        pos_only_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY)
+        pos_kw_sig = Signature.make([pos_kw_int])
+        self.can(pos_kw_sig, pos_kw_sig)
+        self.can(pos_kw_sig, Signature.make([pos_kw_object]))
+        self.cannot(pos_kw_sig, Signature.make([pos_kw_bool]))
+        self.cannot(pos_kw_sig, Signature.make([pos_only_int]))
+        self.cannot(pos_kw_sig, Signature.make([pos_kw_int_b]))
+        self.cannot(
+            pos_kw_sig,
+            Signature.make([P("x", annotation=TypedValue(int), kind=P.VAR_POSITIONAL)]),
+        )
+        self.cannot(
+            pos_kw_sig,
+            Signature.make([P("x", annotation=TypedValue(int), kind=P.VAR_KEYWORD)]),
+        )
+        self.can(
+            pos_kw_sig,
+            Signature.make(
+                [
+                    P("x", annotation=TypedValue(int), kind=P.VAR_POSITIONAL),
+                    P("y", annotation=TypedValue(int), kind=P.VAR_KEYWORD),
+                ]
+            ),
+        )
+        self.can(
+            pos_kw_sig,
+            Signature.make(
+                [
+                    P("x", annotation=TypedValue(object), kind=P.VAR_POSITIONAL),
+                    P("y", annotation=TypedValue(int), kind=P.VAR_KEYWORD),
+                ]
+            ),
+        )
+        self.cannot(
+            pos_kw_sig,
+            Signature.make(
+                [
+                    P("x", annotation=TypedValue(bool), kind=P.VAR_POSITIONAL),
+                    P("y", annotation=TypedValue(int), kind=P.VAR_KEYWORD),
+                ]
+            ),
+        )
+
+    def test_kw_only(self) -> None:
+        kw_only_int = P("a", annotation=TypedValue(int), kind=P.KEYWORD_ONLY)
+        kw_only_int_b = P("b", annotation=TypedValue(int), kind=P.KEYWORD_ONLY)
+        kw_only_bool = P("a", annotation=TypedValue(bool), kind=P.KEYWORD_ONLY)
+        kw_only_object = P("a", annotation=TypedValue(object), kind=P.KEYWORD_ONLY)
+        pos_only_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY)
+        pos_kw_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_OR_KEYWORD)
+        kw_only_sig = Signature.make([kw_only_int])
+        self.can(kw_only_sig, kw_only_sig)
+        self.can(kw_only_sig, Signature.make([kw_only_object]))
+        self.cannot(kw_only_sig, Signature.make([kw_only_bool]))
+        self.cannot(kw_only_sig, Signature.make([kw_only_int_b]))
+        self.can(kw_only_sig, Signature.make([pos_kw_int]))
+        self.cannot(kw_only_sig, Signature.make([pos_only_int]))
+        self.can(
+            kw_only_sig,
+            Signature.make([P("x", annotation=TypedValue(int), kind=P.VAR_KEYWORD)]),
+        )
+        self.cannot(
+            kw_only_sig,
+            Signature.make([P("x", annotation=TypedValue(bool), kind=P.VAR_KEYWORD)]),
+        )
+
+    def test_var_positional(self) -> None:
+        var_pos_int = P("a", annotation=TypedValue(int), kind=P.VAR_POSITIONAL)
+        var_pos_object = P("b", annotation=TypedValue(object), kind=P.VAR_POSITIONAL)
+        var_pos_bool = P("c", annotation=TypedValue(bool), kind=P.VAR_POSITIONAL)
+        var_pos_sig = Signature.make([var_pos_int])
+        self.can(var_pos_sig, var_pos_sig)
+        self.can(var_pos_sig, Signature.make([var_pos_object]))
+        self.cannot(var_pos_sig, Signature.make([var_pos_bool]))
+        self.can(
+            var_pos_sig,
+            Signature.make(
+                [
+                    P("d", annotation=TypedValue(object), kind=P.POSITIONAL_ONLY),
+                    var_pos_int,
+                ]
+            ),
+        )
+        self.cannot(
+            var_pos_sig,
+            Signature.make(
+                [
+                    P("d", annotation=TypedValue(bool), kind=P.POSITIONAL_ONLY),
+                    var_pos_int,
+                ]
+            ),
+        )
+
+    def test_var_keyword(self) -> None:
+        var_kw_int = P("a", annotation=TypedValue(int), kind=P.VAR_KEYWORD)
+        var_kw_object = P("b", annotation=TypedValue(object), kind=P.VAR_KEYWORD)
+        var_kw_bool = P("c", annotation=TypedValue(bool), kind=P.VAR_KEYWORD)
+        var_kw_sig = Signature.make([var_kw_int])
+        self.can(var_kw_sig, var_kw_sig)
+        self.can(var_kw_sig, Signature.make([var_kw_object]))
+        self.cannot(var_kw_sig, Signature.make([var_kw_bool]))
+        self.can(
+            var_kw_sig,
+            Signature.make(
+                [P("d", annotation=TypedValue(object), kind=P.KEYWORD_ONLY), var_kw_int]
+            ),
+        )
+        self.cannot(
+            var_kw_sig,
+            Signature.make(
+                [P("d", annotation=TypedValue(bool), kind=P.KEYWORD_ONLY), var_kw_int]
+            ),
+        )
 
 
 class TestProperty(TestNameCheckVisitorBase):
