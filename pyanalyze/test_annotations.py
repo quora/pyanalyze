@@ -576,6 +576,10 @@ class TestCallable(TestNameCheckVisitorBase):
     def test_known_value(self):
         from typing_extensions import Literal
 
+        class Capybara:
+            def method(self, x: int) -> int:
+                return 42
+
         def f(x: int) -> int:
             return 0
 
@@ -588,6 +592,7 @@ class TestCallable(TestNameCheckVisitorBase):
         def capybara() -> None:
             g(f)
             g(h)
+            g(Capybara().method)
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_wrong_callable(self):

@@ -638,7 +638,12 @@ class CallableValue(TypedValue):
         elif isinstance(other, UnboundMethodValue):
             method = other.get_method()
             if method is not None:
-                signature = ctx.get_signature(method)
+                unbound_signature = ctx.get_signature(method)
+                maybe_bound = pyanalyze.signature.make_bound_method(unbound_signature, other.typ)
+                if isinstance(maybe_bound, pyanalyze.signature.BoundMethodSignature):
+                    signature = maybe_bound.get_signature()
+                else:
+                    signature = maybe_bound
         elif isinstance(other, TypedValue):
             typ = other.typ
             if typ is collections.abc.Callable or typ is FunctionType:
