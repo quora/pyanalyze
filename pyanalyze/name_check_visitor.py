@@ -1244,9 +1244,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return_value = GenericValue(Awaitable, [return_value])
 
         try:
-            argspec = self.arg_spec_cache.get_argspec(
-                potential_function, name=node.name, logger=self.log
-            )
+            argspec = self.arg_spec_cache.get_argspec(potential_function)
         except TypeError:
             return KnownValue(potential_function)
         if argspec is not None:
@@ -3790,13 +3788,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, callee_wrapped: Value, node: ast.AST
     ) -> MaybeSignature:
         if isinstance(callee_wrapped, KnownValue):
-            try:
-                name = callee_wrapped.val.__name__
-            # Ideally this would just catch AttributeError, but some objects raise
-            # other exceptions from __getattr__.
-            except Exception:
-                name = None
-            argspec = self._get_argspec(callee_wrapped.val, node, name=name)
+            argspec = self.arg_spec_cache.get_argspec(callee_wrapped.val)
             if argspec is None:
                 method_object = self.get_attribute(node, "__call__", callee_wrapped)
                 if method_object is UNINITIALIZED_VALUE:
@@ -3809,10 +3801,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         elif isinstance(callee_wrapped, UnboundMethodValue):
             method = callee_wrapped.get_method()
             if method is not None:
-                return self._get_argspec(method, node, name=callee_wrapped.attr_name)
+                return self.arg_spec_cache.get_argspec(method)
         elif isinstance(callee_wrapped, TypedValue):
             typ = callee_wrapped.typ
-            name = typ.__name__
             if not hasattr(typ, "__call__") or (
                 getattr(typ.__call__, "__objclass__", None) is type
                 and not issubclass(typ, type)
@@ -3824,15 +3815,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
                 return None
             call_fn = typ.__call__
-            argspec = self._get_argspec(call_fn, node, name=name)
+            argspec = self.arg_spec_cache.get_argspec(call_fn)
             return make_bound_method(argspec, callee_wrapped)
         return None
-
-    def _get_argspec(
-        self, obj: object, node: ast.AST, name: Optional[str] = None
-    ) -> MaybeSignature:
-        """Given a Python object obj retrieved from node, try to get its argspec."""
-        return self.arg_spec_cache.get_argspec(obj, name=name, logger=self.log)
 
     # Attribute checking
 

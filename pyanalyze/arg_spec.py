@@ -11,7 +11,6 @@ from . import implementation
 from .safe import safe_hasattr
 from .stacked_scopes import uniq_chain
 from .signature import (
-    Logger,
     ImplementationFn,
     MaybeSignature,
     PropertyArgSpec,
@@ -147,7 +146,6 @@ class ArgSpecCache:
         sig: Optional[inspect.Signature],
         *,
         kwonly_args: Sequence[SigParameter] = (),
-        logger: Optional[Logger] = None,
         implementation: Optional[ImplementationFn] = None,
         function_object: object,
         is_async: bool = False,
@@ -155,8 +153,6 @@ class ArgSpecCache:
         """Constructs a pyanalyze Signature from an inspect.Signature.
 
         kwonly_args may be a list of custom keyword-only arguments added to the argspec or None.
-
-        logger is the log function to be used.
 
         implementation is an implementation function for this object.
 
@@ -198,7 +194,6 @@ class ArgSpecCache:
             returns,
             implementation=implementation,
             callable=function_object,
-            logger=logger,
             has_return_annotation=has_return_annotation,
         )
 
@@ -281,17 +276,14 @@ class ArgSpecCache:
     def get_argspec(
         self,
         obj: object,
-        name: Optional[str] = None,
-        logger: Optional[Logger] = None,
         implementation: Optional[ImplementationFn] = None,
     ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
-        kwargs = {"logger": logger, "implementation": implementation}
-        argspec = self._cached_get_argspec(obj, kwargs)
+        argspec = self._cached_get_argspec(obj, implementation)
         return argspec
 
     def _cached_get_argspec(
-        self, obj: object, kwargs: Mapping[str, Any]
+        self, obj: object, implementation: Optional[ImplementationFn]
     ) -> MaybeSignature:
         try:
             if obj in self.known_argspecs:
@@ -301,7 +293,7 @@ class ArgSpecCache:
         else:
             hashable = True
 
-        extended = self._uncached_get_argspec(obj, kwargs)
+        extended = self._uncached_get_argspec(obj, implementation)
         if extended is None:
             return None
 
@@ -310,7 +302,7 @@ class ArgSpecCache:
         return extended
 
     def _uncached_get_argspec(
-        self, obj: Any, kwargs: Mapping[str, Any]
+        self, obj: Any, implementation: Optional[ImplementationFn]
     ) -> MaybeSignature:
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause
@@ -318,14 +310,14 @@ class ArgSpecCache:
         # Cythonized methods, e.g. fn.asynq
         if is_dot_asynq_function(obj):
             try:
-                return self._cached_get_argspec(obj.__self__, kwargs)
+                return self._cached_get_argspec(obj.__self__, implementation)
             except TypeError:
                 # some cythonized methods have __self__ but it is not a function
                 pass
 
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
-            argspec = self._cached_get_argspec(obj.__func__, kwargs)
+            argspec = self._cached_get_argspec(obj.__func__, implementation)
             return make_bound_method(argspec, KnownValue(obj.__self__))
 
         if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
@@ -337,7 +329,7 @@ class ArgSpecCache:
                 # e.g. certain extension classes
                 pass
             else:
-                return self._cached_get_argspec(original_fn, kwargs)
+                return self._cached_get_argspec(original_fn, implementation)
 
         argspec = self.ts_finder.get_argspec(obj)
         if argspec is not None:
@@ -346,7 +338,7 @@ class ArgSpecCache:
         if inspect.isfunction(obj):
             if hasattr(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
-                return self._cached_get_argspec(obj.inner, kwargs)
+                return self._cached_get_argspec(obj.inner, implementation)
 
             # NewTypes, but we don't currently know how to handle NewTypes over more
             # complicated types.
@@ -368,12 +360,12 @@ class ArgSpecCache:
                 self._safe_get_signature(obj),
                 function_object=obj,
                 is_async=asyncio.iscoroutinefunction(obj),
-                **kwargs,
+                implementation=implementation,
             )
 
         # decorator binders
         if _is_qcore_decorator(obj):
-            argspec = self._cached_get_argspec(obj.decorator, kwargs)
+            argspec = self._cached_get_argspec(obj.decorator, implementation)
             # wrap if it's a bound method
             if obj.instance is not None and argspec is not None:
                 return make_bound_method(argspec, KnownValue(obj.instance))
@@ -405,7 +397,10 @@ class ArgSpecCache:
                         for param_name in args
                     ]
             argspec = self.from_signature(
-                argspec, function_object=constructor, kwonly_args=kwonly_args, **kwargs
+                argspec,
+                function_object=constructor,
+                kwonly_args=kwonly_args,
+                implementation=implementation,
             )
             return make_bound_method(argspec, TypedValue(obj))
 
@@ -418,7 +413,7 @@ class ArgSpecCache:
                     return None
                 if method == obj:
                     return None
-                argspec = self._cached_get_argspec(method, kwargs)
+                argspec = self._cached_get_argspec(method, implementation)
                 return make_bound_method(argspec, KnownValue(obj.__self__))
             return None
 
@@ -431,7 +426,7 @@ class ArgSpecCache:
         if isinstance(obj, property):
             # If we know the getter, inherit its return value.
             if obj.fget:
-                fget_argspec = self._cached_get_argspec(obj.fget, kwargs)
+                fget_argspec = self._cached_get_argspec(obj.fget, implementation)
                 if fget_argspec is not None and fget_argspec.has_return_value():
                     return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
             return PropertyArgSpec(obj)
