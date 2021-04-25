@@ -226,7 +226,9 @@ def _super_impl(ctx: CallContext) -> Value:
         current_class = ctx.visitor.asynq_checker.current_class
         if current_class is not None:
             try:
-                first_arg = ctx.visitor.scopes.get("%first_arg", None, ctx.visitor.state)
+                first_arg = ctx.visitor.scopes.get(
+                    "%first_arg", None, ctx.visitor.state
+                )
             except KeyError:
                 # something weird with this function; give up
                 ctx.show_error("failed to find %first_arg", ErrorCode.bad_super_call)

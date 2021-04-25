@@ -3512,6 +3512,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return self.composite_from_name(node)
         elif isinstance(node, ast.Subscript):
             return self.composite_from_subscript(node)
+        elif isinstance(node, ast.Index):
+            # static analysis: ignore[undefined_attribute]
+            return self.composite_from_node(node.value)
+        elif isinstance(node, (ast.ExtSlice, ast.Slice)):
+            # These don't have a .lineno attribute, which would otherwise cause trouble.
+            return Composite(self.visit(node), None, None)
         else:
             return Composite(self.visit(node), None, node)
 
