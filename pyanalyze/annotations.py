@@ -566,6 +566,8 @@ def _value_of_origin_args(
     origin: object, args: Sequence[object], val: object, ctx: Context
 ) -> Value:
     if origin is typing.Type or origin is type:
+        if not args:
+            return TypedValue(type)
         return SubclassValue.make(_type_from_runtime(args[0], ctx))
     elif origin is typing.Tuple or origin is tuple:
         if not args:
