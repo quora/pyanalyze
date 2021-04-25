@@ -18,6 +18,7 @@ Other subtleties implemented here:
 - Class scopes except the current one are skipped in name lookup
 
 """
+from ast import AST
 from collections import defaultdict, OrderedDict
 import contextlib
 from dataclasses import dataclass, field, replace
@@ -108,6 +109,7 @@ SubScope = Dict[Varname, List[Node]]
 class Composite(NamedTuple):
     value: Value
     varname: Optional[Varname]
+    node: Optional[AST]
 
 
 @dataclass(frozen=True)

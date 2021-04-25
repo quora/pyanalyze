@@ -12,6 +12,8 @@ from .stacked_scopes import (
     ConstraintType,
     NULL_CONSTRAINT,
     AbstractConstraint,
+    PredicateProvider,
+    Varname,
 )
 from .value import (
     AnnotatedValue,
@@ -40,6 +42,7 @@ import qcore
 from typing import (
     Any,
     Iterable,
+    NamedTuple,
     Optional,
     ClassVar,
     Union,
@@ -89,9 +92,70 @@ KWARGS = qcore.MarkerObject("**kwargs")
 Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 
+class ImplReturn(NamedTuple):
+    """Return value of impl functions.
+
+    These functions return either a single Value object, indicating what the
+    function returns, or an instance of this class:
+    - The return value
+    - A Constraint indicating things that are true if the function returns a truthy value,
+      or a PredicateProvider
+    - A Constraint indicating things that are true unless the function does not return
+    """
+
+    return_value: Value
+    constraint: Union[AbstractConstraint, PredicateProvider] = NULL_CONSTRAINT
+    no_return_unless: AbstractConstraint = NULL_CONSTRAINT
+
+
+@dataclass
+class CallContext:
+    """The context passed to an impl function."""
+
+    vars: Dict[str, Value]
+    visitor: "NameCheckVisitor"
+    bound_args: inspect.BoundArguments
+    node: ast.AST
+
+    def ast_for_arg(self, arg: str) -> Optional[ast.AST]:
+        composite = self.composite_for_arg(arg)
+        if composite is not None:
+            return composite.node
+        return None
+
+    def varname_for_arg(self, arg: str) -> Optional[Varname]:
+        composite = self.composite_for_arg(arg)
+        if composite is not None:
+            return composite.varname
+        return None
+
+    def composite_for_arg(self, arg: str) -> Optional[Composite]:
+        composite = self.bound_args.arguments.get(arg)
+        if isinstance(composite, Composite):
+            return composite
+        return None
+
+    def show_error(
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.incompatible_call,
+        arg: Optional[str] = None,
+        node: Optional[ast.AST] = None,
+    ) -> None:
+        node = None
+        if arg is not None:
+            node = self.ast_for_arg(arg)
+        if node is None:
+            node = self.node
+        self.visitor.show_error(node, message, error_code=error_code)
+
+
+Impl = Callable[[CallContext], Union[Value, ImplReturn]]
+
+
 def clean_up_implementation_fn_return(
     return_value: ImplementationFnReturn,
-) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+) -> ImplReturn:
     if return_value is None:
         return_value = UNRESOLVED_VALUE
     # Implementation functions may return a pair of (value, constraint)
@@ -112,7 +176,7 @@ def clean_up_implementation_fn_return(
     assert isinstance(
         return_value, Value
     ), f"implementation did not return a Value: {return_value}"
-    return return_value, constraint, no_return_unless
+    return ImplReturn(return_value, constraint, no_return_unless)
 
 
 class SigParameter(inspect.Parameter):
@@ -131,7 +195,7 @@ class SigParameter(inspect.Parameter):
         if default is None:
             default_composite = EMPTY
         elif isinstance(default, Value):
-            default_composite = Composite(default, None)
+            default_composite = Composite(default, None, None)
         else:
             default_composite = default
         if annotation is None:
@@ -144,7 +208,9 @@ class Signature:
     _return_key: ClassVar[str] = "%return"
 
     signature: inspect.Signature
+    # Deprecated in favor of impl
     implementation: Optional[ImplementationFn] = None
+    impl: Optional[Impl] = None
     callable: Optional[object] = None
     is_asynq: bool = False
     has_return_annotation: bool = True
@@ -218,16 +284,20 @@ class Signature:
 
     def _apply_annotated_constraints(
         self,
-        return_value: Value,
+        raw_return: Union[Value, ImplReturn],
         bound_args: inspect.BoundArguments,
-        constraint: AbstractConstraint = NULL_CONSTRAINT,
-        no_return_unless: AbstractConstraint = NULL_CONSTRAINT,
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+    ) -> ImplReturn:
+        if isinstance(raw_return, Value):
+            ret = ImplReturn(raw_return)
+        else:
+            ret = raw_return
         constraints = []
-        if constraint is not NULL_CONSTRAINT:
-            constraints.append(constraint)
-        if isinstance(return_value, AnnotatedValue):
-            for guard in return_value.get_metadata_of_type(ParameterTypeGuardExtension):
+        if ret.constraint is not NULL_CONSTRAINT:
+            constraints.append(ret.constraint)
+        if isinstance(ret.return_value, AnnotatedValue):
+            for guard in ret.return_value.get_metadata_of_type(
+                ParameterTypeGuardExtension
+            ):
                 if guard.varname in bound_args.arguments:
                     composite = bound_args.arguments[guard.varname]
                     if (
@@ -241,7 +311,7 @@ class Signature:
                             guard.guarded_type,
                         )
                         constraints.append(constraint)
-            for guard in return_value.get_metadata_of_type(TypeGuardExtension):
+            for guard in ret.return_value.get_metadata_of_type(TypeGuardExtension):
                 # This might miss some cases where we should use the second argument instead. We'll
                 # have to come up with additional heuristics if that comes up.
                 if isinstance(self.callable, MethodType) or (
@@ -260,7 +330,7 @@ class Signature:
                         guard.guarded_type,
                     )
                     constraints.append(constraint)
-            for guard in return_value.get_metadata_of_type(HasAttrGuardExtension):
+            for guard in ret.return_value.get_metadata_of_type(HasAttrGuardExtension):
                 if guard.varname in bound_args.arguments:
                     composite = bound_args.arguments[guard.varname]
                     if (
@@ -280,11 +350,11 @@ class Signature:
             constraint = reduce(AndConstraint, constraints)
         else:
             constraint = NULL_CONSTRAINT
-        return return_value, constraint, no_return_unless
+        return ImplReturn(ret.return_value, constraint, ret.no_return_unless)
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+    ) -> ImplReturn:
         """Tries to call this object with the given arguments and keyword arguments.
 
         Raises a TypeError if something goes wrong.
@@ -305,7 +375,7 @@ class Signature:
                 # - type check that they are iterables/mappings
                 # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
                 # - else do something smart to still typecheck the call
-                return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+                return ImplReturn(UNRESOLVED_VALUE)
         try:
             bound_args = self.signature.bind(*call_args, **call_kwargs)
         except TypeError as e:
@@ -314,7 +384,7 @@ class Signature:
             else:
                 message = str(e)
             visitor.show_error(node, message, ErrorCode.incompatible_call)
-            return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+            return ImplReturn(UNRESOLVED_VALUE)
         bound_args.apply_defaults()
         variables = {
             name: self._translate_bound_arg(value)
@@ -351,14 +421,19 @@ class Signature:
         # don't call the implementation function if we had an error, so that
         # the implementation function doesn't have to worry about basic
         # type checking
+        if not had_error and self.impl is not None:
+            ctx = CallContext(
+                vars=variables, visitor=visitor, bound_args=bound_args, node=node
+            )
+            return_value = self.impl(ctx)
+            return self._apply_annotated_constraints(return_value, bound_args)
+
         if not had_error and self.implementation is not None:
             return_value = self.implementation(variables, visitor, node)
-            rv, cons, nru = clean_up_implementation_fn_return(return_value)
-            return self._apply_annotated_constraints(
-                rv, bound_args, constraint=cons, no_return_unless=nru
-            )
+            return_value = clean_up_implementation_fn_return(return_value)
+            return self._apply_annotated_constraints(return_value, bound_args)
         elif return_value is EMPTY:
-            return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+            return ImplReturn(UNRESOLVED_VALUE)
         else:
             return self._apply_annotated_constraints(return_value, bound_args)
 
@@ -551,6 +626,7 @@ class Signature:
         parameters: Iterable[SigParameter],
         return_annotation: Optional[Value] = None,
         *,
+        impl: Optional[Impl] = None,
         implementation: Optional[ImplementationFn] = None,
         callable: Optional[object] = None,
         has_return_annotation: bool = True,
@@ -563,6 +639,7 @@ class Signature:
                 parameters, return_annotation=return_annotation
             ),
             implementation=implementation,
+            impl=impl,
             callable=callable,
             has_return_annotation=has_return_annotation,
         )
@@ -586,7 +663,7 @@ class BoundMethodSignature:
     ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
         return self.signature.check_call(
             # TODO get a composite
-            [(Composite(self.self_value, None), None), *args],
+            [(Composite(self.self_value, None, None), None), *args],
             visitor,
             node,
         )
