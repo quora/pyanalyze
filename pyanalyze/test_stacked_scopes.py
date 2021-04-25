@@ -1345,8 +1345,7 @@ class TestConstraints(TestNameCheckVisitorBase):
                 GenericValue(list, [TypedValue(int)]),
             )
             assert_is_value(
-                [elt.x for elt in c if elt.x],
-                GenericValue(list, [TypedValue(int)]),
+                [elt.x for elt in c if elt.x], GenericValue(list, [TypedValue(int)])
             )
 
         def use_subscript(d: List[Tuple[int, Optional[int]]]) -> None:

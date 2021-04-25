@@ -251,8 +251,7 @@ def _super_impl(ctx: CallContext) -> Value:
             cls = typ.val
         else:
             ctx.show_error(
-                "First argument to super must be a class",
-                ErrorCode.bad_super_call,
+                "First argument to super must be a class", ErrorCode.bad_super_call
             )
             return UNRESOLVED_VALUE
     else:
@@ -738,9 +737,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=assert_is_value,
         ),
         Signature.make(
-            [SigParameter("value")],
-            impl=_dump_value_impl,
-            callable=dump_value,
+            [SigParameter("value")], impl=_dump_value_impl, callable=dump_value
         ),
         # builtins
         Signature.make(
@@ -906,9 +903,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=str.format,
         ),
         Signature.make(
-            [SigParameter("typ"), SigParameter("val")],
-            callable=cast,
-            impl=_cast_impl,
+            [SigParameter("typ"), SigParameter("val")], callable=cast, impl=_cast_impl
         ),
         # workaround for https://github.com/python/typeshed/pull/3501
         Signature.make(
