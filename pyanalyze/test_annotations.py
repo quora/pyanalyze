@@ -514,6 +514,100 @@ class TestAnnotated(TestNameCheckVisitorBase):
             )
 
 
+class TestCallable(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing import Callable, TypeVar
+
+        T = TypeVar("T")
+
+        def capybara(
+            x: Callable[..., int], y: Callable[[int], str], id_func: Callable[[T], T]
+        ):
+            assert_is_value(x(), TypedValue(int))
+            assert_is_value(x(arg=3), TypedValue(int))
+            assert_is_value(y(1), TypedValue(str))
+            assert_is_value(id_func(1), KnownValue(1))
+
+    @assert_passes()
+    def test_stringified(self):
+        from typing import Callable, TypeVar
+
+        T = TypeVar("T")
+
+        def capybara(
+            x: "Callable[..., int]",
+            y: "Callable[[int], str]",
+            id_func: "Callable[[T], T]",
+        ):
+            assert_is_value(x(), TypedValue(int))
+            assert_is_value(x(arg=3), TypedValue(int))
+            assert_is_value(y(1), TypedValue(str))
+            assert_is_value(id_func(1), KnownValue(1))
+
+    @skip_before((3, 9))
+    @assert_passes()
+    def test_abc_callable(self):
+        from typing import TypeVar
+        from collections.abc import Callable
+
+        T = TypeVar("T")
+
+        def capybara(
+            x: Callable[..., int], y: Callable[[int], str], id_func: Callable[[T], T]
+        ):
+            assert_is_value(x(), TypedValue(int))
+            assert_is_value(x(arg=3), TypedValue(int))
+            assert_is_value(y(1), TypedValue(str))
+            assert_is_value(id_func(1), KnownValue(1))
+
+    @assert_passes()
+    def test_known_value(self):
+        from typing_extensions import Literal
+
+        def f(x: int) -> int:
+            return 0
+
+        def g(func: Literal[f]) -> None:
+            pass
+
+        def h(x: object) -> bool:
+            return True
+
+        def capybara() -> None:
+            g(f)
+            g(h)
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_wrong_callable(self):
+        from typing import Callable
+
+        def takes_callable(x: Callable[[int], str]) -> None:
+            pass
+
+        def wrong_callable(x: str) -> int:
+            return 0
+
+        def capybara() -> None:
+            takes_callable(wrong_callable)
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_known_value_error(self):
+        from typing_extensions import Literal
+
+        def f(x: int) -> int:
+            return 0
+
+        def g(func: Literal[f]) -> None:
+            pass
+
+        def h(x: bool) -> bool:
+            return True
+
+        def capybara() -> None:
+            g(h)
+
+
 class TestParameterTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):

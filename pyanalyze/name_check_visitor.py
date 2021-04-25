@@ -82,12 +82,20 @@ from .stacked_scopes import (
     constrain_value,
     SubScope,
 )
-from .signature import MaybeSignature, make_bound_method, ARGS, KWARGS
+from .signature import (
+    BoundMethodSignature,
+    MaybeSignature,
+    Signature,
+    make_bound_method,
+    ARGS,
+    KWARGS,
+)
 from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from .yield_checker import YieldChecker
 from .type_object import get_mro
 from .value import (
     AnnotatedValue,
+    CallableValue,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
@@ -116,7 +124,7 @@ AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
 
 
-OPERATION_TO_DESCRIPTION_AND_METHOD = {
+BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.Add: ("addition", "__add__", "__iadd__", "__radd__"),
     ast.Sub: ("subtraction", "__sub__", "__isub__", "__rsub__"),
     ast.Mult: ("multiplication", "__mul__", "__imul__", "__rmul__"),
@@ -129,12 +137,14 @@ OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.BitXor: ("bitwise XOR", "__xor__", "__ixor__", "__rxor__"),
     ast.BitAnd: ("bitwise AND", "__and__", "__iand__", "__rand__"),
     ast.FloorDiv: ("floor division", "__floordiv__", "__ifloordiv__", "__rfloordiv__"),
-    ast.Invert: ("inversion", "__invert__", None, None),
-    ast.UAdd: ("unary positive", "__pos__", None, None),
-    ast.USub: ("unary negation", "__neg__", None, None),
     ast.MatMult: ("matrix multiplication", "__matmul__", "__imatmul__", "__rmatmul__"),
 }
 
+UNARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
+    ast.Invert: ("inversion", "__invert__"),
+    ast.UAdd: ("unary positive", "__pos__"),
+    ast.USub: ("unary negation", "__neg__"),
+}
 
 def _in(a: Any, b: Any) -> bool:
     return operator.contains(b, a)
@@ -755,6 +765,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, typ: Any, generic_args: Sequence[Value] = ()
     ) -> Dict[type, Sequence[Value]]:
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
+
+    def get_signature(self, obj: object) -> Optional[Signature]:
+        sig = self.arg_spec_cache.get_argspec(obj)
+        if isinstance(sig, Signature):
+            return sig
+        elif isinstance(sig, BoundMethodSignature):
+            return sig.get_signature()
+        return None
 
     def __reduce_ex__(self, proto: object) -> object:
         # Only pickle the attributes needed to get error reporting working
@@ -2369,7 +2387,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return val, constraint.invert()
         else:
             operand = self.composite_from_node(node.operand)
-            _, method, _, _ = OPERATION_TO_DESCRIPTION_AND_METHOD[type(node.op)]
+            _, method = UNARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(node.op)]
             val = self._check_dunder_call(node, operand, method, [], allow_call=True)
             return val, NULL_CONSTRAINT
 
@@ -2429,7 +2447,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
             return value
 
-        description, method, imethod, rmethod = OPERATION_TO_DESCRIPTION_AND_METHOD[
+        description, method, imethod, rmethod = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[
             type(op)
         ]
         allow_call = method not in self.config.DISALLOW_CALLS_TO_DUNDERS
@@ -3817,6 +3835,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             method = callee_wrapped.get_method()
             if method is not None:
                 return self.arg_spec_cache.get_argspec(method)
+        elif isinstance(callee_wrapped, CallableValue):
+            return callee_wrapped.signature
         elif isinstance(callee_wrapped, TypedValue):
             typ = callee_wrapped.typ
             if not hasattr(typ, "__call__") or (

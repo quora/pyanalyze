@@ -9,6 +9,7 @@ from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field, InitVar
 import inspect
 from itertools import chain
+from types import FunctionType
 from typing import (
     Any,
     Callable,
@@ -24,6 +25,7 @@ from typing import (
     Type,
     TypeVar,
 )
+import pyanalyze
 from typing_extensions import Literal
 
 from .safe import safe_isinstance
@@ -58,6 +60,9 @@ class CanAssignContext:
         self, typ: type, generic_args: Sequence["Value"] = ()
     ) -> Dict[type, Sequence["Value"]]:
         return {}
+
+    def get_signature(self, obj: object) -> Optional["pyanalyze.signature.Signature"]:
+        return None
 
 
 class Value:
@@ -165,6 +170,10 @@ class KnownValue(Value):
         return KnownValue(type(self.val))
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        # Make Literal[function] equivalent to a Callable type
+        signature = ctx.get_signature(self.val)
+        if signature is not None:
+            return CallableValue(signature).can_assign(other, ctx)
         if isinstance(other, KnownValue):
             if self.val == other.val and type(self) == type(other):
                 return {}
@@ -597,9 +606,94 @@ class AsyncTaskIncompleteValue(GenericValue):
             self.typ, self.value.substitute_typevars(typevars)
         )
 
-    def walk_values(self) -> Iterable["Value"]:
+    def walk_values(self) -> Iterable[Value]:
         yield self
         yield from self.value.walk_values()
+
+
+@dataclass(unsafe_hash=True, init=False)
+class CallableValue(TypedValue):
+    signature: "pyanalyze.signature.Signature"
+
+    def __init__(self, signature: "pyanalyze.signature.Signature") -> None:
+        super().__init__(collections.abc.Callable)
+        self.signature = signature
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return CallableValue(self.signature.substitute_typevars(typevars))
+
+    def walk_values(self) -> Iterable[Value]:
+        yield self
+        yield from self.signature.walk_values()
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+        # TODO: unify with _get_argspec_from_value() in NameCheckVisitor
+        signature = None
+        if isinstance(other, CallableValue):
+            signature = other.signature
+        elif isinstance(other, KnownValue):
+            signature = ctx.get_signature(other.val)
+        elif isinstance(other, SubclassValue) and isinstance(other.typ, TypedValue):
+            signature = ctx.get_signature(other.typ.typ)
+        elif isinstance(other, UnboundMethodValue):
+            method = other.get_method()
+            if method is not None:
+                signature = ctx.get_signature(method)
+        elif isinstance(other, TypedValue):
+            typ = other.typ
+            if typ is collections.abc.Callable or typ is FunctionType:
+                return {}
+            if not hasattr(typ, "__call__") or (
+                getattr(typ.__call__, "__objclass__", None) is type
+                and not issubclass(typ, type)
+            ):
+                return None
+            call_fn = typ.__call__
+            unbound_signature = ctx.get_signature(call_fn)
+            signature = pyanalyze.signature.make_bound_method(
+                unbound_signature, other
+            ).get_signature()
+        if signature is not None:
+            tv_map_or_error = self.signature.can_assign(signature, ctx)
+            if isinstance(tv_map_or_error, str):
+                print(self, other, tv_map_or_error)
+                return None
+            return tv_map_or_error
+
+        return super().can_assign(other, ctx)
+
+    def __str__(self) -> str:
+        is_asynq = "Asynq" if self.signature.is_asynq else ""
+        return_value = self.signature.signature.return_annotation
+        if self.signature.is_ellipsis_args:
+            args = "..."
+        else:
+            parts = ["["]
+            added_star = False
+            for i, param in enumerate(self.signature.signature.parameters.values()):
+                if i > 0:
+                    parts.append(", ")
+                if param.kind is pyanalyze.signature.SigParameter.POSITIONAL_ONLY:
+                    parts.append(str(param.annotation))
+                elif (
+                    param.kind is pyanalyze.signature.SigParameter.POSITIONAL_OR_KEYWORD
+                ):
+                    parts.append(f"{param.name}: {param.annotation}")
+                elif param.kind is pyanalyze.signature.SigParameter.KEYWORD_ONLY:
+                    if not added_star:
+                        parts.append("*, ")
+                        added_star = True
+                    parts.append(f"{param.name}: {param.annotation}")
+                elif param.kind is pyanalyze.signature.SigParameter.VAR_POSITIONAL:
+                    added_star = True
+                    parts.append(f"*{param.annotation}")
+                elif param.kind is pyanalyze.signature.SigParameter.VAR_KEYWORD:
+                    parts.append(f"**{param.annotation}")
+                if param.default is not pyanalyze.signature.EMPTY:
+                    parts.append(" = ...")
+            parts.append("]")
+            args = "".join(parts)
+        return f"{is_asynq}Callable[{args}, {return_value}]"
 
 
 @dataclass(frozen=True)
