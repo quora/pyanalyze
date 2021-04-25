@@ -674,21 +674,21 @@ class CallableValue(TypedValue):
                 if i > 0:
                     parts.append(", ")
                 if param.kind is pyanalyze.signature.SigParameter.POSITIONAL_ONLY:
-                    parts.append(str(param.annotation))
+                    parts.append(str(param.get_annotation()))
                 elif (
                     param.kind is pyanalyze.signature.SigParameter.POSITIONAL_OR_KEYWORD
                 ):
-                    parts.append(f"{param.name}: {param.annotation}")
+                    parts.append(f"{param.name}: {param.get_annotation()}")
                 elif param.kind is pyanalyze.signature.SigParameter.KEYWORD_ONLY:
                     if not added_star:
                         parts.append("*, ")
                         added_star = True
-                    parts.append(f"{param.name}: {param.annotation}")
+                    parts.append(f"{param.name}: {param.get_annotation()}")
                 elif param.kind is pyanalyze.signature.SigParameter.VAR_POSITIONAL:
                     added_star = True
-                    parts.append(f"*{param.annotation}")
+                    parts.append(f"*{param.get_annotation()}")
                 elif param.kind is pyanalyze.signature.SigParameter.VAR_KEYWORD:
-                    parts.append(f"**{param.annotation}")
+                    parts.append(f"**{param.get_annotation()}")
                 if param.default is not pyanalyze.signature.EMPTY:
                     parts.append(" = ...")
             parts.append("]")
