@@ -523,7 +523,10 @@ class TestCallable(TestNameCheckVisitorBase):
         T = TypeVar("T")
 
         def capybara(
-            x: Callable[..., int], y: Callable[[int], str], id_func: Callable[[T], T], takes_seq: Callable[[Sequence[T]], T]
+            x: Callable[..., int],
+            y: Callable[[int], str],
+            id_func: Callable[[T], T],
+            takes_seq: Callable[[Sequence[T]], T],
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
@@ -558,7 +561,10 @@ class TestCallable(TestNameCheckVisitorBase):
         T = TypeVar("T")
 
         def capybara(
-            x: Callable[..., int], y: Callable[[int], str], id_func: Callable[[T], T], takes_seq: Callable[[Sequence[T]], T]
+            x: Callable[..., int],
+            y: Callable[[int], str],
+            id_func: Callable[[T], T],
+            takes_seq: Callable[[Sequence[T]], T],
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
