@@ -639,7 +639,9 @@ class CallableValue(TypedValue):
             method = other.get_method()
             if method is not None:
                 unbound_signature = ctx.get_signature(method)
-                maybe_bound = pyanalyze.signature.make_bound_method(unbound_signature, other.typ)
+                maybe_bound = pyanalyze.signature.make_bound_method(
+                    unbound_signature, other.typ
+                )
                 if isinstance(maybe_bound, pyanalyze.signature.BoundMethodSignature):
                     signature = maybe_bound.get_signature()
                 else:
