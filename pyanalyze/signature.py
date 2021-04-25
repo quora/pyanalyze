@@ -37,7 +37,6 @@ from functools import reduce
 from types import MethodType, FunctionType
 import inspect
 import qcore
-import logging
 from typing import (
     Any,
     Iterable,
@@ -80,7 +79,6 @@ VarsDict = Dict[str, Any]
 ImplementationFn = Callable[
     [VarsDict, "NameCheckVisitor", ast.AST], ImplementationFnReturn
 ]
-Logger = Callable[[int, str, object], object]
 EMPTY = inspect.Parameter.empty
 
 ARGS = qcore.MarkerObject("*args")
@@ -150,7 +148,6 @@ class Signature:
     callable: Optional[object] = None
     is_asynq: bool = False
     has_return_annotation: bool = True
-    logger: Optional[Logger] = field(repr=False, default=None, compare=False)
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
         init=False, default_factory=dict, repr=False, compare=False
     )
@@ -174,10 +171,6 @@ class Signature:
             for tv_list in self.typevars_of_params.values()
             for typevar in tv_list
         }
-
-    def log(self, level: int, label: str, value: object) -> None:
-        if self.logger is not None:
-            self.logger(level, label, value)
 
     def _check_param_type_compatibility(
         self,
@@ -312,7 +305,6 @@ class Signature:
                 # - type check that they are iterables/mappings
                 # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
                 # - else do something smart to still typecheck the call
-                self.log(logging.DEBUG, "Ignoring call with *args/**kwargs", composite)
                 return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
         try:
             bound_args = self.signature.bind(*call_args, **call_kwargs)
@@ -561,7 +553,6 @@ class Signature:
         *,
         implementation: Optional[ImplementationFn] = None,
         callable: Optional[object] = None,
-        logger: Optional[Logger] = None,
         has_return_annotation: bool = True,
     ) -> "Signature":
         if return_annotation is None:
