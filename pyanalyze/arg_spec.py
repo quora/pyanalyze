@@ -377,17 +377,18 @@ class ArgSpecCache:
                     return None
 
                 kwonly_args = []
-                for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
-                    if issubclass(obj, cls_):
-                        kwonly_args += [
-                            SigParameter(
-                                param_name,
-                                SigParameter.KEYWORD_ONLY,
-                                default=KnownValue(None),
-                                annotation=UNRESOLVED_VALUE,
-                            )
-                            for param_name in args
-                        ]
+                if override is not None:
+                    for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
+                        if issubclass(obj, cls_):
+                            kwonly_args += [
+                                SigParameter(
+                                    param_name,
+                                    SigParameter.KEYWORD_ONLY,
+                                    default=KnownValue(None),
+                                    annotation=UNRESOLVED_VALUE,
+                                )
+                                for param_name in args
+                            ]
                 signature = self.from_signature(
                     inspect_sig,
                     function_object=constructor,
