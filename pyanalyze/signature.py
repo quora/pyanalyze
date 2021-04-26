@@ -63,29 +63,6 @@ from typing_extensions import Literal
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
 
-# Implementation functions are passed the following arguments:
-# - variables: a dictionary with the function's arguments (keys are variable names and values are
-#   Value objects)
-# - visitor: the test_scope NameCheckVisitor object, which can be used to check context and emit
-#   errors
-# - node: the AST node corresponding to the call, which needs to be given in order to show errors.
-# They return either a single Value object, indicating what the function returns, or a tuple of two
-# or three elements:
-# - The return value
-# - A Constraint indicating things that are true if the function returns a truthy value,
-#   or a PredicateProvider
-# - A Constraint indicating things that are true unless the function does not return
-ImplementationFnReturn = Union[
-    Value,
-    Tuple[Value, AbstractConstraint],
-    Tuple[Value, AbstractConstraint, AbstractConstraint],
-]
-# Values should be of type Value, but currently *args/**kwargs are entered
-# as tuples and dicts. TODO: fix this.
-VarsDict = Dict[str, Any]
-ImplementationFn = Callable[
-    [VarsDict, "NameCheckVisitor", ast.AST], ImplementationFnReturn
-]
 EMPTY = inspect.Parameter.empty
 
 ARGS = qcore.MarkerObject("*args")
@@ -157,32 +134,6 @@ class CallContext:
 Impl = Callable[[CallContext], Union[Value, ImplReturn]]
 
 
-def clean_up_implementation_fn_return(
-    return_value: ImplementationFnReturn,
-) -> ImplReturn:
-    if return_value is None:
-        return_value = UNRESOLVED_VALUE
-    # Implementation functions may return a pair of (value, constraint)
-    # or a three-tuple of (value, constraint, NoReturn unless)
-    if isinstance(return_value, tuple):
-        if len(return_value) == 2:
-            return_value, constraint = return_value
-            no_return_unless = NULL_CONSTRAINT
-        elif len(return_value) == 3:
-            return_value, constraint, no_return_unless = return_value
-        else:
-            assert (
-                False
-            ), f"implementation must return a 2- or 3-tuple, not {return_value}"
-    else:
-        constraint = no_return_unless = NULL_CONSTRAINT
-    # this indicates a bug in test_scope, so using assert
-    assert isinstance(
-        return_value, Value
-    ), f"implementation did not return a Value: {return_value}"
-    return ImplReturn(return_value, constraint, no_return_unless)
-
-
 class SigParameter(inspect.Parameter):
     """Wrapper around inspect.Parameter that stores annotations as Value objects."""
 
@@ -226,8 +177,6 @@ class Signature:
     _return_key: ClassVar[str] = "%return"
 
     signature: inspect.Signature
-    # Deprecated in favor of impl
-    implementation: Optional[ImplementationFn] = None
     impl: Optional[Impl] = None
     callable: Optional[object] = None
     is_asynq: bool = False
@@ -449,11 +398,6 @@ class Signature:
             )
             return_value = self.impl(ctx)
             return self._apply_annotated_constraints(return_value, bound_args)
-
-        if not had_error and self.implementation is not None:
-            return_value = self.implementation(variables, visitor, node)
-            return_value = clean_up_implementation_fn_return(return_value)
-            return self._apply_annotated_constraints(return_value, bound_args)
         elif return_value is EMPTY:
             return ImplReturn(UNRESOLVED_VALUE)
         else:
@@ -670,7 +614,7 @@ class Signature:
                     typevars
                 ),
             ),
-            implementation=self.implementation,
+            impl=self.impl,
             callable=self.callable,
             is_asynq=self.is_asynq,
             has_return_annotation=self.has_return_annotation,
@@ -689,7 +633,6 @@ class Signature:
         return_annotation: Optional[Value] = None,
         *,
         impl: Optional[Impl] = None,
-        implementation: Optional[ImplementationFn] = None,
         callable: Optional[object] = None,
         has_return_annotation: bool = True,
         is_ellipsis_args: bool = False,
@@ -701,7 +644,6 @@ class Signature:
             signature=inspect.Signature(
                 parameters, return_annotation=return_annotation
             ),
-            implementation=implementation,
             impl=impl,
             callable=callable,
             has_return_annotation=has_return_annotation,
@@ -743,7 +685,7 @@ class BoundMethodSignature:
             signature=inspect.Signature(
                 params[1:], return_annotation=self.signature.signature.return_annotation
             ),
-            # We don't carry over the implementation functions, because it may not work when passed
+            # We don't carry over the implementation function, because it may not work when passed
             # different arguments.
             callable=self.signature.callable,
             is_asynq=self.signature.is_asynq,

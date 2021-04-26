@@ -398,7 +398,6 @@ class YieldChecker:
         """Returns the lines that the given yield node occupies."""
         # see if it has a parent assign node
         if hasattr(yield_node, "parent_assign_node"):
-            # static analysis: ignore[undefined_attribute]
             first_lineno = yield_node.parent_assign_node.lineno
         else:
             first_lineno = yield_node.lineno
