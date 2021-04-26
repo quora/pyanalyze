@@ -1,10 +1,23 @@
 # static analysis: ignore
-from .value import TypedValue, UNRESOLVED_VALUE
+from .value import (
+    GenericValue,
+    SequenceIncompleteValue,
+    TypedDictValue,
+    TypedValue,
+    UNRESOLVED_VALUE,
+)
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .error_code import ErrorCode
 from .signature import Signature, SigParameter as P
 from .test_value import CTX
+
+TupleInt = GenericValue(tuple, [TypedValue(int)])
+TupleBool = GenericValue(tuple, [TypedValue(bool)])
+TupleObject = GenericValue(tuple, [TypedValue(object)])
+DictInt = GenericValue(dict, [TypedValue(str), TypedValue(int)])
+DictBool = GenericValue(dict, [TypedValue(str), TypedValue(bool)])
+DictObject = GenericValue(dict, [TypedValue(str), TypedValue(object)])
 
 
 class TestCanAssign:
@@ -50,15 +63,11 @@ class TestCanAssign:
         # *args interaction
         self.can(
             pos_only_sig,
-            Signature.make(
-                [P("whatever", annotation=TypedValue(int), kind=P.VAR_POSITIONAL)]
-            ),
+            Signature.make([P("whatever", annotation=TupleInt, kind=P.VAR_POSITIONAL)]),
         )
         self.cannot(
             pos_only_sig,
-            Signature.make(
-                [P("x", annotation=TypedValue(bool), kind=P.VAR_POSITIONAL)]
-            ),
+            Signature.make([P("x", annotation=TupleBool, kind=P.VAR_POSITIONAL)]),
         )
 
     def test_pos_or_keyword(self) -> None:
@@ -77,18 +86,17 @@ class TestCanAssign:
         self.cannot(pos_kw_sig, Signature.make([pos_kw_int_b]))
         self.cannot(
             pos_kw_sig,
-            Signature.make([P("x", annotation=TypedValue(int), kind=P.VAR_POSITIONAL)]),
+            Signature.make([P("x", annotation=TupleInt, kind=P.VAR_POSITIONAL)]),
         )
         self.cannot(
-            pos_kw_sig,
-            Signature.make([P("x", annotation=TypedValue(int), kind=P.VAR_KEYWORD)]),
+            pos_kw_sig, Signature.make([P("x", annotation=DictInt, kind=P.VAR_KEYWORD)])
         )
         self.can(
             pos_kw_sig,
             Signature.make(
                 [
-                    P("x", annotation=TypedValue(int), kind=P.VAR_POSITIONAL),
-                    P("y", annotation=TypedValue(int), kind=P.VAR_KEYWORD),
+                    P("x", annotation=TupleInt, kind=P.VAR_POSITIONAL),
+                    P("y", annotation=DictInt, kind=P.VAR_KEYWORD),
                 ]
             ),
         )
@@ -96,8 +104,8 @@ class TestCanAssign:
             pos_kw_sig,
             Signature.make(
                 [
-                    P("x", annotation=TypedValue(object), kind=P.VAR_POSITIONAL),
-                    P("y", annotation=TypedValue(int), kind=P.VAR_KEYWORD),
+                    P("x", annotation=TupleObject, kind=P.VAR_POSITIONAL),
+                    P("y", annotation=DictInt, kind=P.VAR_KEYWORD),
                 ]
             ),
         )
@@ -105,8 +113,8 @@ class TestCanAssign:
             pos_kw_sig,
             Signature.make(
                 [
-                    P("x", annotation=TypedValue(bool), kind=P.VAR_POSITIONAL),
-                    P("y", annotation=TypedValue(int), kind=P.VAR_KEYWORD),
+                    P("x", annotation=TupleBool, kind=P.VAR_POSITIONAL),
+                    P("y", annotation=DictInt, kind=P.VAR_KEYWORD),
                 ]
             ),
         )
@@ -127,17 +135,17 @@ class TestCanAssign:
         self.cannot(kw_only_sig, Signature.make([pos_only_int]))
         self.can(
             kw_only_sig,
-            Signature.make([P("x", annotation=TypedValue(int), kind=P.VAR_KEYWORD)]),
+            Signature.make([P("x", annotation=DictInt, kind=P.VAR_KEYWORD)]),
         )
         self.cannot(
             kw_only_sig,
-            Signature.make([P("x", annotation=TypedValue(bool), kind=P.VAR_KEYWORD)]),
+            Signature.make([P("x", annotation=DictBool, kind=P.VAR_KEYWORD)]),
         )
 
     def test_var_positional(self) -> None:
-        var_pos_int = P("a", annotation=TypedValue(int), kind=P.VAR_POSITIONAL)
-        var_pos_object = P("b", annotation=TypedValue(object), kind=P.VAR_POSITIONAL)
-        var_pos_bool = P("c", annotation=TypedValue(bool), kind=P.VAR_POSITIONAL)
+        var_pos_int = P("a", annotation=TupleInt, kind=P.VAR_POSITIONAL)
+        var_pos_object = P("b", annotation=TupleObject, kind=P.VAR_POSITIONAL)
+        var_pos_bool = P("c", annotation=TupleBool, kind=P.VAR_POSITIONAL)
         var_pos_sig = Signature.make([var_pos_int])
         self.can(var_pos_sig, var_pos_sig)
         self.can(var_pos_sig, Signature.make([var_pos_object]))
@@ -162,9 +170,9 @@ class TestCanAssign:
         )
 
     def test_var_keyword(self) -> None:
-        var_kw_int = P("a", annotation=TypedValue(int), kind=P.VAR_KEYWORD)
-        var_kw_object = P("b", annotation=TypedValue(object), kind=P.VAR_KEYWORD)
-        var_kw_bool = P("c", annotation=TypedValue(bool), kind=P.VAR_KEYWORD)
+        var_kw_int = P("a", annotation=DictInt, kind=P.VAR_KEYWORD)
+        var_kw_object = P("b", annotation=DictObject, kind=P.VAR_KEYWORD)
+        var_kw_bool = P("c", annotation=DictBool, kind=P.VAR_KEYWORD)
         var_kw_sig = Signature.make([var_kw_int])
         self.can(var_kw_sig, var_kw_sig)
         self.can(var_kw_sig, Signature.make([var_kw_object]))
@@ -180,6 +188,56 @@ class TestCanAssign:
             Signature.make(
                 [P("d", annotation=TypedValue(bool), kind=P.KEYWORD_ONLY), var_kw_int]
             ),
+        )
+
+    def test_advanced_var_positional(self) -> None:
+        three_ints_sig = Signature.make(
+            [
+                P("a", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY),
+                P("b", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY),
+                P("c", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY),
+            ]
+        )
+        object_int = P(
+            "args",
+            annotation=SequenceIncompleteValue(
+                tuple, [TypedValue(object), TypedValue(int)]
+            ),
+            kind=P.VAR_POSITIONAL,
+        )
+        self.can(
+            three_ints_sig,
+            Signature.make(
+                [P("a", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY), object_int]
+            ),
+        )
+        self.cannot(three_ints_sig, Signature.make([object_int]))
+
+    def test_advanced_var_keyword(self) -> None:
+        three_ints_sig = Signature.make(
+            [
+                P("a", annotation=TypedValue(int), kind=P.KEYWORD_ONLY),
+                P("b", annotation=TypedValue(int), kind=P.KEYWORD_ONLY),
+                P("c", annotation=TypedValue(int), kind=P.KEYWORD_ONLY),
+            ]
+        )
+        dict_int = P(
+            "args",
+            annotation=GenericValue(dict, [TypedValue(str), TypedValue(int)]),
+            kind=P.VAR_KEYWORD,
+        )
+        self.can(three_ints_sig, Signature.make([dict_int]))
+        good_td = TypedDictValue(
+            {"a": TypedValue(int), "b": TypedValue(int), "c": TypedValue(int)}
+        )
+        self.can(
+            three_ints_sig,
+            Signature.make([P("a", annotation=good_td, kind=P.VAR_KEYWORD)]),
+        )
+        bad_td = TypedDictValue({"a": TypedValue(int), "b": TypedValue(int)})
+        self.cannot(
+            three_ints_sig,
+            Signature.make([P("a", annotation=bad_td, kind=P.VAR_KEYWORD)]),
         )
 
 

@@ -18,6 +18,7 @@ from .stacked_scopes import (
 from .value import (
     AnnotatedValue,
     CanAssignContext,
+    GenericValue,
     HasAttrExtension,
     HasAttrGuardExtension,
     KnownValue,
@@ -25,6 +26,8 @@ from .value import (
     SequenceIncompleteValue,
     DictIncompleteValue,
     TypeGuardExtension,
+    TypeVarValue,
+    TypedDictValue,
     UNRESOLVED_VALUE,
     Value,
     TypeVarMap,
@@ -34,6 +37,7 @@ from .value import (
 )
 
 import ast
+import collections.abc
 from dataclasses import dataclass, field
 from functools import reduce
 from types import MethodType, FunctionType
@@ -479,8 +483,10 @@ class Signature:
         their_params = list(other.signature.parameters.values())
         their_args = other.get_param_of_kind(SigParameter.VAR_POSITIONAL)
         if their_args is not None:
+            their_args_index = their_params.index(their_args)
             args_annotation = their_args.get_annotation()
         else:
+            their_args_index = -1
             args_annotation = None
         their_kwargs = other.get_param_of_kind(SigParameter.VAR_KEYWORD)
         if their_kwargs is not None:
@@ -512,13 +518,12 @@ class Signature:
                     tv_maps.append(tv_map)
                     consumed_positional.add(their_params[i].name)
                 elif args_annotation is not None:
-                    tv_map = args_annotation.can_assign(my_annotation, ctx)
-                    if tv_map is None:
-                        return (
-                            f"type of positional-only parameter {my_param.name!r} is incompatible: "
-                            f"*args type {args_annotation} is incompatible with {my_annotation}"
-                        )
-                    tv_maps.append(tv_map)
+                    new_tv_maps = can_assign_var_positional(
+                        my_param, args_annotation, i - their_args_index, ctx
+                    )
+                    if isinstance(new_tv_maps, str):
+                        return new_tv_maps
+                    tv_maps += new_tv_maps
                 else:
                     return f"positional-only parameter {i} is not accepted"
             elif my_param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
@@ -549,20 +554,18 @@ class Signature:
                 ):
                     return f"parameter {my_param.name!r} is not accepted as a keyword argument"
                 elif args_annotation is not None and kwargs_annotation is not None:
-                    tv_map = args_annotation.can_assign(my_annotation, ctx)
-                    if tv_map is None:
-                        return (
-                            f"type of parameter {my_param.name!r} is incompatible: "
-                            f"*args type {args_annotation} is incompatible with {my_annotation}"
-                        )
-                    tv_maps.append(tv_map)
-                    tv_map = kwargs_annotation.can_assign(my_annotation, ctx)
-                    if tv_map is None:
-                        return (
-                            f"type of parameter {my_param.name!r} is incompatible: "
-                            f"**kwargs type {kwargs_annotation} is incompatible with {my_annotation}"
-                        )
-                    tv_maps.append(tv_map)
+                    new_tv_maps = can_assign_var_positional(
+                        my_param, args_annotation, i - their_args_index, ctx
+                    )
+                    if isinstance(new_tv_maps, str):
+                        return new_tv_maps
+                    tv_maps += new_tv_maps
+                    new_tv_maps = can_assign_var_keyword(
+                        my_param, kwargs_annotation, ctx
+                    )
+                    if isinstance(new_tv_maps, str):
+                        return new_tv_maps
+                    tv_maps += new_tv_maps
                 else:
                     return f"parameter {my_param.name!r} is not accepted"
             elif my_param.kind is SigParameter.KEYWORD_ONLY:
@@ -583,13 +586,12 @@ class Signature:
                     tv_maps.append(tv_map)
                     consumed_keyword.add(their_param.name)
                 elif kwargs_annotation is not None:
-                    tv_map = kwargs_annotation.can_assign(my_annotation, ctx)
-                    if tv_map is None:
-                        return (
-                            f"type of parameter {my_param.name!r} is incompatible: "
-                            f"**kwargs type {kwargs_annotation} is incompatible with {my_annotation}"
-                        )
-                    tv_maps.append(tv_map)
+                    new_tv_maps = can_assign_var_keyword(
+                        my_param, kwargs_annotation, ctx
+                    )
+                    if isinstance(new_tv_maps, str):
+                        return new_tv_maps
+                    tv_maps += new_tv_maps
                 else:
                     return f"parameter {my_param.name!r} is not accepted"
             elif my_param.kind is SigParameter.VAR_POSITIONAL:
@@ -786,3 +788,78 @@ def make_bound_method(
         return BoundMethodSignature(argspec.signature, self_value)
     else:
         assert False, f"invalid argspec {argspec}"
+
+
+T = TypeVar("T")
+IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
+K = TypeVar("K")
+V = TypeVar("V")
+MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
+
+
+def can_assign_var_positional(
+    my_param: SigParameter, args_annotation: Value, idx: int, ctx: CanAssignContext
+) -> Union[List[TypeVarMap], str]:
+    tv_maps = []
+    my_annotation = my_param.get_annotation()
+    if isinstance(args_annotation, SequenceIncompleteValue):
+        length = len(args_annotation.members)
+        if idx >= length:
+            return f"parameter {my_param.name!r} is not accepted; {args_annotation} only accepts {length} values"
+        their_annotation = args_annotation.members[idx]
+        tv_map = their_annotation.can_assign(my_annotation, ctx)
+        if tv_map is None:
+            return (
+                f"type of parameter {my_param.name!r} is incompatible: "
+                f"*args[{idx}] type {their_annotation} is incompatible with {my_annotation}"
+            )
+        tv_maps.append(tv_map)
+    else:
+        tv_map = IterableValue.can_assign(args_annotation, ctx)
+        if tv_map is None:
+            return f"{args_annotation} is not an iterable type"
+        iterable_arg = tv_map.get(T, UNRESOLVED_VALUE)
+        tv_map = iterable_arg.can_assign(my_annotation, ctx)
+        if tv_map is None:
+            return (
+                f"type of parameter {my_param.name!r} is incompatible: "
+                f"*args type {args_annotation} is incompatible with {my_annotation}"
+            )
+        tv_maps.append(tv_map)
+    return tv_maps
+
+
+def can_assign_var_keyword(
+    my_param: SigParameter, kwargs_annotation: Value, ctx: CanAssignContext
+) -> Union[List[TypeVarMap], str]:
+    my_annotation = my_param.get_annotation()
+    tv_maps = []
+    if isinstance(kwargs_annotation, TypedDictValue):
+        if my_param.name not in kwargs_annotation.items:
+            return f"parameter {my_param.name!r} is not accepted by {kwargs_annotation}"
+        their_annotation = kwargs_annotation.items[my_param.name]
+        tv_map = their_annotation.can_assign(my_annotation, ctx)
+        if tv_map is None:
+            return (
+                f"type of parameter {my_param.name!r} is incompatible: "
+                f"*kwargs[{my_param.name!r}] type {their_annotation} is incompatible with {my_annotation}"
+            )
+        tv_maps.append(tv_map)
+    else:
+        mapping_tv_map = MappingValue.can_assign(kwargs_annotation, ctx)
+        if mapping_tv_map is None:
+            return f"{kwargs_annotation} is not a mapping type"
+        key_arg = mapping_tv_map.get(K, UNRESOLVED_VALUE)
+        tv_map = key_arg.can_assign(KnownValue(my_param.name), ctx)
+        if tv_map is None:
+            return f"parameter {my_param.name!r} is not accepted by **kwargs type {kwargs_annotation}"
+        tv_maps.append(tv_map)
+        value_arg = mapping_tv_map.get(V, UNRESOLVED_VALUE)
+        tv_map = value_arg.can_assign(my_annotation, ctx)
+        if tv_map is None:
+            return (
+                f"type of parameter {my_param.name!r} is incompatible: "
+                f"**kwargs type {kwargs_annotation} is incompatible with {my_annotation}"
+            )
+        tv_maps.append(tv_map)
+    return tv_maps
