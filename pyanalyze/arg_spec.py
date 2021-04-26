@@ -12,7 +12,6 @@ from .safe import safe_hasattr
 from .stacked_scopes import uniq_chain
 from .signature import (
     Impl,
-    ImplementationFn,
     MaybeSignature,
     PropertyArgSpec,
     make_bound_method,
@@ -46,9 +45,7 @@ import typing_inspect
 
 @used  # exposed as an API
 @contextlib.contextmanager
-def with_implementation(
-    fn: object, implementation_fn: ImplementationFn
-) -> Iterable[None]:
+def with_implementation(fn: object, implementation_fn: Impl) -> Iterable[None]:
     """Temporarily sets the implementation of fn to be implementation_fn.
 
     This is useful for invoking test_scope to aggregate all calls to a particular function. For
@@ -67,13 +64,11 @@ def with_implementation(
     """
     if fn in ArgSpecCache.DEFAULT_ARGSPECS:
         with qcore.override(
-            ArgSpecCache.DEFAULT_ARGSPECS[fn], "implementation", implementation_fn
+            ArgSpecCache.DEFAULT_ARGSPECS[fn], "impl", implementation_fn
         ):
             yield
     else:
-        argspec = ArgSpecCache(Config()).get_argspec(
-            fn, implementation=implementation_fn
-        )
+        argspec = ArgSpecCache(Config()).get_argspec(fn, impl=implementation_fn)
         if argspec is None:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
@@ -82,7 +77,7 @@ def with_implementation(
                     SigParameter("kwargs", SigParameter.VAR_KEYWORD),
                 ],
                 callable=fn,
-                implementation=implementation_fn,
+                impl=implementation_fn,
             )
         known_argspecs = dict(ArgSpecCache.DEFAULT_ARGSPECS)
         known_argspecs[fn] = argspec
@@ -140,7 +135,6 @@ class ArgSpecCache:
         *,
         kwonly_args: Sequence[SigParameter] = (),
         impl: Optional[Impl] = None,
-        implementation: Optional[ImplementationFn] = None,
         function_object: object,
         is_async: bool = False,
     ) -> Optional[Signature]:
@@ -148,7 +142,7 @@ class ArgSpecCache:
 
         kwonly_args may be a list of custom keyword-only arguments added to the argspec or None.
 
-        implementation is an implementation function for this object.
+        impl is an implementation function for this object.
 
         function_object is the underlying callable.
 
@@ -186,7 +180,6 @@ class ArgSpecCache:
         return Signature.make(
             parameters,
             returns,
-            implementation=implementation,
             impl=impl,
             callable=function_object,
             has_return_annotation=has_return_annotation,
@@ -268,22 +261,12 @@ class ArgSpecCache:
             )
         return None
 
-    def get_argspec(
-        self,
-        obj: object,
-        implementation: Optional[ImplementationFn] = None,
-        impl: Optional[Impl] = None,
-    ) -> MaybeSignature:
+    def get_argspec(self, obj: object, impl: Optional[Impl] = None) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
-        argspec = self._cached_get_argspec(obj, implementation, impl)
+        argspec = self._cached_get_argspec(obj, impl)
         return argspec
 
-    def _cached_get_argspec(
-        self,
-        obj: object,
-        implementation: Optional[ImplementationFn],
-        impl: Optional[Impl],
-    ) -> MaybeSignature:
+    def _cached_get_argspec(self, obj: object, impl: Optional[Impl]) -> MaybeSignature:
         try:
             if obj in self.known_argspecs:
                 return self.known_argspecs[obj]
@@ -292,7 +275,7 @@ class ArgSpecCache:
         else:
             hashable = True
 
-        extended = self._uncached_get_argspec(obj, implementation, impl)
+        extended = self._uncached_get_argspec(obj, impl)
         if extended is None:
             return None
 
@@ -300,23 +283,21 @@ class ArgSpecCache:
             self.known_argspecs[obj] = extended
         return extended
 
-    def _uncached_get_argspec(
-        self, obj: Any, implementation: Optional[ImplementationFn], impl: Optional[Impl]
-    ) -> MaybeSignature:
+    def _uncached_get_argspec(self, obj: Any, impl: Optional[Impl]) -> MaybeSignature:
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause
 
         # Cythonized methods, e.g. fn.asynq
         if is_dot_asynq_function(obj):
             try:
-                return self._cached_get_argspec(obj.__self__, implementation, impl)
+                return self._cached_get_argspec(obj.__self__, impl)
             except TypeError:
                 # some cythonized methods have __self__ but it is not a function
                 pass
 
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
-            argspec = self._cached_get_argspec(obj.__func__, implementation, impl)
+            argspec = self._cached_get_argspec(obj.__func__, impl)
             return make_bound_method(argspec, KnownValue(obj.__self__))
 
         if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
@@ -328,7 +309,7 @@ class ArgSpecCache:
                 # e.g. certain extension classes
                 pass
             else:
-                return self._cached_get_argspec(original_fn, implementation, impl)
+                return self._cached_get_argspec(original_fn, impl)
 
         argspec = self.ts_finder.get_argspec(obj)
         if argspec is not None:
@@ -337,7 +318,7 @@ class ArgSpecCache:
         if inspect.isfunction(obj):
             if hasattr(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
-                return self._cached_get_argspec(obj.inner, implementation, impl)
+                return self._cached_get_argspec(obj.inner, impl)
 
             # NewTypes, but we don't currently know how to handle NewTypes over more
             # complicated types.
@@ -359,13 +340,12 @@ class ArgSpecCache:
                 self._safe_get_signature(obj),
                 function_object=obj,
                 is_async=asyncio.iscoroutinefunction(obj),
-                implementation=implementation,
                 impl=impl,
             )
 
         # decorator binders
         if _is_qcore_decorator(obj):
-            argspec = self._cached_get_argspec(obj.decorator, implementation, impl)
+            argspec = self._cached_get_argspec(obj.decorator, impl)
             # wrap if it's a bound method
             if obj.instance is not None and argspec is not None:
                 return make_bound_method(argspec, KnownValue(obj.instance))
@@ -397,11 +377,7 @@ class ArgSpecCache:
                         for param_name in args
                     ]
             argspec = self.from_signature(
-                argspec,
-                function_object=constructor,
-                kwonly_args=kwonly_args,
-                implementation=implementation,
-                impl=impl,
+                argspec, function_object=constructor, kwonly_args=kwonly_args, impl=impl
             )
             return make_bound_method(argspec, TypedValue(obj))
 
@@ -414,7 +390,7 @@ class ArgSpecCache:
                     return None
                 if method == obj:
                     return None
-                argspec = self._cached_get_argspec(method, implementation, impl)
+                argspec = self._cached_get_argspec(method, impl)
                 return make_bound_method(argspec, KnownValue(obj.__self__))
             return None
 
@@ -427,7 +403,7 @@ class ArgSpecCache:
         if isinstance(obj, property):
             # If we know the getter, inherit its return value.
             if obj.fget:
-                fget_argspec = self._cached_get_argspec(obj.fget, implementation, impl)
+                fget_argspec = self._cached_get_argspec(obj.fget, impl)
                 if fget_argspec is not None and fget_argspec.has_return_value():
                     return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
             return PropertyArgSpec(obj)

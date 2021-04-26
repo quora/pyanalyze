@@ -12,13 +12,7 @@ from .stacked_scopes import (
     OrConstraint,
     Varname,
 )
-from .signature import (
-    SigParameter,
-    Signature,
-    clean_up_implementation_fn_return,
-    ImplReturn,
-    CallContext,
-)
+from .signature import SigParameter, Signature, ImplReturn, CallContext
 from .value import (
     AnnotatedValue,
     HasAttrGuardExtension,
@@ -85,6 +79,14 @@ def _maybe_or_constraint(
     if left is NULL_CONSTRAINT or right is NULL_CONSTRAINT:
         return NULL_CONSTRAINT
     return OrConstraint(left, right)
+
+
+def clean_up_implementation_fn_return(
+    return_value: Union[Value, ImplReturn]
+) -> ImplReturn:
+    if isinstance(return_value, Value):
+        return ImplReturn(return_value)
+    return return_value
 
 
 def flatten_unions(
