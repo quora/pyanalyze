@@ -1952,14 +1952,7 @@ class TestNonlocal(TestNameCheckVisitorBase):
             def inner_capybara():
                 nonlocal x
                 assert_is_value(
-                    x,
-                    MultiValuedValue(
-                        [
-                            KnownValue(4),
-                            KnownValue(3),
-                            KnownValue(5),
-                        ]
-                    ),
+                    x, MultiValuedValue([KnownValue(4), KnownValue(3), KnownValue(5)])
                 )
                 x = 4
                 assert_is_value(x, KnownValue(4))

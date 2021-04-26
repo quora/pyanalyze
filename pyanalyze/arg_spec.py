@@ -40,15 +40,7 @@ import contextlib
 import qcore
 import inspect
 import sys
-from typing import (
-    Any,
-    Sequence,
-    Generic,
-    Iterable,
-    Mapping,
-    Optional,
-    Dict,
-)
+from typing import Any, Sequence, Generic, Iterable, Mapping, Optional, Dict
 import typing_inspect
 
 

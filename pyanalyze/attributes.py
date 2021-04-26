@@ -102,10 +102,7 @@ def may_have_dynamic_attributes(typ: type) -> bool:
     return False
 
 
-def _get_attribute_from_subclass(
-    typ: type,
-    ctx: AttrContext,
-) -> Value:
+def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
     ctx.record_attr_read(typ)
 
     # First check values that are special in Python

@@ -298,9 +298,7 @@ class Signature:
             raise TypeError(repr(argument))
 
     def _apply_annotated_constraints(
-        self,
-        raw_return: Union[Value, ImplReturn],
-        bound_args: inspect.BoundArguments,
+        self, raw_return: Union[Value, ImplReturn], bound_args: inspect.BoundArguments
     ) -> ImplReturn:
         if isinstance(raw_return, Value):
             ret = ImplReturn(raw_return)

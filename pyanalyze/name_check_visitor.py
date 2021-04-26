@@ -1679,9 +1679,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return type_from_value(val, visitor=self, node=node)
 
     def _check_method_first_arg(
-        self,
-        node: FunctionNode,
-        function_info: FunctionInfo = _DEFAULT_FUNCTION_INFO,
+        self, node: FunctionNode, function_info: FunctionInfo = _DEFAULT_FUNCTION_INFO
     ) -> None:
         """Makes sure the first argument to a method is self or cls."""
         if self.current_class is None:
@@ -3661,19 +3659,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 callee_val, self.config.FUNCTIONS_SAFE_TO_CALL
             ) and self._can_perform_call(arg_values, kw_values):
                 return_value = self._try_perform_call(
-                    callee_val,
-                    node,
-                    arg_values,
-                    kw_values,
-                    return_value,
+                    callee_val, node, arg_values, kw_values, return_value
                 )
 
         return return_value, constraint
 
     def _can_perform_call(
-        self,
-        args: Iterable[Value],
-        keywords: Iterable[Tuple[Optional[str], Value]],
+        self, args: Iterable[Value], keywords: Iterable[Tuple[Optional[str], Value]]
     ) -> Annotated[
         bool,
         ParameterTypeGuard["args", Iterable[KnownValue]],

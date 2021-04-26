@@ -246,10 +246,7 @@ def test_multi_valued_value() -> None:
     assert_can_assign(
         val,
         MultiValuedValue(
-            [
-                UNRESOLVED_VALUE,
-                MultiValuedValue([TypedValue(int), KnownValue(None)]),
-            ]
+            [UNRESOLVED_VALUE, MultiValuedValue([TypedValue(int), KnownValue(None)])]
         ),
     )
 

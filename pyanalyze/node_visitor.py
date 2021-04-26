@@ -209,8 +209,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         if level < self._logging_level:
             return
         self.logger.log(
-            level,
-            "%s: %s" % (qcore.safe_str(label), qcore.safe_str(value)),
+            level, "%s: %s" % (qcore.safe_str(label), qcore.safe_str(value))
         )
 
     @qcore.caching.cached_per_instance()
