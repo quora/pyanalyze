@@ -5,11 +5,12 @@ Module-specific configurations for test_scope.
 """
 import asynq
 import enum
+import inspect
 import qcore
 from unittest import mock
 import asyncio
 from types import ModuleType
-from typing import Dict, Set, TYPE_CHECKING, Union
+from typing import Any, Callable, Dict, Set, TYPE_CHECKING, Union
 
 from . import value
 
@@ -34,6 +35,18 @@ class Config(object):
     def unwrap_cls(self, cls: type) -> type:
         """Does any application-specific unwrapping logic for wrapper classes."""
         return cls
+
+    def get_constructor(
+        self, cls: type
+    ) -> Union[None, "Signature", inspect.Signature, Callable[..., Any]]:
+        """Return a constructor signature for this class.
+
+        May return either a function that pyanalyze will use the signature of, an inspect
+        Signature object, or a pyanalyze Signature object. The function or signature
+        should take a self parameter.
+
+        """
+        return None
 
     #
     # Used by name_check_visitor.py
@@ -253,9 +266,11 @@ class Config(object):
     # Used by arg_spec.py
     #
     # These classes take optional keyword-only arguments in their constructors.
+    # Deprecated in favor of get_constructor()
     CLASS_TO_KEYWORD_ONLY_ARGUMENTS = {}
 
     # Tuple of classes for which we should look at their .init to find the argspec
+    # Deprecated in favor of get_constructor()
     CLASSES_USING_INIT = ()
 
     def get_known_argspecs(

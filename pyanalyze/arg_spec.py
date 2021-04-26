@@ -353,33 +353,48 @@ class ArgSpecCache:
 
         if inspect.isclass(obj):
             obj = self.config.unwrap_cls(obj)
-            if issubclass(obj, self.config.CLASSES_USING_INIT):
-                constructor = obj.init  # static analysis: ignore[undefined_attribute]
-            elif hasattr(obj, "__init__"):
-                constructor = obj.__init__
+            override = self.config.get_constructor(obj)
+            if isinstance(override, Signature):
+                signature = override
             else:
-                # old-style class
-                return None
-            argspec = self._safe_get_signature(constructor)
-            if argspec is None:
-                return None
+                if isinstance(override, inspect.Signature):
+                    inspect_sig = override
+                    constructor = obj
+                else:
+                    if override is not None:
+                        constructor = override
+                    elif issubclass(obj, self.config.CLASSES_USING_INIT):
+                        constructor = (
+                            obj.init
+                        )  # static analysis: ignore[undefined_attribute]
+                    elif hasattr(obj, "__init__"):
+                        constructor = obj.__init__
+                    else:
+                        # old-style class
+                        return None
+                    inspect_sig = self._safe_get_signature(constructor)
+                if inspect_sig is None:
+                    return None
 
-            kwonly_args = []
-            for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
-                if issubclass(obj, cls_):
-                    kwonly_args += [
-                        SigParameter(
-                            param_name,
-                            SigParameter.KEYWORD_ONLY,
-                            default=KnownValue(None),
-                            annotation=UNRESOLVED_VALUE,
-                        )
-                        for param_name in args
-                    ]
-            argspec = self.from_signature(
-                argspec, function_object=constructor, kwonly_args=kwonly_args, impl=impl
-            )
-            return make_bound_method(argspec, TypedValue(obj))
+                kwonly_args = []
+                for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
+                    if issubclass(obj, cls_):
+                        kwonly_args += [
+                            SigParameter(
+                                param_name,
+                                SigParameter.KEYWORD_ONLY,
+                                default=KnownValue(None),
+                                annotation=UNRESOLVED_VALUE,
+                            )
+                            for param_name in args
+                        ]
+                signature = self.from_signature(
+                    inspect_sig,
+                    function_object=constructor,
+                    kwonly_args=kwonly_args,
+                    impl=impl,
+                )
+            return make_bound_method(signature, TypedValue(obj))
 
         if inspect.isbuiltin(obj):
             if hasattr(obj, "__self__"):
