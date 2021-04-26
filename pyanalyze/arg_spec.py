@@ -364,9 +364,8 @@ class ArgSpecCache:
                     if override is not None:
                         constructor = override
                     elif issubclass(obj, self.config.CLASSES_USING_INIT):
-                        constructor = (
-                            obj.init
-                        )  # static analysis: ignore[undefined_attribute]
+                        # static analysis: ignore[undefined_attribute]
+                        constructor = obj.init
                     elif hasattr(obj, "__init__"):
                         constructor = obj.__init__
                     else:
@@ -377,8 +376,11 @@ class ArgSpecCache:
                     return None
 
                 kwonly_args = []
-                if override is not None:
-                    for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
+                if override is None:
+                    for (
+                        cls_,
+                        args,
+                    ) in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
                         if issubclass(obj, cls_):
                             kwonly_args += [
                                 SigParameter(
