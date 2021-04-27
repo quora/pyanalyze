@@ -530,7 +530,8 @@ def _list_extend_impl(ctx: CallContext) -> ImplReturn:
                 )
                 if not expected_type.is_assignable(actual_type, ctx.visitor):
                     ctx.show_error(
-                        f"Cannot extend list of {expected_type} with values of type {actual_type}",
+                        f"Cannot extend list of {expected_type} with values of type"
+                        f" {actual_type}",
                         ErrorCode.incompatible_argument,
                         arg="iterable",
                     )
@@ -570,7 +571,8 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
     expected_value = ctx.vars["value"]
     if not isinstance(expected_value, KnownValue):
         ctx.show_error(
-            f"Value argument to assert_is_value must be a KnownValue (got {expected_value}) {obj}",
+            "Value argument to assert_is_value must be a KnownValue (got"
+            f" {expected_value}) {obj}",
             ErrorCode.inference_failure,
             arg="value",
         )
@@ -626,7 +628,8 @@ def _str_format_impl(ctx: CallContext) -> Value:
         if field.arg_name is None:
             if current_index >= len(args):
                 ctx.show_error(
-                    f"Too few arguments to format string (expected at least {current_index})",
+                    "Too few arguments to format string (expected at least"
+                    f" {current_index})",
                     error_code=ErrorCode.incompatible_call,
                 )
             used_indices.add(current_index)
@@ -650,13 +653,13 @@ def _str_format_impl(ctx: CallContext) -> Value:
     if unused_indices:
         ctx.show_error(
             "Numbered argument(s) %s were not used"
-            % (", ".join(map(str, sorted(unused_indices)))),
+            % ", ".join(map(str, sorted(unused_indices))),
             error_code=ErrorCode.incompatible_call,
         )
     unused_kwargs = set(kwargs) - used_kwargs
     if unused_kwargs:
         ctx.show_error(
-            "Named argument(s) %s were not used" % (", ".join(sorted(unused_kwargs))),
+            "Named argument(s) %s were not used" % ", ".join(sorted(unused_kwargs)),
             error_code=ErrorCode.incompatible_call,
         )
     return TypedValue(str)

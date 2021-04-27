@@ -225,7 +225,8 @@ class Signature:
             if compatible is None:
                 visitor.show_error(
                     node,
-                    f"Incompatible argument type for {param.name}: expected {param_typ} but got {var_value}",
+                    f"Incompatible argument type for {param.name}: expected {param_typ}"
+                    f" but got {var_value}",
                     ErrorCode.incompatible_argument,
                 )
                 return False
@@ -456,8 +457,9 @@ class Signature:
                     tv_map = their_annotation.can_assign(my_annotation, ctx)
                     if tv_map is None:
                         return (
-                            f"type of positional-only parameter {my_param.name!r} is incompatible: "
-                            f"{their_annotation} is incompatible with {my_annotation}"
+                            f"type of positional-only parameter {my_param.name!r} is"
+                            f" incompatible: {their_annotation} is incompatible with"
+                            f" {my_annotation}"
                         )
                     tv_maps.append(tv_map)
                     consumed_positional.add(their_params[i].name)
@@ -476,7 +478,10 @@ class Signature:
                     and their_params[i].kind is SigParameter.POSITIONAL_OR_KEYWORD
                 ):
                     if my_param.name != their_params[i].name:
-                        return f"param name {their_params[i].name!r} does not match {my_param.name!r}"
+                        return (
+                            f"param name {their_params[i].name!r} does not match"
+                            f" {my_param.name!r}"
+                        )
                     if (
                         my_param.default is not EMPTY
                         and their_params[i].default is EMPTY
@@ -496,7 +501,10 @@ class Signature:
                     i < len(their_params)
                     and their_params[i].kind is SigParameter.POSITIONAL_ONLY
                 ):
-                    return f"parameter {my_param.name!r} is not accepted as a keyword argument"
+                    return (
+                        f"parameter {my_param.name!r} is not accepted as a keyword"
+                        " argument"
+                    )
                 elif args_annotation is not None and kwargs_annotation is not None:
                     new_tv_maps = can_assign_var_positional(
                         my_param, args_annotation, i - their_args_index, ctx
@@ -544,7 +552,7 @@ class Signature:
                 tv_map = args_annotation.can_assign(my_annotation, ctx)
                 if tv_map is None:
                     return (
-                        f"type of *args is incompatible: "
+                        "type of *args is incompatible: "
                         f"{args_annotation} is incompatible with {my_annotation}"
                     )
                 tv_maps.append(tv_map)
@@ -572,7 +580,7 @@ class Signature:
                 tv_map = kwargs_annotation.can_assign(my_annotation, ctx)
                 if tv_map is None:
                     return (
-                        f"type of **kwargs is incompatible: "
+                        "type of **kwargs is incompatible: "
                         f"{kwargs_annotation} is incompatible with {my_annotation}"
                     )
                 tv_maps.append(tv_map)
@@ -747,13 +755,16 @@ def can_assign_var_positional(
     if isinstance(args_annotation, SequenceIncompleteValue):
         length = len(args_annotation.members)
         if idx >= length:
-            return f"parameter {my_param.name!r} is not accepted; {args_annotation} only accepts {length} values"
+            return (
+                f"parameter {my_param.name!r} is not accepted; {args_annotation} only"
+                f" accepts {length} values"
+            )
         their_annotation = args_annotation.members[idx]
         tv_map = their_annotation.can_assign(my_annotation, ctx)
         if tv_map is None:
             return (
-                f"type of parameter {my_param.name!r} is incompatible: "
-                f"*args[{idx}] type {their_annotation} is incompatible with {my_annotation}"
+                f"type of parameter {my_param.name!r} is incompatible: *args[{idx}]"
+                f" type {their_annotation} is incompatible with {my_annotation}"
             )
         tv_maps.append(tv_map)
     else:
@@ -783,8 +794,9 @@ def can_assign_var_keyword(
         tv_map = their_annotation.can_assign(my_annotation, ctx)
         if tv_map is None:
             return (
-                f"type of parameter {my_param.name!r} is incompatible: "
-                f"*kwargs[{my_param.name!r}] type {their_annotation} is incompatible with {my_annotation}"
+                f"type of parameter {my_param.name!r} is incompatible:"
+                f" *kwargs[{my_param.name!r}] type {their_annotation} is incompatible"
+                f" with {my_annotation}"
             )
         tv_maps.append(tv_map)
     else:
@@ -794,14 +806,17 @@ def can_assign_var_keyword(
         key_arg = mapping_tv_map.get(K, UNRESOLVED_VALUE)
         tv_map = key_arg.can_assign(KnownValue(my_param.name), ctx)
         if tv_map is None:
-            return f"parameter {my_param.name!r} is not accepted by **kwargs type {kwargs_annotation}"
+            return (
+                f"parameter {my_param.name!r} is not accepted by **kwargs type"
+                f" {kwargs_annotation}"
+            )
         tv_maps.append(tv_map)
         value_arg = mapping_tv_map.get(V, UNRESOLVED_VALUE)
         tv_map = value_arg.can_assign(my_annotation, ctx)
         if tv_map is None:
             return (
-                f"type of parameter {my_param.name!r} is incompatible: "
-                f"**kwargs type {kwargs_annotation} is incompatible with {my_annotation}"
+                f"type of parameter {my_param.name!r} is incompatible: **kwargs type"
+                f" {kwargs_annotation} is incompatible with {my_annotation}"
             )
         tv_maps.append(tv_map)
     return tv_maps

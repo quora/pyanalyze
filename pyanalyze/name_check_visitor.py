@@ -1602,7 +1602,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     if default is not None and not value.is_assignable(default, self):
                         self._show_error_if_checking(
                             arg,
-                            f"Default value for argument {arg.arg} incompatible with declared type {value}",
+                            f"Default value for argument {arg.arg} incompatible with"
+                            f" declared type {value}",
                             error_code=ErrorCode.incompatible_default,
                         )
                 elif is_self:
@@ -2184,8 +2185,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 if len(assign_to) != len(being_assigned):
                     self.show_error(
                         node,
-                        "Length mismatch in unpacking assignment: "
-                        f"expected {len(assign_to)} elements but got {self.being_assigned}",
+                        "Length mismatch in unpacking assignment: expected"
+                        f" {len(assign_to)} elements but got {self.being_assigned}",
                         ErrorCode.bad_unpack,
                     )
                     with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
@@ -2671,7 +2672,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             self._show_error_if_checking(
                 node,
-                f"Declared return type {self.expected_return_value} is incompatible with actual return type {value}",
+                f"Declared return type {self.expected_return_value} is incompatible"
+                f" with actual return type {value}",
                 error_code=ErrorCode.incompatible_return_value,
             )
         elif self.expected_return_value == KnownValue(None) and value != KnownValue(
@@ -3025,9 +3027,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if typ is not None and not self._can_be_used_as_boolean(typ):
             self._show_error_if_checking(
                 node,
-                "Object of type {} will always evaluate to True in boolean context".format(
-                    typ
-                ),
+                "Object of type {} will always evaluate to True in boolean context"
+                .format(typ),
                 error_code=ErrorCode.non_boolean_in_boolean_context,
             )
         return condition, constraint
