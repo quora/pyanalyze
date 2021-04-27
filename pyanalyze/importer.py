@@ -50,7 +50,8 @@ def load_module_from_file(
                 is_compiled = getattr(existing, "__file__", None) != str(abspath)
                 if verbose:
                     print(
-                        f"found {abspath} already present as {module_path} (is_compiled: {is_compiled})"
+                        f"found {abspath} already present as {module_path}"
+                        f" (is_compiled: {is_compiled})"
                     )
                 return existing, is_compiled
             if restrict_init:

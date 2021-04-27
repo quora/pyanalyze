@@ -788,8 +788,10 @@ class BaseNodeVisitor(ast.NodeVisitor):
         parser.add_argument(
             "-r",
             "--repeat-until-no-errors",
-            help="Repeatedly runs in autofix mode until no errors are encountered. Use this "
-            "wisely.",
+            help=(
+                "Repeatedly runs in autofix mode until no errors are encountered. Use"
+                " this wisely."
+            ),
             action="store_true",
             default=False,
         )
@@ -807,13 +809,17 @@ class BaseNodeVisitor(ast.NodeVisitor):
         )
         parser.add_argument(
             "--markdown-output",
-            help="Write errors to this file in markdown format. "
-            "Suitable for summarizing and tracking errors.",
+            help=(
+                "Write errors to this file in markdown format. "
+                "Suitable for summarizing and tracking errors."
+            ),
         )
         parser.add_argument(
             "--add-ignores",
-            help="Add ignore comments for all errors detected. "
-            "Must be used with -f/--run-fixer.",
+            help=(
+                "Add ignore comments for all errors detected. "
+                "Must be used with -f/--run-fixer."
+            ),
             action="store_true",
             default=False,
         )

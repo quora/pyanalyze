@@ -30,7 +30,8 @@ def check_no_return(
         if not issubclass(NoneType, expected_return_type):
             visitor.show_error(
                 node,
-                f"Method {method_name} should return a {expected_return_type} but returns nothing",
+                f"Method {method_name} should return a {expected_return_type} but"
+                " returns nothing",
                 error_code=ErrorCode.invalid_method_return_type,
             )
 
@@ -44,7 +45,8 @@ def check_return_value(
             if not return_value.is_type(expected_return_type):
                 visitor.show_error(
                     node,
-                    f"Method {method_name} should return a {expected_return_type} but returns {return_value} instead",
+                    f"Method {method_name} should return a {expected_return_type} but"
+                    f" returns {return_value} instead",
                     error_code=ErrorCode.invalid_method_return_type,
                 )
         elif isinstance(return_value, MultiValuedValue):
@@ -55,7 +57,8 @@ def check_return_value(
             ):
                 visitor.show_error(
                     node,
-                    f"Method {method_name} should return a {expected_return_type} but returns {return_value} instead",
+                    f"Method {method_name} should return a {expected_return_type} but"
+                    f" returns {return_value} instead",
                     error_code=ErrorCode.invalid_method_return_type,
                 )
 

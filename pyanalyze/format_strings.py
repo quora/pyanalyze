@@ -142,7 +142,9 @@ class ConversionSpecifier:
                 yield "using % combined with optional specifiers does not make sense"
         elif self.conversion_type == "b":
             if not self.is_bytes:
-                yield "the %b conversion specifier works only on Python 3 bytes patterns"
+                yield (
+                    "the %b conversion specifier works only on Python 3 bytes patterns"
+                )
 
     def accept(self, arg: Value) -> Iterable[str]:
         """Produces any errors from passing the given object to this specifier."""
@@ -166,8 +168,9 @@ class ConversionSpecifier:
         elif self.conversion_type == "c":
             if arg.is_type(int) or arg.is_type(str):
                 if self.is_bytes and arg.is_type(str):
-                    yield "%c on a bytes pattern requires an integer or a byte, not {!r}".format(
-                        arg
+                    yield (
+                        "%c on a bytes pattern requires an integer or a byte, not {!r}"
+                        .format(arg)
                     )
             elif self.is_bytes and arg.is_type(bytes):
                 # in Python 3, b'%c' % b'c' works but not '%c' % b'c'
@@ -261,7 +264,10 @@ class PercentFormatString:
                     or cs.precision == "*"
                     or cs.field_width == "*"
                 ):
-                    yield "cannot combine specifiers that require a mapping with those that do not"
+                    yield (
+                        "cannot combine specifiers that require a mapping with those"
+                        " that do not"
+                    )
         for piece in self.raw_pieces:
             if (b"%" in piece) if self.is_bytes else ("%" in piece):
                 yield "invalid conversion specifier in {}".format(piece)
