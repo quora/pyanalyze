@@ -490,7 +490,7 @@ class ArgSpecCache:
         return typ.__bases__
 
 
-def _is_qcore_decorator(obj: Any) -> bool:
+def _is_qcore_decorator(obj: object) -> bool:
     try:
         return (
             hasattr(obj, "is_decorator")
