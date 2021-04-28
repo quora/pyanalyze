@@ -265,14 +265,6 @@ class Config(object):
     #
     # Used by arg_spec.py
     #
-    # These classes take optional keyword-only arguments in their constructors.
-    # Deprecated in favor of get_constructor()
-    CLASS_TO_KEYWORD_ONLY_ARGUMENTS = {}
-
-    # Tuple of classes for which we should look at their .init to find the argspec
-    # Deprecated in favor of get_constructor()
-    CLASSES_USING_INIT = ()
-
     def get_known_argspecs(
         self, arg_spec_cache: "ArgSpecCache"
     ) -> Dict[object, "Signature"]:
