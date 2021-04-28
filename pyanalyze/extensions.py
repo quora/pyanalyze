@@ -4,7 +4,40 @@ Extensions to the type system supported by pyanalyze.
 
 """
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, List, Union
+from typing_extensions import Literal
+
+
+class _AsynqCallableMeta(type):
+    def __getitem__(
+        self, params: Tuple[Union[Literal[Ellipsis], List[object]], object]
+    ) -> "AsynqCallable":
+        if not isinstance(params, tuple) or len(params) != 2:
+            raise TypeError(
+                "AsynqCallable[...] should be instantiated "
+                "with two arguments (the argument list and a type)."
+            )
+        if not isinstance(params[0], list) and params[0] is not Ellipsis:
+            raise TypeError("The first argument to AsynqCallable must be a list or ...")
+        return AsynqCallable(params[0], params[1])
+
+
+@dataclass(frozen=True)
+class AsynqCallable(metaclass=_AsynqCallableMeta):
+    """Represents an asynq function (a function decorated with @asynq()).
+
+    Similar to Callable, but AsynqCallables also support being called
+    with .asynq().
+
+    The first argument should be the argument list, as for Callable. Examples:
+
+        AsynqCallable[..., int]  # may take any arguments, returns an int
+        AsynqCallable[[int], str]  # takes an int, returns a str
+
+    """
+
+    args: Union[Literal[Ellipsis], List[object]]
+    return_type: object
 
 
 class _ParameterTypeGuardMeta(type):

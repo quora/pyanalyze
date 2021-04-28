@@ -767,8 +767,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> Dict[type, Sequence[Value]]:
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
 
-    def get_signature(self, obj: object) -> Optional[Signature]:
-        sig = self.arg_spec_cache.get_argspec(obj)
+    def get_signature(self, obj: object, is_asynq: bool = False) -> Optional[Signature]:
+        sig = self.arg_spec_cache.get_argspec(obj, is_asynq=is_asynq)
         if isinstance(sig, Signature):
             return sig
         elif isinstance(sig, BoundMethodSignature):

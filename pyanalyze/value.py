@@ -61,7 +61,9 @@ class CanAssignContext:
     ) -> Dict[type, Sequence["Value"]]:
         return {}
 
-    def get_signature(self, obj: object) -> Optional["pyanalyze.signature.Signature"]:
+    def get_signature(
+        self, obj: object, is_asynq: bool = False
+    ) -> Optional["pyanalyze.signature.Signature"]:
         return None
 
 
@@ -626,13 +628,20 @@ class CallableValue(TypedValue):
         yield self
         yield from self.signature.walk_values()
 
+    def get_asynq_value(self) -> Value:
+        """Return the CallableValue for the .asynq attribute of an AsynqCallable."""
+        sig = self.signature.get_asynq_value()
+        return CallableValue(sig)
+
     def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
         # TODO: unify with _get_argspec_from_value() in NameCheckVisitor
         signature = None
         if isinstance(other, CallableValue):
             signature = other.signature
         elif isinstance(other, KnownValue):
-            signature = ctx.get_signature(other.val)
+            signature = ctx.get_signature(
+                other.val, is_asynq=hasattr(other.val, "asynq")
+            )
         elif isinstance(other, SubclassValue) and isinstance(other.typ, TypedValue):
             signature = ctx.get_signature(other.typ.typ)
         elif isinstance(other, UnboundMethodValue):

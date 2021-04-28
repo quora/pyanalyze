@@ -10,6 +10,7 @@ from .value import (
     MultiValuedValue,
     NewTypeValue,
     SequenceIncompleteValue,
+    TypeVarValue,
     TypedValue,
     UNRESOLVED_VALUE,
     SubclassValue,
@@ -622,6 +623,70 @@ class TestCallable(TestNameCheckVisitorBase):
 
         def capybara() -> None:
             g(h)
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_asynq_callable_incompatible(self):
+        from typing import Callable
+        from pyanalyze.extensions import AsynqCallable
+
+        def f(x: AsynqCallable[[], int]) -> None:
+            pass
+
+        def capybara(func: Callable[[], int]) -> None:
+            f(func)
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_asynq_callable_incompatible_literal(self):
+        from pyanalyze.extensions import AsynqCallable
+
+        def f(x: AsynqCallable[[], int]) -> None:
+            pass
+
+        def func() -> int:
+            return 0
+
+        def capybara() -> None:
+            f(func)
+
+    @assert_passes()
+    def test_asynq_callable(self):
+        from asynq import asynq
+        from pyanalyze.extensions import AsynqCallable
+
+        @asynq()
+        def func_example(x: int) -> str:
+            return ""
+
+        @asynq()
+        def caller(func: AsynqCallable[[int], str]) -> None:
+            assert_is_value(func(1), TypedValue(str))
+            val = yield func.asynq(1)
+            assert_is_value(val, TypedValue(str))
+            yield caller.asynq(func_example)
+
+    @assert_passes(settings={ErrorCode.impure_async_call: False})
+    def test_amap(self):
+        from asynq import asynq
+        from pyanalyze.extensions import AsynqCallable
+        from typing import TypeVar, List, Iterable
+
+        T = TypeVar("T")
+        U = TypeVar("U")
+
+        @asynq()
+        def amap(function: AsynqCallable[[T], U], sequence: Iterable[T]) -> List[U]:
+            return (yield [function.asynq(elt) for elt in sequence])
+
+        @asynq()
+        def mapper(x: int) -> str:
+            return ""
+
+        @asynq()
+        def caller():
+            assert_is_value(amap(mapper, [1]), GenericValue(list, [TypedValue(str)]))
+            assert_is_value(
+                (yield amap.asynq(mapper, [1])), GenericValue(list, [TypedValue(str)])
+            )
 
 
 class TestParameterTypeGuard(TestNameCheckVisitorBase):

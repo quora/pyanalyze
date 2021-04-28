@@ -16,6 +16,7 @@ from .annotations import type_from_runtime
 from .safe import safe_issubclass
 from .value import (
     AnnotatedValue,
+    CallableValue,
     HasAttrExtension,
     Value,
     KnownValue,
@@ -69,6 +70,12 @@ def get_attribute(ctx: AttrContext) -> Value:
     if isinstance(root_value, KnownValue):
         attribute_value = _get_attribute_from_known(root_value.val, ctx)
     elif isinstance(root_value, TypedValue):
+        if (
+            isinstance(root_value, CallableValue)
+            and ctx.attr == "asynq"
+            and root_value.signature.is_asynq
+        ):
+            return root_value.get_asynq_value()
         attribute_value = _get_attribute_from_typed(root_value.typ, ctx)
     elif isinstance(root_value, SubclassValue):
         if isinstance(root_value.typ, TypedValue):
