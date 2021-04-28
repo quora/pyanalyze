@@ -461,17 +461,6 @@ class TestCalls(TestNameCheckVisitorBase):
             return KeywordOnlyArguments(kwonly_arg="hydrochoerus")
 
     @assert_fails(ErrorCode.incompatible_call)
-    def test_kwonly_args_subclass(self):
-        from pyanalyze.tests import KeywordOnlyArguments
-
-        class Capybara(KeywordOnlyArguments):
-            def __init__(self):
-                pass
-
-        def run():
-            Capybara(1)
-
-    @assert_fails(ErrorCode.incompatible_call)
     def test_kwonly_args_bad_kwarg(self):
         from pyanalyze.tests import KeywordOnlyArguments
 

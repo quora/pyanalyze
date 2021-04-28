@@ -3,9 +3,10 @@
 Configuration file specific to tests.
 
 """
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from .arg_spec import ArgSpecCache, Signature, SigParameter
+from .arg_spec import ArgSpecCache
+from .signature import Signature, SigParameter
 from .config import Config
 from . import tests
 from . import value
@@ -32,7 +33,28 @@ class TestConfig(Config):
         value.VariableNameValue(["qid"]),
     ]
 
-    CLASS_TO_KEYWORD_ONLY_ARGUMENTS = {tests.KeywordOnlyArguments: ["kwonly_arg"]}
+    def get_constructor(self, cls: type) -> Optional[Signature]:
+        """Return a constructor signature for this class.
+
+        May return either a function that pyanalyze will use the signature of, an inspect
+        Signature object, or a pyanalyze Signature object. The function or signature
+        should take a self parameter.
+
+        """
+        if issubclass(cls, tests.KeywordOnlyArguments):
+            return Signature.make(
+                [
+                    SigParameter("self", kind=SigParameter.POSITIONAL_ONLY),
+                    SigParameter("args", kind=SigParameter.VAR_POSITIONAL),
+                    SigParameter(
+                        "kwonly_arg",
+                        kind=SigParameter.KEYWORD_ONLY,
+                        default=value.KnownValue(None),
+                    ),
+                ],
+                callable=tests.KeywordOnlyArguments.__init__,
+            )
+        return None
 
     def get_known_argspecs(
         self, arg_spec_cache: ArgSpecCache
