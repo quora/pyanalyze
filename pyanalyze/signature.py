@@ -17,6 +17,7 @@ from .stacked_scopes import (
 )
 from .value import (
     AnnotatedValue,
+    AsyncTaskIncompleteValue,
     CanAssignContext,
     GenericValue,
     HasAttrExtension,
@@ -37,6 +38,7 @@ from .value import (
 )
 
 import ast
+import asynq
 import collections.abc
 from dataclasses import dataclass, field
 from functools import reduce
@@ -634,6 +636,23 @@ class Signature:
             if param.annotation is not EMPTY:
                 yield from param.annotation.walk_values()
 
+    def get_asynq_value(self) -> "Signature":
+        """Return the Signature for the .asynq attribute of an AsynqCallable."""
+        if not self.is_asynq:
+            raise TypeError("get_asynq_value() is only supported for AsynqCallable")
+        return_annotation = AsyncTaskIncompleteValue(
+            asynq.AsyncTask, self.signature.return_annotation
+        )
+        return Signature.make(
+            self.signature.parameters.values(),
+            return_annotation,
+            impl=self.impl,
+            callable=self.callable,
+            has_return_annotation=self.has_return_annotation,
+            is_ellipsis_args=self.is_ellipsis_args,
+            is_asynq=False,
+        )
+
     @classmethod
     def make(
         cls,
@@ -644,6 +663,7 @@ class Signature:
         callable: Optional[object] = None,
         has_return_annotation: bool = True,
         is_ellipsis_args: bool = False,
+        is_asynq: bool = False,
     ) -> "Signature":
         if return_annotation is None:
             return_annotation = UNRESOLVED_VALUE
@@ -656,6 +676,7 @@ class Signature:
             callable=callable,
             has_return_annotation=has_return_annotation,
             is_ellipsis_args=is_ellipsis_args,
+            is_asynq=is_asynq,
         )
 
     # TODO: do we need these?

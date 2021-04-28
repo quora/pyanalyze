@@ -379,6 +379,7 @@ PEP 649's `TypeGuard` type needs to be imported from `pyanalyze.extensions` unti
 In addition to the standard Python type system, pyanalyze supports a number of non-standard extensions:
 
 - Callable literals: you can declare a parameter as `Literal[some_function]` and it will accept any callable assignable to `some_function`. Pyanalyze also supports Literals of various other types in addition to those supported by [PEP 586](https://www.python.org/dev/peps/pep-0586/).
+- `pyanalyze.extensions.AsynqCallable` is a variant of `Callable` that applies to `asynq` functions.
 - `pyanalyze.extensions.ParameterTypeGuard` is a generalization of PEP 649's `TypeGuard` that allows guards on any parameter to a function. To use it, return `Annotated[bool, ParameterTypeGuard["arg", SomeType]]`.
 - `pyanalyze.extensions.HasAttrGuard` is a similar mechanism that allows indicating that an object has a particular attribute. To use it, return `Annotated[bool, HasAttrGuard["arg", "attribute", SomeType]]`.
 
@@ -410,6 +411,25 @@ def bad_callable(not_x: int, y: str = "") -> None:
     pass
 
 takes_template(bad_callable)  # rejected
+```
+
+#### AsynqCallable
+
+The `@asynq()` callable in the [asynq](https://www.github.com/quora/asynq) framework produces a special callable that can either be called directly (producing a synchronous call) or through the special `.asynq()` attribute (producing an asynchronous call). The `AsynqCallable` special form is similar to `Callable`, but describes a callable with this extra `.asynq()` attribute.
+
+For example, this construct can be used to implement the `asynq.tools.amap` helper function:
+
+```python
+from asynq import asynq
+from pyanalyze.extensions import AsynqCallable
+from typing import TypeVar, List, Iterable
+
+T = TypeVar("T")
+U = TypeVar("U")
+
+@asynq()
+def amap(function: AsynqCallable[[T], U], sequence: Iterable[T]) -> List[U]:
+    return (yield [function.asynq(elt) for elt in sequence])
 ```
 
 #### ParameterTypeGuard

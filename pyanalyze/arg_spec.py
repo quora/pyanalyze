@@ -137,6 +137,7 @@ class ArgSpecCache:
         impl: Optional[Impl] = None,
         function_object: object,
         is_async: bool = False,
+        is_asynq: bool = False,
     ) -> Optional[Signature]:
         """Constructs a pyanalyze Signature from an inspect.Signature.
 
@@ -183,6 +184,7 @@ class ArgSpecCache:
             impl=impl,
             callable=function_object,
             has_return_annotation=has_return_annotation,
+            is_asynq=is_asynq,
         )
 
     def _make_sig_parameter(
@@ -261,12 +263,16 @@ class ArgSpecCache:
             )
         return None
 
-    def get_argspec(self, obj: object, impl: Optional[Impl] = None) -> MaybeSignature:
+    def get_argspec(
+        self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
+    ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
-        argspec = self._cached_get_argspec(obj, impl)
+        argspec = self._cached_get_argspec(obj, impl, is_asynq)
         return argspec
 
-    def _cached_get_argspec(self, obj: object, impl: Optional[Impl]) -> MaybeSignature:
+    def _cached_get_argspec(
+        self, obj: object, impl: Optional[Impl], is_asynq: bool
+    ) -> MaybeSignature:
         try:
             if obj in self.known_argspecs:
                 return self.known_argspecs[obj]
@@ -275,7 +281,7 @@ class ArgSpecCache:
         else:
             hashable = True
 
-        extended = self._uncached_get_argspec(obj, impl)
+        extended = self._uncached_get_argspec(obj, impl, is_asynq)
         if extended is None:
             return None
 
@@ -283,24 +289,27 @@ class ArgSpecCache:
             self.known_argspecs[obj] = extended
         return extended
 
-    def _uncached_get_argspec(self, obj: Any, impl: Optional[Impl]) -> MaybeSignature:
+    def _uncached_get_argspec(
+        self, obj: Any, impl: Optional[Impl], is_asynq: bool
+    ) -> MaybeSignature:
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause
 
         # Cythonized methods, e.g. fn.asynq
         if is_dot_asynq_function(obj):
             try:
-                return self._cached_get_argspec(obj.__self__, impl)
+                return self._cached_get_argspec(obj.__self__, impl, is_asynq)
             except TypeError:
                 # some cythonized methods have __self__ but it is not a function
                 pass
 
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
-            argspec = self._cached_get_argspec(obj.__func__, impl)
+            argspec = self._cached_get_argspec(obj.__func__, impl, is_asynq)
             return make_bound_method(argspec, KnownValue(obj.__self__))
 
         if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
+            is_asynq = is_asynq or hasattr(obj, "asynq")
             # many decorators put the original function in the .fn attribute
             try:
                 original_fn = qcore.get_original_fn(obj)
@@ -309,7 +318,7 @@ class ArgSpecCache:
                 # e.g. certain extension classes
                 pass
             else:
-                return self._cached_get_argspec(original_fn, impl)
+                return self._cached_get_argspec(original_fn, impl, is_asynq)
 
         argspec = self.ts_finder.get_argspec(obj)
         if argspec is not None:
@@ -318,7 +327,7 @@ class ArgSpecCache:
         if inspect.isfunction(obj):
             if hasattr(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
-                return self._cached_get_argspec(obj.inner, impl)
+                return self._cached_get_argspec(obj.inner, impl, is_asynq)
 
             # NewTypes, but we don't currently know how to handle NewTypes over more
             # complicated types.
@@ -341,11 +350,12 @@ class ArgSpecCache:
                 function_object=obj,
                 is_async=asyncio.iscoroutinefunction(obj),
                 impl=impl,
+                is_asynq=is_asynq,
             )
 
         # decorator binders
         if _is_qcore_decorator(obj):
-            argspec = self._cached_get_argspec(obj.decorator, impl)
+            argspec = self._cached_get_argspec(obj.decorator, impl, is_asynq)
             # wrap if it's a bound method
             if obj.instance is not None and argspec is not None:
                 return make_bound_method(argspec, KnownValue(obj.instance))
@@ -390,7 +400,7 @@ class ArgSpecCache:
                     return None
                 if method == obj:
                     return None
-                argspec = self._cached_get_argspec(method, impl)
+                argspec = self._cached_get_argspec(method, impl, is_asynq)
                 return make_bound_method(argspec, KnownValue(obj.__self__))
             return None
 
@@ -403,7 +413,7 @@ class ArgSpecCache:
         if isinstance(obj, property):
             # If we know the getter, inherit its return value.
             if obj.fget:
-                fget_argspec = self._cached_get_argspec(obj.fget, impl)
+                fget_argspec = self._cached_get_argspec(obj.fget, impl, is_asynq)
                 if fget_argspec is not None and fget_argspec.has_return_value():
                     return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
             return PropertyArgSpec(obj)

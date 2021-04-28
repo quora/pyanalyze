@@ -139,14 +139,18 @@ def test_get_argspec():
 
         assert_eq(
             Signature.make(
-                [SigParameter("x"), SigParameter("y")], callable=async_function.fn
+                [SigParameter("x"), SigParameter("y")],
+                callable=async_function.fn,
+                is_asynq=True,
             ),
             ArgSpecCache(config).get_argspec(async_function),
         )
 
         assert_eq(
             Signature.make(
-                [SigParameter("x"), SigParameter("y")], callable=async_function.fn
+                [SigParameter("x"), SigParameter("y")],
+                callable=async_function.fn,
+                is_asynq=True,
             ),
             ArgSpecCache(config).get_argspec(async_function.asynq),
         )
@@ -158,6 +162,7 @@ def test_get_argspec():
                 Signature.make(
                     [SigParameter("self"), SigParameter("x")],
                     callable=instance.async_method.decorator.fn,
+                    is_asynq=True,
                 ),
                 KnownValue(instance),
             ),
@@ -169,6 +174,7 @@ def test_get_argspec():
                 Signature.make(
                     [SigParameter("self"), SigParameter("x")],
                     callable=instance.async_method.decorator.fn,
+                    is_asynq=True,
                 ),
                 KnownValue(instance),
             ),
@@ -177,14 +183,18 @@ def test_get_argspec():
 
         assert_eq(
             Signature.make(
-                [SigParameter("y")], callable=ClassWithCall.async_staticmethod.fn
+                [SigParameter("y")],
+                callable=ClassWithCall.async_staticmethod.fn,
+                is_asynq=True,
             ),
             ArgSpecCache(config).get_argspec(ClassWithCall.async_staticmethod),
         )
 
         assert_eq(
             Signature.make(
-                [SigParameter("y")], callable=ClassWithCall.async_staticmethod.fn
+                [SigParameter("y")],
+                callable=ClassWithCall.async_staticmethod.fn,
+                is_asynq=True,
             ),
             ArgSpecCache(config).get_argspec(ClassWithCall.async_staticmethod.asynq),
         )
@@ -194,6 +204,7 @@ def test_get_argspec():
                 Signature.make(
                     [SigParameter("cls"), SigParameter("z")],
                     callable=ClassWithCall.async_classmethod.decorator.fn,
+                    is_asynq=True,
                 ),
                 KnownValue(ClassWithCall),
             ),
@@ -205,6 +216,7 @@ def test_get_argspec():
                 Signature.make(
                     [SigParameter("cls"), SigParameter("z")],
                     callable=ClassWithCall.async_classmethod.decorator.fn,
+                    is_asynq=True,
                 ),
                 KnownValue(ClassWithCall),
             ),
@@ -232,7 +244,9 @@ def test_get_argspec():
         assert_eq(
             BoundMethodSignature(
                 Signature.make(
-                    [SigParameter("cls"), SigParameter("ac")], callable=callable
+                    [SigParameter("cls"), SigParameter("ac")],
+                    callable=callable,
+                    is_asynq=True,
                 ),
                 KnownValue(ClassWithCall),
             ),
