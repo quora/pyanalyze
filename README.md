@@ -432,6 +432,8 @@ def amap(function: AsynqCallable[[T], U], sequence: Iterable[T]) -> List[U]:
     return (yield [function.asynq(elt) for elt in sequence])
 ```
 
+Because of limitations in the runtime typing library, some generic aliases involving AsynqCallable will not work at runtime. For example, given a generic alias `L = List[AsynqCallable[[T], int]]`, `L[str]` will throw an error. Quoting the type annotation works around this.
+
 #### ParameterTypeGuard
 
 [PEP 647](https://www.python.org/dev/peps/pep-0647/) added support for type guards, a mechanism to narrow the type of a variable. However, it only supports narrowing the first argument to a function.

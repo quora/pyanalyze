@@ -271,7 +271,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
                     is_asynq=True,
                 )
             )
-        if not isinstance(arg_types, list):
+        if not isinstance(arg_types, tuple):
             return UNRESOLVED_VALUE
         params = [
             SigParameter(
