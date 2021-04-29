@@ -53,6 +53,7 @@ class AsynqCallable(metaclass=_AsynqCallableMeta):
             if isinstance(arg, TypeVar):
                 return substitution[arg]
             elif hasattr(arg, "__parameters__"):
+                # static analysis: ignore[unsupported_operation]
                 return arg[tuple(substitution[param] for param in arg.__parameters__)]
             else:
                 return arg
