@@ -1681,6 +1681,32 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(1.0 + int(x), TypedValue(float))
             assert_is_value(3 * 3.0 + 1, KnownValue(10.0))
 
+    @assert_passes()
+    def test_rop(self):
+        class HasAdd:
+            def __add__(self, other: int) -> "HasAdd":
+                raise NotImplementedError
+
+        class HasRadd:
+            def __radd__(self, other: int) -> "HasRadd":
+                raise NotImplementedError
+
+        class HasBoth:
+            def __add__(self, other: "HasBoth") -> "HasBoth":
+                raise NotImplementedError
+
+            def __radd__(self, other: "HasBoth") -> int:
+                raise NotImplementedError
+
+        def capybara(x):
+            ha = HasAdd()
+            hr = HasRadd()
+            assert_is_value(1 + hr, TypedValue(HasRadd))
+            assert_is_value(x + hr, UNRESOLVED_VALUE)
+            assert_is_value(ha + 1, TypedValue(HasAdd))
+            assert_is_value(ha + x, UNRESOLVED_VALUE)
+            assert_is_value(HasBoth() + HasBoth(), TypedValue(HasBoth))
+
     @assert_fails(ErrorCode.unsupported_operation)
     def test_unsupported_unary_op(self):
         def capybara():
@@ -1926,14 +1952,7 @@ class TestNonlocal(TestNameCheckVisitorBase):
             def inner_capybara():
                 nonlocal x
                 assert_is_value(
-                    x,
-                    MultiValuedValue(
-                        [
-                            KnownValue(4),
-                            KnownValue(3),
-                            KnownValue(5),
-                        ]
-                    ),
+                    x, MultiValuedValue([KnownValue(4), KnownValue(3), KnownValue(5)])
                 )
                 x = 4
                 assert_is_value(x, KnownValue(4))

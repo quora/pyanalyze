@@ -6,14 +6,18 @@ Code for retrieving the value of attributes.
 import ast
 import asynq
 from dataclasses import dataclass
+from enum import Enum
 import inspect
 import qcore
 import types
 from typing import Any, Tuple, Optional
 
 from .annotations import type_from_runtime
+from .safe import safe_issubclass
 from .value import (
     AnnotatedValue,
+    CallableValue,
+    HasAttrExtension,
     Value,
     KnownValue,
     GenericValue,
@@ -53,6 +57,9 @@ class AttrContext:
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         return UNRESOLVED_VALUE
 
+    def get_attribute_from_typeshed(self, typ: type) -> Value:
+        return UNINITIALIZED_VALUE
+
 
 def get_attribute(ctx: AttrContext) -> Value:
     root_value = ctx.root_value
@@ -61,31 +68,48 @@ def get_attribute(ctx: AttrContext) -> Value:
     elif isinstance(root_value, AnnotatedValue):
         root_value = root_value.value
     if isinstance(root_value, KnownValue):
-        return _get_attribute_from_known(root_value.val, ctx)
+        attribute_value = _get_attribute_from_known(root_value.val, ctx)
     elif isinstance(root_value, TypedValue):
-        return _get_attribute_from_typed(root_value.typ, ctx)
+        if (
+            isinstance(root_value, CallableValue)
+            and ctx.attr == "asynq"
+            and root_value.signature.is_asynq
+        ):
+            return root_value.get_asynq_value()
+        attribute_value = _get_attribute_from_typed(root_value.typ, ctx)
     elif isinstance(root_value, SubclassValue):
         if isinstance(root_value.typ, TypedValue):
-            return _get_attribute_from_subclass(root_value.typ.typ, ctx)
+            attribute_value = _get_attribute_from_subclass(root_value.typ.typ, ctx)
         elif root_value.typ is UNRESOLVED_VALUE:
-            return UNRESOLVED_VALUE
+            attribute_value = UNRESOLVED_VALUE
         else:
-            return _get_attribute_from_known(type, ctx)
+            attribute_value = _get_attribute_from_known(type, ctx)
     elif isinstance(root_value, UnboundMethodValue):
-        return _get_attribute_from_unbound(root_value, ctx)
+        attribute_value = _get_attribute_from_unbound(root_value, ctx)
     elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
-        return UNRESOLVED_VALUE
+        attribute_value = UNRESOLVED_VALUE
     elif isinstance(root_value, MultiValuedValue):
         # TODO: actually check this
-        return UNRESOLVED_VALUE
+        attribute_value = UNRESOLVED_VALUE
     else:
-        return UNINITIALIZED_VALUE
+        attribute_value = UNINITIALIZED_VALUE
+    if (
+        attribute_value is UNRESOLVED_VALUE or attribute_value is UNINITIALIZED_VALUE
+    ) and isinstance(ctx.root_value, AnnotatedValue):
+        for guard in ctx.root_value.get_metadata_of_type(HasAttrExtension):
+            if guard.attribute_name == KnownValue(ctx.attr):
+                return guard.attribute_type
+    return attribute_value
 
 
-def _get_attribute_from_subclass(
-    typ: type,
-    ctx: AttrContext,
-) -> Value:
+def may_have_dynamic_attributes(typ: type) -> bool:
+    """These types have typeshed stubs, but instances may have other attributes."""
+    if typ is type or typ is super or typ is types.FunctionType:
+        return True
+    return False
+
+
+def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
     ctx.record_attr_read(typ)
 
     # First check values that are special in Python
@@ -228,6 +252,15 @@ def _get_attribute_from_unbound(
 
 def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
     # Then go through the MRO and find base classes that may define the attribute.
+    if safe_issubclass(typ, Enum):
+        # Special case, to avoid picking an attribute of Enum instances (e.g., name)
+        # over an Enum member. Ideally we'd have a more principled way to support this
+        # but I haven't thought of one.
+        try:
+            return KnownValue(getattr(typ, ctx.attr)), True
+        except Exception:
+            pass
+
     try:
         mro = list(typ.mro())
     except Exception:
@@ -235,6 +268,10 @@ def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
         pass
     else:
         for base_cls in mro:
+            typeshed_type = ctx.get_attribute_from_typeshed(base_cls)
+            if typeshed_type is not UNINITIALIZED_VALUE:
+                return typeshed_type, False
+
             try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.

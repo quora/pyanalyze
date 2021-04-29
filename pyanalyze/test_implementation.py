@@ -2,7 +2,7 @@
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes
 from .error_code import ErrorCode
-from .value import KnownValue, TypedValue, GenericValue
+from .value import KnownValue, MultiValuedValue, SubclassValue, TypedValue, GenericValue
 
 
 class TestSuperCall(TestNameCheckVisitorBase):
@@ -639,3 +639,19 @@ class TestDictSetItem(TestNameCheckVisitorBase):
         def capybara() -> None:
             dct: Dict[str, int] = {}
             dct["1"] = "1"
+
+
+class TestIssubclass(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self) -> None:
+        def capybara(x: type, y):
+            assert_is_value(x, TypedValue(type))
+            if issubclass(x, str):
+                assert_is_value(x, SubclassValue(TypedValue(str)))
+            if issubclass(y, (int, str)):
+                assert_is_value(
+                    y,
+                    MultiValuedValue(
+                        [SubclassValue(TypedValue(int)), SubclassValue(TypedValue(str))]
+                    ),
+                )

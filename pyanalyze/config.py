@@ -5,11 +5,12 @@ Module-specific configurations for test_scope.
 """
 import asynq
 import enum
+import inspect
 import qcore
 from unittest import mock
 import asyncio
 from types import ModuleType
-from typing import Dict, Set, TYPE_CHECKING, Union
+from typing import Any, Callable, Dict, Set, TYPE_CHECKING, Union
 
 from . import value
 
@@ -35,6 +36,18 @@ class Config(object):
         """Does any application-specific unwrapping logic for wrapper classes."""
         return cls
 
+    def get_constructor(
+        self, cls: type
+    ) -> Union[None, "Signature", inspect.Signature, Callable[..., Any]]:
+        """Return a constructor signature for this class.
+
+        May return either a function that pyanalyze will use the signature of, an inspect
+        Signature object, or a pyanalyze Signature object. The function or signature
+        should take a self parameter.
+
+        """
+        return None
+
     #
     # Used by name_check_visitor.py
     #
@@ -51,11 +64,6 @@ class Config(object):
     # which affects the potentially_undefined_name check. This will miss
     # some bugs but also remove some annoying false positives.
     FOR_LOOP_ALWAYS_ENTERED = False
-
-    # when you run test_scope in a package's directory, that directory is part of the sys.path, but
-    # some submodules of the package may not react kindly to being imported as global modules
-    # instead of submodules, so you can exclude the directory
-    PATHS_EXCLUDED_FROM_IMPORT = set()
 
     # Attribute accesses on these do not result in errors
     IGNORED_PATHS = []
@@ -111,7 +119,12 @@ class Config(object):
     # test_scope will instantiate instances of these classes if it can infer the value of all of
     # their arguments. This is useful mostly for classes that are commonly instantiated with static
     # arguments.
-    CLASSES_SAFE_TO_INSTANTIATE = (value.Value, asynq.ConstFuture, range)
+    CLASSES_SAFE_TO_INSTANTIATE = (
+        value.Value,
+        value.Extension,
+        asynq.ConstFuture,
+        range,
+    )
 
     # Similarly, these functions will be called
     FUNCTIONS_SAFE_TO_CALL = (
@@ -252,12 +265,6 @@ class Config(object):
     #
     # Used by arg_spec.py
     #
-    # These classes take optional keyword-only arguments in their constructors.
-    CLASS_TO_KEYWORD_ONLY_ARGUMENTS = {}
-
-    # Tuple of classes for which we should look at their .init to find the argspec
-    CLASSES_USING_INIT = ()
-
     def get_known_argspecs(
         self, arg_spec_cache: "ArgSpecCache"
     ) -> Dict[object, "Signature"]:

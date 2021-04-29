@@ -1,7 +1,8 @@
 # static analysis: ignore
+from typing import Type
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
-from .implementation import assert_is_value
+from .implementation import assert_is_value, dump_value
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
@@ -9,6 +10,7 @@ from .value import (
     MultiValuedValue,
     NewTypeValue,
     SequenceIncompleteValue,
+    TypeVarValue,
     TypedValue,
     UNRESOLVED_VALUE,
     SubclassValue,
@@ -86,6 +88,13 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
         def capybara(z: SupportsInt) -> None:
             assert_is_value(z, TypedValue(SupportsInt))
+
+    @assert_passes()
+    def test_supports_int_accepted(self):
+        from typing import SupportsInt
+
+        def capybara(z: SupportsInt) -> None:
+            print(z)  # just test that this doesn't get rejected
 
     @assert_passes()
     def test_self_type(self):
@@ -319,6 +328,11 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def f(x: "NoSuchType"):
             pass
 
+    @assert_fails(ErrorCode.undefined_name)
+    def test_forward_ref_bad_attribute(self):
+        def f(x: "collections.defalutdict"):
+            pass
+
     @assert_passes()
     def test_forward_ref_optional(self):
         import typing
@@ -434,6 +448,16 @@ def capybara(x: int | None, y: int | str) -> None:
         def f():
             Capybara(x=3)
 
+    @assert_passes()
+    def test_classvar(self):
+        from typing import ClassVar
+
+        class Capybara:
+            x: ClassVar[str]
+
+        def caller(c: Capybara):
+            assert_is_value(c.x, TypedValue(str))
+
 
 class TestAnnotated(TestNameCheckVisitorBase):
     @assert_passes()
@@ -492,6 +516,179 @@ class TestAnnotated(TestNameCheckVisitorBase):
             )
 
 
+class TestCallable(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing import Callable, Sequence, TypeVar
+
+        T = TypeVar("T")
+
+        def capybara(
+            x: Callable[..., int],
+            y: Callable[[int], str],
+            id_func: Callable[[T], T],
+            takes_seq: Callable[[Sequence[T]], T],
+        ):
+            assert_is_value(x(), TypedValue(int))
+            assert_is_value(x(arg=3), TypedValue(int))
+            assert_is_value(y(1), TypedValue(str))
+            assert_is_value(id_func(1), KnownValue(1))
+            assert_is_value(takes_seq([int("1")]), TypedValue(int))
+
+    @assert_passes()
+    def test_stringified(self):
+        from typing import Callable, Sequence, TypeVar
+
+        T = TypeVar("T")
+
+        def capybara(
+            x: "Callable[..., int]",
+            y: "Callable[[int], str]",
+            id_func: "Callable[[T], T]",
+            takes_seq: "Callable[[Sequence[T]], T]",
+        ):
+            assert_is_value(x(), TypedValue(int))
+            assert_is_value(x(arg=3), TypedValue(int))
+            assert_is_value(y(1), TypedValue(str))
+            assert_is_value(id_func(1), KnownValue(1))
+            assert_is_value(takes_seq([int("1")]), TypedValue(int))
+
+    @skip_before((3, 9))
+    @assert_passes()
+    def test_abc_callable(self):
+        from typing import TypeVar
+        from collections.abc import Callable, Sequence
+
+        T = TypeVar("T")
+
+        def capybara(
+            x: Callable[..., int],
+            y: Callable[[int], str],
+            id_func: Callable[[T], T],
+            takes_seq: Callable[[Sequence[T]], T],
+        ):
+            assert_is_value(x(), TypedValue(int))
+            assert_is_value(x(arg=3), TypedValue(int))
+            assert_is_value(y(1), TypedValue(str))
+            assert_is_value(id_func(1), KnownValue(1))
+            assert_is_value(takes_seq([int("1")]), TypedValue(int))
+
+    @assert_passes()
+    def test_known_value(self):
+        from typing_extensions import Literal
+
+        class Capybara:
+            def method(self, x: int) -> int:
+                return 42
+
+        def f(x: int) -> int:
+            return 0
+
+        def g(func: Literal[f]) -> None:
+            pass
+
+        def h(x: object) -> bool:
+            return True
+
+        def capybara() -> None:
+            g(f)
+            g(h)
+            g(Capybara().method)
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_wrong_callable(self):
+        from typing import Callable
+
+        def takes_callable(x: Callable[[int], str]) -> None:
+            pass
+
+        def wrong_callable(x: str) -> int:
+            return 0
+
+        def capybara() -> None:
+            takes_callable(wrong_callable)
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_known_value_error(self):
+        from typing_extensions import Literal
+
+        def f(x: int) -> int:
+            return 0
+
+        def g(func: Literal[f]) -> None:
+            pass
+
+        def h(x: bool) -> bool:
+            return True
+
+        def capybara() -> None:
+            g(h)
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_asynq_callable_incompatible(self):
+        from typing import Callable
+        from pyanalyze.extensions import AsynqCallable
+
+        def f(x: AsynqCallable[[], int]) -> None:
+            pass
+
+        def capybara(func: Callable[[], int]) -> None:
+            f(func)
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_asynq_callable_incompatible_literal(self):
+        from pyanalyze.extensions import AsynqCallable
+
+        def f(x: AsynqCallable[[], int]) -> None:
+            pass
+
+        def func() -> int:
+            return 0
+
+        def capybara() -> None:
+            f(func)
+
+    @assert_passes()
+    def test_asynq_callable(self):
+        from asynq import asynq
+        from pyanalyze.extensions import AsynqCallable
+
+        @asynq()
+        def func_example(x: int) -> str:
+            return ""
+
+        @asynq()
+        def caller(func: AsynqCallable[[int], str]) -> None:
+            assert_is_value(func(1), TypedValue(str))
+            val = yield func.asynq(1)
+            assert_is_value(val, TypedValue(str))
+            yield caller.asynq(func_example)
+
+    @assert_passes(settings={ErrorCode.impure_async_call: False})
+    def test_amap(self):
+        from asynq import asynq
+        from pyanalyze.extensions import AsynqCallable
+        from typing import TypeVar, List, Iterable
+
+        T = TypeVar("T")
+        U = TypeVar("U")
+
+        @asynq()
+        def amap(function: AsynqCallable[[T], U], sequence: Iterable[T]) -> List[U]:
+            return (yield [function.asynq(elt) for elt in sequence])
+
+        @asynq()
+        def mapper(x: int) -> str:
+            return ""
+
+        @asynq()
+        def caller():
+            assert_is_value(amap(mapper, [1]), GenericValue(list, [TypedValue(str)]))
+            assert_is_value(
+                (yield amap.asynq(mapper, [1])), GenericValue(list, [TypedValue(str)])
+            )
+
+
 class TestParameterTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):
@@ -532,3 +729,37 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
                 assert_is_value(
                     elts, GenericValue(collections.abc.Iterable, [TypedValue(int)])
                 )
+
+
+class TestTypeGuard(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from pyanalyze.extensions import TypeGuard
+        from typing import Union
+
+        def is_int(x: Union[int, str]) -> TypeGuard[int]:
+            return x == 42
+
+        def capybara(x: Union[int, str]):
+            if is_int(x):
+                assert_is_value(x, TypedValue(int))
+            else:
+                assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+
+    @assert_passes()
+    def test_method(self) -> None:
+        from pyanalyze.extensions import TypeGuard
+        from typing import Union
+
+        class Cls:
+            def is_int(self, x: Union[int, str]) -> TypeGuard[int]:
+                return x == 43
+
+        def capybara(x: Union[int, str]):
+            cls = Cls()
+            if cls.is_int(x):
+                assert_is_value(x, TypedValue(int))
+                assert_is_value(cls, TypedValue(Cls))
+            else:
+                assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+                assert_is_value(cls, TypedValue(Cls))

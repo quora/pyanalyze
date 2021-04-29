@@ -1,7 +1,8 @@
 # static analysis: ignore
+from .error_code import ErrorCode
 from .implementation import assert_is_value
 from .value import KnownValue, MultiValuedValue, TypedValue, UNRESOLVED_VALUE
-from .test_node_visitor import assert_passes
+from .test_node_visitor import assert_passes, assert_fails
 from .test_name_check_visitor import TestNameCheckVisitorBase
 
 
@@ -119,3 +120,87 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara():
             x = Row()
             return x.capybaras
+
+    @assert_passes()
+    def test_typeshed(self):
+        def capybara(c: staticmethod):
+            assert_is_value(c.__isabstractmethod__, TypedValue(bool))
+
+    @assert_fails(ErrorCode.undefined_attribute)
+    def test_no_attribute_for_typeshed_class():
+        def capybara(c: staticmethod):
+            c.no_such_attribute
+
+    @assert_passes()
+    def test_typeshed_getattr(self):
+        # has __getattribute__ in typeshed
+        from types import SimpleNamespace
+
+        # has __getattr__
+        from codecs import StreamWriter
+
+        def capybara(sn: SimpleNamespace, sw: StreamWriter):
+            assert_is_value(sn.whatever, UNRESOLVED_VALUE)
+            assert_is_value(sw.whatever, UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_allow_function(self):
+        def decorator(f):
+            return f
+
+        def capybara():
+            @decorator
+            def f():
+                pass
+
+            f.attr = 42
+            print(f.attr)
+
+    @assert_passes()
+    def test_enum_name(self):
+        import enum
+
+        class E(enum.Enum):
+            name = 1
+            no_name = 2
+
+        def capybara():
+            assert_is_value(E.no_name, KnownValue(E.no_name))
+            assert_is_value(E.name, KnownValue(E.name))
+
+
+class TestHasAttrExtension(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_hasattr(self):
+        from typing_extensions import Literal
+
+        def capybara(x: Literal[1]) -> None:
+            if hasattr(x, "x"):
+                assert_is_value(x.x, UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_user_hasattr(self):
+        from typing import TypeVar, Any
+        from typing_extensions import Annotated, Literal
+        from pyanalyze.extensions import HasAttrGuard
+
+        T = TypeVar("T", bound=str)
+
+        def my_hasattr(
+            obj: object, name: T
+        ) -> Annotated[bool, HasAttrGuard["obj", T, Any]]:
+            return hasattr(obj, name)
+
+        def has_int_attr(
+            obj: object, name: T
+        ) -> Annotated[bool, HasAttrGuard["obj", T, int]]:
+            val = getattr(obj, name, None)
+            return isinstance(val, int)
+
+        def capybara(x: Literal[1]) -> None:
+            if my_hasattr(x, "x"):
+                assert_is_value(x.x, UNRESOLVED_VALUE)
+
+        def inty_capybara(x: Literal[1]) -> None:
+            if has_int_attr(x, "inty"):
+                assert_is_value(x.inty, TypedValue(int))

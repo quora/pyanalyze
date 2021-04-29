@@ -1,7 +1,7 @@
 pyanalyze
 =========
 
-Pyanalyze is a tool for programmatically detecting common mistakes in Python code, such as references to undefined variables and some categories of type mismatches.
+Pyanalyze is a tool for programmatically detecting common mistakes in Python code, such as references to undefined variables and type errors.
 It can be extended to add additional rules and perform checks specific to particular functions.
 
 Some use cases for this tool include:
@@ -80,58 +80,52 @@ database.run_query("SELECT answer, question FROM content")
 You want to detect when a call to `run_query()` contains syntactically invalid SQL or refers to a non-existent table or column. You could set that up with code like this:
 
 ```python
-from ast import AST
-from pyanalyze.arg_spec import ExtendedArgSpec, Parameter
+import pyanalyze
 from pyanalyze.error_code import ErrorCode
-from pyanalyze.name_check_visitor import NameCheckVisitor
-from pyanalyze.value import KnownValue, TypedValue, Value
-from typing import Dict
+from pyanalyze.signature import CallContext, Signature, SigParameter
+from pyanalyze.value import KnownValue, TypedValue, UNRESOLVED_VALUE, Value
 
 from database import run_query, parse_sql
 
-def run_query_impl(
-  variables: Dict[str, Value],  # parameters passed to the function
-  visitor: NameCheckVisitor,   # can be used to show errors or look up names
-  node: AST,  # for showing errors
-) -> Value:
-  sql = variables["sql"]
-  if not isinstance(sql, KnownValue) or not isinstance(sql.val, str):
-      visitor.show_error(
-          node,
-          "Argument to run_query() must be a string literal",
-          error_code=ErrorCode.incompatible_call,
-      )
-      return
 
-  try:
-      parsed = parse_sql(sql)
-  except ValueError as e:
-      visitor.show_error(
-          node,
-          f"Invalid sql passed to run_query(): {e}",
-          error_code=ErrorCode.incompatible_call,
-      )
-      return
+def run_query_impl(ctx: CallContext) -> Value:
+    sql = ctx.vars["sql"]
+    if not isinstance(sql, KnownValue) or not isinstance(sql.val, str):
+        ctx.show_error(
+            "Argument to run_query() must be a string literal",
+            ErrorCode.incompatible_call,
+        )
+        return UNRESOLVED_VALUE
 
-  # check that the parsed SQL is valid...
+    try:
+        parsed = parse_sql(sql)
+    except ValueError as e:
+        ctx.show_error(
+            f"Invalid sql passed to run_query(): {e}",
+            ErrorCode.incompatible_call,
+        )
+        return UNRESOLVED_VALUE
 
-  # pyanalyze will use this as the inferred return type for the function
-  return TypedValue(list)
+    # check that the parsed SQL is valid...
 
-  class Config(pyanalyze.config.Config):
-      def get_known_argspecs(self, arg_spec_cache):
-          return {
-              # This infers the parameter types and names from the function signature
-              run_query: arg_spec_cache.get_argspec(
-                  run_query, implementation=run_query_impl,
-              )
-              # You can also write the signature manually
-              run_query: ExtendedArgSpec(
-                  [Parameter("sql", typ=TypedValue(str))],
-                  name="run_query",
-                  implementation=run_query_impl,
-              )
-          }
+    # pyanalyze will use this as the inferred return type for the function
+    return TypedValue(list)
+
+
+class Config(pyanalyze.config.Config):
+    def get_known_argspecs(self, arg_spec_cache):
+        return {
+            # This infers the parameter types and names from the function signature
+            run_query: arg_spec_cache.get_argspec(
+                run_query, impl=run_query_impl
+            ),
+            # You can also write the signature manually
+            run_query: Signature.make(
+                [SigParameter("sql", annotation=TypedValue(str))],
+                callable=run_query,
+                impl=run_query_impl,
+            ),
+        }
 ```
 
 
@@ -288,7 +282,7 @@ This is done by recursively visiting the AST of the file and building up a conte
 
 The name resolution component of pyanalyze makes it possible to connect usage of a Python variable with the place where it is defined.
 
-Pyanalyze uses the `StackedScopes` class to simulate Python scoping rules. This class contains a stack of nested scopes, implemented as dictionaries, that contain names defined in a particular Python scope (e.g., a function). When the script needs to determine what a particular name refers to, it iterates through the scopes, starting at the top of the scope stack, until it finds a scope dictionary that contains the name. This is similar to how name lookup is implemented in Python itself. When a name that is accessed in Python code is not found in any scope object, `test_scope.py` will throw an error with code `undefined_name`.
+Pyanalyze uses the `StackedScopes` class to simulate Python scoping rules. This class contains a stack of nested scopes, implemented as dictionaries, that contain names defined in a particular Python scope (e.g., a function). When the script needs to determine what a particular name refers to, it iterates through the scopes, starting at the top of the scope stack, until it finds a scope dictionary that contains the name. This is similar to how name lookup is implemented in Python itself. When a name that is accessed in Python code is not found in any scope object, pyanalyze will throw an error with code `undefined_name`.
 
 When the script is run on a file, the scopes object is initialized with two scope levels containing builtin objects such as `len` and `Exception` and the file's module-level globals (found by importing the file and inspecting its `__dict__`). When it inspects the AST, it adds names that it finds in assignment context into the appropriate nested scope. For example, when the scripts sees a `FunctionDef` AST node, it adds a new function-level scope, and if the function contains a statement like `x = 1`, it will add the variable `x` to the function's scope. Then when the function accesses the variable `x`, the script can retrieve it from the function-level scope in the `StackedScopes` object.
 
@@ -317,6 +311,9 @@ The following constructs are understood as constraints:
 -   `if x is (not) None`
 -   `if (not) x`
 -   `if isinstance(x, <some type>)`
+-   `if issubclass(x, <some type>)`
+-   `if len(x) == <some value>`
+-   A function returning a `TypeGuard` or similar construct
 
 Constraints are used to restrict the types of:
 
@@ -347,41 +344,13 @@ Each `Value` object has a method `can_assign` that checks whether types are corr
 
 When the visitor encounters a `Call` node (representing a function call) and it can resolve the object being called, it will check that the object can in fact be called and that it accepts the arguments given to it. This checks only the number of arguments and the names of keyword arguments, not their types.
 
-The first step in implementing this check is to retrieve the argument specification (argspec) for the callee. Although Python provides the `inspect.getargspec` function to do this, this function doesn't work on classes and its result needs post-processing to remove the `self` argument from calls to bound methods. To figure out what arguments classes take, the argspec of their `__init__` method is retrieved. It is not always possible to programmatically determine what arguments built-in or Cythonized functions accept, but pyanalyze can often figure this out with the new Python 3 `inspect.signature` API or by using [typeshed](http://github.com/python/typeshed), a repository of types for standard library modules.
+The first step in implementing this check is to retrieve the signature for the callee. Python provides the `inspect.signature` function to do this, but for some callables additional logic is required. In addition, pyanalyze uses [typeshed](http://github.com/python/typeshed), a repository of types for standard library modules, to produce more precise signatures.
 
-Once we have the argspec, we can figure out whether the arguments passed to the callee in the AST node under consideration are compatible with the argspec. The semantics of Python calls are sufficiently complicated that it seemed simplest to generate code that contains a function with the argspec and a call to that function with the node's arguments, which can be `exec`'ed to determine whether the call is valid. All default values and all arguments to the call are set to `None`. In verbose mode, this generated code is printed out:
-
-```
-$ cat call_example.py
-def function(foo, bar=3, baz='baz'):
-    return str(foo * bar) + baz
-
-if False:  # to make the module importable
-    function(2, bar=2, bax='2')
-$ python -m pyanalyze -vv call_example.py
-Checking file: ('call_example.py', 3469)
-Code to execute:
-def str(self, *args, **kwargs):
-    return __builtin__.locals()
-
-Variables from function call: {'self': TypedValue(typ=<class 'str'>), 'args': (UnresolvedValue(),), 'kwargs': {}}
-Code to execute:
-def function(foo, bar=__default_bar, baz=__default_baz):
-    return __builtin__.locals()
-
-
-TypeError("function() got an unexpected keyword argument 'bax'") (code: incompatible_call)
-In call_example.py at line 5:
-   2:     return str(foo * bar) + baz
-   3:
-   4: if False:  # to make the module importable
-   5:     function(2, bar=2, bax='2')
-          ^
-```
+Once we have the signature, we can figure out whether the arguments passed to the callee in the AST node under consideration are compatible with the signature. This is done with the signature's `bind()` method. The abstraction also supports providing an _implementation function_ for a callable, a function that gets called with the types of the arguments to the function and that computes a more specific return type or checks the arguments.
 
 ### Non-existent object attributes
 
-Python throws a runtime `AttributeError` when you try to access an object attribute that doesn't exist. `test_scope.py` can statically find some kinds of code that will access non-existent attribute. The simpler case is when code accesses an attribute of a `KnownValue` , like in a file that has `import os` and then accesses `os.ptah`. In this case, we know the value that `os` contains, so we can try to access the attribute `ptah` on it, and show an error if the attribute lookup fails. Similarly, `os.path` will return a `KnownValue` of the `os.path` module, so that we can also check attribute lookups on `os.path`.
+Python throws a runtime `AttributeError` when you try to access an object attribute that doesn't exist. Pyanalyze can statically find some kinds of code that will access non-existent attribute. The simpler case is when code accesses an attribute of a `KnownValue` , like in a file that has `import os` and then accesses `os.ptah`. In this case, we know the value that `os` contains, so we can try to access the attribute `ptah` on it, and show an error if the attribute lookup fails. Similarly, `os.path` will return a `KnownValue` of the `os.path` module, so that we can also check attribute lookups on `os.path`.
 
 Another class of bugs involves objects accessing attributes on `self` that don't exist. For example, an object may set `self.promote` in its `__init__` method, but then access `self.promotion` in its `tree` method. To detect such cases, pyanalyze uses the `ClassAttributeChecker` class. This class keeps a record of every node where an attribute is written or read on a `TypedValue`. After checking all code that uses the class, it then takes the difference between the sets of read and written values and shows an error for every attribute that is read but never written. This approach is complicated by inheritance---subclasses may read values only written on the superclass, and vice versa. Therefore, the check doesn't trigger for any attribute that is set on any superclass or subclass of the class under consideration. It also doesn't trigger for any attributes of a class that has a base class that wasn't itself examined by the `ClassAttributeChecker`. This was needed to deal with Thrift classes that used attributes defined in superclasses outside of code checked by pyanalyze. Two superclasses are excluded from this, so that undefined attributes are flagged on their subclasses even though test_scope.py hasn't examined their definitions: `object` (the superclass of every class) and `qutils.webnode2.Component` (which doesn't define any attributes that are read by its subclasses).
 
@@ -392,21 +361,142 @@ Because pyanalyze tries to resolve all names and attribute lookups in code in a 
 Type system
 -----------
 
-Pyanalyze partially supports the Python type system, as specified in [PEP 484](https://www.python.org/dev/peps/pep-0484/) and in the [Python documentation](https://docs.python.org/3/library/typing.html). It uses type annotations to infer types and checks for type compatibility in calls and return types. Supported type system features include generics like `List[int]`, `NewType`, and `TypedDict`.
+Pyanalyze supports most of the Python type system, as specified in [PEP 484](https://www.python.org/dev/peps/pep-0484/) and various later PEPs and in the [Python documentation](https://docs.python.org/3/library/typing.html). It uses type annotations to infer types and checks for type compatibility in calls and return types. Supported type system features include generics like `List[int]`, `NewType`, `TypedDict`, `TypeVar`, and `Callable`.
 
-However, support for some features is still missing, including:
+However, support for some features is still missing or incomplete, including:
 
-- Callable types
 - Overloaded functions
-- Type variables
-- Protocols
+- Bounds, constraints, and variance of TypeVars
+- `NewType` over non-trivial types
+- Missing and required keys in `TypedDict`
+- Protocols (PEP 544)
+- `ParamSpec` (PEP 612)
+
+PEP 649's `TypeGuard` type needs to be imported from `pyanalyze.extensions` until it is supported by `typing_extensions` or `typing`.
+
+### Extensions
+
+In addition to the standard Python type system, pyanalyze supports a number of non-standard extensions:
+
+- Callable literals: you can declare a parameter as `Literal[some_function]` and it will accept any callable assignable to `some_function`. Pyanalyze also supports Literals of various other types in addition to those supported by [PEP 586](https://www.python.org/dev/peps/pep-0586/).
+- `pyanalyze.extensions.AsynqCallable` is a variant of `Callable` that applies to `asynq` functions.
+- `pyanalyze.extensions.ParameterTypeGuard` is a generalization of PEP 649's `TypeGuard` that allows guards on any parameter to a function. To use it, return `Annotated[bool, ParameterTypeGuard["arg", SomeType]]`.
+- `pyanalyze.extensions.HasAttrGuard` is a similar mechanism that allows indicating that an object has a particular attribute. To use it, return `Annotated[bool, HasAttrGuard["arg", "attribute", SomeType]]`.
+
+They are explained in more detail below.
+
+#### Extended literals
+
+Literal types are specified by [PEP 586](https://www.python.org/dev/peps/pep-0586/). The PEP only supports Literals of int, str, bytes, bool, Enum, and None objects, but pyanalyze accepts Literals over all Python objects.
+
+As an extension, pyanalyze accepts any compatible callable for a Literal over a function type. This allows more flexible callable types.
+
+For example:
+
+```python
+from typing_extensions import Literal
+
+def template(x: int, y: str = "") -> None:
+    pass
+
+def takes_template(func: Literal[template]) -> None:
+    func(x=1, y="x")
+
+def good_callable(x: int, y: str = "default", z: float = 0.0) -> None:
+    pass
+
+takes_template(good_callable)  # accepted
+
+def bad_callable(not_x: int, y: str = "") -> None:
+    pass
+
+takes_template(bad_callable)  # rejected
+```
+
+#### AsynqCallable
+
+The `@asynq()` callable in the [asynq](https://www.github.com/quora/asynq) framework produces a special callable that can either be called directly (producing a synchronous call) or through the special `.asynq()` attribute (producing an asynchronous call). The `AsynqCallable` special form is similar to `Callable`, but describes a callable with this extra `.asynq()` attribute.
+
+For example, this construct can be used to implement the `asynq.tools.amap` helper function:
+
+```python
+from asynq import asynq
+from pyanalyze.extensions import AsynqCallable
+from typing import TypeVar, List, Iterable
+
+T = TypeVar("T")
+U = TypeVar("U")
+
+@asynq()
+def amap(function: AsynqCallable[[T], U], sequence: Iterable[T]) -> List[U]:
+    return (yield [function.asynq(elt) for elt in sequence])
+```
+
+#### ParameterTypeGuard
+
+[PEP 647](https://www.python.org/dev/peps/pep-0647/) added support for type guards, a mechanism to narrow the type of a variable. However, it only supports narrowing the first argument to a function.
+
+Pyanalyze supports an extended version that combines with [PEP 593](https://www.python.org/dev/peps/pep-0593/)'s `Annotated` type to support guards on any function parameter.
+
+For example, the below function narrows the type of two of its parameters:
+
+```python
+from typing import Iterable, Annotated
+from pyanalyze.extensions import ParameterTypeGuard
+from pyanalyze.value import KnownValue, Value
+
+
+def _can_perform_call(
+    args: Iterable[Value], keywords: Iterable[Value]
+) -> Annotated[
+    bool,
+    ParameterTypeGuard["args", Iterable[KnownValue]],
+    ParameterTypeGuard["keywords", Iterable[KnownValue]],
+]:
+    return all(isinstance(arg, KnownValue) for arg in args) and all(
+        isinstance(kwarg, KnownValue) for kwarg in keywords
+    )
+```
+
+#### HasAttrGuard
+
+`HasAttrGuard` is similar to `ParameterTypeGuard` and `TypeGuard`, but instead of narrowing a type, it indicates that an object has a particular attribute. For example, consider this function:
+
+```python
+from typing import Literal, Annotated
+from pyanalyze.extensions import HasAttrGuard
+
+def has_time(arg: object) -> Annotated[bool, HasAttrGuard["arg", Literal["time"], int]]:
+    attr = getattr(arg, "time", None)
+    return isinstance(attr, int)
+```
+
+After a call to `has_time(o)` succeeds, pyanalyze will know that `o.time` exists and is of type `int`.
+
+In practice the main use of this type is to implement the type of `hasattr` itself. In pure Python `hasattr` could look like this:
+
+```python
+from typing import Any, TypeVar, Annotated
+from pyanalyze.extensions import HasAttrGuard
+
+T = TypeVar("T", bound=str)
+
+def hasattr(obj: object, name: T) -> Annotated[bool, HasAttrGuard["obj", T, Any]]:
+    try:
+        getattr(obj, name)
+        return True
+    except AttributeError:
+        return False
+```
+
+As currently implemented, `HasAttrGuard` does not narrow types; instead it preserves the previous type of a variable and adds the additional attribute.
 
 Limitations
 -----------
 
 Python is sufficiently dynamic that almost any check like the ones run by pyanalyze will inevitably have false positives: cases where the script sees an error, but the code in fact runs fine. Attributes may be added at runtime in hard-to-detect ways, variables may be created by direct manipulation of the `globals()` dictionary, and the `mock` module can change anything into anything. Although pyanalyze has a number of whitelists to deal with these false positives, it is usually better to write code in a way that doesn't require use of the whitelist: code that's easier for the script to understand is probably also easier for humans to understand.
 
-Just as the script inevitably has false positives, it equally inevitably cannot find all code that will throw a runtime error. It is generally impossible to statically determine what a program does or whether it runs successfully without actually running the program. Pyanalyze doesn't check program logic and it cannot always determine exactly what value a variable will have. It is no substitute for unit tests.
+Just as the tool inevitably has false positives, it equally inevitably cannot find all code that will throw a runtime error. It is generally impossible to statically determine what a program does or whether it runs successfully without actually running the program. Pyanalyze doesn't check program logic and it cannot always determine exactly what value a variable will have. It is no substitute for unit tests.
 
 Developing pyanalyze
 --------------------

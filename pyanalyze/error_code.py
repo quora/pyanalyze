@@ -104,28 +104,44 @@ DISABLED_BY_DEFAULT = {
 ERROR_DESCRIPTION = {
     ErrorCode.bad_star_import: '"from ... import *" within a function.',
     ErrorCode.cant_import: "Internal error while checking a star import.",
-    ErrorCode.unexpected_node: "The script encountered a kind of code it does not know about.",
+    ErrorCode.unexpected_node: (
+        "The script encountered a kind of code it does not know about."
+    ),
     ErrorCode.undefined_name: "Usage of a variable that is never assigned to.",
-    ErrorCode.undefined_attribute: "Usage of an attribute (e.g. a function in a module) that does not exist.",
-    ErrorCode.attribute_is_never_set: "An attribute that is read on objects of a particular type is never set on that object.",
+    ErrorCode.undefined_attribute: (
+        "Usage of an attribute (e.g. a function in a module) that does not exist."
+    ),
+    ErrorCode.attribute_is_never_set: (
+        "An attribute that is read on objects of a particular type is never set on that"
+        " object."
+    ),
     ErrorCode.duplicate_dict_key: "Duplicate key in a dictionary.",
     ErrorCode.unhashable_key: "Key cannot be inserted into a set or dictionary.",
     ErrorCode.bad_unpack: "Error in an unpacking assignment.",
-    ErrorCode.unsupported_operation: "Usage of an operation such as subscripting on an object that does not support it.",
+    ErrorCode.unsupported_operation: (
+        "Usage of an operation such as subscripting on an object that does not"
+        " support it."
+    ),
     ErrorCode.not_callable: "Attempt to call an object that is not callable.",
     ErrorCode.incompatible_call: "Incompatible arguments to a function call.",
     ErrorCode.method_first_arg: "First argument to a method is not cls or self.",
     ErrorCode.bad_super_call: "Call to super() with invalid arguments.",
-    ErrorCode.impure_async_call: "Non-async call to an async function within another async function.",
+    ErrorCode.impure_async_call: (
+        "Non-async call to an async function within another async function."
+    ),
     ErrorCode.unnecessary_yield: "Unnecessary yield in async function.",
-    ErrorCode.class_variable_redefinition: "Redefinition of a class-level variable. Usually this means a duplicate method or enum "
-    "value.",
+    ErrorCode.class_variable_redefinition: (
+        "Redefinition of a class-level variable. Usually this means a duplicate method"
+        " or enum value."
+    ),
     ErrorCode.bad_global: "Bad global declaration.",
     ErrorCode.condition_always_true: "Condition is always true.",
     ErrorCode.inference_failure: "Internal error in value inference.",
     ErrorCode.bad_format_string: "Incorrect arguments to a %-formatted string.",
     ErrorCode.yield_without_value: "yield without a value in an async function",
-    ErrorCode.invalid_method_return_type: "An overridden method returns an object of the wrong type",
+    ErrorCode.invalid_method_return_type: (
+        "An overridden method returns an object of the wrong type"
+    ),
     ErrorCode.missing_asynq: "This function should have an @asynq() decorator",
     ErrorCode.bad_exception: "An object that is not an exception is raised",
     ErrorCode.bad_async_yield: "Yield of an invalid value in an async function",
@@ -136,11 +152,15 @@ ERROR_DESCRIPTION = {
     ErrorCode.task_needs_yield: "You probably forgot to yield an async task",
     ErrorCode.mixing_bytes_and_text: "Do not mix str and unicode",
     ErrorCode.bad_except_handler: "Invalid except clause",
-    ErrorCode.implicit_non_ascii_string: "Non-ASCII bytestring without an explicit prefix",
+    ErrorCode.implicit_non_ascii_string: (
+        "Non-ASCII bytestring without an explicit prefix"
+    ),
     ErrorCode.missing_await: "Missing await in async code",
     ErrorCode.unused_variable: "Variable is not read after being written to",
     ErrorCode.bad_nonlocal: "Incorrect usage of nonlocal",
-    ErrorCode.non_boolean_in_boolean_context: "Object will always evaluate to True in boolean context",
+    ErrorCode.non_boolean_in_boolean_context: (
+        "Object will always evaluate to True in boolean context"
+    ),
     ErrorCode.use_fstrings: "Use f-strings instead of % formatting",
     ErrorCode.import_failed: "Failed to import module",
     ErrorCode.unused_ignore: "Unused '# static analysis: ignore' comment",

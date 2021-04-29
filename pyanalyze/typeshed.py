@@ -4,7 +4,7 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
-from .annotations import Context, type_from_ast
+from .annotations import Context, is_typing_name, type_from_ast
 from .error_code import ErrorCode
 from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
@@ -12,6 +12,7 @@ from .value import (
     TypedValue,
     GenericValue,
     KnownValue,
+    UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     Value,
     TypeVarValue,
@@ -60,7 +61,7 @@ class _AnnotationContext(Context):
     ) -> None:
         self.finder.log(message, ())
 
-    def get_name(self, node: ast.AST) -> Value:
+    def get_name(self, node: ast.Name) -> Value:
         info = self.finder._get_info_for_name(f"{self.module}.{node.id}")
         if info is not None:
             return self.finder._value_from_info(info, self.module)
@@ -90,14 +91,7 @@ _TYPING_ALIASES = {
 class TypeshedFinder(object):
     def __init__(self, verbose: bool = True) -> None:
         self.verbose = verbose
-        # Dealing with upcoming typeshed-client change; TODO require the new version
-        # once it is released.
-        try:
-            # static analysis: ignore[incompatible_call]
-            resolver = typeshed_client.Resolver(version=sys.version_info[:2])
-        except TypeError:
-            resolver = typeshed_client.Resolver()
-        self.resolver = resolver
+        self.resolver = typeshed_client.Resolver()
         self._assignment_cache = {}
 
     def log(self, message: str, obj: object) -> None:
@@ -105,7 +99,7 @@ class TypeshedFinder(object):
             return
         print("%s: %r" % (message, obj))
 
-    def get_argspec(self, obj: object) -> Optional[Signature]:
+    def get_argspec(self, obj: Any) -> Optional[Signature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
@@ -138,8 +132,9 @@ class TypeshedFinder(object):
         return sig
 
     def get_bases(self, typ: type) -> Optional[List[Value]]:
+        """Return the base classes for this type, including generic bases."""
         # The way AbstractSet/Set is handled between collections and typing is
-        # too confusing, just hardcode it.
+        # too confusing, just hardcode it. Same for (Abstract)ContextManager.
         if typ is AbstractSet:
             return [GenericValue(Collection, (TypeVarValue(T_co),))]
         if typ is AbstractContextManager:
@@ -152,6 +147,122 @@ class TypeshedFinder(object):
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._get_bases_from_info(info, mod)
+
+    def get_attribute(self, typ: type, attr: str) -> Value:
+        """Return the stub for this attribute.
+
+        Does not look at parent classes. Returns UNINITIALIZED_VALUE if no
+        stub can be found.
+
+        """
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return UNINITIALIZED_VALUE
+        info = self._get_info_for_name(fq_name)
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
+        return self._get_attribute_from_info(info, mod, attr)
+
+    def has_attribute(self, typ: type, attr: str) -> bool:
+        """Whether this type has this attribute in the stubs.
+
+        Also looks at base classes.
+
+        """
+        if self._has_own_attribute(typ, attr):
+            return True
+        bases = self.get_bases(typ)
+        if bases is not None:
+            for base in bases:
+                if not isinstance(base, TypedValue):
+                    continue
+                typ = base.typ
+                if typ is Generic or is_typing_name(typ, "Protocol"):
+                    continue
+                if self.has_attribute(base.typ, attr):
+                    return True
+        return False
+
+    def has_stubs(self, typ: type) -> bool:
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return False
+        info = self._get_info_for_name(fq_name)
+        return info is not None
+
+    def _get_attribute_from_info(
+        self, info: typeshed_client.resolver.ResolvedName, mod: str, attr: str
+    ) -> Value:
+        if info is None:
+            return UNINITIALIZED_VALUE
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._get_attribute_from_info(
+                info.info, ".".join(info.source_module), attr
+            )
+        elif isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.ClassDef):
+                if info.child_nodes and attr in info.child_nodes:
+                    child_info = info.child_nodes[attr]
+                    if isinstance(child_info, typeshed_client.NameInfo):
+                        if isinstance(child_info.ast, ast3.AnnAssign):
+                            return self._parse_expr(child_info.ast.annotation, mod)
+                        elif isinstance(child_info.ast, ast3.FunctionDef):
+                            decorators = [
+                                self._parse_expr(decorator, mod)
+                                for decorator in child_info.ast.decorator_list
+                            ]
+                            if child_info.ast.returns and decorators == [
+                                TypedValue(property)
+                            ]:
+                                return self._parse_expr(child_info.ast.returns, mod)
+                            return UNINITIALIZED_VALUE  # a method
+                        elif isinstance(child_info.ast, ast3.AsyncFunctionDef):
+                            return UNINITIALIZED_VALUE
+                    assert False, repr(child_info)
+                return UNINITIALIZED_VALUE
+            elif isinstance(info.ast, ast3.Assign):
+                val = self._parse_expr(info.ast.value, mod)
+                if isinstance(val, KnownValue) and isinstance(val.val, type):
+                    return self.get_attribute(val.val, attr)
+                else:
+                    return UNINITIALIZED_VALUE
+            else:
+                return UNINITIALIZED_VALUE
+        return UNINITIALIZED_VALUE
+
+    def _has_own_attribute(self, typ: type, attr: str) -> bool:
+        # Special case since otherwise we think every object has every attribute
+        if typ is object and attr == "__getattribute__":
+            return False
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return False
+        info = self._get_info_for_name(fq_name)
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
+        return self._has_attribute_from_info(info, mod, attr)
+
+    def _has_attribute_from_info(
+        self, info: typeshed_client.resolver.ResolvedName, mod: str, attr: str
+    ) -> bool:
+        if info is None:
+            return False
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._has_attribute_from_info(
+                info.info, ".".join(info.source_module), attr
+            )
+        elif isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.ClassDef):
+                if info.child_nodes and attr in info.child_nodes:
+                    return True
+                return False
+            elif isinstance(info.ast, ast3.Assign):
+                val = self._parse_expr(info.ast.value, mod)
+                if isinstance(val, KnownValue) and isinstance(val.val, type):
+                    return self.has_attribute(val.val, attr)
+                else:
+                    return False
+            else:
+                return False
+        return False
 
     def _get_bases_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str
@@ -201,7 +312,7 @@ class TypeshedFinder(object):
             )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
-            if obj.__name__ in info.child_nodes:
+            if info.child_nodes and obj.__name__ in info.child_nodes:
                 child_info = info.child_nodes[obj.__name__]
                 return self._get_signature_from_info(
                     child_info, obj, fq_name, mod, objclass

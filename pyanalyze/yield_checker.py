@@ -63,6 +63,7 @@ class YieldInfo:
 
     def target_and_value(self) -> Tuple[List[ast.AST], List[ast.AST]]:
         """Returns a pair of a list of target nodes and a list of value nodes."""
+        assert self.yield_node.value is not None
         if isinstance(self.statement_node, ast.Assign):
             # this branch is for assign statements
             # e.g. x = yield y.asynq()
@@ -518,11 +519,12 @@ class YieldChecker:
                 lines_to_add += second_assign_lines
                 lines_for_second_yield = replace_second.lines_to_add
 
-            lines_to_add += replace_first.lines_to_add
+            lines_to_add += replace_first.lines_to_add or []
             lines_to_add += lines[
                 first_yield.line_range[-1] : second_yield.line_range[0] - 1
             ]
-            lines_to_add += lines_for_second_yield
+            if lines_for_second_yield:
+                lines_to_add += lines_for_second_yield
 
             linenos_to_delete = list(
                 range(first_yield.line_range[0], second_yield.line_range[-1] + 1)
@@ -548,6 +550,7 @@ class YieldChecker:
         Replacement object implementing the second change.
 
         """
+        assert yield_info.yield_node.value is not None
         varname = self.generate_varname_from_node(yield_info.yield_node.value)
         name_node = ast.Name(id=varname)
         replace = self.visitor.replace_node(

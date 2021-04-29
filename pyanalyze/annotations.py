@@ -27,17 +27,22 @@ from typing import (
 )
 
 from .error_code import ErrorCode
-from .extensions import ParameterTypeGuard
-from .find_unused import used
+from .extensions import AsynqCallable, HasAttrGuard, ParameterTypeGuard, TypeGuard
+from .signature import SigParameter, Signature
 from .value import (
     AnnotatedValue,
+    CallableValue,
     Extension,
+    HasAttrGuardExtension,
     KnownValue,
+    MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
+    TypeGuardExtension,
     UNRESOLVED_VALUE,
     TypedValue,
     SequenceIncompleteValue,
+    annotate_value,
     unite_values,
     Value,
     GenericValue,
@@ -85,7 +90,6 @@ class Context:
         return UNRESOLVED_VALUE
 
 
-@used  # part of the API of this module; low cost even if currently unused
 def type_from_ast(
     ast_node: ast.AST,
     visitor: Optional["NameCheckVisitor"] = None,
@@ -125,12 +129,12 @@ def type_from_value(
 def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
     val = _Visitor(ctx).visit(node)
     if val is None:
-        # TODO show an error here
+        ctx.show_error("Invalid type annotation")
         return UNRESOLVED_VALUE
     return _type_from_value(val, ctx)
 
 
-def _type_from_runtime(val: object, ctx: Context) -> Value:
+def _type_from_runtime(val: Any, ctx: Context) -> Value:
     if isinstance(val, str):
         return _eval_forward_ref(val, ctx)
     elif isinstance(val, tuple):
@@ -174,6 +178,9 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
         # get the actual type out.
         return UNRESOLVED_VALUE
     elif isinstance(val, InitVar):
+        # val.type exists only on 3.8+, but on earlier versions
+        # InitVar instances aren't being created
+        # static analysis: ignore[undefined_attribute]
         return type_from_runtime(val.type)
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
@@ -199,9 +206,10 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
             args = []  # distinguish List from List[T] on 3.7 and 3.8
         return _value_of_origin_args(origin, args, val, ctx)
     elif typing_inspect.is_callable_type(val):
-        return TypedValue(Callable)
+        args = typing_inspect.get_args(val)
+        return _value_of_origin_args(Callable, args, val, ctx)
     elif isinstance(val, type):
-        return _maybe_typed_value(val)
+        return _maybe_typed_value(val, ctx)
     elif val is None:
         return KnownValue(None)
     elif is_typing_name(val, "NoReturn"):
@@ -221,7 +229,11 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
     elif typing_inspect.is_typevar(val):
         return TypeVarValue(cast(TypeVar, val))
     elif typing_inspect.is_classvar(val):
-        return UNRESOLVED_VALUE
+        if hasattr(val, "__type__"):
+            typ = val.__type__
+        else:
+            typ = val.__args__[0]
+        return _type_from_runtime(typ, ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
         val, "ForwardRef"
     ):
@@ -242,10 +254,41 @@ def _type_from_runtime(val: object, ctx: Context) -> Value:
     elif is_instance_of_typing_name(val, "_TypeAlias"):
         # typing.Pattern and Match, which are not normal generic types for some reason
         return GenericValue(val.impl_type, [_type_from_runtime(val.type_var, ctx)])
+    elif isinstance(val, TypeGuard):
+        return AnnotatedValue(
+            TypedValue(bool),
+            [TypeGuardExtension(_type_from_runtime(val.guarded_type, ctx))],
+        )
+    elif isinstance(val, AsynqCallable):
+        arg_types = val.args
+        return_type = val.return_type
+        if arg_types is Ellipsis:
+            return CallableValue(
+                Signature.make(
+                    [],
+                    _type_from_runtime(return_type, ctx),
+                    is_ellipsis_args=True,
+                    is_asynq=True,
+                )
+            )
+        if not isinstance(arg_types, list):
+            return UNRESOLVED_VALUE
+        params = [
+            SigParameter(
+                f"__arg{i}",
+                kind=SigParameter.POSITIONAL_ONLY,
+                annotation=_type_from_runtime(arg, ctx),
+            )
+            for i, arg in enumerate(arg_types)
+        ]
+        sig = Signature.make(
+            params, _type_from_runtime(return_type, ctx), is_asynq=True
+        )
+        return CallableValue(sig)
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
-            return _maybe_typed_value(origin)
+            return _maybe_typed_value(origin, ctx)
         ctx.show_error(f"Invalid type annotation {val}")
         return UNRESOLVED_VALUE
 
@@ -265,6 +308,8 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         return _type_from_runtime(value.val, ctx)
     elif isinstance(value, (TypeVarValue, TypedValue)):
         return value
+    elif isinstance(value, MultiValuedValue):
+        return unite_values(*[_type_from_value(val, ctx) for val in value.vals])
     elif isinstance(value, _SubscriptedValue):
         if isinstance(value.root, GenericValue):
             if len(value.root.args) == len(value.members):
@@ -309,6 +354,16 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         elif is_typing_name(root, "Annotated"):
             origin, *metadata = value.members
             return _make_annotated(_type_from_value(origin, ctx), metadata, ctx)
+        elif root is Callable or root is typing.Callable:
+            if len(value.members) == 2:
+                args, return_value = value.members
+                return _make_callable_from_value(args, return_value, ctx)
+            return UNRESOLVED_VALUE
+        elif root is AsynqCallable:
+            if len(value.members) == 2:
+                args, return_value = value.members
+                return _make_callable_from_value(args, return_value, ctx, is_asynq=True)
+            return UNRESOLVED_VALUE
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
             if origin is None:
@@ -334,7 +389,10 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 )
             ctx.show_error(f"Unrecognized subscripted annotation: {root}")
             return UNRESOLVED_VALUE
+    elif value is UNRESOLVED_VALUE:
+        return UNRESOLVED_VALUE
     else:
+        ctx.show_error(f"Unrecognized annotation {value}")
         return UNRESOLVED_VALUE
 
 
@@ -356,7 +414,7 @@ class _DefaultContext(Context):
         if self.visitor is not None and self.node is not None:
             self.visitor.show_error(self.node, message, error_code)
 
-    def get_name(self, node: ast.AST) -> Value:
+    def get_name(self, node: ast.Name) -> Value:
         if self.visitor is not None:
             return self.visitor.resolve_name(
                 node,
@@ -368,10 +426,12 @@ class _DefaultContext(Context):
                 return KnownValue(self.globals[node.id])
             elif hasattr(builtins, node.id):
                 return KnownValue(getattr(builtins, node.id))
-            else:
-                return UNRESOLVED_VALUE
-        else:
+        if self.should_suppress_undefined_names:
             return UNRESOLVED_VALUE
+        self.show_error(
+            f"Undefined name {node.id!r} used in annotation", ErrorCode.undefined_name
+        )
+        return UNRESOLVED_VALUE
 
 
 @dataclass
@@ -405,8 +465,13 @@ class _Visitor(ast.NodeVisitor):
             try:
                 return KnownValue(getattr(root_value.val, node.attr))
             except AttributeError:
-                return None
-        return None
+                self.ctx.show_error(
+                    f"{root_value.val!r} has no attribute {node.attr!r}"
+                )
+                return UNRESOLVED_VALUE
+        elif root_value is not UNRESOLVED_VALUE:
+            self.ctx.show_error(f"Cannot resolve annotation {root_value}")
+        return UNRESOLVED_VALUE
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
         elts = [self.visit(elt) for elt in node.elts]
@@ -417,7 +482,8 @@ class _Visitor(ast.NodeVisitor):
         return SequenceIncompleteValue(list, elts)
 
     def visit_Index(self, node: ast.Index) -> Value:
-        return self.visit(node.value)
+        # class is unused in 3.9
+        return self.visit(node.value)  # static analysis: ignore[undefined_attribute]
 
     def visit_Ellipsis(self, node: ast.Ellipsis) -> Value:
         return KnownValue(Ellipsis)
@@ -512,6 +578,8 @@ def _value_of_origin_args(
     origin: object, args: Sequence[object], val: object, ctx: Context
 ) -> Value:
     if origin is typing.Type or origin is type:
+        if not args:
+            return TypedValue(type)
         return SubclassValue.make(_type_from_runtime(args[0], ctx))
     elif origin is typing.Tuple or origin is tuple:
         if not args:
@@ -523,26 +591,52 @@ def _value_of_origin_args(
             return SequenceIncompleteValue(tuple, args_vals)
     elif origin is typing.Union:
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
+    elif origin is Callable or origin is typing.Callable:
+        if len(args) == 2 and args[0] is Ellipsis:
+            return CallableValue(
+                Signature.make(
+                    [], _type_from_runtime(args[1], ctx), is_ellipsis_args=True
+                )
+            )
+        elif len(args) == 0:
+            return TypedValue(Callable)
+        *arg_types, return_type = args
+        if len(arg_types) == 1 and isinstance(arg_types[0], list):
+            arg_types = arg_types[0]
+        params = [
+            SigParameter(
+                f"__arg{i}",
+                kind=SigParameter.POSITIONAL_ONLY,
+                annotation=_type_from_runtime(arg, ctx),
+            )
+            for i, arg in enumerate(arg_types)
+        ]
+        sig = Signature.make(params, _type_from_runtime(return_type, ctx))
+        return CallableValue(sig)
     elif isinstance(origin, type):
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
-        if getattr(origin, "__extra__", None) is not None:
-            origin = origin.__extra__
+        extra_origin = getattr(origin, "__extra__", None)
+        if extra_origin is not None:
+            origin = extra_origin
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(val is UNRESOLVED_VALUE for val in args_vals):
-                return _maybe_typed_value(origin)
+                return _maybe_typed_value(origin, ctx)
             return GenericValue(origin, args_vals)
         else:
-            return _maybe_typed_value(origin)
+            return _maybe_typed_value(origin, ctx)
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
-        return _maybe_typed_value(val)
+        return _maybe_typed_value(val, ctx)
     else:
+        ctx.show_error(
+            f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]"
+        )
         return UNRESOLVED_VALUE
 
 
-def _maybe_typed_value(val: type) -> Value:
+def _maybe_typed_value(val: type, ctx: Context) -> Value:
     if val is type(None):
         return KnownValue(None)
     try:
@@ -557,14 +651,35 @@ def _maybe_typed_value(val: type) -> Value:
         return TypedValue(val)
 
 
-def _make_annotated(
-    origin: Value, metadata: Sequence[Value], ctx: Context
-) -> AnnotatedValue:
+def _make_callable_from_value(
+    args: Value, return_value: Value, ctx: Context, is_asynq: bool = False
+) -> Value:
+    return_annotation = _type_from_value(return_value, ctx)
+    if args == KnownValue(Ellipsis):
+        return CallableValue(
+            Signature.make(
+                [],
+                return_annotation=return_annotation,
+                is_ellipsis_args=True,
+                is_asynq=is_asynq,
+            )
+        )
+    elif isinstance(args, SequenceIncompleteValue):
+        params = [
+            SigParameter(
+                f"__arg{i}",
+                kind=SigParameter.POSITIONAL_ONLY,
+                annotation=_type_from_value(arg, ctx),
+            )
+            for i, arg in enumerate(args.members)
+        ]
+        sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+        return CallableValue(sig)
+
+
+def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:
     metadata = [_value_from_metadata(entry, ctx) for entry in metadata]
-    if isinstance(origin, AnnotatedValue):
-        # Flatten it
-        return AnnotatedValue(origin.value, [*origin.metadata, *metadata])
-    return AnnotatedValue(origin, metadata)
+    return annotate_value(origin, metadata)
 
 
 def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
@@ -572,5 +687,11 @@ def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
         if isinstance(entry.val, ParameterTypeGuard):
             return ParameterTypeGuardExtension(
                 entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
+            )
+        elif isinstance(entry.val, HasAttrGuard):
+            return HasAttrGuardExtension(
+                entry.val.varname,
+                _type_from_runtime(entry.val.attribute_name, ctx),
+                _type_from_runtime(entry.val.attribute_type, ctx),
             )
     return entry

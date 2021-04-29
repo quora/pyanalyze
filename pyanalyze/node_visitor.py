@@ -209,8 +209,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         if level < self._logging_level:
             return
         self.logger.log(
-            level,
-            "%s: %s" % (qcore.safe_str(label), qcore.safe_str(value)),
+            level, "%s: %s" % (qcore.safe_str(label), qcore.safe_str(value))
         )
 
     @qcore.caching.cached_per_instance()
@@ -336,10 +335,11 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 settings = {code: True for code in cls.error_code_enum}
             else:
                 settings = cls._get_default_settings()
-                for setting in args.enable:
-                    settings[cls.error_code_enum[setting]] = True
-                for setting in args.disable:
-                    settings[cls.error_code_enum[setting]] = False
+                if settings is not None:
+                    for setting in args.enable:
+                        settings[cls.error_code_enum[setting]] = True
+                    for setting in args.disable:
+                        settings[cls.error_code_enum[setting]] = False
             kwargs = {
                 key: value
                 for key, value in args.__dict__.items()
@@ -788,8 +788,10 @@ class BaseNodeVisitor(ast.NodeVisitor):
         parser.add_argument(
             "-r",
             "--repeat-until-no-errors",
-            help="Repeatedly runs in autofix mode until no errors are encountered. Use this "
-            "wisely.",
+            help=(
+                "Repeatedly runs in autofix mode until no errors are encountered. Use"
+                " this wisely."
+            ),
             action="store_true",
             default=False,
         )
@@ -807,13 +809,17 @@ class BaseNodeVisitor(ast.NodeVisitor):
         )
         parser.add_argument(
             "--markdown-output",
-            help="Write errors to this file in markdown format. "
-            "Suitable for summarizing and tracking errors.",
+            help=(
+                "Write errors to this file in markdown format. "
+                "Suitable for summarizing and tracking errors."
+            ),
         )
         parser.add_argument(
             "--add-ignores",
-            help="Add ignore comments for all errors detected. "
-            "Must be used with -f/--run-fixer.",
+            help=(
+                "Add ignore comments for all errors detected. "
+                "Must be used with -f/--run-fixer."
+            ),
             action="store_true",
             default=False,
         )
