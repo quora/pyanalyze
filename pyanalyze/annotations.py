@@ -271,7 +271,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
                     is_asynq=True,
                 )
             )
-        if not isinstance(arg_types, list):
+        if not isinstance(arg_types, tuple):
             return UNRESOLVED_VALUE
         params = [
             SigParameter(
@@ -362,7 +362,9 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         elif root is AsynqCallable:
             if len(value.members) == 2:
                 args, return_value = value.members
-                return _make_callable_from_value(args, return_value, ctx, is_asynq=True)
+                return _make_callable_from_value(
+                    list(args), return_value, ctx, is_asynq=True
+                )
             return UNRESOLVED_VALUE
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
