@@ -1,5 +1,5 @@
 # static analysis: ignore
-from typing import Type
+from typing import Optional, Type
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
 from .implementation import assert_is_value, dump_value
@@ -652,17 +652,23 @@ class TestCallable(TestNameCheckVisitorBase):
     def test_asynq_callable(self):
         from asynq import asynq
         from pyanalyze.extensions import AsynqCallable
+        from typing import Optional
 
         @asynq()
         def func_example(x: int) -> str:
             return ""
 
         @asynq()
-        def caller(func: AsynqCallable[[int], str]) -> None:
+        def caller(
+            func: AsynqCallable[[int], str],
+            func2: Optional[AsynqCallable[[int], str]] = None,
+        ) -> None:
             assert_is_value(func(1), TypedValue(str))
             val = yield func.asynq(1)
             assert_is_value(val, TypedValue(str))
             yield caller.asynq(func_example)
+            if func2 is not None:
+                yield func2.asynq(1)
 
     @assert_passes(settings={ErrorCode.impure_async_call: False})
     def test_amap(self):
