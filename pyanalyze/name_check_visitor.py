@@ -3270,6 +3270,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 # type.__getitem__ nor type.__class_getitem__ exists at runtime. Support
                 # it directly instead.
                 if isinstance(index, KnownValue):
+                    # self-check throws an error in 3.8 and lower
+                    # static analysis: ignore[unsupported_operation]
                     return_value = KnownValue(type[index.val])
                 else:
                     return_value = UNRESOLVED_VALUE
