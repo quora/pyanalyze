@@ -142,6 +142,9 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
         # nested in tuples, e.g. on 3.6:
         # > typing_inspect.get_args(Union[Set[int], List[str]])
         # ((typing.Set, int), (typing.List, str))
+        if not val:
+            # from Tuple[()]
+            return KnownValue(())
         origin = val[0]
         if len(val) == 2:
             args = (val[1],)
@@ -163,6 +166,8 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             return TypedValue(tuple)
         elif len(args) == 2 and args[1] is Ellipsis:
             return GenericValue(tuple, [_type_from_runtime(args[0], ctx)])
+        elif len(args) == 1 and args[0] == ():
+            return SequenceIncompleteValue(tuple, [])  # empty tuple
         else:
             args_vals = [_type_from_runtime(arg, ctx) for arg in args]
             return SequenceIncompleteValue(tuple, args_vals)
@@ -185,6 +190,8 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
         args = get_args(val)
+        if origin is tuple and not args:
+            return SequenceIncompleteValue(tuple, [])
         return _value_of_origin_args(origin, args, val, ctx)
     elif is_instance_of_typing_name(val, "AnnotatedMeta"):
         # Annotated in 3.6's typing_extensions
@@ -334,6 +341,8 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         elif root is typing.Tuple or root is tuple:
             if len(value.members) == 2 and value.members[1] == KnownValue(Ellipsis):
                 return GenericValue(tuple, [_type_from_value(value.members[0], ctx)])
+            elif len(value.members) == 1 and value.members[0] == KnownValue(()):
+                return SequenceIncompleteValue(tuple, [])
             else:
                 return SequenceIncompleteValue(
                     tuple, [_type_from_value(arg, ctx) for arg in value.members]
@@ -586,6 +595,8 @@ def _value_of_origin_args(
             return TypedValue(tuple)
         elif len(args) == 2 and args[1] is Ellipsis:
             return GenericValue(tuple, [_type_from_runtime(args[0], ctx)])
+        elif len(args) == 1 and args[0] == ():
+            return SequenceIncompleteValue(tuple, [])
         else:
             args_vals = [_type_from_runtime(arg, ctx) for arg in args]
             return SequenceIncompleteValue(tuple, args_vals)
