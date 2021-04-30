@@ -18,6 +18,7 @@ Other subtleties implemented here:
 - Class scopes except the current one are skipped in name lookup
 
 """
+from ast import AST
 from collections import defaultdict, OrderedDict
 import contextlib
 from dataclasses import dataclass, field, replace
@@ -108,6 +109,7 @@ SubScope = Dict[Varname, List[Node]]
 class Composite(NamedTuple):
     value: Value
     varname: Optional[Varname]
+    node: Optional[AST]
 
 
 @dataclass(frozen=True)
@@ -288,8 +290,9 @@ class Constraint(AbstractConstraint):
             if self.positive:
                 yield self.value
             else:
-                if value != self.value:
-                    yield value
+                # PEP 647 specifies that type narrowing should not happen
+                # in the negative case.
+                yield value
 
         elif self.constraint_type == ConstraintType.is_truthy:
             if self.positive:

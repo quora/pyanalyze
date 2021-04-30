@@ -4,7 +4,6 @@ Wrappers around Signature objects.
 
 """
 
-from functools import reduce
 from .error_code import ErrorCode
 from .stacked_scopes import (
     AndConstraint,
@@ -13,30 +12,43 @@ from .stacked_scopes import (
     ConstraintType,
     NULL_CONSTRAINT,
     AbstractConstraint,
+    PredicateProvider,
+    Varname,
 )
 from .value import (
     AnnotatedValue,
+    AsyncTaskIncompleteValue,
+    CanAssignContext,
+    GenericValue,
     HasAttrExtension,
     HasAttrGuardExtension,
     KnownValue,
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
+    TypeGuardExtension,
+    TypeVarValue,
+    TypedDictValue,
     UNRESOLVED_VALUE,
     Value,
     TypeVarMap,
     extract_typevars,
     stringify_object,
+    unify_typevar_maps,
 )
 
 import ast
+import asynq
+import collections.abc
 from dataclasses import dataclass, field
+from functools import reduce
+from types import MethodType, FunctionType
 import inspect
 import qcore
-import logging
 from typing import (
     Any,
     Iterable,
+    NamedTuple,
     Optional,
     ClassVar,
     Union,
@@ -53,30 +65,6 @@ from typing_extensions import Literal
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
 
-# Implementation functions are passed the following arguments:
-# - variables: a dictionary with the function's arguments (keys are variable names and values are
-#   Value objects)
-# - visitor: the test_scope NameCheckVisitor object, which can be used to check context and emit
-#   errors
-# - node: the AST node corresponding to the call, which needs to be given in order to show errors.
-# They return either a single Value object, indicating what the function returns, or a tuple of two
-# or three elements:
-# - The return value
-# - A Constraint indicating things that are true if the function returns a truthy value,
-#   or a PredicateProvider
-# - A Constraint indicating things that are true unless the function does not return
-ImplementationFnReturn = Union[
-    Value,
-    Tuple[Value, AbstractConstraint],
-    Tuple[Value, AbstractConstraint, AbstractConstraint],
-]
-# Values should be of type Value, but currently *args/**kwargs are entered
-# as tuples and dicts. TODO: fix this.
-VarsDict = Dict[str, Any]
-ImplementationFn = Callable[
-    [VarsDict, "NameCheckVisitor", ast.AST], ImplementationFnReturn
-]
-Logger = Callable[[int, str, object], object]
 EMPTY = inspect.Parameter.empty
 
 ARGS = qcore.MarkerObject("*args")
@@ -87,30 +75,65 @@ KWARGS = qcore.MarkerObject("**kwargs")
 Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 
-def clean_up_implementation_fn_return(
-    return_value: ImplementationFnReturn,
-) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
-    if return_value is None:
-        return_value = UNRESOLVED_VALUE
-    # Implementation functions may return a pair of (value, constraint)
-    # or a three-tuple of (value, constraint, NoReturn unless)
-    if isinstance(return_value, tuple):
-        if len(return_value) == 2:
-            return_value, constraint = return_value
-            no_return_unless = NULL_CONSTRAINT
-        elif len(return_value) == 3:
-            return_value, constraint, no_return_unless = return_value
-        else:
-            assert (
-                False
-            ), f"implementation must return a 2- or 3-tuple, not {return_value}"
-    else:
-        constraint = no_return_unless = NULL_CONSTRAINT
-    # this indicates a bug in test_scope, so using assert
-    assert isinstance(
-        return_value, Value
-    ), f"implementation did not return a Value: {return_value}"
-    return return_value, constraint, no_return_unless
+class ImplReturn(NamedTuple):
+    """Return value of impl functions.
+
+    These functions return either a single Value object, indicating what the
+    function returns, or an instance of this class:
+    - The return value
+    - A Constraint indicating things that are true if the function returns a truthy value,
+      or a PredicateProvider
+    - A Constraint indicating things that are true unless the function does not return
+    """
+
+    return_value: Value
+    constraint: Union[AbstractConstraint, PredicateProvider] = NULL_CONSTRAINT
+    no_return_unless: AbstractConstraint = NULL_CONSTRAINT
+
+
+@dataclass
+class CallContext:
+    """The context passed to an impl function."""
+
+    vars: Dict[str, Value]
+    visitor: "NameCheckVisitor"
+    bound_args: inspect.BoundArguments
+    node: ast.AST
+
+    def ast_for_arg(self, arg: str) -> Optional[ast.AST]:
+        composite = self.composite_for_arg(arg)
+        if composite is not None:
+            return composite.node
+        return None
+
+    def varname_for_arg(self, arg: str) -> Optional[Varname]:
+        composite = self.composite_for_arg(arg)
+        if composite is not None:
+            return composite.varname
+        return None
+
+    def composite_for_arg(self, arg: str) -> Optional[Composite]:
+        composite = self.bound_args.arguments.get(arg)
+        if isinstance(composite, Composite):
+            return composite
+        return None
+
+    def show_error(
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.incompatible_call,
+        arg: Optional[str] = None,
+        node: Optional[ast.AST] = None,
+    ) -> None:
+        node = None
+        if arg is not None:
+            node = self.ast_for_arg(arg)
+        if node is None:
+            node = self.node
+        self.visitor.show_error(node, message, error_code=error_code)
+
+
+Impl = Callable[[CallContext], Union[Value, ImplReturn]]
 
 
 class SigParameter(inspect.Parameter):
@@ -124,17 +147,31 @@ class SigParameter(inspect.Parameter):
         kind: inspect._ParameterKind = inspect.Parameter.POSITIONAL_OR_KEYWORD,
         *,
         default: Union[None, Value, Literal[EMPTY]] = None,
-        annotation: Optional[Value] = None,
+        annotation: Union[None, Value, Literal[EMPTY]] = None,
     ) -> None:
         if default is None:
             default_composite = EMPTY
         elif isinstance(default, Value):
-            default_composite = Composite(default, None)
+            default_composite = Composite(default, None, None)
         else:
             default_composite = default
         if annotation is None:
             annotation = EMPTY
         super().__init__(name, kind, default=default_composite, annotation=annotation)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "SigParameter":
+        if self.annotation is EMPTY:
+            annotation = self.annotation
+        else:
+            annotation = self.annotation.substitute_typevars(typevars)
+        return SigParameter(
+            name=self.name, kind=self.kind, default=self.default, annotation=annotation
+        )
+
+    def get_annotation(self) -> Value:
+        if self.annotation is EMPTY:
+            return UNRESOLVED_VALUE
+        return self.annotation
 
 
 @dataclass
@@ -142,10 +179,11 @@ class Signature:
     _return_key: ClassVar[str] = "%return"
 
     signature: inspect.Signature
-    implementation: Optional[ImplementationFn] = None
+    impl: Optional[Impl] = None
     callable: Optional[object] = None
+    is_asynq: bool = False
     has_return_annotation: bool = True
-    logger: Optional[Logger] = field(repr=False, default=None, compare=False)
+    is_ellipsis_args: bool = False
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
         init=False, default_factory=dict, repr=False, compare=False
     )
@@ -170,10 +208,6 @@ class Signature:
             for typevar in tv_list
         }
 
-    def log(self, level: int, label: str, value: object) -> None:
-        if self.logger is not None:
-            self.logger(level, label, value)
-
     def _check_param_type_compatibility(
         self,
         param: SigParameter,
@@ -193,7 +227,8 @@ class Signature:
             if compatible is None:
                 visitor.show_error(
                     node,
-                    f"Incompatible argument type for {param.name}: expected {param_typ} but got {var_value}",
+                    f"Incompatible argument type for {param.name}: expected {param_typ}"
+                    f" but got {var_value}",
                     ErrorCode.incompatible_argument,
                 )
                 return False
@@ -219,17 +254,19 @@ class Signature:
             raise TypeError(repr(argument))
 
     def _apply_annotated_constraints(
-        self,
-        return_value: Value,
-        bound_args: inspect.BoundArguments,
-        constraint: AbstractConstraint = NULL_CONSTRAINT,
-        no_return_unless: AbstractConstraint = NULL_CONSTRAINT,
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+        self, raw_return: Union[Value, ImplReturn], bound_args: inspect.BoundArguments
+    ) -> ImplReturn:
+        if isinstance(raw_return, Value):
+            ret = ImplReturn(raw_return)
+        else:
+            ret = raw_return
         constraints = []
-        if constraint is not NULL_CONSTRAINT:
-            constraints.append(constraint)
-        if isinstance(return_value, AnnotatedValue):
-            for guard in return_value.get_metadata_of_type(ParameterTypeGuardExtension):
+        if ret.constraint is not NULL_CONSTRAINT:
+            constraints.append(ret.constraint)
+        if isinstance(ret.return_value, AnnotatedValue):
+            for guard in ret.return_value.get_metadata_of_type(
+                ParameterTypeGuardExtension
+            ):
                 if guard.varname in bound_args.arguments:
                     composite = bound_args.arguments[guard.varname]
                     if (
@@ -243,7 +280,26 @@ class Signature:
                             guard.guarded_type,
                         )
                         constraints.append(constraint)
-            for guard in return_value.get_metadata_of_type(HasAttrGuardExtension):
+            for guard in ret.return_value.get_metadata_of_type(TypeGuardExtension):
+                # This might miss some cases where we should use the second argument instead. We'll
+                # have to come up with additional heuristics if that comes up.
+                if isinstance(self.callable, MethodType) or (
+                    isinstance(self.callable, FunctionType)
+                    and self.callable.__name__ != self.callable.__qualname__
+                ):
+                    index = 1
+                else:
+                    index = 0
+                composite = bound_args.args[index]
+                if isinstance(composite, Composite) and composite.varname is not None:
+                    constraint = Constraint(
+                        composite.varname,
+                        ConstraintType.is_value_object,
+                        True,
+                        guard.guarded_type,
+                    )
+                    constraints.append(constraint)
+            for guard in ret.return_value.get_metadata_of_type(HasAttrGuardExtension):
                 if guard.varname in bound_args.arguments:
                     composite = bound_args.arguments[guard.varname]
                     if (
@@ -263,11 +319,11 @@ class Signature:
             constraint = reduce(AndConstraint, constraints)
         else:
             constraint = NULL_CONSTRAINT
-        return return_value, constraint, no_return_unless
+        return ImplReturn(ret.return_value, constraint, ret.no_return_unless)
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+    ) -> ImplReturn:
         """Tries to call this object with the given arguments and keyword arguments.
 
         Raises a TypeError if something goes wrong.
@@ -276,6 +332,11 @@ class Signature:
         the local variables to validate types and keyword-only arguments.
 
         """
+        if self.is_ellipsis_args:
+            return_value = self.signature.return_annotation
+            if return_value is EMPTY:
+                return ImplReturn(UNRESOLVED_VALUE)
+            return ImplReturn(return_value)
         call_args = []
         call_kwargs = {}
         for composite, label in args:
@@ -288,8 +349,7 @@ class Signature:
                 # - type check that they are iterables/mappings
                 # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
                 # - else do something smart to still typecheck the call
-                self.log(logging.DEBUG, "Ignoring call with *args/**kwargs", composite)
-                return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+                return ImplReturn(UNRESOLVED_VALUE)
         try:
             bound_args = self.signature.bind(*call_args, **call_kwargs)
         except TypeError as e:
@@ -298,7 +358,7 @@ class Signature:
             else:
                 message = str(e)
             visitor.show_error(node, message, ErrorCode.incompatible_call)
-            return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+            return ImplReturn(UNRESOLVED_VALUE)
         bound_args.apply_defaults()
         variables = {
             name: self._translate_bound_arg(value)
@@ -335,16 +395,263 @@ class Signature:
         # don't call the implementation function if we had an error, so that
         # the implementation function doesn't have to worry about basic
         # type checking
-        if not had_error and self.implementation is not None:
-            return_value = self.implementation(variables, visitor, node)
-            rv, cons, nru = clean_up_implementation_fn_return(return_value)
-            return self._apply_annotated_constraints(
-                rv, bound_args, constraint=cons, no_return_unless=nru
+        if not had_error and self.impl is not None:
+            ctx = CallContext(
+                vars=variables, visitor=visitor, bound_args=bound_args, node=node
             )
+            return_value = self.impl(ctx)
+            return self._apply_annotated_constraints(return_value, bound_args)
         elif return_value is EMPTY:
-            return UNRESOLVED_VALUE, NULL_CONSTRAINT, NULL_CONSTRAINT
+            return ImplReturn(UNRESOLVED_VALUE)
         else:
             return self._apply_annotated_constraints(return_value, bound_args)
+
+    def can_assign(
+        self, other: "Signature", ctx: CanAssignContext
+    ) -> Union[str, TypeVarMap]:
+        """Equivalent of Value.can_assign.
+
+        If the other signature is incompatible with this signature, return a string
+        explaining the discrepancy.
+
+        """
+        if self.is_asynq and not other.is_asynq:
+            return "callable is not asynq"
+        their_return = other.signature.return_annotation
+        my_return = self.signature.return_annotation
+        return_tv_map = my_return.can_assign(their_return, ctx)
+        if return_tv_map is None:
+            return (
+                f"return annotation {their_return} is not compatible with {my_return}"
+            )
+        if self.is_ellipsis_args or other.is_ellipsis_args:
+            return {}
+        tv_maps = [return_tv_map]
+        their_params = list(other.signature.parameters.values())
+        their_args = other.get_param_of_kind(SigParameter.VAR_POSITIONAL)
+        if their_args is not None:
+            their_args_index = their_params.index(their_args)
+            args_annotation = their_args.get_annotation()
+        else:
+            their_args_index = -1
+            args_annotation = None
+        their_kwargs = other.get_param_of_kind(SigParameter.VAR_KEYWORD)
+        if their_kwargs is not None:
+            kwargs_annotation = their_kwargs.get_annotation()
+        else:
+            kwargs_annotation = None
+        consumed_positional = set()
+        consumed_keyword = set()
+        for i, my_param in enumerate(self.signature.parameters.values()):
+            my_annotation = my_param.get_annotation()
+            if my_param.kind is SigParameter.POSITIONAL_ONLY:
+                if i < len(their_params) and their_params[i].kind in (
+                    SigParameter.POSITIONAL_ONLY,
+                    SigParameter.POSITIONAL_OR_KEYWORD,
+                ):
+                    if (
+                        my_param.default is not EMPTY
+                        and their_params[i].default is EMPTY
+                    ):
+                        return f"positional-only param {my_param.name!r} has no default"
+
+                    their_annotation = their_params[i].get_annotation()
+                    tv_map = their_annotation.can_assign(my_annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of positional-only parameter {my_param.name!r} is"
+                            f" incompatible: {their_annotation} is incompatible with"
+                            f" {my_annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                    consumed_positional.add(their_params[i].name)
+                elif args_annotation is not None:
+                    new_tv_maps = can_assign_var_positional(
+                        my_param, args_annotation, i - their_args_index, ctx
+                    )
+                    if isinstance(new_tv_maps, str):
+                        return new_tv_maps
+                    tv_maps += new_tv_maps
+                else:
+                    return f"positional-only parameter {i} is not accepted"
+            elif my_param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
+                if (
+                    i < len(their_params)
+                    and their_params[i].kind is SigParameter.POSITIONAL_OR_KEYWORD
+                ):
+                    if my_param.name != their_params[i].name:
+                        return (
+                            f"param name {their_params[i].name!r} does not match"
+                            f" {my_param.name!r}"
+                        )
+                    if (
+                        my_param.default is not EMPTY
+                        and their_params[i].default is EMPTY
+                    ):
+                        return f"param {my_param.name!r} has no default"
+                    their_annotation = their_params[i].get_annotation()
+                    tv_map = their_annotation.can_assign(my_annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of parameter {my_param.name!r} is incompatible: "
+                            f"{their_annotation} is incompatible with {my_annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                    consumed_positional.add(their_params[i])
+                    consumed_keyword.add(their_params[i])
+                elif (
+                    i < len(their_params)
+                    and their_params[i].kind is SigParameter.POSITIONAL_ONLY
+                ):
+                    return (
+                        f"parameter {my_param.name!r} is not accepted as a keyword"
+                        " argument"
+                    )
+                elif args_annotation is not None and kwargs_annotation is not None:
+                    new_tv_maps = can_assign_var_positional(
+                        my_param, args_annotation, i - their_args_index, ctx
+                    )
+                    if isinstance(new_tv_maps, str):
+                        return new_tv_maps
+                    tv_maps += new_tv_maps
+                    new_tv_maps = can_assign_var_keyword(
+                        my_param, kwargs_annotation, ctx
+                    )
+                    if isinstance(new_tv_maps, str):
+                        return new_tv_maps
+                    tv_maps += new_tv_maps
+                else:
+                    return f"parameter {my_param.name!r} is not accepted"
+            elif my_param.kind is SigParameter.KEYWORD_ONLY:
+                their_param = other.signature.parameters.get(my_param.name)
+                if their_param is not None and their_param.kind in (
+                    SigParameter.POSITIONAL_OR_KEYWORD,
+                    SigParameter.KEYWORD_ONLY,
+                ):
+                    if my_param.default is not EMPTY and their_param.default is EMPTY:
+                        return f"keyword-only param {my_param.name!r} has no default"
+                    their_annotation = their_param.get_annotation()
+                    tv_map = their_annotation.can_assign(my_annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of parameter {my_param.name!r} is incompatible: "
+                            f"{their_annotation} is incompatible with {my_annotation}"
+                        )
+                    tv_maps.append(tv_map)
+                    consumed_keyword.add(their_param.name)
+                elif kwargs_annotation is not None:
+                    new_tv_maps = can_assign_var_keyword(
+                        my_param, kwargs_annotation, ctx
+                    )
+                    if isinstance(new_tv_maps, str):
+                        return new_tv_maps
+                    tv_maps += new_tv_maps
+                else:
+                    return f"parameter {my_param.name!r} is not accepted"
+            elif my_param.kind is SigParameter.VAR_POSITIONAL:
+                if args_annotation is None:
+                    return "*args are not accepted"
+                tv_map = args_annotation.can_assign(my_annotation, ctx)
+                if tv_map is None:
+                    return (
+                        "type of *args is incompatible: "
+                        f"{args_annotation} is incompatible with {my_annotation}"
+                    )
+                tv_maps.append(tv_map)
+                extra_positional = [
+                    param
+                    for param in their_params
+                    if param.name not in consumed_positional
+                    and param.kind
+                    in (
+                        SigParameter.POSITIONAL_ONLY,
+                        SigParameter.POSITIONAL_OR_KEYWORD,
+                    )
+                ]
+                for extra_param in extra_positional:
+                    tv_map = extra_param.get_annotation().can_assign(my_annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of param {extra_param.name!r} is incompatible with "
+                            f"*args type {args_annotation}"
+                        )
+                    tv_maps.append(tv_map)
+            elif my_param.kind is SigParameter.VAR_KEYWORD:
+                if kwargs_annotation is None:
+                    return "**kwargs are not accepted"
+                tv_map = kwargs_annotation.can_assign(my_annotation, ctx)
+                if tv_map is None:
+                    return (
+                        "type of **kwargs is incompatible: "
+                        f"{kwargs_annotation} is incompatible with {my_annotation}"
+                    )
+                tv_maps.append(tv_map)
+                extra_keyword = [
+                    param
+                    for param in their_params
+                    if param.name not in consumed_keyword
+                    and param.kind
+                    in (SigParameter.KEYWORD_ONLY, SigParameter.POSITIONAL_OR_KEYWORD)
+                ]
+                for extra_param in extra_keyword:
+                    tv_map = extra_param.get_annotation().can_assign(my_annotation, ctx)
+                    if tv_map is None:
+                        return (
+                            f"type of param {extra_param.name!r} is incompatible with "
+                            f"**kwargs type {kwargs_annotation}"
+                        )
+                    tv_maps.append(tv_map)
+
+        final_tv_map = unify_typevar_maps(tv_maps)
+        if final_tv_map is None:
+            return "callables are incompatible"
+        return final_tv_map
+
+    def get_param_of_kind(self, kind: inspect._ParameterKind) -> Optional[SigParameter]:
+        for param in self.signature.parameters.values():
+            if param.kind is kind:
+                return param
+        return None
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Signature":
+        return Signature(
+            signature=inspect.Signature(
+                [
+                    param.substitute_typevars(typevars)
+                    for param in self.signature.parameters.values()
+                ],
+                return_annotation=self.signature.return_annotation.substitute_typevars(
+                    typevars
+                ),
+            ),
+            impl=self.impl,
+            callable=self.callable,
+            is_asynq=self.is_asynq,
+            has_return_annotation=self.has_return_annotation,
+        )
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.signature.return_annotation.walk_values()
+        for param in self.signature.parameters.values():
+            if param.annotation is not EMPTY:
+                yield from param.annotation.walk_values()
+
+    def get_asynq_value(self) -> "Signature":
+        """Return the Signature for the .asynq attribute of an AsynqCallable."""
+        if not self.is_asynq:
+            raise TypeError("get_asynq_value() is only supported for AsynqCallable")
+        return_annotation = AsyncTaskIncompleteValue(
+            asynq.AsyncTask, self.signature.return_annotation
+        )
+        return Signature.make(
+            self.signature.parameters.values(),
+            return_annotation,
+            impl=self.impl,
+            callable=self.callable,
+            has_return_annotation=self.has_return_annotation,
+            is_ellipsis_args=self.is_ellipsis_args,
+            is_asynq=False,
+        )
 
     @classmethod
     def make(
@@ -352,10 +659,11 @@ class Signature:
         parameters: Iterable[SigParameter],
         return_annotation: Optional[Value] = None,
         *,
-        implementation: Optional[ImplementationFn] = None,
+        impl: Optional[Impl] = None,
         callable: Optional[object] = None,
-        logger: Optional[Logger] = None,
         has_return_annotation: bool = True,
+        is_ellipsis_args: bool = False,
+        is_asynq: bool = False,
     ) -> "Signature":
         if return_annotation is None:
             return_annotation = UNRESOLVED_VALUE
@@ -364,9 +672,11 @@ class Signature:
             signature=inspect.Signature(
                 parameters, return_annotation=return_annotation
             ),
-            implementation=implementation,
+            impl=impl,
             callable=callable,
             has_return_annotation=has_return_annotation,
+            is_ellipsis_args=is_ellipsis_args,
+            is_asynq=is_asynq,
         )
 
     # TODO: do we need these?
@@ -388,9 +698,27 @@ class BoundMethodSignature:
     ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
         return self.signature.check_call(
             # TODO get a composite
-            [(Composite(self.self_value, None), None), *args],
+            [(Composite(self.self_value, None, None), None), *args],
             visitor,
             node,
+        )
+
+    def get_signature(self) -> Optional[Signature]:
+        params = list(self.signature.signature.parameters.values())
+        if params[0].kind not in (
+            SigParameter.POSITIONAL_ONLY,
+            SigParameter.POSITIONAL_OR_KEYWORD,
+        ):
+            return None
+        return Signature(
+            signature=inspect.Signature(
+                params[1:], return_annotation=self.signature.signature.return_annotation
+            ),
+            # We don't carry over the implementation function, because it may not work when passed
+            # different arguments.
+            callable=self.signature.callable,
+            is_asynq=self.signature.is_asynq,
+            has_return_annotation=self.signature.has_return_annotation,
         )
 
     def has_return_value(self) -> bool:
@@ -431,3 +759,85 @@ def make_bound_method(
         return BoundMethodSignature(argspec.signature, self_value)
     else:
         assert False, f"invalid argspec {argspec}"
+
+
+T = TypeVar("T")
+IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
+K = TypeVar("K")
+V = TypeVar("V")
+MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
+
+
+def can_assign_var_positional(
+    my_param: SigParameter, args_annotation: Value, idx: int, ctx: CanAssignContext
+) -> Union[List[TypeVarMap], str]:
+    tv_maps = []
+    my_annotation = my_param.get_annotation()
+    if isinstance(args_annotation, SequenceIncompleteValue):
+        length = len(args_annotation.members)
+        if idx >= length:
+            return (
+                f"parameter {my_param.name!r} is not accepted; {args_annotation} only"
+                f" accepts {length} values"
+            )
+        their_annotation = args_annotation.members[idx]
+        tv_map = their_annotation.can_assign(my_annotation, ctx)
+        if tv_map is None:
+            return (
+                f"type of parameter {my_param.name!r} is incompatible: *args[{idx}]"
+                f" type {their_annotation} is incompatible with {my_annotation}"
+            )
+        tv_maps.append(tv_map)
+    else:
+        tv_map = IterableValue.can_assign(args_annotation, ctx)
+        if tv_map is None:
+            return f"{args_annotation} is not an iterable type"
+        iterable_arg = tv_map.get(T, UNRESOLVED_VALUE)
+        tv_map = iterable_arg.can_assign(my_annotation, ctx)
+        if tv_map is None:
+            return (
+                f"type of parameter {my_param.name!r} is incompatible: "
+                f"*args type {args_annotation} is incompatible with {my_annotation}"
+            )
+        tv_maps.append(tv_map)
+    return tv_maps
+
+
+def can_assign_var_keyword(
+    my_param: SigParameter, kwargs_annotation: Value, ctx: CanAssignContext
+) -> Union[List[TypeVarMap], str]:
+    my_annotation = my_param.get_annotation()
+    tv_maps = []
+    if isinstance(kwargs_annotation, TypedDictValue):
+        if my_param.name not in kwargs_annotation.items:
+            return f"parameter {my_param.name!r} is not accepted by {kwargs_annotation}"
+        their_annotation = kwargs_annotation.items[my_param.name]
+        tv_map = their_annotation.can_assign(my_annotation, ctx)
+        if tv_map is None:
+            return (
+                f"type of parameter {my_param.name!r} is incompatible:"
+                f" *kwargs[{my_param.name!r}] type {their_annotation} is incompatible"
+                f" with {my_annotation}"
+            )
+        tv_maps.append(tv_map)
+    else:
+        mapping_tv_map = MappingValue.can_assign(kwargs_annotation, ctx)
+        if mapping_tv_map is None:
+            return f"{kwargs_annotation} is not a mapping type"
+        key_arg = mapping_tv_map.get(K, UNRESOLVED_VALUE)
+        tv_map = key_arg.can_assign(KnownValue(my_param.name), ctx)
+        if tv_map is None:
+            return (
+                f"parameter {my_param.name!r} is not accepted by **kwargs type"
+                f" {kwargs_annotation}"
+            )
+        tv_maps.append(tv_map)
+        value_arg = mapping_tv_map.get(V, UNRESOLVED_VALUE)
+        tv_map = value_arg.can_assign(my_annotation, ctx)
+        if tv_map is None:
+            return (
+                f"type of parameter {my_param.name!r} is incompatible: **kwargs type"
+                f" {kwargs_annotation} is incompatible with {my_annotation}"
+            )
+        tv_maps.append(tv_map)
+    return tv_maps

@@ -1,4 +1,5 @@
 import collections.abc
+import enum
 import io
 import pickle
 from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
@@ -38,15 +39,15 @@ class Context(CanAssignContext):
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
 
 
-_CTX = Context()
+CTX = Context()
 
 
 def assert_cannot_assign(left: Value, right: Value) -> None:
-    assert_is(None, left.can_assign(right, _CTX))
+    assert_is(None, left.can_assign(right, CTX))
 
 
 def assert_can_assign(left: Value, right: Value, typevar_map: TypeVarMap = {}) -> None:
-    assert_eq({}, left.can_assign(right, _CTX))
+    assert_eq({}, left.can_assign(right, CTX))
 
 
 def test_UNRESOLVED_VALUE() -> None:
@@ -246,10 +247,7 @@ def test_multi_valued_value() -> None:
     assert_can_assign(
         val,
         MultiValuedValue(
-            [
-                UNRESOLVED_VALUE,
-                MultiValuedValue([TypedValue(int), KnownValue(None)]),
-            ]
+            [UNRESOLVED_VALUE, MultiValuedValue([TypedValue(int), KnownValue(None)])]
         ),
     )
 
@@ -368,6 +366,11 @@ def test_typeddict_value() -> None:
     )
 
 
+class Capybara(enum.IntEnum):
+    hydrochaeris = 1
+    isthmius = 2
+
+
 def test_new_type_value() -> None:
     nt1 = NewType("nt1", int)
     nt1_val = value.NewTypeValue(nt1)
@@ -378,6 +381,8 @@ def test_new_type_value() -> None:
     # This should eventually return False
     assert_can_assign(nt1_val, TypedValue(int))
     assert_can_assign(TypedValue(int), nt1_val)
+    assert_cannot_assign(nt1_val, TypedValue(Capybara))
+    assert_cannot_assign(nt1_val, KnownValue(Capybara.hydrochaeris))
 
 
 def test_annotated_value() -> None:
@@ -393,21 +398,21 @@ def test_io() -> None:
 
 
 def test_concrete_values_from_iterable() -> None:
-    assert_is(None, concrete_values_from_iterable(KnownValue(1), _CTX))
-    assert_eq((), concrete_values_from_iterable(KnownValue([]), _CTX))
+    assert_is(None, concrete_values_from_iterable(KnownValue(1), CTX))
+    assert_eq((), concrete_values_from_iterable(KnownValue([]), CTX))
     assert_eq(
         (KnownValue(1), KnownValue(2)),
-        concrete_values_from_iterable(KnownValue((1, 2)), _CTX),
+        concrete_values_from_iterable(KnownValue((1, 2)), CTX),
     )
     assert_eq(
         (KnownValue(1), KnownValue(2)),
         concrete_values_from_iterable(
-            SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]), _CTX
+            SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]), CTX
         ),
     )
     assert_eq(
         TypedValue(int),
-        concrete_values_from_iterable(GenericValue(list, [TypedValue(int)]), _CTX),
+        concrete_values_from_iterable(GenericValue(list, [TypedValue(int)]), CTX),
     )
     assert_eq(
         [
@@ -421,7 +426,7 @@ def test_concrete_values_from_iterable() -> None:
                     KnownValue((3, 4)),
                 ]
             ),
-            _CTX,
+            CTX,
         ),
     )
     assert_eq(
@@ -433,7 +438,7 @@ def test_concrete_values_from_iterable() -> None:
                     GenericValue(list, [TypedValue(int)]),
                 ]
             ),
-            _CTX,
+            CTX,
         ),
     )
     assert_eq(
@@ -445,7 +450,7 @@ def test_concrete_values_from_iterable() -> None:
                     KnownValue((3,)),
                 ]
             ),
-            _CTX,
+            CTX,
         ),
     )
 

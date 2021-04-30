@@ -11,8 +11,7 @@ from . import implementation
 from .safe import safe_hasattr
 from .stacked_scopes import uniq_chain
 from .signature import (
-    Logger,
-    ImplementationFn,
+    Impl,
     MaybeSignature,
     PropertyArgSpec,
     make_bound_method,
@@ -40,23 +39,13 @@ import contextlib
 import qcore
 import inspect
 import sys
-from typing import (
-    Any,
-    Sequence,
-    Generic,
-    Iterable,
-    Mapping,
-    Optional,
-    Dict,
-)
+from typing import Any, Sequence, Generic, Iterable, Mapping, Optional, Dict
 import typing_inspect
 
 
 @used  # exposed as an API
 @contextlib.contextmanager
-def with_implementation(
-    fn: object, implementation_fn: ImplementationFn
-) -> Iterable[None]:
+def with_implementation(fn: object, implementation_fn: Impl) -> Iterable[None]:
     """Temporarily sets the implementation of fn to be implementation_fn.
 
     This is useful for invoking test_scope to aggregate all calls to a particular function. For
@@ -75,13 +64,11 @@ def with_implementation(
     """
     if fn in ArgSpecCache.DEFAULT_ARGSPECS:
         with qcore.override(
-            ArgSpecCache.DEFAULT_ARGSPECS[fn], "implementation", implementation_fn
+            ArgSpecCache.DEFAULT_ARGSPECS[fn], "impl", implementation_fn
         ):
             yield
     else:
-        argspec = ArgSpecCache(Config()).get_argspec(
-            fn, implementation=implementation_fn
-        )
+        argspec = ArgSpecCache(Config()).get_argspec(fn, impl=implementation_fn)
         if argspec is None:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
@@ -90,7 +77,7 @@ def with_implementation(
                     SigParameter("kwargs", SigParameter.VAR_KEYWORD),
                 ],
                 callable=fn,
-                implementation=implementation_fn,
+                impl=implementation_fn,
             )
         known_argspecs = dict(ArgSpecCache.DEFAULT_ARGSPECS)
         known_argspecs[fn] = argspec
@@ -147,18 +134,16 @@ class ArgSpecCache:
         sig: Optional[inspect.Signature],
         *,
         kwonly_args: Sequence[SigParameter] = (),
-        logger: Optional[Logger] = None,
-        implementation: Optional[ImplementationFn] = None,
+        impl: Optional[Impl] = None,
         function_object: object,
         is_async: bool = False,
+        is_asynq: bool = False,
     ) -> Optional[Signature]:
         """Constructs a pyanalyze Signature from an inspect.Signature.
 
         kwonly_args may be a list of custom keyword-only arguments added to the argspec or None.
 
-        logger is the log function to be used.
-
-        implementation is an implementation function for this object.
+        impl is an implementation function for this object.
 
         function_object is the underlying callable.
 
@@ -196,10 +181,10 @@ class ArgSpecCache:
         return Signature.make(
             parameters,
             returns,
-            implementation=implementation,
+            impl=impl,
             callable=function_object,
-            logger=logger,
             has_return_annotation=has_return_annotation,
+            is_asynq=is_asynq,
         )
 
     def _make_sig_parameter(
@@ -279,19 +264,14 @@ class ArgSpecCache:
         return None
 
     def get_argspec(
-        self,
-        obj: object,
-        name: Optional[str] = None,
-        logger: Optional[Logger] = None,
-        implementation: Optional[ImplementationFn] = None,
+        self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
     ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
-        kwargs = {"logger": logger, "implementation": implementation}
-        argspec = self._cached_get_argspec(obj, kwargs)
+        argspec = self._cached_get_argspec(obj, impl, is_asynq)
         return argspec
 
     def _cached_get_argspec(
-        self, obj: object, kwargs: Mapping[str, Any]
+        self, obj: object, impl: Optional[Impl], is_asynq: bool
     ) -> MaybeSignature:
         try:
             if obj in self.known_argspecs:
@@ -301,7 +281,7 @@ class ArgSpecCache:
         else:
             hashable = True
 
-        extended = self._uncached_get_argspec(obj, kwargs)
+        extended = self._uncached_get_argspec(obj, impl, is_asynq)
         if extended is None:
             return None
 
@@ -310,7 +290,7 @@ class ArgSpecCache:
         return extended
 
     def _uncached_get_argspec(
-        self, obj: Any, kwargs: Mapping[str, Any]
+        self, obj: Any, impl: Optional[Impl], is_asynq: bool
     ) -> MaybeSignature:
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause
@@ -318,17 +298,18 @@ class ArgSpecCache:
         # Cythonized methods, e.g. fn.asynq
         if is_dot_asynq_function(obj):
             try:
-                return self._cached_get_argspec(obj.__self__, kwargs)
+                return self._cached_get_argspec(obj.__self__, impl, is_asynq)
             except TypeError:
                 # some cythonized methods have __self__ but it is not a function
                 pass
 
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
-            argspec = self._cached_get_argspec(obj.__func__, kwargs)
+            argspec = self._cached_get_argspec(obj.__func__, impl, is_asynq)
             return make_bound_method(argspec, KnownValue(obj.__self__))
 
         if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
+            is_asynq = is_asynq or hasattr(obj, "asynq")
             # many decorators put the original function in the .fn attribute
             try:
                 original_fn = qcore.get_original_fn(obj)
@@ -337,7 +318,7 @@ class ArgSpecCache:
                 # e.g. certain extension classes
                 pass
             else:
-                return self._cached_get_argspec(original_fn, kwargs)
+                return self._cached_get_argspec(original_fn, impl, is_asynq)
 
         argspec = self.ts_finder.get_argspec(obj)
         if argspec is not None:
@@ -346,7 +327,7 @@ class ArgSpecCache:
         if inspect.isfunction(obj):
             if hasattr(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
-                return self._cached_get_argspec(obj.inner, kwargs)
+                return self._cached_get_argspec(obj.inner, impl, is_asynq)
 
             # NewTypes, but we don't currently know how to handle NewTypes over more
             # complicated types.
@@ -368,12 +349,13 @@ class ArgSpecCache:
                 self._safe_get_signature(obj),
                 function_object=obj,
                 is_async=asyncio.iscoroutinefunction(obj),
-                **kwargs,
+                impl=impl,
+                is_asynq=is_asynq,
             )
 
         # decorator binders
         if _is_qcore_decorator(obj):
-            argspec = self._cached_get_argspec(obj.decorator, kwargs)
+            argspec = self._cached_get_argspec(obj.decorator, impl, is_asynq)
             # wrap if it's a bound method
             if obj.instance is not None and argspec is not None:
                 return make_bound_method(argspec, KnownValue(obj.instance))
@@ -381,33 +363,33 @@ class ArgSpecCache:
 
         if inspect.isclass(obj):
             obj = self.config.unwrap_cls(obj)
-            if issubclass(obj, self.config.CLASSES_USING_INIT):
-                constructor = obj.init
-            elif hasattr(obj, "__init__"):
-                constructor = obj.__init__
+            override = self.config.get_constructor(obj)
+            if isinstance(override, Signature):
+                signature = override
             else:
-                # old-style class
-                return None
-            argspec = self._safe_get_signature(constructor)
-            if argspec is None:
-                return None
+                if isinstance(override, inspect.Signature):
+                    inspect_sig = override
+                    constructor = obj
+                else:
+                    if override is not None:
+                        constructor = override
+                    elif hasattr(obj, "__init__"):
+                        constructor = obj.__init__
+                    else:
+                        # old-style class
+                        return None
+                    inspect_sig = self._safe_get_signature(constructor)
+                if inspect_sig is None:
+                    return None
 
-            kwonly_args = []
-            for cls_, args in self.config.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.items():
-                if issubclass(obj, cls_):
-                    kwonly_args += [
-                        SigParameter(
-                            param_name,
-                            SigParameter.KEYWORD_ONLY,
-                            default=KnownValue(None),
-                            annotation=UNRESOLVED_VALUE,
-                        )
-                        for param_name in args
-                    ]
-            argspec = self.from_signature(
-                argspec, function_object=constructor, kwonly_args=kwonly_args, **kwargs
-            )
-            return make_bound_method(argspec, TypedValue(obj))
+                kwonly_args = []
+                signature = self.from_signature(
+                    inspect_sig,
+                    function_object=constructor,
+                    kwonly_args=kwonly_args,
+                    impl=impl,
+                )
+            return make_bound_method(signature, TypedValue(obj))
 
         if inspect.isbuiltin(obj):
             if hasattr(obj, "__self__"):
@@ -418,7 +400,7 @@ class ArgSpecCache:
                     return None
                 if method == obj:
                     return None
-                argspec = self._cached_get_argspec(method, kwargs)
+                argspec = self._cached_get_argspec(method, impl, is_asynq)
                 return make_bound_method(argspec, KnownValue(obj.__self__))
             return None
 
@@ -431,7 +413,7 @@ class ArgSpecCache:
         if isinstance(obj, property):
             # If we know the getter, inherit its return value.
             if obj.fget:
-                fget_argspec = self._cached_get_argspec(obj.fget, kwargs)
+                fget_argspec = self._cached_get_argspec(obj.fget, impl, is_asynq)
                 if fget_argspec is not None and fget_argspec.has_return_value():
                     return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
             return PropertyArgSpec(obj)
@@ -497,6 +479,13 @@ class ArgSpecCache:
     ) -> Optional[Dict[type, Sequence[Value]]]:
         if bases is None:
             return None
+        # Put Generic first since it determines the order of the typevars. This matters
+        # for typing.Coroutine.
+        bases = sorted(
+            bases,
+            key=lambda base: not isinstance(base, TypedValue)
+            or base.typ is not Generic,
+        )
         my_typevars = uniq_chain(extract_typevars(base) for base in bases)
         generic_bases = {}
         generic_bases[typ] = [TypeVarValue(tv) for tv in my_typevars]
@@ -518,7 +507,7 @@ class ArgSpecCache:
         return typ.__bases__
 
 
-def _is_qcore_decorator(obj: Any) -> bool:
+def _is_qcore_decorator(obj: object) -> bool:
     try:
         return (
             hasattr(obj, "is_decorator")

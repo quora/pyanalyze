@@ -27,14 +27,18 @@ from typing import (
 )
 
 from .error_code import ErrorCode
-from .extensions import HasAttrGuard, ParameterTypeGuard
+from .extensions import AsynqCallable, HasAttrGuard, ParameterTypeGuard, TypeGuard
+from .signature import SigParameter, Signature
 from .value import (
+    AnnotatedValue,
+    CallableValue,
     Extension,
     HasAttrGuardExtension,
     KnownValue,
     MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
+    TypeGuardExtension,
     UNRESOLVED_VALUE,
     TypedValue,
     SequenceIncompleteValue,
@@ -202,7 +206,8 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             args = []  # distinguish List from List[T] on 3.7 and 3.8
         return _value_of_origin_args(origin, args, val, ctx)
     elif typing_inspect.is_callable_type(val):
-        return TypedValue(Callable)
+        args = typing_inspect.get_args(val)
+        return _value_of_origin_args(Callable, args, val, ctx)
     elif isinstance(val, type):
         return _maybe_typed_value(val, ctx)
     elif val is None:
@@ -249,6 +254,37 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     elif is_instance_of_typing_name(val, "_TypeAlias"):
         # typing.Pattern and Match, which are not normal generic types for some reason
         return GenericValue(val.impl_type, [_type_from_runtime(val.type_var, ctx)])
+    elif isinstance(val, TypeGuard):
+        return AnnotatedValue(
+            TypedValue(bool),
+            [TypeGuardExtension(_type_from_runtime(val.guarded_type, ctx))],
+        )
+    elif isinstance(val, AsynqCallable):
+        arg_types = val.args
+        return_type = val.return_type
+        if arg_types is Ellipsis:
+            return CallableValue(
+                Signature.make(
+                    [],
+                    _type_from_runtime(return_type, ctx),
+                    is_ellipsis_args=True,
+                    is_asynq=True,
+                )
+            )
+        if not isinstance(arg_types, tuple):
+            return UNRESOLVED_VALUE
+        params = [
+            SigParameter(
+                f"__arg{i}",
+                kind=SigParameter.POSITIONAL_ONLY,
+                annotation=_type_from_runtime(arg, ctx),
+            )
+            for i, arg in enumerate(arg_types)
+        ]
+        sig = Signature.make(
+            params, _type_from_runtime(return_type, ctx), is_asynq=True
+        )
+        return CallableValue(sig)
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
@@ -318,6 +354,16 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         elif is_typing_name(root, "Annotated"):
             origin, *metadata = value.members
             return _make_annotated(_type_from_value(origin, ctx), metadata, ctx)
+        elif root is Callable or root is typing.Callable:
+            if len(value.members) == 2:
+                args, return_value = value.members
+                return _make_callable_from_value(args, return_value, ctx)
+            return UNRESOLVED_VALUE
+        elif root is AsynqCallable:
+            if len(value.members) == 2:
+                args, return_value = value.members
+                return _make_callable_from_value(args, return_value, ctx, is_asynq=True)
+            return UNRESOLVED_VALUE
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
             if origin is None:
@@ -532,6 +578,8 @@ def _value_of_origin_args(
     origin: object, args: Sequence[object], val: object, ctx: Context
 ) -> Value:
     if origin is typing.Type or origin is type:
+        if not args:
+            return TypedValue(type)
         return SubclassValue.make(_type_from_runtime(args[0], ctx))
     elif origin is typing.Tuple or origin is tuple:
         if not args:
@@ -543,6 +591,28 @@ def _value_of_origin_args(
             return SequenceIncompleteValue(tuple, args_vals)
     elif origin is typing.Union:
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
+    elif origin is Callable or origin is typing.Callable:
+        if len(args) == 2 and args[0] is Ellipsis:
+            return CallableValue(
+                Signature.make(
+                    [], _type_from_runtime(args[1], ctx), is_ellipsis_args=True
+                )
+            )
+        elif len(args) == 0:
+            return TypedValue(Callable)
+        *arg_types, return_type = args
+        if len(arg_types) == 1 and isinstance(arg_types[0], list):
+            arg_types = arg_types[0]
+        params = [
+            SigParameter(
+                f"__arg{i}",
+                kind=SigParameter.POSITIONAL_ONLY,
+                annotation=_type_from_runtime(arg, ctx),
+            )
+            for i, arg in enumerate(arg_types)
+        ]
+        sig = Signature.make(params, _type_from_runtime(return_type, ctx))
+        return CallableValue(sig)
     elif isinstance(origin, type):
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
@@ -579,6 +649,32 @@ def _maybe_typed_value(val: type, ctx: Context) -> Value:
         return UNRESOLVED_VALUE
     else:
         return TypedValue(val)
+
+
+def _make_callable_from_value(
+    args: Value, return_value: Value, ctx: Context, is_asynq: bool = False
+) -> Value:
+    return_annotation = _type_from_value(return_value, ctx)
+    if args == KnownValue(Ellipsis):
+        return CallableValue(
+            Signature.make(
+                [],
+                return_annotation=return_annotation,
+                is_ellipsis_args=True,
+                is_asynq=is_asynq,
+            )
+        )
+    elif isinstance(args, SequenceIncompleteValue):
+        params = [
+            SigParameter(
+                f"__arg{i}",
+                kind=SigParameter.POSITIONAL_ONLY,
+                annotation=_type_from_value(arg, ctx),
+            )
+            for i, arg in enumerate(args.members)
+        ]
+        sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+        return CallableValue(sig)
 
 
 def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:

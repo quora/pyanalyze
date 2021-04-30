@@ -47,7 +47,6 @@ if __name__ == "__main__":
             "attrs",
             "asynq",
             "dataclasses; python_version < '3.7'",
-            "nose",
             "qcore>=0.5.1",
             "ast_decompiler>=0.4.0",
             "six>=1.10.0",
