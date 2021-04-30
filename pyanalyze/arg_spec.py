@@ -479,6 +479,13 @@ class ArgSpecCache:
     ) -> Optional[Dict[type, Sequence[Value]]]:
         if bases is None:
             return None
+        # Put Generic first since it determines the order of the typevars. This matters
+        # for typing.Coroutine.
+        bases = sorted(
+            bases,
+            key=lambda base: not isinstance(base, TypedValue)
+            or base.typ is not Generic,
+        )
         my_typevars = uniq_chain(extract_typevars(base) for base in bases)
         generic_bases = {}
         generic_bases[typ] = [TypeVarValue(tv) for tv in my_typevars]

@@ -5,7 +5,6 @@ import collections.abc
 from collections.abc import MutableSequence, Sequence, Collection, Reversible, Set
 import contextlib
 import io
-import itertools
 from pathlib import Path
 import tempfile
 import time
@@ -167,6 +166,18 @@ class TestGetGenericBases:
         assert_eq(
             {GenericChild: [one], Parent: [one]},
             self.get_generic_bases(GenericChild, [one]),
+        )
+
+    def test_coroutine(self):
+        one = KnownValue(1)
+        two = KnownValue(2)
+        three = KnownValue(3)
+        assert_eq(
+            {
+                collections.abc.Coroutine: [one, two, three],
+                collections.abc.Awaitable: [three],
+            },
+            self.get_generic_bases(collections.abc.Coroutine, [one, two, three]),
         )
 
     def test_callable(self):
