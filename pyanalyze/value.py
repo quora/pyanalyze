@@ -375,6 +375,14 @@ class NewTypeValue(TypedValue):
             if self.newtype is other.newtype:
                 return {}
             return None
+        # Alow e.g. int for a NewType over int, but not a subtype of int such as an
+        # IntEnum
+        elif isinstance(other, TypedValue):
+            if self.typ is not other.typ:
+                return None
+        elif isinstance(other, KnownValue):
+            if self.typ is not type(other.val):
+                return None
         return super().can_assign(other, ctx)
 
     def __str__(self) -> str:
