@@ -494,7 +494,9 @@ def run():
             capybara = [0]
 
         def use_it():
-            print(capybara[0])
+            assert_is_value(
+                capybara, MultiValuedValue([KnownValue(None), KnownValue([0])])
+            )
 
     @assert_fails(ErrorCode.unsupported_operation)
     def test_self_type_inference(self):
@@ -589,7 +591,9 @@ def run():
         def fn(item):
             if False:
                 item = None
-            print(item["id"])
+            assert_is_value(
+                item, MultiValuedValue([KnownValue(None), UNRESOLVED_VALUE])
+            )
 
     @assert_fails(ErrorCode.undefined_attribute)
     def test_bad_attribute_of_global(self):
