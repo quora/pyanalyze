@@ -148,14 +148,14 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     _changes_for_fixer = collections.defaultdict(list)
 
-    tree: Optional[ast.AST]
+    tree: Optional[ast.Module]
     all_failures: List[Failure]
 
     def __init__(
         self,
         filename: str,
         contents: str,
-        tree: ast.AST,
+        tree: ast.Module,
         settings: Optional[Mapping[Enum, bool]] = None,
         fail_after_first: bool = False,
         verbosity: int = logging.CRITICAL,
