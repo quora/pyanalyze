@@ -1,5 +1,6 @@
 # static analysis: ignore
 from .value import (
+    CanAssignError,
     GenericValue,
     SequenceIncompleteValue,
     TypedDictValue,
@@ -29,7 +30,7 @@ class TestCanAssign:
 
     def cannot(self, left: Signature, right: Signature) -> None:
         tv_map = left.can_assign(right, CTX)
-        assert isinstance(tv_map, str), f"can assign {right} to {left}"
+        assert isinstance(tv_map, CanAssignError), f"can assign {right} to {left}"
 
     def test_return_value(self) -> None:
         self.can(

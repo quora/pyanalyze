@@ -25,6 +25,7 @@ from typing import (
     Type,
     TypeVar,
 )
+
 import pyanalyze
 from typing_extensions import Literal
 
@@ -67,6 +68,24 @@ class CanAssignContext:
         return None
 
 
+@dataclass(frozen=True)
+class CanAssignError:
+    message: str
+    children: List["CanAssignError"] = field(default_factory=list)
+
+    def display(self, depth: int = 2) -> str:
+        result = f"{' ' * depth}{self.message}\n"
+        result += "".join(child.display(depth=depth + 2) for child in self.children)
+        return result
+
+    def __str__(self) -> str:
+        return self.display()
+
+
+# Return value of CanAssign
+CanAssign = Union[TypeVarMap, CanAssignError]
+
+
 class Value:
     """Class that represents the value of a variable."""
 
@@ -92,7 +111,7 @@ class Value:
         """Substitute the typevars in the map to produce a new Value."""
         return self
 
-    def can_assign(self, other: "Value", ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: "Value", ctx: CanAssignContext) -> CanAssign:
         """Whether other can be assigned to self.
 
         If yes, return a (possibly empty) map with TypeVar substitutions. If not,
@@ -102,7 +121,15 @@ class Value:
         if other is UNRESOLVED_VALUE or isinstance(other, VariableNameValue):
             return {}
         elif isinstance(other, MultiValuedValue):
-            tv_maps = [self.can_assign(val, ctx) for val in other.vals]
+            tv_maps = []
+            for val in other.vals:
+                tv_map = self.can_assign(val, ctx)
+                if isinstance(tv_map, CanAssignError):
+                    # Adding an additional layer here isn't helpful
+                    return tv_map
+                tv_maps.append(tv_map)
+            if not tv_maps:
+                return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, AnnotatedValue):
             return self.can_assign(other.value, ctx)
@@ -117,11 +144,11 @@ class Value:
             return {}
         elif self == other:
             return {}
-        return None
+        return CanAssignError(f"Cannot assign {other} to {self}")
 
     def is_assignable(self, other: "Value", ctx: CanAssignContext) -> bool:
         """Similar to can_assign but just returns a bool."""
-        return self.can_assign(other, ctx) is not None
+        return isinstance(self.can_assign(other, ctx), dict)
 
 
 @dataclass(frozen=True)
@@ -131,7 +158,7 @@ class UnresolvedValue(Value):
     def __str__(self) -> str:
         return "Any"
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         return {}  # Always allowed
 
 
@@ -171,7 +198,7 @@ class KnownValue(Value):
     def get_type_value(self) -> Value:
         return KnownValue(type(self.val))
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         # Make Literal[function] equivalent to a Callable type
         signature = ctx.get_signature(self.val)
         if signature is not None:
@@ -276,7 +303,7 @@ class TypedValue(Value):
     def __post_init__(self) -> None:
         self.type_object = TypeObject.make(self.typ)
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if self.type_object.is_thrift_enum:
             # Special case: Thrift enums. These are conceptually like
             # enums, but they are ints at runtime.
@@ -301,14 +328,12 @@ class TypedValue(Value):
                 return {}
         return super().can_assign(other, ctx)
 
-    def can_assign_thrift_enum(
-        self, other: Value, ctx: CanAssignContext
-    ) -> Optional[TypeVarMap]:
+    def can_assign_thrift_enum(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if other is UNRESOLVED_VALUE:
             return {}
         elif isinstance(other, KnownValue):
             if not isinstance(other.val, int):
-                return None
+                return CanAssignError(f"{other} is not an int")
             if other.val in self.typ._VALUES_TO_NAMES:
                 return {}
         elif isinstance(other, TypedValue):
@@ -317,11 +342,19 @@ class TypedValue(Value):
             ) or other.type_object.is_assignable_to_type(int):
                 return {}
         elif isinstance(other, MultiValuedValue):
-            tv_maps = [self.can_assign(val, ctx) for val in other.vals]
+            tv_maps = []
+            for val in other.vals:
+                tv_map = self.can_assign(val, ctx)
+                if isinstance(tv_map, CanAssignError):
+                    # Adding an additional layer here isn't helpful
+                    return tv_map
+                tv_maps.append(tv_map)
+            if not tv_maps:
+                return CanAssignError(f"Cannot assign {other} to Thrift enum {self}")
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, AnnotatedValue):
             return self.can_assign_thrift_enum(other.value, ctx)
-        return None
+        return CanAssignError(f"Cannot assign {other} to Thrift enum {self}")
 
     def get_generic_args_for_type(
         self, typ: Union[type, super], ctx: CanAssignContext
@@ -370,19 +403,19 @@ class NewTypeValue(TypedValue):
         self.name = newtype.__name__
         self.newtype = newtype
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, NewTypeValue):
             if self.newtype is other.newtype:
                 return {}
-            return None
+            return CanAssignError(f"NewTypes {self} and {other} are not compatible")
         # Alow e.g. int for a NewType over int, but not a subtype of int such as an
         # IntEnum
         elif isinstance(other, TypedValue):
             if self.typ is not other.typ:
-                return None
+                return CanAssignError(f"Cannot assign {other} to {self}")
         elif isinstance(other, KnownValue):
             if self.typ is not type(other.val):
-                return None
+                return CanAssignError(f"Cannot assign {other} to {self}")
         return super().can_assign(other, ctx)
 
     def __str__(self) -> str:
@@ -411,18 +444,25 @@ class GenericValue(TypedValue):
         args_str = ", ".join(str(arg) for arg in args)
         return f"{stringify_object(self.typ)}[{args_str}]"
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, TypedValue) and isinstance(other.typ, type):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
             # If we don't think it's a generic base, try super;
             # runtime isinstance() may disagree.
             if generic_args is None or len(self.args) != len(generic_args):
                 return super().can_assign(other, ctx)
-            tv_maps = [
-                arg1.can_assign(arg2, ctx)
-                for arg1, arg2 in zip(self.args, generic_args)
-            ]
+            tv_maps = []
+            for i, (my_arg, their_arg) in enumerate(zip(self.args, generic_args)):
+                tv_map = my_arg.can_assign(their_arg, ctx)
+                if isinstance(tv_map, CanAssignError):
+                    return CanAssignError(
+                        f"In generic argument {i} to {self}", [tv_map]
+                    )
+                tv_maps.append(tv_map)
+            if not tv_maps:
+                return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
+
         return super().can_assign(other, ctx)
 
     def get_arg(self, index: int) -> Value:
@@ -461,16 +501,33 @@ class SequenceIncompleteValue(GenericValue):
         super().__init__(typ, args)
         self.members = tuple(members)
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, SequenceIncompleteValue):
             if not issubclass(other.typ, self.typ):
-                return None
-            if len(other.members) != len(self.members):
-                return None
-            tv_maps = [
-                my_member.can_assign(other_member, ctx)
-                for my_member, other_member in zip(self.members, other.members)
-            ]
+                return CanAssignError(
+                    f"Cannot assign {stringify_object(other.typ)} to"
+                    f" {stringify_object(self.typ)}"
+                )
+            my_len = len(self.members)
+            their_len = len(other.members)
+            if my_len != their_len:
+                type_str = stringify_object(self.typ)
+                return CanAssignError(
+                    f"Cannot assign {type_str} of length {their_len} to {type_str} of"
+                    f" length {my_len}"
+                )
+            if my_len == 0:
+                return {}  # they're both empty
+            tv_maps = []
+            for i, (my_member, their_member) in enumerate(
+                zip(self.members, other.members)
+            ):
+                tv_map = my_member.can_assign(their_member, ctx)
+                if isinstance(tv_map, CanAssignError):
+                    return CanAssignError(
+                        f"Types for member {i} are incompatible", [tv_map]
+                    )
+                tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
 
@@ -542,10 +599,17 @@ class TypedDictValue(GenericValue):
         super().__init__(dict, (TypedValue(str), value_type))
         self.items = items
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, DictIncompleteValue):
-            if len(other.items) < len(self.items):
-                return None
+            their_len = len(other.items)
+            my_len = len(self.items)
+            if my_len == 0:
+                return {}
+            if their_len < my_len:
+                return CanAssignError(
+                    f"Cannot assign dict of length {their_len} to dict of length"
+                    f" {my_len}"
+                )
             known_part = {
                 key.val: value
                 for key, value in other.items
@@ -556,23 +620,32 @@ class TypedDictValue(GenericValue):
             for key, value in self.items.items():
                 if key not in known_part:
                     if not has_unknowns:
-                        return None
+                        return CanAssignError(f"Key {key} is missing in {other}")
                 else:
-                    tv_maps.append(value.can_assign(known_part[key], ctx))
+                    tv_map = value.can_assign(known_part[key], ctx)
+                    if isinstance(tv_map, CanAssignError):
+                        return CanAssignError(f"Types for key {key} are incompatible")
+                    tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, TypedDictValue):
             tv_maps = []
             for key, value in self.items.items():
                 if key not in other.items:
-                    return None
-                tv_maps.append(value.can_assign(other.items[key], ctx))
+                    return CanAssignError(f"Key {key} is missing in {other}")
+                tv_map = value.can_assign(other.items[key], ctx)
+                if isinstance(tv_map, CanAssignError):
+                    return CanAssignError(f"Types for key {key} are incompatible")
+                tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, KnownValue) and isinstance(other.val, dict):
             tv_maps = []
             for key, value in self.items.items():
                 if key not in other.val:
-                    return None
-                tv_maps.append(value.can_assign(KnownValue(other.val[key]), ctx))
+                    return CanAssignError(f"Key {key} is missing in {other}")
+                tv_map = value.can_assign(KnownValue(other.val[key]), ctx)
+                if isinstance(tv_map, CanAssignError):
+                    return CanAssignError(f"Types for key {key} are incompatible")
+                tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
 
@@ -641,7 +714,7 @@ class CallableValue(TypedValue):
         sig = self.signature.get_asynq_value()
         return CallableValue(sig)
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         # TODO: unify with _get_argspec_from_value() in NameCheckVisitor
         signature = None
         if isinstance(other, CallableValue):
@@ -671,7 +744,7 @@ class CallableValue(TypedValue):
                 getattr(typ.__call__, "__objclass__", None) is type
                 and not issubclass(typ, type)
             ):
-                return None
+                return CanAssignError(f"{other} is not a callable type")
             call_fn = typ.__call__
             unbound_signature = ctx.get_signature(call_fn)
             signature = pyanalyze.signature.make_bound_method(
@@ -679,9 +752,8 @@ class CallableValue(TypedValue):
             ).get_signature()
         if signature is not None:
             tv_map_or_error = self.signature.can_assign(signature, ctx)
-            if isinstance(tv_map_or_error, str):
-                print(self, other, tv_map_or_error)
-                return None
+            if isinstance(tv_map_or_error, CanAssignError):
+                return tv_map_or_error
             return tv_map_or_error
 
         return super().can_assign(other, ctx)
@@ -741,7 +813,7 @@ class SubclassValue(Value):
                 return False
         return False
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, SubclassValue):
             return self.typ.can_assign(other.typ, ctx)
         elif isinstance(other, KnownValue):
@@ -816,18 +888,32 @@ class MultiValuedValue(Value):
             [val.substitute_typevars(typevars) for val in self.vals]
         )
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, MultiValuedValue):
-            tv_maps = [self.can_assign(val, ctx) for val in other.vals]
+            tv_maps = []
+            for val in other.vals:
+                tv_map = self.can_assign(val, ctx)
+                if isinstance(tv_map, CanAssignError):
+                    # Adding an additional layer here isn't helpful
+                    return tv_map
+                tv_maps.append(tv_map)
+            if not tv_maps:
+                return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, AnnotatedValue):
             return self.can_assign(other.value, ctx)
         else:
-            tv_maps = [val.can_assign(other, ctx) for val in self.vals]
+            tv_maps = []
+            errors = []
+            for val in self.vals:
+                tv_map = val.can_assign(other, ctx)
+                if isinstance(tv_map, CanAssignError):
+                    errors.append(tv_map)
+                else:
+                    tv_maps.append(tv_map)
             # Ignore any branches that don't match
-            tv_maps = [tv_map for tv_map in tv_maps if tv_map is not None]
             if not tv_maps:
-                return None
+                return CanAssignError("Cannot assign to Union", errors)
             # Include only typevars that appear in all branches; i.e., prefer
             # branches that don't set typevars.
             typevars = collections.Counter(tv for tv_map in tv_maps for tv in tv_map)
@@ -894,7 +980,7 @@ class TypeVarValue(Value):
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return typevars.get(self.typevar, self)
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         return {self.typevar: other}
 
     def get_fallback_value(self) -> Value:
@@ -1005,7 +1091,7 @@ class AnnotatedValue(Value):
         metadata = [val.substitute_typevars(typevars) for val in self.metadata]
         return AnnotatedValue(self.value.substitute_typevars(typevars), metadata)
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         return self.value.can_assign(other, ctx)
 
     def walk_values(self) -> Iterable[Value]:
@@ -1038,12 +1124,12 @@ class VariableNameValue(Value):
 
     varnames: List[str]
 
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> Optional[TypeVarMap]:
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if not isinstance(other, VariableNameValue):
             return {}
         if other == self:
             return {}
-        return None
+        return CanAssignError(f"Types {self} and {other} are different")
 
     def __str__(self) -> str:
         return "<variable name: %s>" % ", ".join(self.varnames)
@@ -1084,13 +1170,9 @@ def flatten_values(val: Value) -> Iterable[Value]:
         yield val
 
 
-def unify_typevar_maps(tv_maps: Sequence[Optional[TypeVarMap]]) -> Optional[TypeVarMap]:
-    if not tv_maps:
-        return None
+def unify_typevar_maps(tv_maps: Sequence[TypeVarMap]) -> TypeVarMap:
     raw_map = defaultdict(list)
     for tv_map in tv_maps:
-        if tv_map is None:
-            return None
         for tv, value in tv_map.items():
             raw_map[tv].append(value)
     return {tv: unite_values(*values) for tv, values in raw_map.items()}
@@ -1203,7 +1285,7 @@ def concrete_values_from_iterable(
     elif isinstance(value, DictIncompleteValue):
         return [key for key, _ in value.items]
     tv_map = IterableValue.can_assign(value, ctx)
-    if tv_map is not None:
+    if not isinstance(tv_map, CanAssignError):
         return tv_map.get(T, UNRESOLVED_VALUE)
     return None
 

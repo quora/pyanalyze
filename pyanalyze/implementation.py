@@ -15,6 +15,7 @@ from .stacked_scopes import (
 from .signature import SigParameter, Signature, ImplReturn, CallContext
 from .value import (
     AnnotatedValue,
+    CanAssignError,
     HasAttrGuardExtension,
     ParameterTypeGuardExtension,
     TypedValue,
@@ -323,11 +324,12 @@ def _sequence_impl(typ: type, ctx: CallContext) -> Value:
         return SequenceIncompleteValue(typ, [key for key, _ in iterable.items])
     else:
         tv_map = IterableValue.can_assign(iterable, ctx.visitor)
-        if tv_map is None:
+        if isinstance(tv_map, CanAssignError):
             ctx.show_error(
                 f"{iterable} is not iterable",
                 ErrorCode.unsupported_operation,
                 arg="iterable",
+                detail=str(tv_map),
             )
         elif T in tv_map:
             return GenericValue(typ, [tv_map[T]])
@@ -348,11 +350,13 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(lst, GenericValue):
         expected_type = lst.get_generic_arg_for_type(list, ctx.visitor, 0)
-        if not expected_type.is_assignable(element, ctx.visitor):
+        tv_map = expected_type.can_assign(element, ctx.visitor)
+        if isinstance(tv_map, CanAssignError):
             ctx.show_error(
                 f"Cannot append value of type {element} to list of {expected_type}",
                 ErrorCode.incompatible_argument,
                 arg="object",
+                detail=str(tv_map),
             )
     return ImplReturn(KnownValue(None))
 
@@ -378,11 +382,13 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
             )
         else:
             expected_type = self_value.items[key.val]
-            if not expected_type.is_assignable(value, ctx.visitor):
+            tv_map = expected_type.can_assign(value, ctx.visitor)
+            if isinstance(tv_map, CanAssignError):
                 ctx.show_error(
                     f"Value for key {key.val!r} must be {expected_type}, not {value}",
                     ErrorCode.incompatible_argument,
                     arg="v",
+                    detail=str(tv_map),
                 )
         return ImplReturn(KnownValue(None))
     elif isinstance(self_value, DictIncompleteValue):
@@ -397,18 +403,22 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(self_value, TypedValue):
         key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
-        if not key_type.is_assignable(key, ctx.visitor):
+        tv_map = key_type.can_assign(key, ctx.visitor)
+        if isinstance(tv_map, CanAssignError):
             ctx.show_error(
                 f"Cannot set key of type {key} (expecting {key_type})",
                 ErrorCode.incompatible_argument,
                 arg="k",
+                detail=str(tv_map),
             )
         value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
-        if not value_type.is_assignable(value, ctx.visitor):
+        tv_map = value_type.can_assign(value, ctx.visitor)
+        if isinstance(tv_map, CanAssignError):
             ctx.show_error(
                 f"Cannot set value of type {value} (expecting {value_type})",
                 ErrorCode.incompatible_argument,
                 arg="v",
+                detail=str(tv_map),
             )
     return ImplReturn(KnownValue(None))
 
@@ -528,12 +538,14 @@ def _list_extend_impl(ctx: CallContext) -> ImplReturn:
                 actual_type = iterable.get_generic_arg_for_type(
                     collections.abc.Iterable, ctx.visitor, 0
                 )
-                if not expected_type.is_assignable(actual_type, ctx.visitor):
+                tv_map = expected_type.can_assign(actual_type, ctx.visitor)
+                if isinstance(tv_map, CanAssignError):
                     ctx.show_error(
                         f"Cannot extend list of {expected_type} with values of type"
                         f" {actual_type}",
                         ErrorCode.incompatible_argument,
                         arg="iterable",
+                        detail=str(tv_map),
                     )
         return ImplReturn(KnownValue(None))
 
@@ -556,10 +568,12 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
         set_args = set_value.get_generic_args_for_type(set, ctx.visitor)
         if set_args:
             expected_type = set_args[0]
-            if not expected_type.is_assignable(element, ctx.visitor):
+            tv_map = expected_type.can_assign(element, ctx.visitor)
+            if isinstance(tv_map, CanAssignError):
                 ctx.show_error(
                     f"Cannot add value of type {element} to set of {expected_type}",
                     ErrorCode.incompatible_argument,
+                    detail=str(tv_map),
                 )
     return ImplReturn(KnownValue(None))
 
