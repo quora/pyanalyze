@@ -3244,6 +3244,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             index = self._check_dunder_call(
                 node, index_composite, "__index__", [], allow_call=True
             )
+            index_composite = Composite(
+                index, index_composite.varname, index_composite.node
+            )
 
         if isinstance(node.ctx, ast.Store):
             if (
@@ -3262,7 +3265,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 node,
             )
         elif isinstance(node.ctx, ast.Load):
-            if (
+            if sys.version_info >= (3, 9) and value == KnownValue(type):
+                # In Python 3.9+ "type[int]" is legal, but neither
+                # type.__getitem__ nor type.__class_getitem__ exists at runtime. Support
+                # it directly instead.
+                if isinstance(index, KnownValue):
+                    return_value = KnownValue(type[index.val])
+                else:
+                    return_value = UNRESOLVED_VALUE
+            elif (
                 isinstance(value, SequenceIncompleteValue)
                 and isinstance(index, KnownValue)
                 and isinstance(index.val, int)

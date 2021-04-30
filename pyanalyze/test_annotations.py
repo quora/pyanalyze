@@ -404,6 +404,13 @@ def f(x: int, y: List[str]):
 
     @skip_before((3, 9))
     @assert_passes()
+    def test_lowercase_type(self):
+        def capybara(x: type[str], y: "type[int]"):
+            assert_is_value(x, SubclassValue(TypedValue(str)))
+            assert_is_value(y, SubclassValue(TypedValue(int)))
+
+    @skip_before((3, 9))
+    @assert_passes()
     def test_generic_alias(self):
         from queue import Queue
 
