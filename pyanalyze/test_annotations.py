@@ -292,7 +292,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             x: int = y
 
     @assert_passes()
-    def test_tuples(self):
+    def test_typing_tuples(self):
         from typing import Tuple, Union
 
         def capybara(
@@ -300,6 +300,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             y: Tuple[int],
             z: Tuple[str, int],
             omega: Union[Tuple[str, int], None],
+            empty: Tuple[()],
         ) -> None:
             assert_is_value(x, GenericValue(tuple, [TypedValue(int)]))
             assert_is_value(y, SequenceIncompleteValue(tuple, [TypedValue(int)]))
@@ -317,6 +318,66 @@ class TestAnnotations(TestNameCheckVisitorBase):
                     ]
                 ),
             )
+            assert_is_value(empty, SequenceIncompleteValue(tuple, []))
+
+    @assert_passes()
+    def test_strinigified_tuples(self):
+        from typing import Tuple, Union
+
+        def capybara(
+            x: "Tuple[int, ...]",
+            y: "Tuple[int]",
+            z: "Tuple[str, int]",
+            omega: "Union[Tuple[str, int], None]",
+            empty: "Tuple[()]",
+        ) -> None:
+            assert_is_value(x, GenericValue(tuple, [TypedValue(int)]))
+            assert_is_value(y, SequenceIncompleteValue(tuple, [TypedValue(int)]))
+            assert_is_value(
+                z, SequenceIncompleteValue(tuple, [TypedValue(str), TypedValue(int)])
+            )
+            assert_is_value(
+                omega,
+                MultiValuedValue(
+                    [
+                        SequenceIncompleteValue(
+                            tuple, [TypedValue(str), TypedValue(int)]
+                        ),
+                        KnownValue(None),
+                    ]
+                ),
+            )
+            assert_is_value(empty, SequenceIncompleteValue(tuple, []))
+
+    @skip_before((3, 9))
+    @assert_passes()
+    def test_builtin_tuples(self):
+        from typing import Union
+
+        def capybara(
+            x: tuple[int, ...],
+            y: tuple[int],
+            z: tuple[str, int],
+            omega: Union[tuple[str, int], None],
+            empty: tuple[()],
+        ) -> None:
+            assert_is_value(x, GenericValue(tuple, [TypedValue(int)]))
+            assert_is_value(y, SequenceIncompleteValue(tuple, [TypedValue(int)]))
+            assert_is_value(
+                z, SequenceIncompleteValue(tuple, [TypedValue(str), TypedValue(int)])
+            )
+            assert_is_value(
+                omega,
+                MultiValuedValue(
+                    [
+                        SequenceIncompleteValue(
+                            tuple, [TypedValue(str), TypedValue(int)]
+                        ),
+                        KnownValue(None),
+                    ]
+                ),
+            )
+            assert_is_value(empty, SequenceIncompleteValue(tuple, []))
 
     @assert_fails(ErrorCode.invalid_annotation)
     def test_invalid_annotation(self):
