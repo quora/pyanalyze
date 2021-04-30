@@ -11,7 +11,7 @@ import tempfile
 import time
 from typeshed_client import Resolver, get_search_context
 import typing
-from typing import Generic, TypeVar, NewType
+from typing import Awaitable, Generic, TypeVar, NewType
 from urllib.error import HTTPError
 
 from .test_config import TestConfig
@@ -167,6 +167,18 @@ class TestGetGenericBases:
         assert_eq(
             {GenericChild: [one], Parent: [one]},
             self.get_generic_bases(GenericChild, [one]),
+        )
+
+    def test_coroutine(self):
+        one = KnownValue(1)
+        two = KnownValue(2)
+        three = KnownValue(3)
+        assert_eq(
+            {
+                collections.abc.Coroutine: [one, two, three],
+                collections.abc.Awaitable: [three],
+            },
+            self.get_generic_bases(collections.abc.Coroutine, [one, two, three]),
         )
 
     def test_callable(self):
