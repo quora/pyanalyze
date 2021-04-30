@@ -528,12 +528,14 @@ class TestCallable(TestNameCheckVisitorBase):
             y: Callable[[int], str],
             id_func: Callable[[T], T],
             takes_seq: Callable[[Sequence[T]], T],
+            two_args: Callable[[int, str], float],
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
             assert_is_value(y(1), TypedValue(str))
             assert_is_value(id_func(1), KnownValue(1))
             assert_is_value(takes_seq([int("1")]), TypedValue(int))
+            assert_is_value(two_args(1, "x"), TypedValue(float))
 
     @assert_passes()
     def test_stringified(self):
@@ -546,12 +548,14 @@ class TestCallable(TestNameCheckVisitorBase):
             y: "Callable[[int], str]",
             id_func: "Callable[[T], T]",
             takes_seq: "Callable[[Sequence[T]], T]",
+            two_args: "Callable[[int, str], float]",
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
             assert_is_value(y(1), TypedValue(str))
             assert_is_value(id_func(1), KnownValue(1))
             assert_is_value(takes_seq([int("1")]), TypedValue(int))
+            assert_is_value(two_args(1, "x"), TypedValue(float))
 
     @skip_before((3, 9))
     @assert_passes()
@@ -566,12 +570,14 @@ class TestCallable(TestNameCheckVisitorBase):
             y: Callable[[int], str],
             id_func: Callable[[T], T],
             takes_seq: Callable[[Sequence[T]], T],
+            two_args: Callable[[int, str], float],
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
             assert_is_value(y(1), TypedValue(str))
             assert_is_value(id_func(1), KnownValue(1))
             assert_is_value(takes_seq([int("1")]), TypedValue(int))
+            assert_is_value(two_args(1, "x"), TypedValue(float))
 
     @assert_passes()
     def test_known_value(self):
