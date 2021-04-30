@@ -670,7 +670,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self,
         filename: str,
         contents: str,
-        tree: ast.AST,
+        tree: ast.Module,
         settings: Optional[Mapping[ErrorCode, bool]] = None,
         fail_after_first: bool = False,
         verbosity: int = logging.CRITICAL,
@@ -1053,6 +1053,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
         else:
             existing = self.import_name_to_node[target]
+            if not isinstance(existing, ast.ImportFrom):
+                return
             names = existing.names + [ast.alias(name=node.id, asname=None)]
             names = sorted(names, key=lambda alias: alias.name)
             existing.names = (
@@ -1771,10 +1773,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if self.scopes.scope_type() == ScopeType.module_scope and not is_star_import:
             self._handle_imports(node.names)
         else:
-            self._simulate_import(node, is_import_from=True)
+            self._simulate_import(node)
 
     def _maybe_record_usages_from_import(
-        self, node: Union[ast.Import, ast.ImportFrom]
+        self, node: ast.ImportFrom
     ) -> None:
         if self.unused_finder is None:
             return
@@ -1794,6 +1796,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 module_name = parent_module_name
         module = sys.modules.get(module_name)
         if module is None:
+            if module_name is None:
+                return
             try:
                 module = __import__(module_name)
             except Exception:
@@ -1819,7 +1823,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
 
     def _simulate_import(
-        self, node: Union[ast.ImportFrom, ast.Import], is_import_from: bool = False
+        self, node: Union[ast.ImportFrom, ast.Import]
     ) -> None:
         """Set the names retrieved from an import node in nontrivial situations.
 
@@ -1859,7 +1863,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         # Apparently doing 'from file_in_package import *' in an __init__.py also adds
         # file_in_package to the module's scope.
         if (
-            is_import_from
+            isinstance(node, ast.ImportFrom)
             and is_init
             and node.module is not None
             and "." not in node.module
@@ -1958,7 +1962,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _visit_comprehension(
         self,
-        node: Union[ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp],
+        node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp],
         typ: type,
     ) -> Value:
         # the iteree of the first generator is executed in the enclosing scope
@@ -1989,7 +1993,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _visit_comprehension_inner(
         self,
-        node: Union[ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp],
+        node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp],
         typ: type,
         iterable_type: Value,
     ) -> Value:
