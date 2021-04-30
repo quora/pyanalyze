@@ -508,9 +508,11 @@ class BaseNodeVisitor(ast.NodeVisitor):
         node: Union[ast.AST, _FakeNode, None],
         e: Optional[str] = None,
         error_code: Optional[Enum] = None,
+        *,
         replacement: Optional[Replacement] = None,
         obey_ignore: bool = True,
         ignore_comment: str = IGNORE_COMMENT,
+        detail: Optional[str] = None,
     ) -> Optional[Failure]:
         """Shows an error associated with this node.
 
@@ -566,6 +568,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
         if error_code is not None:
             error["code"] = error_code
             message += f" (code: {error_code.name})"
+        if detail is not None:
+            message += f"\n{detail}"
         if lineno is not None:
             error["lineno"] = lineno
             message += f"\nIn {self.filename} at line {lineno}\n"

@@ -96,6 +96,7 @@ from .type_object import get_mro
 from .value import (
     AnnotatedValue,
     CallableValue,
+    CanAssignError,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
@@ -911,11 +912,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         node: ast.AST,
         msg: Optional[str] = None,
         error_code: Optional[ErrorCode] = None,
+        *,
         replacement: Optional[node_visitor.Replacement] = None,
+        detail: Optional[str] = None,
     ) -> None:
         """We usually should show errors only in the check_names state to avoid duplicate errors."""
         if self._is_checking():
-            self.show_error(node, msg, error_code=error_code, replacement=replacement)
+            self.show_error(
+                node, msg, error_code=error_code, replacement=replacement, detail=detail
+            )
 
     def _set_name_in_scope(
         self, varname: str, node: object, value: Value = UNRESOLVED_VALUE
@@ -1601,13 +1606,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
                 if arg.annotation is not None:
                     value = self._value_of_annotated_arg(arg)
-                    if default is not None and not value.is_assignable(default, self):
-                        self._show_error_if_checking(
-                            arg,
-                            f"Default value for argument {arg.arg} incompatible with"
-                            f" declared type {value}",
-                            error_code=ErrorCode.incompatible_default,
-                        )
+                    if default is not None:
+                        tv_map = value.can_assign(default, self)
+                        if isinstance(tv_map, CanAssignError):
+                            self._show_error_if_checking(
+                                arg,
+                                f"Default value for argument {arg.arg} incompatible"
+                                f" with declared type {value}",
+                                error_code=ErrorCode.incompatible_default,
+                                detail=tv_map.display(),
+                            )
                 elif is_self:
                     if function_info.is_classmethod or getattr(node, "name", None) in (
                         "__init_subclass__",
@@ -2539,10 +2547,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def visit_Await(self, node: ast.Await) -> Value:
         composite = self.composite_from_node(node.value)
         tv_map = AwaitableValue.can_assign(composite[0], self)
-        if tv_map is not None:
-            return tv_map.get(T, UNRESOLVED_VALUE)
-        else:
+        if isinstance(tv_map, CanAssignError):
             return self._check_dunder_call(node.value, composite, "__await__", [])
+        else:
+            return tv_map.get(T, UNRESOLVED_VALUE)
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Value:
         self.is_generator = True
@@ -2666,17 +2674,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # TODO check generator types properly
             not (self.is_generator and self.async_kind == AsyncFunctionKind.non_async)
             and self.expected_return_value is not None
-            and not self.expected_return_value.is_assignable(value, self)
         ):
-            self._show_error_if_checking(
-                node,
-                f"Declared return type {self.expected_return_value} is incompatible"
-                f" with actual return type {value}",
-                error_code=ErrorCode.incompatible_return_value,
-            )
-        elif self.expected_return_value == KnownValue(None) and value != KnownValue(
-            None
-        ):
+            tv_map = self.expected_return_value.can_assign(value, self)
+            if isinstance(tv_map, CanAssignError):
+                self._show_error_if_checking(
+                    node,
+                    f"Declared return type {self.expected_return_value} is incompatible"
+                    f" with actual return type {value}",
+                    error_code=ErrorCode.incompatible_return_value,
+                    detail=tv_map.display(),
+                )
+        if self.expected_return_value == KnownValue(None) and value != KnownValue(None):
             self._show_error_if_checking(
                 node,
                 "Function declared as returning None may not return a value",
@@ -2894,7 +2902,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return self._member_value_of_iterator_val(iterated.value, node)
         else:
             tv_map = IterableValue.can_assign(iterated, self)
-            if tv_map is None:
+            if isinstance(tv_map, CanAssignError):
                 if not (
                     isinstance(iterated, TypedValue)
                     and self._should_ignore_type(iterated.typ)
@@ -2903,6 +2911,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         node,
                         f"{iterated} is not iterable",
                         ErrorCode.unsupported_operation,
+                        detail=tv_map.display(),
                     )
                 return UNRESOLVED_VALUE, None
             return tv_map.get(T, UNRESOLVED_VALUE), None
@@ -3116,11 +3125,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if node.value:
             is_yield = isinstance(node.value, ast.Yield)
             value = self.visit(node.value)
-            if not expected_type.is_assignable(value, self):
+            tv_map = expected_type.can_assign(value, self)
+            if isinstance(tv_map, CanAssignError):
                 self._show_error_if_checking(
                     node.value,
                     f"Incompatible assignment: expected {expected_type}, got {value}",
                     error_code=ErrorCode.incompatible_assignment,
+                    detail=tv_map.display(),
                 )
 
             with qcore.override(
