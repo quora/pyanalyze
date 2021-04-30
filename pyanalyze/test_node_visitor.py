@@ -242,7 +242,10 @@ class NoWhileVisitor(BaseNodeVisitor):
             [node.lineno], [self._lines()[node.lineno - 1].replace("while", "if")]
         )
         self.show_error(
-            node, "while loops take too long", ErrorCode.no_while, replacement
+            node,
+            "while loops take too long",
+            ErrorCode.no_while,
+            replacement=replacement,
         )
         self.generic_visit(node)
 

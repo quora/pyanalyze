@@ -2,7 +2,13 @@ import collections.abc
 import enum
 import io
 import pickle
-from qcore.asserts import assert_eq, assert_in, assert_is, assert_is_not
+from qcore.asserts import (
+    assert_eq,
+    assert_in,
+    assert_is,
+    assert_is_instance,
+    assert_is_not,
+)
 from typing import NewType, Sequence, Dict
 from typing_extensions import Protocol, runtime_checkable
 import typing
@@ -15,6 +21,7 @@ from .arg_spec import ArgSpecCache
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
+    CanAssignError,
     Value,
     GenericValue,
     KnownValue,
@@ -43,11 +50,13 @@ CTX = Context()
 
 
 def assert_cannot_assign(left: Value, right: Value) -> None:
-    assert_is(None, left.can_assign(right, CTX))
+    tv_map = left.can_assign(right, CTX)
+    assert_is_instance(tv_map, CanAssignError)
+    print(tv_map.display())
 
 
 def assert_can_assign(left: Value, right: Value, typevar_map: TypeVarMap = {}) -> None:
-    assert_eq({}, left.can_assign(right, CTX))
+    assert_eq(typevar_map, left.can_assign(right, CTX))
 
 
 def test_UNRESOLVED_VALUE() -> None:
