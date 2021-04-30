@@ -5,13 +5,12 @@ import collections.abc
 from collections.abc import MutableSequence, Sequence, Collection, Reversible, Set
 import contextlib
 import io
-import itertools
 from pathlib import Path
 import tempfile
 import time
 from typeshed_client import Resolver, get_search_context
 import typing
-from typing import Awaitable, Generic, TypeVar, NewType
+from typing import Generic, TypeVar, NewType
 from urllib.error import HTTPError
 
 from .test_config import TestConfig
