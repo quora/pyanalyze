@@ -1775,9 +1775,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             self._simulate_import(node)
 
-    def _maybe_record_usages_from_import(
-        self, node: ast.ImportFrom
-    ) -> None:
+    def _maybe_record_usages_from_import(self, node: ast.ImportFrom) -> None:
         if self.unused_finder is None:
             return
         if self._is_unimportable_module(node):
@@ -1822,9 +1820,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 for name in node.names
             )
 
-    def _simulate_import(
-        self, node: Union[ast.ImportFrom, ast.Import]
-    ) -> None:
+    def _simulate_import(self, node: Union[ast.ImportFrom, ast.Import]) -> None:
         """Set the names retrieved from an import node in nontrivial situations.
 
         For simple imports (module-global imports that are not "from ... import *"), we can just
@@ -1961,9 +1957,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return iterable_type
 
     def _visit_comprehension(
-        self,
-        node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp],
-        typ: type,
+        self, node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp], typ: type
     ) -> Value:
         # the iteree of the first generator is executed in the enclosing scope
         iterable_type = self._member_value_of_generator(node.generators[0])
