@@ -266,6 +266,12 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             TypedValue(bool),
             [TypeGuardExtension(_type_from_runtime(val.guarded_type, ctx))],
         )
+    elif is_instance_of_typing_name(val, "_TypeGuard"):
+        # 3.6 only
+        return AnnotatedValue(
+            TypedValue(bool),
+            [TypeGuardExtension(_type_from_runtime(val.__type__, ctx))],
+        )
     elif isinstance(val, AsynqCallable):
         arg_types = val.args
         return_type = val.return_type
