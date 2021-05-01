@@ -363,6 +363,14 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         elif is_typing_name(root, "Annotated"):
             origin, *metadata = value.members
             return _make_annotated(_type_from_value(origin, ctx), metadata, ctx)
+        elif is_typing_name(root, "TypeGuard"):
+            if len(value.members) != 1:
+                ctx.show_error("TypeGuard requires a single argument")
+                return UNRESOLVED_VALUE
+            return AnnotatedValue(
+                TypedValue(bool),
+                [TypeGuardExtension(_type_from_value(value.members[0], ctx))],
+            )
         elif root is Callable or root is typing.Callable:
             if len(value.members) == 2:
                 args, return_value = value.members
@@ -637,6 +645,13 @@ def _value_of_origin_args(
             return GenericValue(origin, args_vals)
         else:
             return _maybe_typed_value(origin, ctx)
+    elif is_typing_name(origin, "TypeGuard"):
+        if len(args) != 1:
+            ctx.show_error("TypeGuard requires a single argument")
+            return UNRESOLVED_VALUE
+        return AnnotatedValue(
+            TypedValue(bool), [TypeGuardExtension(_type_from_runtime(args[0], ctx))]
+        )
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
         return _maybe_typed_value(val, ctx)
