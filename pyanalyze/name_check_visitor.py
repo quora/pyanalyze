@@ -122,6 +122,8 @@ from .value import (
 T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
+KnownNone = KnownValue(None)
+KnownNoneType = KnownValue(type(None))
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
 
 
@@ -1221,7 +1223,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if (
             not has_return
             and expected_return_value is not None
-            and expected_return_value != KnownValue(None)
+            and expected_return_value != KnownNone
             and expected_return_value is not NO_RETURN_VALUE
             and not any(
                 decorator == KnownValue(abstractmethod)
@@ -1248,7 +1250,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if not is_generator and expected_return_value is not None:
             return_value = expected_return_value
 
-        if is_generator and return_value == KnownValue(None):
+        if is_generator and return_value == KnownNone:
             return_value = UNRESOLVED_VALUE
 
         # pure async functions are otherwise incorrectly inferred as returning whatever the
@@ -1482,7 +1484,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if not return_values:
             if name is not None:
                 method_return_type.check_no_return(node, self, name)
-            return KnownValue(None), has_return, self.is_generator
+            return KnownNone, has_return, self.is_generator
         # None is added to return_values if the function raises an error.
         return_values = [val for val in return_values if val is not None]
         # If it only ever raises an error, we don't know what it returns. Strictly
@@ -2655,7 +2657,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def visit_Return(self, node: ast.Return) -> None:
         """For return type inference, set the pseudo-variable RETURN_VALUE in the local scope."""
         if node.value is None:
-            value = KnownValue(None)
+            value = KnownNone
             if self.current_function_name is not None:
                 method_return_type.check_no_return(
                     node, self, self.current_function_name
@@ -2684,7 +2686,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     error_code=ErrorCode.incompatible_return_value,
                     detail=tv_map.display(),
                 )
-        if self.expected_return_value == KnownValue(None) and value != KnownValue(None):
+        if self.expected_return_value == KnownNone and value != KnownNone:
             self._show_error_if_checking(
                 node,
                 "Function declared as returning None may not return a value",
@@ -3474,7 +3476,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(root_value, MultiValuedValue):
             if self.config.IGNORE_NONE_ATTRIBUTES:
                 subvals = [
-                    subval for subval in root_value.vals if subval != KnownValue(None)
+                    subval
+                    for subval in root_value.vals
+                    if subval != KnownNone and subval != KnownNoneType
                 ]
             else:
                 subvals = root_value.vals
@@ -3499,8 +3503,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(root_value, MultiValuedValue):
             results = []
             for subval in root_value.vals:
-                if self.config.IGNORE_NONE_ATTRIBUTES and subval == KnownValue(None):
-                    continue
+                if self.config.IGNORE_NONE_ATTRIBUTES:
+                    if subval == KnownNone or subval == KnownNoneType:
+                        continue
                 subresult = self._get_attribute_no_mvv(node, attr, subval)
                 if subresult is UNINITIALIZED_VALUE:
                     subresult = self._get_attribute_fallback(node, attr, subval)
@@ -3697,7 +3702,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             arg_values = [arg.value for arg in args]
             kw_values = [(kw, composite.value) for kw, composite in keywords]
             if (
-                (return_value is UNRESOLVED_VALUE or return_value == KnownValue(None))
+                (return_value is UNRESOLVED_VALUE or return_value == KnownNone)
                 and inspect.isclass(callee_val)
                 and not safe_in(callee_val, self.config.IGNORED_CALLEES)
             ):
