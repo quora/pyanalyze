@@ -4008,7 +4008,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if "arg_spec_cache" not in kwargs:
             kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
         if attribute_checker is None:
-            inner_attribute_checker_obj = ClassAttributeChecker(
+            inner_attribute_checker_obj = attribute_checker = ClassAttributeChecker(
                 cls.config,
                 enabled=attribute_checker_enabled,
                 should_check_unused_attributes=find_unused_attributes,

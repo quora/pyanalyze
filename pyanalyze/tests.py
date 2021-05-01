@@ -5,6 +5,7 @@ Functions to be used in test_scope unit tests.
 
 """
 
+from typing import ClassVar
 from asynq import asynq, async_proxy, AsyncTask, ConstFuture, get_async_fn, result
 from asynq.decorators import AsyncDecorator
 import qcore
@@ -67,7 +68,7 @@ def async_fn(oid):
 
 
 class Wrapper(object):
-    pass
+    base: ClassVar[type]
 
 
 def wrap(cls):
