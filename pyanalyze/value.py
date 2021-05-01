@@ -903,8 +903,11 @@ class MultiValuedValue(Value):
         elif isinstance(other, AnnotatedValue):
             return self.can_assign(other.value, ctx)
         else:
-            # Optimization for large unions of literals
             my_vals = self.vals
+            # Optimization for large unions of literals. We could perhaps cache this set,
+            # but that's more complicated. Empirically this is already much faster.
+            # The number 20 is arbitrary. I noticed the bottleneck in production on a
+            # Union with nearly 500 values.
             if isinstance(other, KnownValue) and len(my_vals) > 20:
                 try:
                     # Include the type to avoid e.g. 1 and True matching
