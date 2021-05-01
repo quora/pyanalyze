@@ -1114,7 +1114,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._generic_visit_list(node.bases)
         self._generic_visit_list(node.keywords)
         value = self._visit_class_and_get_value(node)
-        self._set_name_in_scope(node.name, node, value)
+        # In module scope, the class should already be set
+        if self.scopes.scope_type() != ScopeType.module_scope:
+            self._set_name_in_scope(node.name, node, value)
         return value
 
     def _visit_class_and_get_value(self, node: ast.ClassDef) -> Value:
