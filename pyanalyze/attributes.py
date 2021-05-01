@@ -60,6 +60,9 @@ class AttrContext:
     def get_attribute_from_typeshed(self, typ: type) -> Value:
         return UNINITIALIZED_VALUE
 
+    def should_ignore_none_attributes(self) -> bool:
+        return False
+
 
 def get_attribute(ctx: AttrContext) -> Value:
     root_value = ctx.root_value
@@ -219,7 +222,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
 def _get_attribute_from_known(obj: Any, ctx: AttrContext) -> Value:
     ctx.record_attr_read(type(obj))
 
-    if obj is None:
+    if obj is None and ctx.should_ignore_none_attributes():
         # This usually indicates some context is set to None
         # in the module and initialized later.
         return UNRESOLVED_VALUE

@@ -140,11 +140,18 @@ class TestAttributes(TestNameCheckVisitorBase):
             )
 
     @assert_fails(ErrorCode.unsupported_operation)
-    def test_optional(self):
+    def test_optional_operation(self):
         from typing import Optional
 
         def capybara(x: Optional[str]):
             print(x[1:])
+
+    @assert_fails(ErrorCode.undefined_attribute)
+    def test_optional(self):
+        from typing import Optional
+
+        def capybara(x: Optional[str]):
+            x.split()
 
     @assert_passes()
     def test_typeshed(self):

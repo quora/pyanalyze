@@ -236,6 +236,9 @@ class _AttrContext(attributes.AttrContext):
             return UNRESOLVED_VALUE
         return typeshed_type
 
+    def should_ignore_none_attributes(self) -> bool:
+        return self.visitor.config.IGNORE_NONE_ATTRIBUTES
+
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
 _DEFAULT_FUNCTION_INFO = FunctionInfo(AsyncFunctionKind.normal, False, False, False, [])
@@ -795,7 +798,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # this can happen with scripts that aren't intended to be imported
             if not self.has_file_level_ignore():
                 traceback.print_exc()
-                if self.tree.body:
+                if self.tree is not None and self.tree.body:
                     node = self.tree.body[0]
                 else:
                     node = None
