@@ -3,7 +3,7 @@
 Configuration file specific to tests.
 
 """
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 from .arg_spec import ArgSpecCache
 from .signature import Signature, SigParameter
@@ -73,12 +73,12 @@ class TestConfig(Config):
             )
         }
 
-    def unwrap_cls(self, cls: Any) -> type:
+    def unwrap_cls(self, cls: type) -> type:
         """Does any application-specific unwrapping logic for wrapper classes."""
         if (
             isinstance(cls, type)
             and issubclass(cls, tests.Wrapper)
             and cls is not tests.Wrapper
         ):
-            return cls.base  # static analysis: ignore[undefined_attribute]
+            return cls.base
         return cls

@@ -511,6 +511,8 @@ class Scope:
             elif (
                 type(existing) is TypedValue
                 and isinstance(value, TypedValue)
+                # TODO constraints for type(...) is
+                # static analysis: ignore[attribute_is_never_set]
                 and existing.typ is value.typ
             ):
                 # replace with a more specific TypedValue
