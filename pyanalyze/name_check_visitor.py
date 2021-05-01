@@ -813,6 +813,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def check(self) -> List[node_visitor.Failure]:
         """Runs the visitor on this module."""
+        start_time = qcore.utime()
         try:
             if self.is_compiled:
                 # skip compiled (Cythonized) files because pyanalyze will misinterpret the
@@ -844,6 +845,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self.tree = None
         self._lines.__cached_per_instance_cache__.clear()
         self._argspec_to_retval.clear()
+        end_time = qcore.utime()
+        message = f"{self.filename} took {(end_time - start_time) / qcore.SECOND:.2f} s"
+        self.logger.log(logging.INFO, message)
         return self.all_failures
 
     def visit(self, node: ast.AST) -> Value:
