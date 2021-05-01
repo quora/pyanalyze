@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 import inspect
 import qcore
+import sys
 import types
 from typing import Any, Tuple, Optional
 
@@ -231,6 +232,10 @@ def _get_attribute_from_known(obj: Any, ctx: AttrContext) -> Value:
     # Type alias to Any
     if obj is Any:
         return UNRESOLVED_VALUE
+
+    # Avoid generating huge Union type with the actual value
+    if obj is sys and ctx.attr == "modules":
+        return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
 
     result, _ = _get_attribute_from_mro(obj, ctx)
     if isinstance(obj, (types.ModuleType, type)):
