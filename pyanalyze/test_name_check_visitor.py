@@ -261,13 +261,6 @@ def run():
                 pass
 
     @assert_passes()
-    def test_none_global_whitelisting(self):
-        a = None
-
-        def run():
-            print(a.pweb.ip())
-
-    @assert_passes()
     def test_ipython_whitelisting(self):
         def run():
             print(__IPYTHON__)
