@@ -175,22 +175,25 @@ def _hasattr_impl(ctx: CallContext) -> Value:
     name = ctx.vars["name"]
     if not isinstance(name, KnownValue) or not isinstance(name.val, str):
         return TypedValue(bool)
-    if not isinstance(obj, (TypedValue, KnownValue)):
-        return_value = TypedValue(bool)
-    else:
-        typ = obj.typ if isinstance(obj, TypedValue) else type(obj.val)
+    for val in flatten_values(obj):
+        if isinstance(val, (TypedValue)):
+            typ = val.typ
+        elif isinstance(val, KnownValue):
+            typ = type(val.val)
+        else:
+            continue
         # interpret a hasattr check as a sign that the object (somehow) has the attribute
         ctx.visitor._record_type_attr_set(typ, name.val, ctx.node, UNRESOLVED_VALUE)
 
-        # if the value exists on the type or instance, hasattr should return True
-        # don't interpret the opposite to mean it should return False, as the attribute may
-        # exist on a child class or get assigned at runtime
-        if isinstance(obj, TypedValue) and safe_hasattr(obj.typ, name.val):
-            return_value = KnownValue(True)
-        elif isinstance(obj, KnownValue) and safe_hasattr(obj.val, name.val):
-            return_value = KnownValue(True)
-        else:
-            return_value = TypedValue(bool)
+    # if the value exists on the type or instance, hasattr should return True
+    # don't interpret the opposite to mean it should return False, as the attribute may
+    # exist on a child class or get assigned at runtime
+    if isinstance(obj, TypedValue) and safe_hasattr(obj.typ, name.val):
+        return_value = KnownValue(True)
+    elif isinstance(obj, KnownValue) and safe_hasattr(obj.val, name.val):
+        return_value = KnownValue(True)
+    else:
+        return_value = TypedValue(bool)
     metadata = [HasAttrGuardExtension("object", name, UNRESOLVED_VALUE)]
     return AnnotatedValue(return_value, metadata)
 
