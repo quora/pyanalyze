@@ -228,6 +228,10 @@ def _get_attribute_from_known(obj: Any, ctx: AttrContext) -> Value:
         # in the module and initialized later.
         return UNRESOLVED_VALUE
 
+    # Type alias to Any
+    if obj is Any:
+        return UNRESOLVED_VALUE
+
     result, _ = _get_attribute_from_mro(obj, ctx)
     if isinstance(obj, (types.ModuleType, type)):
         ctx.record_usage(obj, result)
