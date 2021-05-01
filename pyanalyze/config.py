@@ -65,6 +65,10 @@ class Config(object):
     # some bugs but also remove some annoying false positives.
     FOR_LOOP_ALWAYS_ENTERED = False
 
+    # If True, we ignore None when type checking attribute access on a Union
+    # type.
+    IGNORE_NONE_ATTRIBUTES = False
+
     # Attribute accesses on these do not result in errors
     IGNORED_PATHS = []
 

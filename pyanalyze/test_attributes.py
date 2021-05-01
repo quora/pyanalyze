@@ -1,6 +1,6 @@
 # static analysis: ignore
 from .error_code import ErrorCode
-from .implementation import assert_is_value
+from .implementation import assert_is_value, dump_value
 from .value import KnownValue, MultiValuedValue, TypedValue, UNRESOLVED_VALUE
 from .test_node_visitor import assert_passes, assert_fails
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -138,6 +138,13 @@ class TestAttributes(TestNameCheckVisitorBase):
             assert_is_value(
                 x.attr, MultiValuedValue([TypedValue(int), TypedValue(str)])
             )
+
+    @assert_fails(ErrorCode.unsupported_operation)
+    def test_optional(self):
+        from typing import Optional
+
+        def capybara(x: Optional[str]):
+            print(x[1:])
 
     @assert_passes()
     def test_typeshed(self):
