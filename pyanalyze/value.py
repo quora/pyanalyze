@@ -889,6 +889,19 @@ class MultiValuedValue(Value):
         )
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(other, KnownValue) and len(self.vals) > 50:
+            try:
+                my_values = {subval.val for subval in self.vals if isinstance(subval, KnownValue)}
+            except TypeError:
+                pass  # not hashable
+            else:
+                try:
+                    is_present = other.val in my_values
+                except TypeError:
+                    pass  # not hashable
+                else:
+                    if is_present:
+                        return {}
         if isinstance(other, MultiValuedValue):
             tv_maps = []
             for val in other.vals:
