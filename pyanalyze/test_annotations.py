@@ -1,5 +1,6 @@
 # static analysis: ignore
-from typing import Optional, Type
+import typing_extensions
+
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
 from .implementation import assert_is_value, dump_value
@@ -10,7 +11,6 @@ from .value import (
     MultiValuedValue,
     NewTypeValue,
     SequenceIncompleteValue,
-    TypeVarValue,
     TypedValue,
     UNRESOLVED_VALUE,
     SubclassValue,
@@ -812,6 +812,29 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
 
 
 class TestTypeGuard(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_typing_extesions(self):
+        from typing_extensions import TypeGuard
+        from typing import Union
+
+        def is_int(x: Union[int, str]) -> TypeGuard[int]:
+            return x == 42
+
+        def is_quoted_int(x: Union[int, str]) -> "TypeGuard[int]":
+            return x == 42
+
+        def capybara(x: Union[int, str]):
+            if is_int(x):
+                assert_is_value(x, TypedValue(int))
+            else:
+                assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+
+        def pacarana(x: Union[int, str]):
+            if is_quoted_int(x):
+                assert_is_value(x, TypedValue(int))
+            else:
+                assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+
     @assert_passes()
     def test(self):
         from pyanalyze.extensions import TypeGuard

@@ -1,18 +1,16 @@
-pyanalyze
-=========
+# pyanalyze
 
 Pyanalyze is a tool for programmatically detecting common mistakes in Python code, such as references to undefined variables and type errors.
 It can be extended to add additional rules and perform checks specific to particular functions.
 
 Some use cases for this tool include:
 
--   **Catching bugs before they reach production**. The script will catch accidental mistakes like writing "`collections.defalutdict`" instead of "`collections.defaultdict`", so that they won't cause errors in production. Other categories of bugs it can find include variables that may be undefined at runtime, duplicate keys in dict literals, and missing `await` keywords.
--   **Making refactoring easier**. When you make a change like removing an object attribute or moving a class from one file to another, pyanalyze will often be able to flag code that you forgot to change.
--   **Finding dead code**. It has an option for finding Python objects (functions and classes) that are not used anywhere in the codebase.
--   **Checking type annotations**. Type annotations are useful as documentation for readers of code, but only when they are actually correct. Although pyanalyze does not support the full Python type system (see [below](#type-system) for details), it can often detect incorrect type annotations.
+- **Catching bugs before they reach production**. The script will catch accidental mistakes like writing "`collections.defalutdict`" instead of "`collections.defaultdict`", so that they won't cause errors in production. Other categories of bugs it can find include variables that may be undefined at runtime, duplicate keys in dict literals, and missing `await` keywords.
+- **Making refactoring easier**. When you make a change like removing an object attribute or moving a class from one file to another, pyanalyze will often be able to flag code that you forgot to change.
+- **Finding dead code**. It has an option for finding Python objects (functions and classes) that are not used anywhere in the codebase.
+- **Checking type annotations**. Type annotations are useful as documentation for readers of code, but only when they are actually correct. Although pyanalyze does not support the full Python type system (see [below](#type-system) for details), it can often detect incorrect type annotations.
 
-Usage
------
+## Usage
 
 You can install pyanalyze with:
 
@@ -128,7 +126,6 @@ class Config(pyanalyze.config.Config):
         }
 ```
 
-
 ### Displaying and checking the type of an expression
 
 You can use `pyanalyze.dump_value(expr)` to display the type pyanalyze infers for an expression. This can be
@@ -139,7 +136,6 @@ from pyanalyze import dump_value
 
 dump_value(1)  # value: KnownValue(val=1) (code: inference_failure)
 ```
-
 
 Similarly, you can use `pyanalyze.assert_is_value` to assert that pyanalyze infers a particular type for
 an expression. This requires importing the appropriate `Value` subclass from `pyanalyze.value`. For example:
@@ -168,8 +164,7 @@ You can add an error code, like `# static analysis: ignore[undefined_name]`, to 
 
 Pyanalyze supports Python 3.6 through 3.9. Because it imports the code it checks, you have to run it using the same version of Python you use to run your code.
 
-Background
-----------
+## Background
 
 Pyanalyze is built on top of two lower-level abstractions: Python's built-in `ast` module and our own `node_visitor` abstraction, which is an extension of the `ast.NodeVisitor` class.
 
@@ -271,8 +266,7 @@ In example.py at line 2:
 
 Subclasses of `BaseNodeVisitor` can specify which errors are enabled by default by overriding `is_enabled_by_default` and the description shown for an error by overriding `get_description_for_error_code`.
 
-Design
-------
+## Design
 
 Fundamentally, the way pyanalyze works is that it tries to infer, with as much precision as possible, what Python value or what kind of Python value each node in a file's AST corresponds to, and then uses that information to flag code that does something undesirable. Mostly, that involves identifying code that will cause the Python interpreter to throw an error at runtime, for example because it accesses an attribute that doesn't exist or because it passes incorrect arguments to a function. As much as possible, the script tries to evaluate whether an operation is allowed by asking Python whether it is: for example, whether the arguments to a function call are correct is decided by creating a function with the same arguments as the called function, calling it with the same arguments as in the call, and checking whether the call throws an error.
 
@@ -288,10 +282,10 @@ When the script is run on a file, the scopes object is initialized with two scop
 
 The following scope types exist:
 
--   `builtin_scope` is at the bottom of every scope stack and contains standard Python builtin objects.
--   `module_scope` is always right above builtin_scope and contains module-global names, such as classes and functions defined at the global level in the file.
--   `class_scope` is entered whenever the AST visitor encounters a class definition. It can contain nested class or function scopes.
--   `function_scope` is entered for each function definition.
+- `builtin_scope` is at the bottom of every scope stack and contains standard Python builtin objects.
+- `module_scope` is always right above builtin_scope and contains module-global names, such as classes and functions defined at the global level in the file.
+- `class_scope` is entered whenever the AST visitor encounters a class definition. It can contain nested class or function scopes.
+- `function_scope` is entered for each function definition.
 
 The function scope has a more complicated representation than the others so that it can reflect changes in values during the execution of a function. Broadly speaking, pyanalyze collects the places where every local variable is either written (definition nodes) or read (usage nodes), and it maps every usage node to the set of possible definition nodes that the value may come from. For example, if a variable is written to and then read on the next line, the usage node on the second line is mapped to the definition node on the first line only, but if a variable is set within both the if and the else branch of an if block, a usage after the if block will be mapped to definition nodes from both the if and the else block. If the variable is never set in some branches, a special marker object is used again, and pyanalyze will emit a `possibly_undefined_name` error.
 
@@ -308,18 +302,18 @@ In this code, the `x is not None` check is translated into a constraint that is 
 
 The following constructs are understood as constraints:
 
--   `if x is (not) None`
--   `if (not) x`
--   `if isinstance(x, <some type>)`
--   `if issubclass(x, <some type>)`
--   `if len(x) == <some value>`
--   A function returning a `TypeGuard` or similar construct
+- `if x is (not) None`
+- `if (not) x`
+- `if isinstance(x, <some type>)`
+- `if issubclass(x, <some type>)`
+- `if len(x) == <some value>`
+- A function returning a `TypeGuard` or similar construct
 
 Constraints are used to restrict the types of:
 
--   Local variables
--   Instance variables (e.g., after `if self.x is None`, the type of `self.x` is restricted)
--   Nonlocal variables (variables defined in enclosing scopes)
+- Local variables
+- Instance variables (e.g., after `if self.x is None`, the type of `self.x` is restricted)
+- Nonlocal variables (variables defined in enclosing scopes)
 
 ### Type and value inference
 
@@ -327,16 +321,16 @@ Just knowing that a name has been defined doesn't tell what you can do with the 
 
 The following subclasses of `Value` exist:
 
--   `UnresolvedValue` (with a single instance, `UNRESOLVED_VALUE`), representing that the script knows nothing about the value a node can contain. For example, if a file contains only the function `def f(x): return x`, the name `x` will have `UNRESOLVED_VALUE` as its value within the function, because there is no information to determine what value it can contain.
--   `KnownValue` represents a value for which the script knows the concrete Python value. If a file contains the line `x = 1` and no other assignments to `x`, `x` will contain `KnownValue(1)`.
--   `TypedValue` represents that the script knows the type but not the exact value. If the only assignment to `x` is a line `x = int(some_function())`, the script infers that `x` contains `TypedValue(int)`. More generally, the script infers any call to a class as resulting in an instance of that class. The type is also inferred for the `self` argument of methods, for comprehensions, for function arguments with type annotations, and in a few other cases. This class has several subtypes:
-    -   `NewTypeValue` corresponds to [`typing.NewType`](https://docs.python.org/3/library/typing.html#newtype); it indicates a distinct type that is identical to some other type at runtime. At Quora we use newtypes for helper types like `qtype.Uid`.
-    -   `GenericValue` corresponds to generics, like `List[int]`.
--   `MultiValuedValue` indicates that multiple values are possible, for example because a variable is assigned to in multiple places. After the line `x = 1 if condition() else 'foo'`, `x` will contain `MultiValuedValue([KnownValue(1), KnownValue('foo')])`. This corresponds to [`typing.Union`](https://docs.python.org/3/library/typing.html#typing.Union).
--   `UnboundMethodValue` indicates that the value is a method, but that we don't have the instance the method is bound to. This often comes up when a method in a class `SomeClass` contains code like `self.some_other_method`: we know that self is a `TypedValue(SomeClass)` and that `SomeClass` has a method `some_other_method`, but we don't have the instance that `self.some_other_method` will be bound to, so we can't resolve a `KnownValue` for it. Returning an `UnboundMethodValue` in this case makes it still possible to check whether the arguments to the method are valid.
--   `ReferencingValue` represents a value that is a reference to a name in some other scopes. This is used to implement the `global` statement: `global x` creates a `ReferencingValue` referencing the `x` variable in the module scope. Assignments to it will affect the referenced value.
--   `SubclassValue` represents a class object of a class or its subclass. For example, in a classmethod, the type of the `cls` argument is a `SubclassValue` of the class the classmethod is defined in. At runtime, it is either this class or a subclass.
--   `NoReturnValue` indicates that a function will never return (e.g., because it always throws an error), corresponding to [`typing.NoReturn`](https://docs.python.org/3/library/typing.html#typing.NoReturn).
+- `UnresolvedValue` (with a single instance, `UNRESOLVED_VALUE`), representing that the script knows nothing about the value a node can contain. For example, if a file contains only the function `def f(x): return x`, the name `x` will have `UNRESOLVED_VALUE` as its value within the function, because there is no information to determine what value it can contain.
+- `KnownValue` represents a value for which the script knows the concrete Python value. If a file contains the line `x = 1` and no other assignments to `x`, `x` will contain `KnownValue(1)`.
+- `TypedValue` represents that the script knows the type but not the exact value. If the only assignment to `x` is a line `x = int(some_function())`, the script infers that `x` contains `TypedValue(int)`. More generally, the script infers any call to a class as resulting in an instance of that class. The type is also inferred for the `self` argument of methods, for comprehensions, for function arguments with type annotations, and in a few other cases. This class has several subtypes:
+  - `NewTypeValue` corresponds to [`typing.NewType`](https://docs.python.org/3/library/typing.html#newtype); it indicates a distinct type that is identical to some other type at runtime. At Quora we use newtypes for helper types like `qtype.Uid`.
+  - `GenericValue` corresponds to generics, like `List[int]`.
+- `MultiValuedValue` indicates that multiple values are possible, for example because a variable is assigned to in multiple places. After the line `x = 1 if condition() else 'foo'`, `x` will contain `MultiValuedValue([KnownValue(1), KnownValue('foo')])`. This corresponds to [`typing.Union`](https://docs.python.org/3/library/typing.html#typing.Union).
+- `UnboundMethodValue` indicates that the value is a method, but that we don't have the instance the method is bound to. This often comes up when a method in a class `SomeClass` contains code like `self.some_other_method`: we know that self is a `TypedValue(SomeClass)` and that `SomeClass` has a method `some_other_method`, but we don't have the instance that `self.some_other_method` will be bound to, so we can't resolve a `KnownValue` for it. Returning an `UnboundMethodValue` in this case makes it still possible to check whether the arguments to the method are valid.
+- `ReferencingValue` represents a value that is a reference to a name in some other scopes. This is used to implement the `global` statement: `global x` creates a `ReferencingValue` referencing the `x` variable in the module scope. Assignments to it will affect the referenced value.
+- `SubclassValue` represents a class object of a class or its subclass. For example, in a classmethod, the type of the `cls` argument is a `SubclassValue` of the class the classmethod is defined in. At runtime, it is either this class or a subclass.
+- `NoReturnValue` indicates that a function will never return (e.g., because it always throws an error), corresponding to [`typing.NoReturn`](https://docs.python.org/3/library/typing.html#typing.NoReturn).
 
 Each `Value` object has a method `can_assign` that checks whether types are correct. The call `X.can_assign(Y, ctx)` essentially answers the question: if we expect a value `X`, is it legal to pass a value `Y` instead? For example, `TypedValue(int).can_assign(KnownValue(1), ctx)` will succeed, because `1` is a valid `int`, but `TypedValue(int).can_assign(KnownValue("1"), ctx)` will fail, because `"1"` is not. In order to help with type checking generics, the return value of `can_assign` is a (possibly empty) dictionary of type variables mapping to their values.
 
@@ -358,8 +352,7 @@ Another class of bugs involves objects accessing attributes on `self` that don't
 
 Because pyanalyze tries to resolve all names and attribute lookups in code in a package, it was easy to extend it to determine which of the classes and functions defined in the package aren't accessed in any other code. This is done by recording every name and attribute lookup that results in a `KnownValue` containing a function or class defined in the package. After the AST visitor run, it compares the set of accessed objects with another set of all the functions and classes that are defined in submodules of the package. All objects that appear in the second set but not the first are probably unused. (There are false positives, such as functions that are registered in some registry by decorators, or those that are called from outside of `a` itself.) This check can be run by passing the `--find-unused` argument to pyanalyze.
 
-Type system
------------
+## Type system
 
 Pyanalyze supports most of the Python type system, as specified in [PEP 484](https://www.python.org/dev/peps/pep-0484/) and various later PEPs and in the [Python documentation](https://docs.python.org/3/library/typing.html). It uses type annotations to infer types and checks for type compatibility in calls and return types. Supported type system features include generics like `List[int]`, `NewType`, `TypedDict`, `TypeVar`, and `Callable`.
 
@@ -371,8 +364,6 @@ However, support for some features is still missing or incomplete, including:
 - Missing and required keys in `TypedDict`
 - Protocols (PEP 544)
 - `ParamSpec` (PEP 612)
-
-PEP 649's `TypeGuard` type needs to be imported from `pyanalyze.extensions` until it is supported by `typing_extensions` or `typing`.
 
 ### Extensions
 
@@ -493,15 +484,13 @@ def hasattr(obj: object, name: T) -> Annotated[bool, HasAttrGuard["obj", T, Any]
 
 As currently implemented, `HasAttrGuard` does not narrow types; instead it preserves the previous type of a variable and adds the additional attribute.
 
-Limitations
------------
+## Limitations
 
 Python is sufficiently dynamic that almost any check like the ones run by pyanalyze will inevitably have false positives: cases where the script sees an error, but the code in fact runs fine. Attributes may be added at runtime in hard-to-detect ways, variables may be created by direct manipulation of the `globals()` dictionary, and the `mock` module can change anything into anything. Although pyanalyze has a number of whitelists to deal with these false positives, it is usually better to write code in a way that doesn't require use of the whitelist: code that's easier for the script to understand is probably also easier for humans to understand.
 
 Just as the tool inevitably has false positives, it equally inevitably cannot find all code that will throw a runtime error. It is generally impossible to statically determine what a program does or whether it runs successfully without actually running the program. Pyanalyze doesn't check program logic and it cannot always determine exactly what value a variable will have. It is no substitute for unit tests.
 
-Developing pyanalyze
---------------------
+## Developing pyanalyze
 
 Pyanalyze has hundreds of unit tests that check its behavior. To run them, you can just run `pytest` in the project directory.
 
