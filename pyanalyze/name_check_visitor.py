@@ -3477,16 +3477,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         """
         if isinstance(root_value, MultiValuedValue):
-            if self.config.IGNORE_NONE_ATTRIBUTES:
-                subvals = [
-                    subval
-                    for subval in root_value.vals
-                    if subval != KnownNone and subval != KnownNoneType
-                ]
-            else:
-                subvals = root_value.vals
             values = [
-                self._get_attribute_no_mvv(node, attr, subval) for subval in subvals
+                self._get_attribute_no_mvv(node, attr, subval)
+                for subval in root_value.vals
             ]
             if any(value is UNINITIALIZED_VALUE for value in values):
                 return UNINITIALIZED_VALUE
@@ -3506,9 +3499,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(root_value, MultiValuedValue):
             results = []
             for subval in root_value.vals:
-                if self.config.IGNORE_NONE_ATTRIBUTES:
-                    if subval == KnownNone or subval == KnownNoneType:
-                        continue
                 subresult = self._get_attribute_no_mvv(node, attr, subval)
                 if subresult is UNINITIALIZED_VALUE:
                     subresult = self._get_attribute_fallback(node, attr, subval)

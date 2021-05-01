@@ -34,6 +34,7 @@ from .value import (
 # these don't appear to be in the standard types module
 SlotWrapperType = type(type.__init__)
 MethodDescriptorType = type(list.append)
+NoneType = type(None)
 
 
 @dataclass
@@ -222,7 +223,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
 def _get_attribute_from_known(obj: Any, ctx: AttrContext) -> Value:
     ctx.record_attr_read(type(obj))
 
-    if obj is None and ctx.should_ignore_none_attributes():
+    if (obj is None or obj is NoneType) and ctx.should_ignore_none_attributes():
         # This usually indicates some context is set to None
         # in the module and initialized later.
         return UNRESOLVED_VALUE
