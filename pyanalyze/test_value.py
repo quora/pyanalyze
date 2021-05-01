@@ -82,6 +82,8 @@ def test_known_value() -> None:
     assert_can_assign(val, MultiValuedValue([val, UNRESOLVED_VALUE]))
     assert_cannot_assign(val, MultiValuedValue([val, TypedValue(int)]))
     assert_cannot_assign(KnownValue(int), SubclassValue(TypedValue(int)))
+    assert_cannot_assign(KnownValue(1), KnownValue(True))
+    assert_cannot_assign(KnownValue(True), KnownValue(1))
 
 
 def test_unbound_method_value() -> None:
@@ -260,6 +262,14 @@ def test_multi_valued_value() -> None:
             [UNRESOLVED_VALUE, MultiValuedValue([TypedValue(int), KnownValue(None)])]
         ),
     )
+
+
+def test_large_union_optimization() -> None:
+    val = MultiValuedValue([*[KnownValue(i) for i in range(10000)], TypedValue(str)])
+    assert_can_assign(val, KnownValue(1))
+    assert_cannot_assign(val, KnownValue(234234))
+    assert_cannot_assign(val, KnownValue(True))
+    assert_can_assign(val, KnownValue(""))
 
 
 class ThriftEnum(object):

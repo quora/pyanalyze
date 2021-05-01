@@ -204,7 +204,7 @@ class KnownValue(Value):
         if signature is not None:
             return CallableValue(signature).can_assign(other, ctx)
         if isinstance(other, KnownValue):
-            if self.val == other.val and type(self) == type(other):
+            if self.val == other.val and type(self.val) is type(other.val):
                 return {}
         return super().can_assign(other, ctx)
 
@@ -905,9 +905,40 @@ class MultiValuedValue(Value):
         elif isinstance(other, AnnotatedValue):
             return self.can_assign(other.value, ctx)
         else:
+            my_vals = self.vals
+            # Optimization for large unions of literals. We could perhaps cache this set,
+            # but that's more complicated. Empirically this is already much faster.
+            # The number 20 is arbitrary. I noticed the bottleneck in production on a
+            # Union with nearly 500 values.
+            if isinstance(other, KnownValue) and len(my_vals) > 20:
+                try:
+                    # Include the type to avoid e.g. 1 and True matching
+                    known_values = {
+                        (subval.val, type(subval.val))
+                        for subval in my_vals
+                        if isinstance(subval, KnownValue)
+                    }
+                except TypeError:
+                    pass  # not hashable
+                else:
+                    try:
+                        is_present = (other.val, type(other.val)) in known_values
+                    except TypeError:
+                        pass  # not hashable
+                    else:
+                        if is_present:
+                            return {}
+                        else:
+                            # Make remaining check not consider the KnownValues again
+                            my_vals = [
+                                subval
+                                for subval in my_vals
+                                if not isinstance(subval, KnownValue)
+                            ]
+
             tv_maps = []
             errors = []
-            for val in self.vals:
+            for val in my_vals:
                 tv_map = val.can_assign(other, ctx)
                 if isinstance(tv_map, CanAssignError):
                     errors.append(tv_map)
