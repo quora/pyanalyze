@@ -134,6 +134,22 @@ def f(x: NT) -> None:
         )
 
 
+class TestTypeshedProtocol(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_gzip(self):
+        import gzip
+
+        class MatchesProto:
+            def read(self, n: int) -> bytes:
+                return b""
+
+            def seek(self, n: int) -> str:
+                return ""
+
+        def capybara() -> None:
+            gzip._GzipReader(MatchesProto())
+
+
 class Parent(Generic[T]):
     pass
 
