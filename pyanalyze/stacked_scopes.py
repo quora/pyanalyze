@@ -555,6 +555,9 @@ class Scope:
     def scope_used_as_parent(self) -> "Scope":
         """Class scopes are skipped in scope lookup, so don't set them as parent scopes."""
         if self.scope_type == ScopeType.class_scope:
+            assert (
+                self.parent_scope is not None
+            ), "class scopes must have a parent scope"
             return self.parent_scope.scope_used_as_parent()
         else:
             return self
@@ -885,6 +888,9 @@ class FunctionScope(Scope):
                     val.definition_nodes, ctx, val.constraints
                 )
             else:
+                assert (
+                    self.parent_scope
+                ), "constrained value must have definition nodes or parent scope"
                 parent_val, _ = self.parent_scope.get(ctx.varname, None, ctx.state)
                 resolved = _constrain_value([parent_val], val.constraints)
             val.resolution_cache[key] = resolved

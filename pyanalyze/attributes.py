@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 import inspect
 import qcore
+import sys
 import types
 from typing import Any, Tuple, Optional
 
@@ -34,6 +35,7 @@ from .value import (
 # these don't appear to be in the standard types module
 SlotWrapperType = type(type.__init__)
 MethodDescriptorType = type(list.append)
+NoneType = type(None)
 
 
 @dataclass
@@ -59,6 +61,9 @@ class AttrContext:
 
     def get_attribute_from_typeshed(self, typ: type) -> Value:
         return UNINITIALIZED_VALUE
+
+    def should_ignore_none_attributes(self) -> bool:
+        return False
 
 
 def get_attribute(ctx: AttrContext) -> Value:
@@ -89,8 +94,7 @@ def get_attribute(ctx: AttrContext) -> Value:
     elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
         attribute_value = UNRESOLVED_VALUE
     elif isinstance(root_value, MultiValuedValue):
-        # TODO: actually check this
-        attribute_value = UNRESOLVED_VALUE
+        raise TypeError("caller should unwrap MultiValuedValue")
     else:
         attribute_value = UNINITIALIZED_VALUE
     if (
@@ -220,10 +224,18 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
 def _get_attribute_from_known(obj: Any, ctx: AttrContext) -> Value:
     ctx.record_attr_read(type(obj))
 
-    if obj is None:
+    if (obj is None or obj is NoneType) and ctx.should_ignore_none_attributes():
         # This usually indicates some context is set to None
         # in the module and initialized later.
         return UNRESOLVED_VALUE
+
+    # Type alias to Any
+    if obj is Any:
+        return UNRESOLVED_VALUE
+
+    # Avoid generating huge Union type with the actual value
+    if obj is sys and ctx.attr == "modules":
+        return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
 
     result, _ = _get_attribute_from_mro(obj, ctx)
     if isinstance(obj, (types.ModuleType, type)):

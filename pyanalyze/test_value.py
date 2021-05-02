@@ -110,6 +110,7 @@ def test_unbound_method_value() -> None:
     assert_eq(TypedValue(tests.PropertyObject), val.typ)
     assert_eq("asynq", val.secondary_attr_name)
     method = val.get_method()
+    assert_is_not(None, method)
     assert_in(method.__name__, tests.ASYNQ_METHOD_NAMES)
     assert_eq(tests.PropertyObject.get_prop_with_get, method.__self__)
     assert val.is_type(object)

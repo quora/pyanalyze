@@ -122,6 +122,7 @@ from .value import (
 T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
+KnownNone = KnownValue(None)
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
 
 
@@ -233,6 +234,9 @@ class _AttrContext(attributes.AttrContext):
         ):
             return UNRESOLVED_VALUE
         return typeshed_type
+
+    def should_ignore_none_attributes(self) -> bool:
+        return self.visitor.config.IGNORE_NONE_ATTRIBUTES
 
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
@@ -793,7 +797,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # this can happen with scripts that aren't intended to be imported
             if not self.has_file_level_ignore():
                 traceback.print_exc()
-                if self.tree.body:
+                if self.tree is not None and self.tree.body:
                     node = self.tree.body[0]
                 else:
                     node = None
@@ -809,6 +813,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def check(self) -> List[node_visitor.Failure]:
         """Runs the visitor on this module."""
+        start_time = qcore.utime()
         try:
             if self.is_compiled:
                 # skip compiled (Cythonized) files because pyanalyze will misinterpret the
@@ -840,6 +845,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self.tree = None
         self._lines.__cached_per_instance_cache__.clear()
         self._argspec_to_retval.clear()
+        end_time = qcore.utime()
+        message = f"{self.filename} took {(end_time - start_time) / qcore.SECOND:.2f} s"
+        self.logger.log(logging.INFO, message)
         return self.all_failures
 
     def visit(self, node: ast.AST) -> Value:
@@ -1106,7 +1114,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._generic_visit_list(node.bases)
         self._generic_visit_list(node.keywords)
         value = self._visit_class_and_get_value(node)
-        self._set_name_in_scope(node.name, node, value)
+        # In module scope, the class should already be set
+        if self.scopes.scope_type() != ScopeType.module_scope:
+            self._set_name_in_scope(node.name, node, value)
         return value
 
     def _visit_class_and_get_value(self, node: ast.ClassDef) -> Value:
@@ -1221,7 +1231,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if (
             not has_return
             and expected_return_value is not None
-            and expected_return_value != KnownValue(None)
+            and expected_return_value != KnownNone
             and expected_return_value is not NO_RETURN_VALUE
             and not any(
                 decorator == KnownValue(abstractmethod)
@@ -1248,7 +1258,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if not is_generator and expected_return_value is not None:
             return_value = expected_return_value
 
-        if is_generator and return_value == KnownValue(None):
+        if is_generator and return_value == KnownNone:
             return_value = UNRESOLVED_VALUE
 
         # pure async functions are otherwise incorrectly inferred as returning whatever the
@@ -1482,7 +1492,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if not return_values:
             if name is not None:
                 method_return_type.check_no_return(node, self, name)
-            return KnownValue(None), has_return, self.is_generator
+            return KnownNone, has_return, self.is_generator
         # None is added to return_values if the function raises an error.
         return_values = [val for val in return_values if val is not None]
         # If it only ever raises an error, we don't know what it returns. Strictly
@@ -2655,7 +2665,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def visit_Return(self, node: ast.Return) -> None:
         """For return type inference, set the pseudo-variable RETURN_VALUE in the local scope."""
         if node.value is None:
-            value = KnownValue(None)
+            value = KnownNone
             if self.current_function_name is not None:
                 method_return_type.check_no_return(
                     node, self, self.current_function_name
@@ -2684,7 +2694,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     error_code=ErrorCode.incompatible_return_value,
                     detail=tv_map.display(),
                 )
-        if self.expected_return_value == KnownValue(None) and value != KnownValue(None):
+        if self.expected_return_value == KnownNone and value != KnownNone:
             self._show_error_if_checking(
                 node,
                 "Function declared as returning None may not return a value",
@@ -3471,63 +3481,94 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         Returns UninitializedValue if the attribute cannot be found.
 
         """
+        if isinstance(root_value, MultiValuedValue):
+            values = [
+                self._get_attribute_no_mvv(node, attr, subval)
+                for subval in root_value.vals
+            ]
+            if any(value is UNINITIALIZED_VALUE for value in values):
+                return UNINITIALIZED_VALUE
+            return unite_values(*values)
+        return self._get_attribute_no_mvv(node, attr, root_value)
+
+    def _get_attribute_no_mvv(
+        self, node: ast.AST, attr: str, root_value: Value
+    ) -> Value:
+        """Get an attribute. root_value must not be a MultiValuedValue."""
         ctx = _AttrContext(root_value, attr, node, self)
         return attributes.get_attribute(ctx)
 
     def _get_attribute_with_fallback(
         self, node: ast.Attribute, attr: str, root_value: Value
     ) -> Value:
-        result = self.get_attribute(node, attr, root_value)
+        if isinstance(root_value, MultiValuedValue):
+            results = []
+            for subval in root_value.vals:
+                subresult = self._get_attribute_no_mvv(node, attr, subval)
+                if subresult is UNINITIALIZED_VALUE:
+                    subresult = self._get_attribute_fallback(node, attr, subval)
+                results.append(subresult)
+            return unite_values(*results)
+        result = self._get_attribute_no_mvv(node, attr, root_value)
         if result is UNINITIALIZED_VALUE:
-            # We don't throw an error in many
-            # cases where we're not quite sure whether an attribute
-            # will exist.
-            if isinstance(root_value, AnnotatedValue):
-                root_value = root_value.value
-            if isinstance(root_value, UnboundMethodValue):
-                if self._should_ignore_val(node):
-                    return UNRESOLVED_VALUE
-            elif isinstance(root_value, KnownValue):
-                # super calls on mixin classes may use attributes that are defined only on child classes
-                if isinstance(root_value.val, super):
-                    subclasses = qcore.inspection.get_subclass_tree(
-                        root_value.val.__thisclass__
-                    )
-                    if any(
-                        hasattr(cls, attr)
-                        for cls in subclasses
-                        if cls is not root_value.val.__thisclass__
-                    ):
-                        return UNRESOLVED_VALUE
+            return self._get_attribute_fallback(node, attr, root_value)
+        return result
 
-                # Ignore objects that override __getattr__
-                if (
-                    _static_hasattr(root_value.val, "__getattr__")
-                    or self._should_ignore_val(node)
-                    or safe_getattr(
-                        root_value.val, "_pyanalyze_is_nested_function", False
-                    )
+    def _get_attribute_fallback(
+        self, node: ast.Attribute, attr: str, root_value: Value
+    ) -> Value:
+        # We don't throw an error in many
+        # cases where we're not quite sure whether an attribute
+        # will exist.
+        if isinstance(root_value, AnnotatedValue):
+            root_value = root_value.value
+        if isinstance(root_value, UnboundMethodValue):
+            if self._should_ignore_val(node):
+                return UNRESOLVED_VALUE
+        elif isinstance(root_value, KnownValue):
+            # super calls on mixin classes may use attributes that are defined only on child classes
+            if isinstance(root_value.val, super):
+                subclasses = qcore.inspection.get_subclass_tree(
+                    root_value.val.__thisclass__
+                )
+                if any(
+                    hasattr(cls, attr)
+                    for cls in subclasses
+                    if cls is not root_value.val.__thisclass__
                 ):
                     return UNRESOLVED_VALUE
-            elif isinstance(root_value, TypedValue):
-                root_type = root_value.typ
+
+            # Ignore objects that override __getattr__
+            if (
+                _static_hasattr(root_value.val, "__getattr__")
+                or self._should_ignore_val(node)
+                or safe_getattr(root_value.val, "_pyanalyze_is_nested_function", False)
+            ):
+                return UNRESOLVED_VALUE
+        elif isinstance(root_value, TypedValue):
+            root_type = root_value.typ
+            if not self._has_only_known_attributes(root_type):
+                return self._maybe_get_attr_value(root_type, attr)
+        elif isinstance(root_value, SubclassValue):
+            if isinstance(root_value.typ, TypedValue):
+                root_type = root_value.typ.typ
                 if not self._has_only_known_attributes(root_type):
                     return self._maybe_get_attr_value(root_type, attr)
-            elif isinstance(root_value, SubclassValue):
-                if isinstance(root_value.typ, TypedValue):
-                    root_type = root_value.typ.typ
-                    if not self._has_only_known_attributes(root_type):
-                        return self._maybe_get_attr_value(root_type, attr)
-                else:
-                    return UNRESOLVED_VALUE
-            self._show_error_if_checking(
-                node,
-                "%s has no attribute %r" % (root_value, attr),
-                ErrorCode.undefined_attribute,
+            else:
+                return UNRESOLVED_VALUE
+        elif isinstance(root_value, MultiValuedValue):
+            return unite_values(
+                *[
+                    self._get_attribute_fallback(node, attr, val)
+                    for val in root_value.vals
+                ]
             )
-            return UNRESOLVED_VALUE
-
-        return result
+        self._show_error_if_checking(
+            node,
+            "%s has no attribute %r" % (root_value, attr),
+            ErrorCode.undefined_attribute,
+        )
+        return UNRESOLVED_VALUE
 
     def _has_only_known_attributes(self, typ: type) -> bool:
         if (
@@ -3659,7 +3700,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             arg_values = [arg.value for arg in args]
             kw_values = [(kw, composite.value) for kw, composite in keywords]
             if (
-                (return_value is UNRESOLVED_VALUE or return_value == KnownValue(None))
+                (return_value is UNRESOLVED_VALUE or return_value == KnownNone)
                 and inspect.isclass(callee_val)
                 and not safe_in(callee_val, self.config.IGNORED_CALLEES)
             ):
