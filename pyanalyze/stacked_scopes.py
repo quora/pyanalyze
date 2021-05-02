@@ -46,6 +46,7 @@ from typing import (
 
 from .safe import safe_equals, safe_issubclass
 from .value import (
+    AnnotatedValue,
     KnownValue,
     ReferencingValue,
     SubclassValue,
@@ -214,8 +215,12 @@ class Constraint(AbstractConstraint):
 
     def apply_to_values(self, values: Iterable[Value]) -> Iterable[Value]:
         for value in values:
-            for applied in self.apply_to_value(value):
-                yield applied
+            if isinstance(value, AnnotatedValue):
+                for applied in self.apply_to_value(value.value):
+                    yield annotate_value(applied, value.metadata)
+            else:
+                for applied in self.apply_to_value(value):
+                    yield applied
 
     def apply_to_value(self, value: Value) -> Iterable[Value]:
         """Yield values consistent with this constraint.

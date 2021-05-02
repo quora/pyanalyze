@@ -1377,6 +1377,22 @@ class TestConstraints(TestNameCheckVisitorBase):
             assert_is_value(y, MultiValuedValue([KnownValue(True), KnownValue(False)]))
 
     @assert_passes()
+    def test_while_hasattr(self):
+        from typing import Optional
+        from pyanalyze.value import HasAttrExtension
+
+        def capybara(x: Optional[int]):
+            assert_is_value(x, MultiValuedValue([KnownValue(None), TypedValue(int)]))
+            while x is not None and hasattr(x, "name"):
+                assert_is_value(
+                    x,
+                    AnnotatedValue(
+                        TypedValue(int),
+                        [HasAttrExtension(KnownValue("name"), UNRESOLVED_VALUE)],
+                    ),
+                )
+
+    @assert_passes()
     def test_unconstrained_composite(self):
         class Foo(object):
             def has_images(self):

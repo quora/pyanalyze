@@ -1216,7 +1216,25 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
         return origin
     if isinstance(origin, AnnotatedValue):
         # Flatten it
-        return AnnotatedValue(origin.value, [*origin.metadata, *metadata])
+        metadata = [*origin.metadata, *metadata]
+        origin = origin.value
+    # Make sure order is consistent; conceptually this is a set but
+    # sets have unpredictable iteration order.
+    hashable_vals = OrderedDict()
+    unhashable_vals = []
+    uncomparable_vals = []
+    for item in metadata:
+        try:
+            # Don't readd it to preserve original ordering.
+            if item not in hashable_vals:
+                hashable_vals[item] = None
+        except Exception:
+            try:
+                if item not in unhashable_vals:
+                    unhashable_vals.append(item)
+            except Exception:
+                uncomparable_vals.append(item)
+    metadata = list(hashable_vals) + unhashable_vals + uncomparable_vals
     return AnnotatedValue(origin, metadata)
 
 
