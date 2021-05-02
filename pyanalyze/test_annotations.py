@@ -1,15 +1,23 @@
 # static analysis: ignore
-import typing_extensions
+from dataclasses import dataclass
+from qcore.asserts import assert_eq
+from typing_extensions import Protocol
 
+from .annotations import Context, type_from_runtime
+from .arg_spec import ArgSpecCache
+from .test_config import TestConfig
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
-from .implementation import assert_is_value, dump_value
+from .implementation import assert_is_value
 from .error_code import ErrorCode
+from .signature import MaybeSignature, SigParameter, Signature, BoundMethodSignature
 from .value import (
     AnnotatedValue,
+    CallableValue,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
+    ProtocolValue,
     SequenceIncompleteValue,
     TypedValue,
     UNRESOLVED_VALUE,
@@ -866,3 +874,90 @@ class TestTypeGuard(TestNameCheckVisitorBase):
             else:
                 assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
                 assert_is_value(cls, TypedValue(Cls))
+
+
+@dataclass
+class ProtoContext(Context):
+    arg_spec_cache: ArgSpecCache
+
+    def get_signature(
+        self, callable: object, skip_first_arg: bool = False
+    ) -> MaybeSignature:
+        signature = self.arg_spec_cache.get_argspec(callable)
+        if not isinstance(signature, Signature):
+            return None
+        if skip_first_arg:
+            return BoundMethodSignature(signature, UNRESOLVED_VALUE).get_signature()
+        return signature
+
+
+class Proto(Protocol):
+    x: int
+
+    def capybara(self, arg: int) -> str:
+        raise NotImplementedError
+
+
+class TestProtocol(TestNameCheckVisitorBase):
+    def test_type_from_runtime(self) -> None:
+        asc = ArgSpecCache(TestConfig())
+        expected = ProtocolValue(
+            "Proto",
+            {
+                "x": TypedValue(int),
+                "capybara": CallableValue(
+                    Signature.make(
+                        [SigParameter("arg", annotation=TypedValue(int))],
+                        TypedValue(str),
+                        callable=Proto.capybara,
+                    )
+                ),
+            },
+        )
+        assert_eq(expected, type_from_runtime(Proto, ctx=ProtoContext(asc)))
+
+    @assert_passes()
+    def test_runtime(self):
+        from typing_extensions import Protocol
+
+        class Proto(Protocol):
+            x: int
+
+            def capybara(self, arg: int) -> str:
+                raise NotImplementedError
+
+        def capybara(prot: Proto) -> str:
+            assert_is_value(prot.x, TypedValue(int))
+            return prot.capybara(prot.x)
+
+        class Impl:
+            x: int
+
+            def capybara(self, arg: int) -> str:
+                return str(arg)
+
+        def caller() -> None:
+            capybara(Impl())
+
+    @assert_fails(ErrorCode.incompatible_argument)
+    def test_error(self):
+        from typing_extensions import Protocol
+
+        class Proto(Protocol):
+            x: int
+
+            def capybara(self, arg: int) -> str:
+                raise NotImplementedError
+
+        def capybara(prot: Proto) -> str:
+            assert_is_value(prot.x, TypedValue(int))
+            return prot.capybara(prot.x)
+
+        class Impl:
+            x: float
+
+            def capybara(self, arg: int) -> str:
+                return str(arg)
+
+        def caller() -> None:
+            capybara(Impl())

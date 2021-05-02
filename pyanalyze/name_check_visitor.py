@@ -494,7 +494,7 @@ class ClassAttributeChecker:
             return
         # the attribute is in __annotations__, e.g. a dataclass
         if _has_annotation_for_attr(typ, attr_name) or attributes.get_attrs_attribute(
-            typ, attr_name
+            typ, attributes.AttrContext(TypedValue(typ), attr_name)
         ):
             return
 
@@ -3499,6 +3499,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return UNINITIALIZED_VALUE
             return unite_values(*values)
         return self._get_attribute_no_mvv(root_value, attr, node)
+
     def _get_attribute_no_mvv(
         self, root_value: Value, attr: str, node: Optional[ast.AST] = None
     ) -> Value:

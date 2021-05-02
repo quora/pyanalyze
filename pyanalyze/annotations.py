@@ -4,6 +4,7 @@ Code for understanding type annotations.
 
 """
 from dataclasses import dataclass, InitVar, field
+from types import FunctionType
 import mypy_extensions
 import typing_extensions
 import typing
@@ -14,6 +15,7 @@ import builtins
 from collections.abc import Callable
 from typing import (
     Any,
+    Dict,
     cast,
     TypeVar,
     ContextManager,
@@ -28,7 +30,7 @@ from typing import (
 
 from .error_code import ErrorCode
 from .extensions import AsynqCallable, HasAttrGuard, ParameterTypeGuard, TypeGuard
-from .signature import SigParameter, Signature
+from .signature import BoundMethodSignature, MaybeSignature, SigParameter, Signature
 from .value import (
     AnnotatedValue,
     CallableValue,
@@ -38,6 +40,7 @@ from .value import (
     MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
+    ProtocolValue,
     TypeGuardExtension,
     UNRESOLVED_VALUE,
     TypedValue,
@@ -89,6 +92,34 @@ class Context:
     def get_name(self, node: ast.Name) -> Value:
         return UNRESOLVED_VALUE
 
+    def get_signature(self, callable: object) -> MaybeSignature:
+        return None
+
+    def get_bound_signature(
+        self, callable: object, skip_first_arg: bool = False
+    ) -> Optional[Signature]:
+        signature = self.get_signature(callable)
+        if not isinstance(signature, Signature):
+            return None
+        if skip_first_arg:
+            return BoundMethodSignature(signature, UNRESOLVED_VALUE).get_signature()
+        return signature
+
+    def handle_undefined_name(self, name: str) -> Value:
+        if self.should_suppress_undefined_names:
+            return UNRESOLVED_VALUE
+        self.show_error(
+            f"Undefined name {name!r} used in annotation", ErrorCode.undefined_name
+        )
+        return UNRESOLVED_VALUE
+
+    def get_name_from_globals(self, name: str, globals: Mapping[str, Any]) -> Value:
+        if name in globals:
+            return KnownValue(globals[name])
+        elif hasattr(builtins, name):
+            return KnownValue(getattr(builtins, name))
+        return self.handle_undefined_name(name)
+
 
 def type_from_ast(
     ast_node: ast.AST,
@@ -110,6 +141,7 @@ def type_from_runtime(
 ) -> Value:
     """Given a runtime annotation object, return a Value."""
     if ctx is None:
+        assert visitor is not None
         ctx = _DefaultContext(visitor, node, globals)
     return _type_from_runtime(val, ctx)
 
@@ -186,7 +218,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
         # val.type exists only on 3.8+, but on earlier versions
         # InitVar instances aren't being created
         # static analysis: ignore[undefined_attribute]
-        return type_from_runtime(val.type)
+        return _type_from_runtime(val.type, ctx)
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
         args = get_args(val)
@@ -206,6 +238,8 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             [KnownValue(v) for v in val.__metadata__],
             ctx,
         )
+    elif getattr(val, "_is_protocol", False):
+        return ProtocolValue(val.__name__, _extract_protocol_members(val, ctx))
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
@@ -304,6 +338,58 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             return _maybe_typed_value(origin, ctx)
         ctx.show_error(f"Invalid type annotation {val}")
         return UNRESOLVED_VALUE
+
+
+EXCLUDED_PROTOCOL_MEMBERS = {
+    "__abstractmethods__",
+    "__annotations__",
+    "__dict__",
+    "__doc__",
+    "__init__",
+    "__module__",
+    "__parameters__",
+    "__subclasshook__",
+    "__weakref__",
+    "_abc_impl",
+    "_is_protocol",
+}
+
+
+def _extract_protocol_members(val: type, ctx: Context) -> Dict[str, Value]:
+    if (
+        val is object
+        or is_typing_name(val, "Protocol")
+        or is_typing_name(val, "Generic")
+    ):
+        return {}
+    members = {}
+    for base in reversed(val.__bases__):
+        members.update(_extract_protocol_members(base, ctx))
+    for key, value in val.__dict__.items():
+        if key in EXCLUDED_PROTOCOL_MEMBERS:
+            continue
+        if isinstance(value, property) and value.fget is not None:
+            typ = value.fget.__annotations__.get("return", Any)
+            protocol_value = _type_from_runtime(typ, ctx)
+        elif isinstance(value, (staticmethod, classmethod, FunctionType)):
+            if isinstance(value, staticmethod):
+                sig = ctx.get_bound_signature(value.__func__)
+            elif isinstance(value, classmethod):
+                sig = ctx.get_bound_signature(value.__func__, skip_first_arg=True)
+            elif isinstance(value, FunctionType):
+                sig = ctx.get_bound_signature(value, skip_first_arg=True)
+            else:
+                sig = None
+            if sig is not None:
+                protocol_value = CallableValue(sig)
+            else:
+                continue
+        else:
+            continue
+        members[key] = protocol_value
+    for key, value in val.__dict__.get("__annotations__", {}).items():
+        members[key] = _type_from_runtime(value, ctx)
+    return members
 
 
 def _eval_forward_ref(val: str, ctx: Context) -> Value:
@@ -445,16 +531,13 @@ class _DefaultContext(Context):
                 suppress_errors=self.should_suppress_undefined_names,
             )
         elif self.globals is not None:
-            if node.id in self.globals:
-                return KnownValue(self.globals[node.id])
-            elif hasattr(builtins, node.id):
-                return KnownValue(getattr(builtins, node.id))
-        if self.should_suppress_undefined_names:
-            return UNRESOLVED_VALUE
-        self.show_error(
-            f"Undefined name {node.id!r} used in annotation", ErrorCode.undefined_name
-        )
-        return UNRESOLVED_VALUE
+            return self.get_name_from_globals(node.id, self.globals)
+        return self.handle_undefined_name(node.id)
+
+    def get_signature(self, callable: object) -> MaybeSignature:
+        if self.visitor is None:
+            return None
+        return self.visitor.arg_spec_cache.get_argspec(callable)
 
 
 @dataclass

@@ -13,8 +13,9 @@ import sys
 import types
 from typing import Any, Tuple, Optional
 
-from .annotations import type_from_runtime
+from .annotations import type_from_runtime, Context
 from .safe import safe_issubclass
+from .signature import Signature, MaybeSignature
 from .value import (
     AnnotatedValue,
     CallableValue,
@@ -64,6 +65,9 @@ class AttrContext:
 
     def should_ignore_none_attributes(self) -> bool:
         return False
+
+    def get_signature(self, obj: object) -> Optional[Signature]:
+        return None
 
 
 def get_attribute(ctx: AttrContext) -> Value:
@@ -264,12 +268,31 @@ def _get_attribute_from_unbound(
     return result
 
 
-@qcore.debug.trace()
 def _get_attribute_from_protocol(root_value: ProtocolValue, ctx: AttrContext) -> Value:
     if ctx.attr in root_value.members:
         return root_value.members[ctx.attr]
     else:
         return UNINITIALIZED_VALUE
+
+
+@dataclass
+class AnnotationsContext(Context):
+    attr_ctx: AttrContext
+    cls: type
+
+    def __post_init__(self) -> None:
+        super().__init__()
+
+    def get_name(self, node: ast.Name) -> Value:
+        try:
+            globals = sys.modules[self.cls.__module__].__dict__
+        except (KeyError, AttributeError, TypeError):
+            return UNRESOLVED_VALUE
+        else:
+            return self.get_name_from_globals(node.id, globals)
+
+    def get_signature(self, callable: object) -> MaybeSignature:
+        return self.attr_ctx.get_signature(callable)
 
 
 def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
@@ -308,9 +331,14 @@ def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
                 except Exception:
                     pass
             else:
-                return type_from_runtime(annotation), False
+                return (
+                    type_from_runtime(
+                        annotation, ctx=AnnotationsContext(ctx, base_cls)
+                    ),
+                    False,
+                )
 
-    attrs_type = get_attrs_attribute(typ, ctx.attr)
+    attrs_type = get_attrs_attribute(typ, ctx)
     if attrs_type is not None:
         return attrs_type, False
 
@@ -333,13 +361,15 @@ def _static_hasattr(value: object, attr: str) -> bool:
         return True
 
 
-def get_attrs_attribute(typ: Any, attr: str) -> Optional[Value]:
+def get_attrs_attribute(typ: type, ctx: AttrContext) -> Optional[Value]:
     try:
         if hasattr(typ, "__attrs_attrs__"):
             for attr_attr in typ.__attrs_attrs__:
-                if attr_attr.name == attr:
+                if attr_attr.name == ctx.attr:
                     if attr_attr.type is not None:
-                        return type_from_runtime(attr_attr.type)
+                        return type_from_runtime(
+                            attr_attr.type, ctx=AnnotationsContext(ctx, typ)
+                        )
                     else:
                         return UNRESOLVED_VALUE
     except Exception:

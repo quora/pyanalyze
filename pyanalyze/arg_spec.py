@@ -4,7 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .annotations import type_from_runtime, is_typing_name
+from .annotations import Context, type_from_runtime, is_typing_name
 from .config import Config
 from .find_unused import used
 from . import implementation
@@ -32,10 +32,12 @@ from .value import (
     substitute_typevars,
 )
 
+import ast
 import asyncio
 import asynq
 from collections.abc import Awaitable
 import contextlib
+from dataclasses import dataclass
 import qcore
 import inspect
 import sys
@@ -111,6 +113,23 @@ def is_dot_asynq_function(obj: Any) -> bool:
     return getattr(obj, "__name__", None) in ("async", "asynq")
 
 
+@dataclass
+class AnnotationsContext(Context):
+    arg_spec_cache: "ArgSpecCache"
+    globals: Optional[Mapping[str, object]] = None
+
+    def __post_init__(self) -> None:
+        super().__init__()
+
+    def get_name(self, node: ast.Name) -> Value:
+        if self.globals is not None:
+            return self.get_name_from_globals(node.id, self.globals)
+        return self.handle_undefined_name(node.id)
+
+    def get_signature(self, callable: object) -> MaybeSignature:
+        return self.arg_spec_cache.get_argspec(callable)
+
+
 class ArgSpecCache:
     DEFAULT_ARGSPECS = implementation.get_default_argspecs()
 
@@ -119,6 +138,7 @@ class ArgSpecCache:
         self.ts_finder = TypeshedFinder(verbose=False)
         self.known_argspecs = {}
         self.generic_bases_cache = {}
+        self.default_context = AnnotationsContext(self)
         default_argspecs = dict(self.DEFAULT_ARGSPECS)
         default_argspecs.update(self.config.get_known_argspecs(self))
 
@@ -161,7 +181,9 @@ class ArgSpecCache:
             returns = UNRESOLVED_VALUE
             has_return_annotation = False
         else:
-            returns = type_from_runtime(sig.return_annotation, globals=func_globals)
+            returns = type_from_runtime(
+                sig.return_annotation, ctx=AnnotationsContext(self, func_globals)
+            )
             has_return_annotation = True
         if is_async:
             returns = GenericValue(Awaitable, [returns])
@@ -218,7 +240,9 @@ class ArgSpecCache:
         index: int,
     ) -> Optional[Value]:
         if parameter.annotation is not SigParameter.empty:
-            typ = type_from_runtime(parameter.annotation, globals=func_globals)
+            typ = type_from_runtime(
+                parameter.annotation, ctx=AnnotationsContext(self, func_globals)
+            )
             if parameter.kind is SigParameter.VAR_POSITIONAL:
                 return GenericValue(tuple, [typ])
             elif parameter.kind is SigParameter.VAR_KEYWORD:
@@ -267,8 +291,7 @@ class ArgSpecCache:
         self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
     ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
-        argspec = self._cached_get_argspec(obj, impl, is_asynq)
-        return argspec
+        return self._cached_get_argspec(obj, impl, is_asynq)
 
     def _cached_get_argspec(
         self, obj: object, impl: Optional[Impl], is_asynq: bool
@@ -338,7 +361,9 @@ class ArgSpecCache:
                         SigParameter(
                             "x",
                             SigParameter.POSITIONAL_ONLY,
-                            annotation=type_from_runtime(obj.__supertype__),
+                            annotation=type_from_runtime(
+                                obj.__supertype__, ctx=self.default_context
+                            ),
                         )
                     ],
                     NewTypeValue(obj),
@@ -467,7 +492,10 @@ class ArgSpecCache:
         bases = self.ts_finder.get_bases(typ)
         generic_bases = self._extract_bases(typ, bases)
         if generic_bases is None:
-            bases = [type_from_runtime(base) for base in self.get_runtime_bases(typ)]
+            bases = [
+                type_from_runtime(base, ctx=self.default_context)
+                for base in self.get_runtime_bases(typ)
+            ]
             generic_bases = self._extract_bases(typ, bases)
             assert (
                 generic_bases is not None
