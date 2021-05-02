@@ -329,6 +329,8 @@ class TypedValue(Value):
         elif isinstance(other, UnboundMethodValue):
             if self.typ in {Callable, collections.abc.Callable, object}:
                 return {}
+        elif self.typ is object and isinstance(other, ProtocolValue):
+            return {}
         return super().can_assign(other, ctx)
 
     def can_assign_thrift_enum(self, other: Value, ctx: CanAssignContext) -> CanAssign:
@@ -843,7 +845,7 @@ class ProtocolValue(Value):
             yield from member.walk_values()
 
     def __str__(self) -> str:
-        return self.name
+        return f"{self.name}({self.members})"
 
 
 @dataclass(frozen=True)

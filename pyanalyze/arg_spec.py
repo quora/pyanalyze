@@ -460,7 +460,7 @@ class ArgSpecCache:
     def get_generic_bases(
         self, typ: type, generic_args: Sequence[Value] = ()
     ) -> Dict[type, Sequence[Value]]:
-        if typ is Generic or is_typing_name(typ, "Protocol"):
+        if typ is Generic or is_typing_name(typ, "Protocol") or typ is object:
             return {}
         generic_bases = self._get_generic_bases_cached(typ)
         if typ not in generic_bases:

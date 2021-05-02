@@ -182,7 +182,7 @@ class TestGetGenericBases:
 
     def test_callable(self):
         assert_eq(
-            {collections.abc.Callable: [], object: []},
+            {collections.abc.Callable: []},
             self.get_generic_bases(collections.abc.Callable, []),
         )
 

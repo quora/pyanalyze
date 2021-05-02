@@ -183,8 +183,8 @@ class Signature:
     _return_key: ClassVar[str] = "%return"
 
     signature: inspect.Signature
-    impl: Optional[Impl] = None
-    callable: Optional[object] = None
+    impl: Optional[Impl] = field(default=None, compare=False)
+    callable: Optional[object] = field(default=None, compare=False)
     is_asynq: bool = False
     has_return_annotation: bool = True
     is_ellipsis_args: bool = False

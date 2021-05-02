@@ -93,9 +93,14 @@ class TestAnnotations(TestNameCheckVisitorBase):
     @assert_passes()
     def test_supports_int(self):
         from typing import SupportsInt
+        from pyanalyze.signature import Signature
+
+        sig = Signature.make([], TypedValue(int))
 
         def capybara(z: SupportsInt) -> None:
-            assert_is_value(z, TypedValue(SupportsInt))
+            assert_is_value(
+                z, ProtocolValue("SupportsInt", {"__int__": CallableValue(sig)})
+            )
 
     @assert_passes()
     def test_supports_int_accepted(self):
