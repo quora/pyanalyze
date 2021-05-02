@@ -20,6 +20,7 @@ from .signature import (
 )
 from .typeshed import TypeshedFinder
 from .value import (
+    ProtocolValue,
     TypedValue,
     GenericValue,
     NewTypeValue,
@@ -525,6 +526,8 @@ class ArgSpecCache:
                 else:
                     args = ()
                 generic_bases.update(self.get_generic_bases(base.typ, args))
+            elif isinstance(base, ProtocolValue):
+                pass
             else:
                 return None
         return generic_bases
