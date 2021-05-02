@@ -19,6 +19,7 @@ from .value import (
     AnnotatedValue,
     CallableValue,
     HasAttrExtension,
+    ProtocolValue,
     Value,
     KnownValue,
     GenericValue,
@@ -42,7 +43,6 @@ NoneType = type(None)
 class AttrContext:
     root_value: Value
     attr: str
-    node: ast.AST
 
     def record_usage(self, obj: Any, val: Value) -> None:
         pass
@@ -91,6 +91,8 @@ def get_attribute(ctx: AttrContext) -> Value:
             attribute_value = _get_attribute_from_known(type, ctx)
     elif isinstance(root_value, UnboundMethodValue):
         attribute_value = _get_attribute_from_unbound(root_value, ctx)
+    elif isinstance(root_value, ProtocolValue):
+        attribute_value = _get_attribute_from_protocol(root_value, ctx)
     elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
         attribute_value = UNRESOLVED_VALUE
     elif isinstance(root_value, MultiValuedValue):
@@ -260,6 +262,14 @@ def _get_attribute_from_unbound(
     )
     ctx.record_usage(type(method), result)
     return result
+
+
+@qcore.debug.trace()
+def _get_attribute_from_protocol(root_value: ProtocolValue, ctx: AttrContext) -> Value:
+    if ctx.attr in root_value.members:
+        return root_value.members[ctx.attr]
+    else:
+        return UNINITIALIZED_VALUE
 
 
 def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:

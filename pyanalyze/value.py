@@ -67,6 +67,9 @@ class CanAssignContext:
     ) -> Optional["pyanalyze.signature.Signature"]:
         return None
 
+    def get_attribute(self, root_value: "Value", attribute: str) -> "Value":
+        return UNINITIALIZED_VALUE
+
 
 @dataclass(frozen=True)
 class CanAssignError:
@@ -792,6 +795,55 @@ class CallableValue(TypedValue):
             parts.append("]")
             args = "".join(parts)
         return f"{is_asynq}Callable[{args}, {return_value}]"
+
+
+@dataclass(frozen=True)
+class ProtocolValue(Value):
+    """Value that represents a PEP 544 Protocol."""
+
+    name: str
+    members: Dict[str, Value]
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(
+            other,
+            (KnownValue, TypedValue, ProtocolValue, SubclassValue, UnboundMethodValue),
+        ):
+            return self._check_attributes(other, ctx)
+        elif isinstance(other, AnnotatedValue) and not isinstance(
+            other.value, MultiValuedValue
+        ):
+            return self._check_attributes(other, ctx)
+        return super().can_assign(other, ctx)
+
+    def _check_attributes(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        tv_maps = []
+        for name, value in self.members.items():
+            their_value = ctx.get_attribute(other, name)
+            if their_value is UNINITIALIZED_VALUE:
+                return CanAssignError(f"{name!r} is missing")
+            tv_map = value.can_assign(their_value, ctx)
+            if isinstance(tv_map, CanAssignError):
+                return CanAssignError(f"Value of {name!r} is incompatible", [tv_map])
+            tv_maps.append(tv_map)
+        return unify_typevar_maps(tv_maps)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return ProtocolValue(
+            self.name,
+            {
+                name: value.substitute_typevars(typevars)
+                for name, value in self.members.items()
+            },
+        )
+
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        for member in self.members.values():
+            yield from member.walk_values()
+
+    def __str__(self) -> str:
+        return self.name
 
 
 @dataclass(frozen=True)

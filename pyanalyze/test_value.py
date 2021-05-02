@@ -18,10 +18,12 @@ from unittest import mock
 from . import tests
 from . import value
 from .arg_spec import ArgSpecCache
+from .attributes import AttrContext, get_attribute
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
     CanAssignError,
+    ProtocolValue,
     Value,
     GenericValue,
     KnownValue,
@@ -44,6 +46,10 @@ class Context(CanAssignContext):
         self, typ: type, generic_args: Sequence[Value] = ()
     ) -> Dict[type, Sequence[Value]]:
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
+
+    def get_attribute(self, root_value: Value, attribute: str) -> Value:
+        ctx = AttrContext(root_value, attribute)
+        return get_attribute(ctx)
 
 
 CTX = Context()
@@ -166,6 +172,16 @@ def test_protocol() -> None:
 
     assert_can_assign(tv, TypedValue(X))
     assert_can_assign(tv, KnownValue(X()))
+
+
+def test_protocol_value() -> None:
+    pv = ProtocolValue("Proto", {"numerator": TypedValue(int)})
+    assert_can_assign(pv, pv)
+    assert_can_assign(pv, TypedValue(int))
+    assert_can_assign(pv, KnownValue(1))
+    assert_cannot_assign(pv, TypedValue(str))
+    assert_cannot_assign(pv, KnownValue("x"))
+    assert_cannot_assign(pv, ProtocolValue("Proto", {"numerator": TypedValue(str)}))
 
 
 def test_callable() -> None:
