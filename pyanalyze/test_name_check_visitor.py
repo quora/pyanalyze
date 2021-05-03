@@ -2238,20 +2238,17 @@ _AnnotSettings = {
 
 
 class TestRequireAnnotations(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.missing_parameter_annotation, settings=_AnnotSettings)
-    def test_missing_parameter_annotation(self):
-        def f(x) -> None:
+    @assert_passes(settings=_AnnotSettings)
+    def test_missing_annotation(self):
+        def no_param(x) -> None:  # E: missing_parameter_annotation
             pass
 
-    @assert_fails(ErrorCode.missing_return_annotation, settings=_AnnotSettings)
-    def test_missing_parameter_annotation(self):
-        def f(x: object):
+        # E: missing_return_annotation
+        def no_return(x: object):
             pass
 
-    @assert_fails(ErrorCode.missing_parameter_annotation, settings=_AnnotSettings)
-    def test_missing_parameter_annotation_method(self):
         class Capybara:
-            def f(self, x) -> None:
+            def f(self, x) -> None:  # E: missing_parameter_annotation
                 pass
 
     @assert_passes(settings=_AnnotSettings)

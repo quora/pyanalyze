@@ -48,7 +48,43 @@ class BaseNodeVisitorTester(object):
 
     def assert_passes(self, code_str, **kwargs):
         """Asserts that running the given code_str throws no errors."""
-        return self._run_str(code_str, expect_failure=False, **kwargs)
+        errors = self._run_str(
+            code_str, expect_failure=False, fail_after_first=False, **kwargs
+        )
+        expected_errors = {}
+        for i, line in enumerate(code_str.splitlines(), start=1):
+            whole_line_match = re.match(r"^ *#\s*E:\s*([a-z_]+)$", line)
+            if whole_line_match:
+                if i + 1 in expected_errors:
+                    raise RuntimeError(
+                        f"cannot test for multiple errors on line {i + 1}"
+                    )
+                expected_errors[i + 1] = whole_line_match.group(1)
+                continue
+            separate_match = re.search(r"#\s*E:\s*([a-z_]+)", line)
+            if separate_match:
+                if i in expected_errors:
+                    raise RuntimeError(f"cannot test for multiple errors on line {i}")
+                expected_errors[i] = separate_match.group(1)
+
+        mismatches = []
+
+        for error in errors:
+            lineno = error["lineno"]
+            expected_code = expected_errors.pop(lineno, None)
+            if expected_code is not None:
+                if expected_code != error["code"].name:
+                    mismatches.append(
+                        f"Expected {expected_code} on line {lineno}, not"
+                        f" {error['code']}"
+                    )
+            else:
+                mismatches.append(f"Expected no error on line {lineno}")
+
+        for lineno in expected_errors:
+            mismatches.append(f"Expected an error on line {lineno}")
+
+        assert not mismatches, "".join(line + "\n" for line in mismatches)
 
     def assert_fails(self, expected_error_code, code_str, **kwargs):
         """Asserts that running the given code_str fails with expected_error_code."""
