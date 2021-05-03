@@ -2,14 +2,13 @@
 import ast
 from qcore.asserts import assert_eq
 
-from .error_code import ErrorCode
 from .yield_checker import VarnameGenerator, _camel_case_to_snake_case
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes, skip_before
+from .test_node_visitor import assert_passes
 
 
 class TestUnnecessaryYield(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.unnecessary_yield)
+    @assert_passes()
     def test_failure(self):
         from asynq import asynq, result
 
@@ -20,7 +19,7 @@ class TestUnnecessaryYield(TestNameCheckVisitorBase):
         @asynq()
         def capybara():
             var1 = yield inner.asynq(1)
-            var2 = yield inner.asynq(2)
+            var2 = yield inner.asynq(2)  # E: unnecessary_yield
             result(var1 + var2)
 
     @assert_passes()
@@ -105,7 +104,7 @@ class Capybara(object):
 
 
 class TestUnnecessaryYieldInObject(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.unnecessary_yield)
+    @assert_passes()
     def test_across_variable(self):
         from asynq import asynq, result
 
@@ -123,10 +122,10 @@ class TestUnnecessaryYieldInObject(TestNameCheckVisitorBase):
                 grass = yield self.render_grass.asynq()
                 z = []
                 z += grass
-                z += yield self.render_kerodon.asynq()
+                z += yield self.render_kerodon.asynq()  # E: unnecessary_yield
                 result(z)
 
-    @assert_fails(ErrorCode.unnecessary_yield)
+    @assert_passes()
     def test_basic(self):
         from asynq import asynq, result
 
@@ -143,7 +142,7 @@ class TestUnnecessaryYieldInObject(TestNameCheckVisitorBase):
             def tree(self):
                 z = []
                 z += yield self.render_grass.asynq()
-                z += yield self.render_kerodon.asynq()
+                z += yield self.render_kerodon.asynq()  # E: unnecessary_yield
                 result(z)
 
     @assert_passes()
@@ -474,7 +473,7 @@ def f():
 
 
 class TestMissingAsync(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.missing_asynq)
+    @assert_passes()
     def test_async_method(self):
         from asynq import asynq, result
 
@@ -484,9 +483,9 @@ class TestMissingAsync(TestNameCheckVisitorBase):
                 pass
 
         def fn():
-            result((yield Capybara().eat.asynq()))
+            result((yield Capybara().eat.asynq()))  # E: missing_asynq
 
-    @assert_fails(ErrorCode.missing_asynq)
+    @assert_passes()
     def test_yield_tuple(self):
         from asynq import asynq, result
 
@@ -499,9 +498,9 @@ class TestMissingAsync(TestNameCheckVisitorBase):
             pass
 
         def fn():
-            result((yield (eat.asynq(), drink.asynq())))
+            result((yield (eat.asynq(), drink.asynq())))  # E: missing_asynq
 
-    @assert_fails(ErrorCode.missing_asynq)
+    @assert_passes()
     def test_async_function(self):
         from asynq import asynq, result
 
@@ -511,7 +510,7 @@ class TestMissingAsync(TestNameCheckVisitorBase):
 
         def fn():
             assert_is_value(eat, KnownValue(eat))
-            result((yield eat.asynq()))
+            result((yield eat.asynq()))  # E: missing_asynq
 
     @assert_passes()
     def test_successful(self):
@@ -525,15 +524,13 @@ class TestMissingAsync(TestNameCheckVisitorBase):
         def fn():
             result((yield eat.asynq()))
 
-    @assert_fails(ErrorCode.missing_asynq)
+    @assert_passes()
     def test_not_inferred(self):
         def capybara(fn):
-            yield fn.asynq()
+            yield fn.asynq()  # E: missing_asynq
 
-    @assert_fails(ErrorCode.missing_asynq)
-    def test_not_inferred_on_get_async(self):
-        def capybara(box):
-            yield box.get_async()
+        def box_get(box):
+            yield box.get_async()  # E: missing_asynq
 
     def test_autofix(self):
         self.assert_is_changed(
@@ -574,22 +571,18 @@ def capybara(fn, fn2):
 
 
 class TestDuplicateYield(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.duplicate_yield)
+    @assert_passes()
     def test_dupe_none(self):
-        from asynq import asynq
-
-        @asynq()
-        def capybara():
-            yield None, None
-
-    @assert_fails(ErrorCode.duplicate_yield)
-    def test_dupe_call(self):
         from asynq import asynq
         from pyanalyze.tests import async_fn
 
         @asynq()
-        def capybara(oid):
-            yield async_fn.asynq(oid), async_fn.asynq(oid)
+        def dupe_none():
+            yield None, None  # E: duplicate_yield
+
+        @asynq()
+        def dupe_call(oid):
+            yield async_fn.asynq(oid), async_fn.asynq(oid)  # E: duplicate_yield
 
     @assert_passes()
     def test_not_async(self):
