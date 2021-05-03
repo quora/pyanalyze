@@ -223,7 +223,7 @@ h.translate('{foo')  # line 5
 # line 9
 """
         try:
-            self.assert_passes(code_string)
+            self._run_str(code_string)
         except VisitorError as e:
             assert_not_in("   1:", str(e))
             for lineno in range(2, 9):
