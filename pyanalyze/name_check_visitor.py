@@ -3273,16 +3273,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
                 self.scopes.set(composite, self.being_assigned, node, self.state)
-            return Composite(
-                self._check_dunder_call(
-                    node.value,
-                    root_composite,
-                    "__setitem__",
-                    [index_composite, Composite(self.being_assigned, None, node)],
-                ),
-                composite,
-                node,
+            self._check_dunder_call(
+                node.value,
+                root_composite,
+                "__setitem__",
+                [index_composite, Composite(self.being_assigned, None, node)],
             )
+            return Composite(self.being_assigned, composite, node)
         elif isinstance(node.ctx, ast.Load):
             if sys.version_info >= (3, 9) and value == KnownValue(type):
                 # In Python 3.9+ "type[int]" is legal, but neither
@@ -3447,7 +3444,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             typ = root_composite.value.get_type()
             if typ is not None:
                 self._record_type_attr_set(typ, node.attr, node, self.being_assigned)
-            return Composite(UNRESOLVED_VALUE, composite, node)
+            return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):
             if self._is_checking():
                 self.asynq_checker.record_attribute_access(
