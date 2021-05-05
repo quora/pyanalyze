@@ -1,0 +1,58 @@
+import ast
+from pathlib import Path
+from typing import Type
+from qcore.asserts import assert_eq
+
+from .ast_annotator import annotate_file, annotate_code
+from .analysis_lib import files_with_extension_from_directory
+from .value import KnownValue, Value
+
+
+def _check_inferred_value(
+    tree: ast.Module, node_type: Type[ast.AST], value: Value
+) -> None:
+    for node in ast.walk(tree):
+        if isinstance(node, node_type):
+            assert hasattr(node, "inferred_value"), repr(node)
+            assert_eq(value, node.inferred_value, extra=ast.dump(node))
+
+
+def test_annotate_code() -> None:
+    tree = annotate_code("a = 1")
+    _check_inferred_value(tree, ast.Constant, KnownValue(1))
+    _check_inferred_value(tree, ast.Name, KnownValue(1))
+
+    tree = annotate_code(
+        """
+class X:
+    def __init__(self):
+        self.a = 1
+    """
+    )
+    _check_inferred_value(tree, ast.Attribute, KnownValue(1))
+    tree = annotate_code(
+        """
+class X:
+    def __init__(self):
+        self.a = 1
+
+x = X()
+x.a + 1
+    """
+    )
+    _check_inferred_value(tree, ast.BinOp, KnownValue(2))
+
+
+def test_everything_annotated() -> None:
+    pyanalyze_dir = Path(__file__).parent
+    failures = []
+    for filename in files_with_extension_from_directory("py", pyanalyze_dir):
+        tree = annotate_file(filename)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.expr) and not hasattr(node, "inferred_value"):
+                print(filename, node)
+                failures.append((filename, node))
+    if failures:
+        for filename, node in failures:
+            print(f"{filename}: {ast.dump(node)}")
+        assert False, f"found no annotations on {len(failures)} expressions"

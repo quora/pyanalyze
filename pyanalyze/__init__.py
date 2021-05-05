@@ -3,6 +3,7 @@
 pyanalyze is a package for Python static analysis.
 
 """
+from . import ast_annotator
 from . import name_check_visitor
 from . import analysis_lib
 from . import annotations
@@ -24,3 +25,5 @@ from . import typeshed
 from . import tests
 from . import value
 from . import yield_checker
+
+used(ast_annotator)
