@@ -50,9 +50,8 @@ def test_everything_annotated() -> None:
         tree = annotate_file(filename)
         for node in ast.walk(tree):
             if isinstance(node, ast.expr) and not hasattr(node, "inferred_value"):
-                print(filename, node)
                 failures.append((filename, node))
     if failures:
         for filename, node in failures:
-            print(f"{filename}: {ast.dump(node)}")
+            print(f"{filename}:{node.lineno}:{node.col_offset}: {ast.dump(node)}")
         assert False, f"found no annotations on {len(failures)} expressions"
