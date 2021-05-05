@@ -46,7 +46,7 @@ x.a + 1
 def test_everything_annotated() -> None:
     pyanalyze_dir = Path(__file__).parent
     failures = []
-    for filename in files_with_extension_from_directory("py", pyanalyze_dir):
+    for filename in sorted(files_with_extension_from_directory("py", pyanalyze_dir)):
         tree = annotate_file(filename, show_errors=True)
         for node in ast.walk(tree):
             if isinstance(node, ast.expr) and not hasattr(node, "inferred_value"):

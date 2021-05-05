@@ -30,6 +30,7 @@ import inspect
 import sys
 from types import GeneratorType
 from typing import (
+    MutableMapping,
     cast,
     Any,
     Generic,
@@ -40,7 +41,7 @@ from typing import (
     List,
     TypeVar,
 )
-from typing_extensions import Protocol
+from typing_extensions import Protocol, TypedDict
 import typeshed_client
 from typed_ast import ast3
 
@@ -141,6 +142,8 @@ class TypeshedFinder(object):
             return [GenericValue(Generic, (TypeVarValue(T_co),))]
         if typ is Callable or typ is collections.abc.Callable:
             return None
+        if typ is TypedDict:
+            return [GenericValue(MutableMapping, [TypedValue(str), TypedValue(object)])]
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
             return None
