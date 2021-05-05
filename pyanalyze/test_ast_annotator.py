@@ -49,7 +49,11 @@ def test_everything_annotated() -> None:
     for filename in sorted(files_with_extension_from_directory("py", pyanalyze_dir)):
         tree = annotate_file(filename, show_errors=True)
         for node in ast.walk(tree):
-            if isinstance(node, ast.expr) and not hasattr(node, "inferred_value"):
+            if (
+                hasattr(node, "lineno")
+                and not hasattr(node, "inferred_value")
+                and not isinstance(node, (ast.keyword, ast.arg))
+            ):
                 failures.append((filename, node))
     if failures:
         for filename, node in failures:
