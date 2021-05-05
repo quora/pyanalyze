@@ -21,7 +21,13 @@ from .value import (
 
 import ast
 import builtins
-from collections.abc import Awaitable, Collection, Set as AbstractSet, Sized
+from collections.abc import (
+    Awaitable,
+    Collection,
+    MutableMapping,
+    Set as AbstractSet,
+    Sized,
+)
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 import collections.abc
@@ -30,7 +36,6 @@ import inspect
 import sys
 from types import GeneratorType
 from typing import (
-    MutableMapping,
     cast,
     Any,
     Generic,
