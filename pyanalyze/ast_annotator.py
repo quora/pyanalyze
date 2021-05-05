@@ -57,7 +57,7 @@ def annotate_code(
 
 @used  # exposed as an API
 def annotate_file(
-    path: "Union[str, os.PathLike[str]]",
+    path: Union[str, "os.PathLike[str]"],
     *,
     visitor_cls: Type[NameCheckVisitor] = NameCheckVisitor,
     verbose: bool = False,
