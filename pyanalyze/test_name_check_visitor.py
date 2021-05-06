@@ -2258,6 +2258,20 @@ class TestRequireAnnotations(TestNameCheckVisitorBase):
                 pass
 
 
+class TestAnnAssign(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing_extensions import Final
+
+        def capybara() -> None:
+            x: Final = 3
+            assert_is_value(x, KnownValue(3))
+            y: int = 3
+            assert_is_value(y, TypedValue(int))
+            z: float
+            print(z)  # E: undefined_name
+
+
 class HasGetattr(object):
     def __getattr__(self, attr):
         return 42

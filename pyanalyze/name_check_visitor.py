@@ -3200,13 +3200,21 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             value = self._maybe_use_hardcoded_type(value, node.id)
             return Composite(value, node.id, node)
         elif self._is_write_ctx(node.ctx):
-            self.yield_checker.record_assignment(node.id)
-            self._set_name_in_scope(node.id, node, value=self.being_assigned)
             if self._name_node_to_statement is not None:
                 statement = self.node_context.nearest_enclosing(
                     (ast.stmt, ast.comprehension)
                 )
                 self._name_node_to_statement[node] = statement
+                # If we're in an AnnAssign without a value, we skip the assignment,
+                # since no value is actually assigned to the name.
+                is_ann_assign = (
+                    isinstance(statement, ast.AnnAssign) and statement.value is None
+                )
+            else:
+                is_ann_assign = False
+            if not is_ann_assign:
+                self.yield_checker.record_assignment(node.id)
+                self._set_name_in_scope(node.id, node, value=self.being_assigned)
             return Composite(self.being_assigned, node.id, node)
         else:
             # not sure when (if ever) the other contexts can happen
