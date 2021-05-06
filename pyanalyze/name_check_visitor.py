@@ -811,7 +811,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def load_module(self, filename: str) -> Tuple[Optional[types.ModuleType], bool]:
         return importer.load_module_from_file(filename)
 
-    def check(self) -> List[node_visitor.Failure]:
+    def check(self, ignore_missing_module: bool = False) -> List[node_visitor.Failure]:
         """Runs the visitor on this module."""
         start_time = qcore.utime()
         try:
@@ -819,7 +819,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 # skip compiled (Cythonized) files because pyanalyze will misinterpret the
                 # AST in some cases (for example, if a function was cdefed)
                 return []
-            if self.module is None or self.tree is None:
+            if self.tree is None:
+                return self.all_failures
+            if self.module is None and not ignore_missing_module:
                 # If we could not import the module, other checks frequently fail.
                 return self.all_failures
             with qcore.override(self, "state", VisitorState.collect_names):
@@ -830,7 +832,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # leaving this check disabled by default for now.
             self.show_errors_for_unused_ignores(ErrorCode.unused_ignore)
             self.show_errors_for_bare_ignores(ErrorCode.bare_ignore)
-            if self.unused_finder is not None and not self.has_file_level_ignore():
+            if (
+                self.module is not None
+                and self.unused_finder is not None
+                and not self.has_file_level_ignore()
+            ):
                 self.unused_finder.record_module_visited(self.module)
         except node_visitor.VisitorError:
             raise
@@ -1792,7 +1798,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self._simulate_import(node)
 
     def _maybe_record_usages_from_import(self, node: ast.ImportFrom) -> None:
-        if self.unused_finder is None:
+        if self.unused_finder is None or self.module is None:
             return
         if self._is_unimportable_module(node):
             return
@@ -2754,24 +2760,27 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, node: ast.AST
     ) -> Tuple[Value, AbstractConstraint]:
         if isinstance(node, ast.Compare):
-            return self.constraint_from_compare(node)
+            pair = self.constraint_from_compare(node)
         elif isinstance(node, (ast.Name, ast.Attribute, ast.Subscript)):
             composite = self.composite_from_node(node)
             if composite.varname is not None:
                 constraint = Constraint(
                     composite.varname, ConstraintType.is_truthy, True, None
                 )
-                return composite.value, constraint
+                pair = composite.value, constraint
             else:
-                return composite.value, NULL_CONSTRAINT
+                pair = composite.value, NULL_CONSTRAINT
         elif isinstance(node, ast.Call):
-            return self.constraint_from_call(node)
+            pair = self.constraint_from_call(node)
         elif isinstance(node, ast.UnaryOp):
-            return self.constraint_from_unary_op(node)
+            pair = self.constraint_from_unary_op(node)
         elif isinstance(node, ast.BoolOp):
-            return self.constraint_from_bool_op(node)
+            pair = self.constraint_from_bool_op(node)
         else:
-            return self.visit(node), NULL_CONSTRAINT
+            pair = self.visit(node), NULL_CONSTRAINT
+        if self.annotate:
+            node.inferred_value = pair[0]
+        return pair
 
     def visit_Break(self, node: ast.Break) -> None:
         self._set_name_in_scope(LEAVES_LOOP, node, UNRESOLVED_VALUE)
@@ -3144,6 +3153,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self, "being_assigned", value if is_final else expected_type
             ), self.yield_checker.check_yield_result_assignment(is_yield):
                 self.visit(node.target)
+        else:
+            with qcore.override(self, "being_assigned", expected_type):
+                self.visit(node.target)
         # TODO: Idea for what to do if there is no value:
         # - Scopes keep track of a map {name: expected type}
         # - Assignments that are inconsistent with the declared type produce an error.
@@ -3184,13 +3196,21 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             value = self._maybe_use_hardcoded_type(value, node.id)
             return Composite(value, node.id, node)
         elif self._is_write_ctx(node.ctx):
-            self.yield_checker.record_assignment(node.id)
-            self._set_name_in_scope(node.id, node, value=self.being_assigned)
             if self._name_node_to_statement is not None:
                 statement = self.node_context.nearest_enclosing(
                     (ast.stmt, ast.comprehension)
                 )
                 self._name_node_to_statement[node] = statement
+                # If we're in an AnnAssign without a value, we skip the assignment,
+                # since no value is actually assigned to the name.
+                is_ann_assign = (
+                    isinstance(statement, ast.AnnAssign) and statement.value is None
+                )
+            else:
+                is_ann_assign = False
+            if not is_ann_assign:
+                self.yield_checker.record_assignment(node.id)
+                self._set_name_in_scope(node.id, node, value=self.being_assigned)
             return Composite(self.being_assigned, node.id, node)
         else:
             # not sure when (if ever) the other contexts can happen
@@ -3584,19 +3604,22 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def composite_from_node(self, node: ast.AST) -> Composite:
         if isinstance(node, ast.Attribute):
-            return self.composite_from_attribute(node)
+            composite = self.composite_from_attribute(node)
         elif isinstance(node, ast.Name):
-            return self.composite_from_name(node)
+            composite = self.composite_from_name(node)
         elif isinstance(node, ast.Subscript):
-            return self.composite_from_subscript(node)
+            composite = self.composite_from_subscript(node)
         elif isinstance(node, ast.Index):
             # static analysis: ignore[undefined_attribute]
-            return self.composite_from_node(node.value)
+            composite = self.composite_from_node(node.value)
         elif isinstance(node, (ast.ExtSlice, ast.Slice)):
             # These don't have a .lineno attribute, which would otherwise cause trouble.
-            return Composite(self.visit(node), None, None)
+            composite = Composite(self.visit(node), None, None)
         else:
-            return Composite(self.visit(node), None, node)
+            composite = Composite(self.visit(node), None, node)
+        if self.annotate:
+            node.inferred_value = composite.value
+        return composite
 
     def varname_for_constraint(self, node: ast.AST) -> Optional[Varname]:
         """Given a node, returns a variable name that could be used in a local scope."""
@@ -3688,7 +3711,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     if self.current_function is not None
                     else self.module
                 )
-                self.collector.record_call(caller, callee_val)
+                if caller is not None:
+                    self.collector.record_call(caller, callee_val)
 
             arg_values = [arg.value for arg in args]
             kw_values = [(kw, composite.value) for kw, composite in keywords]
@@ -3957,7 +3981,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if inner is self.current_class:
                 return
 
-        self.unused_finder.record(module_or_class, attribute, self.module.__name__)
+        if self.module is not None:
+            self.unused_finder.record(module_or_class, attribute, self.module.__name__)
 
     @classmethod
     def _get_argument_parser(cls) -> ArgumentParser:

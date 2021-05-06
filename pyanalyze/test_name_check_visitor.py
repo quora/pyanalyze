@@ -6,6 +6,7 @@ Tests for the test_scope.py script.
 """
 
 import ast
+from pyanalyze.analysis_lib import make_module
 from asynq import FutureBase, AsyncTask
 import collections
 import os
@@ -111,13 +112,10 @@ class TestAnnotatingNodeVisitor(test_node_visitor.BaseNodeVisitorTester):
         )
 
 
-def _make_module(code_str):
+def _make_module(code_str: str) -> types.ModuleType:
     """Creates a Python module with the given code."""
-    module_name = "<test input>"
-    mod = types.ModuleType(module_name)
-    scope = mod.__dict__
     # make helpers for value inference checking available to all tests
-    scope.update(
+    extra_scope = dict(
         assert_is_value=assert_is_value,
         AsyncTaskIncompleteValue=AsyncTaskIncompleteValue,
         DictIncompleteValue=DictIncompleteValue,
@@ -137,11 +135,8 @@ def _make_module(code_str):
         dump_value=dump_value,
         UNINITIALIZED_VALUE=UNINITIALIZED_VALUE,
         NO_RETURN_VALUE=NO_RETURN_VALUE,
-        __name__=module_name,
     )
-    exec(code_str, scope)
-    sys.modules[module_name] = mod
-    return mod
+    return make_module(code_str, extra_scope)
 
 
 # ===================================================
@@ -2261,6 +2256,20 @@ class TestRequireAnnotations(TestNameCheckVisitorBase):
         class X:
             def f(self) -> None:
                 pass
+
+
+class TestAnnAssign(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing_extensions import Final
+
+        def capybara() -> None:
+            x: Final = 3
+            assert_is_value(x, KnownValue(3))
+            y: int = 3
+            assert_is_value(y, TypedValue(int))
+            z: float
+            print(z)  # E: undefined_name
 
 
 class HasGetattr(object):
