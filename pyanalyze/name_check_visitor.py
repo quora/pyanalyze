@@ -879,9 +879,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             ret = UNRESOLVED_VALUE
         finally:
             self.node_context.contexts.pop()
-        if ret is NO_RETURN_VALUE:
-            self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
-        elif ret is None:
+        if ret is None:
             ret = UNRESOLVED_VALUE
         if self.annotate:
             node.inferred_value = ret
@@ -2947,8 +2945,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     self.visit(handler)
 
         return [try_scope] + except_scopes
-        self.scopes.combine_subscopes([try_scope] + except_scopes)
-        self.yield_checker.reset_yield_checks()
 
     def visit_Try(self, node: ast.Try) -> None:
         # py3 combines the Try and Try/Finally nodes
@@ -3840,6 +3836,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                             error_code=ErrorCode.incompatible_call,
                         )
                     return_value = KnownValue(result)
+
+        if return_value is NO_RETURN_VALUE:
+            self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
 
         # for .asynq functions, we use the argspec for the underlying function, but that means
         # that the return value is not wrapped in AsyncTask, so we do that manually here
