@@ -347,6 +347,10 @@ class TypeshedFinder(object):
             if module == "_io":
                 module = "io"
             fq_name = ".".join([module, obj.__qualname__])
+            # Avoid looking for stubs we won't find anyway.
+            if any(not part.isidentifier() for part in fq_name.split(".")):
+                self.log("Ignoring non-identifier name", fq_name)
+                return None
             return _TYPING_ALIASES.get(fq_name, fq_name)
         except (AttributeError, TypeError):
             self.log("Ignoring object without module or qualname", obj)
