@@ -320,6 +320,18 @@ class TestTry(TestNameCheckVisitorBase):
             assert_is_value(x, KnownValue(4))
 
     @assert_passes()
+    def test_finally_regression():
+        import subprocess
+
+        def test_full():
+            clients = []
+            try:
+                clients.append(subprocess.Popen([]))
+            finally:
+                for client in clients:
+                    client.kill()
+
+    @assert_passes()
     def test_finally_plus_if(self):
         # here an approach that simply ignores the assignments in the try block while examining the
         # finally block would fail
