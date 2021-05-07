@@ -10,7 +10,7 @@ import tempfile
 import time
 from typeshed_client import Resolver, get_search_context
 import typing
-from typing import Generic, TypeVar, NewType
+from typing import Dict, Generic, List, TypeVar, NewType
 from urllib.error import HTTPError
 
 from .test_config import TestConfig
@@ -29,6 +29,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     SequenceIncompleteValue,
+    Value,
 )
 
 T = TypeVar("T")
@@ -85,6 +86,7 @@ def f(x: NT) -> None:
 """
             )
             (temp_dir / "VERSIONS").write_text("newt: 3.5\ntyping: 3.5\n")
+            (temp_dir / "@python2").mkdir()
             tsf = TypeshedFinder(verbose=True)
             search_context = get_search_context(typeshed=temp_dir, search_path=[])
             tsf.resolver = Resolver(search_context)
@@ -168,42 +170,49 @@ class TestGetGenericBases:
         self.get_generic_bases = arg_spec_cache.get_generic_bases
 
     def test_runtime(self):
-        assert_eq({Parent: [UNRESOLVED_VALUE]}, self.get_generic_bases(Parent))
+        assert_eq({Parent: {T: UNRESOLVED_VALUE}}, self.get_generic_bases(Parent))
         assert_eq(
-            {Parent: [TypeVarValue(T)]},
+            {Parent: {T: TypeVarValue(T)}},
             self.get_generic_bases(Parent, [TypeVarValue(T)]),
         )
-        assert_eq({Child: [], Parent: [TypedValue(int)]}, self.get_generic_bases(Child))
         assert_eq(
-            {GenericChild: [UNRESOLVED_VALUE], Parent: [UNRESOLVED_VALUE]},
+            {Child: {}, Parent: {T: TypedValue(int)}}, self.get_generic_bases(Child)
+        )
+        assert_eq(
+            {GenericChild: {T: UNRESOLVED_VALUE}, Parent: {T: UNRESOLVED_VALUE}},
             self.get_generic_bases(GenericChild),
         )
         one = KnownValue(1)
         assert_eq(
-            {GenericChild: [one], Parent: [one]},
+            {GenericChild: {T: one}, Parent: {T: one}},
             self.get_generic_bases(GenericChild, [one]),
         )
+
+    def check(
+        self, expected: Dict[type, List[Value]], base: type, args: Sequence[Value] = ()
+    ) -> None:
+        actual = self.get_generic_bases(base, args)
+        cleaned = {base: list(tv_map.values()) for base, tv_map in actual.items()}
+        assert_eq(expected, cleaned, extra=actual)
 
     def test_coroutine(self):
         one = KnownValue(1)
         two = KnownValue(2)
         three = KnownValue(3)
-        assert_eq(
+        self.check(
             {
                 collections.abc.Coroutine: [one, two, three],
                 collections.abc.Awaitable: [three],
             },
-            self.get_generic_bases(collections.abc.Coroutine, [one, two, three]),
+            collections.abc.Coroutine,
+            [one, two, three],
         )
 
     def test_callable(self):
-        assert_eq(
-            {collections.abc.Callable: []},
-            self.get_generic_bases(collections.abc.Callable, []),
-        )
+        self.check({collections.abc.Callable: []}, collections.abc.Callable)
 
     def test_struct_time(self):
-        assert_eq(
+        self.check(
             {
                 time.struct_time: [],
                 # Ideally should be not Any, but we haven't implemented
@@ -215,30 +224,32 @@ class TestGetGenericBases:
                 collections.abc.Sequence: [UNRESOLVED_VALUE],
                 collections.abc.Container: [UNRESOLVED_VALUE],
             },
-            self.get_generic_bases(time.struct_time, []),
+            time.struct_time,
         )
 
     def test_context_manager(self):
         int_tv = TypedValue(int)
-        assert_eq(
+        self.check(
             {contextlib.AbstractContextManager: [int_tv]},
-            self.get_generic_bases(contextlib.AbstractContextManager, [int_tv]),
+            contextlib.AbstractContextManager,
+            [int_tv],
         )
 
     def test_collections(self):
         int_tv = TypedValue(int)
         str_tv = TypedValue(str)
         int_str_tuple = SequenceIncompleteValue(tuple, [int_tv, str_tv])
-        assert_eq(
+        self.check(
             {
                 collections.abc.ValuesView: [int_tv],
                 collections.abc.MappingView: [],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Sized: [],
             },
-            self.get_generic_bases(collections.abc.ValuesView, [int_tv]),
+            collections.abc.ValuesView,
+            [int_tv],
         )
-        assert_eq(
+        self.check(
             {
                 collections.abc.ItemsView: [int_tv, str_tv],
                 collections.abc.MappingView: [],
@@ -248,10 +259,11 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_str_tuple],
                 collections.abc.Container: [int_str_tuple],
             },
-            self.get_generic_bases(collections.abc.ItemsView, [int_tv, str_tv]),
+            collections.abc.ItemsView,
+            [int_tv, str_tv],
         )
 
-        assert_eq(
+        self.check(
             {
                 collections.deque: [int_tv],
                 collections.abc.MutableSequence: [int_tv],
@@ -261,9 +273,10 @@ class TestGetGenericBases:
                 collections.abc.Sequence: [int_tv],
                 collections.abc.Container: [int_tv],
             },
-            self.get_generic_bases(collections.deque, [int_tv]),
+            collections.deque,
+            [int_tv],
         )
-        assert_eq(
+        self.check(
             {
                 collections.defaultdict: [int_tv, str_tv],
                 dict: [int_tv, str_tv],
@@ -273,13 +286,14 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
             },
-            self.get_generic_bases(collections.defaultdict, [int_tv, str_tv]),
+            collections.defaultdict,
+            [int_tv, str_tv],
         )
 
     def test_typeshed(self):
         int_tv = TypedValue(int)
         str_tv = TypedValue(str)
-        assert_eq(
+        self.check(
             {
                 list: [int_tv],
                 collections.abc.MutableSequence: [int_tv],
@@ -289,9 +303,10 @@ class TestGetGenericBases:
                 collections.abc.Sequence: [int_tv],
                 collections.abc.Container: [int_tv],
             },
-            self.get_generic_bases(list, [int_tv]),
+            list,
+            [int_tv],
         )
-        assert_eq(
+        self.check(
             {
                 set: [int_tv],
                 collections.abc.MutableSet: [int_tv],
@@ -300,9 +315,10 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
             },
-            self.get_generic_bases(set, [int_tv]),
+            set,
+            [int_tv],
         )
-        assert_eq(
+        self.check(
             {
                 dict: [int_tv, str_tv],
                 collections.abc.MutableMapping: [int_tv, str_tv],
@@ -311,11 +327,12 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
             },
-            self.get_generic_bases(dict, [int_tv, str_tv]),
+            dict,
+            [int_tv, str_tv],
         )
 
     def test_io(self):
-        assert_eq(
+        self.check(
             {
                 io.BytesIO: [],
                 io.BufferedIOBase: [],
@@ -325,7 +342,7 @@ class TestGetGenericBases:
                 collections.abc.Iterator: [TypedValue(bytes)],
                 collections.abc.Iterable: [TypedValue(bytes)],
             },
-            self.get_generic_bases(io.BytesIO, []),
+            io.BytesIO,
         )
 
 

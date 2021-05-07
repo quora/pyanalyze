@@ -117,6 +117,7 @@ from .value import (
     TypeVarValue,
     CanAssignContext,
     concrete_values_from_iterable,
+    TypeVarMap,
 )
 
 T = TypeVar("T")
@@ -244,6 +245,11 @@ class _AttrContext(attributes.AttrContext):
 
     def should_ignore_none_attributes(self) -> bool:
         return self.visitor.config.IGNORE_NONE_ATTRIBUTES
+
+    def get_generic_bases(
+        self, typ: type, generic_args: Sequence[Value]
+    ) -> Dict[type, TypeVarMap]:
+        return self.visitor.get_generic_bases(typ, generic_args)
 
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
@@ -776,7 +782,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     # an instance of ABCMeta.
     def get_generic_bases(
         self, typ: Any, generic_args: Sequence[Value] = ()
-    ) -> Dict[type, Sequence[Value]]:
+    ) -> Dict[type, TypeVarMap]:
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
 
     def get_signature(self, obj: object, is_asynq: bool = False) -> Optional[Signature]:

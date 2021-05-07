@@ -8,7 +8,7 @@ from .arg_spec import ArgSpecCache
 from .test_config import TestConfig
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
-from .implementation import assert_is_value
+from .implementation import assert_is_value, dump_value
 from .error_code import ErrorCode
 from .signature import MaybeSignature, SigParameter, Signature, BoundMethodSignature
 from .value import (
@@ -99,7 +99,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
         def capybara(z: SupportsInt) -> None:
             assert_is_value(
-                z, ProtocolValue("SupportsInt", {"__int__": CallableValue(sig)})
+                z, ProtocolValue("typing.SupportsInt", {"__int__": CallableValue(sig)})
             )
 
     @assert_passes()
@@ -907,7 +907,7 @@ class TestProtocol(TestNameCheckVisitorBase):
     def test_type_from_runtime(self) -> None:
         asc = ArgSpecCache(TestConfig())
         expected = ProtocolValue(
-            "Proto",
+            "pyanalyze.test_annotations.Proto",
             {
                 "x": TypedValue(int),
                 "capybara": CallableValue(
@@ -944,7 +944,7 @@ class TestProtocol(TestNameCheckVisitorBase):
         def caller() -> None:
             capybara(Impl())
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_error(self):
         from typing_extensions import Protocol
 
@@ -965,4 +965,70 @@ class TestProtocol(TestNameCheckVisitorBase):
                 return str(arg)
 
         def caller() -> None:
-            capybara(Impl())
+            capybara(Impl())  # E: incompatible_argument
+
+    @assert_passes()
+    def test_generic(self):
+        from typing_extensions import Protocol
+        from typing import TypeVar, Generic
+        from pyanalyze.annotations import type_from_runtime
+
+        T = TypeVar("T")
+
+        class Proto(Protocol[T]):
+            x: T
+
+            def capybara(self, arg: int) -> T:
+                raise NotImplementedError
+
+            def pacarana(self, arg: T) -> int:
+                raise NotImplementedError
+
+        class Child(Proto[int], Protocol):
+            def method(self) -> str:
+                raise NotImplementedError
+
+        print(repr(type_from_runtime(Child)))
+
+        class Impl(Generic[T]):
+            x: T
+
+            def capybara(self, arg: int) -> T:
+                raise NotImplementedError
+
+            def pacarana(self, arg: T) -> int:
+                raise NotImplementedError
+
+        class ChildImpl(Impl[T]):
+            def method(self) -> str:
+                raise NotImplementedError
+
+        def needs_proto(prot: Proto[int]) -> None:
+            pass
+
+        def needs_child(prot: Child) -> None:
+            pass
+
+        def capybara(
+            prot: Proto[int],
+            impl: Impl[int],
+            child: ChildImpl[int],
+            bad_child: ChildImpl[str],
+        ) -> None:
+            assert_is_value(prot.x, TypedValue(int))
+            assert_is_value(prot.capybara(0), TypedValue(int))
+            prot.pacarana("x")  # E: incompatible_argument
+            needs_proto(1)  # E: incompatible_argument
+            needs_proto(impl)
+            needs_child(child)
+            needs_child(bad_child)  # E: incompatible_argument
+
+        def string_needs_proto(prot: "Proto[int]") -> None:
+            pass
+
+        def string_capybara(prot: "Proto[int]", impl: "Impl[int]") -> None:
+            assert_is_value(prot.x, TypedValue(int))
+            assert_is_value(prot.capybara(0), TypedValue(int))
+            prot.pacarana("x")  # E: incompatible_argument
+            string_needs_proto(1)  # E: incompatible_argument
+            string_needs_proto(impl)

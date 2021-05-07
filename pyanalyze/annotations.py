@@ -46,6 +46,7 @@ from .value import (
     TypedValue,
     SequenceIncompleteValue,
     annotate_value,
+    stringify_object,
     unite_values,
     Value,
     GenericValue,
@@ -141,7 +142,6 @@ def type_from_runtime(
 ) -> Value:
     """Given a runtime annotation object, return a Value."""
     if ctx is None:
-        assert visitor is not None
         ctx = _DefaultContext(visitor, node, globals)
     return _type_from_runtime(val, ctx)
 
@@ -238,8 +238,8 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             [KnownValue(v) for v in val.__metadata__],
             ctx,
         )
-    elif getattr(val, "_is_protocol", False):
-        return ProtocolValue(val.__name__, _extract_protocol_members(val, ctx))
+    elif is_protocol(val):
+        return make_protocol(val, ctx)
     elif typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         args = typing_inspect.get_args(val)
@@ -355,6 +355,32 @@ EXCLUDED_PROTOCOL_MEMBERS = {
 }
 
 
+def make_protocol(val: type, ctx: Context) -> ProtocolValue:
+    name = stringify_object(val)
+    return ProtocolValue(
+        name,
+        _generic_extract_protocol_members(val, ctx),
+        {tv: TypeVarValue(tv) for tv in val.__parameters__},
+    )
+
+
+def _generic_extract_protocol_members(val: object, ctx: Context) -> Dict[str, Value]:
+    if hasattr(val, "__bases__") and isinstance(val, type):
+        return _extract_protocol_members(val, ctx)
+    elif typing_inspect.is_generic_type(val):
+        origin = typing_inspect.get_origin(val)
+        args = typing_inspect.get_args(val)
+        params = typing_inspect.get_parameters(origin)
+        arg_vals = [_type_from_runtime(arg, ctx) for arg in args]
+        tv_map = dict(zip(params, arg_vals))
+        members = _extract_protocol_members(origin, ctx)
+        return {
+            name: value.substitute_typevars(tv_map) for name, value in members.items()
+        }
+    else:
+        raise TypeError(f"unsupported protocol base {val!r}")
+
+
 def _extract_protocol_members(val: type, ctx: Context) -> Dict[str, Value]:
     if (
         val is object
@@ -363,8 +389,12 @@ def _extract_protocol_members(val: type, ctx: Context) -> Dict[str, Value]:
     ):
         return {}
     members = {}
-    for base in reversed(val.__bases__):
-        members.update(_extract_protocol_members(base, ctx))
+    if hasattr(val, "__orig_bases__"):
+        bases = val.__orig_bases__
+    else:
+        bases = val.__bases__
+    for base in reversed(bases):
+        members.update(_generic_extract_protocol_members(base, ctx))
     for key, value in val.__dict__.items():
         if key in EXCLUDED_PROTOCOL_MEMBERS:
             continue
@@ -415,6 +445,11 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 return GenericValue(
                     value.root.typ,
                     [_type_from_value(member, ctx) for member in value.members],
+                )
+        elif isinstance(value.root, ProtocolValue):
+            if len(value.root.get_unapplied_typevars()) == len(value.members):
+                return value.root.apply_typevars(
+                    [_type_from_value(val, ctx) for val in value.members]
                 )
         if not isinstance(value.root, KnownValue):
             ctx.show_error(f"Cannot resolve subscripted annotation: {value.root}")
@@ -473,6 +508,18 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 args, return_value = value.members
                 return _make_callable_from_value(args, return_value, ctx, is_asynq=True)
             return UNRESOLVED_VALUE
+        elif is_protocol(root):
+            origin_value = make_protocol(root, ctx)
+            n_typevars = len(origin_value.get_unapplied_typevars())
+            if n_typevars != len(value.members):
+                ctx.show_error(
+                    f"{origin_value} expected {n_typevars} parameters, not"
+                    f" {len(value.members)}"
+                )
+                return origin_value
+            return origin_value.apply_typevars(
+                [_type_from_value(val, ctx) for val in value.members]
+            )
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
             if origin is None:
@@ -721,6 +768,12 @@ def _value_of_origin_args(
         ]
         sig = Signature.make(params, _type_from_runtime(return_type, ctx))
         return CallableValue(sig)
+    elif is_protocol(origin):
+        origin_value = make_protocol(origin, ctx)
+        if args:
+            args_vals = [_type_from_runtime(val, ctx) for val in args]
+            return origin_value.apply_typevars(args_vals)
+        return origin_value
     elif isinstance(origin, type):
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
@@ -749,6 +802,14 @@ def _value_of_origin_args(
             f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]"
         )
         return UNRESOLVED_VALUE
+
+
+def is_protocol(val: object) -> TypeGuard[type]:
+    return (
+        getattr(val, "_is_protocol", False)
+        and not is_typing_name(val, "Protocol")
+        and isinstance(val, type)
+    )
 
 
 def _maybe_typed_value(val: type, ctx: Context) -> Value:

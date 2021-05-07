@@ -21,6 +21,7 @@ from .signature import (
 from .typeshed import TypeshedFinder
 from .value import (
     ProtocolValue,
+    TypeVarMap,
     TypedValue,
     GenericValue,
     NewTypeValue,
@@ -30,7 +31,6 @@ from .value import (
     VariableNameValue,
     TypeVarValue,
     extract_typevars,
-    substitute_typevars,
 )
 
 import ast
@@ -276,7 +276,9 @@ class ArgSpecCache:
                 ):
                     generic_bases = self._get_generic_bases_cached(class_obj)
                     if generic_bases and generic_bases.get(class_obj):
-                        return GenericValue(class_obj, generic_bases[class_obj])
+                        return GenericValue(
+                            class_obj, generic_bases[class_obj].values()
+                        )
                     return TypedValue(class_obj)
         if parameter.kind in (
             SigParameter.POSITIONAL_ONLY,
@@ -460,7 +462,7 @@ class ArgSpecCache:
 
     def get_generic_bases(
         self, typ: type, generic_args: Sequence[Value] = ()
-    ) -> Dict[type, Sequence[Value]]:
+    ) -> Dict[type, TypeVarMap]:
         if typ is Generic or is_typing_name(typ, "Protocol") or typ is object:
             return {}
         generic_bases = self._get_generic_bases_cached(typ)
@@ -470,7 +472,7 @@ class ArgSpecCache:
         if not my_typevars:
             return generic_bases
         tv_map = {}
-        for i, tv_value in enumerate(my_typevars):
+        for i, tv_value in enumerate(my_typevars.values()):
             if not isinstance(tv_value, TypeVarValue):
                 continue
             try:
@@ -479,11 +481,11 @@ class ArgSpecCache:
                 value = UNRESOLVED_VALUE
             tv_map[tv_value.typevar] = value
         return {
-            base: substitute_typevars(args, tv_map)
+            base: {tv: value.substitute_typevars(tv_map) for tv, value in args.items()}
             for base, args in generic_bases.items()
         }
 
-    def _get_generic_bases_cached(self, typ: type) -> Dict[type, Sequence[Value]]:
+    def _get_generic_bases_cached(self, typ: type) -> Dict[type, TypeVarMap]:
         try:
             return self.generic_bases_cache[typ]
         except KeyError:
@@ -505,7 +507,7 @@ class ArgSpecCache:
 
     def _extract_bases(
         self, typ: type, bases: Optional[Sequence[Value]]
-    ) -> Optional[Dict[type, Sequence[Value]]]:
+    ) -> Optional[Dict[type, TypeVarMap]]:
         if bases is None:
             return None
         # Put Generic first since it determines the order of the typevars. This matters
@@ -517,7 +519,7 @@ class ArgSpecCache:
         )
         my_typevars = uniq_chain(extract_typevars(base) for base in bases)
         generic_bases = {}
-        generic_bases[typ] = [TypeVarValue(tv) for tv in my_typevars]
+        generic_bases[typ] = {tv: TypeVarValue(tv) for tv in my_typevars}
         for base in bases:
             if isinstance(base, TypedValue):
                 assert base.typ is not typ, base

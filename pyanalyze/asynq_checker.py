@@ -5,6 +5,7 @@ Implementation of test_scope's asynq checks.
 """
 
 import ast
+from pyanalyze.implementation import dump_value
 import asynq
 import contextlib
 from dataclasses import dataclass, field

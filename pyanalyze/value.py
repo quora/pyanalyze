@@ -59,7 +59,7 @@ class CanAssignContext:
 
     def get_generic_bases(
         self, typ: type, generic_args: Sequence["Value"] = ()
-    ) -> Dict[type, Sequence["Value"]]:
+    ) -> Dict[type, TypeVarMap]:
         return {}
 
     def get_signature(
@@ -369,7 +369,9 @@ class TypedValue(Value):
         else:
             args = ()
         generic_bases = ctx.get_generic_bases(self.typ, args)
-        return generic_bases.get(typ)
+        if typ in generic_bases:
+            return list(generic_bases[typ].values())
+        return None
 
     def get_generic_arg_for_type(
         self, typ: Union[type, super], ctx: CanAssignContext, index: int
@@ -439,6 +441,8 @@ class GenericValue(TypedValue):
 
     def __init__(self, typ: type, args: Iterable[Value]) -> None:
         super().__init__(typ)
+        for arg in args:
+            assert isinstance(arg, Value), (typ, args)
         self.args = tuple(args)
 
     def __str__(self) -> str:
@@ -805,6 +809,7 @@ class ProtocolValue(Value):
 
     name: str
     members: Dict[str, Value]
+    tv_map: TypeVarMap = field(compare=False, hash=False, default_factory=dict)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(
@@ -830,14 +835,33 @@ class ProtocolValue(Value):
             tv_maps.append(tv_map)
         return unify_typevar_maps(tv_maps)
 
-    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+    def substitute_typevars(self, typevars: TypeVarMap) -> "ProtocolValue":
+        new_typevars = {}
+        for typevar, value in self.tv_map.items():
+            if isinstance(value, TypeVarValue):
+                new_value = typevars.get(typevar, value)
+            else:
+                new_value = value
+            new_typevars[typevar] = new_value
         return ProtocolValue(
             self.name,
             {
                 name: value.substitute_typevars(typevars)
                 for name, value in self.members.items()
             },
+            new_typevars,
         )
+
+    def apply_typevars(self, values: Sequence[Value]) -> "ProtocolValue":
+        tv_map = dict(zip(self.get_unapplied_typevars(), values))
+        return self.substitute_typevars(tv_map)
+
+    def get_unapplied_typevars(self) -> List[TypeVar]:
+        return [
+            value.typevar
+            for value in self.tv_map.values()
+            if isinstance(value, TypeVarValue)
+        ]
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -845,7 +869,12 @@ class ProtocolValue(Value):
             yield from member.walk_values()
 
     def __str__(self) -> str:
-        return f"{self.name}({self.members})"
+        if self.tv_map:
+            tvs = ", ".join(map(str, self.tv_map.values()))
+            typevar_str = f"[{tvs}]"
+        else:
+            typevar_str = ""
+        return f"{self.name}{typevar_str}"
 
 
 @dataclass(frozen=True)
@@ -1412,10 +1441,6 @@ def extract_typevars(value: Value) -> Iterable["TypeVar"]:
     for val in value.walk_values():
         if isinstance(val, TypeVarValue):
             yield val.typevar
-
-
-def substitute_typevars(values: Iterable[Value], tv_map: TypeVarMap) -> List[Value]:
-    return [value.substitute_typevars(tv_map) for value in values]
 
 
 def stringify_object(obj: Any) -> str:

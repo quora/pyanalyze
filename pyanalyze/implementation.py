@@ -605,7 +605,7 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
 def _dump_value_impl(ctx: CallContext) -> Value:
     if ctx.visitor._is_checking():
         value = ctx.vars["value"]
-        message = f"Value: {value}"
+        message = f"Value: {value!r}"
         if isinstance(value, KnownValue):
             sig = ctx.visitor.arg_spec_cache.get_argspec(value.val)
             if sig is not None:

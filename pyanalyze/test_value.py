@@ -44,7 +44,7 @@ class Context(CanAssignContext):
 
     def get_generic_bases(
         self, typ: type, generic_args: Sequence[Value] = ()
-    ) -> Dict[type, Sequence[Value]]:
+    ) -> Dict[type, TypeVarMap]:
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
 
     def get_attribute(self, root_value: Value, attribute: str) -> Value:

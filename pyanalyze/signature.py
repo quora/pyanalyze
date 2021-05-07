@@ -634,6 +634,7 @@ class Signature:
             callable=self.callable,
             is_asynq=self.is_asynq,
             has_return_annotation=self.has_return_annotation,
+            is_ellipsis_args=self.is_ellipsis_args,
         )
 
     def walk_values(self) -> Iterable[Value]:
