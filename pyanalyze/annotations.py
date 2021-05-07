@@ -346,6 +346,7 @@ EXCLUDED_PROTOCOL_MEMBERS = {
     "__dict__",
     "__doc__",
     "__init__",
+    "__new__",
     "__module__",
     "__parameters__",
     "__subclasshook__",
@@ -365,18 +366,20 @@ def make_protocol(val: type, ctx: Context) -> ProtocolValue:
 
 
 def _generic_extract_protocol_members(val: object, ctx: Context) -> Dict[str, Value]:
+    if typing_inspect.is_generic_type(val):
+        origin = typing_inspect.get_origin(val)
+        if origin is not None:
+            args = typing_inspect.get_args(val)
+            params = typing_inspect.get_parameters(origin)
+            arg_vals = [_type_from_runtime(arg, ctx) for arg in args]
+            tv_map = dict(zip(params, arg_vals))
+            members = _extract_protocol_members(origin, ctx)
+            return {
+                name: value.substitute_typevars(tv_map)
+                for name, value in members.items()
+            }
     if hasattr(val, "__bases__") and isinstance(val, type):
         return _extract_protocol_members(val, ctx)
-    elif typing_inspect.is_generic_type(val):
-        origin = typing_inspect.get_origin(val)
-        args = typing_inspect.get_args(val)
-        params = typing_inspect.get_parameters(origin)
-        arg_vals = [_type_from_runtime(arg, ctx) for arg in args]
-        tv_map = dict(zip(params, arg_vals))
-        members = _extract_protocol_members(origin, ctx)
-        return {
-            name: value.substitute_typevars(tv_map) for name, value in members.items()
-        }
     else:
         raise TypeError(f"unsupported protocol base {val!r}")
 
