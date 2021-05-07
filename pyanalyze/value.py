@@ -856,7 +856,7 @@ class ProtocolValue(Value):
         tv_map = dict(zip(self.get_unapplied_typevars(), values))
         return self.substitute_typevars(tv_map)
 
-    def get_unapplied_typevars(self) -> List[TypeVar]:
+    def get_unapplied_typevars(self) -> List["TypeVar"]:
         return [
             value.typevar
             for value in self.tv_map.values()

@@ -189,7 +189,10 @@ class TestGetGenericBases:
         )
 
     def check(
-        self, expected: Dict[type, List[Value]], base: type, args: Sequence[Value] = ()
+        self,
+        expected: Dict[type, List[Value]],
+        base: type,
+        args: typing.Sequence[Value] = (),
     ) -> None:
         actual = self.get_generic_bases(base, args)
         cleaned = {base: list(tv_map.values()) for base, tv_map in actual.items()}
