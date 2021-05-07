@@ -21,7 +21,13 @@ from .value import (
 
 import ast
 import builtins
-from collections.abc import Awaitable, Collection, Set as AbstractSet, Sized
+from collections.abc import (
+    Awaitable,
+    Collection,
+    MutableMapping,
+    Set as AbstractSet,
+    Sized,
+)
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 import collections.abc
@@ -40,7 +46,7 @@ from typing import (
     List,
     TypeVar,
 )
-from typing_extensions import Protocol
+from typing_extensions import Protocol, TypedDict
 import typeshed_client
 from typed_ast import ast3
 
@@ -141,6 +147,8 @@ class TypeshedFinder(object):
             return [GenericValue(Generic, (TypeVarValue(T_co),))]
         if typ is Callable or typ is collections.abc.Callable:
             return None
+        if typ is TypedDict:
+            return [GenericValue(MutableMapping, [TypedValue(str), TypedValue(object)])]
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
             return None
@@ -339,6 +347,10 @@ class TypeshedFinder(object):
             if module == "_io":
                 module = "io"
             fq_name = ".".join([module, obj.__qualname__])
+            # Avoid looking for stubs we won't find anyway.
+            if any(not part.isidentifier() for part in fq_name.split(".")):
+                self.log("Ignoring non-identifier name", fq_name)
+                return None
             return _TYPING_ALIASES.get(fq_name, fq_name)
         except (AttributeError, TypeError):
             self.log("Ignoring object without module or qualname", obj)

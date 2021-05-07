@@ -8,7 +8,7 @@ from functools import lru_cache
 import importlib.util
 from pathlib import Path
 import sys
-from typing import Optional, cast, Tuple
+from typing import cast, Tuple
 from types import ModuleType
 
 
@@ -19,7 +19,14 @@ def directory_has_init(path: Path) -> bool:
 
 def load_module_from_file(
     filename: str, verbose: bool = False
-) -> Tuple[Optional[ModuleType], bool]:
+) -> Tuple[ModuleType, bool]:
+    """Import the Python code in the given file.
+
+    Return a tuple (module object, whether it is a compiled file).
+
+    May throw any errors that happen while the file is being imported.
+
+    """
     # Attempt to get the location of the module relative to sys.path so we can import it
     # somewhat properly
     abspath = Path(filename).resolve()
@@ -79,12 +86,22 @@ def load_module_from_file(
             else:
                 parent_module = child_name = None
 
-            spec = importlib.util.spec_from_file_location(module_path, abspath)
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_path] = module
-            spec.loader.exec_module(module)
+            module = import_module(module_path, abspath)
             if parent_module is not None and child_name is not None:
                 setattr(parent_module, child_name, module)
             return module, False
 
-    return None, False
+    # If all else fails, try to import it under its own name
+    # regardless of sys.path.
+    if verbose:
+        print(f"falling back to importing {abspath} outside the import path")
+    return import_module(str(abspath), abspath), False
+
+
+def import_module(module_path: str, filename: str) -> ModuleType:
+    """Import a file under an arbitrary module name."""
+    spec = importlib.util.spec_from_file_location(module_path, filename)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_path] = module
+    spec.loader.exec_module(module)
+    return module

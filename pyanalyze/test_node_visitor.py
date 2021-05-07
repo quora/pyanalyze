@@ -1,6 +1,7 @@
 # static analysis: ignore
 import ast
 from ast_decompiler import decompile
+from collections import defaultdict
 import difflib
 import enum
 import functools
@@ -48,7 +49,41 @@ class BaseNodeVisitorTester(object):
 
     def assert_passes(self, code_str, **kwargs):
         """Asserts that running the given code_str throws no errors."""
-        return self._run_str(code_str, expect_failure=False, **kwargs)
+        errors = self._run_str(
+            code_str, expect_failure=False, fail_after_first=False, **kwargs
+        )
+        expected_errors = defaultdict(lambda: defaultdict(int))
+        for i, line in enumerate(code_str.splitlines(), start=1):
+            whole_line_match = re.match(r"^ *#\s*E:\s*([a-z_]+)$", line)
+            if whole_line_match:
+                expected_errors[i + 1][whole_line_match.group(1)] += 1
+                continue
+            for separate_match in re.finditer(r"#\s*E:\s*([a-z_]+)", line):
+                expected_errors[i][separate_match.group(1)] += 1
+
+        mismatches = []
+
+        for error in errors:
+            lineno = error["lineno"]
+            actual_code = error["code"].name
+            if (
+                actual_code in expected_errors[lineno]
+                and expected_errors[lineno][actual_code] > 0
+            ):
+                expected_errors[lineno][actual_code] -= 1
+            else:
+                mismatches.append(
+                    f"Did not expect error {actual_code} on line {lineno}"
+                )
+
+        for lineno, errors_by_line in expected_errors.items():
+            for error_code, count in errors_by_line.items():
+                if count > 0:
+                    mismatches.append(f"Expected {error_code} on line {lineno}")
+
+        assert not mismatches, "".join(line + "\n" for line in mismatches) + "".join(
+            error["message"] for error in errors
+        )
 
     def assert_fails(self, expected_error_code, code_str, **kwargs):
         """Asserts that running the given code_str fails with expected_error_code."""
@@ -187,7 +222,7 @@ h.translate('{foo')  # line 5
 # line 9
 """
         try:
-            self.assert_passes(code_string)
+            self._run_str(code_string)
         except VisitorError as e:
             assert_not_in("   1:", str(e))
             for lineno in range(2, 9):

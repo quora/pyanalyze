@@ -4,7 +4,7 @@ from qcore.asserts import assert_eq, assert_in, assert_not_in, assert_is
 from .error_code import ErrorCode
 from .stacked_scopes import ScopeType, StackedScopes, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes
+from .test_node_visitor import assert_passes
 from .value import (
     DictIncompleteValue,
     KnownValue,
@@ -145,16 +145,17 @@ class TestScoping(TestNameCheckVisitorBase):
             x = 4
             assert_is_value(x, KnownValue(4))
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name(self):
         def capybara():
-            return x
+            return x  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_read_before_write(self):
         def capybara():
-            print(x)
+            print(x)  # E: undefined_name
             x = 3
+            print(x)
 
     @assert_passes()
     def test_function_argument(self):
@@ -319,6 +320,18 @@ class TestTry(TestNameCheckVisitorBase):
             assert_is_value(x, KnownValue(4))
 
     @assert_passes()
+    def test_finally_regression():
+        import subprocess
+
+        def test_full():
+            clients = []
+            try:
+                clients.append(subprocess.Popen([]))
+            finally:
+                for client in clients:
+                    client.kill()
+
+    @assert_passes()
     def test_finally_plus_if(self):
         # here an approach that simply ignores the assignments in the try block while examining the
         # finally block would fail
@@ -343,13 +356,15 @@ class TestTry(TestNameCheckVisitorBase):
             finally:
                 assert_is_value(x, MultiValuedValue([KnownValue(0), KnownValue(1)]))
 
-    @assert_fails(ErrorCode.bad_except_handler)
+    @assert_passes()
     def test_bad_except_handler(self):
         def capybara():
             try:
                 x = 1
-            except 42 as fortytwo:
+            except 42 as fortytwo:  # E: bad_except_handler
                 print(fortytwo)
+            else:
+                print(x)
 
 
 class TestLoops(TestNameCheckVisitorBase):
@@ -484,10 +499,10 @@ class TestUnusedVariable(TestNameCheckVisitorBase):
             if condition:
                 print(x)
 
-    @assert_fails(ErrorCode.unused_variable)
+    @assert_passes()
     def test_unused(self):
         def capybara():
-            y = 3
+            y = 3  # E: unused_variable
 
     def test_replacement(self):
         self.assert_is_changed(
@@ -502,18 +517,18 @@ def capybara():
 """,
         )
 
-    @assert_fails(ErrorCode.unused_variable)
+    @assert_passes()
     def test_unused_then_used(self):
         def capybara():
-            y = 3
+            y = 3  # E: unused_variable
             y = 4
             return y
 
-    @assert_fails(ErrorCode.unused_variable)
+    @assert_passes()
     def test_unused_in_if(self):
         def capybara(condition):
             if condition:
-                x = 3
+                x = 3  # E: unused_variable
             x = 4
             return x
 
@@ -564,10 +579,21 @@ def capybara():
 
 
 class TestUnusedVariableComprehension(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.unused_variable)
-    def test_single_unused_name(self):
-        def capybara():
-            return [None for i in range(10)]
+    @assert_passes()
+    def test_comprehension(self):
+        def single_unused():
+            return [None for i in range(10)]  # E: unused_variable
+
+        def used():
+            return [i for i in range(10)]
+
+        def both_unused(pairs):
+            return [None for a, b in pairs]  # E: unused_variable  # E: unused_variable
+
+        def capybara(pairs):
+            # this is OK; in real code the name of "b" might serve as useful documentation about
+            # what is in "pairs"
+            return [a for a, b in pairs]
 
     def test_replacement(self):
         self.assert_is_changed(
@@ -581,26 +607,9 @@ def capybara():
 """,
         )
 
-    @assert_passes()
-    def test_used_in_listcomp(self):
-        def capybara():
-            return [i for i in range(10)]
-
-    @assert_fails(ErrorCode.unused_variable)
-    def test_both_unused(self):
-        def capybara(pairs):
-            return [None for a, b in pairs]
-
-    @assert_passes()
-    def test_one_used(self):
-        def capybara(pairs):
-            # this is OK; in real code the name of "b" might serve as useful documentation about
-            # what is in "pairs"
-            return [a for a, b in pairs]
-
 
 class TestUnusedVariableUnpacking(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.unused_variable)
+    @assert_passes()
     def test_unused_in_yield(self):
         from asynq import asynq, result
 
@@ -610,7 +619,7 @@ class TestUnusedVariableUnpacking(TestNameCheckVisitorBase):
 
         @asynq()
         def capybara():
-            a, b = yield kerodon.asynq(1), kerodon.asynq(2)
+            a, b = yield kerodon.asynq(1), kerodon.asynq(2)  # E: unused_variable
             result(a)
 
     @assert_passes()
@@ -626,10 +635,10 @@ class TestUnusedVariableUnpacking(TestNameCheckVisitorBase):
             a, b = yield returns_pair.asynq()
             result(a)
 
-    @assert_fails(ErrorCode.unused_variable)
+    @assert_passes()
     def test_all_unused(self):
         def capybara(pair):
-            a, b = pair
+            a, b = pair  # E: unused_variable  # E: unused_variable
 
     @assert_passes()
     def test_some_used(self):
@@ -637,10 +646,10 @@ class TestUnusedVariableUnpacking(TestNameCheckVisitorBase):
             a, b = pair
             return a
 
-    @assert_fails(ErrorCode.unused_variable)
+    @assert_passes()
     def test_multiple_assignment(self):
         def capybara(pair):
-            c = a, b = pair
+            c = a, b = pair  # E: unused_variable  # E: unused_variable
             return c
 
     @assert_passes()
@@ -690,7 +699,7 @@ class TestLeavesScope(TestNameCheckVisitorBase):
 
             print(x)
 
-    @assert_fails(ErrorCode.possibly_undefined_name)
+    @assert_passes()
     def test_try_may_leave_scope(self):
         def capybara(cond):
             try:
@@ -701,7 +710,7 @@ class TestLeavesScope(TestNameCheckVisitorBase):
                 else:
                     return None
 
-            print(x)
+            print(x)  # E: possibly_undefined_name
 
     @assert_passes()
     def test_assert_false(self):

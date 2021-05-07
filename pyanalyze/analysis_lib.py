@@ -5,7 +5,9 @@ Commonly useful components for static analysis tools.
 """
 import ast
 import os
-from typing import List, Callable, Optional, Set
+import sys
+import types
+from typing import List, Callable, Mapping, Optional, Set
 
 
 def _all_files(
@@ -80,3 +82,17 @@ def get_line_range_for_node(node: ast.AST, lines: List[str]) -> List[int]:
     ):
         last_lineno += 1
     return list(range(first_lineno, last_lineno))
+
+
+def make_module(
+    code_str: str, extra_scope: Mapping[str, object] = {}
+) -> types.ModuleType:
+    """Creates a Python module with the given code."""
+    module_name = "<test input>"
+    mod = types.ModuleType(module_name)
+    scope = mod.__dict__
+    scope["__name__"] = module_name
+    scope.update(extra_scope)
+    exec(code_str, scope)
+    sys.modules[module_name] = mod
+    return mod
