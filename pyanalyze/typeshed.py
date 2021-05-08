@@ -11,6 +11,7 @@ from .signature import SigParameter, Signature
 from .value import (
     CallableValue,
     ProtocolValue,
+    TypeVarMap,
     TypedValue,
     GenericValue,
     KnownValue,
@@ -630,4 +631,8 @@ class TypeshedFinder(object):
                 if isinstance(line.target, ast3.Name):
                     members[line.target.id] = annotation
             # TODO other cases
-        return ProtocolValue(ast.name, members)
+        if typevars:
+            tv_map = {tv.typevar: tv for tv in typevars if isinstance(tv, TypeVarValue)}
+        else:
+            tv_map = {}
+        return ProtocolValue(ast.name, members, tv_map)
