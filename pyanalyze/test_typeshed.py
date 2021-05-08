@@ -85,6 +85,7 @@ def f(x: NT) -> None:
 """
             )
             (temp_dir / "VERSIONS").write_text("newt: 3.5\ntyping: 3.5\n")
+            (temp_dir / "@python2").mkdir()
             tsf = TypeshedFinder(verbose=True)
             search_context = get_search_context(typeshed=temp_dir, search_path=[])
             tsf.resolver = Resolver(search_context)

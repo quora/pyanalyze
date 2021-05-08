@@ -267,8 +267,7 @@ class ArgSpecCache:
         self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
     ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
-        argspec = self._cached_get_argspec(obj, impl, is_asynq)
-        return argspec
+        return self._cached_get_argspec(obj, impl, is_asynq)
 
     def _cached_get_argspec(
         self, obj: object, impl: Optional[Impl], is_asynq: bool
