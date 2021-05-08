@@ -162,18 +162,6 @@ class TestSuperCall(TestNameCheckVisitorBase):
         class Capybara(Mixin, Base):
             pass
 
-    @assert_passes()
-    def test_multi_valued(self):
-        Capybara = 42
-
-        class Capybara(object):
-            pass
-
-        C = Capybara
-
-        def fn():
-            assert_is_value(Capybara, MultiValuedValue([KnownValue(42), KnownValue(C)]))
-
 
 class TestSequenceImpl(TestNameCheckVisitorBase):
     @assert_passes()

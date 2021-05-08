@@ -335,9 +335,8 @@ def run():
         else:
             goes_in_set = "capybara"
         if False:
-            assert_is_value(
-                goes_in_set, MultiValuedValue([KnownValue("capybara"), KnownValue([])])
-            )
+            # The assignment actually executed at runtime wins
+            assert_is_value(goes_in_set, KnownValue("capybara"))
             print({goes_in_set})
 
     @assert_passes()

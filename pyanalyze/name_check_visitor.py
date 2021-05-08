@@ -8,7 +8,6 @@ Contains an AST visitor that visits each node and infers a value for most nodes.
 from abc import abstractmethod
 from argparse import ArgumentParser
 import ast
-from pyanalyze.implementation import dump_value
 from ast_decompiler import decompile
 import asyncio
 import builtins
@@ -952,15 +951,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def _set_name_in_scope(
         self, varname: str, node: object, value: Value = UNRESOLVED_VALUE
     ) -> None:
-        scope_type = self.scopes.scope_type()
-        if not isinstance(value, KnownValue) and scope_type == ScopeType.module_scope:
-            try:
-                value = KnownValue(getattr(self.module, varname))
-            except AttributeError:
-                pass
+        current_scope = self.scopes.current_scope()
+        scope_type = current_scope.scope_type
+        if (
+            self.module is not None
+            and scope_type == ScopeType.module_scope
+            and varname in current_scope
+        ):
+            return
         if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
             self._check_for_class_variable_redefinition(varname, node)
-        self.scopes.set(varname, value, node, self.state)
+        current_scope.set(varname, value, node, self.state)
 
     def _check_for_class_variable_redefinition(
         self, varname: str, node: ast.AST
@@ -1133,9 +1134,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._generic_visit_list(node.bases)
         self._generic_visit_list(node.keywords)
         value = self._visit_class_and_get_value(node)
-        # In module scope, the class should already be set
-        if self.scopes.scope_type() != ScopeType.module_scope:
-            self._set_name_in_scope(node.name, node, value)
+        self._set_name_in_scope(node.name, node, value)
         return value
 
     def _visit_class_and_get_value(self, node: ast.ClassDef) -> Value:
@@ -3966,7 +3965,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 if sig is None:
                     # TODO return None here and figure out when the signature is missing
                     return ANY_SIGNATURE
-                return make_bound_method(sig, value.typ)
+                try:
+                    return_override = self._argspec_to_retval[id(sig)]
+                except KeyError:
+                    return_override = None
+                return make_bound_method(sig, value.typ, return_override)
             return None
         elif isinstance(value, CallableValue):
             return value.signature
@@ -3978,8 +3981,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             ):
                 return None
             call_fn = typ.__call__
-            argspec = self.arg_spec_cache.get_argspec(call_fn)
-            bound_method = make_bound_method(argspec, value)
+            sig = self.arg_spec_cache.get_argspec(call_fn)
+            try:
+                return_override = self._argspec_to_retval[id(sig)]
+            except KeyError:
+                return_override = None
+            bound_method = make_bound_method(sig, value, return_override)
             if bound_method is None:
                 return None
             return bound_method.get_signature()

@@ -766,16 +766,22 @@ ANY_SIGNATURE = Signature.make(
 class BoundMethodSignature:
     signature: Signature
     self_value: Value
+    return_override: Optional[Value] = None
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> ImplReturn:
-        return self.signature.check_call(
+        ret = self.signature.check_call(
             # TODO get a composite
             [(Composite(self.self_value, None, None), None), *args],
             visitor,
             node,
         )
+        if self.return_override is not None and not self.signature.has_return_value():
+            return ImplReturn(
+                self.return_override, ret.constraint, ret.no_return_unless
+            )
+        return ret
 
     def get_signature(self) -> Optional[Signature]:
         params = list(self.signature.signature.parameters.values())
@@ -786,21 +792,28 @@ class BoundMethodSignature:
             return None
         return Signature(
             signature=inspect.Signature(
-                params[1:], return_annotation=self.signature.signature.return_annotation
+                params[1:], return_annotation=self.return_value
             ),
             # We don't carry over the implementation function, because it may not work when passed
             # different arguments.
             callable=self.signature.callable,
             is_asynq=self.signature.is_asynq,
-            has_return_annotation=self.signature.has_return_annotation,
+            has_return_annotation=self.has_return_value(),
+            is_ellipsis_args=self.signature.is_ellipsis_args,
         )
 
     def has_return_value(self) -> bool:
+        if self.return_override is not None:
+            return True
         return self.signature.has_return_value()
 
     @property
     def return_value(self) -> Value:
-        return self.signature.return_value
+        if self.signature.has_return_value():
+            return self.signature.return_value
+        if self.return_override is not None:
+            return self.return_override
+        return UNRESOLVED_VALUE
 
 
 @dataclass
@@ -823,14 +836,16 @@ MaybeSignature = Union[None, Signature, BoundMethodSignature, PropertyArgSpec]
 
 
 def make_bound_method(
-    argspec: MaybeSignature, self_value: Value
+    argspec: MaybeSignature, self_value: Value, return_override: Optional[Value] = None
 ) -> Optional[BoundMethodSignature]:
     if argspec is None:
         return None
     if isinstance(argspec, Signature):
-        return BoundMethodSignature(argspec, self_value)
+        return BoundMethodSignature(argspec, self_value, return_override)
     elif isinstance(argspec, BoundMethodSignature):
-        return BoundMethodSignature(argspec.signature, self_value)
+        if return_override is None:
+            return_override = argspec.return_override
+        return BoundMethodSignature(argspec.signature, self_value, return_override)
     else:
         assert False, f"invalid argspec {argspec}"
 
