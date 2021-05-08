@@ -710,7 +710,7 @@ class Signature:
             is_asynq=is_asynq,
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         param_str = ", ".join(self._render_parameters())
         asynq_str = "@asynq " if self.is_asynq else ""
         rendered = f"{asynq_str}({param_str})"
