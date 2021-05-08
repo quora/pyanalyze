@@ -68,14 +68,7 @@ class _AnnotationContext(Context):
         self.finder.log(message, ())
 
     def get_name(self, node: ast.Name) -> Value:
-        info = self.finder._get_info_for_name(f"{self.module}.{node.id}")
-        if info is not None:
-            return self.finder._value_from_info(info, self.module)
-        elif hasattr(builtins, node.id):
-            val = getattr(builtins, node.id)
-            if val is None or isinstance(val, type):
-                return KnownValue(val)
-        return UNRESOLVED_VALUE
+        return self.finder.resolve_name(self.module, node.id)
 
 
 # These are specified as just "List = _Alias()" in typing.pyi. Redirect
@@ -196,6 +189,16 @@ class TypeshedFinder(object):
             return False
         info = self._get_info_for_name(fq_name)
         return info is not None
+
+    def resolve_name(self, module: str, name: str) -> Value:
+        info = self._get_info_for_name(f"{module}.{name}")
+        if info is not None:
+            return self._value_from_info(info, module)
+        elif hasattr(builtins, name):
+            val = getattr(builtins, name)
+            if val is None or isinstance(val, type):
+                return KnownValue(val)
+        return UNRESOLVED_VALUE
 
     def _get_attribute_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str, attr: str
