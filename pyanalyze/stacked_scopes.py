@@ -44,6 +44,7 @@ from typing import (
     Union,
 )
 
+from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
     AnnotatedValue,
@@ -947,7 +948,10 @@ class StackedScopes:
 
     _builtin_scope = Scope(
         ScopeType.builtin_scope,
-        {k: KnownValue(v) for k, v in builtins.__dict__.items()},
+        {
+            **{k: KnownValue(v) for k, v in builtins.__dict__.items()},
+            "reveal_type": KnownValue(reveal_type),
+        },
         None,
     )
 

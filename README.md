@@ -128,14 +128,26 @@ class Config(pyanalyze.config.Config):
 
 ### Displaying and checking the type of an expression
 
-You can use `pyanalyze.dump_value(expr)` to display the type pyanalyze infers for an expression. This can be
+You can use `pyanalyze.extensions.reveal_type(expr)` to display the type pyanalyze infers for an expression. This can be
 useful to understand errors or to debug why pyanalyze does not catch a particular issue. For example:
 
 ```python
-from pyanalyze import dump_value
+from pyanalyze.extensions import reveal_type
 
-dump_value(1)  # value: KnownValue(val=1) (code: inference_failure)
+reveal_type(1)  # Revealed type is 'Literal[1]' (code: inference_failure)
 ```
+
+This function is also considered a builtin while type checking, so you can use `reveal_type()` in code that is type checked but not run.
+
+For callable objects, `reveal_type()` will also display the signature inferred by pyanalyze:
+
+```python
+from pyanalyze.extensions import reveal_type
+
+reveal_type(reveal_type)  # Revealed type is 'Literal[<function reveal_type at 0x104bf55e0>]', signature is (value, /) -> None (code: inference_failure)
+```
+
+A similar function, `pyanalyze.dump_value`, can be used to get lower-level details of the `Value` object pyanalyze infers for an expression.
 
 Similarly, you can use `pyanalyze.assert_is_value` to assert that pyanalyze infers a particular type for
 an expression. This requires importing the appropriate `Value` subclass from `pyanalyze.value`. For example:

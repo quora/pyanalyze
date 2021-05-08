@@ -1,5 +1,6 @@
 from .annotations import type_from_value
 from .error_code import ErrorCode
+from .extensions import reveal_type
 from .find_unused import used
 from .format_strings import parse_format_string
 from .safe import safe_hasattr
@@ -51,7 +52,6 @@ T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
-@used  # exposed as an API
 def assert_is_value(obj: object, value: Value) -> None:
     """Used to test test_scope's value inference.
 
@@ -63,12 +63,11 @@ def assert_is_value(obj: object, value: Value) -> None:
     pass
 
 
-@used  # exposed as an API
 def dump_value(value: object) -> None:
     """Used for debugging test_scope.
 
-    Calling it will make test_scope print out the argument's inferred value. Does nothing at
-    runtime.
+    Calling it will make pyanalyze print out an internal representation of the argument's inferred
+    value. Does nothing at runtime. Use reveal_type() for a more user-friendly representation.
 
     """
     pass
@@ -589,7 +588,7 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
     if not isinstance(expected_value, KnownValue):
         ctx.show_error(
             "Value argument to assert_is_value must be a KnownValue (got"
-            f" {expected_value}) {obj}",
+            f" {expected_value!r}; object is {obj!r})",
             ErrorCode.inference_failure,
             arg="value",
         )
@@ -602,14 +601,26 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
     return KnownValue(None)
 
 
-def _dump_value_impl(ctx: CallContext) -> Value:
+def _reveal_type_impl(ctx: CallContext) -> Value:
     if ctx.visitor._is_checking():
         value = ctx.vars["value"]
-        message = f"Value: {value}"
+        message = f"Revealed type is '{value!s}'"
         if isinstance(value, KnownValue):
             sig = ctx.visitor.arg_spec_cache.get_argspec(value.val)
             if sig is not None:
-                message += f", signature: {sig}"
+                message += f", signature is {sig!s}"
+        ctx.show_error(message, ErrorCode.inference_failure, arg="value")
+    return KnownValue(None)
+
+
+def _dump_value_impl(ctx: CallContext) -> Value:
+    if ctx.visitor._is_checking():
+        value = ctx.vars["value"]
+        message = f"Value is '{value!r}'"
+        if isinstance(value, KnownValue):
+            sig = ctx.visitor.arg_spec_cache.get_argspec(value.val)
+            if sig is not None:
+                message += f", signature is {sig!r}"
         ctx.show_error(message, ErrorCode.inference_failure, arg="value")
     return KnownValue(None)
 
@@ -755,11 +766,21 @@ def get_default_argspecs() -> Dict[object, Signature]:
         # pyanalyze helpers
         Signature.make(
             [SigParameter("obj"), SigParameter("value", annotation=TypedValue(Value))],
+            KnownValue(None),
             impl=_assert_is_value_impl,
             callable=assert_is_value,
         ),
         Signature.make(
-            [SigParameter("value")], impl=_dump_value_impl, callable=dump_value
+            [SigParameter("value", _POS_ONLY)],
+            KnownValue(None),
+            impl=_reveal_type_impl,
+            callable=reveal_type,
+        ),
+        Signature.make(
+            [SigParameter("value", _POS_ONLY)],
+            KnownValue(None),
+            impl=_dump_value_impl,
+            callable=dump_value,
         ),
         # builtins
         Signature.make(
