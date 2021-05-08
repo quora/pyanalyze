@@ -106,7 +106,7 @@ def get_attribute(ctx: AttrContext) -> Value:
     elif isinstance(root_value, UnboundMethodValue):
         attribute_value = _get_attribute_from_unbound(root_value, ctx)
     elif isinstance(root_value, ProtocolValue):
-        attribute_value = _get_attribute_from_protocol(root_value, ctx)
+        attribute_value = root_value.get_member(ctx.attr)
     elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
         attribute_value = UNRESOLVED_VALUE
     elif isinstance(root_value, MultiValuedValue):
@@ -292,13 +292,6 @@ def _get_attribute_from_unbound(
     )
     ctx.record_usage(type(method), result)
     return result
-
-
-def _get_attribute_from_protocol(root_value: ProtocolValue, ctx: AttrContext) -> Value:
-    if ctx.attr in root_value.members:
-        return root_value.members[ctx.attr]
-    else:
-        return UNINITIALIZED_VALUE
 
 
 @dataclass

@@ -8,7 +8,7 @@ from .arg_spec import ArgSpecCache
 from .test_config import TestConfig
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
-from .implementation import assert_is_value, dump_value
+from .implementation import assert_is_value
 from .error_code import ErrorCode
 from .signature import MaybeSignature, SigParameter, Signature, BoundMethodSignature
 from .value import (
@@ -1029,3 +1029,21 @@ class TestProtocol(TestNameCheckVisitorBase):
             prot.pacarana("x")  # E: incompatible_argument
             string_needs_proto(1)  # E: incompatible_argument
             string_needs_proto(impl)
+
+    @assert_passes()
+    def test_recursion(self):
+        from typing_extensions import Protocol
+        from typing import TypeVar
+
+        T = TypeVar("T")
+
+        class Iterable(Protocol[T]):
+            def __iter__(self) -> "Iterator[T]":
+                raise NotImplementedError
+
+        class Iterator(Iterable[T], Protocol[T]):
+            def __next__(self) -> T:
+                raise NotImplementedError
+
+        def capybara(it: Iterable[int], itt: Iterator) -> None:
+            assert_is_value(it.__iter__().__next__(), TypedValue(int))

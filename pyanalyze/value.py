@@ -145,6 +145,8 @@ class Value:
             # Allow any UnboundMethodValue with a secondary attr; it might not be
             # a method.
             return {}
+        elif isinstance(other, LazyValue):
+            return self.can_assign(other.get_value(), ctx)
         elif self == other:
             return {}
         return CanAssignError(f"Cannot assign {other} to {self}")
@@ -803,6 +805,52 @@ class CallableValue(TypedValue):
         return f"{is_asynq}Callable[{args}, {return_value}]"
 
 
+@dataclass
+class LazyValue(Value):
+    """A Value that has not yet been computed."""
+
+    provider: Optional[Callable[[], Value]]
+    _value: Optional[Value] = field(init=False, repr=False, default=None)
+
+    def get_value(self) -> Value:
+        if self._value is not None:
+            return self._value
+        assert self.provider is not None
+        value = self.provider()
+        self._value = value
+        self._provider = None
+        return value
+
+    def is_computed(self) -> bool:
+        return self._value is not None
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        return self.get_value().can_assign(other, ctx)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        if self._value is not None:
+            return self._value.substitute_typevars(typevars)
+        return self.get_value().substitute_typevars(typevars)
+
+    def walk_values(self) -> Iterable[Value]:
+        yield self
+        yield from self.get_value().walk_values()
+
+    def __eq__(self, other: Value) -> Union[bool, Literal[NotImplemented]]:
+        if isinstance(other, LazyValue):
+            return self.get_value() == other.get_value()
+        return self.get_value() == other
+
+
+def lazy_or_substitute(value: Value, typevars: TypeVarMap) -> Value:
+    if not isinstance(value, LazyValue):
+        return value.substitute_typevars(typevars)
+    elif value.is_computed():
+        return value.get_value().substitute_typevars(typevars)
+    else:
+        return LazyValue(lambda: value.get_value().substitute_typevars(typevars))
+
+
 @dataclass(frozen=True)
 class ProtocolValue(Value):
     """Value that represents a PEP 544 Protocol."""
@@ -846,11 +894,19 @@ class ProtocolValue(Value):
         return ProtocolValue(
             self.name,
             {
-                name: value.substitute_typevars(typevars)
+                name: lazy_or_substitute(value, typevars)
                 for name, value in self.members.items()
             },
             new_typevars,
         )
+
+    def _maybe_lazy(self, value: Value, typevars: TypeVarMap) -> Value:
+        if not isinstance(value, LazyValue):
+            return value.substitute_typevars(typevars)
+        elif value.is_computed():
+            return value.get_value().substitute_typevars(typevars)
+        else:
+            return LazyValue(lambda: value.get_value().substitute_typevars(typevars))
 
     def apply_typevars(self, values: Sequence[Value]) -> "ProtocolValue":
         tv_map = dict(zip(self.get_unapplied_typevars(), values))
@@ -863,10 +919,18 @@ class ProtocolValue(Value):
             if isinstance(value, TypeVarValue)
         ]
 
+    def get_member(self, name: str) -> Value:
+        if name not in self.members:
+            return UNINITIALIZED_VALUE
+        value = self.members[name]
+        if isinstance(value, LazyValue):
+            return value.get_value()
+        return value
+
     def walk_values(self) -> Iterable["Value"]:
         yield self
-        for member in self.members.values():
-            yield from member.walk_values()
+        for value in self.tv_map.values():
+            yield from value.walk_values()
 
     def __str__(self) -> str:
         if self.tv_map:

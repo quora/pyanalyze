@@ -4,12 +4,14 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
+from qcore.inspection import is_classmethod
 from .annotations import Context, is_typing_name, type_from_ast, _Visitor
 from .error_code import ErrorCode
 from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
 from .value import (
     CallableValue,
+    LazyValue,
     ProtocolValue,
     TypeVarMap,
     TypedValue,
@@ -96,6 +98,8 @@ class TypeshedFinder(object):
         self.verbose = verbose
         self.resolver = typeshed_client.Resolver()
         self._assignment_cache = {}
+        self._protocol_cache = {}
+        self.in_protocol_bases = False
 
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
@@ -409,11 +413,22 @@ class TypeshedFinder(object):
         obj: object,
         mod: str,
         objclass: Optional[type] = None,
+        *,
+        autobind: bool = False,
     ) -> Optional[Signature]:
+        is_classmethod = is_staticmethod = False
         for decorator_ast in node.decorator_list:
             decorator = self._parse_expr(decorator_ast, mod)
             if decorator == KnownValue(abstractmethod):
                 continue
+            elif decorator == KnownValue(classmethod):
+                is_classmethod = True
+                if autobind:  # TODO support classmethods otherwise
+                    continue
+            elif decorator == KnownValue(staticmethod):
+                is_staticmethod = True
+                if autobind:  # TODO support staticmethods otherwise
+                    continue
             # might be @overload or something else we don't recognize
             return None
 
@@ -433,6 +448,9 @@ class TypeshedFinder(object):
                 args.args, defaults, mod, SigParameter.POSITIONAL_OR_KEYWORD, objclass
             )
         )
+        if autobind:
+            if is_classmethod or not is_staticmethod:
+                arguments = arguments[1:]
 
         if args.vararg is not None:
             vararg_param = self._parse_param(
@@ -576,7 +594,7 @@ class TypeshedFinder(object):
                     value = self._parse_type(info.ast.value, module)
                 self._assignment_cache[key] = value
                 return value
-            elif isinstance(info.ast, ast3.ClassDef):
+            elif isinstance(info.ast, ast3.ClassDef) and not self.in_protocol_bases:
                 proto = self._extract_protocol(info.ast, module)
                 if proto is not None:
                     return proto
@@ -602,37 +620,54 @@ class TypeshedFinder(object):
     def _extract_protocol(
         self, ast: ast3.ClassDef, module: str
     ) -> Optional[ProtocolValue]:
+        if ast in self._protocol_cache:
+            return self._protocol_cache[ast]
         members = {}
         is_protocol = False
         typevars = None
-        for base in reversed(ast.bases):
-            expr = self._parse_type(base, module)
-            if isinstance(expr, GenericValue) and is_typing_name(expr.typ, "Protocol"):
-                typevars = expr.args
-                is_protocol = True
-            elif isinstance(expr, TypedValue) and is_typing_name(expr.typ, "Protocol"):
-                is_protocol = True
-            else:
-                # TODO inherit from other protocols
-                print("ignore", expr)
-                return None
+        with qcore.override(self, "in_protocol_bases", True):
+            for base in reversed(ast.bases):
+                expr = self._parse_type(base, module)
+                if isinstance(expr, GenericValue) and is_typing_name(
+                    expr.typ, "Protocol"
+                ):
+                    typevars = expr.args
+                    is_protocol = True
+                elif isinstance(expr, TypedValue) and is_typing_name(
+                    expr.typ, "Protocol"
+                ):
+                    is_protocol = True
+                else:
+                    # TODO inherit from other protocols
+                    print("ignore", expr)
+                    return None
         if not is_protocol:
             return None
         for line in ast.body:
             if isinstance(line, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
-                sig = self._get_signature_from_func_def(line, None, module)
-                if sig is None:
-                    value = UNRESOLVED_VALUE
-                else:
-                    value = CallableValue(sig)
-                members[line.name] = value
+
+                def provider(
+                    line: Union[ast3.FunctionDef, ast3.AsyncFunctionDef] = line
+                ) -> Value:
+                    sig = self._get_signature_from_func_def(
+                        line, None, module, autobind=True
+                    )
+                    if sig is None:
+                        return UNRESOLVED_VALUE
+                    else:
+                        return CallableValue(sig)
+
+                members[line.name] = LazyValue(provider)
             elif isinstance(line, ast3.AnnAssign):
-                annotation = self._parse_type(line.annotation)
                 if isinstance(line.target, ast3.Name):
-                    members[line.target.id] = annotation
+                    members[line.target.id] = LazyValue(
+                        lambda line=line: self._parse_type(line.annotation, module)
+                    )
             # TODO other cases
         if typevars:
             tv_map = {tv.typevar: tv for tv in typevars if isinstance(tv, TypeVarValue)}
         else:
             tv_map = {}
-        return ProtocolValue(ast.name, members, tv_map)
+        proto = ProtocolValue(ast.name, members, tv_map)
+        self._protocol_cache[ast] = proto
+        return proto

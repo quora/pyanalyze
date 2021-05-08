@@ -37,6 +37,7 @@ from .value import (
     Extension,
     HasAttrGuardExtension,
     KnownValue,
+    LazyValue,
     MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
@@ -46,6 +47,7 @@ from .value import (
     TypedValue,
     SequenceIncompleteValue,
     annotate_value,
+    lazy_or_substitute,
     stringify_object,
     unite_values,
     Value,
@@ -355,14 +357,22 @@ EXCLUDED_PROTOCOL_MEMBERS = {
     "_is_protocol",
 }
 
+_protocol_cache = {}
+_epm_cache = {}
+
 
 def make_protocol(val: type, ctx: Context) -> ProtocolValue:
+    val_id = id(val)
+    if val_id in _protocol_cache:
+        return _protocol_cache[val_id]
     name = stringify_object(val)
-    return ProtocolValue(
+    proto = ProtocolValue(
         name,
         _generic_extract_protocol_members(val, ctx),
         {tv: TypeVarValue(tv) for tv in val.__parameters__},
     )
+    _protocol_cache[val_id] = proto
+    return proto
 
 
 def _generic_extract_protocol_members(val: object, ctx: Context) -> Dict[str, Value]:
@@ -378,7 +388,7 @@ def _generic_extract_protocol_members(val: object, ctx: Context) -> Dict[str, Va
             tv_map = dict(zip(params, arg_vals))
             members = _extract_protocol_members(origin, ctx)
             return {
-                name: value.substitute_typevars(tv_map)
+                name: lazy_or_substitute(value, tv_map)
                 for name, value in members.items()
             }
     if hasattr(val, "__bases__") and isinstance(val, type):
@@ -394,6 +404,11 @@ def _extract_protocol_members(val: type, ctx: Context) -> Dict[str, Value]:
         or is_typing_name(val, "Generic")
     ):
         return {}
+
+    val_id = id(val)
+    if val_id in _epm_cache:
+        return _epm_cache[val_id]
+
     members = {}
     if hasattr(val, "__orig_bases__"):
         bases = val.__orig_bases__
@@ -406,25 +421,29 @@ def _extract_protocol_members(val: type, ctx: Context) -> Dict[str, Value]:
             continue
         if isinstance(value, property) and value.fget is not None:
             typ = value.fget.__annotations__.get("return", Any)
-            protocol_value = _type_from_runtime(typ, ctx)
+            protocol_value = LazyValue(lambda typ=typ: _type_from_runtime(typ, ctx))
         elif isinstance(value, (staticmethod, classmethod, FunctionType)):
-            if isinstance(value, staticmethod):
-                sig = ctx.get_bound_signature(value.__func__)
-            elif isinstance(value, classmethod):
-                sig = ctx.get_bound_signature(value.__func__, skip_first_arg=True)
-            elif isinstance(value, FunctionType):
-                sig = ctx.get_bound_signature(value, skip_first_arg=True)
-            else:
-                sig = None
-            if sig is not None:
-                protocol_value = CallableValue(sig)
-            else:
-                continue
+
+            def provider(value: Any = value) -> Value:
+                if isinstance(value, staticmethod):
+                    sig = ctx.get_bound_signature(value.__func__)
+                elif isinstance(value, classmethod):
+                    sig = ctx.get_bound_signature(value.__func__, skip_first_arg=True)
+                elif isinstance(value, FunctionType):
+                    sig = ctx.get_bound_signature(value, skip_first_arg=True)
+                else:
+                    sig = None
+                if sig is not None:
+                    return CallableValue(sig)
+                return UNRESOLVED_VALUE
+
+            protocol_value = LazyValue(provider)
         else:
             continue
         members[key] = protocol_value
     for key, value in val.__dict__.get("__annotations__", {}).items():
-        members[key] = _type_from_runtime(value, ctx)
+        members[key] = LazyValue(lambda value=value: _type_from_runtime(value, ctx))
+    _epm_cache[val_id] = members
     return members
 
 
