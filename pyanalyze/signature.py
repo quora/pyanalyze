@@ -164,18 +164,42 @@ class SigParameter(inspect.Parameter):
         super().__init__(name, kind, default=default_composite, annotation=annotation)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "SigParameter":
-        if self.annotation is EMPTY:
-            annotation = self.annotation
+        if self._annotation is EMPTY:
+            annotation = self._annotation
         else:
-            annotation = self.annotation.substitute_typevars(typevars)
+            annotation = self._annotation.substitute_typevars(typevars)
         return SigParameter(
-            name=self.name, kind=self.kind, default=self.default, annotation=annotation
+            name=self._name,
+            kind=self._kind,
+            default=self._default,
+            annotation=annotation,
         )
 
     def get_annotation(self) -> Value:
         if self.annotation is EMPTY:
             return UNRESOLVED_VALUE
         return self.annotation
+
+    def __str__(self) -> str:
+        # Adapted from Parameter.__str__
+        kind = self.kind
+        formatted = self._name
+
+        if self._annotation is not EMPTY:
+            formatted = f"{formatted}: {self._annotation}"
+
+        if self._default is not EMPTY:
+            if self._annotation is not EMPTY:
+                formatted = f"{formatted} = {self._default}"
+            else:
+                formatted = f"{formatted}={self._default}"
+
+        if kind is SigParameter.VAR_POSITIONAL:
+            formatted = "*" + formatted
+        elif kind is SigParameter.VAR_KEYWORD:
+            formatted = "**" + formatted
+
+        return formatted
 
 
 @dataclass
@@ -685,6 +709,43 @@ class Signature:
             is_ellipsis_args=is_ellipsis_args,
             is_asynq=is_asynq,
         )
+
+    def __str__(self) -> str:
+        param_str = ", ".join(self._render_parameters())
+        asynq_str = "@asynq " if self.is_asynq else ""
+        rendered = f"{asynq_str}({param_str})"
+        if self.signature.return_annotation is not EMPTY:
+            rendered += f" -> {self.signature.return_annotation}"
+        return rendered
+
+    def _render_parameters(self) -> Iterable[str]:
+        # Adapted from Signature's own __str__
+        if self.is_ellipsis_args:
+            yield "..."
+            return
+        render_pos_only_separator = False
+        render_kw_only_separator = True
+        for param in self.signature.parameters.values():
+            formatted = str(param)
+
+            kind = param.kind
+
+            if kind == SigParameter.POSITIONAL_ONLY:
+                render_pos_only_separator = True
+            elif render_pos_only_separator:
+                yield "/"
+                render_pos_only_separator = False
+
+            if kind == SigParameter.VAR_POSITIONAL:
+                render_kw_only_separator = False
+            elif kind == SigParameter.KEYWORD_ONLY and render_kw_only_separator:
+                yield "*"
+                render_kw_only_separator = False
+
+            yield formatted
+
+        if render_pos_only_separator:
+            yield "/"
 
     # TODO: do we need these?
     def has_return_value(self) -> bool:
