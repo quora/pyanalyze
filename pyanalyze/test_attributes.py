@@ -59,6 +59,27 @@ class TestAttributes(TestNameCheckVisitorBase):
             assert_is_value(DefiniteCapybara.capybara_id, KnownValue(3))
 
     @assert_passes()
+    def test_generic(self):
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+        U = TypeVar("U")
+
+        class X(Generic[T]):
+            x: T
+
+        class Child1(X[str]):
+            pass
+
+        class Child2(X[U]):
+            pass
+
+        def capybara(obj: X[int], c1: Child1, c2: Child2[bool]) -> None:
+            assert_is_value(obj.x, TypedValue(int))
+            assert_is_value(c1.x, TypedValue(str))
+            assert_is_value(c2.x, TypedValue(bool))
+
+    @assert_passes()
     def test_attribute_union(self):
         class A:
             x: int

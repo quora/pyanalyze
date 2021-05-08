@@ -11,14 +11,16 @@ import inspect
 import qcore
 import sys
 import types
-from typing import Any, Tuple, Optional
+from typing import Any, Dict, Sequence, Tuple, Optional
 
-from .annotations import type_from_runtime
+from .annotations import type_from_runtime, Context
 from .safe import safe_issubclass
+from .signature import Signature, MaybeSignature
 from .value import (
     AnnotatedValue,
     CallableValue,
     HasAttrExtension,
+    TypeVarMap,
     Value,
     KnownValue,
     GenericValue,
@@ -42,7 +44,6 @@ NoneType = type(None)
 class AttrContext:
     root_value: Value
     attr: str
-    node: ast.AST
 
     def record_usage(self, obj: Any, val: Value) -> None:
         pass
@@ -65,6 +66,14 @@ class AttrContext:
     def should_ignore_none_attributes(self) -> bool:
         return False
 
+    def get_signature(self, obj: object) -> Optional[Signature]:
+        return None
+
+    def get_generic_bases(
+        self, typ: type, generic_args: Sequence[Value]
+    ) -> Dict[type, TypeVarMap]:
+        return {}
+
 
 def get_attribute(ctx: AttrContext) -> Value:
     root_value = ctx.root_value
@@ -81,7 +90,11 @@ def get_attribute(ctx: AttrContext) -> Value:
             and root_value.signature.is_asynq
         ):
             return root_value.get_asynq_value()
-        attribute_value = _get_attribute_from_typed(root_value.typ, ctx)
+        if isinstance(root_value, GenericValue):
+            args = root_value.args
+        else:
+            args = ()
+        attribute_value = _get_attribute_from_typed(root_value.typ, args, ctx)
     elif isinstance(root_value, SubclassValue):
         if isinstance(root_value.typ, TypedValue):
             attribute_value = _get_attribute_from_subclass(root_value.typ.typ, ctx)
@@ -123,7 +136,7 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
         return TypedValue(dict)
     elif ctx.attr == "__bases__":
         return GenericValue(tuple, [SubclassValue(TypedValue(object))])
-    result, should_unwrap = _get_attribute_from_mro(typ, ctx)
+    result, _, should_unwrap = _get_attribute_from_mro(typ, ctx)
     if should_unwrap:
         result = _unwrap_value_from_subclass(result, ctx)
     ctx.record_usage(typ, result)
@@ -157,7 +170,9 @@ def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
         return KnownValue(cls_val)
 
 
-def _get_attribute_from_typed(typ: type, ctx: AttrContext) -> Value:
+def _get_attribute_from_typed(
+    typ: type, generic_args: Sequence[Value], ctx: AttrContext
+) -> Value:
     ctx.record_attr_read(typ)
 
     # First check values that are special in Python
@@ -165,7 +180,21 @@ def _get_attribute_from_typed(typ: type, ctx: AttrContext) -> Value:
         return KnownValue(typ)
     elif ctx.attr == "__dict__":
         return TypedValue(dict)
-    result, should_unwrap = _get_attribute_from_mro(typ, ctx)
+    result, provider, should_unwrap = _get_attribute_from_mro(typ, ctx)
+    if isinstance(typ, type):
+        generic_bases = ctx.get_generic_bases(typ, generic_args)
+    else:
+        generic_bases = {}
+    if provider in generic_bases:
+        result = result.substitute_typevars(generic_bases[provider])
+    if generic_args and typ in generic_bases:
+        typevars = [
+            val.typevar
+            for val in generic_bases[typ].values()
+            if isinstance(val, TypeVarValue)
+        ]
+        tv_map = dict(zip(typevars, generic_args))
+        result = result.substitute_typevars(tv_map)
     if should_unwrap:
         result = _unwrap_value_from_typed(result, typ, ctx)
     ctx.record_usage(typ, result)
@@ -237,7 +266,7 @@ def _get_attribute_from_known(obj: Any, ctx: AttrContext) -> Value:
     if obj is sys and ctx.attr == "modules":
         return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
 
-    result, _ = _get_attribute_from_mro(obj, ctx)
+    result, _, _ = _get_attribute_from_mro(obj, ctx)
     if isinstance(obj, (types.ModuleType, type)):
         ctx.record_usage(obj, result)
     else:
@@ -262,14 +291,34 @@ def _get_attribute_from_unbound(
     return result
 
 
-def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
+@dataclass
+class AnnotationsContext(Context):
+    attr_ctx: AttrContext
+    cls: type
+
+    def __post_init__(self) -> None:
+        super().__init__()
+
+    def get_name(self, node: ast.Name) -> Value:
+        try:
+            globals = sys.modules[self.cls.__module__].__dict__
+        except (KeyError, AttributeError, TypeError):
+            return UNRESOLVED_VALUE
+        else:
+            return self.get_name_from_globals(node.id, globals)
+
+    def get_signature(self, callable: object) -> MaybeSignature:
+        return self.attr_ctx.get_signature(callable)
+
+
+def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, type, bool]:
     # Then go through the MRO and find base classes that may define the attribute.
     if safe_issubclass(typ, Enum):
         # Special case, to avoid picking an attribute of Enum instances (e.g., name)
         # over an Enum member. Ideally we'd have a more principled way to support this
         # but I haven't thought of one.
         try:
-            return KnownValue(getattr(typ, ctx.attr)), True
+            return KnownValue(getattr(typ, ctx.attr)), typ, True
         except Exception:
             pass
 
@@ -282,7 +331,7 @@ def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
         for base_cls in mro:
             typeshed_type = ctx.get_attribute_from_typeshed(base_cls)
             if typeshed_type is not UNINITIALIZED_VALUE:
-                return typeshed_type, False
+                return typeshed_type, base_cls, False
 
             try:
                 # Make sure to use only __annotations__ that are actually on this
@@ -294,23 +343,29 @@ def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, bool]:
                     # Make sure we use only the object from this class, but do invoke
                     # the descriptor protocol with getattr.
                     base_cls.__dict__[ctx.attr]
-                    return KnownValue(getattr(typ, ctx.attr)), True
+                    return KnownValue(getattr(typ, ctx.attr)), base_cls, True
                 except Exception:
                     pass
             else:
-                return type_from_runtime(annotation), False
+                return (
+                    type_from_runtime(
+                        annotation, ctx=AnnotationsContext(ctx, base_cls)
+                    ),
+                    base_cls,
+                    False,
+                )
 
-    attrs_type = get_attrs_attribute(typ, ctx.attr)
+    attrs_type = get_attrs_attribute(typ, ctx)
     if attrs_type is not None:
-        return attrs_type, False
+        return attrs_type, typ, False
 
     # Even if we didn't find it any __dict__, maybe getattr() finds it directly.
     try:
-        return KnownValue(getattr(typ, ctx.attr)), True
+        return KnownValue(getattr(typ, ctx.attr)), typ, True
     except Exception:
         pass
 
-    return UNINITIALIZED_VALUE, False
+    return UNINITIALIZED_VALUE, object, False
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
@@ -323,13 +378,15 @@ def _static_hasattr(value: object, attr: str) -> bool:
         return True
 
 
-def get_attrs_attribute(typ: Any, attr: str) -> Optional[Value]:
+def get_attrs_attribute(typ: type, ctx: AttrContext) -> Optional[Value]:
     try:
         if hasattr(typ, "__attrs_attrs__"):
             for attr_attr in typ.__attrs_attrs__:
-                if attr_attr.name == attr:
+                if attr_attr.name == ctx.attr:
                     if attr_attr.type is not None:
-                        return type_from_runtime(attr_attr.type)
+                        return type_from_runtime(
+                            attr_attr.type, ctx=AnnotationsContext(ctx, typ)
+                        )
                     else:
                         return UNRESOLVED_VALUE
     except Exception:
