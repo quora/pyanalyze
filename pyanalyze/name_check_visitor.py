@@ -3975,6 +3975,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return value.signature
         elif isinstance(value, TypedValue):
             typ = value.typ
+            if typ is collections.abc.Callable or typ is types.FunctionType:
+                return ANY_SIGNATURE
             if not hasattr(typ, "__call__") or (
                 getattr(typ.__call__, "__objclass__", None) is type
                 and not issubclass(typ, type)

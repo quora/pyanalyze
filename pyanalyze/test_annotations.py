@@ -650,6 +650,7 @@ class TestCallable(TestNameCheckVisitorBase):
     @assert_passes()
     def test_known_value(self):
         from typing_extensions import Literal
+        from typing import Any
 
         class Capybara:
             def method(self, x: int) -> int:
@@ -664,10 +665,22 @@ class TestCallable(TestNameCheckVisitorBase):
         def h(x: object) -> bool:
             return True
 
+        def decorator(func: Any) -> Any:
+            return func
+
         def capybara() -> None:
+            def nested(x: int) -> int:
+                return 2
+
+            @decorator
+            def decorated(x: int) -> int:
+                return 2
+
             g(f)
             g(h)
             g(Capybara().method)
+            g(nested)
+            g(decorated)
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_wrong_callable(self):
