@@ -191,19 +191,26 @@ class StarredValue(Value):
 @dataclass
 class _AttrContext(attributes.AttrContext):
     visitor: "NameCheckVisitor"
+    node: Optional[ast.AST]
 
     # Needs to be implemented explicitly to work around Cython limitations
     def __init__(
-        self, root_value: Value, attr: str, node: ast.AST, visitor: "NameCheckVisitor"
+        self,
+        root_value: Value,
+        attr: str,
+        node: Optional[ast.AST],
+        visitor: "NameCheckVisitor",
     ) -> None:
-        super().__init__(root_value, attr, node)
+        super().__init__(root_value, attr)
+        self.node = node
         self.visitor = visitor
 
     def record_usage(self, obj: Any, val: Value) -> None:
         self.visitor._maybe_record_usage(obj, self.attr, val)
 
     def record_attr_read(self, obj: Any) -> None:
-        self.visitor._record_type_attr_read(obj, self.attr, self.node)
+        if self.node is not None:
+            self.visitor._record_type_attr_read(obj, self.attr, self.node)
 
     def should_ignore_class_attribute(self, obj: Any) -> bool:
         return self.visitor.config.should_ignore_class_attribute(obj)
@@ -238,6 +245,11 @@ class _AttrContext(attributes.AttrContext):
 
     def should_ignore_none_attributes(self) -> bool:
         return self.visitor.config.IGNORE_NONE_ATTRIBUTES
+
+    def get_generic_bases(
+        self, typ: type, generic_args: Sequence[Value]
+    ) -> Dict[type, TypeVarMap]:
+        return self.visitor.get_generic_bases(typ, generic_args)
 
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
@@ -488,7 +500,7 @@ class ClassAttributeChecker:
             return
         # the attribute is in __annotations__, e.g. a dataclass
         if _has_annotation_for_attr(typ, attr_name) or attributes.get_attrs_attribute(
-            typ, attr_name
+            typ, attributes.AttrContext(TypedValue(typ), attr_name)
         ):
             return
 
@@ -3329,7 +3341,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     )
                 elif sys.version_info >= (3, 7):
                     # If there was no __getitem__, try __class_getitem__ in 3.7+
-                    cgi = self.get_attribute(node.value, "__class_getitem__", value)
+                    cgi = self.get_attribute(value, "__class_getitem__", node.value)
                     if cgi is UNINITIALIZED_VALUE:
                         self._show_error_if_checking(
                             node,
@@ -3386,7 +3398,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _get_dunder(self, node: ast.AST, callee_val: Value, method_name: str) -> Value:
         lookup_val = callee_val.get_type_value()
-        method_object = self.get_attribute(node, method_name, lookup_val)
+        method_object = self.get_attribute(lookup_val, method_name, node)
         if method_object is UNINITIALIZED_VALUE:
             self.show_error(
                 node,
@@ -3468,7 +3480,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     root_composite.value, node.attr, node
                 )
             value = self._get_attribute_with_fallback(
-                node, node.attr, root_composite.value
+                root_composite.value, node.attr, node
             )
             if self._should_use_varname_value(value):
                 varname_value = VariableNameValue.from_varname(
@@ -3489,7 +3501,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self.show_error(node, "Unknown context", ErrorCode.unexpected_node)
             return Composite(UNRESOLVED_VALUE, composite, node)
 
-    def get_attribute(self, node: ast.AST, attr: str, root_value: Value) -> Value:
+    def get_attribute(
+        self, root_value: Value, attr: str, node: Optional[ast.AST] = None
+    ) -> Value:
         """Get an attribute of this value.
 
         Returns UninitializedValue if the attribute cannot be found.
@@ -3497,39 +3511,39 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         """
         if isinstance(root_value, MultiValuedValue):
             values = [
-                self._get_attribute_no_mvv(node, attr, subval)
+                self._get_attribute_no_mvv(subval, attr, node)
                 for subval in root_value.vals
             ]
             if any(value is UNINITIALIZED_VALUE for value in values):
                 return UNINITIALIZED_VALUE
             return unite_values(*values)
-        return self._get_attribute_no_mvv(node, attr, root_value)
+        return self._get_attribute_no_mvv(root_value, attr, node)
 
     def _get_attribute_no_mvv(
-        self, node: ast.AST, attr: str, root_value: Value
+        self, root_value: Value, attr: str, node: Optional[ast.AST] = None
     ) -> Value:
         """Get an attribute. root_value must not be a MultiValuedValue."""
         ctx = _AttrContext(root_value, attr, node, self)
         return attributes.get_attribute(ctx)
 
     def _get_attribute_with_fallback(
-        self, node: ast.Attribute, attr: str, root_value: Value
+        self, root_value: Value, attr: str, node: ast.AST
     ) -> Value:
         if isinstance(root_value, MultiValuedValue):
             results = []
             for subval in root_value.vals:
-                subresult = self._get_attribute_no_mvv(node, attr, subval)
+                subresult = self._get_attribute_no_mvv(subval, attr, node)
                 if subresult is UNINITIALIZED_VALUE:
-                    subresult = self._get_attribute_fallback(node, attr, subval)
+                    subresult = self._get_attribute_fallback(subval, attr, node)
                 results.append(subresult)
             return unite_values(*results)
-        result = self._get_attribute_no_mvv(node, attr, root_value)
+        result = self._get_attribute_no_mvv(root_value, attr, node)
         if result is UNINITIALIZED_VALUE:
-            return self._get_attribute_fallback(node, attr, root_value)
+            return self._get_attribute_fallback(root_value, attr, node)
         return result
 
     def _get_attribute_fallback(
-        self, node: ast.Attribute, attr: str, root_value: Value
+        self, root_value: Value, attr: str, node: ast.AST
     ) -> Value:
         # We don't throw an error in many
         # cases where we're not quite sure whether an attribute
@@ -3573,7 +3587,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         elif isinstance(root_value, MultiValuedValue):
             return unite_values(
                 *[
-                    self._get_attribute_fallback(node, attr, val)
+                    self._get_attribute_fallback(val, attr, node)
                     for val in root_value.vals
                 ]
             )
@@ -3904,7 +3918,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(callee_wrapped, KnownValue):
             argspec = self.arg_spec_cache.get_argspec(callee_wrapped.val)
             if argspec is None:
-                method_object = self.get_attribute(node, "__call__", callee_wrapped)
+                method_object = self.get_attribute(callee_wrapped, "__call__", node)
                 if method_object is UNINITIALIZED_VALUE:
                     self._show_error_if_checking(
                         node,
