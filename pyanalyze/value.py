@@ -59,7 +59,7 @@ class CanAssignContext:
 
     def get_generic_bases(
         self, typ: type, generic_args: Sequence["Value"] = ()
-    ) -> Dict[type, Sequence["Value"]]:
+    ) -> Dict[type, TypeVarMap]:
         return {}
 
     def get_signature(
@@ -364,7 +364,9 @@ class TypedValue(Value):
         else:
             args = ()
         generic_bases = ctx.get_generic_bases(self.typ, args)
-        return generic_bases.get(typ)
+        if typ in generic_bases:
+            return list(generic_bases[typ].values())
+        return None
 
     def get_generic_arg_for_type(
         self, typ: Union[type, super], ctx: CanAssignContext, index: int
@@ -1358,10 +1360,6 @@ def extract_typevars(value: Value) -> Iterable["TypeVar"]:
     for val in value.walk_values():
         if isinstance(val, TypeVarValue):
             yield val.typevar
-
-
-def substitute_typevars(values: Iterable[Value], tv_map: TypeVarMap) -> List[Value]:
-    return [value.substitute_typevars(tv_map) for value in values]
 
 
 def stringify_object(obj: Any) -> str:

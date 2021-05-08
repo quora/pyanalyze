@@ -89,6 +89,21 @@ class Context:
     def get_name(self, node: ast.Name) -> Value:
         return UNRESOLVED_VALUE
 
+    def handle_undefined_name(self, name: str) -> Value:
+        if self.should_suppress_undefined_names:
+            return UNRESOLVED_VALUE
+        self.show_error(
+            f"Undefined name {name!r} used in annotation", ErrorCode.undefined_name
+        )
+        return UNRESOLVED_VALUE
+
+    def get_name_from_globals(self, name: str, globals: Mapping[str, Any]) -> Value:
+        if name in globals:
+            return KnownValue(globals[name])
+        elif hasattr(builtins, name):
+            return KnownValue(getattr(builtins, name))
+        return self.handle_undefined_name(name)
+
 
 def type_from_ast(
     ast_node: ast.AST,
