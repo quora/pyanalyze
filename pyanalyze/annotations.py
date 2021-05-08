@@ -371,6 +371,9 @@ def _generic_extract_protocol_members(val: object, ctx: Context) -> Dict[str, Va
         if origin is not None:
             args = typing_inspect.get_args(val)
             params = typing_inspect.get_parameters(origin)
+            # In Python 3.7 get_parameters() is wrong for generic protocols
+            if not params and hasattr(origin, "__parameters__"):
+                params = origin.__parameters__ or ()
             arg_vals = [_type_from_runtime(arg, ctx) for arg in args]
             tv_map = dict(zip(params, arg_vals))
             members = _extract_protocol_members(origin, ctx)

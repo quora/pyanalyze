@@ -971,7 +971,6 @@ class TestProtocol(TestNameCheckVisitorBase):
     def test_generic(self):
         from typing_extensions import Protocol
         from typing import TypeVar, Generic
-        from pyanalyze.annotations import type_from_runtime
 
         T = TypeVar("T")
 
@@ -987,8 +986,6 @@ class TestProtocol(TestNameCheckVisitorBase):
         class Child(Proto[int], Protocol):
             def method(self) -> str:
                 raise NotImplementedError
-
-        print(repr(type_from_runtime(Child)))
 
         class Impl(Generic[T]):
             x: T
