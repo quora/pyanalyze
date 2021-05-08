@@ -26,4 +26,7 @@ from . import tests
 from . import value
 from . import yield_checker
 
+# Exposed as APIs
 used(ast_annotator)
+used(assert_is_value)
+used(dump_value)
