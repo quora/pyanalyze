@@ -8,6 +8,7 @@ Contains an AST visitor that visits each node and infers a value for most nodes.
 from abc import abstractmethod
 from argparse import ArgumentParser
 import ast
+from pyanalyze.implementation import dump_value
 from ast_decompiler import decompile
 import asyncio
 import builtins
@@ -83,6 +84,7 @@ from .stacked_scopes import (
     SubScope,
 )
 from .signature import (
+    ANY_SIGNATURE,
     BoundMethodSignature,
     MaybeSignature,
     Signature,
@@ -3333,7 +3335,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 with self.catch_errors():
                     getitem = self._get_dunder(node.value, value, "__getitem__")
                 if getitem is not UNINITIALIZED_VALUE:
-                    return_value, _ = self._get_argspec_and_check_call(
+                    return_value, _ = self.check_call(
                         node.value,
                         getitem,
                         [root_composite, index_composite],
@@ -3350,7 +3352,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         )
                         return_value = UNRESOLVED_VALUE
                     else:
-                        return_value, _ = self._get_argspec_and_check_call(
+                        return_value, _ = self.check_call(
                             node.value, cgi, [index_composite], allow_call=True
                         )
                 else:
@@ -3418,7 +3420,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         method_object = self._get_dunder(node, callee_composite[0], method_name)
         if method_object is UNINITIALIZED_VALUE:
             return UNRESOLVED_VALUE
-        return_value, _ = self._get_argspec_and_check_call(
+        return_value, _ = self.check_call(
             node, method_object, [callee_composite, *args], allow_call=allow_call
         )
         return return_value
@@ -3705,9 +3707,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             keywords = []
 
-        return_value, constraint = self._get_argspec_and_check_call(
-            node, callee_wrapped, args, keywords
-        )
+        return_value, constraint = self.check_call(node, callee_wrapped, args, keywords)
 
         if self._is_checking():
             self.yield_checker.record_call(callee_wrapped, node)
@@ -3718,6 +3718,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             callee_val = callee_wrapped.get_method()
         elif isinstance(callee_wrapped, KnownValue):
             callee_val = callee_wrapped.val
+        elif isinstance(callee_wrapped, SubclassValue) and isinstance(
+            callee_wrapped.typ, TypedValue
+        ):
+            callee_val = callee_wrapped.typ.typ
 
         if callee_val is not None:
             if self.collector is not None:
@@ -3797,29 +3801,58 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             return KnownValue(value)
 
-    def _get_argspec_and_check_call(
+    def check_call(
+        self,
+        node: ast.AST,
+        callee: Value,
+        args: Iterable[Composite],
+        keywords: Iterable[Tuple[Optional[str], Composite]] = (),
+        *,
+        allow_call: bool = False,
+    ) -> Tuple[Value, AbstractConstraint]:
+        if isinstance(callee, MultiValuedValue):
+            values, constraints = zip(
+                *[
+                    self._check_call_no_mvv(
+                        node, val, args, keywords, allow_call=allow_call
+                    )
+                    for val in callee.vals
+                ]
+            )
+            return unite_values(*values), reduce(OrConstraint, constraints)
+        return self._check_call_no_mvv(
+            node, callee, args, keywords, allow_call=allow_call
+        )
+
+    def _check_call_no_mvv(
         self,
         node: ast.AST,
         callee_wrapped: Value,
         args: Iterable[Composite],
-        keywords: Iterable[Tuple[Optional[str], Composite]] = [],
+        keywords: Iterable[Tuple[Optional[str], Composite]] = (),
+        *,
         allow_call: bool = False,
     ) -> Tuple[Value, AbstractConstraint]:
-        if not isinstance(callee_wrapped, (KnownValue, TypedValue, UnboundMethodValue)):
-            return UNRESOLVED_VALUE, NULL_CONSTRAINT
-
         if isinstance(callee_wrapped, KnownValue) and any(
             callee_wrapped.val is ignored for ignored in self.config.IGNORED_CALLEES
         ):
             self.log(logging.INFO, "Ignoring callee", callee_wrapped)
             return UNRESOLVED_VALUE, NULL_CONSTRAINT
 
-        if isinstance(callee_wrapped, UnboundMethodValue):
-            args = [Composite(callee_wrapped.typ, None, node), *args]
+        extended_argspec = self.signature_from_value(callee_wrapped, node)
+        if extended_argspec is ANY_SIGNATURE:
+            # don't bother calling it
+            extended_argspec = None
+            return_value = UNRESOLVED_VALUE
+            constraint = NULL_CONSTRAINT
+            no_return_unless = NULL_CONSTRAINT
 
-        extended_argspec = self._get_argspec_from_value(callee_wrapped, node)
-
-        if extended_argspec is None:
+        elif extended_argspec is None:
+            self._show_error_if_checking(
+                node,
+                f"{callee_wrapped} is not callable",
+                error_code=ErrorCode.not_callable,
+            )
             return_value = UNRESOLVED_VALUE
             constraint = NULL_CONSTRAINT
             no_return_unless = NULL_CONSTRAINT
@@ -3911,6 +3944,54 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 if isinstance(task_cls, type):
                     return TypedValue(task_cls), constraint
             return return_value, constraint
+
+    def signature_from_value(
+        self, value: Value, node: Optional[ast.AST] = None
+    ) -> MaybeSignature:
+        if isinstance(value, AnnotatedValue):
+            value = value.value
+        if isinstance(value, KnownValue):
+            argspec = self.arg_spec_cache.get_argspec(value.val)
+            if argspec is None:
+                method_object = self.get_attribute(value, "__call__", node)
+                if method_object is UNINITIALIZED_VALUE:
+                    return None
+                else:
+                    return ANY_SIGNATURE
+            return argspec
+        elif isinstance(value, UnboundMethodValue):
+            method = value.get_method()
+            if method is not None:
+                sig = self.arg_spec_cache.get_argspec(method)
+                if sig is None:
+                    # TODO return None here and figure out when the signature is missing
+                    return ANY_SIGNATURE
+                return make_bound_method(sig, value.typ)
+            return None
+        elif isinstance(value, CallableValue):
+            return value.signature
+        elif isinstance(value, TypedValue):
+            typ = value.typ
+            if not hasattr(typ, "__call__") or (
+                getattr(typ.__call__, "__objclass__", None) is type
+                and not issubclass(typ, type)
+            ):
+                return None
+            call_fn = typ.__call__
+            argspec = self.arg_spec_cache.get_argspec(call_fn)
+            bound_method = make_bound_method(argspec, value)
+            if bound_method is None:
+                return None
+            return bound_method.get_signature()
+        elif isinstance(value, SubclassValue):
+            if isinstance(value.typ, TypedValue):
+                return self.arg_spec_cache.get_argspec(value.typ.typ)
+            else:
+                return ANY_SIGNATURE
+        elif value is UNRESOLVED_VALUE or isinstance(value, VariableNameValue):
+            return ANY_SIGNATURE
+        else:
+            return None
 
     def _get_argspec_from_value(
         self, callee_wrapped: Value, node: ast.AST

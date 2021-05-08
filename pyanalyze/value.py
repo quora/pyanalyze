@@ -9,7 +9,6 @@ from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field, InitVar
 import inspect
 from itertools import chain
-from types import FunctionType
 from typing import (
     Any,
     Callable,
@@ -65,6 +64,11 @@ class CanAssignContext:
     def get_signature(
         self, obj: object, is_asynq: bool = False
     ) -> Optional["pyanalyze.signature.Signature"]:
+        return None
+
+    def signature_from_value(
+        self, value: "Value"
+    ) -> "pyanalyze.signature.MaybeSignature":
         return None
 
 
@@ -717,48 +721,15 @@ class CallableValue(TypedValue):
         return CallableValue(sig)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        # TODO: unify with _get_argspec_from_value() in NameCheckVisitor
-        signature = None
-        if isinstance(other, CallableValue):
-            signature = other.signature
-        elif isinstance(other, KnownValue):
-            signature = ctx.get_signature(
-                other.val, is_asynq=hasattr(other.val, "asynq")
-            )
-        elif isinstance(other, SubclassValue) and isinstance(other.typ, TypedValue):
-            signature = ctx.get_signature(other.typ.typ)
-        elif isinstance(other, UnboundMethodValue):
-            method = other.get_method()
-            if method is not None:
-                unbound_signature = ctx.get_signature(method)
-                maybe_bound = pyanalyze.signature.make_bound_method(
-                    unbound_signature, other.typ
-                )
-                if isinstance(maybe_bound, pyanalyze.signature.BoundMethodSignature):
-                    signature = maybe_bound.get_signature()
-                else:
-                    signature = maybe_bound
-        elif isinstance(other, TypedValue):
-            typ = other.typ
-            if typ is collections.abc.Callable or typ is FunctionType:
-                return {}
-            if not hasattr(typ, "__call__") or (
-                getattr(typ.__call__, "__objclass__", None) is type
-                and not issubclass(typ, type)
-            ):
+        if not isinstance(other, MultiValuedValue):
+            signature = ctx.signature_from_value(other)
+            if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
-            call_fn = typ.__call__
-            unbound_signature = ctx.get_signature(call_fn)
-            bound_method = pyanalyze.signature.make_bound_method(
-                unbound_signature, other
-            )
-            if bound_method is not None:
-                signature = bound_method.get_signature()
-        if signature is not None:
-            tv_map_or_error = self.signature.can_assign(signature, ctx)
-            if isinstance(tv_map_or_error, CanAssignError):
+            elif isinstance(signature, pyanalyze.signature.Signature):
+                tv_map_or_error = self.signature.can_assign(signature, ctx)
+                if isinstance(tv_map_or_error, CanAssignError):
+                    return tv_map_or_error
                 return tv_map_or_error
-            return tv_map_or_error
 
         return super().can_assign(other, ctx)
 

@@ -698,6 +698,22 @@ class TestNoReturn(TestNameCheckVisitorBase):
             assert_unreachable(1)
 
 
+class TestCall(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_union(self):
+        def capybara(cond: bool) -> None:
+            if cond:
+                typ = list
+            else:
+                typ = tuple
+            assert_is_value(
+                typ, MultiValuedValue([KnownValue(list), KnownValue(tuple)])
+            )
+            assert_is_value(
+                typ([1]), MultiValuedValue([KnownValue((1,)), KnownValue([1])])
+            )
+
+
 class TestSubclassValue(TestNameCheckVisitorBase):
     # In 3.7 the behavior of Type[] changed.
     @only_before((3, 7))

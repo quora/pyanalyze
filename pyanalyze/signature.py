@@ -756,6 +756,12 @@ class Signature:
         return self.signature.return_annotation
 
 
+# Signature that should be compatible with any other Signature
+ANY_SIGNATURE = Signature.make(
+    [], UNRESOLVED_VALUE, is_ellipsis_args=True, is_asynq=True
+)
+
+
 @dataclass
 class BoundMethodSignature:
     signature: Signature
@@ -763,7 +769,7 @@ class BoundMethodSignature:
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+    ) -> ImplReturn:
         return self.signature.check_call(
             # TODO get a composite
             [(Composite(self.self_value, None, None), None), *args],
@@ -806,7 +812,7 @@ class PropertyArgSpec:
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+    ) -> ImplReturn:
         raise TypeError("property object is not callable")
 
     def has_return_value(self) -> bool:
