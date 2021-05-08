@@ -1,4 +1,6 @@
 # static analysis: ignore
+from qcore.asserts import assert_eq
+
 from .value import (
     CanAssignError,
     GenericValue,
@@ -19,6 +21,21 @@ TupleObject = GenericValue(tuple, [TypedValue(object)])
 DictInt = GenericValue(dict, [TypedValue(str), TypedValue(int)])
 DictBool = GenericValue(dict, [TypedValue(str), TypedValue(bool)])
 DictObject = GenericValue(dict, [TypedValue(str), TypedValue(object)])
+
+
+def test_stringify() -> None:
+    assert_eq("() -> Any", str(Signature.make([])))
+    assert_eq("() -> int", str(Signature.make([], TypedValue(int))))
+    assert_eq(
+        "@asynq () -> int", str(Signature.make([], TypedValue(int), is_asynq=True))
+    )
+    assert_eq(
+        "(...) -> int", str(Signature.make([], TypedValue(int), is_ellipsis_args=True))
+    )
+    assert_eq(
+        "(x: int) -> int",
+        str(Signature.make([P("x", annotation=TypedValue(int))], TypedValue(int))),
+    )
 
 
 class TestCanAssign:

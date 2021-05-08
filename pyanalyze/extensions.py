@@ -170,3 +170,15 @@ class TypeGuard(metaclass=_TypeGuardMeta):
     """
 
     guarded_type: object
+
+
+def reveal_type(value: object) -> None:
+    """Used for debugging test_scope.
+
+    Calling it will make pyanalyze print out the argument's inferred value in a human-readable
+    format. Does nothing at runtime.
+
+    This is automatically exposed as a global.
+
+    """
+    pass
