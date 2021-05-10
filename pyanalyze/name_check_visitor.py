@@ -4040,10 +4040,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return None
             return bound_method.get_signature()
         elif isinstance(value, SubclassValue):
-            if isinstance(value.typ, TypedValue):
-                return self.arg_spec_cache.get_argspec(value.typ.typ)
-            else:
-                return ANY_SIGNATURE
+            # SubclassValues are callable, but we can't assume the signature
+            # is consistent with the base class.
+            return ANY_SIGNATURE
         elif value is UNRESOLVED_VALUE or isinstance(value, VariableNameValue):
             return ANY_SIGNATURE
         else:

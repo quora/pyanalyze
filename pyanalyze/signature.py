@@ -784,8 +784,10 @@ class BoundMethodSignature:
         return ret
 
     def get_signature(self) -> Optional[Signature]:
+        if self.signature.is_ellipsis_args:
+            return ANY_SIGNATURE
         params = list(self.signature.signature.parameters.values())
-        if params[0].kind not in (
+        if not params or params[0].kind not in (
             SigParameter.POSITIONAL_ONLY,
             SigParameter.POSITIONAL_OR_KEYWORD,
         ):

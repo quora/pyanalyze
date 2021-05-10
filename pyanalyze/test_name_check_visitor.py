@@ -554,7 +554,7 @@ def run():
             y = 3 if x else 4
             assert_is_value(y, MultiValuedValue([KnownValue(3), KnownValue(4)]))
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_namedtuple(self):
         import collections
 
@@ -562,7 +562,18 @@ def run():
 
         def fn():
             t = typ(1, 2)
-            print(t.baz)
+            print(t.baz)  # E: undefined_attribute
+
+    @assert_passes()
+    def test_local_namedtuple(self):
+        import collections
+
+        def capybara():
+            typ = collections.namedtuple("typ", "foo bar")
+            # For now just test that this produces no errors; if we
+            # add support for local namedtuples we can assert something
+            # more precise here.
+            print(typ(1, 2))
 
     @assert_passes()
     def test_set_after_get(self):
