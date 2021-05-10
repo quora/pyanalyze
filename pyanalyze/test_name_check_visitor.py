@@ -1652,6 +1652,15 @@ class TestSubscripting(TestNameCheckVisitorBase):
         def capybara():
             return [1, 2][3.0]
 
+    @assert_passes()
+    def test_union(self):
+        from typing import Dict, Any, Union
+
+        def capybara(seq: Union[Dict[int, str], Any]) -> None:
+            assert_is_value(
+                seq[0], MultiValuedValue([TypedValue(str), UNRESOLVED_VALUE])
+            )
+
 
 class TestPython3Compatibility(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.mixing_bytes_and_text)
@@ -1687,6 +1696,13 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(1 + float(x), TypedValue(float))
             assert_is_value(1.0 + int(x), TypedValue(float))
             assert_is_value(3 * 3.0 + 1, KnownValue(10.0))
+
+    @assert_passes()
+    def test_union(self):
+        from typing import Union
+
+        def capybara(x: Union[int, str]) -> None:
+            assert_is_value(x * 3, MultiValuedValue([TypedValue(int), TypedValue(str)]))
 
     @assert_passes()
     def test_rop(self):

@@ -8,6 +8,7 @@ Contains an AST visitor that visits each node and infers a value for most nodes.
 from abc import abstractmethod
 from argparse import ArgumentParser
 import ast
+from unittest.mock import call
 from ast_decompiler import decompile
 import asyncio
 import builtins
@@ -3269,7 +3270,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def composite_from_subscript(self, node: ast.Subscript) -> Composite:
         root_composite = self.composite_from_node(node.value)
-        value = root_composite.value
         index_composite = self.composite_from_node(node.slice)
         index = index_composite.value
         if (
@@ -3286,7 +3286,32 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
         else:
             composite = None
+        if isinstance(root_composite.value, MultiValuedValue):
+            values = [
+                self._composite_from_subscript_no_mvv(
+                    node,
+                    Composite(val, root_composite.varname, root_composite.node),
+                    index_composite,
+                    composite,
+                )
+                for val in root_composite.value.vals
+            ]
+            return_value = unite_values(*values)
+        else:
+            return_value = self._composite_from_subscript_no_mvv(
+                node, root_composite, index_composite, composite
+            )
+        return Composite(return_value, composite, node)
 
+    def _composite_from_subscript_no_mvv(
+        self,
+        node: ast.Subscript,
+        root_composite: Composite,
+        index_composite: Composite,
+        composite: Composite,
+    ) -> Value:
+        value = root_composite.value
+        index = index_composite.value
         if any(
             value.is_type(typ) for typ in (list, tuple, str, bytes)
         ) and not index.is_type(slice):
@@ -3309,7 +3334,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 "__setitem__",
                 [index_composite, Composite(self.being_assigned, None, node)],
             )
-            return Composite(self.being_assigned, composite, node)
+            return self.being_assigned
         elif isinstance(node.ctx, ast.Load):
             if sys.version_info >= (3, 9) and value == KnownValue(type):
                 # In Python 3.9+ "type[int]" is legal, but neither
@@ -3380,14 +3405,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 local_value = self._get_composite(composite, node, return_value)
                 if local_value is not UNINITIALIZED_VALUE:
                     return_value = local_value
-            return Composite(return_value, composite, node)
+            return return_value
         elif isinstance(node.ctx, ast.Del):
-            return Composite(
-                self._check_dunder_call(
-                    node.value, root_composite, "__delitem__", [index_composite]
-                ),
-                composite,
-                node,
+            return self._check_dunder_call(
+                node.value, root_composite, "__delitem__", [index_composite]
             )
         else:
             self.show_error(
@@ -3395,7 +3416,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 f"Unexpected subscript context: {node.ctx}",
                 ErrorCode.unexpected_node,
             )
-            return Composite(UNRESOLVED_VALUE, composite, node)
+            return UNRESOLVED_VALUE
 
     def _get_dunder(self, node: ast.AST, callee_val: Value, method_name: str) -> Value:
         lookup_val = callee_val.get_type_value()
@@ -3416,7 +3437,31 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         args: Iterable[Composite],
         allow_call: bool = False,
     ) -> Value:
-        method_object = self._get_dunder(node, callee_composite[0], method_name)
+        if isinstance(callee_composite.value, MultiValuedValue):
+            composites = [
+                Composite(val, callee_composite.varname, callee_composite.node)
+                for val in callee_composite.value.vals
+            ]
+            values = [
+                self._check_dunder_call_no_mvv(
+                    node, composite, method_name, args, allow_call
+                )
+                for composite in composites
+            ]
+            return unite_values(*values)
+        return self._check_dunder_call_no_mvv(
+            node, callee_composite, method_name, args, allow_call
+        )
+
+    def _check_dunder_call_no_mvv(
+        self,
+        node: ast.AST,
+        callee_composite: Composite,
+        method_name: str,
+        args: Iterable[Composite],
+        allow_call: bool = False,
+    ) -> Value:
+        method_object = self._get_dunder(node, callee_composite.value, method_name)
         if method_object is UNINITIALIZED_VALUE:
             return UNRESOLVED_VALUE
         return_value, _ = self.check_call(
