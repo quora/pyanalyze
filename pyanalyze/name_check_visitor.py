@@ -8,7 +8,6 @@ Contains an AST visitor that visits each node and infers a value for most nodes.
 from abc import abstractmethod
 from argparse import ArgumentParser
 import ast
-from unittest.mock import call
 from ast_decompiler import decompile
 import asyncio
 import builtins
@@ -3278,40 +3277,43 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and is_hashable(index.val)
         ):
             if isinstance(root_composite.varname, str):
-                composite = CompositeVariable(root_composite.varname, (index,))
+                composite_var = CompositeVariable(root_composite.varname, (index,))
             else:
-                composite = CompositeVariable(
+                composite_var = CompositeVariable(
                     root_composite.varname.varname,
                     (*root_composite.varname.attributes, index),
                 )
         else:
-            composite = None
+            composite_var = None
         if isinstance(root_composite.value, MultiValuedValue):
             values = [
                 self._composite_from_subscript_no_mvv(
                     node,
                     Composite(val, root_composite.varname, root_composite.node),
                     index_composite,
-                    composite,
+                    composite_var,
                 )
                 for val in root_composite.value.vals
             ]
             return_value = unite_values(*values)
         else:
             return_value = self._composite_from_subscript_no_mvv(
-                node, root_composite, index_composite, composite
+                node, root_composite, index_composite, composite_var
             )
-        return Composite(return_value, composite, node)
+        return Composite(return_value, composite_var, node)
 
     def _composite_from_subscript_no_mvv(
         self,
         node: ast.Subscript,
         root_composite: Composite,
         index_composite: Composite,
-        composite: Composite,
+        composite_var: Optional[CompositeVariable],
     ) -> Value:
         value = root_composite.value
         index = index_composite.value
+
+        # TODO remove this, it should be done in these types' dunder
+        # methods instead.
         if any(
             value.is_type(typ) for typ in (list, tuple, str, bytes)
         ) and not index.is_type(slice):
@@ -3324,10 +3326,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         if isinstance(node.ctx, ast.Store):
             if (
-                composite is not None
+                composite_var is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
-                self.scopes.set(composite, self.being_assigned, node, self.state)
+                self.scopes.set(composite_var, self.being_assigned, node, self.state)
             self._check_dunder_call(
                 node.value,
                 root_composite,
@@ -3399,10 +3401,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         return_value = varname_value
 
             if (
-                composite is not None
+                composite_var is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
-                local_value = self._get_composite(composite, node, return_value)
+                local_value = self._get_composite(composite_var, node, return_value)
                 if local_value is not UNINITIALIZED_VALUE:
                     return_value = local_value
             return return_value
