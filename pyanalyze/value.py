@@ -725,11 +725,15 @@ class CallableValue(TypedValue):
             signature = ctx.signature_from_value(other)
             if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
-            elif isinstance(signature, pyanalyze.signature.Signature):
-                tv_map_or_error = self.signature.can_assign(signature, ctx)
-                if isinstance(tv_map_or_error, CanAssignError):
-                    return tv_map_or_error
-                return tv_map_or_error
+            call_fn = typ.__call__
+            unbound_signature = ctx.get_signature(call_fn)
+            bound_method = pyanalyze.signature.make_bound_method(
+                unbound_signature, other
+            )
+            if bound_method is not None:
+                signature = bound_method.get_signature()
+        if isinstance(signature, pyanalyze.signature.Signature):
+            return self.signature.can_assign(signature, ctx)
 
         return super().can_assign(other, ctx)
 
@@ -1081,6 +1085,22 @@ class HasAttrExtension(Extension):
 
 
 @dataclass(frozen=True)
+class WeakExtension(Extension):
+    """Used to indicate that a generic argument to a container may be widened.
+
+    This is used only in conjuction with the special casing for functions
+    like list.extend. After code like `lst = [1, 2]; lst.extend([i for in range(5)])`
+    we may end up inferring a type like `List[Literal[0, 1, 2, 3, 4]]`, but that is
+    too narrow and leads to false positives if later code puts a different int in
+    the list. If the generic argument is instead annotated with WeakExtension, we
+    widen the type to accommodate later appends.
+
+    The TestGenericMutators.test_weak_value test case is an example.
+
+    """
+
+
+@dataclass(frozen=True)
 class AnnotatedValue(Value):
     """Value representing a PEP 593 Annotated object."""
 
@@ -1092,6 +1112,9 @@ class AnnotatedValue(Value):
 
     def get_type(self) -> Optional[type]:
         return self.value.get_type()
+
+    def get_type_value(self) -> Value:
+        return self.value.get_type_value()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         metadata = [val.substitute_typevars(typevars) for val in self.metadata]
@@ -1110,6 +1133,9 @@ class AnnotatedValue(Value):
         for data in self.metadata:
             if isinstance(data, typ):
                 yield data
+
+    def has_metadata_of_type(self, typ: Type[Extension]) -> bool:
+        return any(isinstance(data, typ) for data in self.metadata)
 
     def __str__(self) -> str:
         return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
@@ -1161,7 +1187,7 @@ class VariableNameValue(Value):
         return None
 
 
-def flatten_values(val: Value) -> Iterable[Value]:
+def flatten_values(val: Value, *, unwrap_annotated: bool = False) -> Iterable[Value]:
     """Flatten a MultiValuedValue into a single value.
 
     We don't need to do this recursively because the
@@ -1172,6 +1198,8 @@ def flatten_values(val: Value) -> Iterable[Value]:
         yield from val.vals
     elif isinstance(val, AnnotatedValue) and isinstance(val.value, MultiValuedValue):
         yield from val.value.vals
+    elif unwrap_annotated and isinstance(val, AnnotatedValue):
+        yield val.value
     else:
         yield val
 

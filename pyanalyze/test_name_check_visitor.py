@@ -1672,6 +1672,15 @@ class TestSubscripting(TestNameCheckVisitorBase):
                 seq[0], MultiValuedValue([TypedValue(str), UNRESOLVED_VALUE])
             )
 
+    @assert_passes()
+    def test_weak():
+        from typing import Any, Dict, List
+
+        def get_min_max_pk_value(
+            min_pks: List[Dict[str, Any]], max_pks: List[Dict[str, Any]]
+        ):
+            return [r["pk"] for r in [*min_pks, *max_pks]]
+
 
 class TestPython3Compatibility(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.mixing_bytes_and_text)
@@ -2119,12 +2128,20 @@ class TestUnpackingGeneralizations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_iterable_unpacking(self):
+        from pyanalyze.value import WeakExtension
+
         def capybara(x):
             degu = (1, *x)
             assert_is_value(
                 degu,
                 GenericValue(
-                    tuple, [MultiValuedValue([KnownValue(1), UNRESOLVED_VALUE])]
+                    tuple,
+                    [
+                        AnnotatedValue(
+                            MultiValuedValue([KnownValue(1), UNRESOLVED_VALUE]),
+                            [WeakExtension()],
+                        )
+                    ],
                 ),
             )
 

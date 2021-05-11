@@ -98,6 +98,8 @@ from .value import (
     AnnotatedValue,
     CallableValue,
     CanAssignError,
+    WeakExtension,
+    annotate_value,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
@@ -2273,7 +2275,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else:
                     values.append(elt)
             if has_unknown_value:
-                return GenericValue(typ, [unite_values(*values)])
+                return GenericValue(
+                    typ, [annotate_value(unite_values(*values), [WeakExtension()])]
+                )
             else:
                 return SequenceIncompleteValue(typ, values)
 
