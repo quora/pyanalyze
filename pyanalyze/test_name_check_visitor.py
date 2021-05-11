@@ -1637,6 +1637,15 @@ class TestSubscripting(TestNameCheckVisitorBase):
         def capybara():
             return [1, 2][3.0]
 
+    @assert_passes()
+    def test_weak():
+        from typing import Any, Dict, List
+
+        def get_min_max_pk_value(
+            min_pks: List[Dict[str, Any]], max_pks: List[Dict[str, Any]]
+        ):
+            return [r["pk"] for r in [*min_pks, *max_pks]]
+
 
 class TestPython3Compatibility(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.mixing_bytes_and_text)

@@ -755,10 +755,7 @@ class CallableValue(TypedValue):
             if bound_method is not None:
                 signature = bound_method.get_signature()
         if signature is not None:
-            tv_map_or_error = self.signature.can_assign(signature, ctx)
-            if isinstance(tv_map_or_error, CanAssignError):
-                return tv_map_or_error
-            return tv_map_or_error
+            return self.signature.can_assign(signature, ctx)
 
         return super().can_assign(other, ctx)
 
@@ -1137,6 +1134,9 @@ class AnnotatedValue(Value):
 
     def get_type(self) -> Optional[type]:
         return self.value.get_type()
+
+    def get_type_value(self) -> Value:
+        return self.value.get_type_value()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         metadata = [val.substitute_typevars(typevars) for val in self.metadata]
