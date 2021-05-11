@@ -452,6 +452,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_list_extend(self):
         from typing import List
+        from pyanalyze.value import WeakExtension
 
         def capybara(x: int, y: str) -> None:
             lst = [x]
@@ -470,8 +471,11 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 GenericValue(
                     list,
                     [
-                        MultiValuedValue(
-                            [TypedValue(int), TypedValue(str), TypedValue(float)]
+                        AnnotatedValue(
+                            MultiValuedValue(
+                                [TypedValue(int), TypedValue(str), TypedValue(float)]
+                            ),
+                            [WeakExtension()],
                         )
                     ],
                 ),
@@ -482,13 +486,89 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.extend([x])
             assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
+    def test_weak_value(self):
+        from typing import List
+        from typing_extensions import Literal
+        from pyanalyze.value import WeakExtension
+
+        def func() -> List[Literal["c", "d"]]:
+            return ["d", "c"]
+
+        def capybara() -> None:
+            lst = ["a", "b"]
+            assert_is_value(lst, KnownValue(["a", "b"]))
+            lst.extend(func())
+            assert_is_value(
+                lst,
+                GenericValue(
+                    list,
+                    [
+                        AnnotatedValue(
+                            MultiValuedValue(
+                                [
+                                    KnownValue("a"),
+                                    KnownValue("b"),
+                                    KnownValue("c"),
+                                    KnownValue("d"),
+                                ]
+                            ),
+                            [WeakExtension()],
+                        )
+                    ],
+                ),
+            )
+            lst.extend(["e"])
+            assert_is_value(
+                lst,
+                GenericValue(
+                    list,
+                    [
+                        AnnotatedValue(
+                            MultiValuedValue(
+                                [
+                                    KnownValue("a"),
+                                    KnownValue("b"),
+                                    KnownValue("c"),
+                                    KnownValue("d"),
+                                    KnownValue("e"),
+                                ]
+                            ),
+                            [WeakExtension()],
+                        )
+                    ],
+                ),
+            )
+            lst.append("f")
+            assert_is_value(
+                lst,
+                GenericValue(
+                    list,
+                    [
+                        AnnotatedValue(
+                            MultiValuedValue(
+                                [
+                                    KnownValue("a"),
+                                    KnownValue("b"),
+                                    KnownValue("c"),
+                                    KnownValue("d"),
+                                    KnownValue("e"),
+                                    KnownValue("f"),
+                                ]
+                            ),
+                            [WeakExtension()],
+                        )
+                    ],
+                ),
+            )
+
+    @assert_passes()
     def test_list_extend_wrong_type(self):
         from typing import List
 
         def capybara():
             lst: List[int] = [3]
-            lst.extend([str(3)])
+            lst.extend([str(3)])  # E: incompatible_argument
 
 
 class TestDictGetItem(TestNameCheckVisitorBase):
