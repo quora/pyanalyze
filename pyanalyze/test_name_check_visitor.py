@@ -2077,12 +2077,20 @@ class TestUnpackingGeneralizations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_iterable_unpacking(self):
+        from pyanalyze.value import WeakExtension
+
         def capybara(x):
             degu = (1, *x)
             assert_is_value(
                 degu,
                 GenericValue(
-                    tuple, [MultiValuedValue([KnownValue(1), UNRESOLVED_VALUE])]
+                    tuple,
+                    [
+                        AnnotatedValue(
+                            MultiValuedValue([KnownValue(1), UNRESOLVED_VALUE]),
+                            [WeakExtension()],
+                        )
+                    ],
                 ),
             )
 
