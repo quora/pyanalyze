@@ -14,6 +14,7 @@ import builtins
 from collections.abc import Callable
 from typing import (
     Any,
+    Dict,
     cast,
     TypeVar,
     ContextManager,
@@ -589,27 +590,34 @@ class _Visitor(ast.NodeVisitor):
 
 
 def is_typing_name(obj: object, name: str) -> bool:
-    for mod in (typing, typing_extensions, mypy_extensions):
-        try:
-            typing_obj = getattr(mod, name)
-        except AttributeError:
-            continue
-        else:
-            if obj is typing_obj:
-                return True
+    objs = _fill_typing_name_cache(name)
+    for typing_obj in objs:
+        if obj is typing_obj:
+            return True
     return False
 
 
 def is_instance_of_typing_name(obj: object, name: str) -> bool:
-    for mod in (typing, typing_extensions, mypy_extensions):
-        try:
-            typing_obj = getattr(mod, name)
-        except AttributeError:
-            continue
-        else:
-            if isinstance(obj, typing_obj):
-                return True
-    return False
+    objs = _fill_typing_name_cache(name)
+    return isinstance(obj, objs)
+
+
+_typing_name_cache: Dict[str, Tuple[Any, ...]] = {}
+
+
+def _fill_typing_name_cache(name: str) -> Tuple[Any, ...]:
+    try:
+        return _typing_name_cache[name]
+    except KeyError:
+        objs = []
+        for mod in (typing, typing_extensions, mypy_extensions):
+            try:
+                objs.append(getattr(mod, name))
+            except AttributeError:
+                pass
+        objs_tuple = tuple(objs)
+        _typing_name_cache[name] = objs_tuple
+        return objs_tuple
 
 
 def _value_of_origin_args(
