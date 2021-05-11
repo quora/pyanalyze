@@ -725,15 +725,8 @@ class CallableValue(TypedValue):
             signature = ctx.signature_from_value(other)
             if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
-            call_fn = typ.__call__
-            unbound_signature = ctx.get_signature(call_fn)
-            bound_method = pyanalyze.signature.make_bound_method(
-                unbound_signature, other
-            )
-            if bound_method is not None:
-                signature = bound_method.get_signature()
-        if isinstance(signature, pyanalyze.signature.Signature):
-            return self.signature.can_assign(signature, ctx)
+            if isinstance(signature, pyanalyze.signature.Signature):
+                return self.signature.can_assign(signature, ctx)
 
         return super().can_assign(other, ctx)
 
