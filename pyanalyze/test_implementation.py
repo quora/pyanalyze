@@ -563,6 +563,43 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
+    def test_starred_weak(self):
+        from typing import List
+        from typing_extensions import Literal
+        from pyanalyze.value import WeakExtension
+
+        def capybara(arg) -> None:
+            lst1: List[Literal["a"]] = ["a" for _ in arg]
+            lst2 = [*lst1, "b"]
+            assert_is_value(
+                lst2,
+                GenericValue(
+                    list,
+                    [
+                        AnnotatedValue(
+                            MultiValuedValue([KnownValue("a"), KnownValue("b")]),
+                            [WeakExtension()],
+                        )
+                    ],
+                ),
+            )
+            lst2.append("c")
+            assert_is_value(
+                lst2,
+                GenericValue(
+                    list,
+                    [
+                        AnnotatedValue(
+                            MultiValuedValue(
+                                [KnownValue("a"), KnownValue("b"), KnownValue("c")]
+                            ),
+                            [WeakExtension()],
+                        )
+                    ],
+                ),
+            )
+
+    @assert_passes()
     def test_list_extend_wrong_type(self):
         from typing import List
 
