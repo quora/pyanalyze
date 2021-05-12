@@ -12,7 +12,7 @@ from .stacked_scopes import (
     OrConstraint,
     Varname,
 )
-from .signature import SigParameter, Signature, ImplReturn, CallContext
+from .signature import Impl, SigParameter, Signature, ImplReturn, CallContext
 from .value import (
     AnnotatedValue,
     CanAssignError,
@@ -497,6 +497,96 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
     return flatten_unions(inner, ctx.vars["k"])
 
 
+def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
+    key = ctx.vars["key"]
+    default = ctx.vars["default"]
+    varname = ctx.visitor.varname_for_self_constraint(ctx.node)
+    self_value = replace_known_sequence_value(ctx.vars["self"])
+
+    if isinstance(key, KnownValue):
+        try:
+            hash(key.val)
+        except Exception:
+            ctx.show_error(
+                f"Dictionary key {key} is not hashable",
+                ErrorCode.unhashable_key,
+                arg="key",
+            )
+            return UNRESOLVED_VALUE
+
+    if isinstance(self_value, TypedDictValue):
+        if not TypedValue(str).is_assignable(key, ctx.visitor):
+            ctx.show_error(
+                f"TypedDict key must be str, not {key}",
+                ErrorCode.invalid_typeddict_key,
+                arg="key",
+            )
+            return UNRESOLVED_VALUE
+        elif isinstance(key, KnownValue):
+            try:
+                expected_type = self_value.items[key.val]
+            # probably KeyError, but catch anything in case it's an
+            # unhashable str subclass or something
+            except Exception:
+                pass
+            else:
+                tv_map = expected_type.can_assign(default, ctx.visitor)
+                if isinstance(tv_map, CanAssignError):
+                    ctx.show_error(
+                        f"TypedDict key {key.val} expected value of type"
+                        f" {expected_type}, not {default}",
+                        ErrorCode.incompatible_argument,
+                        arg="default",
+                    )
+                return self_value.items[key.val]
+        ctx.show_error(
+            f"Key {key} does not exist in TypedDict",
+            ErrorCode.invalid_typeddict_key,
+            arg="key",
+        )
+        return default
+    elif isinstance(self_value, DictIncompleteValue):
+        possible_values = [
+            dict_value
+            for dict_key, dict_value in self_value.items
+            if dict_key.is_assignable(key, ctx.visitor)
+        ]
+        new_value = DictIncompleteValue([*self_value.items, (key, default)])
+        no_return_unless = Constraint(
+            varname, ConstraintType.is_value_object, True, new_value
+        )
+        if not possible_values:
+            return ImplReturn(default, no_return_unless=no_return_unless)
+        return ImplReturn(
+            unite_values(default, *possible_values),
+            no_return_unless=no_return_unless,
+        )
+    elif isinstance(self_value, TypedValue):
+        key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
+        value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
+        new_value_type = unite_values(value_type, default)
+        if _is_weak(ctx.vars["self"]):
+            new_key_type = unite_values(key_type, key)
+            new_type = make_weak(
+                GenericValue(self_value.typ, [new_key_type, new_value_type])
+            )
+            no_return_unless = Constraint(
+                varname, ConstraintType.is_value_object, True, new_type
+            )
+            return ImplReturn(new_value_type, no_return_unless=no_return_unless)
+        else:
+            tv_map = key_type.can_assign(key, ctx.visitor)
+            if isinstance(tv_map, CanAssignError):
+                ctx.show_error(
+                    f"Key {key} is not valid for {self_value}",
+                    ErrorCode.incompatible_argument,
+                    arg="key",
+                )
+            return new_value_type
+    else:
+        return UNRESOLVED_VALUE
+
+
 def _list_add_impl(ctx: CallContext) -> ImplReturn:
     def inner(left: Value, right: Value) -> Value:
         left = replace_known_sequence_value(left)
@@ -946,6 +1036,15 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=dict.__getitem__,
             impl=_dict_getitem_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter("key", _POS_ONLY),
+                SigParameter("default", _POS_ONLY, default=KnownValue(None)),
+            ],
+            callable=dict.setdefault,
+            impl=_dict_setdefault_impl,
         ),
         Signature.make(
             [

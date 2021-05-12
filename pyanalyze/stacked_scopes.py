@@ -229,7 +229,7 @@ class Constraint(AbstractConstraint):
         Produces zero or more values consistent both with the given
         value and with this constraint.
 
-        The value may not be a MultiValuedValue.
+        The value may not be a MultiValuedValue or AnnotatedValue.
 
         """
         if value is UNINITIALIZED_VALUE:
