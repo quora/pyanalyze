@@ -468,16 +468,15 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.extend({float(1.0)})
             assert_is_value(
                 lst,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [TypedValue(int), TypedValue(str), TypedValue(float)]
                             ),
-                            [WeakExtension()],
-                        )
-                    ],
+                        ],
+                    )
                 ),
             )
 
@@ -501,10 +500,10 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.extend(func())
             assert_is_value(
                 lst,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [
                                     KnownValue("a"),
@@ -512,19 +511,18 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                                     KnownValue("c"),
                                     KnownValue("d"),
                                 ]
-                            ),
-                            [WeakExtension()],
-                        )
-                    ],
+                            )
+                        ],
+                    ),
                 ),
             )
             lst.extend(["e"])
             assert_is_value(
                 lst,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [
                                     KnownValue("a"),
@@ -534,18 +532,17 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                                     KnownValue("e"),
                                 ]
                             ),
-                            [WeakExtension()],
-                        )
-                    ],
+                        ],
+                    )
                 ),
             )
             lst.append("f")
             assert_is_value(
                 lst,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [
                                     KnownValue("a"),
@@ -556,9 +553,8 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                                     KnownValue("f"),
                                 ]
                             ),
-                            [WeakExtension()],
-                        )
-                    ],
+                        ],
+                    ),
                 ),
             )
 
@@ -573,29 +569,24 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst2 = [*lst1, "b"]
             assert_is_value(
                 lst2,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
-                            MultiValuedValue([KnownValue("a"), KnownValue("b")]),
-                            [WeakExtension()],
-                        )
-                    ],
+                make_weak(
+                    GenericValue(
+                        list, [MultiValuedValue([KnownValue("a"), KnownValue("b")])]
+                    )
                 ),
             )
             lst2.append("c")
             assert_is_value(
                 lst2,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [KnownValue("a"), KnownValue("b"), KnownValue("c")]
-                            ),
-                            [WeakExtension()],
-                        )
-                    ],
+                            )
+                        ],
+                    )
                 ),
             )
 

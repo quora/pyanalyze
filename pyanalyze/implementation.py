@@ -1,7 +1,6 @@
 from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import reveal_type
-from .find_unused import used
 from .format_strings import parse_format_string
 from .safe import safe_hasattr
 from .stacked_scopes import (
@@ -34,7 +33,7 @@ from .value import (
     KNOWN_MUTABLE_TYPES,
     Value,
     WeakExtension,
-    annotate_value,
+    make_weak,
     unite_values,
     flatten_values,
     replace_known_sequence_value,
@@ -94,7 +93,7 @@ def clean_up_implementation_fn_return(
 def flatten_unions(
     callable: Callable[..., Union[ImplReturn, Value]],
     *values: Value,
-    unwrap_annotated: bool = True,
+    unwrap_annotated: bool = False,
 ) -> ImplReturn:
     value_lists = [
         flatten_values(val, unwrap_annotated=unwrap_annotated) for val in values
@@ -357,9 +356,8 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
         )
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(lst, GenericValue):
-        expected_type = lst.get_generic_arg_for_type(list, ctx.visitor, 0)
         return _maybe_broaden_weak_type(
-            "list.append", "object", expected_type, element, ctx, list, varname
+            "list.append", "object", ctx.vars["self"], lst, element, ctx, list, varname
         )
     return ImplReturn(KnownValue(None))
 
@@ -406,23 +404,32 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(self_value, TypedValue):
         key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
-        tv_map = key_type.can_assign(key, ctx.visitor)
-        if isinstance(tv_map, CanAssignError):
-            ctx.show_error(
-                f"Cannot set key of type {key} (expecting {key_type})",
-                ErrorCode.incompatible_argument,
-                arg="k",
-                detail=str(tv_map),
-            )
         value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
-        tv_map = value_type.can_assign(value, ctx.visitor)
-        if isinstance(tv_map, CanAssignError):
-            ctx.show_error(
-                f"Cannot set value of type {value} (expecting {value_type})",
-                ErrorCode.incompatible_argument,
-                arg="v",
-                detail=str(tv_map),
+        if _is_weak(ctx.vars["self"]):
+            key_type = unite_values(key_type, key)
+            value_type = unite_values(value_type, value)
+            constrained_value = make_weak(GenericValue(dict, [key_type, value_type]))
+            no_return_unless = Constraint(
+                varname, ConstraintType.is_value_object, True, constrained_value
             )
+            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
+        else:
+            tv_map = key_type.can_assign(key, ctx.visitor)
+            if isinstance(tv_map, CanAssignError):
+                ctx.show_error(
+                    f"Cannot set key of type {key} (expecting {key_type})",
+                    ErrorCode.incompatible_argument,
+                    arg="k",
+                    detail=str(tv_map),
+                )
+            tv_map = value_type.can_assign(value, ctx.visitor)
+            if isinstance(tv_map, CanAssignError):
+                ctx.show_error(
+                    f"Cannot set value of type {value} (expecting {value_type})",
+                    ErrorCode.incompatible_argument,
+                    arg="v",
+                    detail=str(tv_map),
+                )
     return ImplReturn(KnownValue(None))
 
 
@@ -512,18 +519,14 @@ def _list_extend_impl(ctx: CallContext) -> ImplReturn:
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
 
     def inner(lst: Value, iterable: Value) -> ImplReturn:
-        lst = replace_known_sequence_value(lst)
+        cleaned_lst = replace_known_sequence_value(lst)
         iterable = replace_known_sequence_value(iterable)
-        if isinstance(lst, AnnotatedValue):
-            lst = lst.value
-        if isinstance(iterable, AnnotatedValue):
-            iterable = iterable.value
-        if isinstance(lst, SequenceIncompleteValue):
+        if isinstance(cleaned_lst, SequenceIncompleteValue):
             if isinstance(iterable, SequenceIncompleteValue) and issubclass(
                 iterable.typ, (list, tuple)
             ):
                 constrained_value = SequenceIncompleteValue(
-                    list, (*lst.members, *iterable.members)
+                    list, (*cleaned_lst.members, *iterable.members)
                 )
             else:
                 if isinstance(iterable, TypedValue):
@@ -532,50 +535,49 @@ def _list_extend_impl(ctx: CallContext) -> ImplReturn:
                     )
                 else:
                     arg_type = UNRESOLVED_VALUE
-                generic_arg = unite_values(*lst.members, arg_type)
-                constrained_value = GenericValue(
-                    list, [annotate_value(generic_arg, [WeakExtension()])]
-                )
+                generic_arg = unite_values(*cleaned_lst.members, arg_type)
+                constrained_value = make_weak(GenericValue(list, [generic_arg]))
             no_return_unless = Constraint(
                 varname, ConstraintType.is_value_object, True, constrained_value
             )
             return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        elif isinstance(lst, GenericValue):
-            expected_type = lst.get_generic_arg_for_type(list, ctx.visitor, 0)
-            if isinstance(iterable, TypedValue):
-                actual_type = iterable.get_generic_arg_for_type(
-                    collections.abc.Iterable, ctx.visitor, 0
-                )
-                return _maybe_broaden_weak_type(
-                    "list.extend",
-                    "iterable",
-                    expected_type,
-                    actual_type,
-                    ctx,
-                    list,
-                    varname,
-                )
+        elif isinstance(cleaned_lst, GenericValue) and isinstance(iterable, TypedValue):
+            actual_type = iterable.get_generic_arg_for_type(
+                collections.abc.Iterable, ctx.visitor, 0
+            )
+            return _maybe_broaden_weak_type(
+                "list.extend",
+                "iterable",
+                lst,
+                cleaned_lst,
+                actual_type,
+                ctx,
+                list,
+                varname,
+            )
         return ImplReturn(KnownValue(None))
 
     return flatten_unions(inner, ctx.vars["self"], ctx.vars["iterable"])
 
 
+def _is_weak(val: Value) -> bool:
+    return isinstance(val, AnnotatedValue) and val.has_metadata_of_type(WeakExtension)
+
+
 def _maybe_broaden_weak_type(
     function_name: str,
     arg: str,
-    expected_type: Value,
+    original_container_type: Value,
+    container_type: Value,
     actual_type: Value,
     ctx: CallContext,
     typ: type,
     varname: Varname,
 ) -> ImplReturn:
-    if isinstance(expected_type, AnnotatedValue) and expected_type.has_metadata_of_type(
-        WeakExtension
-    ):
+    expected_type = container_type.get_generic_arg_for_type(typ, ctx.visitor, 0)
+    if _is_weak(original_container_type):
         generic_arg = unite_values(expected_type, actual_type)
-        constrained_value = GenericValue(
-            typ, [annotate_value(generic_arg, [WeakExtension()])]
-        )
+        constrained_value = make_weak(GenericValue(typ, [generic_arg]))
         no_return_unless = Constraint(
             varname, ConstraintType.is_value_object, True, constrained_value
         )
@@ -605,9 +607,8 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
         )
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(set_value, GenericValue):
-        expected_type = set_value.get_generic_arg_for_type(set, ctx.visitor, 0)
         return _maybe_broaden_weak_type(
-            "set.add", "object", expected_type, element, ctx, set, varname
+            "set.add", "object", ctx.vars["self"], set_value, element, ctx, set, varname
         )
     return ImplReturn(KnownValue(None))
 

@@ -13,6 +13,7 @@ from .value import (
     TypedValue,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
+    make_weak,
 )
 
 
@@ -1326,12 +1327,15 @@ class TestConstraints(TestNameCheckVisitorBase):
             lst = [maybe_int(elt) for elt in y]
             assert_is_value(
                 lst,
-                GenericValue(
-                    list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
+                make_weak(
+                    GenericValue(
+                        list,
+                        [MultiValuedValue([TypedValue(int), KnownValue(None)])],
+                    )
                 ),
             )
             lst2 = [elt for elt in lst if elt]
-            assert_is_value(lst2, GenericValue(list, [TypedValue(int)]))
+            assert_is_value(lst2, make_weak(GenericValue(list, [TypedValue(int)])))
 
     @assert_passes()
     def test_comprehension_composite(self):
@@ -1345,32 +1349,39 @@ class TestConstraints(TestNameCheckVisitorBase):
         def use_attr(c: List[Capybara]) -> None:
             assert_is_value(
                 [elt.x for elt in c],
-                GenericValue(
-                    list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
+                make_weak(
+                    GenericValue(
+                        list,
+                        [MultiValuedValue([TypedValue(int), KnownValue(None)])],
+                    )
                 ),
             )
             assert_is_value(
                 [elt.x for elt in c if elt.x is not None],
-                GenericValue(list, [TypedValue(int)]),
+                make_weak(GenericValue(list, [TypedValue(int)])),
             )
             assert_is_value(
-                [elt.x for elt in c if elt.x], GenericValue(list, [TypedValue(int)])
+                [elt.x for elt in c if elt.x],
+                make_weak(GenericValue(list, [TypedValue(int)])),
             )
 
         def use_subscript(d: List[Tuple[int, Optional[int]]]) -> None:
             assert_is_value(
                 [pair[1] for pair in d],
-                GenericValue(
-                    list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
+                make_weak(
+                    GenericValue(
+                        list,
+                        [MultiValuedValue([TypedValue(int), KnownValue(None)])],
+                    )
                 ),
             )
             assert_is_value(
                 [pair[1] for pair in d if pair[1] is not None],
-                GenericValue(list, [TypedValue(int)]),
+                make_weak(GenericValue(list, [TypedValue(int)])),
             )
             assert_is_value(
                 [pair[1] for pair in d if pair[1]],
-                GenericValue(list, [TypedValue(int)]),
+                make_weak(GenericValue(list, [TypedValue(int)])),
             )
 
     @assert_passes()

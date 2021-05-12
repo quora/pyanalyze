@@ -97,12 +97,11 @@ from .value import (
     AnnotatedValue,
     CallableValue,
     CanAssignError,
-    WeakExtension,
-    annotate_value,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     NO_RETURN_VALUE,
+    make_weak,
     unite_values,
     KnownValue,
     TypedValue,
@@ -1968,7 +1967,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     with qcore.override(self, "in_comprehension_body", True):
                         key = self.visit(node.key)
                         value = self.visit(node.value)
-                    ret = GenericValue(dict, [key, value])
+                    ret = make_weak(GenericValue(dict, [key, value]))
         return ret
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Value:
@@ -2047,7 +2046,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if member_value is UNRESOLVED_VALUE:
             return TypedValue(typ)
         else:
-            return GenericValue(typ, [member_value])
+            return make_weak(GenericValue(typ, [member_value]))
 
     # Literals and displays
 
@@ -2283,9 +2282,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else:
                     values.append(elt)
             if has_unknown_value:
-                return GenericValue(
-                    typ, [annotate_value(unite_values(*values), [WeakExtension()])]
-                )
+                return make_weak(GenericValue(typ, [unite_values(*values)]))
             else:
                 return SequenceIncompleteValue(typ, values)
 
