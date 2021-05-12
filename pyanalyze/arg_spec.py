@@ -493,6 +493,7 @@ class ArgSpecCache:
             assert (
                 generic_bases is not None
             ), f"failed to extract runtime bases from {typ}"
+        self.generic_bases_cache[typ] = generic_bases
         return generic_bases
 
     def _extract_bases(

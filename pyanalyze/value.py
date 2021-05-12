@@ -24,9 +24,9 @@ from typing import (
     Type,
     TypeVar,
 )
+from typing_extensions import Literal
 
 import pyanalyze
-from typing_extensions import Literal
 
 from .safe import safe_isinstance
 from .type_object import TypeObject
@@ -1325,14 +1325,101 @@ def concrete_values_from_iterable(
     elif isinstance(value, AnnotatedValue):
         return concrete_values_from_iterable(value.value, ctx)
     value = replace_known_sequence_value(value)
-    if isinstance(value, SequenceIncompleteValue):
+    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
         return value.members
-    elif isinstance(value, DictIncompleteValue):
-        return [key for key, _ in value.items]
     tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(tv_map, CanAssignError):
         return tv_map.get(T, UNRESOLVED_VALUE)
     return None
+
+
+def unpack_values(
+    value: Value,
+    ctx: CanAssignContext,
+    target_length: int,
+    post_starred_length: Optional[int] = None,
+) -> Union[Sequence[Value], CanAssignError]:
+    """Implement iterable unpacking.
+
+    If post_starred_length is None, return a list of target_length values, or CanAssignError
+    if value is not an iterable of the expected length. If post_starred_length is not None,
+    return a list of target_length + 1 + post_starred_length values. This implements
+    unpacking like `a, b, *c, d = ...`.
+
+    """
+    if isinstance(value, MultiValuedValue):
+        subvals = [
+            unpack_values(val, ctx, target_length, post_starred_length)
+            for val in value.vals
+        ]
+        good_subvals = []
+        for subval in subvals:
+            if isinstance(subval, CanAssignError):
+                return CanAssignError(f"Cannot unpack {value}", [subval])
+            good_subvals.append(subval)
+        if not good_subvals:
+            return _create_unpacked_list(
+                UNRESOLVED_VALUE, target_length, post_starred_length
+            )
+        return [unite_values(*vals) for vals in zip(*good_subvals)]
+    elif isinstance(value, AnnotatedValue):
+        return unpack_values(value.value, ctx, target_length, post_starred_length)
+    value = replace_known_sequence_value(value)
+
+    # We do this only for tuples because lists, sets, and dicts are mutable
+    # and we can't be confident they haven't been modified.
+    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
+        return _unpack_value_sequence(
+            value, value.members, target_length, post_starred_length
+        )
+    tv_map = IterableValue.can_assign(value, ctx)
+    if isinstance(tv_map, CanAssignError):
+        return tv_map
+    iterable_type = tv_map.get(T, UNRESOLVED_VALUE)
+    return _create_unpacked_list(iterable_type, target_length, post_starred_length)
+
+
+def _create_unpacked_list(
+    iterable_type: Value, target_length: int, post_starred_length: Optional[int]
+) -> List[Value]:
+    if post_starred_length is not None:
+        return [
+            *([iterable_type] * target_length),
+            GenericValue(list, [iterable_type]),
+            *([iterable_type] * post_starred_length),
+        ]
+    else:
+        return [iterable_type] * target_length
+
+
+def _unpack_value_sequence(
+    value: Value,
+    members: Sequence[Value],
+    target_length: int,
+    post_starred_length: Optional[int],
+) -> Union[Sequence[Value], CanAssignError]:
+    actual_length = len(members)
+    if post_starred_length is None:
+        if actual_length != target_length:
+            return CanAssignError(
+                f"{value} is of length {actual_length} (expected {target_length})"
+            )
+        return members
+    if actual_length < target_length + post_starred_length:
+        return CanAssignError(
+            f"{value} is of length {actual_length} (expected at least"
+            f" {target_length + post_starred_length})"
+        )
+    head = members[:target_length]
+    if post_starred_length > 0:
+        body = SequenceIncompleteValue(
+            list, members[target_length:-post_starred_length]
+        )
+        tail = members[-post_starred_length:]
+    else:
+        body = SequenceIncompleteValue(list, members[target_length:])
+        tail = []
+    return [*head, body, *tail]
 
 
 def replace_known_sequence_value(value: Value) -> Value:
