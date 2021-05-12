@@ -120,6 +120,7 @@ from .value import (
     CanAssignContext,
     concrete_values_from_iterable,
     TypeVarMap,
+    unpack_values,
 )
 
 T = TypeVar("T")
@@ -2201,35 +2202,43 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, node: Union[ast.List, ast.Tuple], typ: type
     ) -> Optional[Value]:
         if self._is_write_ctx(node.ctx):
-            being_assigned = concrete_values_from_iterable(self.being_assigned, self)
-            if being_assigned is None:
+            target_length = 0
+            post_starred_length = None
+            for target in node.elts:
+                if isinstance(target, ast.Starred):
+                    if post_starred_length is not None:
+                        # This is a SyntaxError at runtime so it should never happen
+                        self.show_error(
+                            node,
+                            "Two starred expressions in assignment",
+                            error_code=ErrorCode.unexpected_node,
+                        )
+                        with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
+                            return self.generic_visit(node)
+                    else:
+                        post_starred_length = 0
+                elif post_starred_length is not None:
+                    post_starred_length += 1
+                else:
+                    target_length += 1
+
+            being_assigned = unpack_values(
+                self.being_assigned, self, target_length, post_starred_length
+            )
+            if isinstance(being_assigned, CanAssignError):
                 self.show_error(
-                    node, f"{self.being_assigned} is not iterable", ErrorCode.bad_unpack
+                    node,
+                    f"Cannot unpack {self.being_assigned}",
+                    ErrorCode.bad_unpack,
+                    detail=str(being_assigned),
                 )
                 with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
                     return self.generic_visit(node)
-            elif any(isinstance(elt, ast.Starred) for elt in node.elts):
-                # TODO handle * assignment in the left hand side
-                with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
-                    return self.generic_visit(node)
-            elif isinstance(being_assigned, Value):
-                with qcore.override(self, "being_assigned", being_assigned):
-                    return self.generic_visit(node)
-            else:
-                assign_to = node.elts
-                if len(assign_to) != len(being_assigned):
-                    self.show_error(
-                        node,
-                        "Length mismatch in unpacking assignment: expected"
-                        f" {len(assign_to)} elements but got {self.being_assigned}",
-                        ErrorCode.bad_unpack,
-                    )
-                    with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
-                        self.generic_visit(node)
-                else:
-                    for target, value in zip(assign_to, being_assigned):
-                        with qcore.override(self, "being_assigned", value):
-                            self.visit(target)
+
+            for target, value in zip(node.elts, being_assigned):
+                with qcore.override(self, "being_assigned", value):
+                    self.visit(target)
+            return None
         else:
             return self._visit_display_read(node, typ)
 
