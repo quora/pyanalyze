@@ -1354,10 +1354,8 @@ def concrete_values_from_iterable(
     elif isinstance(value, AnnotatedValue):
         return concrete_values_from_iterable(value.value, ctx)
     value = replace_known_sequence_value(value)
-    if isinstance(value, SequenceIncompleteValue):
+    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
         return value.members
-    elif isinstance(value, DictIncompleteValue):
-        return [key for key, _ in value.items]
     tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(tv_map, CanAssignError):
         return tv_map.get(T, UNRESOLVED_VALUE)
@@ -1396,14 +1394,12 @@ def unpack_values(
     elif isinstance(value, AnnotatedValue):
         return unpack_values(value.value, ctx, target_length, post_starred_length)
     value = replace_known_sequence_value(value)
-    if isinstance(value, SequenceIncompleteValue):
+
+    # We do this only for tuples because lists, sets, and dicts are mutable
+    # and we can't be confident they haven't been modified.
+    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
         return _unpack_value_sequence(
             value, value.members, target_length, post_starred_length
-        )
-    elif isinstance(value, DictIncompleteValue):
-        members = [key for key, _ in value.items]
-        return _unpack_value_sequence(
-            value, members, target_length, post_starred_length
         )
     tv_map = IterableValue.can_assign(value, ctx)
     if isinstance(tv_map, CanAssignError):

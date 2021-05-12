@@ -2105,7 +2105,7 @@ class TestUnpacking(TestNameCheckVisitorBase):
             assert_is_value(c, TypedValue(int))
             assert_is_value(d, TypedValue(int))
 
-            e, f = [lst, 42]
+            e, f = (lst, 42)
             assert_is_value(e, GenericValue(list, [TypedValue(int)]))
             assert_is_value(f, KnownValue(42))
 
@@ -2148,6 +2148,20 @@ class TestUnpacking(TestNameCheckVisitorBase):
             for t, u in []:
                 assert_is_value(t, UNRESOLVED_VALUE)
                 assert_is_value(u, UNRESOLVED_VALUE)
+
+            known_list = [1, 2]
+            v, w = known_list
+            assert_is_value(v, MultiValuedValue([KnownValue(1), KnownValue(2)]))
+            assert_is_value(w, MultiValuedValue([KnownValue(1), KnownValue(2)]))
+
+            if lst:
+                known_list.append(3)
+
+            # We allow this unsafe code to avoid false positives
+            x, y = known_list
+            assert_is_value(
+                x, MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue(3)])
+            )
 
     @assert_passes()
     def test_unpack_int(self):
