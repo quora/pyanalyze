@@ -376,48 +376,6 @@ def run():
         def run():
             print({key: 1})
 
-    @assert_fails(ErrorCode.bad_unpack)
-    def test_too_many_values_to_unpack(self):
-        def run():
-            a, b = 1, 2, 3
-            return a, b
-
-    @assert_fails(ErrorCode.bad_unpack)
-    def test_too_few_values_to_unpack(self):
-        def run():
-            a, b, c = 1, 2
-            return a, b, c
-
-    @assert_fails(ErrorCode.bad_unpack)
-    def test_too_many_values_to_unpack_list(self):
-        def run():
-            [a, b, c] = 1, 2
-            return a, b, c
-
-    @assert_passes()
-    def test_correct_unpack(self):
-        from typing import List
-
-        def run(lst: List[int]):
-            a, b = 1, 2
-            assert_is_value(a, KnownValue(1))
-            assert_is_value(b, KnownValue(2))
-
-            c, d = lst
-            assert_is_value(c, TypedValue(int))
-            assert_is_value(d, TypedValue(int))
-
-            e, f = [lst, 42]
-            assert_is_value(e, GenericValue(list, [TypedValue(int)]))
-            assert_is_value(f, KnownValue(42))
-
-    @assert_fails(ErrorCode.not_callable)
-    def test_unpack_int(self):
-        def run():
-            a, b = 1, 2
-            a()
-            return a, b
-
     @assert_fails(ErrorCode.undefined_name)
     def test_nested_classes(self):
         class Caviids(object):
@@ -2076,7 +2034,7 @@ class TestAugAssign(TestNameCheckVisitorBase):
             assert_is_value(x, KnownValue(3))
 
 
-class TestUnpackingGeneralizations(TestNameCheckVisitorBase):
+class TestUnpacking(TestNameCheckVisitorBase):
     @assert_passes()
     def test_dict_unpacking(self):
         def capybara():
@@ -2111,10 +2069,92 @@ class TestUnpackingGeneralizations(TestNameCheckVisitorBase):
                 ),
             )
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_not_iterable(self):
         def capybara(x: int):
-            (*x,)
+            (*x,)  # E: unsupported_operation
+
+    @assert_passes()
+    def test_bad_unpack(self):
+        def too_many_values():
+            a, b = 1, 2, 3  # E: bad_unpack
+            return a, b
+
+        def too_few_values():
+            a, b, c = 1, 2  # E: bad_unpack
+            return a, b, c
+
+        def too_few_values_list():
+            [a, b, c] = 1, 2  # E: bad_unpack
+            return a, b, c
+
+        def too_short_generalized():
+            a, b, *c = (1,)  # E: bad_unpack
+            return a, b, c
+
+    @assert_passes()
+    def test_correct_unpack(self):
+        from typing import List, Union, Any, Tuple
+
+        def run(lst: List[int], union: Union[Any, List[int], Tuple[str, float]]):
+            a, b = 1, 2
+            assert_is_value(a, KnownValue(1))
+            assert_is_value(b, KnownValue(2))
+
+            c, d = lst
+            assert_is_value(c, TypedValue(int))
+            assert_is_value(d, TypedValue(int))
+
+            e, f = [lst, 42]
+            assert_is_value(e, GenericValue(list, [TypedValue(int)]))
+            assert_is_value(f, KnownValue(42))
+
+            g, h = union
+            assert_is_value(
+                g,
+                MultiValuedValue([UNRESOLVED_VALUE, TypedValue(int), TypedValue(str)]),
+            )
+            assert_is_value(
+                h,
+                MultiValuedValue(
+                    [UNRESOLVED_VALUE, TypedValue(int), TypedValue(float)]
+                ),
+            )
+
+            long_tuple = (1, 2, 3, 4, 5, 6)
+            *i, j, k = long_tuple
+            assert_is_value(
+                i,
+                SequenceIncompleteValue(
+                    list, [KnownValue(1), KnownValue(2), KnownValue(3), KnownValue(4)]
+                ),
+            )
+            assert_is_value(j, KnownValue(5))
+            assert_is_value(k, KnownValue(6))
+            l, m, *n, o, p = long_tuple
+            assert_is_value(l, KnownValue(1))
+            assert_is_value(m, KnownValue(2))
+            assert_is_value(
+                n, SequenceIncompleteValue(list, [KnownValue(3), KnownValue(4)])
+            )
+            assert_is_value(o, KnownValue(5))
+            assert_is_value(p, KnownValue(6))
+
+            q, r, *s = (1, 2)
+            assert_is_value(q, KnownValue(1))
+            assert_is_value(r, KnownValue(2))
+            assert_is_value(s, SequenceIncompleteValue(list, []))
+
+            for t, u in []:
+                assert_is_value(t, UNRESOLVED_VALUE)
+                assert_is_value(u, UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_unpack_int(self):
+        def run():
+            a, b = 1, 2
+            a()  # E: not_callable
+            return a, b
 
 
 class TestUnusedIgnore(TestNameCheckVisitorBase):
