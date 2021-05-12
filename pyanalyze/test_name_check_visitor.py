@@ -2151,8 +2151,8 @@ class TestUnpacking(TestNameCheckVisitorBase):
 
             known_list = [1, 2]
             v, w = known_list
-            assert_is_value(v, MultiValuedValue([KnownValue(1), KnownValue(2)]))
-            assert_is_value(w, MultiValuedValue([KnownValue(1), KnownValue(2)]))
+            assert_is_value(v, KnownValue(1))
+            assert_is_value(w, KnownValue(2))
 
             if lst:
                 known_list.append(3)
