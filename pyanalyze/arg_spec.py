@@ -8,7 +8,7 @@ from .annotations import Context, type_from_runtime, is_typing_name
 from .config import Config
 from .find_unused import used
 from . import implementation
-from .safe import safe_hasattr
+from .safe import safe_hasattr, safe_in
 from .stacked_scopes import uniq_chain
 from .signature import (
     ANY_SIGNATURE,
@@ -198,6 +198,7 @@ class ArgSpecCache:
             callable=function_object,
             has_return_annotation=has_return_annotation,
             is_asynq=is_asynq,
+            allow_call=safe_in(function_object, self.config.FUNCTIONS_SAFE_TO_CALL),
         )
 
     def _make_sig_parameter(

@@ -257,9 +257,9 @@ class TestEncodeDecode(TestNameCheckVisitorBase):
     def test(self):
         import six
 
-        def capybara():
-            assert_is_value("".encode("utf-8"), TypedValue(bytes))
-            assert_is_value(b"".decode("utf-8"), TypedValue(six.text_type))
+        def capybara(s: str, b: bytes):
+            assert_is_value(s.encode("utf-8"), TypedValue(bytes))
+            assert_is_value(b.decode("utf-8"), TypedValue(six.text_type))
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_encode_wrong_type(self):

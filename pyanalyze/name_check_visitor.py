@@ -3823,12 +3823,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else:
                     # calls to types result in values of that type
                     return_value = TypedValue(callee_val)
-            elif safe_in(
-                callee_val, self.config.FUNCTIONS_SAFE_TO_CALL
-            ) and self._can_perform_call(arg_values, kw_values):
-                return_value = self._try_perform_call(
-                    callee_val, node, arg_values, kw_values, return_value
-                )
 
         return return_value, constraint
 
