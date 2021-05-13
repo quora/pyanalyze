@@ -468,16 +468,15 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.extend({float(1.0)})
             assert_is_value(
                 lst,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [TypedValue(int), TypedValue(str), TypedValue(float)]
-                            ),
-                            [WeakExtension()],
-                        )
-                    ],
+                            )
+                        ],
+                    )
                 ),
             )
 
@@ -501,10 +500,10 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.extend(func())
             assert_is_value(
                 lst,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [
                                     KnownValue("a"),
@@ -512,19 +511,18 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                                     KnownValue("c"),
                                     KnownValue("d"),
                                 ]
-                            ),
-                            [WeakExtension()],
-                        )
-                    ],
+                            )
+                        ],
+                    )
                 ),
             )
             lst.extend(["e"])
             assert_is_value(
                 lst,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [
                                     KnownValue("a"),
@@ -533,19 +531,18 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                                     KnownValue("d"),
                                     KnownValue("e"),
                                 ]
-                            ),
-                            [WeakExtension()],
-                        )
-                    ],
+                            )
+                        ],
+                    )
                 ),
             )
             lst.append("f")
             assert_is_value(
                 lst,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [
                                     KnownValue("a"),
@@ -555,10 +552,9 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                                     KnownValue("e"),
                                     KnownValue("f"),
                                 ]
-                            ),
-                            [WeakExtension()],
-                        )
-                    ],
+                            )
+                        ],
+                    )
                 ),
             )
 
@@ -573,29 +569,24 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst2 = [*lst1, "b"]
             assert_is_value(
                 lst2,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
-                            MultiValuedValue([KnownValue("a"), KnownValue("b")]),
-                            [WeakExtension()],
-                        )
-                    ],
+                make_weak(
+                    GenericValue(
+                        list, [MultiValuedValue([KnownValue("a"), KnownValue("b")])]
+                    )
                 ),
             )
             lst2.append("c")
             assert_is_value(
                 lst2,
-                GenericValue(
-                    list,
-                    [
-                        AnnotatedValue(
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
                             MultiValuedValue(
                                 [KnownValue("a"), KnownValue("b"), KnownValue("c")]
-                            ),
-                            [WeakExtension()],
-                        )
-                    ],
+                            )
+                        ],
+                    )
                 ),
             )
 
@@ -606,6 +597,96 @@ class TestGenericMutators(TestNameCheckVisitorBase):
         def capybara():
             lst: List[int] = [3]
             lst.extend([str(3)])  # E: incompatible_argument
+
+    @assert_passes()
+    def test_setdefault(self):
+        from typing_extensions import TypedDict
+        from typing import Dict
+
+        class TD(TypedDict):
+            a: int
+            b: str
+
+        def typeddict(td: TD):
+            td.setdefault({})  # E: unhashable_key
+            td.setdefault(0)  # E: invalid_typeddict_key
+            td.setdefault("c")  # E: invalid_typeddict_key
+            td.setdefault("a", "s")  # E: incompatible_argument
+            assert_is_value(td.setdefault("b", "x"), TypedValue(str))
+
+        def dict_incomplete_value():
+            incomplete_value = {"a": str(TD)}
+            assert_is_value(
+                incomplete_value,
+                DictIncompleteValue([(KnownValue("a"), TypedValue(str))]),
+            )
+            assert_is_value(incomplete_value.setdefault("b"), KnownValue(None))
+            assert_is_value(
+                incomplete_value,
+                DictIncompleteValue(
+                    [
+                        (KnownValue("a"), TypedValue(str)),
+                        (KnownValue("b"), KnownValue(None)),
+                    ]
+                ),
+            )
+            assert_is_value(
+                incomplete_value.setdefault("a"),
+                MultiValuedValue([KnownValue(None), TypedValue(str)]),
+            )
+            assert_is_value(
+                incomplete_value,
+                DictIncompleteValue(
+                    [
+                        (KnownValue("a"), TypedValue(str)),
+                        (KnownValue("b"), KnownValue(None)),
+                        (KnownValue("a"), KnownValue(None)),
+                    ]
+                ),
+            )
+
+        def make_weak_dict():
+            return {i: str(i) for i in range(5)}
+
+        def weak_typed():
+            weak_dict = make_weak_dict()
+            assert_is_value(
+                weak_dict,
+                make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),
+            )
+            assert_is_value(weak_dict.setdefault(3, str(TD)), TypedValue(str))
+
+            int_or_3 = MultiValuedValue([TypedValue(int), KnownValue(3)])
+            assert_is_value(
+                weak_dict, make_weak(GenericValue(dict, [int_or_3, TypedValue(str)]))
+            )
+            assert_is_value(
+                weak_dict.setdefault(3),
+                MultiValuedValue([TypedValue(str), KnownValue(None)]),
+            )
+            assert_is_value(
+                weak_dict,
+                make_weak(
+                    GenericValue(
+                        dict,
+                        [
+                            int_or_3,
+                            MultiValuedValue([TypedValue(str), KnownValue(None)]),
+                        ],
+                    )
+                ),
+            )
+
+        def strong_typed(strong_dict: Dict[int, str]):
+            expected = GenericValue(dict, [TypedValue(int), TypedValue(str)])
+            assert_is_value(strong_dict, expected)
+            assert_is_value(strong_dict.setdefault(3, str(TD)), TypedValue(str))
+            assert_is_value(strong_dict, expected)
+            assert_is_value(
+                strong_dict.setdefault(3),
+                MultiValuedValue([TypedValue(str), KnownValue(None)]),
+            )
+            assert_is_value(strong_dict, expected)
 
 
 class TestDictGetItem(TestNameCheckVisitorBase):

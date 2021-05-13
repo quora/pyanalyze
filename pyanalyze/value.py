@@ -1234,6 +1234,10 @@ def unify_typevar_maps(tv_maps: Sequence[TypeVarMap]) -> TypeVarMap:
     return {tv: unite_values(*values) for tv, values in raw_map.items()}
 
 
+def make_weak(val: Value) -> Value:
+    return annotate_value(val, [WeakExtension()])
+
+
 def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:
     if not metadata:
         return origin
@@ -1474,6 +1478,8 @@ def _unpack_value_sequence(
 
 
 def replace_known_sequence_value(value: Value) -> Value:
+    if isinstance(value, AnnotatedValue):
+        value = value.value
     if isinstance(value, KnownValue):
         if isinstance(value.val, (list, tuple, set)):
             return SequenceIncompleteValue(
