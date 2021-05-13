@@ -414,8 +414,13 @@ def run():
 
     @assert_passes()
     def test_binop(self):
+        from typing import Union
+
         def tucotuco():
             assert_is_value(2 + 3, KnownValue(5))
+
+        def capybara(x: Union[int, float], y: Union[int, float]) -> float:
+            return x + y
 
     @assert_passes()
     def test_inplace_binop(self):

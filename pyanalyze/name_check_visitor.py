@@ -2515,6 +2515,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if not inplace_errors:
                 return inplace_result
 
+        # TODO handle MVV properly here. The naive approach (removing this check)
+        # leads to an error on Union[int, float] + Union[int, float], presumably because
+        # some combinations need the left and some need the right variant.
+        # A proper solution may be to take the product of the MVVs on both sides and try
+        # them all.
+        if isinstance(left, MultiValuedValue) or isinstance(right, MultiValuedValue):
+            return UNRESOLVED_VALUE
+
         with self.catch_errors() as left_errors:
             left_result = self._check_dunder_call(
                 source_node,
