@@ -1204,10 +1204,12 @@ class TestComprehensions(TestNameCheckVisitorBase):
             assert_is_value(a, make_weak(GenericValue(list, [TypedValue(int)])))
 
             b = (0 for _ in lst)
-            # Making the generator weak doesn't make much sense but
-            # it seems harmless for now.
             assert_is_value(
-                b, make_weak(GenericValue(types.GeneratorType, [KnownValue(0)]))
+                b,
+                GenericValue(
+                    types.GeneratorType,
+                    [KnownValue(0), KnownValue(None), KnownValue(None)],
+                ),
             )
 
             c = {int(x): int(x) for x in lst}

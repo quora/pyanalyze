@@ -645,11 +645,8 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 ),
             )
 
-        def make_weak_dict():
-            return {i: str(i) for i in range(5)}
-
         def weak_typed():
-            weak_dict = make_weak_dict()
+            weak_dict = {i: str(i) for i in range(5)}
             assert_is_value(
                 weak_dict,
                 make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),
