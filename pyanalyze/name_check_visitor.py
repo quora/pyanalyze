@@ -4035,6 +4035,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         elif isinstance(value, SubclassValue):
             # SubclassValues are callable, but we can't assume the signature
             # is consistent with the base class.
+            # TODO: make the return annotation be of the type of the value.
             return ANY_SIGNATURE
         elif value is UNRESOLVED_VALUE or isinstance(value, VariableNameValue):
             return ANY_SIGNATURE
