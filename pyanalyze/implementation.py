@@ -1055,6 +1055,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             TypedValue(str),
             callable=bytes.decode,
+            allow_call=True,
         ),
         Signature.make(
             [
@@ -1066,6 +1067,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             TypedValue(bytes),
             callable=str.encode,
+            allow_call=True,
         ),
         Signature.make(
             [

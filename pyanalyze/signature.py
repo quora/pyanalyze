@@ -47,6 +47,7 @@ from functools import reduce
 from types import MethodType, FunctionType
 import inspect
 import qcore
+from qcore.helpers import safe_str
 from typing import (
     Any,
     Iterable,
@@ -212,6 +213,7 @@ class Signature:
     is_asynq: bool = False
     has_return_annotation: bool = True
     is_ellipsis_args: bool = False
+    allow_call: bool = False
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
         init=False, default_factory=dict, repr=False, compare=False
     )
@@ -430,10 +432,46 @@ class Signature:
             )
             return_value = self.impl(ctx)
             return self._apply_annotated_constraints(return_value, bound_args)
-        elif return_value is EMPTY:
+        if self.allow_call:
+            runtime_return = self._maybe_perform_call(
+                call_args, call_kwargs, visitor, node
+            )
+            if runtime_return is not None:
+                return ImplReturn(runtime_return)
+        if return_value is EMPTY:
             return ImplReturn(UNRESOLVED_VALUE)
         else:
             return self._apply_annotated_constraints(return_value, bound_args)
+
+    def _maybe_perform_call(
+        self,
+        call_args: List[Composite],
+        call_kwargs: Dict[str, Composite],
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+    ) -> Optional[Value]:
+        if self.callable is None:
+            return None
+        args = []
+        for composite in call_args:
+            if isinstance(composite.value, KnownValue):
+                args.append(composite.value.val)
+            else:
+                return None
+        kwargs = {}
+        for key, composite in call_kwargs.items():
+            if isinstance(composite.value, KnownValue):
+                kwargs[key] = composite.value.val
+            else:
+                return None
+        try:
+            value = self.callable(*args, **kwargs)
+        except Exception as e:
+            message = f"Error calling {self}: {safe_str(e)}"
+            visitor._show_error_if_checking(node, message, ErrorCode.incompatible_call)
+            return None
+        else:
+            return KnownValue(value)
 
     def can_assign(self, other: "Signature", ctx: CanAssignContext) -> CanAssign:
         """Equivalent of Value.can_assign.
@@ -659,6 +697,7 @@ class Signature:
             is_asynq=self.is_asynq,
             has_return_annotation=self.has_return_annotation,
             is_ellipsis_args=self.is_ellipsis_args,
+            allow_call=self.allow_call,
         )
 
     def walk_values(self) -> Iterable[Value]:
@@ -682,6 +721,7 @@ class Signature:
             has_return_annotation=self.has_return_annotation,
             is_ellipsis_args=self.is_ellipsis_args,
             is_asynq=False,
+            allow_call=self.allow_call,
         )
 
     @classmethod
@@ -695,6 +735,7 @@ class Signature:
         has_return_annotation: bool = True,
         is_ellipsis_args: bool = False,
         is_asynq: bool = False,
+        allow_call: bool = False,
     ) -> "Signature":
         if return_annotation is None:
             return_annotation = UNRESOLVED_VALUE
@@ -708,6 +749,7 @@ class Signature:
             has_return_annotation=has_return_annotation,
             is_ellipsis_args=is_ellipsis_args,
             is_asynq=is_asynq,
+            allow_call=allow_call,
         )
 
     def __str__(self) -> str:
@@ -802,6 +844,7 @@ class BoundMethodSignature:
             is_asynq=self.signature.is_asynq,
             has_return_annotation=self.has_return_value(),
             is_ellipsis_args=self.signature.is_ellipsis_args,
+            allow_call=self.signature.allow_call,
         )
 
     def has_return_value(self) -> bool:
