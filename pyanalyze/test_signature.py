@@ -1,5 +1,6 @@
 # static analysis: ignore
 from pyanalyze.implementation import assert_is_value
+from collections.abc import Sequence
 from qcore.asserts import assert_eq
 
 from .value import (
@@ -138,6 +139,21 @@ class TestCanAssign:
                 ]
             ),
         )
+
+        # unhashable default
+        seq_int = GenericValue(Sequence, [TypedValue(int)])
+        list_default = P(
+            "a",
+            annotation=seq_int,
+            default=KnownValue([]),
+            kind=P.POSITIONAL_OR_KEYWORD,
+        )
+        sig = Signature.make([list_default])
+        no_default_sig = Signature.make(
+            [P("a", annotation=seq_int, kind=P.POSITIONAL_OR_KEYWORD)]
+        )
+        self.cannot(sig, no_default_sig)
+        self.can(no_default_sig, sig)
 
     def test_kw_only(self) -> None:
         kw_only_int = P("a", annotation=TypedValue(int), kind=P.KEYWORD_ONLY)

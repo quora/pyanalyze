@@ -574,8 +574,8 @@ class Signature:
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
-                    consumed_positional.add(their_params[i])
-                    consumed_keyword.add(their_params[i])
+                    consumed_positional.add(their_params[i].name)
+                    consumed_keyword.add(their_params[i].name)
                 elif (
                     i < len(their_params)
                     and their_params[i].kind is SigParameter.POSITIONAL_ONLY
