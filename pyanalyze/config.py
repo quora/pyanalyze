@@ -137,6 +137,7 @@ class Config(object):
         # what append does
         sorted,
         asynq.asynq,
+        value.make_weak,
     )
     # These decorators can safely be applied to nested functions. If True, they take arguments.
     SAFE_DECORATORS_FOR_NESTED_FUNCTIONS = {

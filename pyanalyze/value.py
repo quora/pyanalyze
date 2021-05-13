@@ -1205,6 +1205,10 @@ def unify_typevar_maps(tv_maps: Sequence[TypeVarMap]) -> TypeVarMap:
     return {tv: unite_values(*values) for tv, values in raw_map.items()}
 
 
+def make_weak(val: Value) -> Value:
+    return annotate_value(val, [WeakExtension()])
+
+
 def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:
     if not metadata:
         return origin
@@ -1366,12 +1370,34 @@ def unpack_values(
         return unpack_values(value.value, ctx, target_length, post_starred_length)
     value = replace_known_sequence_value(value)
 
-    # We do this only for tuples because lists, sets, and dicts are mutable
-    # and we can't be confident they haven't been modified.
-    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
-        return _unpack_value_sequence(
-            value, value.members, target_length, post_starred_length
-        )
+    # We treat the different sequence types differently here.
+    # - Tuples are  immutable so we can always unpack and show
+    #   an error if the length doesn't match.
+    # - Sets have randomized order so unpacking into specific values
+    #   doesn't make sense. We just fallback to the behavior for
+    #   general iterables.
+    # - Dicts do have deterministic order but unpacking them doesn't
+    #   seem like a common use case. They're also mutable, so if we
+    #   did decide to unpack, we'd have to do something similar to
+    #   what we do for lists.
+    # - Lists can be sensibly unpacked but they are also mutable. Therefore,
+    #   we try first to unpack into specific values, and if that doesn't
+    #   work due to a length mismatch we fall back to the generic
+    #   iterable approach. We experimented both with treating lists
+    #   like tuples and with always falling back, and both approaches
+    #   led to false positives.
+    if isinstance(value, SequenceIncompleteValue):
+        if value.typ is tuple:
+            return _unpack_value_sequence(
+                value, value.members, target_length, post_starred_length
+            )
+        elif value.typ is list:
+            vals = _unpack_value_sequence(
+                value, value.members, target_length, post_starred_length
+            )
+            if not isinstance(vals, CanAssignError):
+                return vals
+
     tv_map = IterableValue.can_assign(value, ctx)
     if isinstance(tv_map, CanAssignError):
         return tv_map
@@ -1423,6 +1449,8 @@ def _unpack_value_sequence(
 
 
 def replace_known_sequence_value(value: Value) -> Value:
+    if isinstance(value, AnnotatedValue):
+        value = value.value
     if isinstance(value, KnownValue):
         if isinstance(value.val, (list, tuple, set)):
             return SequenceIncompleteValue(

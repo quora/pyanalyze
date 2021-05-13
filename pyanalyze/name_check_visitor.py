@@ -98,12 +98,11 @@ from .value import (
     AnnotatedValue,
     CallableValue,
     CanAssignError,
-    WeakExtension,
-    annotate_value,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     NO_RETURN_VALUE,
+    make_weak,
     unite_values,
     KnownValue,
     TypedValue,
@@ -1952,28 +1951,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     # Comprehensions
 
+    def visit_DictComp(self, node: ast.DictComp) -> Value:
+        return self._visit_sequence_comp(node, dict)
+
     def visit_ListComp(self, node: ast.ListComp) -> Value:
-        return self._visit_comprehension(node, list)
+        return self._visit_sequence_comp(node, list)
 
     def visit_SetComp(self, node: ast.SetComp) -> Value:
-        return self._visit_comprehension(node, set)
-
-    def visit_DictComp(self, node: ast.DictComp) -> Value:
-        if self.state == VisitorState.collect_names:
-            return TypedValue(dict)
-        with self.scopes.add_scope(ScopeType.function_scope, scope_node=node):
-            for state in (VisitorState.collect_names, VisitorState.check_names):
-                with qcore.override(self, "state", state):
-                    for generator in node.generators:
-                        self.visit(generator)
-                    with qcore.override(self, "in_comprehension_body", True):
-                        key = self.visit(node.key)
-                        value = self.visit(node.value)
-                    ret = GenericValue(dict, [key, value])
-        return ret
+        return self._visit_sequence_comp(node, set)
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Value:
-        return self._visit_comprehension(node, types.GeneratorType)
+        return self._visit_sequence_comp(node, types.GeneratorType)
 
     def visit_comprehension(
         self, node: ast.comprehension, iterable_type: Optional[Value] = None
@@ -1995,8 +1983,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         )
         return iterable_type
 
-    def _visit_comprehension(
-        self, node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp], typ: type
+    def _visit_sequence_comp(
+        self,
+        node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
+        typ: type,
     ) -> Value:
         # the iteree of the first generator is executed in the enclosing scope
         iterable_type = self._member_value_of_generator(node.generators[0])
@@ -2026,7 +2016,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _visit_comprehension_inner(
         self,
-        node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp],
+        node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
         typ: type,
         iterable_type: Value,
     ) -> Value:
@@ -2043,12 +2033,25 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             finally:
                 self.node_context.contexts.pop()
 
+        if isinstance(node, ast.DictComp):
+            with qcore.override(self, "in_comprehension_body", True):
+                key_value = self.visit(node.key)
+                value_value = self.visit(node.value)
+            if key_value is UNRESOLVED_VALUE and value_value is UNRESOLVED_VALUE:
+                return TypedValue(dict)
+            else:
+                return make_weak(GenericValue(dict, [key_value, value_value]))
+
         with qcore.override(self, "in_comprehension_body", True):
             member_value = self.visit(node.elt)
         if member_value is UNRESOLVED_VALUE:
             return TypedValue(typ)
         else:
-            return GenericValue(typ, [member_value])
+            if typ is types.GeneratorType:
+                return GenericValue(
+                    typ, [member_value, KnownValue(None), KnownValue(None)]
+                )
+            return make_weak(GenericValue(typ, [member_value]))
 
     # Literals and displays
 
@@ -2284,9 +2287,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else:
                     values.append(elt)
             if has_unknown_value:
-                return GenericValue(
-                    typ, [annotate_value(unite_values(*values), [WeakExtension()])]
-                )
+                return make_weak(GenericValue(typ, [unite_values(*values)]))
             else:
                 return SequenceIncompleteValue(typ, values)
 
