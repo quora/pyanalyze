@@ -673,22 +673,6 @@ class TestNoReturn(TestNameCheckVisitorBase):
             assert_unreachable(1)
 
 
-class TestCall(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_union(self):
-        def capybara(cond: bool) -> None:
-            if cond:
-                typ = list
-            else:
-                typ = tuple
-            assert_is_value(
-                typ, MultiValuedValue([KnownValue(list), KnownValue(tuple)])
-            )
-            assert_is_value(
-                typ([1]), MultiValuedValue([KnownValue((1,)), KnownValue([1])])
-            )
-
-
 class TestSubclassValue(TestNameCheckVisitorBase):
     # In 3.7 the behavior of Type[] changed.
     @only_before((3, 7))
@@ -1132,13 +1116,6 @@ class TestVariableNameValue(TestNameCheckVisitorBase):
             d = {"uid": self}
             assert_is_value(d["uid"], VariableNameValue(["uid"]))
             assert_is_value(self.uid, VariableNameValue(["uid"]))
-
-
-class TestFunctionsSafeToCall(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test(self):
-        def test(self):
-            assert_is_value(sorted([3, 1, 2]), KnownValue([1, 2, 3]))
 
 
 class TestImports(TestNameCheckVisitorBase):
