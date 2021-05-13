@@ -209,7 +209,7 @@ class Signature:
 
     signature: inspect.Signature
     impl: Optional[Impl] = field(default=None, compare=False)
-    callable: Optional[object] = field(default=None, compare=False)
+    callable: Optional[Callable[..., Any]] = field(default=None, compare=False)
     is_asynq: bool = False
     has_return_annotation: bool = True
     is_ellipsis_args: bool = False
@@ -363,11 +363,6 @@ class Signature:
         the local variables to validate types and keyword-only arguments.
 
         """
-        if self.is_ellipsis_args:
-            return_value = self.signature.return_annotation
-            if return_value is EMPTY:
-                return ImplReturn(UNRESOLVED_VALUE)
-            return ImplReturn(return_value)
         call_args = []
         call_kwargs = {}
         for composite, label in args:
@@ -381,6 +376,19 @@ class Signature:
                 # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
                 # - else do something smart to still typecheck the call
                 return ImplReturn(UNRESOLVED_VALUE)
+
+        if self.is_ellipsis_args:
+            if self.allow_call:
+                runtime_return = self._maybe_perform_call(
+                    call_args, call_kwargs, visitor, node
+                )
+                if runtime_return is not None:
+                    return ImplReturn(runtime_return)
+            return_value = self.signature.return_annotation
+            if return_value is EMPTY:
+                return ImplReturn(UNRESOLVED_VALUE)
+            return ImplReturn(return_value)
+
         try:
             bound_args = self.signature.bind(*call_args, **call_kwargs)
         except TypeError as e:

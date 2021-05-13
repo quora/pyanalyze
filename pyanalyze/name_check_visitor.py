@@ -2520,7 +2520,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         # some combinations need the left and some need the right variant.
         # A proper solution may be to take the product of the MVVs on both sides and try
         # them all.
-        if isinstance(left, MultiValuedValue) or isinstance(right, MultiValuedValue):
+        if isinstance(left, MultiValuedValue) and isinstance(right, MultiValuedValue):
             return UNRESOLVED_VALUE
 
         with self.catch_errors() as left_errors:
@@ -3781,18 +3781,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self.yield_checker.record_call(callee_wrapped, node)
             self.asynq_checker.check_call(callee_wrapped, node)
 
-        callee_val = None
-        if isinstance(callee_wrapped, UnboundMethodValue):
-            callee_val = callee_wrapped.get_method()
-        elif isinstance(callee_wrapped, KnownValue):
-            callee_val = callee_wrapped.val
-        elif isinstance(callee_wrapped, SubclassValue) and isinstance(
-            callee_wrapped.typ, TypedValue
-        ):
-            callee_val = callee_wrapped.typ.typ
+        if self.collector is not None:
+            callee_val = None
+            if isinstance(callee_wrapped, UnboundMethodValue):
+                callee_val = callee_wrapped.get_method()
+            elif isinstance(callee_wrapped, KnownValue):
+                callee_val = callee_wrapped.val
+            elif isinstance(callee_wrapped, SubclassValue) and isinstance(
+                callee_wrapped.typ, TypedValue
+            ):
+                callee_val = callee_wrapped.typ.typ
 
-        if callee_val is not None:
-            if self.collector is not None:
+            if callee_val is not None:
                 caller = (
                     self.current_function
                     if self.current_function is not None
@@ -3800,29 +3800,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
                 if caller is not None:
                     self.collector.record_call(caller, callee_val)
-
-            arg_values = [arg.value for arg in args]
-            kw_values = [(kw, composite.value) for kw, composite in keywords]
-            if (
-                (return_value is UNRESOLVED_VALUE or return_value == KnownNone)
-                and inspect.isclass(callee_val)
-                and not safe_in(callee_val, self.config.IGNORED_CALLEES)
-            ):
-                # if all arguments are KnownValues and the class is whitelisted, instantiate it
-                if issubclass(
-                    callee_val, self.config.CLASSES_SAFE_TO_INSTANTIATE
-                ) and self._can_perform_call(arg_values, kw_values):
-                    return_value = self._try_perform_call(
-                        # TODO make these unnecessary
-                        callee_val,
-                        node,
-                        arg_values,
-                        kw_values,
-                        TypedValue(callee_val),
-                    )
-                else:
-                    # calls to types result in values of that type
-                    return_value = TypedValue(callee_val)
 
         return return_value, constraint
 
