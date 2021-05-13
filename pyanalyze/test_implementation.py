@@ -587,6 +587,39 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.extend([str(3)])  # E: incompatible_argument
 
     @assert_passes()
+    def test_list_extend_union(self):
+        def capybara(cond):
+            if cond:
+                lst = [1 for _ in range(3)]
+            else:
+                lst = [2 for _ in range(3)]
+            assert_is_value(
+                lst,
+                MultiValuedValue(
+                    [
+                        make_weak(GenericValue(list, [KnownValue(1)])),
+                        make_weak(GenericValue(list, [KnownValue(2)])),
+                    ]
+                ),
+            )
+            lst.extend([3, 4])
+
+            # TODO: this is wrong; it drops all but the last Union member
+            assert_is_value(
+                lst,
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
+                            MultiValuedValue(
+                                [KnownValue(2), KnownValue(3), KnownValue(4)]
+                            )
+                        ],
+                    )
+                ),
+            )
+
+    @assert_passes()
     def test_setdefault(self):
         from typing_extensions import TypedDict
         from typing import Dict
