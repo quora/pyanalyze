@@ -1,14 +1,4 @@
 # static analysis: ignore
-from pyanalyze.extensions import reveal_type
-from pyanalyze.value import (
-    DictIncompleteValue,
-    GenericValue,
-    KnownValue,
-    MultiValuedValue,
-    TypedValue,
-    make_weak,
-)
-from pyanalyze.implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes
 from .error_code import ErrorCode
@@ -484,7 +474,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                         [
                             MultiValuedValue(
                                 [TypedValue(int), TypedValue(str), TypedValue(float)]
-                            ),
+                            )
                         ],
                     )
                 ),
@@ -523,7 +513,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                                 ]
                             )
                         ],
-                    ),
+                    )
                 ),
             )
             lst.extend(["e"])
@@ -541,7 +531,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                                     KnownValue("d"),
                                     KnownValue("e"),
                                 ]
-                            ),
+                            )
                         ],
                     )
                 ),
@@ -562,9 +552,9 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                                     KnownValue("e"),
                                     KnownValue("f"),
                                 ]
-                            ),
+                            )
                         ],
-                    ),
+                    )
                 ),
             )
 
@@ -668,8 +658,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
 
             int_or_3 = MultiValuedValue([TypedValue(int), KnownValue(3)])
             assert_is_value(
-                weak_dict,
-                make_weak(GenericValue(dict, [int_or_3, TypedValue(str)])),
+                weak_dict, make_weak(GenericValue(dict, [int_or_3, TypedValue(str)]))
             )
             assert_is_value(
                 weak_dict.setdefault(3),

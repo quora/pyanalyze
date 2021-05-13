@@ -1329,8 +1329,7 @@ class TestConstraints(TestNameCheckVisitorBase):
                 lst,
                 make_weak(
                     GenericValue(
-                        list,
-                        [MultiValuedValue([TypedValue(int), KnownValue(None)])],
+                        list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
                     )
                 ),
             )
@@ -1351,8 +1350,7 @@ class TestConstraints(TestNameCheckVisitorBase):
                 [elt.x for elt in c],
                 make_weak(
                     GenericValue(
-                        list,
-                        [MultiValuedValue([TypedValue(int), KnownValue(None)])],
+                        list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
                     )
                 ),
             )
@@ -1370,8 +1368,7 @@ class TestConstraints(TestNameCheckVisitorBase):
                 [pair[1] for pair in d],
                 make_weak(
                     GenericValue(
-                        list,
-                        [MultiValuedValue([TypedValue(int), KnownValue(None)])],
+                        list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
                     )
                 ),
             )
