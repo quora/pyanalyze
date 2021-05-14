@@ -884,3 +884,24 @@ class TestInferenceHelpers(TestNameCheckVisitorBase):
             assert_is_value(1, KnownValue(1))
             assert_is_value(1, KnownValue(2))  # E: inference_failure
             assert_is_value(1, val)  # E: inference_failure
+
+
+class TestCallableGuards(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_callable(self):
+        from pyanalyze.signature import ANY_SIGNATURE
+
+        def capybara(o: object) -> None:
+            assert_is_value(o, TypedValue(object))
+            if callable(o):
+                assert_is_value(o, CallableValue(ANY_SIGNATURE))
+
+    @assert_passes()
+    def test_isfunction(self):
+        from types import FunctionType
+        import inspect
+
+        def capybara(o: object) -> None:
+            assert_is_value(o, TypedValue(object))
+            if inspect.isfunction(o):
+                assert_is_value(o, TypedValue(FunctionType))

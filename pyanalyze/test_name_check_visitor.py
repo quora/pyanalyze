@@ -27,6 +27,7 @@ from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
     AsyncTaskIncompleteValue,
+    CallableValue,
     DictIncompleteValue,
     KnownValue,
     MultiValuedValue,
@@ -119,6 +120,7 @@ def _make_module(code_str: str) -> types.ModuleType:
     extra_scope = dict(
         assert_is_value=assert_is_value,
         AsyncTaskIncompleteValue=AsyncTaskIncompleteValue,
+        CallableValue=CallableValue,
         DictIncompleteValue=DictIncompleteValue,
         GenericValue=GenericValue,
         KnownValue=KnownValue,
