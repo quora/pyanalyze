@@ -221,6 +221,23 @@ class TestAttributes(TestNameCheckVisitorBase):
             assert_is_value(E.no_name, KnownValue(E.no_name))
             assert_is_value(E.name, KnownValue(E.name))
 
+    @assert_passes()
+    def test_module_annotations(self):
+        from pyanalyze import value
+        from pyanalyze.type_object import TypeObject
+        from typing import Optional
+
+        annotated_global: Optional[str] = None
+
+        def capybara():
+            assert_is_value(
+                value._type_object_cache,
+                GenericValue(dict, [TypedValue(type), TypedValue(TypeObject)]),
+            )
+            assert_is_value(
+                annotated_global, MultiValuedValue([TypedValue(str), KnownValue(None)])
+            )
+
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
     @assert_passes()

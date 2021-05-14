@@ -53,7 +53,7 @@ import qcore
 from qcore.helpers import safe_str
 
 from . import attributes, format_strings, node_visitor, importer, method_return_type
-from .annotations import type_from_value, is_typing_name
+from .annotations import type_from_runtime, type_from_value, is_typing_name
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
@@ -747,7 +747,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and not self.is_compiled
         ):
             self.attribute_checker.record_module_examined(self.module.__name__)
-        self.scopes = StackedScopes(self.module)
+
+        self.scopes = build_stacked_scopes(self.module)
         self.node_context = StackedContexts()
         self.asynq_checker = AsynqChecker(
             self.config,
@@ -4279,6 +4280,33 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 checker.types_with_dynamic_attrs
             )
             attribute_checker.filename_to_visitor.update(checker.filename_to_visitor)
+
+
+def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
+    """Build a StackedScopes object.
+
+    Not part of stacked_scopes.py to avoid a circular dependency.
+
+    """
+    if module is None:
+        module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
+    else:
+        module_vars = {key: KnownValue(value) for key, value in module.__dict__.items()}
+        module_vars = {}
+        annotations = getattr(module, "__annotations__", {})
+        for key, value in module.__dict__.items():
+            try:
+                annotation = annotations[key]
+            except Exception:
+                # Malformed __annotations__
+                val = KnownValue(value)
+            else:
+                if is_typing_name(annotation, "Final"):
+                    val = KnownValue(value)
+                else:
+                    val = type_from_runtime(annotation, globals=module.__dict__)
+            module_vars[key] = val
+    return StackedScopes(module_vars, module)
 
 
 def _get_task_cls(fn: Any) -> Any:
