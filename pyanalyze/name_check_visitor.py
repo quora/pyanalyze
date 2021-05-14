@@ -763,6 +763,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self.current_enum_members = None
         self.is_async_def = False
         self.in_annotation = False
+        self.in_union_decomposition = False
         self.collector = collector
         self.import_name_to_node = {}
         self.imports_added = set()
@@ -3466,12 +3467,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 Composite(val, callee_composite.varname, callee_composite.node)
                 for val in callee_composite.value.vals
             ]
-            values = [
-                self._check_dunder_call_no_mvv(
-                    node, composite, method_name, args, allow_call
-                )
-                for composite in composites
-            ]
+            with qcore.override(self, "in_union_decomposition", True):
+                values = [
+                    self._check_dunder_call_no_mvv(
+                        node, composite, method_name, args, allow_call
+                    )
+                    for composite in composites
+                ]
             return unite_values(*values)
         return self._check_dunder_call_no_mvv(
             node, callee_composite, method_name, args, allow_call
@@ -3850,14 +3852,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         allow_call: bool = False,
     ) -> Tuple[Value, AbstractConstraint]:
         if isinstance(callee, MultiValuedValue):
-            values, constraints = zip(
-                *[
-                    self._check_call_no_mvv(
-                        node, val, args, keywords, allow_call=allow_call
-                    )
-                    for val in callee.vals
-                ]
-            )
+            with qcore.override(self, "in_union_decomposition", True):
+                values, constraints = zip(
+                    *[
+                        self._check_call_no_mvv(
+                            node, val, args, keywords, allow_call=allow_call
+                        )
+                        for val in callee.vals
+                    ]
+                )
             return unite_values(*values), reduce(OrConstraint, constraints)
         return self._check_call_no_mvv(
             node, callee, args, keywords, allow_call=allow_call

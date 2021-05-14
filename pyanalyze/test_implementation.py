@@ -215,30 +215,32 @@ class TestFormat(TestNameCheckVisitorBase):
             assert_is_value("{0:.{1:d}e}".format(0, 1), TypedValue(str))
             assert_is_value("{:<{width}}".format("", width=1), TypedValue(str))
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_out_of_range_implicit(self):
-        def capybara():
-            "{} {}".format(0)
+    @assert_passes()
+    def test_errors(self):
+        def out_of_range_implicit():
+            "{} {}".format(0)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_out_of_range_numbered(self):
-        def capybara():
-            "{0} {1}".format(0)
+        def out_of_range_numbered():
+            "{0} {1}".format(0)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_out_of_range_named(self):
-        def capybara():
-            "{x}".format(y=3)
+        def out_of_range_named():
+            "{x}".format(y=3)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_unused_numbered(self):
-        def capybara():
-            "{}".format(0, 1)
+        def unused_numbered():
+            "{}".format(0, 1)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_unused_named(self):
-        def capybara():
-            "{x}".format(x=0, y=1)
+        def unused_names():
+            "{x}".format(x=0, y=1)  # E: incompatible_call
+
+    @assert_passes()
+    def test_union(self):
+        def capybara(cond):
+            if cond:
+                template = "{a} {b}"
+            else:
+                template = "{a} {b} {c}"
+            string = template.format(a="a", b="b", c="c")
+            assert_is_value(string, TypedValue(str))
 
 
 class TestTypeMethods(TestNameCheckVisitorBase):

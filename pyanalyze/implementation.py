@@ -801,19 +801,24 @@ def _str_format_impl(ctx: CallContext) -> Value:
                     error_code=ErrorCode.incompatible_call,
                 )
             used_kwargs.add(field.arg_name)
-    unused_indices = set(range(len(args))) - used_indices
-    if unused_indices:
-        ctx.show_error(
-            "Numbered argument(s) %s were not used"
-            % ", ".join(map(str, sorted(unused_indices))),
-            error_code=ErrorCode.incompatible_call,
-        )
-    unused_kwargs = set(kwargs) - used_kwargs
-    if unused_kwargs:
-        ctx.show_error(
-            "Named argument(s) %s were not used" % ", ".join(sorted(unused_kwargs)),
-            error_code=ErrorCode.incompatible_call,
-        )
+    # Skip these checks in unions because the arguments may be used in a
+    # different branch of the union. Ideally we'd error if they are unused
+    # in all variants, but that's difficult to achieve with the current
+    # abstractions.
+    if not ctx.visitor.in_union_decomposition:
+        unused_indices = set(range(len(args))) - used_indices
+        if unused_indices:
+            ctx.show_error(
+                "Numbered argument(s) %s were not used"
+                % ", ".join(map(str, sorted(unused_indices))),
+                error_code=ErrorCode.incompatible_call,
+            )
+        unused_kwargs = set(kwargs) - used_kwargs
+        if unused_kwargs:
+            ctx.show_error(
+                "Named argument(s) %s were not used" % ", ".join(sorted(unused_kwargs)),
+                error_code=ErrorCode.incompatible_call,
+            )
     return TypedValue(str)
 
 
