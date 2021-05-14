@@ -14,7 +14,7 @@ import types
 from typing import Any, Dict, Sequence, Tuple, Optional
 
 from .annotations import type_from_runtime, Context
-from .safe import safe_issubclass
+from .safe import safe_isinstance, safe_issubclass
 from .signature import Signature, MaybeSignature
 from .value import (
     AnnotatedValue,
@@ -250,7 +250,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         return KnownValue(cls_val)
 
 
-def _get_attribute_from_known(obj: Any, ctx: AttrContext) -> Value:
+def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
     ctx.record_attr_read(type(obj))
 
     if (obj is None or obj is NoneType) and ctx.should_ignore_none_attributes():
@@ -294,15 +294,18 @@ def _get_attribute_from_unbound(
 @dataclass
 class AnnotationsContext(Context):
     attr_ctx: AttrContext
-    cls: type
+    cls: object
 
     def __post_init__(self) -> None:
         super().__init__()
 
     def get_name(self, node: ast.Name) -> Value:
         try:
-            globals = sys.modules[self.cls.__module__].__dict__
-        except (KeyError, AttributeError, TypeError):
+            if isinstance(self.cls, types.ModuleType):
+                globals = self.cls.__dict__
+            else:
+                globals = sys.modules[self.cls.__module__].__dict__
+        except Exception:
             return UNRESOLVED_VALUE
         else:
             return self.get_name_from_globals(node.id, globals)
@@ -311,9 +314,11 @@ class AnnotationsContext(Context):
         return self.attr_ctx.get_signature(callable)
 
 
-def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, type, bool]:
+def _get_attribute_from_mro(
+    typ: object, ctx: AttrContext
+) -> Tuple[Value, object, bool]:
     # Then go through the MRO and find base classes that may define the attribute.
-    if safe_issubclass(typ, Enum):
+    if safe_isinstance(typ, type) and safe_issubclass(typ, Enum):
         # Special case, to avoid picking an attribute of Enum instances (e.g., name)
         # over an Enum member. Ideally we'd have a more principled way to support this
         # but I haven't thought of one.
@@ -321,6 +326,15 @@ def _get_attribute_from_mro(typ: type, ctx: AttrContext) -> Tuple[Value, type, b
             return KnownValue(getattr(typ, ctx.attr)), typ, True
         except Exception:
             pass
+    elif safe_isinstance(typ, types.ModuleType):
+        try:
+            annotation = typ.__annotations__[ctx.attr]
+        except Exception:
+            # Module doesn't have annotations or it's not in there
+            pass
+        else:
+            attr_type = type_from_runtime(annotation, ctx=AnnotationsContext(ctx, typ))
+            return (attr_type, typ, False)
 
     try:
         mro = list(typ.mro())
@@ -378,7 +392,7 @@ def _static_hasattr(value: object, attr: str) -> bool:
         return True
 
 
-def get_attrs_attribute(typ: type, ctx: AttrContext) -> Optional[Value]:
+def get_attrs_attribute(typ: object, ctx: AttrContext) -> Optional[Value]:
     try:
         if hasattr(typ, "__attrs_attrs__"):
             for attr_attr in typ.__attrs_attrs__:

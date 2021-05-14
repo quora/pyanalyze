@@ -955,13 +955,9 @@ class StackedScopes:
         None,
     )
 
-    def __init__(self, module: Optional[ModuleType]) -> None:
-        if module is None:
-            module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
-        else:
-            module_vars = {
-                key: KnownValue(value) for key, value in module.__dict__.items()
-            }
+    def __init__(
+        self, module_vars: Dict[str, Value], module: Optional[ModuleType]
+    ) -> None:
         self.scopes = [
             self._builtin_scope,
             Scope(

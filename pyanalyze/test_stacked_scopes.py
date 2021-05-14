@@ -2,7 +2,8 @@
 from qcore.asserts import assert_eq, assert_in, assert_not_in, assert_is
 
 from .error_code import ErrorCode
-from .stacked_scopes import ScopeType, StackedScopes, uniq_chain
+from .name_check_visitor import build_stacked_scopes
+from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
@@ -25,7 +26,7 @@ class Module(object):
 
 class TestStackedScopes(object):
     def setup(self):
-        self.scopes = StackedScopes(Module)
+        self.scopes = build_stacked_scopes(Module)
 
     def test_scope_type(self):
         assert_eq(ScopeType.module_scope, self.scopes.scope_type())

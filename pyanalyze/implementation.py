@@ -2,7 +2,7 @@ from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import reveal_type
 from .format_strings import parse_format_string
-from .safe import safe_hasattr
+from .safe import safe_hasattr, safe_isinstance, safe_issubclass
 from .stacked_scopes import (
     NULL_CONSTRAINT,
     AbstractConstraint,
@@ -928,6 +928,25 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_issubclass_impl,
             callable=issubclass,
+        ),
+        Signature.make(
+            [SigParameter("obj"), SigParameter("class_or_tuple")],
+            impl=_isinstance_impl,
+            callable=safe_isinstance,
+        ),
+        Signature.make(
+            [
+                SigParameter("cls", _POS_ONLY, annotation=TypedValue(type)),
+                SigParameter(
+                    "class_or_tuple",
+                    _POS_ONLY,
+                    annotation=MultiValuedValue(
+                        [TypedValue(type), GenericValue(tuple, [TypedValue(type)])]
+                    ),
+                ),
+            ],
+            impl=_issubclass_impl,
+            callable=safe_issubclass,
         ),
         Signature.make(
             [
