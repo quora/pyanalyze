@@ -115,7 +115,7 @@ def f(x: NT) -> None:
         def capybara(x: Dict[int, str]):
             assert_is_value(
                 {k: v for k, v in x.items()},
-                GenericValue(dict, [TypedValue(int), TypedValue(str)]),
+                make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),
             )
 
     @assert_passes()

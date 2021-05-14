@@ -53,7 +53,7 @@ import qcore
 from qcore.helpers import safe_str
 
 from . import attributes, format_strings, node_visitor, importer, method_return_type
-from .annotations import type_from_value, is_typing_name
+from .annotations import type_from_runtime, type_from_value, is_typing_name
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
@@ -101,6 +101,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     NO_RETURN_VALUE,
+    make_weak,
     unite_values,
     KnownValue,
     TypedValue,
@@ -118,6 +119,7 @@ from .value import (
     CanAssignContext,
     concrete_values_from_iterable,
     TypeVarMap,
+    unpack_values,
 )
 
 T = TypeVar("T")
@@ -744,7 +746,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and not self.is_compiled
         ):
             self.attribute_checker.record_module_examined(self.module.__name__)
-        self.scopes = StackedScopes(self.module)
+
+        self.scopes = build_stacked_scopes(self.module)
         self.node_context = StackedContexts()
         self.asynq_checker = AsynqChecker(
             self.config,
@@ -1948,28 +1951,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     # Comprehensions
 
+    def visit_DictComp(self, node: ast.DictComp) -> Value:
+        return self._visit_sequence_comp(node, dict)
+
     def visit_ListComp(self, node: ast.ListComp) -> Value:
-        return self._visit_comprehension(node, list)
+        return self._visit_sequence_comp(node, list)
 
     def visit_SetComp(self, node: ast.SetComp) -> Value:
-        return self._visit_comprehension(node, set)
-
-    def visit_DictComp(self, node: ast.DictComp) -> Value:
-        if self.state == VisitorState.collect_names:
-            return TypedValue(dict)
-        with self.scopes.add_scope(ScopeType.function_scope, scope_node=node):
-            for state in (VisitorState.collect_names, VisitorState.check_names):
-                with qcore.override(self, "state", state):
-                    for generator in node.generators:
-                        self.visit(generator)
-                    with qcore.override(self, "in_comprehension_body", True):
-                        key = self.visit(node.key)
-                        value = self.visit(node.value)
-                    ret = GenericValue(dict, [key, value])
-        return ret
+        return self._visit_sequence_comp(node, set)
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Value:
-        return self._visit_comprehension(node, types.GeneratorType)
+        return self._visit_sequence_comp(node, types.GeneratorType)
 
     def visit_comprehension(
         self, node: ast.comprehension, iterable_type: Optional[Value] = None
@@ -1991,8 +1983,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         )
         return iterable_type
 
-    def _visit_comprehension(
-        self, node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp], typ: type
+    def _visit_sequence_comp(
+        self,
+        node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
+        typ: type,
     ) -> Value:
         # the iteree of the first generator is executed in the enclosing scope
         iterable_type = self._member_value_of_generator(node.generators[0])
@@ -2022,7 +2016,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _visit_comprehension_inner(
         self,
-        node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp],
+        node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
         typ: type,
         iterable_type: Value,
     ) -> Value:
@@ -2039,12 +2033,25 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             finally:
                 self.node_context.contexts.pop()
 
+        if isinstance(node, ast.DictComp):
+            with qcore.override(self, "in_comprehension_body", True):
+                key_value = self.visit(node.key)
+                value_value = self.visit(node.value)
+            if key_value is UNRESOLVED_VALUE and value_value is UNRESOLVED_VALUE:
+                return TypedValue(dict)
+            else:
+                return make_weak(GenericValue(dict, [key_value, value_value]))
+
         with qcore.override(self, "in_comprehension_body", True):
             member_value = self.visit(node.elt)
         if member_value is UNRESOLVED_VALUE:
             return TypedValue(typ)
         else:
-            return GenericValue(typ, [member_value])
+            if typ is types.GeneratorType:
+                return GenericValue(
+                    typ, [member_value, KnownValue(None), KnownValue(None)]
+                )
+            return make_weak(GenericValue(typ, [member_value]))
 
     # Literals and displays
 
@@ -2199,35 +2206,43 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, node: Union[ast.List, ast.Tuple], typ: type
     ) -> Optional[Value]:
         if self._is_write_ctx(node.ctx):
-            being_assigned = concrete_values_from_iterable(self.being_assigned, self)
-            if being_assigned is None:
+            target_length = 0
+            post_starred_length = None
+            for target in node.elts:
+                if isinstance(target, ast.Starred):
+                    if post_starred_length is not None:
+                        # This is a SyntaxError at runtime so it should never happen
+                        self.show_error(
+                            node,
+                            "Two starred expressions in assignment",
+                            error_code=ErrorCode.unexpected_node,
+                        )
+                        with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
+                            return self.generic_visit(node)
+                    else:
+                        post_starred_length = 0
+                elif post_starred_length is not None:
+                    post_starred_length += 1
+                else:
+                    target_length += 1
+
+            being_assigned = unpack_values(
+                self.being_assigned, self, target_length, post_starred_length
+            )
+            if isinstance(being_assigned, CanAssignError):
                 self.show_error(
-                    node, f"{self.being_assigned} is not iterable", ErrorCode.bad_unpack
+                    node,
+                    f"Cannot unpack {self.being_assigned}",
+                    ErrorCode.bad_unpack,
+                    detail=str(being_assigned),
                 )
                 with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
                     return self.generic_visit(node)
-            elif any(isinstance(elt, ast.Starred) for elt in node.elts):
-                # TODO handle * assignment in the left hand side
-                with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
-                    return self.generic_visit(node)
-            elif isinstance(being_assigned, Value):
-                with qcore.override(self, "being_assigned", being_assigned):
-                    return self.generic_visit(node)
-            else:
-                assign_to = node.elts
-                if len(assign_to) != len(being_assigned):
-                    self.show_error(
-                        node,
-                        "Length mismatch in unpacking assignment: expected"
-                        f" {len(assign_to)} elements but got {self.being_assigned}",
-                        ErrorCode.bad_unpack,
-                    )
-                    with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
-                        self.generic_visit(node)
-                else:
-                    for target, value in zip(assign_to, being_assigned):
-                        with qcore.override(self, "being_assigned", value):
-                            self.visit(target)
+
+            for target, value in zip(node.elts, being_assigned):
+                with qcore.override(self, "being_assigned", value):
+                    self.visit(target)
+            return None
         else:
             return self._visit_display_read(node, typ)
 
@@ -2272,7 +2287,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else:
                     values.append(elt)
             if has_unknown_value:
-                return GenericValue(typ, [unite_values(*values)])
+                return make_weak(GenericValue(typ, [unite_values(*values)]))
             else:
                 return SequenceIncompleteValue(typ, values)
 
@@ -4146,6 +4161,33 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 checker.types_with_dynamic_attrs
             )
             attribute_checker.filename_to_visitor.update(checker.filename_to_visitor)
+
+
+def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
+    """Build a StackedScopes object.
+
+    Not part of stacked_scopes.py to avoid a circular dependency.
+
+    """
+    if module is None:
+        module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
+    else:
+        module_vars = {key: KnownValue(value) for key, value in module.__dict__.items()}
+        module_vars = {}
+        annotations = getattr(module, "__annotations__", {})
+        for key, value in module.__dict__.items():
+            try:
+                annotation = annotations[key]
+            except Exception:
+                # Malformed __annotations__
+                val = KnownValue(value)
+            else:
+                if is_typing_name(annotation, "Final"):
+                    val = KnownValue(value)
+                else:
+                    val = type_from_runtime(annotation, globals=module.__dict__)
+            module_vars[key] = val
+    return StackedScopes(module_vars, module)
 
 
 def _get_task_cls(fn: Any) -> Any:

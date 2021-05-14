@@ -35,16 +35,16 @@ def safe_equals(left: object, right: object) -> bool:
         return False
 
 
-def safe_issubclass(value: type, typ: Union[type, Tuple[type, ...]]) -> bool:
+def safe_issubclass(cls: type, class_or_tuple: Union[type, Tuple[type, ...]]) -> bool:
     try:
-        return issubclass(value, typ)
+        return issubclass(cls, class_or_tuple)
     except Exception:
         return False
 
 
-def safe_isinstance(value: object, typ: Union[type, Tuple[type, ...]]) -> bool:
+def safe_isinstance(obj: object, class_or_tuple: Union[type, Tuple[type, ...]]) -> bool:
     try:
-        return isinstance(value, typ)
+        return isinstance(obj, class_or_tuple)
     except Exception:
         return False
 

@@ -229,7 +229,7 @@ class Constraint(AbstractConstraint):
         Produces zero or more values consistent both with the given
         value and with this constraint.
 
-        The value may not be a MultiValuedValue.
+        The value may not be a MultiValuedValue or AnnotatedValue.
 
         """
         if value is UNINITIALIZED_VALUE:
@@ -955,13 +955,9 @@ class StackedScopes:
         None,
     )
 
-    def __init__(self, module: Optional[ModuleType]) -> None:
-        if module is None:
-            module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
-        else:
-            module_vars = {
-                key: KnownValue(value) for key, value in module.__dict__.items()
-            }
+    def __init__(
+        self, module_vars: Dict[str, Value], module: Optional[ModuleType]
+    ) -> None:
         self.scopes = [
             self._builtin_scope,
             Scope(

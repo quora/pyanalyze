@@ -25,9 +25,9 @@ from typing import (
     Type,
     TypeVar,
 )
+from typing_extensions import Literal
 
 import pyanalyze
-from typing_extensions import Literal
 
 from .safe import safe_isinstance
 from .type_object import TypeObject
@@ -764,10 +764,7 @@ class CallableValue(TypedValue):
             if bound_method is not None:
                 signature = bound_method.get_signature()
         if signature is not None:
-            tv_map_or_error = self.signature.can_assign(signature, ctx)
-            if isinstance(tv_map_or_error, CanAssignError):
-                return tv_map_or_error
-            return tv_map_or_error
+            return self.signature.can_assign(signature, ctx)
 
         return super().can_assign(other, ctx)
 
@@ -1255,6 +1252,22 @@ class HasAttrExtension(Extension):
 
 
 @dataclass(frozen=True)
+class WeakExtension(Extension):
+    """Used to indicate that a generic argument to a container may be widened.
+
+    This is used only in conjuction with the special casing for functions
+    like list.extend. After code like `lst = [1, 2]; lst.extend([i for in range(5)])`
+    we may end up inferring a type like `List[Literal[0, 1, 2, 3, 4]]`, but that is
+    too narrow and leads to false positives if later code puts a different int in
+    the list. If the generic argument is instead annotated with WeakExtension, we
+    widen the type to accommodate later appends.
+
+    The TestGenericMutators.test_weak_value test case is an example.
+
+    """
+
+
+@dataclass(frozen=True)
 class AnnotatedValue(Value):
     """Value representing a PEP 593 Annotated object."""
 
@@ -1266,6 +1279,9 @@ class AnnotatedValue(Value):
 
     def get_type(self) -> Optional[type]:
         return self.value.get_type()
+
+    def get_type_value(self) -> Value:
+        return self.value.get_type_value()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         metadata = [val.substitute_typevars(typevars) for val in self.metadata]
@@ -1284,6 +1300,9 @@ class AnnotatedValue(Value):
         for data in self.metadata:
             if isinstance(data, typ):
                 yield data
+
+    def has_metadata_of_type(self, typ: Type[Extension]) -> bool:
+        return any(isinstance(data, typ) for data in self.metadata)
 
     def __str__(self) -> str:
         return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
@@ -1335,7 +1354,7 @@ class VariableNameValue(Value):
         return None
 
 
-def flatten_values(val: Value) -> Iterable[Value]:
+def flatten_values(val: Value, *, unwrap_annotated: bool = False) -> Iterable[Value]:
     """Flatten a MultiValuedValue into a single value.
 
     We don't need to do this recursively because the
@@ -1346,6 +1365,8 @@ def flatten_values(val: Value) -> Iterable[Value]:
         yield from val.vals
     elif isinstance(val, AnnotatedValue) and isinstance(val.value, MultiValuedValue):
         yield from val.value.vals
+    elif unwrap_annotated and isinstance(val, AnnotatedValue):
+        yield val.value
     else:
         yield val
 
@@ -1356,6 +1377,10 @@ def unify_typevar_maps(tv_maps: Sequence[TypeVarMap]) -> TypeVarMap:
         for tv, value in tv_map.items():
             raw_map[tv].append(value)
     return {tv: unite_values(*values) for tv, values in raw_map.items()}
+
+
+def make_weak(val: Value) -> Value:
+    return annotate_value(val, [WeakExtension()])
 
 
 def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:
@@ -1478,17 +1503,128 @@ def concrete_values_from_iterable(
     elif isinstance(value, AnnotatedValue):
         return concrete_values_from_iterable(value.value, ctx)
     value = replace_known_sequence_value(value)
-    if isinstance(value, SequenceIncompleteValue):
+    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
         return value.members
-    elif isinstance(value, DictIncompleteValue):
-        return [key for key, _ in value.items]
     tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(tv_map, CanAssignError):
         return tv_map.get(T, UNRESOLVED_VALUE)
     return None
 
 
+def unpack_values(
+    value: Value,
+    ctx: CanAssignContext,
+    target_length: int,
+    post_starred_length: Optional[int] = None,
+) -> Union[Sequence[Value], CanAssignError]:
+    """Implement iterable unpacking.
+
+    If post_starred_length is None, return a list of target_length values, or CanAssignError
+    if value is not an iterable of the expected length. If post_starred_length is not None,
+    return a list of target_length + 1 + post_starred_length values. This implements
+    unpacking like `a, b, *c, d = ...`.
+
+    """
+    if isinstance(value, MultiValuedValue):
+        subvals = [
+            unpack_values(val, ctx, target_length, post_starred_length)
+            for val in value.vals
+        ]
+        good_subvals = []
+        for subval in subvals:
+            if isinstance(subval, CanAssignError):
+                return CanAssignError(f"Cannot unpack {value}", [subval])
+            good_subvals.append(subval)
+        if not good_subvals:
+            return _create_unpacked_list(
+                UNRESOLVED_VALUE, target_length, post_starred_length
+            )
+        return [unite_values(*vals) for vals in zip(*good_subvals)]
+    elif isinstance(value, AnnotatedValue):
+        return unpack_values(value.value, ctx, target_length, post_starred_length)
+    value = replace_known_sequence_value(value)
+
+    # We treat the different sequence types differently here.
+    # - Tuples are  immutable so we can always unpack and show
+    #   an error if the length doesn't match.
+    # - Sets have randomized order so unpacking into specific values
+    #   doesn't make sense. We just fallback to the behavior for
+    #   general iterables.
+    # - Dicts do have deterministic order but unpacking them doesn't
+    #   seem like a common use case. They're also mutable, so if we
+    #   did decide to unpack, we'd have to do something similar to
+    #   what we do for lists.
+    # - Lists can be sensibly unpacked but they are also mutable. Therefore,
+    #   we try first to unpack into specific values, and if that doesn't
+    #   work due to a length mismatch we fall back to the generic
+    #   iterable approach. We experimented both with treating lists
+    #   like tuples and with always falling back, and both approaches
+    #   led to false positives.
+    if isinstance(value, SequenceIncompleteValue):
+        if value.typ is tuple:
+            return _unpack_value_sequence(
+                value, value.members, target_length, post_starred_length
+            )
+        elif value.typ is list:
+            vals = _unpack_value_sequence(
+                value, value.members, target_length, post_starred_length
+            )
+            if not isinstance(vals, CanAssignError):
+                return vals
+
+    tv_map = IterableValue.can_assign(value, ctx)
+    if isinstance(tv_map, CanAssignError):
+        return tv_map
+    iterable_type = tv_map.get(T, UNRESOLVED_VALUE)
+    return _create_unpacked_list(iterable_type, target_length, post_starred_length)
+
+
+def _create_unpacked_list(
+    iterable_type: Value, target_length: int, post_starred_length: Optional[int]
+) -> List[Value]:
+    if post_starred_length is not None:
+        return [
+            *([iterable_type] * target_length),
+            GenericValue(list, [iterable_type]),
+            *([iterable_type] * post_starred_length),
+        ]
+    else:
+        return [iterable_type] * target_length
+
+
+def _unpack_value_sequence(
+    value: Value,
+    members: Sequence[Value],
+    target_length: int,
+    post_starred_length: Optional[int],
+) -> Union[Sequence[Value], CanAssignError]:
+    actual_length = len(members)
+    if post_starred_length is None:
+        if actual_length != target_length:
+            return CanAssignError(
+                f"{value} is of length {actual_length} (expected {target_length})"
+            )
+        return members
+    if actual_length < target_length + post_starred_length:
+        return CanAssignError(
+            f"{value} is of length {actual_length} (expected at least"
+            f" {target_length + post_starred_length})"
+        )
+    head = members[:target_length]
+    if post_starred_length > 0:
+        body = SequenceIncompleteValue(
+            list, members[target_length:-post_starred_length]
+        )
+        tail = members[-post_starred_length:]
+    else:
+        body = SequenceIncompleteValue(list, members[target_length:])
+        tail = []
+    return [*head, body, *tail]
+
+
 def replace_known_sequence_value(value: Value) -> Value:
+    if isinstance(value, AnnotatedValue):
+        value = value.value
     if isinstance(value, KnownValue):
         if isinstance(value.val, (list, tuple, set)):
             return SequenceIncompleteValue(
