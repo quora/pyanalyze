@@ -260,13 +260,13 @@ class ArgSpecCache:
             ):
                 module = sys.modules[module_name]
                 *class_names, function_name = qualname.split(".")
-                class_obj: Any = module
+                class_obj = module
                 for class_name in class_names:
                     class_obj = getattr(class_obj, class_name, None)
                     if class_obj is None:
                         break
                 if (
-                    class_obj is not None
+                    isinstance(class_obj, type)
                     and inspect.getattr_static(class_obj, function_name, None)
                     is function_object
                 ):
