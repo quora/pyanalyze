@@ -4,3 +4,4 @@ pyanalyze/*.c
 *.pyc
 build/
 *.code-workspace
+.vscode/
