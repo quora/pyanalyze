@@ -38,7 +38,7 @@ KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 
 TypeVarMap = Mapping["TypeVar", "Value"]
 
-_type_object_cache: Dict[type, TypeObject] = {}
+_type_object_cache: Dict[Union[type, super], TypeObject] = {}
 
 
 class CanAssignContext:
