@@ -232,7 +232,13 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(
                 value._type_object_cache,
-                GenericValue(dict, [TypedValue(type), TypedValue(TypeObject)]),
+                GenericValue(
+                    dict,
+                    [
+                        MultiValuedValue([TypedValue(type), TypedValue(super)]),
+                        TypedValue(TypeObject),
+                    ],
+                ),
             )
             assert_is_value(
                 annotated_global, MultiValuedValue([TypedValue(str), KnownValue(None)])

@@ -74,7 +74,7 @@ class ConversionSpecifier:
     mapping_key: Optional[str] = None
     conversion_flags: Optional[str] = None
     field_width: Union[int, Literal["*"], None] = None
-    precision: Optional[int] = None
+    precision: Union[int, Literal["*"], None] = None
     length_modifier: Optional[str] = None
     is_bytes: bool = False
 
@@ -219,17 +219,11 @@ class PercentFormatString:
     raw_pieces: Sequence[str] = ()
 
     @classmethod
-    def from_pattern(cls, pattern: Union[str, bytes]) -> "PercentFormatString":
+    def from_pattern(cls, pattern: str) -> "PercentFormatString":
         """Creates a parsed PercentFormatString from a raw string."""
-        if isinstance(pattern, bytes):
-            is_bytes = True
-            rgx = _FORMAT_STRING_REGEX_BYTES
-        elif isinstance(pattern, str):
-            is_bytes = False
-            rgx = _FORMAT_STRING_REGEX_TEXT
-        else:
+        if not isinstance(pattern, str):
             raise TypeError("invalid type for format string: {!r}".format(pattern))
-        matches = list(rgx.finditer(pattern))
+        matches = list(_FORMAT_STRING_REGEX_TEXT.finditer(pattern))
         specifiers = tuple(
             ConversionSpecifier.from_match(match)
             for match in matches
@@ -238,14 +232,30 @@ class PercentFormatString:
         raw_pieces = [match.group("pre_match") for match in matches]
         if len(raw_pieces) == len(specifiers) + 2:
             raw_pieces = raw_pieces[:-1]
-        if pattern.endswith(b"\n" if is_bytes else "\n"):
+        if pattern.endswith("\n"):
             # due to a quirk in the re module, the final newline otherwise gets removed
-            raw_pieces[-1] += b"\n" if is_bytes else "\n"
+            raw_pieces[-1] += "\n"
         return cls(
-            pattern,
-            is_bytes=is_bytes,
-            specifiers=specifiers,
-            raw_pieces=tuple(raw_pieces),
+            pattern, is_bytes=False, specifiers=specifiers, raw_pieces=tuple(raw_pieces)
+        )
+
+    @classmethod
+    def from_bytes_pattern(cls, pattern: bytes) -> "PercentFormatString":
+        """Creates a parsed PercentFormatString from a raw bytestring."""
+        matches = list(_FORMAT_STRING_REGEX_BYTES.finditer(pattern))
+        specifiers = tuple(
+            ConversionSpecifier.from_match(match)
+            for match in matches
+            if match.group("conversion_type") is not None
+        )
+        raw_pieces = [match.group("pre_match") for match in matches]
+        if len(raw_pieces) == len(specifiers) + 2:
+            raw_pieces = raw_pieces[:-1]
+        if pattern.endswith(b"\n"):
+            # due to a quirk in the re module, the final newline otherwise gets removed
+            raw_pieces[-1] += b"\n"
+        return cls(
+            pattern, is_bytes=True, specifiers=specifiers, raw_pieces=tuple(raw_pieces)
         )
 
     def needs_mapping(self) -> bool:
@@ -368,7 +378,10 @@ def check_string_format(
     on_error: Callable[..., None],
 ) -> Tuple[Value, Optional[ast.AST]]:
     """Checks that arguments to %-formatted strings are correct."""
-    fs = PercentFormatString.from_pattern(format_str)
+    if isinstance(format_str, bytes):
+        fs = PercentFormatString.from_bytes_pattern(format_str)
+    else:
+        fs = PercentFormatString.from_pattern(format_str)
     for err in fs.lint():
         on_error(node, err, error_code=ErrorCode.bad_format_string)
     for err in fs.accept(args):

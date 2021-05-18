@@ -14,6 +14,7 @@ from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .tests import l0cached_async_fn
 from .value import (
     KnownValue,
+    MultiValuedValue,
     NewTypeValue,
     TypedValue,
     GenericValue,
@@ -356,3 +357,41 @@ class TestCoroutines(TestNameCheckVisitorBase):
 
         async def g():
             assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
+
+
+class TestClassInstantiation(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_union_with_impl(self):
+        def capybara(cond: bool) -> None:
+            if cond:
+                typ = list
+            else:
+                typ = tuple
+            assert_is_value(
+                typ, MultiValuedValue([KnownValue(list), KnownValue(tuple)])
+            )
+            assert_is_value(
+                typ([1]), MultiValuedValue([KnownValue((1,)), KnownValue([1])])
+            )
+
+    @assert_passes()
+    def test_union_without_impl(self):
+        class A:
+            pass
+
+        class B:
+            pass
+
+        def capybara(cond: bool) -> None:
+            if cond:
+                cls = A
+            else:
+                cls = B
+            assert_is_value(cls(), MultiValuedValue([TypedValue(A), TypedValue(B)]))
+
+
+class TestFunctionsSafeToCall(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        def test(self):
+            assert_is_value(sorted([3, 1, 2]), KnownValue([1, 2, 3]))

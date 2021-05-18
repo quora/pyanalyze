@@ -12,9 +12,10 @@ from .stacked_scopes import (
     OrConstraint,
     Varname,
 )
-from .signature import SigParameter, Signature, ImplReturn, CallContext
+from .signature import ANY_SIGNATURE, SigParameter, Signature, ImplReturn, CallContext
 from .value import (
     AnnotatedValue,
+    CallableValue,
     CanAssignError,
     HasAttrGuardExtension,
     ParameterTypeGuardExtension,
@@ -45,6 +46,7 @@ from itertools import product
 import qcore
 import inspect
 import warnings
+from types import FunctionType
 from typing import cast, Dict, NewType, Callable, TypeVar, Optional, Union
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
@@ -799,19 +801,24 @@ def _str_format_impl(ctx: CallContext) -> Value:
                     error_code=ErrorCode.incompatible_call,
                 )
             used_kwargs.add(field.arg_name)
-    unused_indices = set(range(len(args))) - used_indices
-    if unused_indices:
-        ctx.show_error(
-            "Numbered argument(s) %s were not used"
-            % ", ".join(map(str, sorted(unused_indices))),
-            error_code=ErrorCode.incompatible_call,
-        )
-    unused_kwargs = set(kwargs) - used_kwargs
-    if unused_kwargs:
-        ctx.show_error(
-            "Named argument(s) %s were not used" % ", ".join(sorted(unused_kwargs)),
-            error_code=ErrorCode.incompatible_call,
-        )
+    # Skip these checks in unions because the arguments may be used in a
+    # different branch of the union. Ideally we'd error if they are unused
+    # in all variants, but that's difficult to achieve with the current
+    # abstractions.
+    if not ctx.visitor.in_union_decomposition:
+        unused_indices = set(range(len(args))) - used_indices
+        if unused_indices:
+            ctx.show_error(
+                "Numbered argument(s) %s were not used"
+                % ", ".join(map(str, sorted(unused_indices))),
+                error_code=ErrorCode.incompatible_call,
+            )
+        unused_kwargs = set(kwargs) - used_kwargs
+        if unused_kwargs:
+            ctx.show_error(
+                "Named argument(s) %s were not used" % ", ".join(sorted(unused_kwargs)),
+                error_code=ErrorCode.incompatible_call,
+            )
     return TypedValue(str)
 
 
@@ -1074,6 +1081,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             TypedValue(str),
             callable=bytes.decode,
+            allow_call=True,
         ),
         Signature.make(
             [
@@ -1085,6 +1093,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             TypedValue(bytes),
             callable=str.encode,
+            allow_call=True,
         ),
         Signature.make(
             [
@@ -1160,6 +1169,33 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=len,
             impl=_len_impl,
+        ),
+        # TypeGuards, which aren't in typeshed yet
+        Signature.make(
+            [
+                SigParameter(
+                    "obj", SigParameter.POSITIONAL_ONLY, annotation=TypedValue(object)
+                )
+            ],
+            callable=callable,
+            return_annotation=AnnotatedValue(
+                TypedValue(bool),
+                [ParameterTypeGuardExtension("obj", CallableValue(ANY_SIGNATURE))],
+            ),
+        ),
+        Signature.make(
+            [
+                SigParameter(
+                    "object",
+                    SigParameter.POSITIONAL_OR_KEYWORD,
+                    annotation=TypedValue(object),
+                )
+            ],
+            callable=inspect.isfunction,
+            return_annotation=AnnotatedValue(
+                TypedValue(bool),
+                [ParameterTypeGuardExtension("object", TypedValue(FunctionType))],
+            ),
         ),
     ]
     return {sig.callable: sig for sig in signatures}

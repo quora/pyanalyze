@@ -47,6 +47,7 @@ from functools import reduce
 from types import MethodType, FunctionType
 import inspect
 import qcore
+from qcore.helpers import safe_str
 from typing import (
     Any,
     Iterable,
@@ -208,10 +209,11 @@ class Signature:
 
     signature: inspect.Signature
     impl: Optional[Impl] = field(default=None, compare=False)
-    callable: Optional[object] = field(default=None, compare=False)
+    callable: Optional[Callable[..., Any]] = field(default=None, compare=False)
     is_asynq: bool = False
     has_return_annotation: bool = True
     is_ellipsis_args: bool = False
+    allow_call: bool = False
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
         init=False, default_factory=dict, repr=False, compare=False
     )
@@ -361,11 +363,6 @@ class Signature:
         the local variables to validate types and keyword-only arguments.
 
         """
-        if self.is_ellipsis_args:
-            return_value = self.signature.return_annotation
-            if return_value is EMPTY:
-                return ImplReturn(UNRESOLVED_VALUE)
-            return ImplReturn(return_value)
         call_args = []
         call_kwargs = {}
         for composite, label in args:
@@ -379,6 +376,19 @@ class Signature:
                 # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
                 # - else do something smart to still typecheck the call
                 return ImplReturn(UNRESOLVED_VALUE)
+
+        if self.is_ellipsis_args:
+            if self.allow_call:
+                runtime_return = self._maybe_perform_call(
+                    call_args, call_kwargs, visitor, node
+                )
+                if runtime_return is not None:
+                    return ImplReturn(runtime_return)
+            return_value = self.signature.return_annotation
+            if return_value is EMPTY:
+                return ImplReturn(UNRESOLVED_VALUE)
+            return ImplReturn(return_value)
+
         try:
             bound_args = self.signature.bind(*call_args, **call_kwargs)
         except TypeError as e:
@@ -430,10 +440,46 @@ class Signature:
             )
             return_value = self.impl(ctx)
             return self._apply_annotated_constraints(return_value, bound_args)
-        elif return_value is EMPTY:
+        if self.allow_call:
+            runtime_return = self._maybe_perform_call(
+                call_args, call_kwargs, visitor, node
+            )
+            if runtime_return is not None:
+                return ImplReturn(runtime_return)
+        if return_value is EMPTY:
             return ImplReturn(UNRESOLVED_VALUE)
         else:
             return self._apply_annotated_constraints(return_value, bound_args)
+
+    def _maybe_perform_call(
+        self,
+        call_args: List[Composite],
+        call_kwargs: Dict[str, Composite],
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+    ) -> Optional[Value]:
+        if self.callable is None:
+            return None
+        args = []
+        for composite in call_args:
+            if isinstance(composite.value, KnownValue):
+                args.append(composite.value.val)
+            else:
+                return None
+        kwargs = {}
+        for key, composite in call_kwargs.items():
+            if isinstance(composite.value, KnownValue):
+                kwargs[key] = composite.value.val
+            else:
+                return None
+        try:
+            value = self.callable(*args, **kwargs)
+        except Exception as e:
+            message = f"Error calling {self}: {safe_str(e)}"
+            visitor._show_error_if_checking(node, message, ErrorCode.incompatible_call)
+            return None
+        else:
+            return KnownValue(value)
 
     def can_assign(self, other: "Signature", ctx: CanAssignContext) -> CanAssign:
         """Equivalent of Value.can_assign.
@@ -659,6 +705,7 @@ class Signature:
             is_asynq=self.is_asynq,
             has_return_annotation=self.has_return_annotation,
             is_ellipsis_args=self.is_ellipsis_args,
+            allow_call=self.allow_call,
         )
 
     def walk_values(self) -> Iterable[Value]:
@@ -682,6 +729,7 @@ class Signature:
             has_return_annotation=self.has_return_annotation,
             is_ellipsis_args=self.is_ellipsis_args,
             is_asynq=False,
+            allow_call=self.allow_call,
         )
 
     @classmethod
@@ -695,6 +743,7 @@ class Signature:
         has_return_annotation: bool = True,
         is_ellipsis_args: bool = False,
         is_asynq: bool = False,
+        allow_call: bool = False,
     ) -> "Signature":
         if return_annotation is None:
             return_annotation = UNRESOLVED_VALUE
@@ -708,6 +757,7 @@ class Signature:
             has_return_annotation=has_return_annotation,
             is_ellipsis_args=is_ellipsis_args,
             is_asynq=is_asynq,
+            allow_call=allow_call,
         )
 
     def __str__(self) -> str:
@@ -756,45 +806,67 @@ class Signature:
         return self.signature.return_annotation
 
 
+# Signature that should be compatible with any other Signature
+ANY_SIGNATURE = Signature.make(
+    [], UNRESOLVED_VALUE, is_ellipsis_args=True, is_asynq=True
+)
+
+
 @dataclass
 class BoundMethodSignature:
     signature: Signature
     self_value: Value
+    return_override: Optional[Value] = None
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
-        return self.signature.check_call(
+    ) -> ImplReturn:
+        ret = self.signature.check_call(
             # TODO get a composite
             [(Composite(self.self_value, None, None), None), *args],
             visitor,
             node,
         )
+        if self.return_override is not None and not self.signature.has_return_value():
+            return ImplReturn(
+                self.return_override, ret.constraint, ret.no_return_unless
+            )
+        return ret
 
     def get_signature(self) -> Optional[Signature]:
+        if self.signature.is_ellipsis_args:
+            return ANY_SIGNATURE
         params = list(self.signature.signature.parameters.values())
-        if params[0].kind not in (
+        if not params or params[0].kind not in (
             SigParameter.POSITIONAL_ONLY,
             SigParameter.POSITIONAL_OR_KEYWORD,
         ):
             return None
         return Signature(
             signature=inspect.Signature(
-                params[1:], return_annotation=self.signature.signature.return_annotation
+                params[1:], return_annotation=self.return_value
             ),
             # We don't carry over the implementation function, because it may not work when passed
             # different arguments.
             callable=self.signature.callable,
             is_asynq=self.signature.is_asynq,
-            has_return_annotation=self.signature.has_return_annotation,
+            has_return_annotation=self.has_return_value(),
+            is_ellipsis_args=self.signature.is_ellipsis_args,
+            allow_call=self.signature.allow_call,
         )
 
     def has_return_value(self) -> bool:
+        if self.return_override is not None:
+            return True
         return self.signature.has_return_value()
 
     @property
     def return_value(self) -> Value:
-        return self.signature.return_value
+        if self.signature.has_return_value():
+            return self.signature.return_value
+        if self.return_override is not None:
+            return self.return_override
+        return UNRESOLVED_VALUE
 
 
 @dataclass
@@ -806,7 +878,7 @@ class PropertyArgSpec:
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+    ) -> ImplReturn:
         raise TypeError("property object is not callable")
 
     def has_return_value(self) -> bool:
@@ -817,14 +889,16 @@ MaybeSignature = Union[None, Signature, BoundMethodSignature, PropertyArgSpec]
 
 
 def make_bound_method(
-    argspec: MaybeSignature, self_value: Value
+    argspec: MaybeSignature, self_value: Value, return_override: Optional[Value] = None
 ) -> Optional[BoundMethodSignature]:
     if argspec is None:
         return None
     if isinstance(argspec, Signature):
-        return BoundMethodSignature(argspec, self_value)
+        return BoundMethodSignature(argspec, self_value, return_override)
     elif isinstance(argspec, BoundMethodSignature):
-        return BoundMethodSignature(argspec.signature, self_value)
+        if return_override is None:
+            return_override = argspec.return_override
+        return BoundMethodSignature(argspec.signature, self_value, return_override)
     else:
         assert False, f"invalid argspec {argspec}"
 

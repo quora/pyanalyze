@@ -27,6 +27,7 @@ from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
     AsyncTaskIncompleteValue,
+    CallableValue,
     DictIncompleteValue,
     KnownValue,
     MultiValuedValue,
@@ -119,6 +120,7 @@ def _make_module(code_str: str) -> types.ModuleType:
     extra_scope = dict(
         assert_is_value=assert_is_value,
         AsyncTaskIncompleteValue=AsyncTaskIncompleteValue,
+        CallableValue=CallableValue,
         DictIncompleteValue=DictIncompleteValue,
         GenericValue=GenericValue,
         KnownValue=KnownValue,
@@ -337,9 +339,8 @@ def run():
         else:
             goes_in_set = "capybara"
         if False:
-            assert_is_value(
-                goes_in_set, MultiValuedValue([KnownValue("capybara"), KnownValue([])])
-            )
+            # The assignment actually executed at runtime wins
+            assert_is_value(goes_in_set, KnownValue("capybara"))
             print({goes_in_set})
 
     @assert_passes()
@@ -415,8 +416,13 @@ def run():
 
     @assert_passes()
     def test_binop(self):
+        from typing import Union
+
         def tucotuco():
             assert_is_value(2 + 3, KnownValue(5))
+
+        def capybara(x: Union[int, float], y: Union[int, float]) -> float:
+            return x + y
 
     @assert_passes()
     def test_inplace_binop(self):
@@ -515,7 +521,7 @@ def run():
             y = 3 if x else 4
             assert_is_value(y, MultiValuedValue([KnownValue(3), KnownValue(4)]))
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_namedtuple(self):
         import collections
 
@@ -523,7 +529,18 @@ def run():
 
         def fn():
             t = typ(1, 2)
-            print(t.baz)
+            print(t.baz)  # E: undefined_attribute
+
+    @assert_passes()
+    def test_local_namedtuple(self):
+        import collections
+
+        def capybara():
+            typ = collections.namedtuple("typ", "foo bar")
+            # For now just test that this produces no errors; if we
+            # add support for local namedtuples we can assert something
+            # more precise here.
+            print(typ(1, 2))
 
     @assert_passes()
     def test_set_after_get(self):
@@ -1103,13 +1120,6 @@ class TestVariableNameValue(TestNameCheckVisitorBase):
             assert_is_value(self.uid, VariableNameValue(["uid"]))
 
 
-class TestFunctionsSafeToCall(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test(self):
-        def test(self):
-            assert_is_value(sorted([3, 1, 2]), KnownValue([1, 2, 3]))
-
-
 class TestImports(TestNameCheckVisitorBase):
     def test_star_import(self):
         self.assert_passes(
@@ -1606,6 +1616,15 @@ class TestSubscripting(TestNameCheckVisitorBase):
             return [1, 2][3.0]
 
     @assert_passes()
+    def test_union(self):
+        from typing import Dict, Any, Union
+
+        def capybara(seq: Union[Dict[int, str], Any]) -> None:
+            assert_is_value(
+                seq[0], MultiValuedValue([TypedValue(str), UNRESOLVED_VALUE])
+            )
+
+    @assert_passes()
     def test_weak():
         from typing import Any, Dict, List
 
@@ -1649,6 +1668,13 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(1 + float(x), TypedValue(float))
             assert_is_value(1.0 + int(x), TypedValue(float))
             assert_is_value(3 * 3.0 + 1, KnownValue(10.0))
+
+    @assert_passes()
+    def test_union(self):
+        from typing import Union
+
+        def capybara(x: Union[int, str]) -> None:
+            assert_is_value(x * 3, MultiValuedValue([TypedValue(int), TypedValue(str)]))
 
     @assert_passes()
     def test_rop(self):
