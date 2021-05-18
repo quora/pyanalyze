@@ -3993,6 +3993,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> MaybeSignature:
         if isinstance(value, AnnotatedValue):
             value = value.value
+        if isinstance(value, TypeVarValue):
+            value = value.get_fallback_value()
         if isinstance(value, KnownValue):
             argspec = self.arg_spec_cache.get_argspec(value.val)
             if argspec is None:
