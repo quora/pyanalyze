@@ -39,7 +39,7 @@ from .value import (
     flatten_values,
     replace_known_sequence_value,
     dump_value,
-    assert_is_value
+    assert_is_value,
 )
 
 from functools import reduce
