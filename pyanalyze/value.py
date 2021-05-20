@@ -69,7 +69,7 @@ class Value:
         are not compatible.
 
         For example, calling ``a.can_assign(b, ctx)`` where `a` is ``Iterable[T]``
-        and ``b`` is ``List[int]`` will return ``{T: TypedValue(int)}``.
+        and `b` is ``List[int]`` will return ``{T: TypedValue(int)}``.
 
         This is the primary mechanism used for checking type compatibility.
 

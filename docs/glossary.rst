@@ -9,7 +9,7 @@ Glossary
         :term:`varname`). Constraints are inferred from function
         calls like :func:`isinstance`, conditions like ``is None``,
         and assertions.
-    
+
     impl
         An impl function is a callback that gets called when the
         type checker encounters a particular function. For example,
@@ -28,7 +28,7 @@ Glossary
         Values are pervasive throughout the pyanalyze codebase.
 
     varname
-        A variable name used with a :term:`constraint`. This is
-        either a string (representing a simple variable) or a
+        The object that a :term:`constraint` operates on. This is
+        either a string (representing a variable name) or a
         :class:`pyanalyze.stacked_scopes.CompositeVariable`,
-        representing an attribute or index on a local variable.
+        representing an attribute or index on a variable.
