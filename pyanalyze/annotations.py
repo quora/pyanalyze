@@ -408,10 +408,12 @@ def _eval_forward_ref(val: str, ctx: Context) -> Value:
 def _type_from_value(value: Value, ctx: Context) -> Value:
     if isinstance(value, KnownValue):
         return _type_from_runtime(value.val, ctx)
-    elif isinstance(value, (TypeVarValue, TypedValue)):
+    elif isinstance(value, TypeVarValue):
         return value
     elif isinstance(value, MultiValuedValue):
         return unite_values(*[_type_from_value(val, ctx) for val in value.vals])
+    elif isinstance(value, AnnotatedValue):
+        return _type_from_value(value.value, ctx)
     elif isinstance(value, _SubscriptedValue):
         if isinstance(value.root, GenericValue):
             if len(value.root.args) == len(value.members):
