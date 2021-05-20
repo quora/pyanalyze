@@ -1,6 +1,8 @@
 """
 
-Wrappers around Signature objects.
+The :class:`Signature` object and associated functionality. This
+provides a way to represent rich callable objects and type check
+calls.
 
 """
 
@@ -79,19 +81,20 @@ Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 
 class ImplReturn(NamedTuple):
-    """Return value of impl functions.
+    """Return value of :term:`impl` functions.
 
-    These functions return either a single Value object, indicating what the
-    function returns, or an instance of this class:
-    - The return value
-    - A Constraint indicating things that are true if the function returns a truthy value,
-      or a PredicateProvider
-    - A Constraint indicating things that are true unless the function does not return
+    These functions return either a single :class:`pyanalyze.value.Value`
+    object, indicating what the function returns, or an instance of this class.
+
     """
 
     return_value: Value
+    """The return value of the function."""
     constraint: Union[AbstractConstraint, PredicateProvider] = NULL_CONSTRAINT
+    """A ``Constraint`` indicating things that are true if the function returns a truthy value,
+    or a ``PredicateProvider``."""
     no_return_unless: AbstractConstraint = NULL_CONSTRAINT
+    """A ``Constraint`` indicating things that are true unless the function does not return."""
 
 
 @dataclass
@@ -110,6 +113,12 @@ class CallContext:
         return None
 
     def varname_for_arg(self, arg: str) -> Optional[Varname]:
+        """Return a :term:`varname` corresponding to the given function argument.
+
+        This is useful for creating a :class:`pyanalyze.stacked_scopes.Constraint`
+        referencing the argument.
+
+        """
         composite = self.composite_for_arg(arg)
         if composite is not None:
             return composite.varname
@@ -806,14 +815,17 @@ class Signature:
         return self.signature.return_annotation
 
 
-# Signature that should be compatible with any other Signature
 ANY_SIGNATURE = Signature.make(
     [], UNRESOLVED_VALUE, is_ellipsis_args=True, is_asynq=True
 )
+""":class:`Signature` that should be compatible with any other
+:class:`Signature`."""
 
 
 @dataclass
 class BoundMethodSignature:
+    """Signature for a method bound to a particular value."""
+
     signature: Signature
     self_value: Value
     return_override: Optional[Value] = None

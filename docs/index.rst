@@ -10,6 +10,14 @@ Welcome to pyanalyze's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   glossary
+   reference/annotations
+   reference/ast_annotator
+   reference/extensions
+   reference/name_check_visitor
+   reference/signature
+   reference/stacked_scopes
+   reference/value
 
 
 Indices and tables

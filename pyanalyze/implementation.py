@@ -38,6 +38,8 @@ from .value import (
     unite_values,
     flatten_values,
     replace_known_sequence_value,
+    dump_value,
+    assert_is_value
 )
 
 from functools import reduce
@@ -53,27 +55,6 @@ _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
 
 T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
-
-
-def assert_is_value(obj: object, value: Value) -> None:
-    """Used to test test_scope's value inference.
-
-    Takes two arguments: a Python object and a Value object. This function does nothing at runtime,
-    but test_scope checks that when it encounters a call to assert_is_value, the inferred value of
-    the object matches that in the call.
-
-    """
-    pass
-
-
-def dump_value(value: object) -> None:
-    """Used for debugging test_scope.
-
-    Calling it will make pyanalyze print out an internal representation of the argument's inferred
-    value. Does nothing at runtime. Use reveal_type() for a more user-friendly representation.
-
-    """
-    pass
 
 
 def _maybe_or_constraint(

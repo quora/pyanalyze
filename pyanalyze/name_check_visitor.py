@@ -1,8 +1,10 @@
 """
 
-Implementation of the core of pyanalyze.
+The core of the pyanalyze type checker.
 
-Contains an AST visitor that visits each node and infers a value for most nodes.
+:class:`NameCheckVisitor` is the AST visitor that powers pyanalyze's
+type inference. It is the central object that invokes other parts of
+the system.
 
 """
 from abc import abstractmethod
@@ -176,7 +178,7 @@ COMPARATOR_TO_OPERATOR = {
 
 
 @dataclass
-class StarredValue(Value):
+class _StarredValue(Value):
     """Helper Value to represent the result of "*x".
 
     Should not escape this file.
@@ -446,11 +448,12 @@ class ClassAttributeChecker:
         """Attempts to find attributes.
 
         This relies on comparing the set of attributes read on each class with the attributes in the
-        class's __dict__. It has many false positives and should be considered experimental.
+        class's ``__dict__``. It has many false positives and should be considered experimental.
 
         Some known causes of false positives:
+
         - Methods called in base classes of children (mixins)
-        - Special methods like __eq__
+        - Special methods like ``__eq__``
         - Insufficiently powerful type inference
 
         """
@@ -675,7 +678,7 @@ class CallSiteCollector:
 
 
 class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
-    """Visitor class that infers the type and value of Python objects and detects some errors."""
+    """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
     config = Config()  # subclasses may override this with a more specific config
@@ -830,7 +833,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return importer.load_module_from_file(filename)
 
     def check(self, ignore_missing_module: bool = False) -> List[node_visitor.Failure]:
-        """Runs the visitor on this module."""
+        """Run the visitor on this module."""
         start_time = qcore.utime()
         try:
             if self.is_compiled:
@@ -875,7 +878,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return self.all_failures
 
     def visit(self, node: ast.AST) -> Value:
-        """Visits a node and ensures that it returns UNRESOLVED_VALUE when necessary."""
+        """Visit a node and return the :class:`pyanalyze.value.Value` corresponding
+        to the node."""
         # inline self.node_context.add and the superclass's visit() for performance
         node_type = type(node)
         method = self._method_cache[node_type]
@@ -910,7 +914,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return ret
 
     def generic_visit(self, node: ast.AST) -> None:
-        """Inlined version of ast.Visitor.generic_visit for performance."""
+        # Inlined version of ast.Visitor.generic_visit for performance.
         for field in node._fields:
             try:
                 value = getattr(node, field)
@@ -998,7 +1002,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> Value:
         """Resolves a Name node to a value.
 
-        If error_node is given, it is used (instead of Node) to show errors on.
+        :param node: Node to resolve the name from
+        :type node: ast.AST
+
+        :param error_node: If given, this AST node is used instead of `node`
+                           for displaying errors.
+        :type error_node: Optional[ast.AST]
+
+        :param suppress_errors: If True, do not produce errors if the name is
+                                undefined.
+        :type suppress_errors: bool
 
         """
         if error_node is None:
@@ -2058,12 +2071,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     # Literals and displays
 
     def visit_JoinedStr(self, node: ast.JoinedStr) -> Value:
-        """JoinedStr is the node type for f-strings.
-
-        Not too much to check here. Perhaps we can add checks that format specifiers
-        are valid.
-
-        """
+        # JoinedStr is the node type for f-strings.
+        # Not too much to check here. Perhaps we can add checks that format specifiers
+        # are valid.
         self._generic_visit_list(node.values)
         return TypedValue(str)
 
@@ -2139,11 +2149,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return KnownValue(node.value)
 
     def visit_Dict(self, node: ast.Dict) -> Value:
-        """Returns a KnownValue if all the keys and values can be resolved to KnownValues.
-
-        Also checks that there are no duplicate keys and that all keys are hashable.
-
-        """
         ret = {}
         all_pairs = []
         has_UNRESOLVED_VALUE = False
@@ -2270,7 +2275,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             values = []
             has_unknown_value = False
             for elt in elts:
-                if isinstance(elt, StarredValue):
+                if isinstance(elt, _StarredValue):
                     vals = concrete_values_from_iterable(elt.value, self)
                     if vals is None:
                         self.show_error(
@@ -2302,17 +2307,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def constraint_from_bool_op(
         self, node: ast.BoolOp
     ) -> Tuple[Value, AbstractConstraint]:
-        """Visit an AND or OR expression.
+        # Visit an AND or OR expression.
 
-        We want to show an error if the left operand in a BoolOp is always true,
-        so we use constraint_from_condition.
+        # We want to show an error if the left operand in a BoolOp is always true,
+        # so we use constraint_from_condition.
 
-        Within the BoolOp itself we set additional constraints: for an AND
-        clause we know that if it is executed, all constraints to its left must
-        be true, so we set a positive constraint; for OR it is the opposite, so
-        we set a negative constraint.
+        # Within the BoolOp itself we set additional constraints: for an AND
+        # clause we know that if it is executed, all constraints to its left must
+        # be true, so we set a positive constraint; for OR it is the opposite, so
+        # we set a negative constraint.
 
-        """
         is_and = isinstance(node.op, ast.And)
         out_constraints = []
         with self.scopes.subscope():
@@ -2705,7 +2709,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return UNRESOLVED_VALUE
 
     def visit_Return(self, node: ast.Return) -> None:
-        """For return type inference, set the pseudo-variable RETURN_VALUE in the local scope."""
+        # For return type inference, set the pseudo-variable RETURN_VALUE in the local scope.
         if node.value is None:
             value = KnownNone
             if self.current_function_name is not None:
@@ -3257,7 +3261,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def visit_Starred(self, node: ast.Starred) -> Value:
         val = self.visit(node.value)
-        return StarredValue(val, node.value)
+        return _StarredValue(val, node.value)
 
     def visit_arg(self, node: ast.arg) -> None:
         self.yield_checker.record_assignment(node.arg)
@@ -3512,13 +3516,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return self.composite_from_attribute(node).value
 
     def composite_from_attribute(self, node: ast.Attribute) -> Composite:
-        """Visits an Attribute node (e.g. a.b).
-
-        This resolves the value on the left and checks that it has the attribute. If it does not, an
-        error is shown, unless the node matches IGNORED_PATHS or IGNORED_END_OF_REFERENCE.
-
-        """
-
         if isinstance(node.value, ast.Name):
             attr_str = f"{node.value.id}.{node.attr}"
             if self._is_write_ctx(node.ctx):
@@ -3579,7 +3576,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> Value:
         """Get an attribute of this value.
 
-        Returns UninitializedValue if the attribute cannot be found.
+        Returns :data:`pyanalyze.value.UNINITIALIZED_VALUE` if the attribute cannot be found.
 
         """
         if isinstance(root_value, MultiValuedValue):
@@ -3728,7 +3725,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def varname_for_self_constraint(self, node: ast.AST) -> Optional[Varname]:
         """Helper for constraints on self from method calls.
 
-        Given a Call node representing a method call, return the variable name
+        Given an ``ast.Call`` node representing a method call, return the variable name
         to be used for a constraint on the self object.
 
         """
@@ -3761,12 +3758,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return (node.arg, self.composite_from_node(node.value))
 
     def visit_Call(self, node: ast.Call) -> Value:
-        """Call nodes represent function or other calls.
-
-        We try to resolve the callee node into a value and then check whether its signature
-        is compatible with the arguments that are passed to it.
-
-        """
         val, _ = self.constraint_from_call(node)
         return val
 
@@ -3902,7 +3893,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         else:
             arguments = [
-                (arg, ARGS) if isinstance(arg.value, StarredValue) else (arg, None)
+                (arg, ARGS) if isinstance(arg.value, _StarredValue) else (arg, None)
                 for arg in args
             ] + [
                 (value, KWARGS) if keyword is None else (value, keyword)
@@ -4285,11 +4276,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
 
 def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
-    """Build a StackedScopes object.
-
-    Not part of stacked_scopes.py to avoid a circular dependency.
-
-    """
+    # Build a StackedScopes object.
+    # Not part of stacked_scopes.py to avoid a circular dependency.
     if module is None:
         module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
     else:

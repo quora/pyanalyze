@@ -1,6 +1,10 @@
 """
 
-Extensions to the type system supported by pyanalyze.
+Extensions to the type system supported by pyanalyze. These can be imported at runtime and used in user code.
+
+Several type system extensions are used with the ``Annotated`` type from
+`PEP 593 <https://www.python.org/dev/peps/pep-0593/>`_. This allows them to
+be gracefully ignored by other type checkers.
 
 """
 from dataclasses import dataclass
@@ -26,12 +30,13 @@ class _AsynqCallableMeta(type):
 
 @dataclass(frozen=True)
 class AsynqCallable(metaclass=_AsynqCallableMeta):
-    """Represents an asynq function (a function decorated with @asynq()).
+    """Represents an `asynq <https://github.com/quora/asynq>`_ function (a function decorated with ``@asynq()``).
 
-    Similar to Callable, but AsynqCallables also support being called
-    with .asynq().
+    Similar to ``Callable``, but ``AsynqCallable`` also supports calls
+    through ``.asynq()``. Because asynq functions can also be called synchronously,
+    an asynq function is assignable to a non-asynq function, but not the reverse.
 
-    The first argument should be the argument list, as for Callable. Examples:
+    The first argument should be the argument list, as for ``Callable``. Examples::
 
         AsynqCallable[..., int]  # may take any arguments, returns an int
         AsynqCallable[[int], str]  # takes an int, returns a str
@@ -99,9 +104,9 @@ class _ParameterTypeGuardMeta(type):
 
 @dataclass(frozen=True)
 class ParameterTypeGuard(metaclass=_ParameterTypeGuardMeta):
-    """A guard on an arbitrary parameter.
+    """A guard on an arbitrary parameter. Used with ``Annotated``.
 
-    Example usage:
+    Example usage::
 
         def is_int(arg: object) -> Annotated[bool, ParameterTypeGuard["arg", int]]:
             return isinstance(arg, int)
@@ -127,11 +132,13 @@ class _HasAttrGuardMeta(type):
 @dataclass(frozen=True)
 class HasAttrGuard(metaclass=_HasAttrGuardMeta):
     """A guard on an arbitrary parameter that checks for the presence of an attribute.
+    Used with ``Annotated``.
 
-    A return type of HasAttrGuard[param, attr, type] means that param has an attribute
-    named attr of type type.
+    A return type of ``Annotated[bool, HasAttrGuard[param, attr, type]]`` means that
+    `param` has an attribute named `attr` of type `type` if the function
+    returns True.
 
-    Example usage:
+    Example usage::
 
         def has_time(arg: object) -> Annotated[bool, HasAttrGuard["arg", Literal["time"], int]]:
             attr = getattr(arg, "time", None)
@@ -160,11 +167,14 @@ class _TypeGuardMeta(type):
 
 @dataclass(frozen=True)
 class TypeGuard(metaclass=_TypeGuardMeta):
-    """Type guards, as defined in PEP 647.
+    """Type guards, as defined in `PEP 647 <https://www.python.org/dev/peps/pep-0647/>`_.
 
-    Example usage:
+    New code should instead use ``typing_extensions.TypeGuard`` or
+    (in Python 3.10 and higher) ``typing.TypeGuard``.
 
-        def is_int_list(arg: list[Any]) -> list[int]:
+    Example usage::
+
+        def is_int_list(arg: list[Any]) -> TypeGuard[list[int]]:
             return all(isinstance(elt, int) for elt in arg)
 
     """
@@ -173,12 +183,19 @@ class TypeGuard(metaclass=_TypeGuardMeta):
 
 
 def reveal_type(value: object) -> None:
-    """Used for debugging test_scope.
+    """Inspect the inferred type of an expression.
 
-    Calling it will make pyanalyze print out the argument's inferred value in a human-readable
-    format. Does nothing at runtime.
+    Calling this function will make pyanalyze print out the argument's
+    inferred value in a human-readable format. At runtime it does nothing.
 
-    This is automatically exposed as a global.
+    This is automatically exposed as a global during type checking, so in
+    code that is not run at import, `reveal_type()` can be used without
+    being impoorted.
+
+    Example::
+
+        def f(x: int) -> None:
+            reveal_type(x)  # Revealed type is "int"
 
     """
     pass

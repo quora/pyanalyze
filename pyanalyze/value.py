@@ -1,6 +1,21 @@
 """
 
-Implementation of value classes, which represent values found while analyzing an AST.
+Value classes represent the value of an expression in a Python program. Values
+are the key data type used in pyanalyze's internals.
+
+Values are instances of a subclass of :class:`Value`. This module defines
+these subclasses and some related utilities.
+
+:func:`dump_value` can be used to show inferred values during type checking. Examples::
+
+    from typing import Any
+    from pyanalyze import dump_value
+
+    def function(x: int, y: list[int], z: Any):
+        dump_value(1)  # KnownValue(1)
+        dump_value(x)  # TypedValue(int)
+        dump_value(y)  # GenericValue(list, [TypedValue(int)])
+        dump_value(z)  # UnresolvedValue()
 
 """
 
@@ -28,7 +43,7 @@ from typing_extensions import Literal
 
 import pyanalyze
 
-from .safe import safe_isinstance
+from .safe import safe_isinstance, safe_issubclass
 from .type_object import TypeObject
 
 T = TypeVar("T")
@@ -41,85 +56,22 @@ TypeVarMap = Mapping["TypeVar", "Value"]
 _type_object_cache: Dict[Union[type, super], TypeObject] = {}
 
 
-class CanAssignContext:
-    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
-        return set()
-
-    def make_type_object(self, typ: Union[type, super]) -> TypeObject:
-        try:
-            in_cache = typ in _type_object_cache
-        except Exception:
-            return TypeObject(typ, self.get_additional_bases(typ))
-        if in_cache:
-            return _type_object_cache[typ]
-        type_object = TypeObject(typ, self.get_additional_bases(typ))
-        _type_object_cache[typ] = type_object
-        return type_object
-
-    def get_generic_bases(
-        self, typ: type, generic_args: Sequence["Value"] = ()
-    ) -> Dict[type, TypeVarMap]:
-        return {}
-
-    def get_signature(
-        self, obj: object, is_asynq: bool = False
-    ) -> Optional["pyanalyze.signature.Signature"]:
-        return None
-
-    def signature_from_value(
-        self, value: "Value"
-    ) -> "pyanalyze.signature.MaybeSignature":
-        return None
-
-
-@dataclass(frozen=True)
-class CanAssignError:
-    message: str
-    children: List["CanAssignError"] = field(default_factory=list)
-
-    def display(self, depth: int = 2) -> str:
-        result = f"{' ' * depth}{self.message}\n"
-        result += "".join(child.display(depth=depth + 2) for child in self.children)
-        return result
-
-    def __str__(self) -> str:
-        return self.display()
-
-
-# Return value of CanAssign
-CanAssign = Union[TypeVarMap, CanAssignError]
-
-
 class Value:
-    """Class that represents the value of a variable."""
+    """Base class for all values."""
 
     __slots__ = ()
 
-    def is_type(self, typ: type) -> bool:
-        """Returns whether this value is an instance of the given type."""
-        return False
-
-    def get_type(self) -> Optional[type]:
-        """Returns the type of this value, or None if it is not known."""
-        return None
-
-    def get_type_value(self) -> "Value":
-        """Return the type of this object as used for dunder lookups."""
-        return self
-
-    def walk_values(self) -> Iterable["Value"]:
-        """Walk over all values contained in this value."""
-        yield self
-
-    def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
-        """Substitute the typevars in the map to produce a new Value."""
-        return self
-
-    def can_assign(self, other: "Value", ctx: CanAssignContext) -> CanAssign:
+    def can_assign(self, other: "Value", ctx: "CanAssignContext") -> "CanAssign":
         """Whether other can be assigned to self.
 
-        If yes, return a (possibly empty) map with TypeVar substitutions. If not,
-        return None.
+        If yes, return a (possibly empty) map with the TypeVar values dictated by the
+        assignment. If not, return a :class:`CanAssignError` explaining why the types
+        are not compatible.
+
+        For example, calling ``a.can_assign(b, ctx)`` where `a` is ``Iterable[T]``
+        and ``b`` is ``List[int]`` will return ``{T: TypedValue(int)}``.
+
+        This is the primary mechanism used for checking type compatibility.
 
         """
         if other is UNRESOLVED_VALUE or isinstance(other, VariableNameValue):
@@ -150,14 +102,167 @@ class Value:
             return {}
         return CanAssignError(f"Cannot assign {other} to {self}")
 
-    def is_assignable(self, other: "Value", ctx: CanAssignContext) -> bool:
-        """Similar to can_assign but just returns a bool."""
+    def is_assignable(self, other: "Value", ctx: "CanAssignContext") -> bool:
+        """Similar to :meth:`can_assign` but returns a bool for simplicity."""
         return isinstance(self.can_assign(other, ctx), dict)
+
+    def walk_values(self) -> Iterable["Value"]:
+        """Iterator that yields all sub-values contained in this value."""
+        yield self
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
+        """Substitute the typevars in the map to produce a new Value.
+
+        This is used to specialize a generic. For example, substituting
+        ``{T: int}`` on ``List[T]`` will produce ``List[int]``.
+
+        """
+        return self
+
+    def is_type(self, typ: type) -> bool:
+        """Returns whether this value is an instance of the given type.
+
+        This method should be avoided. Use :meth:`can_assign` instead for
+        checking compatibility.
+
+        """
+        return False
+
+    def get_type(self) -> Optional[type]:
+        """Returns the type of this value, or None if it is not known.
+
+        This method should be avoided.
+
+        """
+        return None
+
+    def get_type_value(self) -> "Value":
+        """Return the type of this object as used for dunder lookups."""
+        return self
+
+
+class CanAssignContext:
+    """A context passed to the :meth:`Value.can_assign` method.
+
+    Provides access to various functionality used for type checking.
+
+    """
+
+    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
+        """Return classes that should be considered base classes of `typ`.
+
+        This can be used to make the type checker treat a type as a subclass
+        of another when it is not actually a subtype at runtime.
+
+        """
+        return set()
+
+    def make_type_object(self, typ: Union[type, super]) -> TypeObject:
+        # Undocumented because TypeObject isn't a very useful concept;
+        # we may be able to deprecate it.
+        try:
+            in_cache = typ in _type_object_cache
+        except Exception:
+            return TypeObject(typ, self.get_additional_bases(typ))
+        if in_cache:
+            return _type_object_cache[typ]
+        type_object = TypeObject(typ, self.get_additional_bases(typ))
+        _type_object_cache[typ] = type_object
+        return type_object
+
+    def get_generic_bases(
+        self, typ: type, generic_args: Sequence["Value"] = ()
+    ) -> Dict[type, TypeVarMap]:
+        """Return the base classes for `typ` with their generic arguments.
+
+        For example, calling
+        ``ctx.get_generic_bases(dict, [TypedValue(int), TypedValue(str)])``
+        may produce a map containing the following::
+
+            {
+                dict: [TypedValue(int), TypedValue(str)],
+                Mapping: [TypedValue(int), TypedValue(str)],
+                Iterable: [TypedValue(int)],
+                Sized: [],
+            }
+
+        """
+        return {}
+
+    def get_signature(self, obj: object) -> Optional["pyanalyze.signature.Signature"]:
+        """Return a :class:`pyanalyze.signature.Signature` for this object.
+
+        Return None if the object is not callable.
+
+        """
+        return None
+
+    def signature_from_value(
+        self, value: "Value"
+    ) -> "pyanalyze.signature.MaybeSignature":
+        """Return a :class:`pyanalyze.signature.Signature` for a :class:`Value`.
+
+        Return None if the object is not callable.
+
+        """
+        return None
+
+
+@dataclass(frozen=True)
+class CanAssignError:
+    """A type checking error message with nested details.
+
+    This exists in order to produce more useful error messages
+    when there is a mismatch between complex types.
+
+    """
+
+    message: str
+    children: List["CanAssignError"] = field(default_factory=list)
+
+    def display(self, depth: int = 2) -> str:
+        """Display all errors in a human-readable format."""
+        result = f"{' ' * depth}{self.message}\n"
+        result += "".join(child.display(depth=depth + 2) for child in self.children)
+        return result
+
+    def __str__(self) -> str:
+        return self.display()
+
+
+# Return value of CanAssign
+CanAssign = Union[TypeVarMap, CanAssignError]
+
+
+def assert_is_value(obj: object, value: Value) -> None:
+    """Used to test pyanalyze's value inference.
+
+    Takes two arguments: a Python object and a :class:`Value` object. At runtime
+    this does nothing, but pyanalyze throws an error if the object is not
+    inferred to be the same as the :class:`Value`.
+
+    Example usage::
+
+        assert_is_value(1, KnownValue(1))  # passes
+        assert_is_value(1, TypedValue(int))  # shows an error
+
+    """
+    pass
+
+
+def dump_value(value: object) -> None:
+    """Print out the :class:`Value` representation of its argument.
+
+    Calling it will make pyanalyze print out an internal representation of the argument's inferred
+    value. Does nothing at runtime. Use :func:`pyanalyze.extensions.reveal_type` for a more user-friendly representation.
+
+    """
+    pass
 
 
 @dataclass(frozen=True)
 class UnresolvedValue(Value):
-    """Value that we cannot resolve further."""
+    """An unknown value, equivalent to ``typing.Any``."""
 
     def __str__(self) -> str:
         return "Any"
@@ -167,6 +272,7 @@ class UnresolvedValue(Value):
 
 
 UNRESOLVED_VALUE = UnresolvedValue()
+"""The only instance of :class:`UnresolvedValue`."""
 
 
 @dataclass(frozen=True)
@@ -182,13 +288,20 @@ class UninitializedValue(Value):
 
 
 UNINITIALIZED_VALUE = UninitializedValue()
+"""The only instance of :class:`UninitializedValue`."""
 
 
 @dataclass(frozen=True)
 class KnownValue(Value):
-    """Variable with a known value."""
+    """Equivalent to ``typing.Literal``. Represents a specific value.
+
+    This is inferred for constants and for references to objects
+    like modules, classes, and functions.
+
+    """
 
     val: Any
+    """The Python object that this ``KnownValue`` represents."""
 
     def is_type(self, typ: type) -> bool:
         return self.get_type_object().is_assignable_to_type(typ)
@@ -235,18 +348,30 @@ class KnownValue(Value):
 
 @dataclass(frozen=True)
 class UnboundMethodValue(Value):
-    """Value that represents an unbound method.
+    """Value that represents a method on an underlying :class:`Value`.
 
-    That is, we know that this value is this method, but we don't have the instance it is called on.
+    Despite the name this really represents a method bound to a value. For
+    example, given ``s: str``, ``s.strip`` will be inferred as
+    ``UnboundMethodValue("strip", TypedValue(str))``.
 
     """
 
     attr_name: str
+    """Name of the method."""
     typ: Value
+    """Value the method is bound to."""
     secondary_attr_name: Optional[str] = None
+    """Used when an attribute is accessed on an existing ``UnboundMethodValue``.
+
+    This is mostly useful in conjunction with asynq, where we might use
+    ``object.method.asynq``. In that case, we would infer an ``UnboundMethodValue``
+    with `secondary_attr_name` set to ``"asynq"``.
+
+    """
 
     def get_method(self) -> Optional[Any]:
-        """Returns the method object for this UnboundMethodValue."""
+        """Return the runtime callable for this ``UnboundMethodValue``, or
+        None if it cannot be found."""
         try:
             typ = self.typ.get_type()
             method = getattr(typ, self.attr_name)
@@ -269,7 +394,6 @@ class UnboundMethodValue(Value):
         return KnownValue(type(self.get_method()))
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
-        """Substitute the typevars in the map to produce a new Value."""
         return UnboundMethodValue(
             self.attr_name,
             self.typ.substitute_typevars(typevars),
@@ -286,22 +410,14 @@ class UnboundMethodValue(Value):
 
 @dataclass(unsafe_hash=True)
 class TypedValue(Value):
-    """Value for which we know the type.
-
-    There are several subclasses of this that are used when we have an _incomplete value_: we don't
-    know the full value, but have more information than just the type. For example, in this
-    function:
-
-        def fn(a, b):
-            x = [a, b]
-
-    we don't have enough information to make x a KnownValue, but we know that it is a list of two
-    elements. In this case, we set it to
-    SequenceIncompleteValue(list, [UNRESOLVED_VALUE, UNRESOLVED_VALUE]).
+    """Value for which we know the type. This is equivalent to simple type
+    annotations: an annotation of ``int`` will yield ``TypedValue(int)`` during
+    type inference.
 
     """
 
     typ: Any
+    """The underlying type."""
     type_object: TypeObject = field(init=False, repr=False, hash=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -397,12 +513,17 @@ class TypedValue(Value):
 class NewTypeValue(TypedValue):
     """A wrapper around an underlying type.
 
-    Corresponds to typing.NewType.
+    Corresponds to ``typing.NewType``.
+
+    This is a subclass of :class:`TypedValue`. Currently only NewTypes over simple,
+    non-generic types are supported.
 
     """
 
     name: str
+    """Name of the ``NewType``."""
     newtype: Any
+    """Underlying ``NewType`` object."""
 
     def __init__(self, newtype: Any) -> None:
         super().__init__(newtype.__supertype__)
@@ -430,13 +551,14 @@ class NewTypeValue(TypedValue):
 
 @dataclass(unsafe_hash=True, init=False)
 class GenericValue(TypedValue):
-    """A TypedValue representing a generic.
+    """Subclass of :class:`TypedValue` that can represent generics.
 
-    For example, List[int] is represented as GenericValue(list, [TypedValue(int)]).
+    For example, ``List[int]`` is represented as ``GenericValue(list, [TypedValue(int)])``.
 
     """
 
     args: Tuple[Value, ...]
+    """The generic arguments to the type."""
 
     def __init__(self, typ: type, args: Iterable[Value]) -> None:
         super().__init__(typ)
@@ -490,14 +612,17 @@ class GenericValue(TypedValue):
 
 @dataclass(unsafe_hash=True, init=False)
 class SequenceIncompleteValue(GenericValue):
-    """A TypedValue representing a sequence whose members are not completely known.
+    """A :class:`TypedValue` subclass representing a sequence of known type and length.
 
-    For example, the expression [int(self.foo)] may be typed as
-    SequenceIncompleteValue(list, [TypedValue(int)])
+    For example, the expression ``[int(self.foo)]`` may be typed as
+    ``SequenceIncompleteValue(list, [TypedValue(int)])``.
+
+    This is only used for ``set``, ``list``, and ``tuple``.
 
     """
 
     members: Tuple[Value, ...]
+    """The elements of the sequence."""
 
     def __init__(self, typ: type, members: Sequence[Value]) -> None:
         if members:
@@ -556,14 +681,15 @@ class SequenceIncompleteValue(GenericValue):
 
 @dataclass(unsafe_hash=True, init=False)
 class DictIncompleteValue(GenericValue):
-    """A TypedValue representing a dictionary whose keys and values are not completely known.
+    """A :class:`TypedValue` representing a dictionary of known size.
 
-    For example, the expression {'foo': int(self.bar)} may be typed as
-    DictIncompleteValue([(KnownValue('foo'), TypedValue(int))]).
+    For example, the expression ``{'foo': int(self.bar)}`` may be typed as
+    ``DictIncompleteValue([(KnownValue('foo'), TypedValue(int))])``.
 
     """
 
     items: List[Tuple[Value, Value]]
+    """List of pairs representing the keys and values of the dict."""
 
     def __init__(self, items: List[Tuple[Value, Value]]) -> None:
         if items:
@@ -595,7 +721,14 @@ class DictIncompleteValue(GenericValue):
 
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
+    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys.
+
+    Currently does not handle the distinction between required and non-required keys.
+
+    """
+
     items: Dict[str, Value]
+    """The items of the ``TypedDict``."""
 
     def __init__(self, items: Dict[str, Value]) -> None:
         if items:
@@ -678,16 +811,17 @@ class TypedDictValue(GenericValue):
 
 @dataclass(unsafe_hash=True, init=False)
 class AsyncTaskIncompleteValue(GenericValue):
-    """A TypedValue representing an async task.
+    """A :class:`GenericValue` representing an async task.
 
-    value is the value that the task object wraps.
+    This should probably just be replaced with ``GenericValue``.
 
     """
 
     value: Value
+    """The value returned by the task on completion."""
 
     def __init__(self, typ: type, value: Value) -> None:
-        super(AsyncTaskIncompleteValue, self).__init__(typ, (value,))
+        super().__init__(typ, (value,))
         self.value = value
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
@@ -702,6 +836,12 @@ class AsyncTaskIncompleteValue(GenericValue):
 
 @dataclass(unsafe_hash=True, init=False)
 class CallableValue(TypedValue):
+    """Equivalent to the ``Callable`` type.
+
+    This is a thin wrapper around :class:`pyanalyze.signature.Signature`.
+
+    """
+
     signature: "pyanalyze.signature.Signature"
 
     def __init__(self, signature: "pyanalyze.signature.Signature") -> None:
@@ -766,9 +906,19 @@ class CallableValue(TypedValue):
 
 @dataclass(frozen=True)
 class SubclassValue(Value):
-    """Value that is either a type or its subclass."""
+    """Equivalent of ``Type[]``.
+
+    The `typ` attribute can be either a :class:`TypedValue` or a
+    :class:`TypeVarValue`. The former is equivalent to ``Type[int]``
+    and represents the ``int`` class or a subclass. The latter is
+    equivalent to ``Type[T]`` where ``T`` is a type variable.
+    The third legal argument to ``Type[]`` is ``Any``, but
+    ``Type[Any]`` is represented as ``TypedValue(type)``.
+
+    """
 
     typ: Union[TypedValue, "TypeVarValue"]
+    """The underlying type."""
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return self.make(self.typ.substitute_typevars(typevars))
@@ -779,10 +929,7 @@ class SubclassValue(Value):
 
     def is_type(self, typ: type) -> bool:
         if isinstance(self.typ, TypedValue):
-            try:
-                return issubclass(self.typ.typ, typ)
-            except Exception:
-                return False
+            return safe_issubclass(self.typ.typ, typ)
         return False
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
@@ -841,10 +988,11 @@ class SubclassValue(Value):
 
 @dataclass(frozen=True, order=False)
 class MultiValuedValue(Value):
-    """Variable for which multiple possible values have been recorded."""
+    """Equivalent of ``typing.Union``. Represents the union of multiple values."""
 
     raw_vals: InitVar[Iterable[Value]]
     vals: Tuple[Value, ...] = field(init=False)
+    """The underlying values of the union."""
 
     def __post_init__(self, raw_vals: Iterable[Value]) -> None:
         object.__setattr__(
@@ -961,6 +1109,7 @@ class MultiValuedValue(Value):
 
 
 NO_RETURN_VALUE = MultiValuedValue([])
+"""The empty union, equivalent to ``typing.NoReturn``."""
 
 
 @dataclass(frozen=True)
@@ -976,7 +1125,11 @@ class ReferencingValue(Value):
 
 @dataclass(frozen=True)
 class TypeVarValue(Value):
-    """Value representing a type variable."""
+    """Value representing a ``typing.TypeVar``.
+
+    Currently, bounds, value restrictions, and variance are ignored.
+
+    """
 
     typevar: TypeVar
 
@@ -992,6 +1145,9 @@ class TypeVarValue(Value):
 
 
 class Extension:
+    """An extra piece of information about a type that can be stored in
+    an :class:`AnnotatedValue`."""
+
     __slots__ = ()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Extension":
@@ -1003,6 +1159,13 @@ class Extension:
 
 @dataclass
 class ParameterTypeGuardExtension(Extension):
+    """An :class:`Extension` used in a function return type. Used to
+    indicate that the parameter named `varname` is of type `guarded_type`.
+
+    Corresponds to :class:`pyanalyze.extensions.ParameterTypeGuard`.
+
+    """
+
     varname: str
     guarded_type: Value
 
@@ -1016,6 +1179,13 @@ class ParameterTypeGuardExtension(Extension):
 
 @dataclass
 class TypeGuardExtension(Extension):
+    """An :class:`Extension` used in a function return type. Used to
+    indicate that the first function argument is of type `guarded_type`.
+
+    Corresponds to :class:`pyanalyze.extensions.TypeGuard`, or ``typing.TypeGuard``.
+
+    """
+
     guarded_type: Value
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
@@ -1028,7 +1198,13 @@ class TypeGuardExtension(Extension):
 
 @dataclass
 class HasAttrGuardExtension(Extension):
-    """Returned by a function to indicate that varname has the given attribute."""
+    """An :class:`Extension` used in a function return type. Used to
+    indicate that the function argument named `varname` has an attribute
+    named `attribute_name` of type `attribute_type`.
+
+    Corresponds to :class:`pyanalyze.extensions.HasAttrGuard`.
+
+    """
 
     varname: str
     attribute_name: Value
@@ -1048,18 +1224,18 @@ class HasAttrGuardExtension(Extension):
 
 @dataclass
 class HasAttrExtension(Extension):
-    """Attached to a function to indicate that it has the given attribute.
+    """Attached to an object to indicate that it has the given attribute.
 
     These cannot be created directly from user code, only through the
-    HasAttrGuard mechanism. The main reason is that in code like this:
+    :class:`pyanalyze.extension.HasAttrGuard` mechanism. This is
+    because of potential code like this::
 
         def f(x: Annotated[object, HasAttr["y", int]]) -> None:
             return x.y
 
-    We would correctly type check the function body, but we currently
-    have no way to enforce that it is only called with arguments that
-    obey the constraint. If we fix that, we might as well fully implement
-    Protocols.
+    Here, we would correctly type check the function body, but we currently
+    have no way to enforce that the function is only called with arguments that
+    obey the constraint.
 
     """
 
@@ -1082,23 +1258,30 @@ class WeakExtension(Extension):
     """Used to indicate that a generic argument to a container may be widened.
 
     This is used only in conjuction with the special casing for functions
-    like list.extend. After code like `lst = [1, 2]; lst.extend([i for in range(5)])`
-    we may end up inferring a type like `List[Literal[0, 1, 2, 3, 4]]`, but that is
+    like ``list.extend``. After code like ``lst = [1, 2]; lst.extend([i for in range(5)])``
+    we may end up inferring a type like ``List[Literal[0, 1, 2, 3, 4]]``, but that is
     too narrow and leads to false positives if later code puts a different int in
-    the list. If the generic argument is instead annotated with WeakExtension, we
+    the list. If the generic argument is instead annotated with ``WeakExtension``, we
     widen the type to accommodate later appends.
 
-    The TestGenericMutators.test_weak_value test case is an example.
+    The ``TestGenericMutators.test_weak_value`` test case is an example.
 
     """
 
 
 @dataclass(frozen=True)
 class AnnotatedValue(Value):
-    """Value representing a PEP 593 Annotated object."""
+    """Value representing a `PEP 593 <https://www.python.org/dev/peps/pep-0593/>`_ Annotated object.
+
+    Pyanalyze uses ``Annotated`` types to represent types with some extra
+    information added to them in the form of :class:`Extension` objects.
+
+    """
 
     value: Value
+    """The underlying value."""
     metadata: Sequence[Union[Value, Extension]]
+    """The extensions associated with this value."""
 
     def is_type(self, typ: type) -> bool:
         return self.value.is_type(typ)
@@ -1123,11 +1306,13 @@ class AnnotatedValue(Value):
             yield from val.walk_values()
 
     def get_metadata_of_type(self, typ: Type[T]) -> Iterable[T]:
+        """Return any metadata of the given type."""
         for data in self.metadata:
             if isinstance(data, typ):
                 yield data
 
     def has_metadata_of_type(self, typ: Type[Extension]) -> bool:
+        """Return whether there is metadat of the given type."""
         return any(isinstance(data, typ) for data in self.metadata)
 
     def __str__(self) -> str:
@@ -1138,12 +1323,16 @@ class AnnotatedValue(Value):
 class VariableNameValue(Value):
     """Value that is stored in a variable associated with a particular kind of value.
 
-    For example, any variable named 'uid' will get resolved into a VariableNameValue of type uid,
-    and if it gets passed into a function that takes an argument called 'aid',
-    can_assign will return None.
+    For example, any variable named `uid` will get resolved into a ``VariableNameValue``
+    of type `uid`,
+    and if it gets passed into a function that takes an argument called `aid`,
+    the call will be rejected.
 
     This was created for a legacy codebase without type annotations. If possible, prefer
     using NewTypes or other more explicit types.
+
+    There should only be a limited set of ``VariableNameValue`` objects,
+    created through the pyanalyze configuration.
 
     """
 
@@ -1181,10 +1370,13 @@ class VariableNameValue(Value):
 
 
 def flatten_values(val: Value, *, unwrap_annotated: bool = False) -> Iterable[Value]:
-    """Flatten a MultiValuedValue into a single value.
+    """Flatten a :class:`MultiValuedValue` into its constituent values.
 
     We don't need to do this recursively because the
-    MultiValuedValue constructor applies this to its arguments.
+    :class:`MultiValuedValue` constructor applies this to its arguments.
+
+    if `unwrap_annotated` is true, produces the underlying values for
+    :class:`AnnotatedValue` objects.
 
     """
     if isinstance(val, MultiValuedValue):
@@ -1237,6 +1429,12 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
 
 
 def unite_values(*values: Value) -> Value:
+    """Unite multiple values into a single :class:`Value`.
+
+    This collapses equal values and returns a :class:`MultiValuedValue`
+    if multiple remain.
+
+    """
     if not values:
         return NO_RETURN_VALUE
     # Make sure order is consistent; conceptually this is a set but
@@ -1302,15 +1500,17 @@ def concrete_values_from_iterable(
     """Return the exact values that can be extracted from an iterable.
 
     Three possible return types:
-    - None if the argument is not iterable
-    - A sequence of Values if we know the exact types in the iterable
-    - A single Value if we just know that the iterable contains this
+
+    - ``None`` if the argument is not iterable
+    - A sequence of :class:`Value` if we know the exact types in the iterable
+    - A single :class:`Value` if we just know that the iterable contains this
       value, but not the precise number of them.
 
     Examples:
-    - tuple[int, str] -> (int, str)
-    - tuple[int, ...] -> int
-    - int -> None
+
+    - ``int`` -> ``None``
+    - ``tuple[int, str]`` -> ``(int, str)``
+    - ``tuple[int, ...]`` -> ``int``
 
     """
     if isinstance(value, MultiValuedValue):
@@ -1345,10 +1545,11 @@ def unpack_values(
 ) -> Union[Sequence[Value], CanAssignError]:
     """Implement iterable unpacking.
 
-    If post_starred_length is None, return a list of target_length values, or CanAssignError
-    if value is not an iterable of the expected length. If post_starred_length is not None,
-    return a list of target_length + 1 + post_starred_length values. This implements
-    unpacking like `a, b, *c, d = ...`.
+    If `post_starred_length` is None, return a list of `target_length`
+    values, or :class:`CanAssignError` if value is not an iterable of
+    the expected length. If `post_starred_length` is not None,
+    return a list of `target_length + 1 + post_starred_length` values. This implements
+    unpacking like ``a, b, *c, d = ...``.
 
     """
     if isinstance(value, MultiValuedValue):
@@ -1470,7 +1671,7 @@ def extract_typevars(value: Value) -> Iterable["TypeVar"]:
 
 
 def stringify_object(obj: Any) -> str:
-    """Stringify arbitrary Python objects such as methods and types."""
+    # Stringify arbitrary Python objects such as methods and types.
     try:
         objclass = getattr(obj, "__objclass__", None)
         if objclass is not None:
