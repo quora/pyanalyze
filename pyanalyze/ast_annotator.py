@@ -2,6 +2,10 @@
 
 Functionality for annotating the AST of a module.
 
+The APIs in this module use pyanalyze's type inference to annotate
+an AST with inferred :class:`pyanalyze.value.Value` objects in `.inferred_value`
+attributes.
+
 """
 import ast
 import os
@@ -25,21 +29,28 @@ def annotate_code(
     show_errors: bool = False,
     verbose: bool = False,
 ) -> ast.Module:
-    """Annotate a piece of Python code. Return an AST with extra inferred_value attributes.
+    """Annotate a piece of Python code. Return an AST with extra `inferred_value` attributes.
 
-    Example usage:
+    Example usage::
 
         tree = annotate_code("a = 1")
         print(tree.body[0].targets[0].inferred_value)  # Literal[1]
 
-    This will import and exec() the provided code. If this fails, the code will
+    This will import and ``exec()`` the provided code. If this fails, the code will
     still be annotated but the quality of the annotations will be much lower.
 
-    Optional arguments:
-        visitor_cls: pass a subclass of NameCheckVisitor to customize pyanalyze behavior
-        dump: if True, the annotated AST is printed out
-        show_errors: if True, errors from pyanalyze are printed
-        verbose: if True, more details are printed
+    :param visitor_cls: Pass a subclass of :class:`pyanalyze.name_check_visitor.NameCheckVisitor`
+                        to customize pyanalyze behavior.
+    :type visitor_cls: Type[NameCheckVisitor]
+
+    :param dump: If True, the annotated AST is printed out.
+    :type dump: bool
+
+    :param show_errors: If True, errors from pyanalyze are printed.
+    :type show_errors: bool
+
+    :param verbose: If True, more details are printed.
+    :type verbose: bool
 
     """
     tree = ast.parse(code)
@@ -64,9 +75,9 @@ def annotate_file(
     dump: bool = False,
     show_errors: bool = False,
 ) -> ast.AST:
-    """Annotate the code in a Python source file. Return an AST with extra inferred_value attributes.
+    """Annotate the code in a Python source file. Return an AST with extra `inferred_value` attributes.
 
-    Example usage:
+    Example usage::
 
         tree = annotate_file("/some/file.py")
         print(tree.body[0].targets[0].inferred_value)  # Literal[1]
@@ -74,11 +85,18 @@ def annotate_file(
     This will import and exec() the provided code. If this fails, the code will
     still be annotated but the quality of the annotations will be much lower.
 
-    Optional arguments:
-        visitor_cls: pass a subclass of NameCheckVisitor to customize pyanalyze behavior
-        dump: if True, the annotated AST is printed out
-        show_errors: if True, errors from pyanalyze are printed
-        verbose: if True, more details are printed
+    :param visitor_cls: Pass a subclass of :class:`pyanalyze.name_check_visitor.NameCheckVisitor`
+                        to customize pyanalyze behavior.
+    :type visitor_cls: Type[NameCheckVisitor]
+
+    :param dump: If True, the annotated AST is printed out.
+    :type dump: bool
+
+    :param show_errors: If True, errors from pyanalyze are printed.
+    :type show_errors: bool
+
+    :param verbose: If True, more details are printed.
+    :type verbose: bool
 
     """
     filename = os.fspath(path)
