@@ -2,6 +2,26 @@
 
 Code for understanding type annotations.
 
+This file contains functions that turn various representations of
+Python type annotations into :class:`pyanalyze.value.Value` objects.
+
+There are three major functions:
+
+- :func:`type_from_runtime` takes a runtime Python object, for example
+  ``type_from_value(int)`` -> ``TypedValue(int)``.
+- :func:`type_from_value` takes an existing :class:`pyanalyze.value.Value`
+  object. For example, evaluating the expression ``int`` will produce
+  ``KnownValue(int)``, and calling :func:`type_from_value` on that value
+  will produce ``TypedValue(int)``.
+- :func:`type_from_ast` takes an AST node and evaluates it into a type.
+
+These functions all rely on each other. For example, when a forward
+reference is found in a runtime annotation, the code parses it and calls
+:func:`type_from_ast` to evaluate it.
+
+These functions all use :class:`Context` objects to resolve names and
+show errors.
+
 """
 from dataclasses import dataclass, InitVar, field
 import mypy_extensions
@@ -71,23 +91,27 @@ except ImportError:
 
 @dataclass
 class Context:
-    """Default context used in interpreting annotations.
+    """A context for evaluating annotations.
 
-    Subclass this to do something more useful.
+    The base implementation does very little. Subclass this to do something more useful.
 
     """
 
     should_suppress_undefined_names: bool = field(default=False, init=False)
+    """While this is True, no errors are shown for undefined names."""
 
     def suppress_undefined_names(self) -> ContextManager[None]:
+        """Temporarily suppress errors about undefined names."""
         return qcore.override(self, "should_suppress_undefined_names", True)
 
     def show_error(
         self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
     ) -> None:
+        """Show an error found while evaluating an annotation."""
         pass
 
     def get_name(self, node: ast.Name) -> Value:
+        """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
         return UNRESOLVED_VALUE
 
     def handle_undefined_name(self, name: str) -> Value:
@@ -111,7 +135,18 @@ def type_from_ast(
     visitor: Optional["NameCheckVisitor"] = None,
     ctx: Optional[Context] = None,
 ) -> Value:
-    """Given an AST node representing an annotation, return a Value."""
+    """Given an AST node representing an annotation, return a
+    :class:`Value <pyanalyze.value.Value>`.
+
+    :param ast_node: AST node to evaluate.
+
+    :param visitor: Visitor class to use. This is used in the default
+                    :class:`Context` to resolve names and show errors.
+                    This is ignored if `ctx` is given.
+
+    :param ctx: :class:`Context` to use for evaluation.
+
+    """
     if ctx is None:
         ctx = _DefaultContext(visitor, ast_node)
     return _type_from_ast(ast_node, ctx)
@@ -124,7 +159,26 @@ def type_from_runtime(
     globals: Optional[Mapping[str, object]] = None,
     ctx: Optional[Context] = None,
 ) -> Value:
-    """Given a runtime annotation object, return a Value."""
+    """Given a runtime annotation object, return a
+    :class:`Value <pyanalyze.value.Value>`.
+
+    :param val: Object to evaluate. This will usually come from an
+                ``__annotations__`` dictionary.
+
+    :param visitor: Visitor class to use. This is used in the default
+                    :class:`Context` to resolve names and show errors.
+                    This is ignored if `ctx` is given.
+
+    :param node: AST node that the annotation derives from. This is
+                 used for showing errors. Ignored if `ctx` is given.
+
+    :param globals: Dictionary of global variables that can be used
+                    to resolve names. Ignored if `ctx` is given.
+
+    :param ctx: :class:`Context` to use for evaluation.
+
+    """
+
     if ctx is None:
         ctx = _DefaultContext(visitor, node, globals)
     return _type_from_runtime(val, ctx)
@@ -136,7 +190,26 @@ def type_from_value(
     node: Optional[ast.AST] = None,
     ctx: Optional[Context] = None,
 ) -> Value:
-    """Given a Value from resolving an annotation, return the type."""
+    """Given a :class:`Value <pyanalyze.value.Value` representing an annotation,
+    return a :class:`Value <pyanalyze.value.Value>` representing the type.
+
+    The input value represents an expression, the output value represents
+    a type. For example, the :term:`impl` of ``typing.cast(typ, val)``
+    calls :func:`type_from_value` on the value it receives for its
+    `typ` argument and returns the result.
+
+    :param value: :class:`Value <pyanalyze.value.Value` to evaluate.
+
+    :param visitor: Visitor class to use. This is used in the default
+                    :class:`Context` to resolve names and show errors.
+                    This is ignored if `ctx` is given.
+
+    :param node: AST node that the annotation derives from. This is
+                 used for showing errors. Ignored if `ctx` is given.
+
+    :param ctx: :class:`Context` to use for evaluation.
+
+    """
     if ctx is None:
         ctx = _DefaultContext(visitor, node)
     return _type_from_value(value, ctx)

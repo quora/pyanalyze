@@ -8,6 +8,8 @@ import inspect
 from typing import Set, Dict, Sequence, Union
 from unittest import mock
 
+from .safe import safe_issubclass
+
 _cache: Dict[type, "TypeObject"] = {}
 
 
@@ -57,9 +59,5 @@ class TypeObject:
 
     def is_assignable_to_type(self, typ: type) -> bool:
         for base in self.base_classes:
-            try:
-                if issubclass(base, typ):
-                    return True
-            except Exception:
-                pass  # ignore if issubclass() raised
+            return safe_issubclass(base, typ)
         return self.is_universally_assignable

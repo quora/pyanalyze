@@ -518,7 +518,7 @@ class Signature:
 
     def can_assign(self, other: "Signature", ctx: CanAssignContext) -> CanAssign:
         """Equivalent of :meth:`pyanalyze.value.Value.can_assign`. Checks
-        whether another `Signature` is compatible with this `Signature`.
+        whether another ``Signature`` is compatible with this ``Signature``.
         """
         if self.is_asynq and not other.is_asynq:
             return CanAssignError("callable is not asynq")
@@ -747,7 +747,8 @@ class Signature:
                 yield from param.annotation.walk_values()
 
     def get_asynq_value(self) -> "Signature":
-        """Return the Signature for the .asynq attribute of an AsynqCallable."""
+        """Return the :class:`Signature` for the `.asynq` attribute of an
+        :class:`pyanalyze.extensions.AsynqCallable`."""
         if not self.is_asynq:
             raise TypeError("get_asynq_value() is only supported for AsynqCallable")
         return_annotation = AsyncTaskIncompleteValue(
