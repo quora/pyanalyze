@@ -49,6 +49,7 @@ from typing import (
 
 from .error_code import ErrorCode
 from .extensions import AsynqCallable, HasAttrGuard, ParameterTypeGuard, TypeGuard
+from .find_unused import used
 from .signature import SigParameter, Signature
 from .value import (
     AnnotatedValue,
@@ -130,6 +131,7 @@ class Context:
         return self.handle_undefined_name(name)
 
 
+@used  # part of an API
 def type_from_ast(
     ast_node: ast.AST,
     visitor: Optional["NameCheckVisitor"] = None,
