@@ -80,8 +80,9 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
 from typing import NewType
 
 NT = NewType("NT", int)
+Alias = int
 
-def f(x: NT) -> None:
+def f(x: NT, y: Alias) -> None:
     pass
 """
             )
@@ -95,13 +96,17 @@ def f(x: NT) -> None:
                 pass
 
             sig = tsf.get_argspec_for_fully_qualified_name("newt.f", runtime_f)
-            ntv = next(iter(tsf._assignment_cache.values()))
-            assert_is_instance(ntv, NewTypeValue)
+            newtype = next(iter(tsf._assignment_cache.values()))
+            assert_is_instance(newtype, KnownValue)
+            ntv = NewTypeValue(newtype.val)
             assert_eq("NT", ntv.name)
             assert_eq(int, ntv.typ)
             assert_eq(
                 Signature.make(
-                    [SigParameter("x", annotation=ntv)],
+                    [
+                        SigParameter("x", annotation=ntv),
+                        SigParameter("y", annotation=TypedValue(int)),
+                    ],
                     KnownValue(None),
                     callable=runtime_f,
                 ),

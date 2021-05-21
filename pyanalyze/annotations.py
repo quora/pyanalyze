@@ -215,11 +215,16 @@ def type_from_value(
     return _type_from_value(value, ctx)
 
 
-def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
-    val = _Visitor(ctx).visit(node)
+def value_from_ast(ast_node: ast.AST, ctx: Context) -> Value:
+    val = _Visitor(ctx).visit(ast_node)
     if val is None:
         ctx.show_error("Invalid type annotation")
         return UNRESOLVED_VALUE
+    return val
+
+
+def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
+    val = value_from_ast(node, ctx)
     return _type_from_value(val, ctx)
 
 
@@ -419,6 +424,15 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             if len(value.root.args) == len(value.members):
                 return GenericValue(
                     value.root.typ,
+                    [_type_from_value(member, ctx) for member in value.members],
+                )
+        if isinstance(value.root, _SubscriptedValue):
+            root_type = _type_from_value(value.root, ctx)
+            if isinstance(root_type, GenericValue) and len(root_type.args) == len(
+                value.members
+            ):
+                return GenericValue(
+                    root_type.typ,
                     [_type_from_value(member, ctx) for member in value.members],
                 )
         if not isinstance(value.root, KnownValue):
