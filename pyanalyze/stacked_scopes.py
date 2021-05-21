@@ -364,6 +364,32 @@ NULL_CONSTRAINT = NullConstraint()
 
 @dataclass(frozen=True)
 class PredicateProvider(AbstractConstraint):
+    """A form of constraint implemented through a predicate on a value.
+
+    If a function returns a :class:`PredicateProvider`, equality
+    checks on the return value will produce a `predicate`
+    :term:`constraint`.
+
+    Consider the following code::
+
+        def two_lengths(tpl: Union[Tuple[int], Tuple[str, int]]) -> int:
+            if len(tpl) == 1:
+                return tpl[0]
+            else:
+                return tpl[1]
+
+    The :term:`impl` for :func:`len` returns a :class:`PredicateProvider`,
+    with a `provider` attribute that returns the length of the object
+    represented by a :term:`value`. In turn, the equality check (``== 1``)
+    produces a constraint of type `predicate`, which filters away any
+    values that do not match the length of the object.
+
+    In this case, there are two values: a tuple of length 1 and one of
+    length 2. Only the first matches the constraint, so the type is
+    narrowed down to that tuple and the code typechecks correctly.
+
+    """
+
     varname: Varname
     provider: Callable[[Value], Value]
 

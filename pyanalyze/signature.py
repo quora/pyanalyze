@@ -14,7 +14,6 @@ from .stacked_scopes import (
     ConstraintType,
     NULL_CONSTRAINT,
     AbstractConstraint,
-    PredicateProvider,
     Varname,
 )
 from .value import (
@@ -90,11 +89,12 @@ class ImplReturn(NamedTuple):
 
     return_value: Value
     """The return value of the function."""
-    constraint: Union[AbstractConstraint, PredicateProvider] = NULL_CONSTRAINT
-    """A ``Constraint`` indicating things that are true if the function returns a truthy value,
-    or a ``PredicateProvider``."""
+    constraint: AbstractConstraint = NULL_CONSTRAINT
+    """A :class:`pyanalyze.stacked_scopes.Constraint` indicating things that are true
+    if the function returns a truthy value."""
     no_return_unless: AbstractConstraint = NULL_CONSTRAINT
-    """A ``Constraint`` indicating things that are true unless the function does not return."""
+    """A :class:`pyanalyze.stacked_scopes.Constraint` indicating things that are true
+    unless the function does not return."""
 
 
 @dataclass
