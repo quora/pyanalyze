@@ -31,6 +31,7 @@ if __name__ == "__main__":
         author="Quora, Inc.",
         author_email="jelle@quora.com",
         description="A static analyzer for Python",
+        entry_points={"console_scripts": ["pyanalyze=pyanalyze.__main__:main"]},
         long_description=Path("README.md").read_text(),
         long_description_content_type="text/markdown",
         url="https://github.com/quora/pyanalyze",
