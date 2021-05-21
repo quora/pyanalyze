@@ -64,6 +64,10 @@ class TestConfig(Config):
     def get_known_argspecs(
         self, arg_spec_cache: ArgSpecCache
     ) -> Dict[object, Signature]:
+        failing_impl_sig = arg_spec_cache.get_argspec(
+            tests.FailingImpl, impl=_failing_impl
+        )
+        assert isinstance(failing_impl_sig, Signature), failing_impl_sig
         return {
             tests.takes_kwonly_argument: Signature.make(
                 [
@@ -76,9 +80,7 @@ class TestConfig(Config):
                 ],
                 callable=tests.takes_kwonly_argument,
             ),
-            tests.FailingImpl: arg_spec_cache.get_argspec(
-                tests.FailingImpl, impl=_failing_impl
-            ),
+            tests.FailingImpl: failing_impl_sig,
         }
 
     def unwrap_cls(self, cls: type) -> type:
