@@ -198,3 +198,8 @@ class WhatIsMyName:
 
 WhatIsMyName.__name__ = "Capybara"
 WhatIsMyName.__init__.__name__ = "capybara"
+
+
+class FailingImpl:
+    def __init__(self) -> None:
+        pass

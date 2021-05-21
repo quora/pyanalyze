@@ -389,6 +389,13 @@ class TestClassInstantiation(TestNameCheckVisitorBase):
                 cls = B
             assert_is_value(cls(), MultiValuedValue([TypedValue(A), TypedValue(B)]))
 
+    @assert_passes()
+    def test_constructor_impl(self):
+        from pyanalyze.tests import FailingImpl
+
+        def capybara():
+            FailingImpl()  # E: incompatible_call
+
 
 class TestFunctionsSafeToCall(TestNameCheckVisitorBase):
     @assert_passes()

@@ -438,7 +438,7 @@ class ArgSpecCache:
             bound_sig = make_bound_method(signature, TypedValue(obj))
             if bound_sig is None:
                 return None
-            sig = bound_sig.get_signature()
+            sig = bound_sig.get_signature(preserve_impl=True)
             if sig is not None:
                 return sig
             return bound_sig
