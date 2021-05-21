@@ -474,13 +474,20 @@ class Signature:
                 vars=variables, visitor=visitor, bound_args=bound_args, node=node
             )
             return_value = self.impl(ctx)
-            return self._apply_annotated_constraints(return_value, bound_args)
+
         if self.allow_call:
             runtime_return = self._maybe_perform_call(
                 call_args, call_kwargs, visitor, node
             )
             if runtime_return is not None:
-                return ImplReturn(runtime_return)
+                if isinstance(return_value, ImplReturn):
+                    return_value = ImplReturn(
+                        runtime_return,
+                        return_value.constraint,
+                        return_value.no_return_unless,
+                    )
+                else:
+                    return_value = runtime_return
         if return_value is EMPTY:
             return ImplReturn(UNRESOLVED_VALUE)
         else:
