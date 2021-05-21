@@ -404,7 +404,6 @@ class ArgSpecCache:
                 )
                 if isinstance(override, inspect.Signature):
                     inspect_sig = override
-                    constructor = obj
                 else:
                     if override is not None:
                         constructor = override

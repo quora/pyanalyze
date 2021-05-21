@@ -883,7 +883,7 @@ class BoundMethodSignature:
             )
         return ret
 
-    def get_signature(self) -> Optional[Signature]:
+    def get_signature(self, *, preserve_impl: bool = False) -> Optional[Signature]:
         if self.signature.is_ellipsis_args:
             return ANY_SIGNATURE
         params = list(self.signature.signature.parameters.values())
@@ -896,8 +896,9 @@ class BoundMethodSignature:
             signature=inspect.Signature(
                 params[1:], return_annotation=self.return_value
             ),
-            # We don't carry over the implementation function, because it may not work when passed
-            # different arguments.
+            # We don't carry over the implementation function by default, because it
+            # may not work when passed different arguments.
+            impl=self.signature.impl if preserve_impl else None,
             callable=self.signature.callable,
             is_asynq=self.signature.is_asynq,
             has_return_annotation=self.has_return_value(),
