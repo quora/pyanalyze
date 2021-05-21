@@ -474,13 +474,20 @@ class Signature:
                 vars=variables, visitor=visitor, bound_args=bound_args, node=node
             )
             return_value = self.impl(ctx)
-            return self._apply_annotated_constraints(return_value, bound_args)
+
         if self.allow_call:
             runtime_return = self._maybe_perform_call(
                 call_args, call_kwargs, visitor, node
             )
             if runtime_return is not None:
-                return ImplReturn(runtime_return)
+                if isinstance(return_value, ImplReturn):
+                    return_value = ImplReturn(
+                        runtime_return,
+                        return_value.constraint,
+                        return_value.no_return_unless,
+                    )
+                else:
+                    return_value = runtime_return
         if return_value is EMPTY:
             return ImplReturn(UNRESOLVED_VALUE)
         else:
@@ -876,7 +883,7 @@ class BoundMethodSignature:
             )
         return ret
 
-    def get_signature(self) -> Optional[Signature]:
+    def get_signature(self, *, preserve_impl: bool = False) -> Optional[Signature]:
         if self.signature.is_ellipsis_args:
             return ANY_SIGNATURE
         params = list(self.signature.signature.parameters.values())
@@ -889,8 +896,9 @@ class BoundMethodSignature:
             signature=inspect.Signature(
                 params[1:], return_annotation=self.return_value
             ),
-            # We don't carry over the implementation function, because it may not work when passed
-            # different arguments.
+            # We don't carry over the implementation function by default, because it
+            # may not work when passed different arguments.
+            impl=self.signature.impl if preserve_impl else None,
             callable=self.signature.callable,
             is_asynq=self.signature.is_asynq,
             has_return_annotation=self.has_return_value(),

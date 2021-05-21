@@ -6,10 +6,15 @@ Configuration file specific to tests.
 from typing import Dict, Optional
 
 from .arg_spec import ArgSpecCache
-from .signature import Signature, SigParameter
+from .signature import CallContext, Signature, SigParameter
 from .config import Config
 from . import tests
 from . import value
+
+
+def _failing_impl(ctx: CallContext) -> value.Value:
+    ctx.show_error("Always errors")
+    return value.UNRESOLVED_VALUE
 
 
 class TestConfig(Config):
@@ -59,6 +64,10 @@ class TestConfig(Config):
     def get_known_argspecs(
         self, arg_spec_cache: ArgSpecCache
     ) -> Dict[object, Signature]:
+        failing_impl_sig = arg_spec_cache.get_argspec(
+            tests.FailingImpl, impl=_failing_impl
+        )
+        assert isinstance(failing_impl_sig, Signature), failing_impl_sig
         return {
             tests.takes_kwonly_argument: Signature.make(
                 [
@@ -70,7 +79,8 @@ class TestConfig(Config):
                     ),
                 ],
                 callable=tests.takes_kwonly_argument,
-            )
+            ),
+            tests.FailingImpl: failing_impl_sig,
         }
 
     def unwrap_cls(self, cls: type) -> type:
