@@ -4,7 +4,7 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
-from .annotations import Context, is_typing_name, type_from_ast
+from .annotations import Context, is_typing_name, type_from_value, value_from_ast
 from .error_code import ErrorCode
 from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
@@ -215,23 +215,23 @@ class TypeshedFinder(object):
                     child_info = info.child_nodes[attr]
                     if isinstance(child_info, typeshed_client.NameInfo):
                         if isinstance(child_info.ast, ast3.AnnAssign):
-                            return self._parse_expr(child_info.ast.annotation, mod)
+                            return self._parse_type(child_info.ast.annotation, mod)
                         elif isinstance(child_info.ast, ast3.FunctionDef):
                             decorators = [
                                 self._parse_expr(decorator, mod)
                                 for decorator in child_info.ast.decorator_list
                             ]
                             if child_info.ast.returns and decorators == [
-                                TypedValue(property)
+                                KnownValue(property)
                             ]:
-                                return self._parse_expr(child_info.ast.returns, mod)
+                                return self._parse_type(child_info.ast.returns, mod)
                             return UNINITIALIZED_VALUE  # a method
                         elif isinstance(child_info.ast, ast3.AsyncFunctionDef):
                             return UNINITIALIZED_VALUE
                     assert False, repr(child_info)
                 return UNINITIALIZED_VALUE
             elif isinstance(info.ast, ast3.Assign):
-                val = self._parse_expr(info.ast.value, mod)
+                val = self._parse_type(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
                     return self.get_attribute(val.val, attr)
                 else:
@@ -285,9 +285,9 @@ class TypeshedFinder(object):
         elif isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, ast3.ClassDef):
                 bases = info.ast.bases
-                return [self._parse_expr(base, mod) for base in bases]
+                return [self._parse_type(base, mod) for base in bases]
             elif isinstance(info.ast, ast3.Assign):
-                val = self._parse_expr(info.ast.value, mod)
+                val = self._parse_type(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
                     return self.get_bases(val.val)
                 else:
@@ -408,7 +408,7 @@ class TypeshedFinder(object):
         if node.returns is None:
             return_value = UNRESOLVED_VALUE
         else:
-            return_value = self._parse_expr(node.returns, mod)
+            return_value = self._parse_type(node.returns, mod)
         # ignore self type for class and static methods
         if node.decorator_list:
             objclass = None
@@ -478,7 +478,7 @@ class TypeshedFinder(object):
     ) -> SigParameter:
         typ = UNRESOLVED_VALUE
         if arg.annotation is not None:
-            typ = self._parse_expr(arg.annotation, module)
+            typ = self._parse_type(arg.annotation, module)
         elif objclass is not None:
             bases = self.get_bases(objclass)
             if bases is None:
@@ -509,7 +509,12 @@ class TypeshedFinder(object):
 
     def _parse_expr(self, node: ast3.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
-        typ = type_from_ast(cast(ast.AST, node), ctx=ctx)
+        return value_from_ast(cast(ast.AST, node), ctx=ctx)
+
+    def _parse_type(self, node: ast3.AST, module: str) -> Value:
+        val = self._parse_expr(node, module)
+        ctx = _AnnotationContext(finder=self, module=module)
+        typ = type_from_value(val, ctx=ctx)
         if self.verbose and typ is UNRESOLVED_VALUE:
             self.log("Got UNRESOLVED_VALUE", (ast3.dump(node), module))
         return typ
@@ -529,7 +534,7 @@ class TypeshedFinder(object):
         ):
             return UNRESOLVED_VALUE
         ctx = _AnnotationContext(finder=self, module=module)
-        return type_from_ast(cast(ast.AST, info.ast.value), ctx=ctx)
+        return value_from_ast(cast(ast.AST, info.ast.value), ctx=ctx)
 
     def _value_from_info(
         self, info: typeshed_client.resolver.ResolvedName, module: str

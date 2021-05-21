@@ -49,6 +49,7 @@ from typing import (
 
 from .error_code import ErrorCode
 from .extensions import AsynqCallable, HasAttrGuard, ParameterTypeGuard, TypeGuard
+from .find_unused import used
 from .signature import SigParameter, Signature
 from .value import (
     AnnotatedValue,
@@ -130,6 +131,7 @@ class Context:
         return self.handle_undefined_name(name)
 
 
+@used  # part of an API
 def type_from_ast(
     ast_node: ast.AST,
     visitor: Optional["NameCheckVisitor"] = None,
@@ -215,11 +217,16 @@ def type_from_value(
     return _type_from_value(value, ctx)
 
 
-def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
-    val = _Visitor(ctx).visit(node)
+def value_from_ast(ast_node: ast.AST, ctx: Context) -> Value:
+    val = _Visitor(ctx).visit(ast_node)
     if val is None:
         ctx.show_error("Invalid type annotation")
         return UNRESOLVED_VALUE
+    return val
+
+
+def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
+    val = value_from_ast(node, ctx)
     return _type_from_value(val, ctx)
 
 
@@ -408,15 +415,26 @@ def _eval_forward_ref(val: str, ctx: Context) -> Value:
 def _type_from_value(value: Value, ctx: Context) -> Value:
     if isinstance(value, KnownValue):
         return _type_from_runtime(value.val, ctx)
-    elif isinstance(value, (TypeVarValue, TypedValue)):
+    elif isinstance(value, TypeVarValue):
         return value
     elif isinstance(value, MultiValuedValue):
         return unite_values(*[_type_from_value(val, ctx) for val in value.vals])
+    elif isinstance(value, AnnotatedValue):
+        return _type_from_value(value.value, ctx)
     elif isinstance(value, _SubscriptedValue):
         if isinstance(value.root, GenericValue):
             if len(value.root.args) == len(value.members):
                 return GenericValue(
                     value.root.typ,
+                    [_type_from_value(member, ctx) for member in value.members],
+                )
+        if isinstance(value.root, _SubscriptedValue):
+            root_type = _type_from_value(value.root, ctx)
+            if isinstance(root_type, GenericValue) and len(root_type.args) == len(
+                value.members
+            ):
+                return GenericValue(
+                    root_type.typ,
                     [_type_from_value(member, ctx) for member in value.members],
                 )
         if not isinstance(value.root, KnownValue):

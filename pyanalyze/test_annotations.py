@@ -379,20 +379,21 @@ class TestAnnotations(TestNameCheckVisitorBase):
             )
             assert_is_value(empty, SequenceIncompleteValue(tuple, []))
 
-    @assert_fails(ErrorCode.invalid_annotation)
+    @assert_passes()
     def test_invalid_annotation(self):
-        def f(x: 1):
+        def not_an_annotation(x: 1):  # E: invalid_annotation
             pass
 
-    @assert_fails(ErrorCode.undefined_name)
-    def test_forward_ref_undefined(self):
-        def f(x: "NoSuchType"):
+        def forward_ref_undefined(x: "NoSuchType"):  # E: undefined_name
             pass
 
-    @assert_fails(ErrorCode.undefined_name)
-    def test_forward_ref_bad_attribute(self):
-        def f(x: "collections.defalutdict"):
+        def forward_ref_bad_attribute(
+            x: "collections.defalutdict",  # E: undefined_name
+        ):
             pass
+
+        def test_typed_value_annotation() -> dict():  # E: invalid_annotation
+            return {}
 
     @assert_passes()
     def test_forward_ref_optional(self):
