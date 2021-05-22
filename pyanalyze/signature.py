@@ -538,7 +538,8 @@ class Signature:
         return_tv_map = my_return.can_assign(their_return, ctx)
         if isinstance(return_tv_map, CanAssignError):
             return CanAssignError(
-                "return annotation is not compatible", [return_tv_map]
+                f"Return annotation {their_return} is not compatible with {my_return}",
+                [return_tv_map],
             )
         if self.is_ellipsis_args or other.is_ellipsis_args:
             return {}

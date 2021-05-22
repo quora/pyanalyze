@@ -30,6 +30,7 @@ from .value import (
     UNRESOLVED_VALUE,
     SequenceIncompleteValue,
     Value,
+    assert_is_value,
 )
 
 T = TypeVar("T")
@@ -157,6 +158,17 @@ class TestTypeshedProtocol(TestNameCheckVisitorBase):
         def capybara() -> None:
             pkgutil.read_code(MatchesProto())
             pkgutil.read_code(NoMatch())  # E: incompatible_argument
+
+    @assert_passes()
+    def test_iterable_arg(self):
+        class BadIter:
+            def __iter__(self) -> bool:
+                return False
+
+        def capybara():
+            assert_is_value(all([]), TypedValue(bool))
+            all(42)  # E: incompatible_argument
+            all(BadIter())  # E: incompatible_argument
 
 
 class Parent(Generic[T]):

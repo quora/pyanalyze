@@ -635,9 +635,7 @@ class TypeshedFinder(object):
                 ):
                     is_protocol = True
                 else:
-                    # TODO inherit from other protocols
-                    print("ignore", expr)
-                    return None
+                    bases.append(lambda base=base: self._parse_type(base, module))
         if not is_protocol:
             return None
         for line in ast.body:

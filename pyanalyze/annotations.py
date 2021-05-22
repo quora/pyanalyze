@@ -550,7 +550,6 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 )
         elif isinstance(value.root, ProtocolValue):
             if len(value.root.get_unapplied_typevars()) == len(value.members):
-                value.root.unlazify()
                 return value.root.apply_typevars(
                     [_type_from_value(val, ctx) for val in value.members]
                 )
