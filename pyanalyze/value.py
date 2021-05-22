@@ -974,7 +974,7 @@ class ProtocolValue(Value):
     def _check_attributes(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         tv_maps = []
         for name, (value, tv_map) in self.members.items():
-            if name == "__call__":
+            if name == "__call__" and not isinstance(other, ProtocolValue):
                 their_sig = ctx.signature_from_value(other)
                 if isinstance(their_sig, pyanalyze.signature.BoundMethodSignature):
                     their_sig = their_sig.get_signature()
