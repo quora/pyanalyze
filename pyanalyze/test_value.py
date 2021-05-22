@@ -175,13 +175,15 @@ def test_protocol() -> None:
 
 
 def test_protocol_value() -> None:
-    pv = ProtocolValue("Proto", {"numerator": TypedValue(int)})
+    pv = ProtocolValue("Proto", members={"numerator": (TypedValue(int), {})})
     assert_can_assign(pv, pv)
     assert_can_assign(pv, TypedValue(int))
     assert_can_assign(pv, KnownValue(1))
     assert_cannot_assign(pv, TypedValue(str))
     assert_cannot_assign(pv, KnownValue("x"))
-    assert_cannot_assign(pv, ProtocolValue("Proto", {"numerator": TypedValue(str)}))
+    assert_cannot_assign(
+        pv, ProtocolValue("Proto", members={"numerator": (TypedValue(str), {})})
+    )
 
 
 def test_callable() -> None:

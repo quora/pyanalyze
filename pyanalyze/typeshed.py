@@ -10,7 +10,6 @@ from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
 from .value import (
     CallableValue,
-    LazyValue,
     ProtocolValue,
     TypedValue,
     GenericValue,
