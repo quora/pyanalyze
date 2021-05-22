@@ -965,7 +965,6 @@ class ProtocolValue(Value):
         compare=False, hash=False, default_factory=dict, init=False
     )
     in_unlazify: bool = field(init=False, default=False)
-    needs_substitution: bool = field(default=False)
 
     def unlazify(self) -> None:
         if self.members:
@@ -1041,7 +1040,6 @@ class ProtocolValue(Value):
             self.member_providers,
             self.bases,
             tv_map={**self.tv_map, **tv_map},
-            needs_substitution=True,
         )
 
     def get_unapplied_typevars(self) -> List["TypeVar"]:
