@@ -213,9 +213,9 @@ class SigParameter(inspect.Parameter):
 
         if self._default is not EMPTY:
             if self._annotation is not EMPTY:
-                formatted = f"{formatted} = {self._default}"
+                formatted = f"{formatted} = {self._default.value}"
             else:
-                formatted = f"{formatted}={self._default}"
+                formatted = f"{formatted}={self._default.value}"
 
         if kind is SigParameter.VAR_POSITIONAL:
             formatted = "*" + formatted

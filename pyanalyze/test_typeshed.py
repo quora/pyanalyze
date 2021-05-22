@@ -143,18 +143,20 @@ def f(x: NT, y: Alias) -> None:
 
 class TestTypeshedProtocol(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_gzip(self):
-        import gzip
+    def test_pkgutil(self):
+        import pkgutil
 
         class MatchesProto:
-            def read(self, n: int) -> bytes:
-                return b""
+            def read(self, n: int = 0) -> bytes:
+                raise NotImplementedError
 
-            def seek(self, n: int) -> str:
-                return ""
+        class NoMatch:
+            def read(self, n: int = 0) -> float:
+                raise NotImplementedError
 
         def capybara() -> None:
-            gzip._GzipReader(MatchesProto())
+            pkgutil.read_code(MatchesProto())
+            pkgutil.read_code(NoMatch())  # E: incompatible_argument
 
 
 class Parent(Generic[T]):
