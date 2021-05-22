@@ -4,8 +4,7 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
-from qcore.inspection import is_classmethod
-from .annotations import Context, is_typing_name, type_from_ast, _Visitor
+from .annotations import Context, is_typing_name, type_from_value, value_from_ast
 from .error_code import ErrorCode
 from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
@@ -238,7 +237,7 @@ class TypeshedFinder(object):
                                 for decorator in child_info.ast.decorator_list
                             ]
                             if child_info.ast.returns and decorators == [
-                                TypedValue(property)
+                                KnownValue(property)
                             ]:
                                 return self._parse_type(child_info.ast.returns, mod)
                             return UNINITIALIZED_VALUE  # a method
@@ -539,14 +538,12 @@ class TypeshedFinder(object):
 
     def _parse_expr(self, node: ast3.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
-        typ = _Visitor(ctx).visit(cast(ast.AST, node))
-        if typ is None:
-            return UNRESOLVED_VALUE
-        return typ
+        return value_from_ast(cast(ast.AST, node), ctx=ctx)
 
     def _parse_type(self, node: ast3.AST, module: str) -> Value:
+        val = self._parse_expr(node, module)
         ctx = _AnnotationContext(finder=self, module=module)
-        typ = type_from_ast(cast(ast.AST, node), ctx=ctx)
+        typ = type_from_value(val, ctx=ctx)
         if self.verbose and typ is UNRESOLVED_VALUE:
             self.log("Got UNRESOLVED_VALUE", (ast3.dump(node), module))
         return typ
@@ -566,7 +563,7 @@ class TypeshedFinder(object):
         ):
             return UNRESOLVED_VALUE
         ctx = _AnnotationContext(finder=self, module=module)
-        return type_from_ast(cast(ast.AST, info.ast.value), ctx=ctx)
+        return value_from_ast(cast(ast.AST, info.ast.value), ctx=ctx)
 
     def _value_from_info(
         self, info: typeshed_client.resolver.ResolvedName, module: str

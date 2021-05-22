@@ -1,6 +1,6 @@
 """
 
-"Safe" operations that call into user code and catch any excxeptions.
+"Safe" operations that call into user code and catch any exceptions.
 
 """
 from typing import Any, Tuple, Union, Container, Type, TypeVar, Iterable
@@ -12,16 +12,17 @@ T = TypeVar("T")
 
 
 def safe_hasattr(item: object, member: str) -> bool:
+    """Safe version of ``hasattr()``."""
     try:
         # some sketchy implementation (like paste.registry) of
-        # __getattr__ caused errors at static analysis.
+        # __getattr__ cause hasattr() to throw an error.
         return hasattr(item, member)
     except Exception:
         return False
 
 
 def safe_getattr(value: object, attr: str, default: object) -> Any:
-    """Returns whether this value has the given attribute, ignoring exceptions."""
+    """Whether this value has the given attribute, ignoring exceptions."""
     try:
         return getattr(value, attr)
     except Exception:
@@ -29,6 +30,7 @@ def safe_getattr(value: object, attr: str, default: object) -> Any:
 
 
 def safe_equals(left: object, right: object) -> bool:
+    """Safely check whether two objects are equal."""
     try:
         return bool(left == right)
     except Exception:
@@ -36,6 +38,14 @@ def safe_equals(left: object, right: object) -> bool:
 
 
 def safe_issubclass(cls: type, class_or_tuple: Union[type, Tuple[type, ...]]) -> bool:
+    """Safe version of ``issubclass()``.
+
+    Apart from incorrect arguments, ``issubclass(a, b)`` can throw an error
+    only if `b` has a ``__subclasscheck__`` method that throws an error.
+    Therefore, it is not necessary to use ``safe_issubclass()`` if the class
+    is known to not override ``__subclasscheck__``.
+
+    """
     try:
         return issubclass(cls, class_or_tuple)
     except Exception:
@@ -43,6 +53,14 @@ def safe_issubclass(cls: type, class_or_tuple: Union[type, Tuple[type, ...]]) ->
 
 
 def safe_isinstance(obj: object, class_or_tuple: Union[type, Tuple[type, ...]]) -> bool:
+    """Safe version of ``isinstance()``.
+
+    Apart from incorrect arguments, ``isinstance(a, b)`` can throw an error
+    only if `b` has a ``__instancecheck__`` method that throws an error.
+    Therefore, it is not necessary to use ``safe_isinstance()`` if the class
+    is known to not override ``__instancecheck__``.
+
+    """
     try:
         return isinstance(obj, class_or_tuple)
     except Exception:
@@ -60,6 +78,7 @@ def safe_in(item: T, collection: Container[T]) -> bool:
 
 
 def is_hashable(obj: object) -> bool:
+    """Return whether an object is hashable."""
     try:
         hash(obj)
     except Exception:

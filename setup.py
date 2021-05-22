@@ -1,9 +1,10 @@
 import os
+from pathlib import Path
 from setuptools import setup
 from setuptools.extension import Extension
 
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 # Used in internal packaging system.
 if "SANTA_PACKAGE_VERSION" in os.environ:
     VERSION = "%s.%s" % (VERSION, os.environ["SANTA_PACKAGE_VERSION"])
@@ -30,7 +31,9 @@ if __name__ == "__main__":
         author="Quora, Inc.",
         author_email="jelle@quora.com",
         description="A static analyzer for Python",
-        long_description="",
+        entry_points={"console_scripts": ["pyanalyze=pyanalyze.__main__:main"]},
+        long_description=Path("README.md").read_text(),
+        long_description_content_type="text/markdown",
         url="https://github.com/quora/pyanalyze",
         license="Apache Software License",
         classifiers=[

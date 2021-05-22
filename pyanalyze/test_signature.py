@@ -1,5 +1,7 @@
 # static analysis: ignore
+from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
+from pyanalyze.implementation import assert_is_value
 from qcore.asserts import assert_eq
 
 from .value import (
@@ -557,6 +559,23 @@ class TestCalls(TestNameCheckVisitorBase):
         def fn():
             return fn(**x)
 
+    @assert_passes()
+    def test_set__name__(self):
+        import pyanalyze.tests
+
+        class A:
+            def __init__(self) -> None:
+                assert_is_value(self, TypedValue(A))
+
+        A.__name__ = "B"
+        A.__init__.__name__ = "B"
+
+        def capybara():
+            assert_is_value(A(), TypedValue(A))
+            assert_is_value(
+                pyanalyze.tests.WhatIsMyName(), TypedValue(pyanalyze.tests.WhatIsMyName)
+            )
+
 
 class TestTypeVar(TestNameCheckVisitorBase):
     @assert_passes()
@@ -691,3 +710,15 @@ class TestTypeVar(TestNameCheckVisitorBase):
         class B(A):
             def capybara(self) -> None:
                 super().capybara()
+
+
+class TestAllowCall(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_encode_decode(self):
+        def capybara():
+            s = "x"
+            b = b"x"
+            assert_is_value(s.encode("ascii"), KnownValue(b"x"))
+            assert_is_value(b.decode("ascii"), KnownValue("x"))
+
+            s.encode("not an encoding")  # E: incompatible_call

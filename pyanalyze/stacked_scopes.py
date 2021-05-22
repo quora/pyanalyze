@@ -6,15 +6,16 @@ This module is responsible for mapping names to their values in pyanalyze. Varia
 mostly through a series of nested dictionaries. When pyanalyze sees a reference to a name inside a
 nested function, it will first look at that function's scope, then in the enclosing function's
 scope, then in the module scope, and finally in the builtin scope containing Python builtins. Each
-of these scopes is represented as a Scope object, which by default is just a thin wrapper around a
+of these scopes is represented as a :class:`Scope` object, which by default is just a thin wrapper around a
 dictionary. However, function scopes are more complicated in order to track variable values
-accurately through control flow structures like if blocks. See the FunctionScope docstring for
+accurately through control flow structures like if blocks. See the :class:`FunctionScope` docstring for
 details.
 
 Other subtleties implemented here:
-- Multiple assignments to the same name result in MultiValuedValue
-- Globals are represented as ReferencingValues, and name lookups for such names are delegated to
-  the ReferencingValue's scope
+
+- Multiple assignments to the same name result in :class:`pyanalyze.value.MultiValuedValue`
+- Globals are represented as :class:`pyanalyze.value.ReferencingValue`, and name lookups for such names are delegated to
+  the :class:`pyanalyze.value.ReferencingValue`\'s scope
 - Class scopes except the current one are skipped in name lookup
 
 """
@@ -70,6 +71,8 @@ _UNINITIALIZED = qcore.MarkerObject("uninitialized")
 
 
 class VisitorState(enum.Enum):
+    """The :term:`phase` of type checking."""
+
     collect_names = 1
     check_names = 2
 
@@ -83,15 +86,16 @@ class ScopeType(enum.Enum):
 
 @dataclass(frozen=True)
 class CompositeVariable:
-    """Fake variable used to implement constraints on instance variables.
+    """:term:`varname` used to implement constraints on instance variables.
 
-    For example, access to "self.x" would make us use
-    CompositeVariable('self', ('x',)). If a function contains a check for
-    isinstance(self.x, int), we would put a Constraint on this CompositeVariable.
+    For example, access to ``self.x`` would make us use
+    ``CompositeVariable('self', ('x',))``. If a function contains a check for
+    ``isinstance(self.x, int)``, we would put a :class:`Constraint` on this
+    :class:`CompositeVariable`.
 
-    Also used for subscripts. Access to "a[1]" uses
-    CompositeVariable('a', (KnownValue(1),)). These can be mixed: "a[1].b"
-    corresponds to CompositeVariable('a', (KnownValue(1), 'b')).
+    Also used for subscripts. Access to ``a[1]`` uses
+    ``CompositeVariable('a', (KnownValue(1),))``. These can be mixed: ``a[1].b``
+    corresponds to ``CompositeVariable('a', (KnownValue(1), 'b'))``.
 
     """
 
@@ -109,6 +113,9 @@ SubScope = Dict[Varname, List[Node]]
 
 
 class Composite(NamedTuple):
+    """A :class:`pyanalyze.value.Value` with information about its
+    origin. This is useful for setting constraints."""
+
     value: Value
     varname: Optional[Varname]
     node: Optional[AST]
@@ -123,27 +130,29 @@ class _LookupContext:
 
 
 class ConstraintType(enum.Enum):
-    # corresponds to (not) isinstance(constraint.varname, constraint.value)
     is_instance = 1
-    # corresponds to constraint.varname is (not) constraint.value
+    """Corresponds to ``(not) isinstance(constraint.varname, constraint.value)``."""
     is_value = 2
-    # corresponds to if (not) constraint.varname
+    """Corresponds to ``constraint.varname is (not) constraint.value``."""
     is_truthy = 3
-    # For these constraint types, the value is itself a list of constraints. These
-    # constraints are always positive. They are similar to the abstract
-    # AndConstraint and OrConstraint, but unlike these, all constraints in a one_of
-    # or all_of constraint apply to the same variable.
-    # at least one of several other constraints on varname is true
+    """Corresponds to ``if (not) constraint.varname``."""
     one_of = 4
-    # all of several other constraints on varname are true
+    """At least one of several other constraints on `varname` is true.
+
+    For the `one_of` and `all_of` constraint types, the value is itself a list of constraints. These
+    constraints are always positive. They are similar to the abstract
+    :class:`AndConstraint` and :class:`OrConstraint`, but unlike these, all constraints in a `one_of`
+    or `all_of` constraint apply to the same :term:`varname`.
+    """
     all_of = 5
-    # constraint.varname should be typed as a Value object. Naming of this
-    # and is_value is confusing, and ideally we'd come up with better names.
+    """All of several other constraints on `varname` are true."""
     is_value_object = 6
-    # constraint.value is a PredicateFunc
+    """`constraint.varname` should be typed as a `:pyanalyze.value.Value` object. Naming of this
+    and `is_value` is confusing, and ideally we'd come up with better names."""
     predicate = 7
-    # self.value is an Extension to annotate the value with
+    """`constraint.value` is a `PredicateFunc`."""
     add_annotation = 8
+    """`constraint.value` is an :class:`pyanalyze.value.Extension` to annotate the value with."""
 
 
 class AbstractConstraint:
@@ -157,7 +166,7 @@ class AbstractConstraint:
     produces no concrete constraints, and an AND constraint AND(C1, C2)
     produces both C1 and C2.
 
-    Concrete constraints are instances of the Constraint class.
+    Concrete constraints are instances of the :class:`Constraint` class.
 
     """
 
@@ -181,35 +190,34 @@ class Constraint(AbstractConstraint):
     Constraints are tracked in scope objects, so that we know which constraints
     are active for a given usage of a variable.
 
-    Constraints have the following attributes:
-    - varname (str): name of the variable the constraint applies to
-    - constraint_type (ConstraintType): type of constraint
-    - positive (bool): whether this is a positive constraint or not (e.g.,
-      for an is_truthy constraint, "if x" would lead to a positive and "if not x"
-      to a negative constraint)
-    - value: type for an is_instance constraint; value identical to the variable
-      for is_value; unused for is_truthy; Value object for is_value_object.
-
-    For example:
+    For example::
 
         def f(x: Optional[int]) -> None:
-            # x can be either an int or None
+            reveal_type(x)  # Union[int, None]
             assert x
             # Now a constraint of type is_truthy is active. Because
-            # None is not truthy, we now know that x is of type int.
+            # None is not truthy, we know that x is of type int.
+            reveal_type(x)  # int
 
     """
 
     varname: Varname
+    """The :term:`varname` that the constraint applies to."""
     constraint_type: ConstraintType
+    """Type of constraint. Determines the meaning of :attr:`value`."""
     positive: bool
+    """Whether this is a positive constraint or not. For example,
+    for an `is_truthy` constraint, ``if x`` would lead to a positive and ``if not x``
+    to a negative constraint."""
     value: Any
+    """Type for an ``is_instance`` constraint; value identical to the variable
+    for ``is_value``; unused for is_truthy; :class:`pyanalyze.value.Value` object for
+    `is_value_object`."""
 
     def apply(self) -> Iterable["Constraint"]:
         yield self
 
     def invert(self) -> "Constraint":
-        """Returns the opposite of this constraint."""
         return Constraint(
             self.varname, self.constraint_type, not self.positive, self.value
         )
@@ -351,10 +359,37 @@ class NullConstraint(AbstractConstraint):
 
 
 NULL_CONSTRAINT = NullConstraint()
+"""The single instance of :class:`NullConstraint`."""
 
 
 @dataclass(frozen=True)
 class PredicateProvider(AbstractConstraint):
+    """A form of constraint implemented through a predicate on a value.
+
+    If a function returns a :class:`PredicateProvider`, equality
+    checks on the return value will produce a `predicate`
+    :term:`constraint`.
+
+    Consider the following code::
+
+        def two_lengths(tpl: Union[Tuple[int], Tuple[str, int]]) -> int:
+            if len(tpl) == 1:
+                return tpl[0]
+            else:
+                return tpl[1]
+
+    The :term:`impl` for :func:`len` returns a :class:`PredicateProvider`,
+    with a `provider` attribute that returns the length of the object
+    represented by a :term:`value`. In turn, the equality check (``== 1``)
+    produces a constraint of type `predicate`, which filters away any
+    values that do not match the length of the object.
+
+    In this case, there are two values: a tuple of length 1 and one of
+    length 2. Only the first matches the constraint, so the type is
+    narrowed down to that tuple and the code typechecks correctly.
+
+    """
+
     varname: Varname
     provider: Callable[[Value], Value]
 
@@ -403,7 +438,7 @@ class OrConstraint(AbstractConstraint):
                     ConstraintType.one_of,
                     True,
                     [
-                        self._constraint_from_list(varname, left[varname]),
+                        self._constraint_from_list(varname, constraints),
                         self._constraint_from_list(varname, right[varname]),
                     ],
                 )
@@ -539,7 +574,7 @@ class Scope:
 
     @contextlib.contextmanager
     def loop_scope(self) -> Iterator[None]:
-        """Context manager for the subscope associated with a loop."""
+        # Context manager for the subscope associated with a loop.
         yield
 
     def combine_subscopes(
@@ -572,33 +607,33 @@ class Scope:
 class FunctionScope(Scope):
     """Keeps track of the local variables of a single function.
 
-    FunctionScope is designed to produce the correct value for each variable at each point in the
-    function, unlike the base Scope class, which assumes that each variable has the same value
+    :class:`FunctionScope` is designed to produce the correct value for each variable at each point in the
+    function, unlike the base :class:`Scope` class, which assumes that each variable has the same value
     throughout the scope it represents.
 
-    For example, given the code:
+    For example, given the code::
 
         x = 3
         x = 4
         print(x)
 
-    FunctionScope will infer the value of x to be KnownValue(4), but Scope will produce a
-    MultiValuedValue because it does not know whether the assignment to 3 or 4 is active.
+    :class:`FunctionScope` will infer the value of `x` to be ``KnownValue(4)``, but :class:`Scope` will produce a
+    :class:`pyanalyze.value.MultiValuedValue` because it does not know whether the assignment to 3 or 4 is active.
 
     The approach taken is to map each usage node (a place where the variable is used) to a set of
     definition nodes (places where the variable is assigned to) that could be active when the
     variable is used. Each definition node is also mapped to the value assigned to the variable
     there.
 
-    For example, in the code:
+    For example, in the code::
 
         x = 3  # (a)
         print(x)  # (b)
 
-    (a) is the only definition node for the usage node at (b), and (a) is mapped to KnownValue(3),
-    so at (b) x is inferred to be KnownValue(3).
+    (a) is the only definition node for the usage node at (b), and (a) is mapped to ``KnownValue(3)``,
+    so at (b) x is inferred to be ``KnownValue(3)``.
 
-    However, in this code:
+    However, in this code::
 
         if some_condition():
             x = 3  # (a)
@@ -607,15 +642,15 @@ class FunctionScope(Scope):
         print(x)  # (c)
 
     both (a) and (b) are possible definition nodes for the usage node at (c), so at (c) x is
-    inferred to be a MultiValuedValue([KnownValue(3), KnownValue(4)]).
+    inferred to be a ``MultiValuedValue([KnownValue(3), KnownValue(4)])``.
 
-    These mappings are implemented as the usage_to_definition_nodes and definition_node_to_value
-    attributes on the FunctionScope object. They are created completely during the collecting
-    phase. The basic mechanism uses the name_to_current_definition_nodes dictionary, which maps
+    These mappings are implemented as the `usage_to_definition_nodes` and `definition_node_to_value`
+    attributes on the :class:`FunctionScope` object. They are created completely during the collecting
+    :term:`phase`. The basic mechanism uses the `name_to_current_definition_nodes` dictionary, which maps
     each local variable to a list of active definition nodes. When pyanalyze encounters an
-    assignment, it updates name_to_current_definition_nodes to map to that assignment node, and
-    when it encounters a variable usage it updates usage_to_definition_nodes to map that usage
-    to the current definition nodes in name_to_current_definition_nodes. For example:
+    assignment, it updates `name_to_current_definition_nodes` to map to that assignment node, and
+    when it encounters a variable usage it updates `usage_to_definition_nodes` to map that usage
+    to the current definition nodes in `name_to_current_definition_nodes`. For example::
 
         # name_to_current_definition_nodes (n2cdn) = {}, usage_to_definition_nodes (u2dn) = {}
         x = 3  # (a)
@@ -628,12 +663,12 @@ class FunctionScope(Scope):
         # n2cdn = {'x': [(c)]}, u2dn = {(b): [(a)], (d): [(c)]}
 
     However, this simple approach is not sufficient to handle control flow inside the function. To
-    handle this case, FunctionScope supports the creation of subscopes and the combine_subscopes
+    handle this case, :class:`FunctionScope` supports the creation of subscopes and the `combine_subscopes`
     operation. Each branch in a conditional statement is mapped to a separate subscope, which
-    contains an independently updated copy of name_to_current_definition_nodes. After pyanalyze
-    visits all branches, it runs the combine_subscopes operation on all of the branches' subscopes.
+    contains an independently updated copy of `name_to_current_definition_nodes`. After pyanalyze
+    visits all branches, it runs the `combine_subscopes` operation on all of the branches' subscopes.
     This operation takes, for each variable, the union of the definition nodes created in all of the
-    branches. For example:
+    branches. For example::
 
         # n2cdn = {}, u2dn = {}
         if some_condition():
@@ -653,7 +688,7 @@ class FunctionScope(Scope):
 
     This model applies most cleanly to if blocks, but try-except can also be analyzed using this
     approach. Loops are more complicated, because variable usages sometimes need to be mapped to
-    definition nodes later in the same loop body. For example, in code like this:
+    definition nodes later in the same loop body. For example, in code like this::
 
         x = None
         for _ in (1, 2):
@@ -662,13 +697,13 @@ class FunctionScope(Scope):
             else:
                 x = (1, 2)  # (b)
 
-    a naive approach would infer that x is None at (a). To take care of this case, pyanalyze visits
-    the loop body twice during the collecting phase, so that usage_to_definition_nodes can add a
-    mapping of (a) to (b). To handle break and continue correctly, it also uses a separate "loop
+    a naive approach would infer that `x` is ``None`` at (a). To take care of this case, pyanalyze visits
+    the loop body twice during the collecting :term:`phase`, so that `usage_to_definition_nodes` can add a
+    mapping of (a) to (b). To handle `break` and `continue` correctly, it also uses a separate "loop
     scope" that ends up combining the scopes created by normal control flow through the body of the
-    loop and by each break and continue statement.
+    loop and by each `break` and `continue` statement.
 
-    Try-finally blocks are handled by visiting the finally block twice. Essentially, we treat:
+    Try-finally blocks are handled by visiting the finally block twice. Essentially, we treat::
 
         try:
             TRY-BODY
@@ -676,7 +711,7 @@ class FunctionScope(Scope):
             FINALLY-BODY
         REST-OF-FUNCTION
 
-    as equivalent to:
+    as equivalent to::
 
         if <empty>:
             FINALLY-BODY
@@ -692,14 +727,14 @@ class FunctionScope(Scope):
     disadvantage that the finally body is visted twice, which may lead to some errors being doubled.
 
     A similar approach is used to handle loops, where the body of the loop may not be executed at
-    all. A for loop of the form:
+    all. A for loop of the form::
 
         for TARGET in ITERABLE:
             FOR-BODY
         else:
             ELSE-BODY
 
-    is treated like:
+    is treated like::
 
         if <empty>:
             TARGET = next(iter(ITERABLE))
@@ -975,7 +1010,7 @@ class StackedScopes:
         scope_node: Node,
         scope_object: Optional[object] = None,
     ) -> Iterable[None]:
-        """Contextmanager that temporarily adds a scope of this type to the top of the stack."""
+        """Context manager that adds a scope of this type to the top of the stack."""
         if scope_type is ScopeType.function_scope:
             scope = FunctionScope(self.scopes[-1], scope_node)
         else:
@@ -1000,19 +1035,25 @@ class StackedScopes:
     def get(self, varname: Varname, node: Node, state: VisitorState) -> Value:
         """Gets a variable of the given name from the current scope stack.
 
-        Arguments:
-        - varname: name of the variable to retrieve
-        - node: AST node corresponding to the place where the variable lookup is happening.
-          FunctionScope uses this to decide which definition of the variable to use; other scopes
-          ignore it. It can be passed as None to indicate that any definition may be used. This is
-          used among others when looking up names in outer scopes. Although this argument should
-          normally be an AST node, it can be any unique, hashable identifier, because sometimes a
-          single AST node sets multiple variables (e.g. in ImportFrom nodes).
-        - state: the current VisitorState. pyanalyze runs the collecting state to collect all name
-          assignments and map name usages to their corresponding assignments, and then the checking
-          state to locate any errors in the code.
+        :param varname: :term:`varname` of the variable to retrieve
+        :type varname: Varname
 
-        Returns UNINITIALIZED_VALUE if the name is not defined in any known scope.
+        :param node: AST node corresponding to the place where the variable lookup is happening.
+                     :class:`FunctionScope` uses this to decide which definition of the variable
+                     to use; other scopes ignore it. It can be passed as None to indicate that
+                     any definition may be used. This is used among others when looking up names
+                     in outer scopes. Although this argument should normally be an AST node, it
+                     can be any unique, hashable identifier, because sometimes a single AST node
+                     sets multiple variables (e.g. in ImportFrom nodes).
+        :type node: Node
+
+        :param state: The current :class:`VisitorState`. Pyanalyze runs the collecting
+                      :term:`phase` to collect all name assignments and map name usages to their
+                      corresponding assignments, and then the checking phase to locate any errors
+                      in the code.
+        :type state: VisitorState
+
+        Returns :data:`pyanalyze.value.UNINITIALIZED_VALUE` if the name is not defined in any known scope.
 
         """
         value, _ = self.get_with_scope(varname, node, state)
@@ -1021,9 +1062,9 @@ class StackedScopes:
     def get_with_scope(
         self, varname: Varname, node: Node, state: VisitorState
     ) -> Tuple[Value, Optional[Scope]]:
-        """Like get(), but also returns the scope object the name was found in.
+        """Like :meth:`get`, but also returns the scope object the name was found in.
 
-        Returns a (Value, Scope) tuple. The Scope is None if the name was not found.
+        Returns a (:class:`pyanalyze.value.Value`, :class:`Scope`) tuple. The :class:`Scope` is ``None`` if the name was not found.
 
         """
         return self.scopes[-1].get(varname, node, state)
@@ -1047,18 +1088,18 @@ class StackedScopes:
     ) -> None:
         """Records an assignment to this variable.
 
-        value is the value that is being assigned to varname. It should be an instance of
-        value.Value. The other arguments are the same as those of get().
+        value is the :term:`value` that is being assigned to `varname`. The other
+        arguments are the same as those of :meth:`get`.
 
         """
         self.scopes[-1].set(varname, value, node, state)
 
     def subscope(self) -> ContextManager[SubScope]:
-        """Creates a new subscope (see the FunctionScope docstring)."""
+        """Creates a new subscope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].subscope()
 
     def loop_scope(self) -> ContextManager[None]:
-        """Creates a new loop scope (see the FunctionScope docstring)."""
+        """Creates a new loop scope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].loop_scope()
 
     def combine_subscopes(
@@ -1095,7 +1136,7 @@ class StackedScopes:
 
 
 def constrain_value(value: Value, constraint: AbstractConstraint) -> Value:
-    """Create a version of this value with the constraint applied."""
+    """Create a version of this :term:`value` with the :term:`constraint` applied."""
     return _constrain_value([value], constraint.apply())
 
 

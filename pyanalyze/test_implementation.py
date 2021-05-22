@@ -162,18 +162,6 @@ class TestSuperCall(TestNameCheckVisitorBase):
         class Capybara(Mixin, Base):
             pass
 
-    @assert_passes()
-    def test_multi_valued(self):
-        Capybara = 42
-
-        class Capybara(object):
-            pass
-
-        C = Capybara
-
-        def fn():
-            assert_is_value(Capybara, MultiValuedValue([KnownValue(42), KnownValue(C)]))
-
 
 class TestSequenceImpl(TestNameCheckVisitorBase):
     @assert_passes()
@@ -227,30 +215,32 @@ class TestFormat(TestNameCheckVisitorBase):
             assert_is_value("{0:.{1:d}e}".format(0, 1), TypedValue(str))
             assert_is_value("{:<{width}}".format("", width=1), TypedValue(str))
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_out_of_range_implicit(self):
-        def capybara():
-            "{} {}".format(0)
+    @assert_passes()
+    def test_errors(self):
+        def out_of_range_implicit():
+            "{} {}".format(0)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_out_of_range_numbered(self):
-        def capybara():
-            "{0} {1}".format(0)
+        def out_of_range_numbered():
+            "{0} {1}".format(0)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_out_of_range_named(self):
-        def capybara():
-            "{x}".format(y=3)
+        def out_of_range_named():
+            "{x}".format(y=3)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_unused_numbered(self):
-        def capybara():
-            "{}".format(0, 1)
+        def unused_numbered():
+            "{}".format(0, 1)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_unused_named(self):
-        def capybara():
-            "{x}".format(x=0, y=1)
+        def unused_names():
+            "{x}".format(x=0, y=1)  # E: incompatible_call
+
+    @assert_passes()
+    def test_union(self):
+        def capybara(cond):
+            if cond:
+                template = "{a} {b}"
+            else:
+                template = "{a} {b} {c}"
+            string = template.format(a="a", b="b", c="c")
+            assert_is_value(string, TypedValue(str))
 
 
 class TestTypeMethods(TestNameCheckVisitorBase):
@@ -269,9 +259,9 @@ class TestEncodeDecode(TestNameCheckVisitorBase):
     def test(self):
         import six
 
-        def capybara():
-            assert_is_value("".encode("utf-8"), TypedValue(bytes))
-            assert_is_value(b"".decode("utf-8"), TypedValue(six.text_type))
+        def capybara(s: str, b: bytes):
+            assert_is_value(s.encode("utf-8"), TypedValue(bytes))
+            assert_is_value(b.decode("utf-8"), TypedValue(six.text_type))
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_encode_wrong_type(self):
@@ -599,6 +589,39 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.extend([str(3)])  # E: incompatible_argument
 
     @assert_passes()
+    def test_list_extend_union(self):
+        def capybara(cond):
+            if cond:
+                lst = [1 for _ in range(3)]
+            else:
+                lst = [2 for _ in range(3)]
+            assert_is_value(
+                lst,
+                MultiValuedValue(
+                    [
+                        make_weak(GenericValue(list, [KnownValue(1)])),
+                        make_weak(GenericValue(list, [KnownValue(2)])),
+                    ]
+                ),
+            )
+            lst.extend([3, 4])
+
+            # TODO: this is wrong; it drops all but the last Union member
+            assert_is_value(
+                lst,
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
+                            MultiValuedValue(
+                                [KnownValue(2), KnownValue(3), KnownValue(4)]
+                            )
+                        ],
+                    )
+                ),
+            )
+
+    @assert_passes()
     def test_setdefault(self):
         from typing_extensions import TypedDict
         from typing import Dict
@@ -863,3 +886,24 @@ class TestInferenceHelpers(TestNameCheckVisitorBase):
             assert_is_value(1, KnownValue(1))
             assert_is_value(1, KnownValue(2))  # E: inference_failure
             assert_is_value(1, val)  # E: inference_failure
+
+
+class TestCallableGuards(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_callable(self):
+        from pyanalyze.signature import ANY_SIGNATURE
+
+        def capybara(o: object) -> None:
+            assert_is_value(o, TypedValue(object))
+            if callable(o):
+                assert_is_value(o, CallableValue(ANY_SIGNATURE))
+
+    @assert_passes()
+    def test_isfunction(self):
+        from types import FunctionType
+        import inspect
+
+        def capybara(o: object) -> None:
+            assert_is_value(o, TypedValue(object))
+            if inspect.isfunction(o):
+                assert_is_value(o, TypedValue(FunctionType))

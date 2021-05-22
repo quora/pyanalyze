@@ -8,9 +8,10 @@ from .annotations import Context, type_from_runtime, is_typing_name
 from .config import Config
 from .find_unused import used
 from . import implementation
-from .safe import safe_hasattr
+from .safe import safe_hasattr, safe_in, safe_issubclass
 from .stacked_scopes import uniq_chain
 from .signature import (
+    ANY_SIGNATURE,
     Impl,
     MaybeSignature,
     PropertyArgSpec,
@@ -42,6 +43,7 @@ from dataclasses import dataclass
 import qcore
 import inspect
 import sys
+from types import ModuleType
 from typing import Any, Sequence, Generic, Iterable, Mapping, Optional, Dict
 import typing_inspect
 
@@ -152,14 +154,15 @@ class ArgSpecCache:
 
     def from_signature(
         self,
-        sig: Optional[inspect.Signature],
+        sig: inspect.Signature,
         *,
-        kwonly_args: Sequence[SigParameter] = (),
         impl: Optional[Impl] = None,
         function_object: object,
         is_async: bool = False,
         is_asynq: bool = False,
-    ) -> Optional[Signature]:
+        returns: Optional[Value] = None,
+        allow_call: bool = False,
+    ) -> Signature:
         """Constructs a pyanalyze Signature from an inspect.Signature.
 
         kwonly_args may be a list of custom keyword-only arguments added to the argspec or None.
@@ -169,8 +172,6 @@ class ArgSpecCache:
         function_object is the underlying callable.
 
         """
-        if sig is None:
-            return None
         func_globals = getattr(function_object, "__globals__", None)
         # Signature preserves the return annotation for wrapped functions,
         # because @functools.wraps copies the __annotations__ of the wrapped function. We
@@ -178,28 +179,27 @@ class ArgSpecCache:
         # This caused problems with @contextlib.contextmanager.
         is_wrapped = safe_hasattr(function_object, "__wrapped__")
 
-        if is_wrapped or sig.return_annotation is inspect.Signature.empty:
-            returns = UNRESOLVED_VALUE
-            has_return_annotation = False
-        else:
-            returns = type_from_runtime(
-                sig.return_annotation, ctx=AnnotationsContext(self, func_globals)
-            )
+        if returns is not None:
             has_return_annotation = True
-        if is_async:
-            returns = GenericValue(Awaitable, [returns])
+        else:
+            if is_wrapped or sig.return_annotation is inspect.Signature.empty:
+                returns = UNRESOLVED_VALUE
+                has_return_annotation = False
+            else:
+                returns = type_from_runtime(
+                    sig.return_annotation, ctx=AnnotationsContext(self, func_globals)
+                )
+                has_return_annotation = True
+            if is_async:
+                returns = GenericValue(Awaitable, [returns])
 
         parameters = []
         for i, parameter in enumerate(sig.parameters.values()):
-            if kwonly_args and parameter.kind is SigParameter.VAR_KEYWORD:
-                parameters += kwonly_args
-                kwonly_args = []
             parameters.append(
                 self._make_sig_parameter(
                     parameter, func_globals, function_object, is_wrapped, i
                 )
             )
-        parameters += kwonly_args
 
         return Signature.make(
             parameters,
@@ -208,6 +208,8 @@ class ArgSpecCache:
             callable=function_object,
             has_return_annotation=has_return_annotation,
             is_asynq=is_asynq,
+            allow_call=allow_call
+            or safe_in(function_object, self.config.FUNCTIONS_SAFE_TO_CALL),
         )
 
     def _make_sig_parameter(
@@ -264,13 +266,13 @@ class ArgSpecCache:
             ):
                 module = sys.modules[module_name]
                 *class_names, function_name = qualname.split(".")
-                class_obj: Any = module
+                class_obj = module
                 for class_name in class_names:
                     class_obj = getattr(class_obj, class_name, None)
                     if class_obj is None:
                         break
                 if (
-                    class_obj is not None
+                    isinstance(class_obj, type)
                     and inspect.getattr_static(class_obj, function_name, None)
                     is function_object
                 ):
@@ -373,8 +375,12 @@ class ArgSpecCache:
                     callable=obj,
                 )
 
+            inspect_sig = self._safe_get_signature(obj)
+            if inspect_sig is None:
+                return self._make_any_sig(obj)
+
             return self.from_signature(
-                self._safe_get_signature(obj),
+                inspect_sig,
                 function_object=obj,
                 is_async=asyncio.iscoroutinefunction(obj),
                 impl=impl,
@@ -395,9 +401,13 @@ class ArgSpecCache:
             if isinstance(override, Signature):
                 signature = override
             else:
+                should_ignore = safe_in(obj, self.config.IGNORED_CALLEES)
+                return_type = UNRESOLVED_VALUE if should_ignore else TypedValue(obj)
+                allow_call = safe_issubclass(
+                    obj, self.config.CLASSES_SAFE_TO_INSTANTIATE
+                )
                 if isinstance(override, inspect.Signature):
                     inspect_sig = override
-                    constructor = obj
                 else:
                     if override is not None:
                         constructor = override
@@ -405,38 +415,59 @@ class ArgSpecCache:
                         constructor = obj.__init__
                     else:
                         # old-style class
-                        return None
+                        return Signature.make(
+                            [],
+                            return_type,
+                            is_ellipsis_args=True,
+                            callable=obj,
+                            allow_call=allow_call,
+                        )
                     inspect_sig = self._safe_get_signature(constructor)
                 if inspect_sig is None:
-                    return None
+                    return Signature.make(
+                        [],
+                        return_type,
+                        is_ellipsis_args=True,
+                        callable=obj,
+                        allow_call=allow_call,
+                    )
 
-                kwonly_args = []
                 signature = self.from_signature(
                     inspect_sig,
-                    function_object=constructor,
-                    kwonly_args=kwonly_args,
+                    function_object=obj,
                     impl=impl,
+                    returns=return_type,
+                    allow_call=allow_call,
                 )
-            return make_bound_method(signature, TypedValue(obj))
+            bound_sig = make_bound_method(signature, TypedValue(obj))
+            if bound_sig is None:
+                return None
+            sig = bound_sig.get_signature(preserve_impl=True)
+            if sig is not None:
+                return sig
+            return bound_sig
 
         if inspect.isbuiltin(obj):
-            if hasattr(obj, "__self__"):
+            if hasattr(obj, "__self__") and not isinstance(obj.__self__, ModuleType):
                 cls = type(obj.__self__)
                 try:
                     method = getattr(cls, obj.__name__)
                 except AttributeError:
-                    return None
+                    return self._make_any_sig(obj)
                 if method == obj:
-                    return None
+                    return self._make_any_sig(obj)
                 argspec = self._cached_get_argspec(method, impl, is_asynq)
                 return make_bound_method(argspec, KnownValue(obj.__self__))
-            return None
+            inspect_sig = self._safe_get_signature(obj)
+            if inspect_sig is not None:
+                return self.from_signature(inspect_sig, function_object=obj)
+            return self._make_any_sig(obj)
 
         if hasattr(obj, "__call__"):
             # we could get an argspec here in some cases, but it's impossible to figure out
             # the argspec for some builtin methods (e.g., dict.__init__), and no way to detect
             # these with inspect, so just give up.
-            return None
+            return self._make_any_sig(obj)
 
         if isinstance(obj, property):
             # If we know the getter, inherit its return value.
@@ -447,6 +478,19 @@ class ArgSpecCache:
             return PropertyArgSpec(obj)
 
         return None
+
+    def _make_any_sig(self, obj: object) -> Signature:
+        if safe_in(obj, self.config.FUNCTIONS_SAFE_TO_CALL):
+            return Signature.make(
+                [],
+                UNRESOLVED_VALUE,
+                is_ellipsis_args=True,
+                is_asynq=True,
+                allow_call=True,
+                callable=obj,
+            )
+        else:
+            return ANY_SIGNATURE
 
     def _safe_get_signature(self, obj: Any) -> Optional[inspect.Signature]:
         """Wrapper around inspect.getargspec that catches TypeErrors."""

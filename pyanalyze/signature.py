@@ -1,6 +1,8 @@
 """
 
-Wrappers around Signature objects.
+The :class:`Signature` object and associated functionality. This
+provides a way to represent rich callable objects and type check
+calls.
 
 """
 
@@ -12,7 +14,6 @@ from .stacked_scopes import (
     ConstraintType,
     NULL_CONSTRAINT,
     AbstractConstraint,
-    PredicateProvider,
     Varname,
 )
 from .value import (
@@ -47,6 +48,7 @@ from functools import reduce
 from types import MethodType, FunctionType
 import inspect
 import qcore
+from qcore.helpers import safe_str
 from typing import (
     Any,
     Iterable,
@@ -78,29 +80,36 @@ Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 
 class ImplReturn(NamedTuple):
-    """Return value of impl functions.
+    """Return value of :term:`impl` functions.
 
-    These functions return either a single Value object, indicating what the
-    function returns, or an instance of this class:
-    - The return value
-    - A Constraint indicating things that are true if the function returns a truthy value,
-      or a PredicateProvider
-    - A Constraint indicating things that are true unless the function does not return
+    These functions return either a single :class:`pyanalyze.value.Value`
+    object, indicating what the function returns, or an instance of this class.
+
     """
 
     return_value: Value
-    constraint: Union[AbstractConstraint, PredicateProvider] = NULL_CONSTRAINT
+    """The return value of the function."""
+    constraint: AbstractConstraint = NULL_CONSTRAINT
+    """A :class:`pyanalyze.stacked_scopes.Constraint` indicating things that are true
+    if the function returns a truthy value."""
     no_return_unless: AbstractConstraint = NULL_CONSTRAINT
+    """A :class:`pyanalyze.stacked_scopes.Constraint` indicating things that are true
+    unless the function does not return."""
 
 
 @dataclass
 class CallContext:
-    """The context passed to an impl function."""
+    """The context passed to an :term:`impl` function."""
 
     vars: Dict[str, Value]
+    """Dictionary of variable names passed to the function."""
     visitor: "NameCheckVisitor"
+    """Using the visitor can allow various kinds of advanced logic
+    in impl functions."""
     bound_args: inspect.BoundArguments
     node: ast.AST
+    """AST node corresponding to the function call. Useful for
+    showing errors."""
 
     def ast_for_arg(self, arg: str) -> Optional[ast.AST]:
         composite = self.composite_for_arg(arg)
@@ -109,6 +118,12 @@ class CallContext:
         return None
 
     def varname_for_arg(self, arg: str) -> Optional[Varname]:
+        """Return a :term:`varname` corresponding to the given function argument.
+
+        This is useful for creating a :class:`pyanalyze.stacked_scopes.Constraint`
+        referencing the argument.
+
+        """
         composite = self.composite_for_arg(arg)
         if composite is not None:
             return composite.varname
@@ -129,6 +144,13 @@ class CallContext:
         node: Optional[ast.AST] = None,
         detail: Optional[str] = None,
     ) -> None:
+        """Show an error.
+
+        If the `arg` parameter is given, we attempt to find the
+        AST for that argument to the function and point the error
+        to it.
+
+        """
         node = None
         if arg is not None:
             node = self.ast_for_arg(arg)
@@ -141,7 +163,8 @@ Impl = Callable[[CallContext], Union[Value, ImplReturn]]
 
 
 class SigParameter(inspect.Parameter):
-    """Wrapper around inspect.Parameter that stores annotations as Value objects."""
+    """Wrapper around :class:`inspect.Parameter` that stores annotations
+    as :class:`pyanalyze.value.Value` objects."""
 
     __slots__ = ()
 
@@ -204,14 +227,30 @@ class SigParameter(inspect.Parameter):
 
 @dataclass
 class Signature:
+    """Represents the signature of a Python callable.
+
+    This is used to type check function calls and it powers the
+    :class:`pyanalyze.value.CallableValue` class.
+
+    """
+
     _return_key: ClassVar[str] = "%return"
 
     signature: inspect.Signature
+    """The underlying :class:`inspect.Signature`, storing the parameters
+    and the return annotation."""
     impl: Optional[Impl] = field(default=None, compare=False)
-    callable: Optional[object] = field(default=None, compare=False)
+    """:term:`impl` function for this signature."""
+    callable: Optional[Callable[..., Any]] = field(default=None, compare=False)
+    """The callable that this signature represents."""
     is_asynq: bool = False
+    """Whether this signature represents an asynq function."""
     has_return_annotation: bool = True
     is_ellipsis_args: bool = False
+    """Whether this signature represents a ``Callable[..., T]`` callable. Such
+    a callable is compatible with any other callable with a compatible return type."""
+    allow_call: bool = False
+    """Whether type checking can call the actual function to retrieve a precise return value."""
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
         init=False, default_factory=dict, repr=False, compare=False
     )
@@ -353,19 +392,12 @@ class Signature:
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> ImplReturn:
-        """Tries to call this object with the given arguments and keyword arguments.
+        """Type check a call to this Signature with the given arguments.
 
-        Raises a TypeError if something goes wrong.
-
-        This is done by calling the function generated by generate_function(), and then examining
-        the local variables to validate types and keyword-only arguments.
+        This may call the :term:`impl` function or the underlying callable,
+        but normally just uses :meth:`inspect.Signature.bind`.
 
         """
-        if self.is_ellipsis_args:
-            return_value = self.signature.return_annotation
-            if return_value is EMPTY:
-                return ImplReturn(UNRESOLVED_VALUE)
-            return ImplReturn(return_value)
         call_args = []
         call_kwargs = {}
         for composite, label in args:
@@ -379,6 +411,19 @@ class Signature:
                 # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
                 # - else do something smart to still typecheck the call
                 return ImplReturn(UNRESOLVED_VALUE)
+
+        if self.is_ellipsis_args:
+            if self.allow_call:
+                runtime_return = self._maybe_perform_call(
+                    call_args, call_kwargs, visitor, node
+                )
+                if runtime_return is not None:
+                    return ImplReturn(runtime_return)
+            return_value = self.signature.return_annotation
+            if return_value is EMPTY:
+                return ImplReturn(UNRESOLVED_VALUE)
+            return ImplReturn(return_value)
+
         try:
             bound_args = self.signature.bind(*call_args, **call_kwargs)
         except TypeError as e:
@@ -429,18 +474,58 @@ class Signature:
                 vars=variables, visitor=visitor, bound_args=bound_args, node=node
             )
             return_value = self.impl(ctx)
-            return self._apply_annotated_constraints(return_value, bound_args)
-        elif return_value is EMPTY:
+
+        if self.allow_call:
+            runtime_return = self._maybe_perform_call(
+                call_args, call_kwargs, visitor, node
+            )
+            if runtime_return is not None:
+                if isinstance(return_value, ImplReturn):
+                    return_value = ImplReturn(
+                        runtime_return,
+                        return_value.constraint,
+                        return_value.no_return_unless,
+                    )
+                else:
+                    return_value = runtime_return
+        if return_value is EMPTY:
             return ImplReturn(UNRESOLVED_VALUE)
         else:
             return self._apply_annotated_constraints(return_value, bound_args)
 
+    def _maybe_perform_call(
+        self,
+        call_args: List[Composite],
+        call_kwargs: Dict[str, Composite],
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+    ) -> Optional[Value]:
+        if self.callable is None:
+            return None
+        args = []
+        for composite in call_args:
+            if isinstance(composite.value, KnownValue):
+                args.append(composite.value.val)
+            else:
+                return None
+        kwargs = {}
+        for key, composite in call_kwargs.items():
+            if isinstance(composite.value, KnownValue):
+                kwargs[key] = composite.value.val
+            else:
+                return None
+        try:
+            value = self.callable(*args, **kwargs)
+        except Exception as e:
+            message = f"Error calling {self}: {safe_str(e)}"
+            visitor._show_error_if_checking(node, message, ErrorCode.incompatible_call)
+            return None
+        else:
+            return KnownValue(value)
+
     def can_assign(self, other: "Signature", ctx: CanAssignContext) -> CanAssign:
-        """Equivalent of Value.can_assign.
-
-        If the other signature is incompatible with this signature, return a string
-        explaining the discrepancy.
-
+        """Equivalent of :meth:`pyanalyze.value.Value.can_assign`. Checks
+        whether another ``Signature`` is compatible with this ``Signature``.
         """
         if self.is_asynq and not other.is_asynq:
             return CanAssignError("callable is not asynq")
@@ -449,7 +534,7 @@ class Signature:
         return_tv_map = my_return.can_assign(their_return, ctx)
         if isinstance(return_tv_map, CanAssignError):
             return CanAssignError(
-                f"return annotation is not compatible", [return_tv_map]
+                "return annotation is not compatible", [return_tv_map]
             )
         if self.is_ellipsis_args or other.is_ellipsis_args:
             return {}
@@ -659,6 +744,7 @@ class Signature:
             is_asynq=self.is_asynq,
             has_return_annotation=self.has_return_annotation,
             is_ellipsis_args=self.is_ellipsis_args,
+            allow_call=self.allow_call,
         )
 
     def walk_values(self) -> Iterable[Value]:
@@ -668,7 +754,8 @@ class Signature:
                 yield from param.annotation.walk_values()
 
     def get_asynq_value(self) -> "Signature":
-        """Return the Signature for the .asynq attribute of an AsynqCallable."""
+        """Return the :class:`Signature` for the `.asynq` attribute of an
+        :class:`pyanalyze.extensions.AsynqCallable`."""
         if not self.is_asynq:
             raise TypeError("get_asynq_value() is only supported for AsynqCallable")
         return_annotation = AsyncTaskIncompleteValue(
@@ -682,6 +769,7 @@ class Signature:
             has_return_annotation=self.has_return_annotation,
             is_ellipsis_args=self.is_ellipsis_args,
             is_asynq=False,
+            allow_call=self.allow_call,
         )
 
     @classmethod
@@ -695,7 +783,15 @@ class Signature:
         has_return_annotation: bool = True,
         is_ellipsis_args: bool = False,
         is_asynq: bool = False,
+        allow_call: bool = False,
     ) -> "Signature":
+        """Create a :class:`Signature` object.
+
+        This is more convenient to use than the constructor
+        because it abstracts away the creation of the underlying
+        :class:`inspect.Signature`.
+
+        """
         if return_annotation is None:
             return_annotation = UNRESOLVED_VALUE
             has_return_annotation = False
@@ -708,6 +804,7 @@ class Signature:
             has_return_annotation=has_return_annotation,
             is_ellipsis_args=is_ellipsis_args,
             is_asynq=is_asynq,
+            allow_call=allow_call,
         )
 
     def __str__(self) -> str:
@@ -756,45 +853,71 @@ class Signature:
         return self.signature.return_annotation
 
 
+ANY_SIGNATURE = Signature.make(
+    [], UNRESOLVED_VALUE, is_ellipsis_args=True, is_asynq=True
+)
+""":class:`Signature` that should be compatible with any other
+:class:`Signature`."""
+
+
 @dataclass
 class BoundMethodSignature:
+    """Signature for a method bound to a particular value."""
+
     signature: Signature
     self_value: Value
+    return_override: Optional[Value] = None
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
-        return self.signature.check_call(
+    ) -> ImplReturn:
+        ret = self.signature.check_call(
             # TODO get a composite
             [(Composite(self.self_value, None, None), None), *args],
             visitor,
             node,
         )
+        if self.return_override is not None and not self.signature.has_return_value():
+            return ImplReturn(
+                self.return_override, ret.constraint, ret.no_return_unless
+            )
+        return ret
 
-    def get_signature(self) -> Optional[Signature]:
+    def get_signature(self, *, preserve_impl: bool = False) -> Optional[Signature]:
+        if self.signature.is_ellipsis_args:
+            return ANY_SIGNATURE
         params = list(self.signature.signature.parameters.values())
-        if params[0].kind not in (
+        if not params or params[0].kind not in (
             SigParameter.POSITIONAL_ONLY,
             SigParameter.POSITIONAL_OR_KEYWORD,
         ):
             return None
         return Signature(
             signature=inspect.Signature(
-                params[1:], return_annotation=self.signature.signature.return_annotation
+                params[1:], return_annotation=self.return_value
             ),
-            # We don't carry over the implementation function, because it may not work when passed
-            # different arguments.
+            # We don't carry over the implementation function by default, because it
+            # may not work when passed different arguments.
+            impl=self.signature.impl if preserve_impl else None,
             callable=self.signature.callable,
             is_asynq=self.signature.is_asynq,
-            has_return_annotation=self.signature.has_return_annotation,
+            has_return_annotation=self.has_return_value(),
+            is_ellipsis_args=self.signature.is_ellipsis_args,
+            allow_call=self.signature.allow_call,
         )
 
     def has_return_value(self) -> bool:
+        if self.return_override is not None:
+            return True
         return self.signature.has_return_value()
 
     @property
     def return_value(self) -> Value:
-        return self.signature.return_value
+        if self.signature.has_return_value():
+            return self.signature.return_value
+        if self.return_override is not None:
+            return self.return_override
+        return UNRESOLVED_VALUE
 
 
 @dataclass
@@ -806,7 +929,7 @@ class PropertyArgSpec:
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Tuple[Value, AbstractConstraint, AbstractConstraint]:
+    ) -> ImplReturn:
         raise TypeError("property object is not callable")
 
     def has_return_value(self) -> bool:
@@ -817,14 +940,16 @@ MaybeSignature = Union[None, Signature, BoundMethodSignature, PropertyArgSpec]
 
 
 def make_bound_method(
-    argspec: MaybeSignature, self_value: Value
+    argspec: MaybeSignature, self_value: Value, return_override: Optional[Value] = None
 ) -> Optional[BoundMethodSignature]:
     if argspec is None:
         return None
     if isinstance(argspec, Signature):
-        return BoundMethodSignature(argspec, self_value)
+        return BoundMethodSignature(argspec, self_value, return_override)
     elif isinstance(argspec, BoundMethodSignature):
-        return BoundMethodSignature(argspec.signature, self_value)
+        if return_override is None:
+            return_override = argspec.return_override
+        return BoundMethodSignature(argspec.signature, self_value, return_override)
     else:
         assert False, f"invalid argspec {argspec}"
 

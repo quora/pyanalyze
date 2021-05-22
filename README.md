@@ -507,3 +507,19 @@ Just as the tool inevitably has false positives, it equally inevitably cannot fi
 Pyanalyze has hundreds of unit tests that check its behavior. To run them, you can just run `pytest` in the project directory.
 
 The code is formatted using [Black](https://github.com/psf/black).
+
+## Changelog
+
+Version 0.2.0 (May 17, 2021)
+
+- Drop support for Python 2 and 3.5
+- Improve unused object finder
+- Add support for `TypeVar`
+- Add support for `Callable`
+- Add `pyanalyze.extensions`
+- Add `pyanalyze.ast_annotator`
+- Numerous other bug fixes and improvements
+
+Version 0.1.0 (May 29, 2020)
+
+- Initial public release

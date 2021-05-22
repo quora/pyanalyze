@@ -189,3 +189,17 @@ class FixedMethodReturnType(object):
 class KeywordOnlyArguments(object):
     def __init__(self, *args, **kwargs):
         assert set(kwargs) <= {"kwonly_arg"}
+
+
+class WhatIsMyName:
+    def __init__(self):
+        pass
+
+
+WhatIsMyName.__name__ = "Capybara"
+WhatIsMyName.__init__.__name__ = "capybara"
+
+
+class FailingImpl:
+    def __init__(self) -> None:
+        pass
