@@ -958,7 +958,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _set_name_in_scope(
         self, varname: str, node: object, value: Value = UNRESOLVED_VALUE
-    ) -> None:
+    ) -> Value:
         current_scope = self.scopes.current_scope()
         scope_type = current_scope.scope_type
         if (
@@ -966,10 +966,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and scope_type == ScopeType.module_scope
             and varname in current_scope
         ):
-            return
+            return current_scope.get_local(varname, node, self.state)
         if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
             self._check_for_class_variable_redefinition(varname, node)
         current_scope.set(varname, value, node, self.state)
+        return value
 
     def _check_for_class_variable_redefinition(
         self, varname: str, node: ast.AST
@@ -1151,8 +1152,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._generic_visit_list(node.bases)
         self._generic_visit_list(node.keywords)
         value = self._visit_class_and_get_value(node)
-        self._set_name_in_scope(node.name, node, value)
-        return value
+        return self._set_name_in_scope(node.name, node, value)
 
     def _visit_class_and_get_value(self, node: ast.ClassDef) -> Value:
         if self._is_checking():
@@ -3250,10 +3250,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
             else:
                 is_ann_assign = False
+            value = self.being_assigned
             if not is_ann_assign:
                 self.yield_checker.record_assignment(node.id)
-                self._set_name_in_scope(node.id, node, value=self.being_assigned)
-            return Composite(self.being_assigned, node.id, node)
+                value = self._set_name_in_scope(node.id, node, value=value)
+            return Composite(value, node.id, node)
         else:
             # not sure when (if ever) the other contexts can happen
             self.show_error(node, f"Bad context: {node.ctx}", ErrorCode.unexpected_node)
