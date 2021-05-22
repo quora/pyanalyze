@@ -232,7 +232,7 @@ class TypeshedFinder(object):
                             return self._parse_type(child_info.ast.annotation, mod)
                         elif isinstance(child_info.ast, ast3.FunctionDef):
                             decorators = [
-                                self._parse_type(decorator, mod)
+                                self._parse_expr(decorator, mod)
                                 for decorator in child_info.ast.decorator_list
                             ]
                             if child_info.ast.returns and decorators == [
@@ -280,7 +280,7 @@ class TypeshedFinder(object):
                     return True
                 return False
             elif isinstance(info.ast, ast3.Assign):
-                val = self._parse_type(info.ast.value, mod)
+                val = self._parse_expr(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
                     return self.has_attribute(val.val, attr)
                 else:
@@ -530,7 +530,7 @@ class TypeshedFinder(object):
         if default is None:
             return SigParameter(name, kind, annotation=typ)
         else:
-            default = self._parse_type(default, module)
+            default = self._parse_expr(default, module)
             if default == KnownValue(...):
                 default = UNRESOLVED_VALUE
             return SigParameter(name, kind, annotation=typ, default=default)
