@@ -98,8 +98,6 @@ class Value:
             # Allow any UnboundMethodValue with a secondary attr; it might not be
             # a method.
             return {}
-        elif isinstance(other, LazyValue):
-            return self.can_assign(other.get_value(), ctx)
         elif self == other:
             return {}
         return CanAssignError(f"Cannot assign {other} to {self}")
@@ -915,49 +913,19 @@ class CallableValue(TypedValue):
         return f"{is_asynq}Callable[{args}, {return_value}]"
 
 
-@dataclass
-class LazyValue(Value):
-    """A Value that has not yet been computed."""
-
-    provider: Optional[Callable[[], Value]]
-    _value: Optional[Value] = field(init=False, repr=False, default=None)
-
-    def get_value(self) -> Value:
-        if self._value is not None:
-            return self._value
-        assert self.provider is not None
-        value = self.provider()
-        self._value = value
-        self._provider = None
-        return value
-
-    def is_computed(self) -> bool:
-        return self._value is not None
-
-    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        return self.get_value().can_assign(other, ctx)
-
-    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        if self._value is not None:
-            return self._value.substitute_typevars(typevars)
-        return self.get_value().substitute_typevars(typevars)
-
-    def walk_values(self) -> Iterable[Value]:
-        yield self
-        yield from self.get_value().walk_values()
-
-    def __eq__(self, other: Value) -> Union[bool, Literal[NotImplemented]]:
-        if isinstance(other, LazyValue):
-            return self.get_value() == other.get_value()
-        return self.get_value() == other
-
-
 ValueProvider = Callable[[], Value]
 
 
-@dataclass(unsafe_hash=True)
+@dataclass
 class ProtocolValue(Value):
-    """Value that represents a PEP 544 Protocol."""
+    """Value that represents a PEP 544 Protocol.
+
+    Protocols are tricky to implement because they can be recursive and mutually
+    recursive. This implementation relies on "provider functions" that lazily
+    compute the members and bases of protocols to make recursion work correctly.
+    Before most uses of a protocol, the :meth:`unlazify` method must be called.
+
+    """
 
     name: str
     member_providers: Dict[str, ValueProvider] = field(
@@ -968,9 +936,10 @@ class ProtocolValue(Value):
     members: Dict[str, Tuple[Value, TypeVarMap]] = field(
         compare=False, hash=False, default_factory=dict
     )
-    in_unlazify: bool = field(init=False, default=False)
+    in_unlazify: bool = field(init=False, default=False, hash=False)
 
     def unlazify(self) -> None:
+        """Resolve all value providers and compute the final members of the protocol."""
         if self.members:
             return
         if self.in_unlazify:
@@ -1005,7 +974,16 @@ class ProtocolValue(Value):
     def _check_attributes(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         tv_maps = []
         for name, (value, tv_map) in self.members.items():
-            their_value = ctx.get_attribute(other, name)
+            if name == "__call__":
+                their_sig = ctx.signature_from_value(other)
+                if isinstance(their_sig, pyanalyze.signature.BoundMethodSignature):
+                    their_sig = their_sig.get_signature()
+                if isinstance(their_sig, pyanalyze.signature.Signature):
+                    their_value = CallableValue(their_sig)
+                else:
+                    return CanAssignError("Object is not callable")
+            else:
+                their_value = ctx.get_attribute(other, name)
             if their_value is UNINITIALIZED_VALUE:
                 return CanAssignError(f"{name!r} is missing")
             value = value.substitute_typevars(tv_map)

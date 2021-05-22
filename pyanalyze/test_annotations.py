@@ -1063,3 +1063,31 @@ class TestProtocol(TestNameCheckVisitorBase):
 
         def capybara(it: Iterable[int], itt: Iterator) -> None:
             assert_is_value(it.__iter__().__next__(), TypedValue(int))
+
+    @assert_passes()
+    def test_callable(self):
+        from typing_extensions import Protocol
+        from typing import Callable
+
+        class Proto(Protocol):
+            def __call__(self, x: int) -> None:
+                pass
+
+        def f(x: Callable[[int], None]) -> None:
+            x(1)
+
+        def g(x: Proto) -> None:
+            x(1)
+
+        def example(x: int) -> None:
+            pass
+
+        def bad_example(x: str) -> None:
+            pass
+
+        def capybara(p: Proto) -> None:
+            g(example)
+            g(bad_example)  # E: incompatible_argument
+            p(1)
+            f(p)
+            p("")  # E: incompatible_argument

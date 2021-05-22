@@ -100,6 +100,7 @@ from .value import (
     AnnotatedValue,
     CallableValue,
     CanAssignError,
+    ProtocolValue,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
@@ -4009,6 +4010,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_override = None
                 return make_bound_method(sig, value.typ, return_override)
             return None
+        elif isinstance(value, ProtocolValue):
+            call = value.get_member("__call__")
+            if call is UNINITIALIZED_VALUE:
+                return None
+            return self.signature_from_value(call, node)
         elif isinstance(value, CallableValue):
             return value.signature
         elif isinstance(value, TypedValue):
