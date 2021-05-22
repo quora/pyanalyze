@@ -587,7 +587,7 @@ class TypeshedFinder(object):
                 if isinstance(info.ast.value, ast3.Call):
                     value = self._parse_call_assignment(info, module)
                 else:
-                    value = self._parse_type(info.ast.value, module)
+                    value = self._parse_expr(info.ast.value, module)
                 self._assignment_cache[key] = value
                 return value
             elif isinstance(info.ast, ast3.ClassDef) and not self.in_protocol_bases:
