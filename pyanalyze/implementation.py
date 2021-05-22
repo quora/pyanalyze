@@ -19,6 +19,7 @@ from .value import (
     CanAssignError,
     HasAttrGuardExtension,
     ParameterTypeGuardExtension,
+    ProtocolValue,
     TypedValue,
     SubclassValue,
     GenericValue,
@@ -714,6 +715,13 @@ def _reveal_type_impl(ctx: CallContext) -> Value:
             sig = ctx.visitor.arg_spec_cache.get_argspec(value.val)
             if sig is not None:
                 message += f", signature is {sig!s}"
+        if isinstance(value, ProtocolValue):
+            value.unlazify()
+            members = ", ".join(
+                f"{name!r}: {member_value.substitute_typevars(tv_map)!s}"
+                for name, (member_value, tv_map) in value.members.items()
+            )
+            message += f", members are {members}"
         ctx.show_error(message, ErrorCode.inference_failure, arg="value")
     return KnownValue(None)
 
