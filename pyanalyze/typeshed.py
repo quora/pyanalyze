@@ -161,7 +161,8 @@ class TypeshedFinder(object):
             return None
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
-        return self._get_bases_from_info(info, mod)
+        with qcore.override(self, "in_protocol_bases", True):
+            return self._get_bases_from_info(info, mod)
 
     def get_attribute(self, typ: type, attr: str) -> Value:
         """Return the stub for this attribute.
