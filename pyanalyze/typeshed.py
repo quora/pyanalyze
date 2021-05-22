@@ -12,7 +12,6 @@ from .value import (
     CallableValue,
     LazyValue,
     ProtocolValue,
-    TypeVarMap,
     TypedValue,
     GenericValue,
     KnownValue,
