@@ -134,7 +134,6 @@ def _make_module(code_str: str) -> types.ModuleType:
         VariableNameValue=VariableNameValue,
         ReferencingValue=ReferencingValue,
         SubclassValue=SubclassValue,
-        CallableValue=CallableValue,
         ProtocolValue=ProtocolValue,
         NewTypeValue=NewTypeValue,
         TypedDictValue=TypedDictValue,
