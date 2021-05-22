@@ -950,24 +950,44 @@ class LazyValue(Value):
         return self.get_value() == other
 
 
-def lazy_or_substitute(value: Value, typevars: TypeVarMap) -> Value:
-    if not isinstance(value, LazyValue):
-        return value.substitute_typevars(typevars)
-    elif value.is_computed():
-        return value.get_value().substitute_typevars(typevars)
-    else:
-        return LazyValue(lambda: value.get_value().substitute_typevars(typevars))
+ValueProvider = Callable[[], Value]
 
 
-@dataclass(frozen=True)
+@dataclass(unsafe_hash=True)
 class ProtocolValue(Value):
     """Value that represents a PEP 544 Protocol."""
 
     name: str
-    members: Dict[str, Value]
+    member_providers: Dict[str, ValueProvider] = field(compare=False, hash=False)
+    bases: List[ValueProvider] = field(compare=False, hash=False, default_factory=list)
     tv_map: TypeVarMap = field(compare=False, hash=False, default_factory=dict)
+    members: Dict[str, Tuple[Value, TypeVarMap]] = field(
+        compare=False, hash=False, default_factory=dict, init=False
+    )
+    in_unlazify: bool = field(init=False, default=False)
+    needs_substitution: bool = field(default=False)
+
+    def unlazify(self) -> None:
+        if self.members:
+            return
+        if self.in_unlazify:
+            raise Exception(f"recursive {self}")
+        self.in_unlazify = True
+        members = {}
+        for base_provider in reversed(self.bases):
+            base = base_provider()
+            if isinstance(base, ProtocolValue):
+                base.unlazify()
+                members.update(base.members)
+        for key, value_provider in self.member_providers.items():
+            members[key] = (value_provider(), self.tv_map)
+        self.members = members
+        self.bases = []
+        self.member_providers = {}
+        self.in_unlazify = False
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        self.unlazify()
         if isinstance(
             other,
             (KnownValue, TypedValue, ProtocolValue, SubclassValue, UnboundMethodValue),
@@ -981,10 +1001,11 @@ class ProtocolValue(Value):
 
     def _check_attributes(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         tv_maps = []
-        for name, value in self.members.items():
+        for name, (value, tv_map) in self.members.items():
             their_value = ctx.get_attribute(other, name)
             if their_value is UNINITIALIZED_VALUE:
                 return CanAssignError(f"{name!r} is missing")
+            value = value.substitute_typevars(tv_map)
             tv_map = value.can_assign(their_value, ctx)
             if isinstance(tv_map, CanAssignError):
                 return CanAssignError(f"Value of {name!r} is incompatible", [tv_map])
@@ -992,6 +1013,7 @@ class ProtocolValue(Value):
         return unify_typevar_maps(tv_maps)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "ProtocolValue":
+        self.unlazify()
         new_typevars = {}
         for typevar, value in self.tv_map.items():
             if isinstance(value, TypeVarValue):
@@ -1002,23 +1024,25 @@ class ProtocolValue(Value):
         return ProtocolValue(
             self.name,
             {
-                name: lazy_or_substitute(value, typevars)
-                for name, value in self.members.items()
+                name: lambda value=value: value.substitute_typevars(
+                    {**tv_map, **typevars}
+                )
+                for name, (value, tv_map) in self.members.items()
             },
-            new_typevars,
+            tv_map=new_typevars,
         )
-
-    def _maybe_lazy(self, value: Value, typevars: TypeVarMap) -> Value:
-        if not isinstance(value, LazyValue):
-            return value.substitute_typevars(typevars)
-        elif value.is_computed():
-            return value.get_value().substitute_typevars(typevars)
-        else:
-            return LazyValue(lambda: value.get_value().substitute_typevars(typevars))
 
     def apply_typevars(self, values: Sequence[Value]) -> "ProtocolValue":
         tv_map = dict(zip(self.get_unapplied_typevars(), values))
-        return self.substitute_typevars(tv_map)
+        if self.members:
+            return self.substitute_typevars(tv_map)
+        return ProtocolValue(
+            self.name,
+            self.member_providers,
+            self.bases,
+            tv_map={**self.tv_map, **tv_map},
+            needs_substitution=True,
+        )
 
     def get_unapplied_typevars(self) -> List["TypeVar"]:
         return [
@@ -1028,14 +1052,14 @@ class ProtocolValue(Value):
         ]
 
     def get_member(self, name: str) -> Value:
+        self.unlazify()
         if name not in self.members:
             return UNINITIALIZED_VALUE
-        value = self.members[name]
-        if isinstance(value, LazyValue):
-            return value.get_value()
-        return value
+        value, tv_map = self.members[name]
+        return value.substitute_typevars(tv_map)
 
     def walk_values(self) -> Iterable["Value"]:
+        self.unlazify()
         yield self
         for value in self.tv_map.values():
             yield from value.walk_values()
@@ -1810,7 +1834,11 @@ def replace_known_sequence_value(value: Value) -> Value:
 
 
 def extract_typevars(value: Value) -> Iterable["TypeVar"]:
-    for val in value.walk_values():
+    if isinstance(value, ProtocolValue):
+        values = value.tv_map.values()
+    else:
+        values = value.walk_values()
+    for val in values:
         if isinstance(val, TypeVarValue):
             yield val.typevar
 

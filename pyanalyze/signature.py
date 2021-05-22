@@ -254,11 +254,13 @@ class Signature:
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
         init=False, default_factory=dict, repr=False, compare=False
     )
-    all_typevars: Set["TypeVar"] = field(
-        init=False, default_factory=set, repr=False, compare=False
+    all_typevars: Optional[Set["TypeVar"]] = field(
+        init=False, default=None, repr=False, compare=False
     )
 
-    def __post_init__(self) -> None:
+    def _compute_typevars(self) -> None:
+        if self.all_typevars is not None:
+            return
         for param_name, param in self.signature.parameters.items():
             if param.annotation is EMPTY:
                 continue
@@ -433,6 +435,8 @@ class Signature:
                 message = str(e)
             visitor.show_error(node, message, ErrorCode.incompatible_call)
             return ImplReturn(UNRESOLVED_VALUE)
+        self._compute_typevars()
+
         bound_args.apply_defaults()
         variables = {
             name: self._translate_bound_arg(value)

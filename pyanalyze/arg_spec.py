@@ -121,6 +121,9 @@ class AnnotationsContext(Context):
     arg_spec_cache: "ArgSpecCache"
     globals: Optional[Mapping[str, object]] = None
 
+    def __repr__(self) -> str:
+        return "AnnotationsContext()"
+
     def __post_init__(self) -> None:
         super().__init__()
 

@@ -39,6 +39,7 @@ from typing import (
     cast,
     TypeVar,
     ContextManager,
+    List,
     Mapping,
     NewType,
     Sequence,
@@ -58,7 +59,6 @@ from .value import (
     Extension,
     HasAttrGuardExtension,
     KnownValue,
-    LazyValue,
     MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
@@ -67,8 +67,8 @@ from .value import (
     UNRESOLVED_VALUE,
     TypedValue,
     SequenceIncompleteValue,
+    ValueProvider,
     annotate_value,
-    lazy_or_substitute,
     stringify_object,
     unite_values,
     Value,
@@ -438,27 +438,22 @@ EXCLUDED_PROTOCOL_MEMBERS = {
 }
 
 _protocol_cache = {}
-_epm_cache = {}
 
 
 def make_protocol(val: type, ctx: Context) -> ProtocolValue:
     val_id = id(val)
     if val_id in _protocol_cache:
         return _protocol_cache[val_id]
-    name = stringify_object(val)
-    proto = ProtocolValue(
-        name,
-        _generic_extract_protocol_members(val, ctx),
-        {tv: TypeVarValue(tv) for tv in val.__parameters__},
-    )
+    proto = _generic_extract_protocol_members(val, ctx)
     _protocol_cache[val_id] = proto
     return proto
 
 
-def _generic_extract_protocol_members(val: object, ctx: Context) -> Dict[str, Value]:
+def _generic_extract_protocol_members(val: object, ctx: Context) -> ProtocolValue:
     if typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         if origin is not None:
+            name = stringify_object(origin)
             args = typing_inspect.get_args(val)
             params = typing_inspect.get_parameters(origin)
             # In Python 3.7 get_parameters() is wrong for generic protocols
@@ -466,42 +461,46 @@ def _generic_extract_protocol_members(val: object, ctx: Context) -> Dict[str, Va
                 params = origin.__parameters__ or ()
             arg_vals = [_type_from_runtime(arg, ctx) for arg in args]
             tv_map = dict(zip(params, arg_vals))
-            members = _extract_protocol_members(origin, ctx)
-            return {
-                name: lazy_or_substitute(value, tv_map)
-                for name, value in members.items()
-            }
+            bases, members = _extract_protocol_members(origin, ctx)
+            return ProtocolValue(
+                name, members, bases, tv_map=tv_map, needs_substitution=True
+            )
     if hasattr(val, "__bases__") and isinstance(val, type):
-        return _extract_protocol_members(val, ctx)
+        bases, members = _extract_protocol_members(val, ctx)
+        return ProtocolValue(
+            stringify_object(val),
+            members,
+            bases,
+            tv_map={tv: TypeVarValue(tv) for tv in val.__parameters__},
+        )
     else:
         raise TypeError(f"unsupported protocol base {val!r}")
 
 
-def _extract_protocol_members(val: type, ctx: Context) -> Dict[str, Value]:
+def _extract_protocol_members(
+    val: type, ctx: Context
+) -> Tuple[List[ValueProvider], Dict[str, ValueProvider]]:
     if (
         val is object
         or is_typing_name(val, "Protocol")
         or is_typing_name(val, "Generic")
     ):
-        return {}
-
-    val_id = id(val)
-    if val_id in _epm_cache:
-        return _epm_cache[val_id]
+        return [], {}
 
     members = {}
     if hasattr(val, "__orig_bases__"):
         bases = val.__orig_bases__
-    else:
+    elif hasattr(val, "__bases__"):
         bases = val.__bases__
-    for base in reversed(bases):
-        members.update(_generic_extract_protocol_members(base, ctx))
+    else:
+        raise TypeError(val)
+    base_providers = [lambda base=base: make_protocol(base, ctx) for base in bases]
     for key, value in val.__dict__.items():
         if key in EXCLUDED_PROTOCOL_MEMBERS:
             continue
         if isinstance(value, property) and value.fget is not None:
             typ = value.fget.__annotations__.get("return", Any)
-            protocol_value = LazyValue(lambda typ=typ: _type_from_runtime(typ, ctx))
+            provider = lambda typ=typ: _type_from_runtime(typ, ctx)
         elif isinstance(value, (staticmethod, classmethod, FunctionType)):
 
             def provider(value: Any = value) -> Value:
@@ -517,14 +516,12 @@ def _extract_protocol_members(val: type, ctx: Context) -> Dict[str, Value]:
                     return CallableValue(sig)
                 return UNRESOLVED_VALUE
 
-            protocol_value = LazyValue(provider)
         else:
             continue
-        members[key] = protocol_value
+        members[key] = provider
     for key, value in val.__dict__.get("__annotations__", {}).items():
-        members[key] = LazyValue(lambda value=value: _type_from_runtime(value, ctx))
-    _epm_cache[val_id] = members
-    return members
+        members[key] = lambda value=value: _type_from_runtime(value, ctx)
+    return base_providers, members
 
 
 def _eval_forward_ref(val: str, ctx: Context) -> Value:

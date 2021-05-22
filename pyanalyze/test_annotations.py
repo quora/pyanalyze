@@ -1,5 +1,6 @@
 # static analysis: ignore
 from dataclasses import dataclass
+from pyanalyze.extensions import reveal_type
 from qcore.asserts import assert_eq
 from typing_extensions import Protocol
 
@@ -23,6 +24,7 @@ from .value import (
     UNRESOLVED_VALUE,
     SubclassValue,
     GenericValue,
+    dump_value,
 )
 
 
