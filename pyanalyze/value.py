@@ -958,11 +958,13 @@ class ProtocolValue(Value):
     """Value that represents a PEP 544 Protocol."""
 
     name: str
-    member_providers: Dict[str, ValueProvider] = field(compare=False, hash=False)
+    member_providers: Dict[str, ValueProvider] = field(
+        compare=False, hash=False, default_factory=dict
+    )
     bases: List[ValueProvider] = field(compare=False, hash=False, default_factory=list)
     tv_map: TypeVarMap = field(compare=False, hash=False, default_factory=dict)
     members: Dict[str, Tuple[Value, TypeVarMap]] = field(
-        compare=False, hash=False, default_factory=dict, init=False
+        compare=False, hash=False, default_factory=dict
     )
     in_unlazify: bool = field(init=False, default=False)
 
@@ -1022,10 +1024,8 @@ class ProtocolValue(Value):
             new_typevars[typevar] = new_value
         return ProtocolValue(
             self.name,
-            {
-                name: lambda value=value: value.substitute_typevars(
-                    {**tv_map, **typevars}
-                )
+            members={
+                name: (value, merge_tv_maps(tv_map, typevars))
                 for name, (value, tv_map) in self.members.items()
             },
             tv_map=new_typevars,
@@ -1039,7 +1039,7 @@ class ProtocolValue(Value):
             self.name,
             self.member_providers,
             self.bases,
-            tv_map={**self.tv_map, **tv_map},
+            tv_map=merge_tv_maps(self.tv_map, tv_map),
         )
 
     def get_unapplied_typevars(self) -> List["TypeVar"]:
@@ -1069,6 +1069,17 @@ class ProtocolValue(Value):
         else:
             typevar_str = ""
         return f"{self.name}{typevar_str}"
+
+
+def merge_tv_maps(left: TypeVarMap, right: TypeVarMap) -> TypeVarMap:
+    return {
+        **{
+            key: value.substitute_typevars(right)
+            for key, value in left.items()
+            if key not in right
+        },
+        **right,
+    }
 
 
 @dataclass(frozen=True)
