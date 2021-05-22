@@ -621,6 +621,7 @@ class TypeshedFinder(object):
         members = {}
         is_protocol = False
         typevars = None
+        bases = []
         with qcore.override(self, "in_protocol_bases", True):
             for base in reversed(ast.bases):
                 expr = self._parse_type(base, module)
@@ -653,17 +654,17 @@ class TypeshedFinder(object):
                     else:
                         return CallableValue(sig)
 
-                members[line.name] = LazyValue(provider)
+                members[line.name] = provider
             elif isinstance(line, ast3.AnnAssign):
                 if isinstance(line.target, ast3.Name):
-                    members[line.target.id] = LazyValue(
-                        lambda line=line: self._parse_type(line.annotation, module)
+                    members[line.target.id] = lambda line=line: self._parse_type(
+                        line.annotation, module
                     )
             # TODO other cases
         if typevars:
             tv_map = {tv.typevar: tv for tv in typevars if isinstance(tv, TypeVarValue)}
         else:
             tv_map = {}
-        proto = ProtocolValue(ast.name, members, tv_map)
+        proto = ProtocolValue(ast.name, members, bases, tv_map=tv_map)
         self._protocol_cache[ast] = proto
         return proto
