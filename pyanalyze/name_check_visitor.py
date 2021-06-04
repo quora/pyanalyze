@@ -1542,7 +1542,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def _check_function_unused_vars(
         self,
         scope: FunctionScope,
-        args: Iterable[ast.AST],
         enclosing_statement: Optional[ast.stmt] = None,
     ) -> None:
         """Shows errors for any unused variables in the function."""
@@ -1552,17 +1551,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         all_used_def_nodes = set(
             chain.from_iterable(scope.usage_to_definition_nodes.values())
         )
-        arg_nodes = set(args)
         all_unused_nodes = all_def_nodes - all_used_def_nodes
         for unused in all_unused_nodes:
-            # Ignore names not defined through a Name node (e.g., some function arguments)
+            # Ignore names not defined through a Name node (e.g., function arguments)
             if not isinstance(unused, ast.Name) or not self._is_write_ctx(unused.ctx):
                 continue
             # Ignore names that are meant to be ignored
             if unused.id.startswith("_"):
-                continue
-            # Ignore arguments
-            if unused in arg_nodes:
                 continue
             # Ignore names involved in global and similar declarations
             if unused.id in scope.accessed_from_special_nodes:
@@ -2026,7 +2021,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     ret = self._visit_comprehension_inner(node, typ, iterable_type)
             stmt = self.node_context.nearest_enclosing(ast.stmt)
             assert isinstance(stmt, ast.stmt)
-            self._check_function_unused_vars(scope, (), enclosing_statement=stmt)
+            self._check_function_unused_vars(scope, enclosing_statement=stmt)
         return ret
 
     def _visit_comprehension_inner(
