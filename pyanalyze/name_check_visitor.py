@@ -1506,7 +1506,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return_values = self.return_values
                 return_set = scope.get_local(LEAVES_SCOPE, None, self.state)
 
-            self._check_function_unused_vars(scope, args)
+            self._check_function_unused_vars(scope)
             return self._compute_return_type(node, name, return_values, return_set)
 
     def _compute_return_type(
