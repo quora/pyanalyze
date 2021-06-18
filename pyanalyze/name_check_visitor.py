@@ -1551,17 +1551,30 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         )
         all_unused_nodes = all_def_nodes - all_used_def_nodes
         for unused in all_unused_nodes:
-            # Ignore names not defined through a Name node (e.g., function arguments)
-            if not isinstance(unused, ast.Name) or not self._is_write_ctx(unused.ctx):
+            if isinstance(unused, ast.Name):
+                if not self._is_write_ctx(unused.ctx):
+                    assert False, ast.dump(unused)
+                    continue
+                name = unused.id
+            elif isinstance(unused, ast.arg):
+                name = unused.arg
+            elif isinstance(unused, (str, ast.stmt, ast.Attribute, ast.Subscript)):
                 continue
+            else:
+                assert False, repr(unused)
+                # Ignore names not defined through a normal assignment (e.g., function arguments)
+                continue
+
             # Ignore names that are meant to be ignored
-            if unused.id.startswith("_"):
+            if name.startswith("_"):
                 continue
             # Ignore names involved in global and similar declarations
-            if unused.id in scope.accessed_from_special_nodes:
+            if name in scope.accessed_from_special_nodes:
                 continue
             replacement = None
-            if self._name_node_to_statement is not None:
+            if self._name_node_to_statement is not None and isinstance(
+                unused, ast.Name
+            ):
                 # Ignore some names defined in unpacking assignments. This should behave as follows:
                 #   a, b = c()  # error only if a and b are both unused
                 #   a, b = yield c.asynq()  # same
@@ -1615,8 +1628,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     continue
             self._show_error_if_checking(
                 unused,
-                "Variable {} is not read after being written to".format(unused.id),
-                error_code=ErrorCode.unused_variable,
+                f"Variable {name} is not read after being written to",
+                error_code=ErrorCode.unused_parameter
+                if isinstance(unused, ast.arg)
+                else ErrorCode.unused_variable,
                 replacement=replacement,
             )
 
