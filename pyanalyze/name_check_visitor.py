@@ -1639,14 +1639,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     # ignore assignments in AnnAssign nodes, which don't actually
                     # bind the name
                     continue
-            self._show_error_if_checking(
-                unused,
-                f"Variable {name} is not read after being written to",
-                error_code=ErrorCode.unused_parameter
-                if isinstance(unused, ast.arg)
-                else ErrorCode.unused_variable,
-                replacement=replacement,
-            )
+            if isinstance(unused, ast.arg):
+                self._show_error_if_checking(
+                    unused,
+                    f"Parameter {name} is unused",
+                    error_code=ErrorCode.unused_parameter,
+                )
+            else:
+                self._show_error_if_checking(
+                    unused,
+                    f"Variable {name} is not read after being written to",
+                    error_code=ErrorCode.unused_variable,
+                    replacement=replacement,
+                )
 
     def _visit_function_args(
         self,
