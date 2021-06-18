@@ -1484,7 +1484,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else qcore.override(self, "current_class", None)
             )
             with class_ctx:
-                args = self._visit_function_args(
+                self_arg = self._visit_function_args(
                     node, function_info, defaults, kw_defaults
                 )
 
@@ -1506,7 +1506,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return_values = self.return_values
                 return_set = scope.get_local(LEAVES_SCOPE, None, self.state)
 
-            self._check_function_unused_vars(scope)
+            self._check_function_unused_vars(scope, self_arg=self_arg)
             return self._compute_return_type(node, name, return_values, return_set)
 
     def _compute_return_type(
@@ -1540,7 +1540,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return unite_values(*return_values), has_return, self.is_generator
 
     def _check_function_unused_vars(
-        self, scope: FunctionScope, enclosing_statement: Optional[ast.stmt] = None
+        self,
+        scope: FunctionScope,
+        enclosing_statement: Optional[ast.stmt] = None,
+        self_arg: Optional[ast.arg] = None,
     ) -> None:
         """Shows errors for any unused variables in the function."""
         all_def_nodes = set(
@@ -1557,6 +1560,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
                 name = unused.id
             elif isinstance(unused, ast.arg):
+                if unused is self_arg:
+                    continue
                 name = unused.arg
             elif isinstance(unused, ast.ExceptHandler):
                 name = unused.name
@@ -1649,8 +1654,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         function_info: FunctionInfo,
         defaults: Sequence[Optional[Value]],
         kw_defaults: Sequence[Optional[Value]],
-    ) -> List[ast.arg]:
-        """Visits and checks the arguments to a function. Returns the list of argument names."""
+    ) -> Optional[ast.arg]:
+        """Visits and checks the arguments to a function. Returns the self argument if this is a method."""
+        self_arg = None
         self._check_method_first_arg(node, function_info=function_info)
 
         num_without_defaults = len(node.args.args) - len(defaults)
@@ -1665,6 +1671,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     and not function_info.is_staticmethod
                     and not isinstance(node, ast.Lambda)
                 )
+                if is_self:
+                    assert self_arg is None, repr(self_arg)
+                    self_arg = arg
                 if arg.annotation is not None:
                     value = self._value_of_annotated_arg(arg)
                     if default is not None:
@@ -1729,7 +1738,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     value = GenericValue(dict, [TypedValue(str), arg_value])
                 self.scopes.set(kwarg, value, kwarg, self.state)
 
-        return args
+        return self_arg
 
     def _value_of_annotated_arg(self, arg: ast.arg) -> Value:
         if arg.annotation is None:

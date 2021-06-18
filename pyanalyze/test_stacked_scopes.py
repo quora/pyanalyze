@@ -590,6 +590,13 @@ def capybara():
         def h(x, y):  # E: unused_parameter
             return y
 
+        class Capybara:
+            def method(self):
+                pass
+
+            def method2(self, x):  # E: unused_parameter
+                pass
+
     @assert_passes()
     def test_except_handler(self):
         def i():
