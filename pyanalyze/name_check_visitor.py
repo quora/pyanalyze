@@ -1554,11 +1554,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if isinstance(unused, ast.Name):
                 if not self._is_write_ctx(unused.ctx):
                     assert False, ast.dump(unused)
-                    continue
+
                 name = unused.id
             elif isinstance(unused, ast.arg):
                 name = unused.arg
-            elif isinstance(unused, (str, ast.stmt, ast.Attribute, ast.Subscript)):
+            elif isinstance(unused, ast.ExceptHandler):
+                name = unused.name
+            elif isinstance(unused, tuple):
+                # For import nodes, the node is a tuple (node, name):
+                # see the _simulate_import method.
+                unused, name = unused
+            elif isinstance(
+                unused, (str, ast.stmt, ast.Attribute, ast.Subscript, ast.Call)
+            ):
                 continue
             else:
                 assert False, repr(unused)

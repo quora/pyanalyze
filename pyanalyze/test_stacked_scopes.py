@@ -590,6 +590,26 @@ def capybara():
         def h(x, y):  # E: unused_parameter
             return y
 
+    @assert_passes()
+    def test_except_handler(self):
+        def i():
+            try:
+                1 / 0
+            except KeyError as e:
+                print(e)
+            except Exception as e:  # E: unused_variable
+                pass
+
+    @assert_passes()
+    def test_import(self):
+        def capybara():
+            import os  # E: unused_variable
+            import sys
+            from itertools import islice  # E: unused_variable
+            from functools import reduce
+
+            print(sys.argv, reduce)
+
 
 class TestUnusedVariableComprehension(TestNameCheckVisitorBase):
     @assert_passes()
