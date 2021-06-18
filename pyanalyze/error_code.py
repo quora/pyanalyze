@@ -85,6 +85,7 @@ class ErrorCode(enum.Enum):
 DISABLED_IN_TESTS = {
     ErrorCode.missing_return_annotation,
     ErrorCode.missing_parameter_annotation,
+    ErrorCode.unused_parameter,
 }
 
 
@@ -100,7 +101,7 @@ DISABLED_BY_DEFAULT = {
     ErrorCode.possibly_undefined_name,
     ErrorCode.missing_f,
     ErrorCode.bare_ignore,
-    ErrorCode.unused_parameter
+    ErrorCode.unused_parameter,
 }
 
 ERROR_DESCRIPTION = {
@@ -180,7 +181,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.duplicate_enum_member: "Duplicate enum member",
     ErrorCode.missing_return_annotation: "Missing function return annotation",
     ErrorCode.missing_parameter_annotation: "Missing function parameter annotation",
-    ErrorCode.unused_parameter: "Unused function parameter"
+    ErrorCode.unused_parameter: "Unused function parameter",
 }
 
 

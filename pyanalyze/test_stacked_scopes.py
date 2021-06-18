@@ -579,6 +579,17 @@ def capybara():
             inner()
             x = 4
 
+    @assert_passes(settings={ErrorCode.unused_parameter: True})
+    def test_unused_param(self):
+        def f(x):  # E: unused_parameter
+            pass
+
+        def g(x):
+            print(x)
+
+        def h(x, y):  # E: unused_parameter
+            return y
+
 
 class TestUnusedVariableComprehension(TestNameCheckVisitorBase):
     @assert_passes()
