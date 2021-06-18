@@ -1562,6 +1562,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             elif isinstance(unused, ast.arg):
                 if unused is self_arg:
                     continue
+                if self.current_class is not None:
+                    continue
+                if "test" in self.filename or "thrift" in self.filename:
+                    continue
                 name = unused.arg
             elif isinstance(unused, ast.ExceptHandler):
                 name = unused.name
