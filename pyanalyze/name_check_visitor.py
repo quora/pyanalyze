@@ -1540,9 +1540,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return unite_values(*return_values), has_return, self.is_generator
 
     def _check_function_unused_vars(
-        self,
-        scope: FunctionScope,
-        enclosing_statement: Optional[ast.stmt] = None,
+        self, scope: FunctionScope, enclosing_statement: Optional[ast.stmt] = None
     ) -> None:
         """Shows errors for any unused variables in the function."""
         all_def_nodes = set(
