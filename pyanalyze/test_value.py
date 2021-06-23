@@ -80,7 +80,7 @@ def test_known_value() -> None:
     assert_can_assign(val, val)
     assert_cannot_assign(val, TypedValue(int))
     assert_can_assign(val, MultiValuedValue([val, UNRESOLVED_VALUE]))
-    assert_cannot_assign(val, MultiValuedValue([val, TypedValue(int)]))
+    assert_cannot_assign(val, val | TypedValue(int))
     assert_cannot_assign(KnownValue(int), SubclassValue(TypedValue(int)))
     assert_cannot_assign(KnownValue(1), KnownValue(True))
     assert_cannot_assign(KnownValue(True), KnownValue(1))
@@ -207,24 +207,15 @@ def test_generic_value() -> None:
 
     it = GenericValue(collections.abc.Iterable, [TypedValue(object)])
     assert_can_assign(
-        it,
-        GenericValue(
-            types.GeneratorType,
-            [MultiValuedValue([TypedValue(bool), KnownValue(None)])],
-        ),
+        it, GenericValue(types.GeneratorType, [TypedValue(bool) | KnownValue(None)])
     )
 
 
 def test_sequence_incomplete_value() -> None:
     val = value.SequenceIncompleteValue(tuple, [TypedValue(int), TypedValue(str)])
     assert_can_assign(val, TypedValue(tuple))
-    assert_can_assign(
-        val, GenericValue(tuple, [MultiValuedValue([TypedValue(int), TypedValue(str)])])
-    )
-    assert_cannot_assign(
-        val,
-        GenericValue(tuple, [MultiValuedValue([TypedValue(int), TypedValue(list)])]),
-    )
+    assert_can_assign(val, GenericValue(tuple, [TypedValue(int) | TypedValue(str)]))
+    assert_cannot_assign(val, GenericValue(tuple, [TypedValue(int) | TypedValue(list)]))
 
     assert_can_assign(val, val)
     assert_cannot_assign(val, value.SequenceIncompleteValue(tuple, [TypedValue(int)]))
@@ -248,20 +239,22 @@ def test_dict_incomplete_value() -> None:
 
 
 def test_multi_valued_value() -> None:
-    val = MultiValuedValue([TypedValue(int), KnownValue(None)])
+    val = TypedValue(int) | KnownValue(None)
+    assert_eq(MultiValuedValue([TypedValue(int), KnownValue(None)]), val)
+    assert_eq(val, val | KnownValue(None))
+    assert_eq(
+        MultiValuedValue([TypedValue(int), KnownValue(None), TypedValue(str)]),
+        val | TypedValue(str),
+    )
+
     assert_eq("Union[int, None]", str(val))
     assert_can_assign(val, KnownValue(1))
     assert_can_assign(val, KnownValue(None))
     assert_cannot_assign(val, KnownValue(""))
     assert_cannot_assign(val, TypedValue(float))
     assert_can_assign(val, val)
-    assert_cannot_assign(val, MultiValuedValue([KnownValue(None), TypedValue(str)]))
-    assert_can_assign(
-        val,
-        MultiValuedValue(
-            [UNRESOLVED_VALUE, MultiValuedValue([TypedValue(int), KnownValue(None)])]
-        ),
-    )
+    assert_cannot_assign(val, KnownValue(None) | TypedValue(str))
+    assert_can_assign(val, UNRESOLVED_VALUE | TypedValue(int) | KnownValue(None))
 
 
 def test_large_union_optimization() -> None:
@@ -479,4 +472,4 @@ def _assert_pickling_roundtrip(obj: object) -> None:
 def test_pickling() -> None:
     _assert_pickling_roundtrip(KnownValue(1))
     _assert_pickling_roundtrip(TypedValue(int))
-    _assert_pickling_roundtrip(MultiValuedValue([KnownValue(None), TypedValue(str)]))
+    _assert_pickling_roundtrip(KnownValue(None) | TypedValue(str))
