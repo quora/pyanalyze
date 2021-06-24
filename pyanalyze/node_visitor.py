@@ -172,7 +172,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         """
         if not isinstance(contents, str):
             raise TypeError("File contents must be text, not {}".format(type(contents)))
-        super(BaseNodeVisitor, self).__init__()
+        super().__init__()
         self.filename = filename
         self.contents = contents
         self.tree = tree
@@ -190,6 +190,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     def check(self) -> List[Failure]:
         """Runs the class's checks on a tree."""
         self.log(logging.INFO, "Check file", self.filename)
+        assert self.tree is not None, "tree must be set"
         self.visit(self.tree)
         return self.all_failures
 

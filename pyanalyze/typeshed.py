@@ -147,9 +147,11 @@ class TypeshedFinder(object):
             return None
         fq_name = f"{module}.{class_name}"
         info = self._get_info_for_name(fq_name)
+        if not hasattr(obj, "__globals__"):
+            return None
         try:
             objclass = obj.__globals__[class_name]
-        except (AttributeError, KeyError):
+        except KeyError:
             return None
         return self._get_method_signature_from_info(
             info, obj, fq_name, module, objclass
@@ -485,6 +487,8 @@ class TypeshedFinder(object):
                 args.vararg, None, mod, SigParameter.VAR_POSITIONAL
             )
             annotation = GenericValue(tuple, [vararg_param.annotation])
+            # https://github.com/python/typeshed/pull/5689
+            # static analysis: ignore[incompatible_argument]
             arguments.append(vararg_param.replace(annotation=annotation))
         arguments += self._parse_param_list(
             args.kwonlyargs, args.kw_defaults, mod, SigParameter.KEYWORD_ONLY
@@ -494,6 +498,8 @@ class TypeshedFinder(object):
                 args.kwarg, None, mod, SigParameter.VAR_KEYWORD
             )
             annotation = GenericValue(dict, [TypedValue(str), kwarg_param.annotation])
+            # https://github.com/python/typeshed/pull/5689
+            # static analysis: ignore[incompatible_argument]
             arguments.append(kwarg_param.replace(annotation=annotation))
         # some typeshed types have a positional-only after a normal argument,
         # and Signature doesn't like that
@@ -505,6 +511,8 @@ class TypeshedFinder(object):
             elif seen_non_positional:
                 arg = arg.replace(kind=SigParameter.POSITIONAL_OR_KEYWORD)
             cleaned_arguments.append(arg)
+        # https://github.com/python/typeshed/pull/5689
+        # static analysis: ignore[incompatible_argument]
         return Signature.make(
             cleaned_arguments,
             callable=obj,
