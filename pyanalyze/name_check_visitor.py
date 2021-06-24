@@ -4039,43 +4039,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             return None
 
-    def _get_argspec_from_value(
-        self, callee_wrapped: Value, node: ast.AST
-    ) -> MaybeSignature:
-        if isinstance(callee_wrapped, KnownValue):
-            argspec = self.arg_spec_cache.get_argspec(callee_wrapped.val)
-            if argspec is None:
-                method_object = self.get_attribute(callee_wrapped, "__call__", node)
-                if method_object is UNINITIALIZED_VALUE:
-                    self._show_error_if_checking(
-                        node,
-                        f"{callee_wrapped} is not callable",
-                        ErrorCode.not_callable,
-                    )
-            return argspec
-        elif isinstance(callee_wrapped, UnboundMethodValue):
-            method = callee_wrapped.get_method()
-            if method is not None:
-                return self.arg_spec_cache.get_argspec(method)
-        elif isinstance(callee_wrapped, CallableValue):
-            return callee_wrapped.signature
-        elif isinstance(callee_wrapped, TypedValue):
-            typ = callee_wrapped.typ
-            if not hasattr(typ, "__call__") or (
-                getattr(typ.__call__, "__objclass__", None) is type
-                and not issubclass(typ, type)
-            ):
-                self._show_error_if_checking(
-                    node,
-                    "Object of type %r is not callable" % (typ,),
-                    ErrorCode.not_callable,
-                )
-                return None
-            call_fn = typ.__call__
-            argspec = self.arg_spec_cache.get_argspec(call_fn)
-            return make_bound_method(argspec, callee_wrapped)
-        return None
-
     # Attribute checking
 
     def _record_class_examined(self, cls: type) -> None:

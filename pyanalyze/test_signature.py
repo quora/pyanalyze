@@ -1,7 +1,5 @@
 # static analysis: ignore
-from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
-from pyanalyze.implementation import assert_is_value
 from qcore.asserts import assert_eq
 
 from .value import (
@@ -17,7 +15,7 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .error_code import ErrorCode
 from .signature import Signature, SigParameter as P
-from .test_value import CTX
+from .test_name_check_visitor import VISITOR as CTX
 
 TupleInt = GenericValue(tuple, [TypedValue(int)])
 TupleBool = GenericValue(tuple, [TypedValue(bool)])

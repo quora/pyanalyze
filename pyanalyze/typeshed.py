@@ -117,6 +117,11 @@ class TypeshedFinder(object):
                 self.log("Found signature", (obj, sig))
             return sig
 
+        sig = self._get_argspec_for_unbound_method(obj)
+        if sig is not None:
+            self.log("Found signature", (obj, sig))
+            return sig
+
         if inspect.ismethod(obj):
             self.log("Ignoring method", obj)
             return None
@@ -124,6 +129,31 @@ class TypeshedFinder(object):
         if fq_name is None:
             return None
         return self.get_argspec_for_fully_qualified_name(fq_name, obj)
+
+    def _get_argspec_for_unbound_method(self, obj: object) -> Optional[Signature]:
+        qualname = getattr(obj, "__qualname__", None)
+        if qualname is None:
+            return None
+        name = getattr(obj, "__name__", None)
+        if name is None:
+            return None
+        module = getattr(obj, "__module__", None)
+        if module is None:
+            return None
+        if name == qualname or qualname.count(".") != 1:
+            return None
+        class_name, function_name = qualname.split(".")
+        if function_name != name:
+            return None
+        fq_name = f"{module}.{class_name}"
+        info = self._get_info_for_name(fq_name)
+        try:
+            objclass = obj.__globals__[class_name]
+        except (AttributeError, KeyError):
+            return None
+        return self._get_method_signature_from_info(
+            info, obj, fq_name, module, objclass
+        )
 
     def get_info_for_object(self, obj: Any) -> Value:
         fq_name = self._get_fq_name(obj)

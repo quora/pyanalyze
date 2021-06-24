@@ -96,18 +96,6 @@ def test_get_argspec():
     # test everything twice because calling qcore.get_original_fn has side effects
     for _ in range(2):
 
-        # there's special logic for this in _get_argspec_from_value; TODO move that into
-        # ExtendedArgSpec
-        assert_eq(
-            BoundMethodSignature(
-                Signature.make(
-                    [cwc_self, SigParameter("arg")], callable=ClassWithCall.__call__
-                ),
-                cwc_typed,
-            ),
-            visitor._get_argspec_from_value(cwc_typed, None),
-        )
-
         assert_eq(
             BoundMethodSignature(
                 Signature.make(
