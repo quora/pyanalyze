@@ -926,6 +926,15 @@ class BoundMethodSignature:
             return self.return_override
         return UNRESOLVED_VALUE
 
+    def substitute_typevars(self, typevars: TypeVarMap) -> "BoundMethodSignature":
+        return BoundMethodSignature(
+            self.signature.substitute_typevars(typevars),
+            self.self_value.substitute_typevars(typevars),
+            self.return_override.substitute_typevars(typevars)
+            if self.return_override is not None
+            else None,
+        )
+
 
 @dataclass
 class PropertyArgSpec:
@@ -941,6 +950,11 @@ class PropertyArgSpec:
 
     def has_return_value(self) -> bool:
         return self.return_value is not UNRESOLVED_VALUE
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "PropertyArgSpec":
+        return PropertyArgSpec(
+            self.obj, self.return_value.substitute_typevars(typevars)
+        )
 
 
 MaybeSignature = Union[None, Signature, BoundMethodSignature, PropertyArgSpec]

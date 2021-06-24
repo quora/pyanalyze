@@ -381,6 +381,8 @@ class UnboundMethodValue(Value):
     with `secondary_attr_name` set to ``"asynq"``.
 
     """
+    tv_map: TypeVarMap = field(default_factory=dict, compare=False, hash=False)
+    """TypeVars that should be substituted on the signature when it is computed."""
 
     def get_method(self) -> Optional[Any]:
         """Return the runtime callable for this ``UnboundMethodValue``, or
@@ -411,13 +413,15 @@ class UnboundMethodValue(Value):
             self.attr_name,
             self.typ.substitute_typevars(typevars),
             self.secondary_attr_name,
+            merge_tv_maps(self.tv_map, typevars),
         )
 
     def __str__(self) -> str:
-        return "<method %s%s on %s>" % (
+        return "<method %s%s on %s%s>" % (
             self.attr_name,
             f".{self.secondary_attr_name}" if self.secondary_attr_name else "",
             self.typ,
+            f" with {self.tv_map}" if self.tv_map else "",
         )
 
 

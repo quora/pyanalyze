@@ -3999,6 +3999,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_override = self._argspec_to_retval[id(sig)]
                 except KeyError:
                     return_override = None
+                if value.tv_map:
+                    sig = sig.substitute_typevars(value.tv_map)
                 return make_bound_method(sig, value.typ, return_override)
             return None
         elif isinstance(value, ProtocolValue):
