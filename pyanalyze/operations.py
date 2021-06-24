@@ -40,15 +40,20 @@ IteratorProto = ProtocolValue(
     tv_map=TV_MAP,
 )
 
+import qcore
 
+
+@qcore.debug.trace()
 def is_iterable_value(
     value: Value, ctx: CanAssignContext
 ) -> Union[Value, CanAssignError]:
     tv_map = IterableProto.can_assign(value, ctx)
     if isinstance(tv_map, CanAssignError):
         return tv_map
+    print("TV1", tv_map)
 
     tv_map = IteratorProto.can_assign(tv_map.get(T, UNRESOLVED_VALUE), ctx)
+    print("TV2", tv_map)
     if isinstance(tv_map, CanAssignError):
         return tv_map
     return tv_map.get(T, UNRESOLVED_VALUE)

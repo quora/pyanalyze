@@ -184,18 +184,16 @@ def _get_attribute_from_typed(
     elif ctx.attr == "__dict__":
         return TypedValue(dict)
     result, provider, should_unwrap = _get_attribute_from_mro(typ, ctx)
+    print("GOT", result, provider, should_unwrap, typ, ctx)
     if isinstance(typ, type):
         generic_bases = ctx.get_generic_bases(typ, generic_args)
     else:
         generic_bases = {}
     if provider in generic_bases:
         result = result.substitute_typevars(generic_bases[provider])
+    print("GEN", generic_args, generic_bases)
     if generic_args and typ in generic_bases:
-        typevars = [
-            val.typevar
-            for val in generic_bases[typ].values()
-            if isinstance(val, TypeVarValue)
-        ]
+        typevars = [tv for tv in generic_bases[typ]]
         tv_map = dict(zip(typevars, generic_args))
         result = result.substitute_typevars(tv_map)
     if should_unwrap:

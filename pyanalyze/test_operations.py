@@ -1,7 +1,7 @@
 from qcore.asserts import assert_eq, assert_is
 
 from .operations import concrete_values_from_iterable
-from .test_value import CTX
+from .test_name_check_visitor import VISITOR as CTX
 from .value import (
     GenericValue,
     KnownValue,
