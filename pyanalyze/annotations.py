@@ -462,11 +462,12 @@ def _generic_extract_protocol_members(val: object, ctx: Context) -> ProtocolValu
             arg_vals = [_type_from_runtime(arg, ctx) for arg in args]
             tv_map = dict(zip(params, arg_vals))
             bases, members = _extract_protocol_members(origin, ctx)
-            return ProtocolValue(name, members, bases, tv_map=tv_map)
+            return ProtocolValue(name, None, members, bases, tv_map=tv_map)
     if hasattr(val, "__bases__") and isinstance(val, type):
         bases, members = _extract_protocol_members(val, ctx)
         return ProtocolValue(
             stringify_object(val),
+            TypedValue(val),
             members,
             bases,
             tv_map={tv: TypeVarValue(tv) for tv in val.__parameters__},

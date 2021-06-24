@@ -937,6 +937,9 @@ class ProtocolValue(Value):
     """
 
     name: str
+    underlying_type: Optional[TypedValue] = field(
+        compare=False, hash=False, default=None
+    )
     member_providers: Dict[str, ValueProvider] = field(
         compare=False, hash=False, default_factory=dict
     )
@@ -972,12 +975,18 @@ class ProtocolValue(Value):
         if isinstance(
             other,
             (KnownValue, TypedValue, ProtocolValue, SubclassValue, UnboundMethodValue),
+        ) or (
+            isinstance(other, AnnotatedValue)
+            and not isinstance(other.value, MultiValuedValue)
         ):
-            return self._check_attributes(other, ctx)
-        elif isinstance(other, AnnotatedValue) and not isinstance(
-            other.value, MultiValuedValue
-        ):
-            return self._check_attributes(other, ctx)
+            tv_map = self._check_attributes(other, ctx)
+            # If you inherit nominally from a Protocol type, that automatically makes
+            # you compatible. This is why str is compatible with Container[object].
+            if self.underlying_type is not None and isinstance(tv_map, CanAssignError):
+                nominal_tv_map = self.underlying_type.can_assign(other, ctx)
+                if not isinstance(nominal_tv_map, CanAssignError):
+                    return nominal_tv_map
+            return tv_map
         return super().can_assign(other, ctx)
 
     def _check_attributes(self, other: Value, ctx: CanAssignContext) -> CanAssign:
@@ -1013,6 +1022,7 @@ class ProtocolValue(Value):
             new_typevars[typevar] = new_value
         return ProtocolValue(
             self.name,
+            self.underlying_type,
             members={
                 name: (value, merge_tv_maps(tv_map, typevars))
                 for name, (value, tv_map) in self.members.items()
@@ -1026,6 +1036,7 @@ class ProtocolValue(Value):
             return self.substitute_typevars(tv_map)
         return ProtocolValue(
             self.name,
+            self.underlying_type,
             self.member_providers,
             self.bases,
             tv_map=merge_tv_maps(self.tv_map, tv_map),

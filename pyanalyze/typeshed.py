@@ -663,6 +663,6 @@ class TypeshedFinder(object):
             tv_map = {tv.typevar: tv for tv in typevars if isinstance(tv, TypeVarValue)}
         else:
             tv_map = {}
-        proto = ProtocolValue(ast.name, members, bases, tv_map=tv_map)
+        proto = ProtocolValue(ast.name, None, members, bases, tv_map=tv_map)
         self._protocol_cache[ast] = proto
         return proto

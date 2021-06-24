@@ -101,7 +101,10 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
         def capybara(z: SupportsInt) -> None:
             assert_is_value(
-                z, ProtocolValue("typing.SupportsInt", {"__int__": CallableValue(sig)})
+                z,
+                ProtocolValue(
+                    "typing.SupportsInt", members={"__int__": CallableValue(sig)}
+                ),
             )
 
     @assert_passes()
