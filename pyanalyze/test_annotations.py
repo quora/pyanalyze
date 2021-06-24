@@ -103,7 +103,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(
                 z,
                 ProtocolValue(
-                    "typing.SupportsInt", members={"__int__": CallableValue(sig)}
+                    "typing", "SupportsInt", members={"__int__": CallableValue(sig)}
                 ),
             )
 
@@ -926,8 +926,9 @@ class TestProtocol(TestNameCheckVisitorBase):
     def test_type_from_runtime(self) -> None:
         asc = ArgSpecCache(TestConfig())
         expected = ProtocolValue(
-            "pyanalyze.test_annotations.Proto",
-            {
+            "pyanalyze.test_annotations",
+            "Proto",
+            members={
                 "x": TypedValue(int),
                 "capybara": CallableValue(
                     Signature.make(
@@ -1094,3 +1095,8 @@ class TestProtocol(TestNameCheckVisitorBase):
             p(1)
             f(p)
             p("")  # E: incompatible_argument
+
+    @assert_passes()
+    def test_practical(self):
+        def capybara(x: tuple):
+            assert_is_value("".join(x), TypedValue(str))

@@ -2,6 +2,7 @@ from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import reveal_type
 from .format_strings import parse_format_string
+from .operations import is_iterable_value
 from .safe import safe_hasattr, safe_isinstance, safe_issubclass
 from .stacked_scopes import (
     NULL_CONSTRAINT,
@@ -29,7 +30,6 @@ from .value import (
     TypedDictValue,
     KnownValue,
     MultiValuedValue,
-    TypeVarValue,
     UNRESOLVED_VALUE,
     NO_RETURN_VALUE,
     KNOWN_MUTABLE_TYPES,
@@ -50,12 +50,9 @@ import qcore
 import inspect
 import warnings
 from types import FunctionType
-from typing import cast, Dict, NewType, Callable, TypeVar, Optional, Union
+from typing import cast, Dict, NewType, Callable, Optional, Union
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
-
-T = TypeVar("T")
-IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
 def _maybe_or_constraint(
@@ -314,16 +311,16 @@ def _sequence_impl(typ: type, ctx: CallContext) -> Value:
     elif isinstance(iterable, DictIncompleteValue):
         return SequenceIncompleteValue(typ, [key for key, _ in iterable.items])
     else:
-        tv_map = IterableValue.can_assign(iterable, ctx.visitor)
-        if isinstance(tv_map, CanAssignError):
+        value_or_error = is_iterable_value(iterable, ctx.visitor)
+        if isinstance(value_or_error, CanAssignError):
             ctx.show_error(
                 f"{iterable} is not iterable",
                 ErrorCode.unsupported_operation,
                 arg="iterable",
-                detail=str(tv_map),
+                detail=str(value_or_error),
             )
-        elif T in tv_map:
-            return GenericValue(typ, [tv_map[T]])
+        elif value_or_error is not UNRESOLVED_VALUE:
+            return GenericValue(typ, [value_or_error])
         return TypedValue(typ)
 
 

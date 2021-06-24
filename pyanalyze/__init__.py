@@ -16,6 +16,7 @@ from .find_unused import used as used
 from . import implementation
 from . import method_return_type
 from . import node_visitor
+from . import operations
 from . import safe
 from . import signature
 from . import stacked_scopes

@@ -66,6 +66,8 @@ from typing import (
 )
 from typing_extensions import Literal
 
+import pyanalyze
+
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
 
@@ -959,8 +961,6 @@ def make_bound_method(
         assert False, f"invalid argspec {argspec}"
 
 
-T = TypeVar("T")
-IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 K = TypeVar("K")
 V = TypeVar("V")
 MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
@@ -988,13 +988,12 @@ def can_assign_var_positional(
             )
         tv_maps.append(tv_map)
     else:
-        tv_map = IterableValue.can_assign(args_annotation, ctx)
-        if isinstance(tv_map, CanAssignError):
+        value_or_error = pyanalyze.operations.is_iterable_value(args_annotation, ctx)
+        if isinstance(value_or_error, CanAssignError):
             return CanAssignError(
-                f"{args_annotation} is not an iterable type", [tv_map]
+                f"{args_annotation} is not an iterable type", [value_or_error]
             )
-        iterable_arg = tv_map.get(T, UNRESOLVED_VALUE)
-        tv_map = iterable_arg.can_assign(my_annotation, ctx)
+        tv_map = value_or_error.can_assign(my_annotation, ctx)
         if isinstance(tv_map, CanAssignError):
             return CanAssignError(
                 f"type of parameter {my_param.name!r} is incompatible: "

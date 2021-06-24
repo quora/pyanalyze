@@ -95,18 +95,19 @@ from .signature import (
 )
 from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from .yield_checker import YieldChecker
+from .operations import concrete_values_from_iterable, unpack_values, is_iterable_value
 from .type_object import get_mro
 from .value import (
     AnnotatedValue,
     CallableValue,
     CanAssignError,
     ProtocolValue,
-    boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     NO_RETURN_VALUE,
     make_weak,
     unite_values,
+    boolean_value,
     KnownValue,
     TypedValue,
     MultiValuedValue,
@@ -121,13 +122,10 @@ from .value import (
     Value,
     TypeVarValue,
     CanAssignContext,
-    concrete_values_from_iterable,
     TypeVarMap,
-    unpack_values,
 )
 
 T = TypeVar("T")
-IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
@@ -2954,8 +2952,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         elif isinstance(iterated, AnnotatedValue):
             return self._member_value_of_iterator_val(iterated.value, node)
         else:
-            tv_map = IterableValue.can_assign(iterated, self)
-            if isinstance(tv_map, CanAssignError):
+            value_or_error = is_iterable_value(iterated, self)
+            if isinstance(value_or_error, CanAssignError):
                 if not (
                     isinstance(iterated, TypedValue)
                     and self._should_ignore_type(iterated.typ)
@@ -2964,10 +2962,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         node,
                         f"{iterated} is not iterable",
                         ErrorCode.unsupported_operation,
-                        detail=tv_map.display(),
+                        detail=value_or_error.display(),
                     )
                 return UNRESOLVED_VALUE, None
-            return tv_map.get(T, UNRESOLVED_VALUE), None
+            return value_or_error, None
         return UNRESOLVED_VALUE, None
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:

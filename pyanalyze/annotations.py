@@ -69,7 +69,6 @@ from .value import (
     SequenceIncompleteValue,
     ValueProvider,
     annotate_value,
-    stringify_object,
     unite_values,
     Value,
     GenericValue,
@@ -450,10 +449,11 @@ def make_protocol(val: type, ctx: Context) -> ProtocolValue:
 
 
 def _generic_extract_protocol_members(val: object, ctx: Context) -> ProtocolValue:
+    module = getattr(val, "__module__", "<unknown module>")
+    name = getattr(val, "__qualname__", getattr(val, "__name__", repr(val)))
     if typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
         if origin is not None:
-            name = stringify_object(origin)
             args = typing_inspect.get_args(val)
             params = typing_inspect.get_parameters(origin)
             # In Python 3.7 get_parameters() is wrong for generic protocols
@@ -462,14 +462,22 @@ def _generic_extract_protocol_members(val: object, ctx: Context) -> ProtocolValu
             arg_vals = [_type_from_runtime(arg, ctx) for arg in args]
             tv_map = dict(zip(params, arg_vals))
             bases, members = _extract_protocol_members(origin, ctx)
-            return ProtocolValue(name, None, members, bases, tv_map=tv_map)
+            return ProtocolValue(
+                module_name=module,
+                name=name,
+                underlying_type=None,
+                member_providers=members,
+                bases=bases,
+                tv_map=tv_map,
+            )
     if hasattr(val, "__bases__") and isinstance(val, type):
         bases, members = _extract_protocol_members(val, ctx)
         return ProtocolValue(
-            stringify_object(val),
-            TypedValue(val),
-            members,
-            bases,
+            module_name=module,
+            name=name,
+            underlying_type=TypedValue(val),
+            member_providers=members,
+            bases=bases,
             tv_map={tv: TypeVarValue(tv) for tv in val.__parameters__},
         )
     else:
