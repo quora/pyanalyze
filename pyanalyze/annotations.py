@@ -265,6 +265,12 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
         else:
             args = val[1:]
         return _value_of_origin_args(origin, args, val, ctx)
+    elif GenericAlias is not None and isinstance(val, GenericAlias):
+        origin = get_origin(val)
+        args = get_args(val)
+        if origin is tuple and not args:
+            return SequenceIncompleteValue(tuple, [])
+        return _value_of_origin_args(origin, args, val, ctx)
     elif typing_inspect.is_literal_type(val):
         args = typing_inspect.get_args(val)
         if len(args) == 0:
@@ -301,12 +307,6 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
         # InitVar instances aren't being created
         # static analysis: ignore[undefined_attribute]
         return _type_from_runtime(val.type, ctx)
-    elif GenericAlias is not None and isinstance(val, GenericAlias):
-        origin = get_origin(val)
-        args = get_args(val)
-        if origin is tuple and not args:
-            return SequenceIncompleteValue(tuple, [])
-        return _value_of_origin_args(origin, args, val, ctx)
     elif is_instance_of_typing_name(val, "AnnotatedMeta"):
         # Annotated in 3.6's typing_extensions
         origin, metadata = val.__args__

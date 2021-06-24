@@ -140,6 +140,13 @@ class Value:
         """Return the type of this object as used for dunder lookups."""
         return self
 
+    def __or__(self, other: "Value") -> "Value":
+        """Shortcut for defining a MultiValuedValue."""
+        return unite_values(self, other)
+
+    def __ror__(self, other: "Value") -> "Value":
+        return unite_values(other, self)
+
 
 class CanAssignContext:
     """A context passed to the :meth:`Value.can_assign` method.
@@ -256,8 +263,10 @@ def assert_is_value(obj: object, value: Value) -> None:
 def dump_value(value: object) -> None:
     """Print out the :class:`Value` representation of its argument.
 
-    Calling it will make pyanalyze print out an internal representation of the argument's inferred
-    value. Does nothing at runtime. Use :func:`pyanalyze.extensions.reveal_type` for a more user-friendly representation.
+    Calling it will make pyanalyze print out an internal
+    representation of the argument's inferred value. Does nothing
+    at runtime. Use :func:`pyanalyze.extensions.reveal_type` for a
+    more user-friendly representation.
 
     """
     pass
