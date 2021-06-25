@@ -39,6 +39,7 @@ import inspect
 import sys
 from types import GeneratorType
 from typing import (
+    Tuple,
     cast,
     Any,
     Generic,
@@ -77,16 +78,16 @@ class _AnnotationContext(Context):
 # These are specified as just "List = _Alias()" in typing.pyi. Redirect
 # them to the proper runtime equivalent.
 _TYPING_ALIASES = {
-    "typing.List": "builtins.list",
-    "typing.Dict": "builtins.dict",
-    "typing.DefaultDict": "collections.defaultdict",
-    "typing.Set": "builtins.set",
-    "typing.Frozenzet": "builtins.frozenset",
-    "typing.Counter": "collections.Counter",
-    "typing.Deque": "collections.deque",
-    "typing.ChainMap": "collections.ChainMap",
-    "typing.OrderedDict": "collections.OrderedDict",
-    "typing.Tuple": "builtins.tuple",
+    ("typing", "List"): ("builtins", "list"),
+    ("typing", "Dict"): ("builtins", "dict"),
+    ("typing", "DefaultDict"): ("collections", "defaultdict"),
+    ("typing", "Set"): ("builtins", "set"),
+    ("typing", "Frozenzet"): ("builtins", "frozenset"),
+    ("typing", "Counter"): ("collections", "Counter"),
+    ("typing", "Deque"): ("collections", "deque"),
+    ("typing", "ChainMap"): ("collections", "ChainMap"),
+    ("typing", "OrderedDict"): ("collections", "OrderedDict"),
+    ("typing", "Tuple"): ("builtins", "tuple"),
 }
 
 
@@ -106,12 +107,14 @@ class TypeshedFinder(object):
     def get_argspec(self, obj: Any) -> Optional[Signature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
-            fq_name = self._get_fq_name(objclass)
-            if fq_name is None:
+            pair = self._get_module_and_name(objclass)
+            if pair is None:
                 return None
+            module, name = pair
+            fq_name = f"{module}.{name}"
             info = self._get_info_for_name(fq_name)
             sig = self._get_method_signature_from_info(
-                info, obj, fq_name, objclass.__module__, objclass
+                info, obj, fq_name, module, objclass
             )
             if sig is not None:
                 self.log("Found signature", (obj, sig))
@@ -380,12 +383,12 @@ class TypeshedFinder(object):
             self.log("Ignoring unrecognized info", (fq_name, info))
             return None
 
-    def _get_fq_name(self, obj: Any) -> Optional[str]:
+    def _get_module_and_name(self, obj: Any) -> Optional[Tuple[str, str]]:
         if obj is GeneratorType:
-            return "typing.Generator"
+            return ("typing", "Generator")
         if IS_PRE_38:
             if obj is Sized:
-                return "typing.Sized"
+                return ("typing", "Sized")
         try:
             module = obj.__module__
             if module is None:
@@ -399,15 +402,22 @@ class TypeshedFinder(object):
                 name = obj.__qualname__
             except AttributeError:
                 name = obj._name
-            fq_name = f"{module}.{name}"
+            fq_name = (module, name)
             # Avoid looking for stubs we won't find anyway.
-            if any(not part.isidentifier() for part in fq_name.split(".")):
+            if any(not part.isidentifier() for part in f"{module}.{name}".split(".")):
                 self.log("Ignoring non-identifier name", fq_name)
                 return None
             return _TYPING_ALIASES.get(fq_name, fq_name)
         except (AttributeError, TypeError):
             self.log("Ignoring object without module or qualname", obj)
             return None
+
+    def _get_fq_name(self, obj: Any) -> Optional[str]:
+        pair = self._get_module_and_name(obj)
+        if pair is None:
+            return None
+        module, name = pair
+        return f"{module}.{name}"
 
     def _get_signature_from_info(
         self,
@@ -608,15 +618,18 @@ class TypeshedFinder(object):
         if isinstance(info, typeshed_client.ImportedInfo):
             return self._value_from_info(info.info, ".".join(info.source_module))
         elif isinstance(info, typeshed_client.NameInfo):
-            fq_name = f"{module}.{info.name}"
-            if fq_name in _TYPING_ALIASES:
-                new_fq_name = _TYPING_ALIASES[fq_name]
+            if (module, info.name) in _TYPING_ALIASES:
+                module, name = _TYPING_ALIASES[(module, info.name)]
+                new_fq_name = f"{module}.{name}"
                 info = self._get_info_for_name(new_fq_name)
                 return self._value_from_info(
                     info, new_fq_name.rsplit(".", maxsplit=1)[0]
                 )
             elif IS_PRE_38:
-                if fq_name in ("typing.Protocol", "typing_extensions.Protocol"):
+                if info.name == "Protocol" and module in (
+                    "typing",
+                    "typing_extensions",
+                ):
                     return KnownValue(Protocol)
             if isinstance(info.ast, ast3.Assign):
                 key = (module, info.ast)

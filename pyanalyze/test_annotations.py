@@ -1098,5 +1098,8 @@ class TestProtocol(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_practical(self):
-        def capybara(x: tuple):
+        from types import GeneratorType
+
+        def capybara(x: tuple, y: "GeneratorType[str, None, None]"):
             assert_is_value("".join(x), TypedValue(str))
+            assert_is_value(y.__iter__().__next__(), TypedValue(str))
