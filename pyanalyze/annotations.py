@@ -472,13 +472,17 @@ def _generic_extract_protocol_members(val: object, ctx: Context) -> ProtocolValu
             )
     if hasattr(val, "__bases__") and isinstance(val, type):
         bases, members = _extract_protocol_members(val, ctx)
+        if hasattr(val, "__parameters__"):
+            tv_map = {tv: TypeVarValue(tv) for tv in val.__parameters__}
+        else:
+            tv_map = {}
         return ProtocolValue(
             module_name=module,
             name=name,
             underlying_type=TypedValue(val),
             member_providers=members,
             bases=bases,
-            tv_map={tv: TypeVarValue(tv) for tv in val.__parameters__},
+            tv_map=tv_map,
         )
     else:
         raise TypeError(f"unsupported protocol base {val!r}")
