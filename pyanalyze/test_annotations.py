@@ -1099,7 +1099,14 @@ class TestProtocol(TestNameCheckVisitorBase):
     @assert_passes()
     def test_practical(self):
         from types import GeneratorType
+        from typing import Any, Container
+
+        def contain_me(x: Container[Any]) -> None:
+            pass
 
         def capybara(x: tuple, y: "GeneratorType[str, None, None]"):
             assert_is_value("".join(x), TypedValue(str))
             assert_is_value(y.__iter__().__next__(), TypedValue(str))
+
+            contain_me("x")
+            contain_me(3)  # E: incompatible_argument
