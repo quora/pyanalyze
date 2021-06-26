@@ -4,7 +4,13 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
-from .annotations import Context, is_typing_name, type_from_value, value_from_ast
+from .annotations import (
+    Context,
+    is_typing_name,
+    type_from_runtime,
+    type_from_value,
+    value_from_ast,
+)
 from .error_code import ErrorCode
 from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
@@ -714,9 +720,18 @@ class TypeshedFinder(object):
             tv_map = {tv.typevar: tv for tv in typevars if isinstance(tv, TypeVarValue)}
         else:
             tv_map = {}
+
+        try:
+            __import__(module)
+            typ = getattr(sys.modules[module], ast.name)
+            ctx = _AnnotationContext(finder=self, module=module)
+            underlying_type = type_from_runtime(typ, ctx=ctx)
+        except Exception:
+            underlying_type = None
         proto = ProtocolValue(
             module_name=module,
             name=ast.name,
+            underlying_type=underlying_type,
             member_providers=members,
             bases=bases,
             tv_map=tv_map,

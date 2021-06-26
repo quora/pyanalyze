@@ -1036,7 +1036,9 @@ class ProtocolValue(Value):
             tv_maps.append(tv_map)
         return unify_typevar_maps(tv_maps)
 
-    def substitute_typevars(self, typevars: TypeVarMap) -> "ProtocolValue":
+    def substitute_typevars(
+        self, typevars: TypeVarMap, underlying_type: Optional[Value] = None
+    ) -> "ProtocolValue":
         self.unlazify()
         new_typevars = {}
         for typevar, value in self.tv_map.items():
@@ -1048,7 +1050,9 @@ class ProtocolValue(Value):
         return ProtocolValue(
             module_name=self.module_name,
             name=self.name,
-            underlying_type=self.underlying_type,
+            underlying_type=underlying_type
+            if underlying_type is not None
+            else self.underlying_type.substitute_typevars(typevars),
             members={
                 name: (value, merge_tv_maps(tv_map, typevars))
                 for name, (value, tv_map) in self.members.items()
@@ -1057,13 +1061,17 @@ class ProtocolValue(Value):
         )
 
     def apply_typevars(self, values: Sequence[Value]) -> "ProtocolValue":
+        if type(self.underlying_type) is TypedValue:
+            underlying_type = GenericValue(self.underlying_type.typ, values)
+        else:
+            underlying_type = self.underlying_type.substitute_typevars()
         tv_map = dict(zip(self.get_unapplied_typevars(), values))
         if self.members:
-            return self.substitute_typevars(tv_map)
+            return self.substitute_typevars(tv_map, underlying_type)
         return ProtocolValue(
             module_name=self.module_name,
             name=self.name,
-            underlying_type=self.underlying_type,
+            underlying_type=underlying_type,
             member_providers=self.member_providers,
             bases=self.bases,
             tv_map=merge_tv_maps(self.tv_map, tv_map),

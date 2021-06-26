@@ -1,6 +1,5 @@
 # static analysis: ignore
 from dataclasses import dataclass
-from pyanalyze.extensions import reveal_type
 from qcore.asserts import assert_eq
 from typing_extensions import Protocol
 
@@ -1099,9 +1098,13 @@ class TestProtocol(TestNameCheckVisitorBase):
     @assert_passes()
     def test_practical(self):
         from types import GeneratorType
-        from typing import Any, Container
+        from typing import Any, Container, Iterable
+        from qcore.asserts import assert_in
 
         def contain_me(x: Container[Any]) -> None:
+            pass
+
+        def iterate_me(x: Iterable[int]) -> None:
             pass
 
         def capybara(x: tuple, y: "GeneratorType[str, None, None]"):
@@ -1110,3 +1113,5 @@ class TestProtocol(TestNameCheckVisitorBase):
 
             contain_me("x")
             contain_me(3)  # E: incompatible_argument
+            assert_in("a", str(assert_in))
+            iterate_me(str(assert_in))  # E: incompatible_argument
