@@ -146,22 +146,29 @@ class TypeshedFinder(object):
         name = getattr(obj, "__name__", None)
         if name is None:
             return None
-        module = getattr(obj, "__module__", None)
-        if module is None:
-            return None
         if name == qualname or qualname.count(".") != 1:
             return None
         class_name, function_name = qualname.split(".")
+
+        if hasattr(obj, "__objclass__"):
+            objclass = obj.__objclass__
+            module = getattr(objclass, "__module__", None)
+            if module is None:
+                return None
+        else:
+            if not hasattr(obj, "__globals__"):
+                return None
+            try:
+                objclass = obj.__globals__[class_name]
+            except KeyError:
+                return None
+            module = getattr(obj, "__module__", None)
+            if module is None:
+                return None
         if function_name != name:
             return None
         fq_name = f"{module}.{class_name}"
         info = self._get_info_for_name(fq_name)
-        if not hasattr(obj, "__globals__"):
-            return None
-        try:
-            objclass = obj.__globals__[class_name]
-        except KeyError:
-            return None
         return self._get_method_signature_from_info(
             info, obj, fq_name, module, objclass
         )

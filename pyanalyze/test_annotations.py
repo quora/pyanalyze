@@ -1096,6 +1096,29 @@ class TestProtocol(TestNameCheckVisitorBase):
             p("")  # E: incompatible_argument
 
     @assert_passes()
+    def test_generic_known(self):
+        from typing_extensions import Protocol
+        from typing import TypeVar
+
+        T = TypeVar("T")
+
+        class GenericSized(Protocol[T]):
+            def __len__(self) -> T:
+                raise NotImplementedError
+
+        def weird_size(x: GenericSized[str]):
+            pass
+
+        class WeirdImpl:
+            def __len__(self) -> str:
+                return "0"
+
+        def capybara():
+            weird_size(WeirdImpl())
+            weird_size(str(WeirdImpl))  # E: incompatible_argument
+            weird_size("x")  # E: incompatible_argument
+
+    @assert_passes()
     def test_practical(self):
         from types import GeneratorType
         from typing import Any, Container, Iterable
