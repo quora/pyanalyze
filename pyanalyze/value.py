@@ -943,9 +943,7 @@ class ProtocolValue(Value):
 
     module_name: str
     name: str
-    underlying_type: Optional[TypedValue] = field(
-        compare=False, hash=False, default=None
-    )
+    underlying_type: Optional[Value] = field(compare=False, hash=False, default=None)
     member_providers: Dict[str, ValueProvider] = field(
         compare=False, hash=False, default_factory=dict
     )
@@ -1047,12 +1045,12 @@ class ProtocolValue(Value):
             else:
                 new_value = value
             new_typevars[typevar] = new_value
+        if underlying_type is None and self.underlying_type is not None:
+            underlying_type = self.underlying_type.substitute_typevars(typevars)
         return ProtocolValue(
             module_name=self.module_name,
             name=self.name,
-            underlying_type=underlying_type
-            if underlying_type is not None
-            else self.underlying_type.substitute_typevars(typevars),
+            underlying_type=underlying_type,
             members={
                 name: (value, merge_tv_maps(tv_map, typevars))
                 for name, (value, tv_map) in self.members.items()
@@ -1061,11 +1059,16 @@ class ProtocolValue(Value):
         )
 
     def apply_typevars(self, values: Sequence[Value]) -> "ProtocolValue":
-        if type(self.underlying_type) is TypedValue:
-            underlying_type = GenericValue(self.underlying_type.typ, values)
-        else:
-            underlying_type = self.underlying_type.substitute_typevars()
         tv_map = dict(zip(self.get_unapplied_typevars(), values))
+        if self.underlying_type is not None:
+            if type(self.underlying_type) is TypedValue:
+                # TODO: add support for type(...) is narrowing
+                assert isinstance(self.underlying_type, TypedValue)
+                underlying_type = GenericValue(self.underlying_type.typ, values)
+            else:
+                underlying_type = self.underlying_type.substitute_typevars(tv_map)
+        else:
+            underlying_type = None
         if self.members:
             return self.substitute_typevars(tv_map, underlying_type)
         return ProtocolValue(
