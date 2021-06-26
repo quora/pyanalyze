@@ -596,10 +596,11 @@ class GenericValue(TypedValue):
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, TypedValue) and isinstance(other.typ, type):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
-            # If we don't think it's a generic base, try super;
-            # runtime isinstance() may disagree.
             if generic_args is None or len(self.args) != len(generic_args):
-                return super().can_assign(other, ctx)
+                if isinstance(other, GenericValue) and self.typ is other.typ:
+                    generic_args = other.args
+                else:
+                    return CanAssignError(f"Cannot assign {other} to {self}")
             tv_maps = []
             for i, (my_arg, their_arg) in enumerate(zip(self.args, generic_args)):
                 tv_map = my_arg.can_assign(their_arg, ctx)
