@@ -1138,3 +1138,18 @@ class TestProtocol(TestNameCheckVisitorBase):
             contain_me(3)  # E: incompatible_argument
             assert_in("a", str(assert_in))
             iterate_me(str(assert_in))  # E: incompatible_argument
+
+    @assert_passes()
+    def test_custom_implementation(self):
+        from typing import Any, Iterable
+
+        class MyIterable:
+            def __iter__(self) -> Any:
+                raise NotImplementedError
+
+        def takes_iter(it: Iterable[int]) -> None:
+            pass
+
+        def capybara() -> None:
+            takes_iter(MyIterable())
+            all(MyIterable())

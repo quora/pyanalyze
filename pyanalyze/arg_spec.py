@@ -135,6 +135,9 @@ class AnnotationsContext(Context):
     def get_signature(self, callable: object) -> MaybeSignature:
         return self.arg_spec_cache.get_argspec(callable)
 
+    def get_typeshed_info_for_object(self, obj: object) -> Value:
+        return self.arg_spec_cache.ts_finder.get_info_for_object(obj)
+
 
 class ArgSpecCache:
     DEFAULT_ARGSPECS = implementation.get_default_argspecs()

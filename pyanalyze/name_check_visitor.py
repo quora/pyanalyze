@@ -781,6 +781,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._method_cache = {}
         self._statement_types = set()
         self._fill_method_cache()
+        self._use_module_annotations()
+
+    def _use_module_annotations(self) -> None:
+        if self.module is None:
+            return
+        module_vars = self.scopes.scopes[-1].variables
+        annotations = getattr(self.module, "__annotations__", {})
+        for key, annotation in annotations.items():
+            if is_typing_name(annotation, "Final"):
+                continue
+            val = type_from_runtime(
+                annotation, globals=self.module.__dict__, visitor=self
+            )
+            module_vars[key] = val
 
     def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
         return self.config.get_additional_bases(typ)
@@ -2603,9 +2617,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Value:
         self.is_generator = True
         value = self.visit(node.value)
-        if not TypedValue(collections.abc.Iterable).is_assignable(
-            value, self
-        ) and not TypedValue(Awaitable).is_assignable(value, self):
+        value_or_error = is_iterable_value(value, self)
+        if isinstance(value_or_error, CanAssignError) and not TypedValue(
+            Awaitable
+        ).is_assignable(value, self):
             self._show_error_if_checking(
                 node,
                 f"Cannot use {value} in yield from",
@@ -4245,20 +4260,6 @@ def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
         module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
     else:
         module_vars = {key: KnownValue(value) for key, value in module.__dict__.items()}
-        module_vars = {}
-        annotations = getattr(module, "__annotations__", {})
-        for key, value in module.__dict__.items():
-            try:
-                annotation = annotations[key]
-            except Exception:
-                # Malformed __annotations__
-                val = KnownValue(value)
-            else:
-                if is_typing_name(annotation, "Final"):
-                    val = KnownValue(value)
-                else:
-                    val = type_from_runtime(annotation, globals=module.__dict__)
-            module_vars[key] = val
     return StackedScopes(module_vars, module)
 
 

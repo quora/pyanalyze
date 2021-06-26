@@ -147,6 +147,9 @@ class Context:
             return KnownValue(getattr(builtins, name))
         return self.handle_undefined_name(name)
 
+    def get_typeshed_info_for_object(self, obj: object) -> Value:
+        return UNRESOLVED_VALUE
+
 
 @used  # part of an API
 def type_from_ast(
@@ -331,7 +334,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
         args = typing_inspect.get_args(val)
         return _value_of_origin_args(Callable, args, val, ctx)
     elif isinstance(val, type):
-        return _maybe_typed_value(val, ctx)
+        return _maybe_typed_value(val, [], ctx)
     elif val is None:
         return KnownValue(None)
     elif is_typing_name(val, "NoReturn"):
@@ -416,7 +419,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
-            return _maybe_typed_value(origin, ctx)
+            return _maybe_typed_value(origin, [], ctx)
         ctx.show_error(f"Invalid type annotation {val}")
         return UNRESOLVED_VALUE
 
@@ -647,6 +650,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 [_type_from_value(val, ctx) for val in value.members]
             )
         elif typing_inspect.is_generic_type(root):
+            # TODO shouldn't this take get_args() into account?
             origin = typing_inspect.get_origin(root)
             if origin is None:
                 # On Python 3.9 at least, get_origin() of a class that inherits
@@ -654,20 +658,20 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 origin = root
             if getattr(origin, "__extra__", None) is not None:
                 origin = origin.__extra__
-            return GenericValue(
-                origin, [_type_from_value(elt, ctx) for elt in value.members]
+            return _maybe_typed_value(
+                origin, [_type_from_value(elt, ctx) for elt in value.members], ctx
             )
         elif isinstance(root, type):
-            return GenericValue(
-                root, [_type_from_value(elt, ctx) for elt in value.members]
+            return _maybe_typed_value(
+                root, [_type_from_value(elt, ctx) for elt in value.members], ctx
             )
         else:
             # In Python 3.9, generics are implemented differently and typing.get_origin
             # can help.
             origin = get_origin(root)
             if isinstance(origin, type):
-                return GenericValue(
-                    origin, [_type_from_value(elt, ctx) for elt in value.members]
+                return _maybe_typed_value(
+                    origin, [_type_from_value(elt, ctx) for elt in value.members], ctx
                 )
             ctx.show_error(f"Unrecognized subscripted annotation: {root}")
             return UNRESOLVED_VALUE
@@ -711,6 +715,9 @@ class _DefaultContext(Context):
         if self.visitor is None:
             return None
         return self.visitor.arg_spec_cache.get_argspec(callable)
+
+    def get_typeshed_info_for_object(self, obj: object) -> Value:
+        return self.visitor.arg_spec_cache.ts_finder.get_info_for_object(obj)
 
 
 @dataclass
@@ -916,10 +923,10 @@ def _value_of_origin_args(
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(val is UNRESOLVED_VALUE for val in args_vals):
-                return _maybe_typed_value(origin, ctx)
-            return GenericValue(origin, args_vals)
+                args_vals = []
+            return _maybe_typed_value(origin, args_vals, ctx)
         else:
-            return _maybe_typed_value(origin, ctx)
+            return _maybe_typed_value(origin, [], ctx)
     elif is_typing_name(origin, "TypeGuard"):
         if len(args) != 1:
             ctx.show_error("TypeGuard requires a single argument")
@@ -929,7 +936,7 @@ def _value_of_origin_args(
         )
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
-        return _maybe_typed_value(val, ctx)
+        return _maybe_typed_value(val, [], ctx)
     else:
         ctx.show_error(
             f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]"
@@ -945,9 +952,14 @@ def is_protocol(val: object) -> TypeGuard[type]:
     )
 
 
-def _maybe_typed_value(val: type, ctx: Context) -> Value:
+def _maybe_typed_value(val: type, args: Sequence[Value], ctx: Context) -> Value:
     if val is type(None):
         return KnownValue(None)
+    ts_info = ctx.get_typeshed_info_for_object(val)
+    if isinstance(ts_info, ProtocolValue):
+        if args:
+            return ts_info.apply_typevars(args)
+        return ts_info
     try:
         isinstance(1, val)
     except Exception:
@@ -957,7 +969,9 @@ def _maybe_typed_value(val: type, ctx: Context) -> Value:
             return TypedValue(typing_extensions.Protocol)
         return UNRESOLVED_VALUE
     else:
-        return TypedValue(val)
+        if not args:
+            return TypedValue(val)
+        return GenericValue(val, args)
 
 
 def _make_callable_from_value(
