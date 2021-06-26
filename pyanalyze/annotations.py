@@ -453,7 +453,9 @@ def _generic_extract_protocol_members(val: object, ctx: Context) -> ProtocolValu
     name = getattr(val, "__qualname__", getattr(val, "__name__", repr(val)))
     if typing_inspect.is_generic_type(val):
         origin = typing_inspect.get_origin(val)
-        if origin is not None:
+        # in 3.6 get_origin() returns the object for an unsubscripted
+        # Protocol
+        if origin is not None and origin is not val:
             args = typing_inspect.get_args(val)
             params = typing_inspect.get_parameters(origin)
             # In Python 3.7 get_parameters() is wrong for generic protocols
