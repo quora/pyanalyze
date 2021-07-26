@@ -335,11 +335,11 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 settings = {code: True for code in cls.error_code_enum}
             else:
                 settings = cls._get_default_settings()
-                if settings is not None:
-                    for setting in args.enable:
-                        settings[cls.error_code_enum[setting]] = True
-                    for setting in args.disable:
-                        settings[cls.error_code_enum[setting]] = False
+            if settings is not None:
+                for setting in args.enable:
+                    settings[cls.error_code_enum[setting]] = True
+                for setting in args.disable:
+                    settings[cls.error_code_enum[setting]] = False
             kwargs = {
                 key: value
                 for key, value in args.__dict__.items()
@@ -834,7 +834,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 "--enable-all",
                 action="store_true",
                 default=False,
-                help="Enable all checks",
+                help="Enable all checks by default",
             )
             parser.add_argument(
                 "-e",
