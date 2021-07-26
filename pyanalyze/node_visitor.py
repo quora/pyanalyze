@@ -333,6 +333,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
         if cls.error_code_enum is not None:
             if args.enable_all:
                 settings = {code: True for code in cls.error_code_enum}
+            elif args.disable_all:
+                settings = {code: False for code in cls.error_code_enum}
             else:
                 settings = cls._get_default_settings()
             if settings is not None:
@@ -343,7 +345,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             kwargs = {
                 key: value
                 for key, value in args.__dict__.items()
-                if key not in {"enable_all", "enable", "disable"}
+                if key not in {"enable_all", "disable_all", "enable", "disable"}
             }
             kwargs["settings"] = settings
         else:
@@ -829,12 +831,19 @@ class BaseNodeVisitor(ast.NodeVisitor):
         )
 
         if cls.error_code_enum is not None:
-            parser.add_argument(
+            all_group = parser.add_mutually_exclusive_group()
+            all_group.add_argument(
                 "-a",
                 "--enable-all",
                 action="store_true",
                 default=False,
                 help="Enable all checks by default",
+            )
+            all_group.add_argument(
+                "--disable-all",
+                action="store_true",
+                default=False,
+                help="Disable all checks by default",
             )
             parser.add_argument(
                 "-e",
