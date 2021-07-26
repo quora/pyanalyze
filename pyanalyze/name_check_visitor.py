@@ -18,7 +18,6 @@ from collections.abc import Awaitable
 import contextlib
 from dataclasses import dataclass
 from functools import reduce
-import imp
 import inspect
 from itertools import chain
 import logging
@@ -1913,16 +1912,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if node.level == 1 or (node.level == 0 and node.module not in sys.modules):
                 self._set_name_in_scope(node.module, node, TypedValue(types.ModuleType))
 
-        with tempfile.TemporaryFile() as f:
+        with tempfile.NamedTemporaryFile(suffix=".py") as f:
             f.write(source_code.encode("utf-8"))
+            f.flush()
             f.seek(0)
             try:
-                pseudo_module = imp.load_module(
-                    pseudo_module_name,
-                    f,
-                    pseudo_module_file,
-                    (".py", "r", imp.PY_SOURCE),
-                )
+                pseudo_module = importer.import_module(pseudo_module_name, f.name)
             except Exception:
                 # sets the name of the imported module to an UnresolvedValue so we don't get further
                 # errors
