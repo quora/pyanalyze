@@ -20,6 +20,7 @@ from .value import (
     GenericValue,
     UNRESOLVED_VALUE,
     SequenceIncompleteValue,
+    assert_is_value,
 )
 
 T = TypeVar("T")
@@ -402,3 +403,26 @@ class TestFunctionsSafeToCall(TestNameCheckVisitorBase):
     def test(self):
         def test(self):
             assert_is_value(sorted([3, 1, 2]), KnownValue([1, 2, 3]))
+
+
+class TestNamedTuple(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_args(self):
+        from typing import NamedTuple
+
+        class NT(NamedTuple):
+            field: int
+
+        class CustomNew:
+            def __new__(self, a: int) -> "CustomNew":
+                return super().__new__(self)
+
+        def capybara():
+            NT(filed=3)  # E: incompatible_call
+            nt2 = NT(field=3)
+            assert_is_value(nt2, TypedValue(NT))
+            assert_is_value(nt2.field, TypedValue(int))
+
+            CustomNew("x")  # E: incompatible_argument
+            cn = CustomNew(a=3)
+            assert_is_value(cn, TypedValue(CustomNew))
