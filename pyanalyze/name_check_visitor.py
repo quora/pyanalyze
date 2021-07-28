@@ -99,6 +99,7 @@ from .value import (
     AnnotatedValue,
     CallableValue,
     CanAssignError,
+    NewTypeValue,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
@@ -3267,7 +3268,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         hand, an UNRESOLVED_VALUE carries no information, so we're fine always replacing it.
 
         """
-        return value.is_type(int) or value is UNRESOLVED_VALUE
+        return not isinstance(value, NewTypeValue) and (
+            value.is_type(int) or value is UNRESOLVED_VALUE
+        )
 
     def _maybe_use_hardcoded_type(self, value: Value, name: str) -> Value:
         """Replaces a value with a name of hardcoded type where applicable."""
