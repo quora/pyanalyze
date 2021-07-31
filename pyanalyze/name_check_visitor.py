@@ -817,16 +817,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # don't re-raise the error, just proceed without a module object
             # this can happen with scripts that aren't intended to be imported
             if not self.has_file_level_ignore():
-                traceback.print_exc()
                 if self.tree is not None and self.tree.body:
                     node = self.tree.body[0]
                 else:
                     node = None
-                self.show_error(
+                failure = self.show_error(
                     node,
-                    "Failed to import {} due to {!r}".format(self.filename, e),
+                    f"Failed to import {self.filename} due to {e!r}",
                     error_code=ErrorCode.import_failed,
                 )
+                if failure is not None:
+                    # Don't print a traceback if the error was suppressed.
+                    traceback.print_exc()
             return None, False
 
     def load_module(self, filename: str) -> Tuple[Optional[types.ModuleType], bool]:
@@ -1876,6 +1878,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         To figure out what names would be imported in these cases, we create a fake module
         consisting of just the import statement, eval it, and set all the names in its __dict__
         in the current module scope.
+
+        TODO: Replace this with code that just evaluates the import without going
+        through this exec shenanigans.
 
         """
         if self.module is None:
