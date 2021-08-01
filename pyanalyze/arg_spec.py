@@ -43,7 +43,7 @@ from dataclasses import dataclass
 import qcore
 import inspect
 import sys
-from types import ModuleType
+from types import FunctionType, ModuleType
 from typing import Any, Sequence, Generic, Iterable, Mapping, Optional, Dict
 import typing_inspect
 
@@ -417,6 +417,15 @@ class ArgSpecCache:
                 else:
                     if override is not None:
                         constructor = override
+                    # We pick __new__ if it is implemented as a Python function only;
+                    # if we picked it whenever it was overridden we'd get too many C
+                    # types that have a meaningless __new__ signature. Typeshed
+                    # usually doesn't have a __new__ signature. Alternatively, we
+                    # could try __new__ first and fall back to __init__ if __new__
+                    # doesn't have a useful signature.
+                    # In practice, we saw this make a difference with NamedTuples.
+                    elif isinstance(obj.__new__, FunctionType):
+                        constructor = obj.__new__
                     elif hasattr(obj, "__init__"):
                         constructor = obj.__init__
                     else:

@@ -18,7 +18,6 @@ from collections.abc import Awaitable
 import contextlib
 from dataclasses import dataclass
 from functools import reduce
-import imp
 import inspect
 from itertools import chain
 import logging
@@ -102,6 +101,8 @@ from .value import (
     CallableValue,
     CanAssignError,
     ProtocolValue,
+    NewTypeValue,
+    boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
     NO_RETURN_VALUE,
@@ -830,16 +831,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # don't re-raise the error, just proceed without a module object
             # this can happen with scripts that aren't intended to be imported
             if not self.has_file_level_ignore():
-                traceback.print_exc()
                 if self.tree is not None and self.tree.body:
                     node = self.tree.body[0]
                 else:
                     node = None
-                self.show_error(
+                failure = self.show_error(
                     node,
-                    "Failed to import {} due to {!r}".format(self.filename, e),
+                    f"Failed to import {self.filename} due to {e!r}",
                     error_code=ErrorCode.import_failed,
                 )
+                if failure is not None:
+                    # Don't print a traceback if the error was suppressed.
+                    traceback.print_exc()
             return None, False
 
     def load_module(self, filename: str) -> Tuple[Optional[types.ModuleType], bool]:
@@ -1890,6 +1893,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         consisting of just the import statement, eval it, and set all the names in its __dict__
         in the current module scope.
 
+        TODO: Replace this with code that just evaluates the import without going
+        through this exec shenanigans.
+
         """
         if self.module is None:
             self._handle_imports(node.names)
@@ -1926,16 +1932,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if node.level == 1 or (node.level == 0 and node.module not in sys.modules):
                 self._set_name_in_scope(node.module, node, TypedValue(types.ModuleType))
 
-        with tempfile.TemporaryFile() as f:
+        with tempfile.NamedTemporaryFile(suffix=".py") as f:
             f.write(source_code.encode("utf-8"))
+            f.flush()
             f.seek(0)
             try:
-                pseudo_module = imp.load_module(
-                    pseudo_module_name,
-                    f,
-                    pseudo_module_file,
-                    (".py", "r", imp.PY_SOURCE),
-                )
+                pseudo_module = importer.import_module(pseudo_module_name, f.name)
             except Exception:
                 # sets the name of the imported module to an UnresolvedValue so we don't get further
                 # errors
@@ -3286,7 +3288,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         hand, an UNRESOLVED_VALUE carries no information, so we're fine always replacing it.
 
         """
-        return value.is_type(int) or value is UNRESOLVED_VALUE
+        return not isinstance(value, NewTypeValue) and (
+            value.is_type(int) or value is UNRESOLVED_VALUE
+        )
 
     def _maybe_use_hardcoded_type(self, value: Value, name: str) -> Value:
         """Replaces a value with a name of hardcoded type where applicable."""

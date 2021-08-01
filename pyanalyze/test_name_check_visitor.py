@@ -1110,10 +1110,15 @@ class TestBadRaise(TestNameCheckVisitorBase):
 class TestVariableNameValue(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
+        from typing import NewType
+
+        Uid = NewType("Uid", int)
+
         def name_ends_with_uid(uid):
             return uid
 
-        def test(self):
+        def test(self, uid: Uid):
+            assert_is_value(uid, NewTypeValue(Uid))
             assert_is_value(name_ends_with_uid, KnownValue(name_ends_with_uid))
             uid = 3
             assert_is_value(uid, VariableNameValue(["uid"]))
