@@ -760,7 +760,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
             epilog=epilog,
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
-        parser.add_argument("files", nargs="*", help="Files or directories to check")
+        parser.add_argument(
+            "files", nargs="*", default=".", help="Files or directories to check"
+        )
         parser.add_argument(
             "-v", "--verbose", help="Print more information.", action="count"
         )
