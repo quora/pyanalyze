@@ -510,6 +510,14 @@ The code is formatted using [Black](https://github.com/psf/black).
 
 ## Changelog
 
+Version 0.3.0 (August 1, 2021)
+
+- Type check calls on Unions properly
+- Add `pyanalyze` executable
+- Add `--enable-all` and `--disable-all` flags
+  (contributed by C.A.M. Gerlach)
+- Bug fixes
+
 Version 0.2.0 (May 17, 2021)
 
 - Drop support for Python 2 and 3.5
