@@ -510,6 +510,13 @@ The code is formatted using [Black](https://github.com/psf/black).
 
 ## Changelog
 
+Version 0.3.1 (August 11, 2021)
+
+- Exit with a non-zero exit code when errors occur
+  (contributed by C.A.M. Gerlach)
+- Type check the working directory if no command-line arguments
+  are given (contributed by C.A.M. Gerlach)
+
 Version 0.3.0 (August 1, 2021)
 
 - Type check calls on Unions properly
