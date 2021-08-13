@@ -416,6 +416,14 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
     return ImplReturn(KnownValue(None))
 
 
+def _list_getitem_impl(ctx: CallContext) -> ImplReturn:
+    self_value = ctx.vars['self']
+    index = ctx.vars['index']
+    if isinstance(index, TypedValue):
+        if index.typ is slice:
+            return TypedValue(self_value.get_type())
+    return UNRESOLVED_VALUE
+
 def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
     def inner(key: Value) -> Value:
         self_value = ctx.vars["self"]
@@ -1042,6 +1050,22 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=dict.__getitem__,
             impl=_dict_getitem_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(list)),
+                SigParameter("index", _POS_ONLY),
+            ],
+            callable=list.__getitem__,
+            impl=_list_getitem_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(tuple)),
+                SigParameter("index", _POS_ONLY),
+            ],
+            callable=tuple.__getitem__,
+            impl=_list_getitem_impl,
         ),
         Signature.make(
             [
