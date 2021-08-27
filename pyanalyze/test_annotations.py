@@ -880,3 +880,21 @@ class TestTypeGuard(TestNameCheckVisitorBase):
             else:
                 assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
                 assert_is_value(cls, TypedValue(Cls))
+
+
+class TestExternalType(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self) -> None:
+        import os
+        from pyanalyze.extensions import ExternalType
+
+        def capybara(
+            x: ExternalType["builtins.str"], y: ExternalType["os.stat_result"]
+        ) -> None:
+            pass
+
+        def user():
+            sr = os.stat_result((1,) * 10)
+            capybara("x", 1)  # E: incompatible_argument
+            capybara(1, sr)  # E: incompatible_argument
+            capybara("x", sr)

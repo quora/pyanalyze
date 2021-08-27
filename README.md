@@ -385,6 +385,8 @@ In addition to the standard Python type system, pyanalyze supports a number of n
 - `pyanalyze.extensions.AsynqCallable` is a variant of `Callable` that applies to `asynq` functions.
 - `pyanalyze.extensions.ParameterTypeGuard` is a generalization of PEP 649's `TypeGuard` that allows guards on any parameter to a function. To use it, return `Annotated[bool, ParameterTypeGuard["arg", SomeType]]`.
 - `pyanalyze.extensions.HasAttrGuard` is a similar mechanism that allows indicating that an object has a particular attribute. To use it, return `Annotated[bool, HasAttrGuard["arg", "attribute", SomeType]]`.
+- `pyanalyze.extensions.ExternalType` is a way to refer to a type that cannot
+  be referenced by name in contexts where using `if TYPE_CHECKING` is not possible.
 
 They are explained in more detail below.
 
@@ -496,6 +498,27 @@ def hasattr(obj: object, name: T) -> Annotated[bool, HasAttrGuard["obj", T, Any]
 
 As currently implemented, `HasAttrGuard` does not narrow types; instead it preserves the previous type of a variable and adds the additional attribute.
 
+### ExternalType
+
+`ExternalType` is a way to refer to a type that is not imported at runtime.
+The type must be fully qualified.
+
+```python
+from pyanalyze.extensions import ExternalType
+
+def function(arg: "other_module.Type") -> None:
+    pass
+```
+
+To resolve the type, pyanalyze will import `other_module`, but the module
+using `ExternalType` does not have to import `other_module`.
+
+`typing.TYPE_CHECKING` can be used in a similar fashion, but `ExternalType`
+can be more convenient when programmatically generating types. Our motivating
+use case is our database schema definition file: we would like to map each
+column to the enum it corresponds to, but those enums are defined in code
+that should not be imported by the schema definition.
+
 ## Limitations
 
 Python is sufficiently dynamic that almost any check like the ones run by pyanalyze will inevitably have false positives: cases where the script sees an error, but the code in fact runs fine. Attributes may be added at runtime in hard-to-detect ways, variables may be created by direct manipulation of the `globals()` dictionary, and the `mock` module can change anything into anything. Although pyanalyze has a number of whitelists to deal with these false positives, it is usually better to write code in a way that doesn't require use of the whitelist: code that's easier for the script to understand is probably also easier for humans to understand.
@@ -509,6 +532,10 @@ Pyanalyze has hundreds of unit tests that check its behavior. To run them, you c
 The code is formatted using [Black](https://github.com/psf/black).
 
 ## Changelog
+
+Unreleased
+
+- Add `pyanalyze.extensions.ExternalType`
 
 Version 0.3.1 (August 11, 2021)
 
