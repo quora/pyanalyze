@@ -48,7 +48,13 @@ from typing import (
 )
 
 from .error_code import ErrorCode
-from .extensions import AsynqCallable, HasAttrGuard, ParameterTypeGuard, TypeGuard
+from .extensions import (
+    AsynqCallable,
+    ExternalType,
+    HasAttrGuard,
+    ParameterTypeGuard,
+    TypeGuard,
+)
 from .find_unused import used
 from .signature import SigParameter, Signature
 from .value import (
@@ -394,6 +400,13 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             params, _type_from_runtime(return_type, ctx), is_asynq=True
         )
         return CallableValue(sig)
+    elif isinstance(val, ExternalType):
+        try:
+            typ = qcore.helpers.object_from_string(val.type_path)
+        except Exception:
+            ctx.show_error(f"Cannot resolve type {val.type_path!r}")
+            return UNRESOLVED_VALUE
+        return _type_from_runtime(typ, ctx)
     else:
         origin = get_origin(val)
         if isinstance(origin, type):

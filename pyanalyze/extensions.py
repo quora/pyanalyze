@@ -182,6 +182,39 @@ class TypeGuard(metaclass=_TypeGuardMeta):
     guarded_type: object
 
 
+class _ExternalTypeMeta(type):
+    def __getitem__(self, params: str) -> "ExternalType":
+        if not isinstance(params, str):
+            raise TypeError(f"ExternalType expects a string, not {params!r}")
+        return ExternalType(params)
+
+
+@dataclass(frozen=True)
+class ExternalType(metaclass=_ExternalTypeMeta):
+    """`ExternalType` is a way to refer to a type that is not imported at runtime.
+    The type must be given as a string representing a fully qualified name.
+
+    Example usage::
+
+        from pyanalyze.extensions import ExternalType
+
+        def function(arg: "other_module.Type") -> None:
+            pass
+
+    To resolve the type, pyanalyze will import `other_module`, but the module
+    using `ExternalType` does not have to import `other_module`.
+
+    `typing.TYPE_CHECKING` can be used in a similar fashion, but `ExternalType`
+    can be more convenient when programmatically generating types. Our motivating
+    use case is our database schema definition file: we would like to map each
+    column to the enum it corresponds to, but those enums are defined in code
+    that should not be imported by the schema definition.
+
+    """
+
+    type_path: str
+
+
 def reveal_type(value: object) -> None:
     """Inspect the inferred type of an expression.
 
