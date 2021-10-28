@@ -3,6 +3,7 @@
 Module-specific configurations for test_scope.
 
 """
+import abc
 import asynq
 import enum
 import inspect
@@ -265,7 +266,7 @@ class Config(object):
     # will only alert about attributes that don't exist when it has visited all the base classes of
     # the class with the possibly missing attribute. However, these classes are never going to be
     # visited (since they're builtin), but they don't set any attributes that we rely on.
-    IGNORED_TYPES_FOR_ATTRIBUTE_CHECKING = {object}
+    IGNORED_TYPES_FOR_ATTRIBUTE_CHECKING = {object, abc.ABC}
 
     #
     # Used by arg_spec.py
