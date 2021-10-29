@@ -185,12 +185,6 @@ class Config(object):
     # Used by find_unused.py
     #
 
-    # By default, the find_unused check will assume that any class with a metaclass is not unused,
-    # since metaclasses are commonly used to create a registry of classes that are accessed through
-    # that registry. These metaclasses do not register the class in a registry, so classes that have
-    # them can still be resolved as unused.
-    ALLOWED_METACLASSES = {qcore.helpers.DisallowInheritance, type}
-
     # Subclasses of these classes are not marked as unused by the find_unused check, nor are their
     # attributes
     USED_BASE_CLASSES = set()
