@@ -42,6 +42,7 @@ from typing import (
 from typing_extensions import Literal
 
 import pyanalyze
+from pyanalyze.extensions import CustomCheck
 
 from .safe import safe_isinstance, safe_issubclass
 from .type_object import TypeObject
@@ -1167,6 +1168,21 @@ class Extension:
 
 
 @dataclass
+class CustomCheckExtension(Extension):
+    custom_check: CustomCheck
+
+    def __str__(self) -> str:
+        # This extra wrapper class just adds noise
+        return str(self.custom_check)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Extension":
+        return CustomCheckExtension(self.custom_check.substitute_typevars(typevars))
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.custom_check.walk_values()
+
+
+@dataclass
 class ParameterTypeGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the parameter named `varname` is of type `guarded_type`.
@@ -1306,7 +1322,16 @@ class AnnotatedValue(Value):
         return AnnotatedValue(self.value.substitute_typevars(typevars), metadata)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        return self.value.can_assign(other, ctx)
+        can_assign = self.value.can_assign(other, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return can_assign
+        tv_maps = [can_assign]
+        for custom_check in self.get_metadata_of_type(CustomCheckExtension):
+            custom_can_assign = custom_check.custom_check.can_assign(other, ctx)
+            if isinstance(custom_can_assign, CanAssignError):
+                return custom_can_assign
+            tv_maps.append(custom_can_assign)
+        return unify_typevar_maps(tv_maps)
 
     def walk_values(self) -> Iterable[Value]:
         yield self
@@ -1319,6 +1344,12 @@ class AnnotatedValue(Value):
         for data in self.metadata:
             if isinstance(data, typ):
                 yield data
+
+    def get_custom_check_of_type(self, typ: Type[T]) -> Iterable[T]:
+        """Return any CustomChecks of the given type in the metadata."""
+        for custom_check in self.get_metadata_of_type(CustomCheckExtension):
+            if isinstance(custom_check.custom_check, typ):
+                yield custom_check.custom_check
 
     def has_metadata_of_type(self, typ: Type[Extension]) -> bool:
         """Return whether there is metadat of the given type."""

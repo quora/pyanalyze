@@ -1,9 +1,7 @@
 # static analysis: ignore
-import typing_extensions
-
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
-from .implementation import assert_is_value, dump_value
+from .implementation import assert_is_value
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
@@ -880,6 +878,143 @@ class TestTypeGuard(TestNameCheckVisitorBase):
             else:
                 assert_is_value(x, MultiValuedValue([TypedValue(int), TypedValue(str)]))
                 assert_is_value(cls, TypedValue(Cls))
+
+
+class TestCustomCheck(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_literal_only(self) -> None:
+        from pyanalyze.extensions import LiteralOnly
+        from typing_extensions import Annotated
+
+        def capybara(x: Annotated[str, LiteralOnly()]) -> str:
+            return x
+
+        def caller(x: str) -> None:
+            capybara("x")
+            capybara(x)  # E: incompatible_argument
+            capybara(str(1))  # E: incompatible_argument
+            capybara("x" if x else "y")
+            capybara("x" if x else x)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_not_none(self) -> None:
+        from dataclasses import dataclass
+        from pyanalyze.extensions import CustomCheck
+        from pyanalyze.value import (
+            flatten_values,
+            CanAssign,
+            CanAssignError,
+            CanAssignContext,
+            KnownValue,
+            Value,
+        )
+        from typing_extensions import Annotated
+        from typing import Any, Optional
+
+        @dataclass
+        class IsNot(CustomCheck):
+            obj: object
+
+            def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+                for subval in flatten_values(value):
+                    if isinstance(subval, KnownValue):
+                        if subval.val is self.obj:
+                            return CanAssignError(f"Value may not be {self.obj!r}")
+                return {}
+
+        def capybara(x: Annotated[Any, IsNot(None)]) -> None:
+            pass
+
+        def caller(x: Optional[str]) -> None:
+            capybara("x")
+            capybara(None)  # E: incompatible_argument
+            capybara(x)  # E: incompatible_argument
+            capybara("x" if x else None)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_greater_than(self) -> None:
+        from dataclasses import dataclass
+        from pyanalyze.extensions import CustomCheck
+        from pyanalyze.value import (
+            flatten_values,
+            CanAssign,
+            CanAssignError,
+            CanAssignContext,
+            KnownValue,
+            TypeVarMap,
+            TypeVarValue,
+            Value,
+        )
+        from typing_extensions import Annotated, TypeGuard
+        from typing import Iterable, TypeVar, Union
+
+        @dataclass
+        class GreaterThan(CustomCheck):
+            value: Union[int, TypeVar]
+
+            def _can_assign_inner(self, value: Value) -> CanAssign:
+                if isinstance(value, KnownValue):
+                    if not isinstance(value.val, int):
+                        return CanAssignError(f"Value {value.val!r} is not an int")
+                    if value.val <= self.value:
+                        return CanAssignError(
+                            f"Value {value.val!r} is not greater than {self.value}"
+                        )
+                elif value is UNRESOLVED_VALUE:
+                    return {}
+                else:
+                    return CanAssignError(f"Size of {value} is not known")
+
+            def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+                if isinstance(self.value, TypeVar):
+                    return {}
+                for subval in flatten_values(value, unwrap_annotated=False):
+                    if isinstance(subval, AnnotatedValue):
+                        can_assign = self._can_assign_inner(subval.value)
+                        if not isinstance(can_assign, CanAssignError):
+                            return can_assign
+                        gts = list(subval.get_custom_check_of_type(GreaterThan))
+                        if not gts:
+                            return CanAssignError(f"Size of {value} is not known")
+                        if not any(
+                            check.value >= self.value
+                            for check in gts
+                            if isinstance(check.value, int)
+                        ):
+                            return CanAssignError(f"{subval} is too small")
+                    else:
+                        can_assign = self._can_assign_inner(subval)
+                        if isinstance(can_assign, CanAssignError):
+                            return can_assign
+                return {}
+
+            def walk_values(self) -> Iterable[Value]:
+                if isinstance(self.value, TypeVar):
+                    yield TypeVarValue(self.value)
+
+            def substitute_typevars(self, typevars: TypeVarMap) -> "GreaterThan":
+                if isinstance(self.value, TypeVar) and self.value in typevars:
+                    value = typevars[self.value]
+                    if isinstance(value, KnownValue) and isinstance(value.val, int):
+                        return GreaterThan(value.val)
+                return self
+
+        def capybara(x: Annotated[int, GreaterThan(2)]) -> None:
+            pass
+
+        IntT = TypeVar("IntT", bound=int)
+
+        def is_greater_than(
+            x: int, limit: IntT
+        ) -> TypeGuard[Annotated[int, GreaterThan(IntT)]]:
+            return x > limit
+
+        def caller(x: int) -> None:
+            capybara(x)  # E: incompatible_argument
+            if is_greater_than(x, 2):
+                capybara(x)  # ok
+            capybara(3)  # ok
+            capybara(2)  # E: incompatible_argument
 
 
 class TestExternalType(TestNameCheckVisitorBase):
