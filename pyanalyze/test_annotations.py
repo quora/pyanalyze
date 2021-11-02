@@ -950,7 +950,8 @@ class TestCustomCheck(TestNameCheckVisitorBase):
 
         @dataclass(frozen=True)
         class GreaterThan(CustomCheck):
-            value: Union[int, TypeVar]
+            # Must be quoted in 3.6 because otherwise the runtime explodes.
+            value: Union[int, "TypeVar"]
 
             def _can_assign_inner(self, value: Value) -> CanAssign:
                 if isinstance(value, KnownValue):
