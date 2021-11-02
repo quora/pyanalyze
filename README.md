@@ -387,6 +387,8 @@ In addition to the standard Python type system, pyanalyze supports a number of n
 - `pyanalyze.extensions.HasAttrGuard` is a similar mechanism that allows indicating that an object has a particular attribute. To use it, return `Annotated[bool, HasAttrGuard["arg", "attribute", SomeType]]`.
 - `pyanalyze.extensions.ExternalType` is a way to refer to a type that cannot
   be referenced by name in contexts where using `if TYPE_CHECKING` is not possible.
+- `pyanalyze.extensions.CustomCheck` is a powerful mechanism to extend the type system
+  with custom user-defined checks.
 
 They are explained in more detail below.
 
@@ -518,6 +520,141 @@ can be more convenient when programmatically generating types. Our motivating
 use case is our database schema definition file: we would like to map each
 column to the enum it corresponds to, but those enums are defined in code
 that should not be imported by the schema definition.
+
+### CustomCheck
+
+`CustomCheck` is a mechanism that allows users to define additional checks
+that are not natively supported by the type system. To use it, create a
+new subclass of `CustomCheck` that overrides the `can_assign` method. Such
+objects can then be placed in `Annotated` annotations.
+
+For example, the following creates a custom check that allows only literal
+values:
+
+```python
+from pyanalyze.extensions import CustomCheck
+from pyanalyze.value import Value, CanAssign, CanAssignContext, CanAssignError, KnownValue, flatten_values
+
+class LiteralOnly(CustomCheck):
+    def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+        for subval in flatten_values(value):
+            if not isinstance(subval, KnownValue):
+                return CanAssignError("Value must be a literal")
+        return {}
+```
+
+This is also exposed publicly as `pyanalyze.extensions.LiteralOnly`.
+
+It is used as follows:
+
+```python
+def func(arg: Annotated[str, LiteralOnly()]) -> None:
+    ...
+
+func("x")  # ok
+func(str(some_call()))  # error
+```
+
+Custom checks can also be generic. For example, the following custom check
+implements basic support for integers with a limited range:
+
+```python
+from dataclasses import dataclass
+from pyanalyze.extensions import CustomCheck
+from pyanalyze.value import (
+    flatten_values,
+    CanAssign,
+    CanAssignError,
+    CanAssignContext,
+    KnownValue,
+    TypeVarMap,
+    TypeVarValue,
+    Value,
+)
+from typing_extensions import Annotated, TypeGuard
+from typing import Iterable, TypeVar, Union
+
+@dataclass
+class GreaterThan(CustomCheck):
+    # The value can be either an integer or a TypeVar. In the latter case,
+    # the check hasn't been specified yet, and we let everything through.
+    value: Union[int, TypeVar]
+
+    def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(self.value, TypeVar):
+            return {}
+        # flatten_values() unwraps unions, but we don't want to unwrap
+        # Annotated, so we can accept other Annotated objects.
+        for subval in flatten_values(value, unwrap_annotated=False):
+            if isinstance(subval, AnnotatedValue):
+                # If the inner value isn't valid, error immediately (for example,
+                # if it's an int that's too small).
+                can_assign = self._can_assign_inner(subval.value)
+                if not isinstance(can_assign, CanAssignError):
+                    return can_assign
+                gts = list(subval.get_custom_check_of_type(GreaterThan))
+                if not gts:
+                    # We reject values that are just ints with no GreaterThan
+                    # annotation.
+                    return CanAssignError(f"Size of {value} is not known")
+                # If a value winds up with multiple GreaterThan annotations,
+                # we allow it if at least one is bigger than or equal to our value.
+                if not any(
+                    check.value >= self.value
+                    for check in gts
+                    if isinstance(check.value, int)
+                ):
+                    return CanAssignError(f"{subval} is too small")
+            else:
+                can_assign = self._can_assign_inner(subval)
+                if isinstance(can_assign, CanAssignError):
+                    return can_assign
+        return {}
+
+    def _can_assign_inner(self, value: Value) -> CanAssign:
+        if isinstance(value, KnownValue):
+            if not isinstance(value.val, int):
+                return CanAssignError(f"Value {value.val!r} is not an int")
+            if value.val <= self.value:
+                return CanAssignError(
+                    f"Value {value.val!r} is not greater than {self.value}"
+                )
+        elif value is UNRESOLVED_VALUE:
+            # We let Any through.
+            return {}
+        else:
+            # Should be mostly TypedValue.
+            return CanAssignError(f"Size of {value} is not known")
+
+    def walk_values(self) -> Iterable[Value]:
+        if isinstance(self.value, TypeVar):
+            yield TypeVarValue(self.value)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "GreaterThan":
+        if isinstance(self.value, TypeVar) and self.value in typevars:
+            value = typevars[self.value]
+            if isinstance(value, KnownValue) and isinstance(value.val, int):
+                return GreaterThan(value.val)
+        return self
+
+def more_than_two(x: Annotated[int, GreaterThan(2)]) -> None:
+    pass
+
+IntT = TypeVar("IntT", bound=int)
+
+def is_greater_than(
+    x: int, limit: IntT
+) -> TypeGuard[Annotated[int, GreaterThan(IntT)]]:
+    return x > limit
+
+def caller(x: int) -> None:
+    more_than_two(x)  # E: incompatible_argument
+    if is_greater_than(x, 2):
+        more_than_two(x)  # ok
+    more_than_two(3)  # ok
+    more_than_two(2)  # E: incompatible_argument
+```
+
 
 ## Limitations
 

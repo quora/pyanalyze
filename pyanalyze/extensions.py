@@ -19,7 +19,32 @@ if TYPE_CHECKING:
 class CustomCheck:
     """A mechanism for extending the type system with user-defined checks.
 
-    TODO
+    To use this, create a subclass of ``CustomCheck`` that overrides the
+    ``can_assign`` method, and place it in an ``Annotated`` annotation. The
+    return value is equivalent to that of :meth:`pyanalyze.value.Value.can_assign`.
+
+    A simple example is :class:`LiteralOnly`, which is also exposed by pyanalyze
+    itself:
+
+        class LiteralOnly(CustomCheck):
+            def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
+                for subval in pyanalyze.value.flatten_values(value):
+                    if not isinstance(subval, pyanalyze.value.KnownValue):
+                        return pyanalyze.value.CanAssignError("Value must be a literal")
+                return {}
+
+        def func(arg: Annotated[str, LiteralOnly()]) -> None:
+            ...
+
+        func("x")  # ok
+        func(str(some_call()))  # error
+
+    ``CustomCheck``s can also be generic over a ``TypeVar``. To implement support
+    for ``TypeVar``s, two more methods must be overridden:
+    - ``walk_values()`` should yield all ``TypeVar``s contained in the check,
+      wrapped in a :class:`pyanalyze.value.TypeVarValue`.
+    - ``substitute_typevars()`` takes a map from ``TypeVar``s to
+      :class:`pyanalyze.value.Value` objects and returns a new ``CustomCheck``.
 
     """
 
