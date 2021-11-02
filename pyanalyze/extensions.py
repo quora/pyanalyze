@@ -268,7 +268,7 @@ class ExternalType(metaclass=_ExternalTypeMeta):
 
         from pyanalyze.extensions import ExternalType
 
-        def function(arg: "other_module.Type") -> None:
+        def function(arg: ExternalType["other_module.Type"]) -> None:
             pass
 
     To resolve the type, pyanalyze will import `other_module`, but the module
@@ -283,6 +283,10 @@ class ExternalType(metaclass=_ExternalTypeMeta):
     """
 
     type_path: str
+
+    # This makes it possible to use ExternalType within e.g. Annotated
+    def __call__(self):
+        raise NotImplementedError("just here to fool typing._type_check")
 
 
 def reveal_type(value: object) -> None:
