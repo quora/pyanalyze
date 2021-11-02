@@ -58,7 +58,7 @@ class CustomCheck:
         return self
 
 
-@dataclass
+@dataclass(frozen=True)
 class LiteralOnly(CustomCheck):
     """Custom check that allows only values pyanalyze infers as literals.
 

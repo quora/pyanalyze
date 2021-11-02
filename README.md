@@ -574,7 +574,8 @@ from pyanalyze.value import (
 from typing_extensions import Annotated, TypeGuard
 from typing import Iterable, TypeVar, Union
 
-@dataclass
+# Annotated[] annotations must be hashable
+@dataclass(frozen=True)
 class GreaterThan(CustomCheck):
     # The value can be either an integer or a TypeVar. In the latter case,
     # the check hasn't been specified yet, and we let everything through.

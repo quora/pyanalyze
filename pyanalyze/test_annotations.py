@@ -911,7 +911,7 @@ class TestCustomCheck(TestNameCheckVisitorBase):
         from typing_extensions import Annotated
         from typing import Any, Optional
 
-        @dataclass
+        @dataclass(frozen=True)
         class IsNot(CustomCheck):
             obj: object
 
@@ -948,7 +948,7 @@ class TestCustomCheck(TestNameCheckVisitorBase):
         from typing_extensions import Annotated, TypeGuard
         from typing import Iterable, TypeVar, Union
 
-        @dataclass
+        @dataclass(frozen=True)
         class GreaterThan(CustomCheck):
             value: Union[int, TypeVar]
 
