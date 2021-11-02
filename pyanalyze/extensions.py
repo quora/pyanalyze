@@ -8,8 +8,78 @@ be gracefully ignored by other type checkers.
 
 """
 from dataclasses import dataclass
-from typing import Any, Iterable, Tuple, List, Union, TypeVar
+import pyanalyze
+from typing import Any, Iterable, Tuple, List, Union, TypeVar, TYPE_CHECKING
 from typing_extensions import Literal
+
+if TYPE_CHECKING:
+    from .value import Value, CanAssign, CanAssignContext, TypeVarMap
+
+
+class CustomCheck:
+    """A mechanism for extending the type system with user-defined checks.
+
+    To use this, create a subclass of ``CustomCheck`` that overrides the
+    ``can_assign`` method, and place it in an ``Annotated`` annotation. The
+    return value is equivalent to that of :meth:`pyanalyze.value.Value.can_assign`.
+
+    A simple example is :class:`LiteralOnly`, which is also exposed by pyanalyze
+    itself:
+
+        class LiteralOnly(CustomCheck):
+            def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
+                for subval in pyanalyze.value.flatten_values(value):
+                    if not isinstance(subval, pyanalyze.value.KnownValue):
+                        return pyanalyze.value.CanAssignError("Value must be a literal")
+                return {}
+
+        def func(arg: Annotated[str, LiteralOnly()]) -> None:
+            ...
+
+        func("x")  # ok
+        func(str(some_call()))  # error
+
+    ``CustomCheck``s can also be generic over a ``TypeVar``. To implement support
+    for ``TypeVar``s, two more methods must be overridden:
+    - ``walk_values()`` should yield all ``TypeVar``s contained in the check,
+      wrapped in a :class:`pyanalyze.value.TypeVarValue`.
+    - ``substitute_typevars()`` takes a map from ``TypeVar``s to
+      :class:`pyanalyze.value.Value` objects and returns a new ``CustomCheck``.
+
+    """
+
+    def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
+        return {}
+
+    def walk_values(self) -> Iterable["Value"]:
+        return []
+
+    def substitute_typevars(self, typevars: "TypeVarMap") -> "CustomCheck":
+        return self
+
+
+@dataclass(frozen=True)
+class LiteralOnly(CustomCheck):
+    """Custom check that allows only values pyanalyze infers as literals.
+
+    Example:
+
+        def func(arg: Annotated[str, LiteralOnly()]) -> None:
+            ...
+
+        func("x")  # ok
+        func(str(some_call()))  # error
+
+    This can be useful to prevent user-controlled input in security-sensitive
+    APIs.
+
+    """
+
+    def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
+        for subval in pyanalyze.value.flatten_values(value):
+            if not isinstance(subval, pyanalyze.value.KnownValue):
+                return pyanalyze.value.CanAssignError("Value must be a literal")
+        return {}
 
 
 class _AsynqCallableMeta(type):

@@ -50,6 +50,7 @@ from typing import (
 from .error_code import ErrorCode
 from .extensions import (
     AsynqCallable,
+    CustomCheck,
     ExternalType,
     HasAttrGuard,
     ParameterTypeGuard,
@@ -60,6 +61,7 @@ from .signature import SigParameter, Signature
 from .value import (
     AnnotatedValue,
     CallableValue,
+    CustomCheckExtension,
     Extension,
     HasAttrGuardExtension,
     KnownValue,
@@ -853,4 +855,6 @@ def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
                 _type_from_runtime(entry.val.attribute_name, ctx),
                 _type_from_runtime(entry.val.attribute_type, ctx),
             )
+        elif isinstance(entry.val, CustomCheck):
+            return CustomCheckExtension(entry.val)
     return entry

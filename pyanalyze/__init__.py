@@ -11,6 +11,7 @@ from . import arg_spec
 from . import asynq_checker
 from . import config
 from . import error_code
+from . import extensions
 from . import find_unused
 from .find_unused import used as used
 from . import implementation
@@ -30,3 +31,4 @@ from . import yield_checker
 used(ast_annotator)
 used(assert_is_value)
 used(dump_value)
+used(extensions.LiteralOnly)
