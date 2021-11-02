@@ -14,6 +14,7 @@ from types import ModuleType
 from typing import Any, Callable, Dict, Set, TYPE_CHECKING, Union
 
 from . import value
+from .extensions import CustomCheck
 
 if TYPE_CHECKING:
     from .arg_spec import ArgSpecCache
@@ -125,6 +126,7 @@ class Config(object):
     # their arguments. This is useful mostly for classes that are commonly instantiated with static
     # arguments.
     CLASSES_SAFE_TO_INSTANTIATE = (
+        CustomCheck,
         value.Value,
         value.Extension,
         asynq.ConstFuture,
