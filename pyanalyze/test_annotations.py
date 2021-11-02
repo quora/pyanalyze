@@ -1,4 +1,5 @@
 # static analysis: ignore
+from typing import Optional
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
 from .implementation import assert_is_value
@@ -529,7 +530,9 @@ def capybara(x: int | None, y: int | str) -> None:
 class TestAnnotated(TestNameCheckVisitorBase):
     @assert_passes()
     def test_typing_extensions(self):
+        import collections.abc
         from typing_extensions import Annotated
+        from typing import Optional, Iterable
 
         obj = object()
 
@@ -539,6 +542,8 @@ class TestAnnotated(TestNameCheckVisitorBase):
             quoted: "Annotated[int, int, str]",
             nested: Annotated[Annotated[int, 1], 2],
             nested_quoted: "Annotated[Annotated[int, 1], 2]",
+            in_optional: Optional[Annotated[int, 1]],
+            in_iterable: Iterable[Annotated[int, 1]],
         ) -> None:
             assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue("stuff")]))
             assert_is_value(y, AnnotatedValue(TypedValue(int), [KnownValue(obj)]))
@@ -552,12 +557,24 @@ class TestAnnotated(TestNameCheckVisitorBase):
             assert_is_value(
                 nested_quoted,
                 AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)]),
+            )
+            assert_is_value(
+                in_optional,
+                AnnotatedValue(TypedValue(int), [KnownValue(1)]) | KnownValue(None),
+            )
+            assert_is_value(
+                in_iterable,
+                GenericValue(
+                    collections.abc.Iterable,
+                    [AnnotatedValue(TypedValue(int), [KnownValue(1)])],
+                ),
             )
 
     @skip_before((3, 9))
     @assert_passes()
     def test_typing(self):
-        from typing import Annotated
+        import collections.abc
+        from typing import Annotated, Iterable, Optional
 
         obj = object()
 
@@ -567,6 +584,8 @@ class TestAnnotated(TestNameCheckVisitorBase):
             quoted: "Annotated[int, int, str]",
             nested: Annotated[Annotated[int, 1], 2],
             nested_quoted: "Annotated[Annotated[int, 1], 2]",
+            in_optional: Optional[Annotated[int, 1]],
+            in_iterable: Iterable[Annotated[int, 1]],
         ) -> None:
             assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue("stuff")]))
             assert_is_value(y, AnnotatedValue(TypedValue(int), [KnownValue(obj)]))
@@ -580,6 +599,17 @@ class TestAnnotated(TestNameCheckVisitorBase):
             assert_is_value(
                 nested_quoted,
                 AnnotatedValue(TypedValue(int), [KnownValue(1), KnownValue(2)]),
+            )
+            assert_is_value(
+                in_optional,
+                AnnotatedValue(TypedValue(int), [KnownValue(1)]) | KnownValue(None),
+            )
+            assert_is_value(
+                in_iterable,
+                GenericValue(
+                    collections.abc.Iterable,
+                    [AnnotatedValue(TypedValue(int), [KnownValue(1)])],
+                ),
             )
 
 
