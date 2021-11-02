@@ -767,6 +767,13 @@ def _value_of_origin_args(
         ]
         sig = Signature.make(params, _type_from_runtime(return_type, ctx))
         return CallableValue(sig)
+    elif is_typing_name(origin, "Annotated"):
+        origin, metadata = args
+        return _make_annotated(
+            _type_from_runtime(origin, ctx),
+            [KnownValue(data) for data in metadata],
+            ctx,
+        )
     elif isinstance(origin, type):
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
