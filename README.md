@@ -655,6 +655,9 @@ def caller(x: int) -> None:
     more_than_two(2)  # E: incompatible_argument
 ```
 
+This is not a full, usable implementation of ranged integers; for that we would
+also need to add support for this check to operators like `int.__add__`.
+
 
 ## Limitations
 
