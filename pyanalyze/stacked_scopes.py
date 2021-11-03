@@ -238,12 +238,7 @@ class Constraint(AbstractConstraint):
 
     def apply_to_values(self, values: Iterable[Value]) -> Iterable[Value]:
         for value in values:
-            if isinstance(value, AnnotatedValue):
-                for applied in self.apply_to_value(value.value):
-                    yield annotate_value(applied, value.metadata)
-            else:
-                for applied in self.apply_to_value(value):
-                    yield applied
+            yield from self.apply_to_value(value)
 
     def apply_to_value(self, value: Value) -> Iterable[Value]:
         """Yield values consistent with this constraint.
@@ -296,19 +291,19 @@ class Constraint(AbstractConstraint):
         elif self.constraint_type == ConstraintType.is_value:
             if self.positive:
                 known_val = KnownValue(self.value)
-                if value is UNRESOLVED_VALUE:
+                if inner_value is UNRESOLVED_VALUE:
                     yield known_val
-                elif isinstance(value, KnownValue):
-                    if value.val is self.value:
+                elif isinstance(inner_value, KnownValue):
+                    if inner_value.val is self.value:
+                        yield value
+                elif isinstance(inner_value, TypedValue):
+                    if isinstance(self.value, inner_value.typ):
                         yield known_val
-                elif isinstance(value, TypedValue):
-                    if isinstance(self.value, value.typ):
-                        yield known_val
-                elif isinstance(value, SubclassValue):
+                elif isinstance(inner_value, SubclassValue):
                     if (
-                        isinstance(value.typ, TypedValue)
+                        isinstance(inner_value.typ, TypedValue)
                         and isinstance(self.value, type)
-                        and safe_issubclass(self.value, value.typ.typ)
+                        and safe_issubclass(self.value, inner_value.typ.typ)
                     ):
                         yield known_val
             else:
@@ -328,10 +323,10 @@ class Constraint(AbstractConstraint):
 
         elif self.constraint_type == ConstraintType.is_truthy:
             if self.positive:
-                if boolean_value(value) is not False:
+                if boolean_value(inner_value) is not False:
                     yield value
             else:
-                if boolean_value(value) is not True:
+                if boolean_value(inner_value) is not True:
                     yield value
 
         elif self.constraint_type == ConstraintType.predicate:
