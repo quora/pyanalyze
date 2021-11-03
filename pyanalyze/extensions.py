@@ -10,7 +10,7 @@ be gracefully ignored by other type checkers.
 from dataclasses import dataclass
 import pyanalyze
 from typing import Any, Iterable, Tuple, List, Union, TypeVar, TYPE_CHECKING
-from typing_extensions import Literal
+from typing_extensions import Literal, NoReturn
 
 if TYPE_CHECKING:
     from .value import Value, CanAssign, CanAssignContext, TypeVarMap
@@ -285,7 +285,7 @@ class ExternalType(metaclass=_ExternalTypeMeta):
     type_path: str
 
     # This makes it possible to use ExternalType within e.g. Annotated
-    def __call__(self):
+    def __call__(self) -> NoReturn:
         raise NotImplementedError("just here to fool typing._type_check")
 
 
