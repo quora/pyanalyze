@@ -852,6 +852,25 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
                     elts, GenericValue(collections.abc.Iterable, [TypedValue(int)])
                 )
 
+    @assert_passes()
+    def test_self(self):
+        from pyanalyze.extensions import ParameterTypeGuard
+        from typing_extensions import Annotated
+
+        class A:
+            def is_b(self) -> Annotated[bool, ParameterTypeGuard["self", "B"]]:
+                return isinstance(self, B)
+
+        class B(A):
+            pass
+
+        def capybara(obj: A) -> None:
+            assert_is_value(obj, TypedValue(A))
+            if obj.is_b():
+                assert_is_value(obj, TypedValue(B))
+            else:
+                assert_is_value(obj, TypedValue(A))
+
 
 class TestTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
