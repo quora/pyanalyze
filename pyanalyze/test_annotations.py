@@ -1,5 +1,4 @@
 # static analysis: ignore
-from typing import Optional, Union
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
 from .implementation import assert_is_value

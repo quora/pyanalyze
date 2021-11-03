@@ -1444,6 +1444,10 @@ def make_weak(val: Value) -> Value:
 def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:
     if not metadata:
         return origin
+    if isinstance(origin, MultiValuedValue):
+        return MultiValuedValue(
+            [annotate_value(subval, metadata) for subval in origin.vals]
+        )
     if isinstance(origin, AnnotatedValue):
         # Flatten it
         metadata = [*origin.metadata, *metadata]
@@ -1488,7 +1492,9 @@ def unite_values(*values: Value) -> Value:
         elif isinstance(value, AnnotatedValue) and isinstance(
             value.value, MultiValuedValue
         ):
-            subvals = value.value.vals
+            subvals = [
+                annotate_value(subval, value.metadata) for subval in value.value.vals
+            ]
         else:
             subvals = [value]
         for subval in subvals:
@@ -1518,6 +1524,8 @@ def boolean_value(value: Optional[Value]) -> Optional[bool]:
     Returns None if its truth value cannot be determined.
 
     """
+    if isinstance(value, AnnotatedValue):
+        value = value.value
     if isinstance(value, KnownValue):
         try:
             # don't pretend to know the boolean value of mutable types

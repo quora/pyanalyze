@@ -7,6 +7,7 @@ from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
+    AnnotatedValue,
     DictIncompleteValue,
     KnownValue,
     MultiValuedValue,
@@ -14,6 +15,7 @@ from .value import (
     TypedValue,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
+    assert_is_value,
     make_weak,
 )
 
@@ -1463,6 +1465,38 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(2))
             else:
                 assert_is_value(x, KnownValue(1))
+
+    @assert_passes()
+    def test_preserve_annotated(self):
+        from typing_extensions import Annotated
+        from typing import Optional
+
+        AnnotatedUnion = AnnotatedValue(
+            TypedValue(str), [KnownValue(1)]
+        ) | AnnotatedValue(KnownValue(None), [KnownValue(1)])
+
+        def capybara(x: Annotated[Optional[str], 1]) -> None:
+            assert_is_value(x, AnnotatedUnion)
+
+            if x:
+                assert_is_value(x, AnnotatedValue(TypedValue(str), [KnownValue(1)]))
+            else:
+                # None or the empty string
+                assert_is_value(x, AnnotatedUnion)
+
+        def pacarana(x: Annotated[Optional[str], 1]) -> None:
+            assert_is_value(x, AnnotatedUnion)
+            if x is not None:
+                assert_is_value(x, AnnotatedValue(TypedValue(str), [KnownValue(1)]))
+            else:
+                assert_is_value(x, AnnotatedValue(KnownValue(None), [KnownValue(1)]))
+
+        def agouti(x: Annotated[Optional[str], 1]) -> None:
+            assert_is_value(x, AnnotatedUnion)
+            if isinstance(x, str):
+                assert_is_value(x, AnnotatedValue(TypedValue(str), [KnownValue(1)]))
+            else:
+                assert_is_value(x, AnnotatedValue(KnownValue(None), [KnownValue(1)]))
 
 
 class TestComposite(TestNameCheckVisitorBase):

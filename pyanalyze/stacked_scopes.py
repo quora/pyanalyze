@@ -238,12 +238,7 @@ class Constraint(AbstractConstraint):
 
     def apply_to_values(self, values: Iterable[Value]) -> Iterable[Value]:
         for value in values:
-            if isinstance(value, AnnotatedValue):
-                for applied in self.apply_to_value(value.value):
-                    yield annotate_value(applied, value.metadata)
-            else:
-                for applied in self.apply_to_value(value):
-                    yield applied
+            yield from self.apply_to_value(value)
 
     def apply_to_value(self, value: Value) -> Iterable[Value]:
         """Yield values consistent with this constraint.
@@ -251,67 +246,71 @@ class Constraint(AbstractConstraint):
         Produces zero or more values consistent both with the given
         value and with this constraint.
 
-        The value may not be a MultiValuedValue or AnnotatedValue.
+        The value may not be a MultiValuedValue.
 
         """
-        if value is UNINITIALIZED_VALUE:
+        inner_value = value.value if isinstance(value, AnnotatedValue) else value
+        if inner_value is UNINITIALIZED_VALUE:
             yield UNINITIALIZED_VALUE
             return
         if self.constraint_type == ConstraintType.is_instance:
-            if value is UNRESOLVED_VALUE:
+            if inner_value is UNRESOLVED_VALUE:
                 if self.positive:
                     yield TypedValue(self.value)
                 else:
                     yield UNRESOLVED_VALUE
-            elif isinstance(value, KnownValue):
+            elif isinstance(inner_value, KnownValue):
                 if self.positive:
-                    if isinstance(value.val, self.value):
+                    if isinstance(inner_value.val, self.value):
                         yield value
                 else:
-                    if not isinstance(value.val, self.value):
+                    if not isinstance(inner_value.val, self.value):
                         yield value
-            elif isinstance(value, TypedValue):
+            elif isinstance(inner_value, TypedValue):
                 if self.positive:
-                    if safe_issubclass(value.typ, self.value):
+                    if safe_issubclass(inner_value.typ, self.value):
                         yield value
-                    elif safe_issubclass(self.value, value.typ):
+                    elif safe_issubclass(self.value, inner_value.typ):
                         yield TypedValue(self.value)
                     # TODO: Technically here we should infer an intersection type:
                     # a type that is a subclass of both types. In practice currently
                     # _constrain_values() will eventually return UNRESOLVED_VALUE.
                 else:
-                    if not safe_issubclass(value.typ, self.value):
+                    if not safe_issubclass(inner_value.typ, self.value):
                         yield value
-            elif isinstance(value, SubclassValue):
-                if not isinstance(value.typ, TypedValue):
+            elif isinstance(inner_value, SubclassValue):
+                if not isinstance(inner_value.typ, TypedValue):
                     yield value
                 elif self.positive:
-                    if isinstance(value.typ.typ, self.value):
+                    if isinstance(inner_value.typ.typ, self.value):
                         yield value
                 else:
-                    if not isinstance(value.typ.typ, self.value):
+                    if not isinstance(inner_value.typ.typ, self.value):
                         yield value
 
         elif self.constraint_type == ConstraintType.is_value:
             if self.positive:
                 known_val = KnownValue(self.value)
-                if value is UNRESOLVED_VALUE:
+                if inner_value is UNRESOLVED_VALUE:
                     yield known_val
-                elif isinstance(value, KnownValue):
-                    if value.val is self.value:
+                elif isinstance(inner_value, KnownValue):
+                    if inner_value.val is self.value:
+                        yield value
+                elif isinstance(inner_value, TypedValue):
+                    if isinstance(self.value, inner_value.typ):
                         yield known_val
-                elif isinstance(value, TypedValue):
-                    if isinstance(self.value, value.typ):
-                        yield known_val
-                elif isinstance(value, SubclassValue):
+                elif isinstance(inner_value, SubclassValue):
                     if (
-                        isinstance(value.typ, TypedValue)
+                        isinstance(inner_value.typ, TypedValue)
                         and isinstance(self.value, type)
-                        and safe_issubclass(self.value, value.typ.typ)
+                        and safe_issubclass(self.value, inner_value.typ.typ)
                     ):
                         yield known_val
             else:
-                if not (isinstance(value, KnownValue) and value.val is self.value):
+                if not (
+                    isinstance(inner_value, KnownValue)
+                    and inner_value.val is self.value
+                ):
                     yield value
 
         elif self.constraint_type == ConstraintType.is_value_object:
@@ -324,10 +323,10 @@ class Constraint(AbstractConstraint):
 
         elif self.constraint_type == ConstraintType.is_truthy:
             if self.positive:
-                if boolean_value(value) is not False:
+                if boolean_value(inner_value) is not False:
                     yield value
             else:
-                if boolean_value(value) is not True:
+                if boolean_value(inner_value) is not True:
                     yield value
 
         elif self.constraint_type == ConstraintType.predicate:
