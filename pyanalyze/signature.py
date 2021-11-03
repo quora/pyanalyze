@@ -865,17 +865,14 @@ class BoundMethodSignature:
     """Signature for a method bound to a particular value."""
 
     signature: Signature
-    self_value: Value
+    self_composite: Composite
     return_override: Optional[Value] = None
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> ImplReturn:
         ret = self.signature.check_call(
-            # TODO get a composite
-            [(Composite(self.self_value, None, None), None), *args],
-            visitor,
-            node,
+            [(self.self_composite, None), *args], visitor, node
         )
         if self.return_override is not None and not self.signature.has_return_value():
             return ImplReturn(
@@ -940,16 +937,18 @@ MaybeSignature = Union[None, Signature, BoundMethodSignature, PropertyArgSpec]
 
 
 def make_bound_method(
-    argspec: MaybeSignature, self_value: Value, return_override: Optional[Value] = None
+    argspec: MaybeSignature,
+    self_composite: Composite,
+    return_override: Optional[Value] = None,
 ) -> Optional[BoundMethodSignature]:
     if argspec is None:
         return None
     if isinstance(argspec, Signature):
-        return BoundMethodSignature(argspec, self_value, return_override)
+        return BoundMethodSignature(argspec, self_composite, return_override)
     elif isinstance(argspec, BoundMethodSignature):
         if return_override is None:
             return_override = argspec.return_override
-        return BoundMethodSignature(argspec.signature, self_value, return_override)
+        return BoundMethodSignature(argspec.signature, self_composite, return_override)
     else:
         assert False, f"invalid argspec {argspec}"
 

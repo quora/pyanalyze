@@ -14,6 +14,7 @@ import sys
 import types
 
 from qcore.asserts import assert_eq, assert_is, assert_in
+
 from .name_check_visitor import (
     _get_task_cls,
     _static_hasattr,
@@ -23,6 +24,7 @@ from .name_check_visitor import (
 from .arg_spec import ArgSpecCache
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
+from .stacked_scopes import Composite
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
@@ -139,6 +141,7 @@ def _make_module(code_str: str) -> types.ModuleType:
         make_weak=make_weak,
         UNINITIALIZED_VALUE=UNINITIALIZED_VALUE,
         NO_RETURN_VALUE=NO_RETURN_VALUE,
+        Composite=Composite,
     )
     return make_module(code_str, extra_scope)
 
@@ -1550,24 +1553,29 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
         def capybara(oid):
             assert_is_value(
                 PropertyObject(oid).non_async_method,
-                UnboundMethodValue("non_async_method", TypedValue(PropertyObject)),
+                UnboundMethodValue(
+                    "non_async_method", Composite(TypedValue(PropertyObject))
+                ),
             )
             assert_is_value(
                 PropertyObject(oid).async_method,
-                UnboundMethodValue("async_method", TypedValue(PropertyObject)),
+                UnboundMethodValue(
+                    "async_method", Composite(TypedValue(PropertyObject))
+                ),
             )
             assert_is_value(
                 ClassWithAsync().get_async,
-                UnboundMethodValue("get_async", TypedValue(ClassWithAsync)),
+                UnboundMethodValue("get_async", Composite(TypedValue(ClassWithAsync))),
             )
             assert_is_value(
                 ClassWithAsync().get,
-                UnboundMethodValue("get", TypedValue(ClassWithAsync)),
+                UnboundMethodValue("get", Composite(TypedValue(ClassWithAsync))),
             )
             assert_is_value(
                 [oid].append,
                 UnboundMethodValue(
-                    "append", SequenceIncompleteValue(list, [UNRESOLVED_VALUE])
+                    "append",
+                    Composite(SequenceIncompleteValue(list, [UNRESOLVED_VALUE])),
                 ),
             )
 
@@ -1581,7 +1589,10 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
                 # assert_is_value(super(Metaclass, self).__init__,
                 #                 UnboundMethodValue('__init__', super(Metaclass, Metaclass)))
                 assert_is_value(
-                    self.__init__, UnboundMethodValue("__init__", TypedValue(Metaclass))
+                    self.__init__,
+                    UnboundMethodValue(
+                        "__init__", Composite(TypedValue(Metaclass), "self")
+                    ),
                 )
 
 

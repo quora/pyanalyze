@@ -9,7 +9,7 @@ from .config import Config
 from .find_unused import used
 from . import implementation
 from .safe import safe_hasattr, safe_in, safe_issubclass
-from .stacked_scopes import uniq_chain
+from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
     Impl,
@@ -330,7 +330,7 @@ class ArgSpecCache:
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
             argspec = self._cached_get_argspec(obj.__func__, impl, is_asynq)
-            return make_bound_method(argspec, KnownValue(obj.__self__))
+            return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
 
         if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
             is_asynq = is_asynq or hasattr(obj, "asynq")
@@ -388,7 +388,7 @@ class ArgSpecCache:
             argspec = self._cached_get_argspec(obj.decorator, impl, is_asynq)
             # wrap if it's a bound method
             if obj.instance is not None and argspec is not None:
-                return make_bound_method(argspec, KnownValue(obj.instance))
+                return make_bound_method(argspec, Composite(KnownValue(obj.instance)))
             return argspec
 
         if inspect.isclass(obj):
@@ -444,7 +444,7 @@ class ArgSpecCache:
                     returns=return_type,
                     allow_call=allow_call,
                 )
-            bound_sig = make_bound_method(signature, TypedValue(obj))
+            bound_sig = make_bound_method(signature, Composite(TypedValue(obj)))
             if bound_sig is None:
                 return None
             sig = bound_sig.get_signature(preserve_impl=True)
@@ -462,7 +462,7 @@ class ArgSpecCache:
                 if method == obj:
                     return self._make_any_sig(obj)
                 argspec = self._cached_get_argspec(method, impl, is_asynq)
-                return make_bound_method(argspec, KnownValue(obj.__self__))
+                return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
             inspect_sig = self._safe_get_signature(obj)
             if inspect_sig is not None:
                 return self.from_signature(inspect_sig, function_object=obj)

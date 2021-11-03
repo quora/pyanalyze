@@ -15,9 +15,11 @@ import typing
 import types
 from unittest import mock
 
+
 from . import tests
 from . import value
 from .arg_spec import ArgSpecCache
+from .stacked_scopes import Composite
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
@@ -88,11 +90,11 @@ def test_known_value() -> None:
 
 def test_unbound_method_value() -> None:
     val = value.UnboundMethodValue(
-        "get_prop_with_get", value.TypedValue(tests.PropertyObject)
+        "get_prop_with_get", Composite(value.TypedValue(tests.PropertyObject))
     )
     assert_eq("<method get_prop_with_get on pyanalyze.tests.PropertyObject>", str(val))
     assert_eq("get_prop_with_get", val.attr_name)
-    assert_eq(TypedValue(tests.PropertyObject), val.typ)
+    assert_eq(TypedValue(tests.PropertyObject), val.composite.value)
     assert_is(None, val.secondary_attr_name)
     assert_eq(tests.PropertyObject.get_prop_with_get, val.get_method())
     assert val.is_type(object)
@@ -100,14 +102,14 @@ def test_unbound_method_value() -> None:
 
     val = value.UnboundMethodValue(
         "get_prop_with_get",
-        value.TypedValue(tests.PropertyObject),
+        Composite(value.TypedValue(tests.PropertyObject)),
         secondary_attr_name="asynq",
     )
     assert_eq(
         "<method get_prop_with_get.asynq on pyanalyze.tests.PropertyObject>", str(val)
     )
     assert_eq("get_prop_with_get", val.attr_name)
-    assert_eq(TypedValue(tests.PropertyObject), val.typ)
+    assert_eq(TypedValue(tests.PropertyObject), val.composite.value)
     assert_eq("asynq", val.secondary_attr_name)
     method = val.get_method()
     assert_is_not(None, method)

@@ -131,6 +131,7 @@ class Config(object):
         value.Extension,
         asynq.ConstFuture,
         range,
+        tuple,
     )
 
     # Similarly, these functions will be called

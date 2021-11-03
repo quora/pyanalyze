@@ -52,6 +52,7 @@ from .value import (
     KnownValue,
     ReferencingValue,
     SubclassValue,
+    TypeVarMap,
     TypedValue,
     Value,
     annotate_value,
@@ -117,8 +118,21 @@ class Composite(NamedTuple):
     origin. This is useful for setting constraints."""
 
     value: Value
-    varname: Optional[Varname]
-    node: Optional[AST]
+    varname: Optional[Varname] = None
+    node: Optional[AST] = None
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Composite":
+        return Composite(
+            self.value.substitute_typevars(typevars), self.varname, self.node
+        )
+
+    def __eq__(self, other: "Composite") -> bool:
+        # Skip the AST node because it's hard to get right in tests.
+        return (
+            isinstance(other, Composite)
+            and self.value == other.value
+            and self.varname == other.varname
+        )
 
 
 @dataclass(frozen=True)
