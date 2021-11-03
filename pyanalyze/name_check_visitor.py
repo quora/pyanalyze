@@ -201,12 +201,12 @@ class _AttrContext(attributes.AttrContext):
     # Needs to be implemented explicitly to work around Cython limitations
     def __init__(
         self,
-        root_value: Value,
+        root_composite: Composite,
         attr: str,
         node: Optional[ast.AST],
         visitor: "NameCheckVisitor",
     ) -> None:
-        super().__init__(root_value, attr)
+        super().__init__(root_composite, attr)
         self.node = node
         self.visitor = visitor
 
@@ -506,7 +506,7 @@ class ClassAttributeChecker:
             return
         # the attribute is in __annotations__, e.g. a dataclass
         if _has_annotation_for_attr(typ, attr_name) or attributes.get_attrs_attribute(
-            typ, attributes.AttrContext(TypedValue(typ), attr_name)
+            typ, attributes.AttrContext(Composite(TypedValue(typ)), attr_name)
         ):
             return
 
@@ -3590,7 +3590,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, root_value: Value, attr: str, node: Optional[ast.AST] = None
     ) -> Value:
         """Get an attribute. root_value must not be a MultiValuedValue."""
-        ctx = _AttrContext(root_value, attr, node, self)
+        ctx = _AttrContext(Composite(root_value), attr, node, self)
         return attributes.get_attribute(ctx)
 
     def _get_attribute_with_fallback(

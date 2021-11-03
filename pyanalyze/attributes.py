@@ -44,12 +44,12 @@ NoneType = type(None)
 
 @dataclass
 class AttrContext:
-    root_value: Value
+    root_composite: Composite
     attr: str
 
     @property
-    def root_composite(self) -> Composite:
-        return Composite(self.root_value)
+    def root_value(self) -> Value:
+        return self.root_composite.value
 
     def record_usage(self, obj: Any, val: Value) -> None:
         pass
