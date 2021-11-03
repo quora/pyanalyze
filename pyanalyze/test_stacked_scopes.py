@@ -1,8 +1,5 @@
 # static analysis: ignore
-from typing import Optional
 from qcore.asserts import assert_eq, assert_in, assert_not_in, assert_is
-
-from pyanalyze.extensions import CustomCheck
 
 from .error_code import ErrorCode
 from .name_check_visitor import build_stacked_scopes
