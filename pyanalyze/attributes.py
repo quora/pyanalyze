@@ -13,9 +13,11 @@ import sys
 import types
 from typing import Any, Dict, Sequence, Tuple, Optional
 
+
 from .annotations import type_from_runtime, Context
 from .safe import safe_isinstance, safe_issubclass
 from .signature import Signature, MaybeSignature
+from .stacked_scopes import Composite
 from .value import (
     AnnotatedValue,
     CallableValue,
@@ -44,6 +46,10 @@ NoneType = type(None)
 class AttrContext:
     root_value: Value
     attr: str
+
+    @property
+    def root_composite(self) -> Composite:
+        return Composite(self.root_value)
 
     def record_usage(self, obj: Any, val: Value) -> None:
         pass
@@ -213,7 +219,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
     elif qcore.inspection.is_classmethod(cls_val):
         return KnownValue(cls_val)
     elif inspect.ismethod(cls_val):
-        return UnboundMethodValue(ctx.attr, ctx.root_value)
+        return UnboundMethodValue(ctx.attr, ctx.root_composite)
     elif inspect.isfunction(cls_val):
         # either a staticmethod or an unbound method
         try:
@@ -221,24 +227,24 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         except AttributeError:
             # probably a super call; assume unbound method
             if ctx.attr != "__new__":
-                return UnboundMethodValue(ctx.attr, ctx.root_value)
+                return UnboundMethodValue(ctx.attr, ctx.root_composite)
             else:
                 # __new__ is implicitly a staticmethod
                 return KnownValue(cls_val)
         if isinstance(descriptor, staticmethod) or ctx.attr == "__new__":
             return KnownValue(cls_val)
         else:
-            return UnboundMethodValue(ctx.attr, ctx.root_value)
+            return UnboundMethodValue(ctx.attr, ctx.root_composite)
     elif isinstance(cls_val, (MethodDescriptorType, SlotWrapperType)):
         # built-in method; e.g. scope_lib.tests.SimpleDatabox.get
-        return UnboundMethodValue(ctx.attr, ctx.root_value)
+        return UnboundMethodValue(ctx.attr, ctx.root_composite)
     elif (
         _static_hasattr(cls_val, "decorator")
         and _static_hasattr(cls_val, "instance")
         and not isinstance(cls_val.instance, type)
     ):
         # non-static method
-        return UnboundMethodValue(ctx.attr, ctx.root_value)
+        return UnboundMethodValue(ctx.attr, ctx.root_composite)
     elif asynq.is_async_fn(cls_val):
         # static or class method
         return KnownValue(cls_val)
@@ -285,7 +291,7 @@ def _get_attribute_from_unbound(
     except AttributeError:
         return UNINITIALIZED_VALUE
     result = UnboundMethodValue(
-        root_value.attr_name, root_value.typ, secondary_attr_name=ctx.attr
+        root_value.attr_name, root_value.composite, secondary_attr_name=ctx.attr
     )
     ctx.record_usage(type(method), result)
     return result

@@ -362,13 +362,13 @@ class UnboundMethodValue(Value):
 
     Despite the name this really represents a method bound to a value. For
     example, given ``s: str``, ``s.strip`` will be inferred as
-    ``UnboundMethodValue("strip", TypedValue(str))``.
+    ``UnboundMethodValue("strip", Composite(TypedValue(str), "s"))``.
 
     """
 
     attr_name: str
     """Name of the method."""
-    typ: Value
+    composite: "pyanalyze.stacked_scopes.Composite"
     """Value the method is bound to."""
     secondary_attr_name: Optional[str] = None
     """Used when an attribute is accessed on an existing ``UnboundMethodValue``.
@@ -383,7 +383,7 @@ class UnboundMethodValue(Value):
         """Return the runtime callable for this ``UnboundMethodValue``, or
         None if it cannot be found."""
         try:
-            typ = self.typ.get_type()
+            typ = self.composite.value.get_type()
             method = getattr(typ, self.attr_name)
             if self.secondary_attr_name is not None:
                 method = getattr(method, self.secondary_attr_name)
@@ -406,7 +406,7 @@ class UnboundMethodValue(Value):
     def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
         return UnboundMethodValue(
             self.attr_name,
-            self.typ.substitute_typevars(typevars),
+            self.composite.substitute_typevars(typevars),
             self.secondary_attr_name,
         )
 
@@ -414,7 +414,7 @@ class UnboundMethodValue(Value):
         return "<method %s%s on %s>" % (
             self.attr_name,
             f".{self.secondary_attr_name}" if self.secondary_attr_name else "",
-            self.typ,
+            self.composite.value,
         )
 
 

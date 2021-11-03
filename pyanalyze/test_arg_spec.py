@@ -418,9 +418,12 @@ class TestNamedTuple(TestNameCheckVisitorBase):
             def __new__(self, a: int) -> "CustomNew":
                 return super().__new__(self)
 
+        def make_nt() -> NT:
+            return NT(field=3)
+
         def capybara():
             NT(filed=3)  # E: incompatible_call
-            nt2 = NT(field=3)
+            nt2 = make_nt()
             assert_is_value(nt2, TypedValue(NT))
             assert_is_value(nt2.field, TypedValue(int))
 

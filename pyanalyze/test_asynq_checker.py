@@ -1,12 +1,14 @@
 # static analysis: ignore
 from qcore.asserts import assert_eq
 
+
 from .error_code import ErrorCode
 from .asynq_checker import (
     is_impure_async_fn,
     _stringify_async_fn,
     get_pure_async_equivalent,
 )
+from .stacked_scopes import Composite
 from .tests import (
     PropertyObject,
     async_fn,
@@ -402,11 +404,13 @@ def test_stringify_async_fn():
     # UnboundMethodValue
     check(
         "PropertyObject.async_method",
-        UnboundMethodValue("async_method", TypedValue(PropertyObject)),
+        UnboundMethodValue("async_method", Composite(TypedValue(PropertyObject))),
     )
     check(
         "PropertyObject.async_method.asynq",
-        UnboundMethodValue("async_method", TypedValue(PropertyObject), "asynq"),
+        UnboundMethodValue(
+            "async_method", Composite(TypedValue(PropertyObject)), "asynq"
+        ),
     )
 
     check(
@@ -415,7 +419,9 @@ def test_stringify_async_fn():
     assert_eq(
         "super(pyanalyze.tests.Subclass, self).async_method",
         _stringify_async_fn(
-            UnboundMethodValue("async_method", TypedValue(super(Subclass, Subclass)))
+            UnboundMethodValue(
+                "async_method", Composite(TypedValue(super(Subclass, Subclass)))
+            )
         ),
     )
 
@@ -436,10 +442,12 @@ def test_is_impure_async_fn():
 
     # UnboundMethodValue
     assert is_impure_async_fn(
-        UnboundMethodValue("async_method", TypedValue(PropertyObject))
+        UnboundMethodValue("async_method", Composite(TypedValue(PropertyObject)))
     )
     assert not is_impure_async_fn(
-        UnboundMethodValue("async_method", TypedValue(PropertyObject), "asynq")
+        UnboundMethodValue(
+            "async_method", Composite(TypedValue(PropertyObject)), "asynq"
+        )
     )
 
 
@@ -459,6 +467,6 @@ def test_get_pure_async_equivalent():
     assert_eq(
         "pyanalyze.tests.PropertyObject.async_method.asynq",
         get_pure_async_equivalent(
-            UnboundMethodValue("async_method", TypedValue(PropertyObject))
+            UnboundMethodValue("async_method", Composite(TypedValue(PropertyObject)))
         ),
     )

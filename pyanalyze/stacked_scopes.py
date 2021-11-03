@@ -52,6 +52,7 @@ from .value import (
     KnownValue,
     ReferencingValue,
     SubclassValue,
+    TypeVarMap,
     TypedValue,
     Value,
     annotate_value,
@@ -119,6 +120,11 @@ class Composite(NamedTuple):
     value: Value
     varname: Optional[Varname] = None
     node: Optional[AST] = None
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Composite":
+        return Composite(
+            self.value.substitute_typevars(typevars), self.varname, self.node
+        )
 
 
 @dataclass(frozen=True)

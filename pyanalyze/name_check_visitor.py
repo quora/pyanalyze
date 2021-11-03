@@ -4003,7 +4003,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_override = self._argspec_to_retval[id(sig)]
                 except KeyError:
                     return_override = None
-                return make_bound_method(sig, Composite(value.typ), return_override)
+                return make_bound_method(sig, value.composite, return_override)
             return None
         elif isinstance(value, CallableValue):
             return value.signature

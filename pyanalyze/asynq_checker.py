@@ -14,8 +14,10 @@ import inspect
 import types
 from typing import Sequence, Any, Callable, List, Optional, Iterable
 
+
 from .config import Config
 from .error_code import ErrorCode
+from .stacked_scopes import Composite
 from .value import Value, KnownValue, TypedValue, UnboundMethodValue
 
 
@@ -91,24 +93,24 @@ class AsynqChecker:
                 replacement_node=replacement_node,
             )
         elif (
-            isinstance(value, UnboundMethodValue)
-            and value.secondary_attr_name is None
-            and hasattr(value.typ.get_type(), value.attr_name + "_async")
+            isinstance(value, UnboundMethodValue) and value.secondary_attr_name is None
         ):
-            if isinstance(node.func, ast.Attribute):
-                func_node = ast.Attribute(
-                    value=node.func.value, attr=value.attr_name + "_async"
+            inner_type = value.composite.value.get_type()
+            if hasattr(inner_type, value.attr_name + "_async"):
+                if isinstance(node.func, ast.Attribute):
+                    func_node = ast.Attribute(
+                        value=node.func.value, attr=value.attr_name + "_async"
+                    )
+                    call_node = replace_func_on_call_node(node, func_node)
+                    replacement_node = ast.Yield(value=call_node)
+                else:
+                    replacement_node = None
+                self._show_impure_async_error(
+                    node,
+                    replacement_call="%s.%s_async"
+                    % (_stringify_obj(inner_type), value.attr_name),
+                    replacement_node=replacement_node,
                 )
-                call_node = replace_func_on_call_node(node, func_node)
-                replacement_node = ast.Yield(value=call_node)
-            else:
-                replacement_node = None
-            self._show_impure_async_error(
-                node,
-                replacement_call="%s.%s_async"
-                % (_stringify_obj(value.typ.get_type()), value.attr_name),
-                replacement_node=replacement_node,
-            )
 
     def record_attribute_access(
         self, root_value: Value, attr_name: str, node: ast.Attribute
@@ -137,7 +139,7 @@ class AsynqChecker:
                     getattr(root_value.typ, async_name)
                 ):
                     replacement_call = _stringify_async_fn(
-                        UnboundMethodValue(async_name, root_value, "asynq")
+                        UnboundMethodValue(async_name, Composite(root_value), "asynq")
                     )
                     method_node = ast.Attribute(value=node.value, attr=async_name)
                     func_node = ast.Attribute(value=method_node, attr="asynq")
@@ -220,7 +222,7 @@ def get_pure_async_equivalent(value: Value) -> str:
         return "%s.asynq" % (_stringify_obj(value.val),)
     elif isinstance(value, UnboundMethodValue):
         return _stringify_async_fn(
-            UnboundMethodValue(value.attr_name, value.typ, "asynq")
+            UnboundMethodValue(value.attr_name, value.composite, "asynq")
         )
     else:
         assert False, f"cannot get pure async equivalent of {value}"
@@ -230,7 +232,10 @@ def _stringify_async_fn(value: Value) -> str:
     if isinstance(value, KnownValue):
         return _stringify_obj(value.val)
     elif isinstance(value, UnboundMethodValue):
-        ret = "%s.%s" % (_stringify_obj(value.typ.get_type()), value.attr_name)
+        ret = "%s.%s" % (
+            _stringify_obj(value.composite.value.get_type()),
+            value.attr_name,
+        )
         if value.secondary_attr_name is not None:
             ret += f".{value.secondary_attr_name}"
         return ret
