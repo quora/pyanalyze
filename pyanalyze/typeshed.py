@@ -183,7 +183,7 @@ class TypeshedFinder(object):
                     return True
         return False
 
-    def has_stubs(self, typ: type) -> bool:
+    def has_stubs(self, typ: object) -> bool:
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
             return False

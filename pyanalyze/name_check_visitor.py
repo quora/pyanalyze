@@ -10,6 +10,7 @@ the system.
 from abc import abstractmethod
 from argparse import ArgumentParser
 import ast
+import enum
 from ast_decompiler import decompile
 import asyncio
 import builtins
@@ -3634,7 +3635,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return UNRESOLVED_VALUE
 
             # Ignore objects that override __getattr__
-            if (
+            if not self._has_only_known_attributes(root_value.val) and (
                 _static_hasattr(root_value.val, "__getattr__")
                 or self._should_ignore_val(node)
                 or safe_getattr(root_value.val, "_pyanalyze_is_nested_function", False)
@@ -3665,13 +3666,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         )
         return UNRESOLVED_VALUE
 
-    def _has_only_known_attributes(self, typ: type) -> bool:
+    def _has_only_known_attributes(self, typ: object) -> bool:
         if (
             isinstance(typ, type)
             and issubclass(typ, tuple)
             and not hasattr(typ, "__getattr__")
         ):
             # namedtuple
+            return True
+        if isinstance(typ, type) and issubclass(typ, enum.Enum):
             return True
         ts_finder = self.arg_spec_cache.ts_finder
         if (

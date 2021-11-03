@@ -220,6 +220,7 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(E.no_name, KnownValue(E.no_name))
             assert_is_value(E.name, KnownValue(E.name))
+            E.what_is_this  # E: undefined_attribute
 
     @assert_passes()
     def test_module_annotations(self):
