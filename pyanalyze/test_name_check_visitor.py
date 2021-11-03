@@ -1590,7 +1590,9 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
                 #                 UnboundMethodValue('__init__', super(Metaclass, Metaclass)))
                 assert_is_value(
                     self.__init__,
-                    UnboundMethodValue("__init__", Composite(TypedValue(Metaclass))),
+                    UnboundMethodValue(
+                        "__init__", Composite(TypedValue(Metaclass), "self")
+                    ),
                 )
 
 

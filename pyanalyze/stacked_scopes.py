@@ -126,6 +126,14 @@ class Composite(NamedTuple):
             self.value.substitute_typevars(typevars), self.varname, self.node
         )
 
+    def __eq__(self, other: "Composite") -> bool:
+        # Skip the AST node because it's hard to get right in tests.
+        return (
+            isinstance(other, Composite)
+            and self.value == other.value
+            and self.varname == other.varname
+        )
+
 
 @dataclass(frozen=True)
 class _LookupContext:
