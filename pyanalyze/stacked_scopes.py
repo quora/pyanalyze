@@ -251,45 +251,46 @@ class Constraint(AbstractConstraint):
         Produces zero or more values consistent both with the given
         value and with this constraint.
 
-        The value may not be a MultiValuedValue or AnnotatedValue.
+        The value may not be a MultiValuedValue.
 
         """
-        if value is UNINITIALIZED_VALUE:
+        inner_value = value.value if isinstance(value, AnnotatedValue) else value
+        if inner_value is UNINITIALIZED_VALUE:
             yield UNINITIALIZED_VALUE
             return
         if self.constraint_type == ConstraintType.is_instance:
-            if value is UNRESOLVED_VALUE:
+            if inner_value is UNRESOLVED_VALUE:
                 if self.positive:
                     yield TypedValue(self.value)
                 else:
                     yield UNRESOLVED_VALUE
-            elif isinstance(value, KnownValue):
+            elif isinstance(inner_value, KnownValue):
                 if self.positive:
-                    if isinstance(value.val, self.value):
+                    if isinstance(inner_value.val, self.value):
                         yield value
                 else:
-                    if not isinstance(value.val, self.value):
+                    if not isinstance(inner_value.val, self.value):
                         yield value
-            elif isinstance(value, TypedValue):
+            elif isinstance(inner_value, TypedValue):
                 if self.positive:
-                    if safe_issubclass(value.typ, self.value):
+                    if safe_issubclass(inner_value.typ, self.value):
                         yield value
-                    elif safe_issubclass(self.value, value.typ):
+                    elif safe_issubclass(self.value, inner_value.typ):
                         yield TypedValue(self.value)
                     # TODO: Technically here we should infer an intersection type:
                     # a type that is a subclass of both types. In practice currently
                     # _constrain_values() will eventually return UNRESOLVED_VALUE.
                 else:
-                    if not safe_issubclass(value.typ, self.value):
+                    if not safe_issubclass(inner_value.typ, self.value):
                         yield value
-            elif isinstance(value, SubclassValue):
-                if not isinstance(value.typ, TypedValue):
+            elif isinstance(inner_value, SubclassValue):
+                if not isinstance(inner_value.typ, TypedValue):
                     yield value
                 elif self.positive:
-                    if isinstance(value.typ.typ, self.value):
+                    if isinstance(inner_value.typ.typ, self.value):
                         yield value
                 else:
-                    if not isinstance(value.typ.typ, self.value):
+                    if not isinstance(inner_value.typ.typ, self.value):
                         yield value
 
         elif self.constraint_type == ConstraintType.is_value:
@@ -311,7 +312,10 @@ class Constraint(AbstractConstraint):
                     ):
                         yield known_val
             else:
-                if not (isinstance(value, KnownValue) and value.val is self.value):
+                if not (
+                    isinstance(inner_value, KnownValue)
+                    and inner_value.val is self.value
+                ):
                     yield value
 
         elif self.constraint_type == ConstraintType.is_value_object:

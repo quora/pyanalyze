@@ -1518,6 +1518,8 @@ def boolean_value(value: Optional[Value]) -> Optional[bool]:
     Returns None if its truth value cannot be determined.
 
     """
+    if isinstance(value, AnnotatedValue):
+        value = value.value
     if isinstance(value, KnownValue):
         try:
             # don't pretend to know the boolean value of mutable types
