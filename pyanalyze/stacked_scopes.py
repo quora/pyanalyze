@@ -117,8 +117,8 @@ class Composite(NamedTuple):
     origin. This is useful for setting constraints."""
 
     value: Value
-    varname: Optional[Varname]
-    node: Optional[AST]
+    varname: Optional[Varname] = None
+    node: Optional[AST] = None
 
 
 @dataclass(frozen=True)

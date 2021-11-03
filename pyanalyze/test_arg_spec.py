@@ -10,6 +10,7 @@ from .test_name_check_visitor import (
 )
 from .test_node_visitor import assert_passes
 from .signature import SigParameter, BoundMethodSignature, Signature
+from .stacked_scopes import Composite
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .tests import l0cached_async_fn
 from .value import (
@@ -104,7 +105,7 @@ def test_get_argspec():
                 Signature.make(
                     [cwc_self, SigParameter("arg")], callable=ClassWithCall.__call__
                 ),
-                cwc_typed,
+                Composite(cwc_typed),
             ),
             visitor._get_argspec_from_value(cwc_typed, None),
         )
@@ -115,7 +116,7 @@ def test_get_argspec():
                     [SigParameter("cls")],
                     callable=ClassWithCall.normal_classmethod.__func__,
                 ),
-                KnownValue(ClassWithCall),
+                Composite(KnownValue(ClassWithCall)),
             ),
             ArgSpecCache(config).get_argspec(ClassWithCall.normal_classmethod),
         )
@@ -166,7 +167,7 @@ def test_get_argspec():
                     callable=instance.async_method.decorator.fn,
                     is_asynq=True,
                 ),
-                KnownValue(instance),
+                Composite(KnownValue(instance)),
             ),
             ArgSpecCache(config).get_argspec(instance.async_method),
         )
@@ -178,7 +179,7 @@ def test_get_argspec():
                     callable=instance.async_method.decorator.fn,
                     is_asynq=True,
                 ),
-                KnownValue(instance),
+                Composite(KnownValue(instance)),
             ),
             ArgSpecCache(config).get_argspec(instance.async_method.asynq),
         )
@@ -208,7 +209,7 @@ def test_get_argspec():
                     callable=ClassWithCall.async_classmethod.decorator.fn,
                     is_asynq=True,
                 ),
-                KnownValue(ClassWithCall),
+                Composite(KnownValue(ClassWithCall)),
             ),
             ArgSpecCache(config).get_argspec(ClassWithCall.async_classmethod),
         )
@@ -220,7 +221,7 @@ def test_get_argspec():
                     callable=ClassWithCall.async_classmethod.decorator.fn,
                     is_asynq=True,
                 ),
-                KnownValue(ClassWithCall),
+                Composite(KnownValue(ClassWithCall)),
             ),
             ArgSpecCache(config).get_argspec(ClassWithCall.async_classmethod.asynq),
         )
@@ -231,7 +232,7 @@ def test_get_argspec():
                     [SigParameter("cls"), SigParameter("ac")],
                     callable=ClassWithCall.pure_async_classmethod.decorator.fn,
                 ),
-                KnownValue(ClassWithCall),
+                Composite(KnownValue(ClassWithCall)),
             ),
             ArgSpecCache(config).get_argspec(ClassWithCall.pure_async_classmethod),
         )
@@ -250,7 +251,7 @@ def test_get_argspec():
                     callable=callable,
                     is_asynq=True,
                 ),
-                KnownValue(ClassWithCall),
+                Composite(KnownValue(ClassWithCall)),
             ),
             ArgSpecCache(config).get_argspec(ClassWithCall.classmethod_before_async),
         )

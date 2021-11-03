@@ -4003,7 +4003,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_override = self._argspec_to_retval[id(sig)]
                 except KeyError:
                     return_override = None
-                return make_bound_method(sig, value.typ, return_override)
+                return make_bound_method(sig, Composite(value.typ), return_override)
             return None
         elif isinstance(value, CallableValue):
             return value.signature
@@ -4022,7 +4022,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return_override = self._argspec_to_retval[id(sig)]
             except KeyError:
                 return_override = None
-            bound_method = make_bound_method(sig, value, return_override)
+            bound_method = make_bound_method(sig, Composite(value), return_override)
             if bound_method is None:
                 return None
             return bound_method.get_signature()
@@ -4070,7 +4070,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return None
             call_fn = typ.__call__
             argspec = self.arg_spec_cache.get_argspec(call_fn)
-            return make_bound_method(argspec, callee_wrapped)
+            return make_bound_method(argspec, Composite(callee_wrapped))
         return None
 
     # Attribute checking
