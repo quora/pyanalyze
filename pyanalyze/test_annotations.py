@@ -1,5 +1,5 @@
 # static analysis: ignore
-from typing import Optional
+from typing import Optional, Union
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
 from .implementation import assert_is_value
@@ -1053,11 +1053,21 @@ class TestExternalType(TestNameCheckVisitorBase):
     def test(self) -> None:
         import os
         from pyanalyze.extensions import ExternalType
+        from typing_extensions import Annotated
+        from typing import Union
 
         def capybara(
-            x: ExternalType["builtins.str"], y: ExternalType["os.stat_result"]
+            x: ExternalType["builtins.str"],
+            y: ExternalType["os.stat_result"],
+            z: Annotated[ExternalType["builtins.str"], 1] = "z",
+            omega: Union[
+                ExternalType["builtins.str"], ExternalType["builtins.int"]
+            ] = 1,
         ) -> None:
-            pass
+            assert_is_value(x, TypedValue(str))
+            assert_is_value(y, TypedValue(os.stat_result))
+            assert_is_value(z, AnnotatedValue(TypedValue(str), [KnownValue(1)]))
+            assert_is_value(omega, TypedValue(str) | TypedValue(int))
 
         def user():
             sr = os.stat_result((1,) * 10)
