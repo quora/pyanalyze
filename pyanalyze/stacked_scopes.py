@@ -332,7 +332,7 @@ class Constraint(AbstractConstraint):
         elif self.constraint_type == ConstraintType.predicate:
             new_value = self.value(value, self.positive)
             if new_value is not None:
-                yield value
+                yield new_value
 
         elif self.constraint_type == ConstraintType.add_annotation:
             if self.positive:
