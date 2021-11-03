@@ -1030,8 +1030,6 @@ class MultiValuedValue(Value):
             if not tv_maps:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
-        elif isinstance(other, AnnotatedValue):
-            return self.can_assign(other.value, ctx)
         else:
             my_vals = self.vals
             # Optimization for large unions of literals. We could perhaps cache this set,
