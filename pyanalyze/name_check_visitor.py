@@ -3667,14 +3667,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return UNRESOLVED_VALUE
 
     def _has_only_known_attributes(self, typ: object) -> bool:
-        if (
-            isinstance(typ, type)
-            and issubclass(typ, tuple)
-            and not hasattr(typ, "__getattr__")
-        ):
+        if not isinstance(typ, type):
+            return False
+        if issubclass(typ, tuple) and not hasattr(typ, "__getattr__"):
             # namedtuple
             return True
-        if isinstance(typ, type) and issubclass(typ, enum.Enum):
+        if issubclass(typ, enum.Enum):
             return True
         ts_finder = self.arg_spec_cache.ts_finder
         if (
