@@ -2331,35 +2331,6 @@ class TestTypedDict(TestNameCheckVisitorBase):
             x[0]
 
 
-class TestSequenceIndex(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_list_index(self):
-        def capybara(x):
-            lst = ["a", "b", int(x)]
-            assert_is_value(lst[0], KnownValue("a"))
-            assert_is_value(lst[2], TypedValue(int))
-            assert_is_value(lst[-2], KnownValue("b"))
-            assert_is_value(lst[5], UNRESOLVED_VALUE)
-
-    @assert_passes()
-    def test_tuple_index(self):
-        def capybara(x):
-            tpl = ["a", "b", int(x)]
-            assert_is_value(tpl[0], KnownValue("a"))
-            assert_is_value(tpl[2], TypedValue(int))
-            assert_is_value(tpl[-2], KnownValue("b"))
-            assert_is_value(tpl[5], UNRESOLVED_VALUE)
-
-    @assert_passes()
-    def test_tuple_annotation(self):
-        from typing import Tuple
-
-        def capybara(tpl: Tuple[int, str, float]) -> None:
-            assert_is_value(tpl[0], TypedValue(int))
-            assert_is_value(tpl[-2], TypedValue(str))
-            assert_is_value(tpl[2], TypedValue(float))
-
-
 _AnnotSettings = {
     ErrorCode.missing_parameter_annotation: True,
     ErrorCode.missing_return_annotation: True,

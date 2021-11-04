@@ -1,4 +1,5 @@
 # static analysis: ignore
+from pyanalyze.value import KnownValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes
 from .error_code import ErrorCode
@@ -771,6 +772,33 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
                 known[s], SequenceIncompleteValue(tuple, [KnownValue(1), KnownValue(2)])
             )
             assert_is_value(known[unannotated], UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_list_index(self):
+        def capybara(x):
+            lst = ["a", "b", int(x)]
+            assert_is_value(lst[0], KnownValue("a"))
+            assert_is_value(lst[2], TypedValue(int))
+            assert_is_value(lst[-2], KnownValue("b"))
+            assert_is_value(lst[5], KnownValue("a") | KnownValue("b") | TypedValue(int))
+
+    @assert_passes()
+    def test_tuple_index(self):
+        def capybara(x):
+            tpl = ("a", "b", int(x))
+            assert_is_value(tpl[0], KnownValue("a"))
+            assert_is_value(tpl[2], TypedValue(int))
+            assert_is_value(tpl[-2], KnownValue("b"))
+            assert_is_value(tpl[5], UNRESOLVED_VALUE)  # E: incompatible_call
+
+    @assert_passes()
+    def test_tuple_annotation(self):
+        from typing import Tuple
+
+        def capybara(tpl: Tuple[int, str, float]) -> None:
+            assert_is_value(tpl[0], TypedValue(int))
+            assert_is_value(tpl[-2], TypedValue(str))
+            assert_is_value(tpl[2], TypedValue(float))
 
 
 class TestDictGetItem(TestNameCheckVisitorBase):

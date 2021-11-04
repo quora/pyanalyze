@@ -2582,9 +2582,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             return KnownValue(
                 slice(
-                    lower if lower is None else lower.val,
-                    upper if upper is None else upper.val,
-                    step if step is None else step.val,
+                    lower.val if isinstance(lower, KnownValue) else None,
+                    upper.val if isinstance(upper, KnownValue) else None,
+                    step.val if isinstance(step, KnownValue) else None,
                 )
             )
         else:

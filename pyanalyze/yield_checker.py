@@ -76,13 +76,12 @@ class YieldInfo:
                 isinstance(self.yield_node.value, ast.Call)
                 and isinstance(self.yield_node.value.func, ast.Name)
                 and self.yield_node.value.func.id == "tuple"
+                and isinstance(self.yield_node.value.args[0], ast.Tuple)
             ):
                 # value is a call to tuple()
                 # e.g. x, y = yield tuple((a.asynq(), b.asynq()))
                 # in this case we remove the call to tuple and return
                 # the plain elements of the tuple but we remove the surrounding braces
-                # Note: This will break when we have something like
-                # x,y,z = yield tuple(<generator_expr>) but that shouldn't be happening
                 return (
                     self.statement_node.targets[0].elts,
                     self.yield_node.value.args[0].elts,
