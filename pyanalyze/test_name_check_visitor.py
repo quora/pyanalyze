@@ -163,6 +163,19 @@ def test_annotation():
 
 
 class TestNameCheckVisitor(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_list_return(self):
+        from typing import List
+
+        class A:
+            pass
+
+        def func() -> List[A]:
+            return [A]  # E: incompatible_return_value
+
+        def func() -> A:
+            return A  # E: incompatible_return_value
+
     @assert_fails(ErrorCode.undefined_name)
     def test_undefined_name(self):
         def run():

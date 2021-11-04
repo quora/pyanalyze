@@ -583,6 +583,7 @@ class GenericValue(TypedValue):
         return f"{stringify_object(self.typ)}[{args_str}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        other = replace_known_sequence_value(other)
         if isinstance(other, TypedValue) and isinstance(other.typ, type):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
             # If we don't think it's a generic base, try super;
