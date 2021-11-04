@@ -33,6 +33,7 @@ from .value import (
     NO_RETURN_VALUE,
     KNOWN_MUTABLE_TYPES,
     Value,
+    VariableNameValue,
     WeakExtension,
     make_weak,
     unite_values,
@@ -343,6 +344,57 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
             "list.append", "object", ctx.vars["self"], lst, element, ctx, list, varname
         )
     return ImplReturn(KnownValue(None))
+
+
+def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
+    def inner(key: Value) -> Value:
+        self_value = replace_known_sequence_value(ctx.vars["self"])
+        if not isinstance(self_value, TypedValue):
+            return UNRESOLVED_VALUE  # shouldn't happen
+        if isinstance(key, KnownValue):
+            if isinstance(key.val, int):
+                if isinstance(self_value, SequenceIncompleteValue):
+                    if -len(self_value.members) <= key.val < len(self_value.members):
+                        return self_value.members[key.val]
+                    elif typ is list:
+                        # fall back to the common type
+                        return self_value.args[0]
+                    else:
+                        ctx.show_error(f"Tuple index out of range: {key}")
+                        return UNRESOLVED_VALUE
+                else:
+                    return self_value.get_generic_arg_for_type(typ, ctx.visitor, 0)
+            elif isinstance(key.val, slice):
+                if isinstance(self_value, SequenceIncompleteValue):
+                    return SequenceIncompleteValue(list, self_value.members[key.val])
+                else:
+                    return self_value
+            else:
+                ctx.show_error(f"Invalid {typ.__name__} key {key}")
+                return UNRESOLVED_VALUE
+        elif isinstance(key, TypedValue):
+            if issubclass(key.typ, int):
+                return self_value.get_generic_arg_for_type(typ, ctx.visitor, 0)
+            elif issubclass(key.typ, slice):
+                return self_value
+            else:
+                ctx.show_error(f"Invalid {typ.__name__} key {key}")
+                return UNRESOLVED_VALUE
+        elif key is UNRESOLVED_VALUE or isinstance(key, VariableNameValue):
+            return UNRESOLVED_VALUE
+        else:
+            ctx.show_error(f"Invalid {typ.__name__} key {key}")
+            return UNRESOLVED_VALUE
+
+    return flatten_unions(inner, ctx.vars["obj"], unwrap_annotated=True)
+
+
+def _list_getitem_impl(ctx: CallContext) -> ImplReturn:
+    return _sequence_getitem_impl(ctx, list)
+
+
+def _tuple_getitem_impl(ctx: CallContext) -> ImplReturn:
+    return _sequence_getitem_impl(ctx, tuple)
 
 
 def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
@@ -1017,6 +1069,22 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=list.extend,
             impl=_list_extend_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(list)),
+                SigParameter("obj", _POS_ONLY),
+            ],
+            callable=list.__getitem__,
+            impl=_list_getitem_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(tuple)),
+                SigParameter("obj", _POS_ONLY),
+            ],
+            callable=tuple.__getitem__,
+            impl=_tuple_getitem_impl,
         ),
         Signature.make(
             [

@@ -709,6 +709,70 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(strong_dict, expected)
 
 
+class TestSequenceGetItem(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_list(self):
+        from typing import List
+
+        def capybara(lst: List[int], i: int, s: slice, unannotated) -> None:
+            assert_is_value(lst[0], TypedValue(int))
+            assert_is_value(lst[-1], TypedValue(int))
+            assert_is_value(lst[:1], GenericValue(list, [TypedValue(int)]))
+            assert_is_value(lst[i], TypedValue(int))
+            assert_is_value(lst[s], GenericValue(list, [TypedValue(int)]))
+            assert_is_value(lst[unannotated], UNRESOLVED_VALUE)
+
+            empty = []
+            assert_is_value(empty[0], UNRESOLVED_VALUE)
+            assert_is_value(empty[1:], KnownValue([]))
+            assert_is_value(empty[i], UNRESOLVED_VALUE)
+            assert_is_value(empty[s], SequenceIncompleteValue(list, []))
+            assert_is_value(empty[unannotated], UNRESOLVED_VALUE)
+
+            known = [1, 2]
+            assert_is_value(known[0], KnownValue(1))
+            assert_is_value(known[-1], KnownValue(2))
+            assert_is_value(known[-5], KnownValue(1) | KnownValue(2))
+            assert_is_value(known[1:], KnownValue([2]))
+            assert_is_value(known[::-1], KnownValue([2, 1]))
+            assert_is_value(known[i], KnownValue(1) | KnownValue(2))
+            assert_is_value(
+                known[s], SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)])
+            )
+            assert_is_value(known[unannotated], UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_tuple(self):
+        from typing import Tuple
+
+        def capybara(tpl: Tuple[int, ...], i: int, s: slice, unannotated) -> None:
+            assert_is_value(tpl[0], TypedValue(int))
+            assert_is_value(tpl[-1], TypedValue(int))
+            assert_is_value(tpl[:1], GenericValue(tuple, [TypedValue(int)]))
+            assert_is_value(tpl[i], TypedValue(int))
+            assert_is_value(tpl[s], GenericValue(tuple, [TypedValue(int)]))
+            assert_is_value(tpl[unannotated], UNRESOLVED_VALUE)
+
+            empty = ()
+            assert_is_value(empty[0], UNRESOLVED_VALUE)  # E: incompatible_call
+            assert_is_value(empty[1:], KnownValue(()))
+            assert_is_value(empty[i], UNRESOLVED_VALUE)
+            assert_is_value(empty[s], SequenceIncompleteValue(tuple, []))
+            assert_is_value(empty[unannotated], UNRESOLVED_VALUE)
+
+            known = (1, 2)
+            assert_is_value(known[0], KnownValue(1))
+            assert_is_value(known[-1], KnownValue(2))
+            assert_is_value(known[-5], UNRESOLVED_VALUE)  # E: incompatible_call
+            assert_is_value(known[1:], KnownValue((2,)))
+            assert_is_value(known[::-1], KnownValue((2, 1)))
+            assert_is_value(known[i], KnownValue(1) | KnownValue(2))
+            assert_is_value(
+                known[s], SequenceIncompleteValue(tuple, [KnownValue(1), KnownValue(2)])
+            )
+            assert_is_value(known[unannotated], UNRESOLVED_VALUE)
+
+
 class TestDictGetItem(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.unhashable_key)
     def test_unhashable(self):
