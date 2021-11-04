@@ -855,6 +855,7 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
     def test_self(self):
         from pyanalyze.extensions import ParameterTypeGuard
         from typing_extensions import Annotated
+        from typing import Union
 
         class A:
             def is_b(self) -> Annotated[bool, ParameterTypeGuard["self", "B"]]:
@@ -863,12 +864,20 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
         class B(A):
             pass
 
+        class C(A):
+            pass
+
         def capybara(obj: A) -> None:
             assert_is_value(obj, TypedValue(A))
             if obj.is_b():
                 assert_is_value(obj, TypedValue(B))
             else:
                 assert_is_value(obj, TypedValue(A))
+
+        def narrow_union(union: Union[B, C]) -> None:
+            assert_is_value(union, TypedValue(B) | TypedValue(C))
+            if union.is_b():
+                assert_is_value(union, TypedValue(B))
 
 
 class TestTypeGuard(TestNameCheckVisitorBase):

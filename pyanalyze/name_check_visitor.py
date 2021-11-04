@@ -3579,7 +3579,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         """
         if isinstance(root_composite.value, MultiValuedValue):
             values = [
-                self._get_attribute_no_mvv(Composite(subval), attr, node)
+                self._get_attribute_no_mvv(
+                    Composite(subval, root_composite.varname, root_composite.node),
+                    attr,
+                    node,
+                )
                 for subval in root_composite.value.vals
             ]
             if any(value is UNINITIALIZED_VALUE for value in values):
@@ -3600,7 +3604,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(root_composite.value, MultiValuedValue):
             results = []
             for subval in root_composite.value.vals:
-                subresult = self._get_attribute_no_mvv(Composite(subval), attr, node)
+                composite = Composite(
+                    subval, root_composite.varname, root_composite.node
+                )
+                subresult = self._get_attribute_no_mvv(composite, attr, node)
                 if subresult is UNINITIALIZED_VALUE:
                     subresult = self._get_attribute_fallback(subval, attr, node)
                 results.append(subresult)
