@@ -2601,8 +2601,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         upper = self.visit(node.upper) if node.upper is not None else None
         step = self.visit(node.step) if node.step is not None else None
 
-        if all(isinstance(val, KnownValue) for val in (lower, upper, step)):
-            return KnownValue(slice(lower, upper, step))
+        if all(
+            val is None or isinstance(val, KnownValue) for val in (lower, upper, step)
+        ):
+            return KnownValue(
+                slice(
+                    lower.val if isinstance(lower, KnownValue) else None,
+                    upper.val if isinstance(upper, KnownValue) else None,
+                    step.val if isinstance(step, KnownValue) else None,
+                )
+            )
         else:
             return TypedValue(slice)
 

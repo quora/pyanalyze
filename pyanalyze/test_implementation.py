@@ -1,4 +1,5 @@
 # static analysis: ignore
+from pyanalyze.value import KnownValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes
 from .error_code import ErrorCode
@@ -709,6 +710,97 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 MultiValuedValue([TypedValue(str), KnownValue(None)]),
             )
             assert_is_value(strong_dict, expected)
+
+
+class TestSequenceGetItem(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_list(self):
+        from typing import List
+
+        def capybara(lst: List[int], i: int, s: slice, unannotated) -> None:
+            assert_is_value(lst[0], TypedValue(int))
+            assert_is_value(lst[-1], TypedValue(int))
+            assert_is_value(lst[:1], GenericValue(list, [TypedValue(int)]))
+            assert_is_value(lst[i], TypedValue(int))
+            assert_is_value(lst[s], GenericValue(list, [TypedValue(int)]))
+            assert_is_value(lst[unannotated], UNRESOLVED_VALUE)
+
+            empty = []
+            assert_is_value(empty[0], UNRESOLVED_VALUE)
+            assert_is_value(empty[1:], KnownValue([]))
+            assert_is_value(empty[i], UNRESOLVED_VALUE)
+            assert_is_value(empty[s], SequenceIncompleteValue(list, []))
+            assert_is_value(empty[unannotated], UNRESOLVED_VALUE)
+
+            known = [1, 2]
+            assert_is_value(known[0], KnownValue(1))
+            assert_is_value(known[-1], KnownValue(2))
+            assert_is_value(known[-5], KnownValue(1) | KnownValue(2))
+            assert_is_value(known[1:], KnownValue([2]))
+            assert_is_value(known[::-1], KnownValue([2, 1]))
+            assert_is_value(known[i], KnownValue(1) | KnownValue(2))
+            assert_is_value(
+                known[s], SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)])
+            )
+            assert_is_value(known[unannotated], UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_tuple(self):
+        from typing import Tuple
+
+        def capybara(tpl: Tuple[int, ...], i: int, s: slice, unannotated) -> None:
+            assert_is_value(tpl[0], TypedValue(int))
+            assert_is_value(tpl[-1], TypedValue(int))
+            assert_is_value(tpl[:1], GenericValue(tuple, [TypedValue(int)]))
+            assert_is_value(tpl[i], TypedValue(int))
+            assert_is_value(tpl[s], GenericValue(tuple, [TypedValue(int)]))
+            assert_is_value(tpl[unannotated], UNRESOLVED_VALUE)
+
+            empty = ()
+            assert_is_value(empty[0], UNRESOLVED_VALUE)  # E: incompatible_call
+            assert_is_value(empty[1:], KnownValue(()))
+            assert_is_value(empty[i], UNRESOLVED_VALUE)
+            assert_is_value(empty[s], SequenceIncompleteValue(tuple, []))
+            assert_is_value(empty[unannotated], UNRESOLVED_VALUE)
+
+            known = (1, 2)
+            assert_is_value(known[0], KnownValue(1))
+            assert_is_value(known[-1], KnownValue(2))
+            assert_is_value(known[-5], UNRESOLVED_VALUE)  # E: incompatible_call
+            assert_is_value(known[1:], KnownValue((2,)))
+            assert_is_value(known[::-1], KnownValue((2, 1)))
+            assert_is_value(known[i], KnownValue(1) | KnownValue(2))
+            assert_is_value(
+                known[s], SequenceIncompleteValue(tuple, [KnownValue(1), KnownValue(2)])
+            )
+            assert_is_value(known[unannotated], UNRESOLVED_VALUE)
+
+    @assert_passes()
+    def test_list_index(self):
+        def capybara(x):
+            lst = ["a", "b", int(x)]
+            assert_is_value(lst[0], KnownValue("a"))
+            assert_is_value(lst[2], TypedValue(int))
+            assert_is_value(lst[-2], KnownValue("b"))
+            assert_is_value(lst[5], KnownValue("a") | KnownValue("b") | TypedValue(int))
+
+    @assert_passes()
+    def test_tuple_index(self):
+        def capybara(x):
+            tpl = ("a", "b", int(x))
+            assert_is_value(tpl[0], KnownValue("a"))
+            assert_is_value(tpl[2], TypedValue(int))
+            assert_is_value(tpl[-2], KnownValue("b"))
+            assert_is_value(tpl[5], UNRESOLVED_VALUE)  # E: incompatible_call
+
+    @assert_passes()
+    def test_tuple_annotation(self):
+        from typing import Tuple
+
+        def capybara(tpl: Tuple[int, str, float]) -> None:
+            assert_is_value(tpl[0], TypedValue(int))
+            assert_is_value(tpl[-2], TypedValue(str))
+            assert_is_value(tpl[2], TypedValue(float))
 
 
 class TestDictGetItem(TestNameCheckVisitorBase):
