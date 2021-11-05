@@ -582,7 +582,7 @@ class ArgSpecCache:
                 return None
         return generic_bases
 
-    def get_runtime_bases(self, typ: type) -> Sequence[Value]:
+    def get_runtime_bases(self, typ: type) -> Sequence[object]:
         if typing_inspect.is_generic_type(typ):
             return typing_inspect.get_generic_bases(typ)
         return typ.__bases__

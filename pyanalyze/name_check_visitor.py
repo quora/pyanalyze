@@ -4163,6 +4163,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     @classmethod
     def get_default_modules(cls) -> Tuple[types.ModuleType, ...]:
+        if cls.config.DEFAULT_BASE_MODULE is None:
+            return ()
         return (cls.config.DEFAULT_BASE_MODULE,)
 
     @classmethod
