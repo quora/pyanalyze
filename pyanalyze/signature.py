@@ -6,6 +6,7 @@ calls.
 
 """
 
+from collections import defaultdict
 from .error_code import ErrorCode
 from .stacked_scopes import (
     AndConstraint,
@@ -38,6 +39,7 @@ from .value import (
     extract_typevars,
     stringify_object,
     unify_typevar_maps,
+    unite_values,
 )
 
 import ast
@@ -441,6 +443,7 @@ class Signature:
         return_value = self.signature.return_annotation
         typevar_values: Dict[TypeVar, Value] = {}
         if self.all_typevars:
+            tv_possible_values: Dict[TypeVar, List[Value]] = defaultdict(list)
             for param_name in self.typevars_of_params:
                 if param_name == self._return_key:
                     continue
@@ -452,9 +455,13 @@ class Signature:
                 if not isinstance(tv_map, CanAssignError):
                     # For now, the first assignment wins.
                     for typevar, value in tv_map.items():
-                        typevar_values.setdefault(typevar, value)
-            for typevar in self.all_typevars:
-                typevar_values.setdefault(typevar, UNRESOLVED_VALUE)
+                        tv_possible_values[typevar].append(value)
+            typevar_values = {
+                typevar: unite_values(
+                    *tv_possible_values.get(typevar, [UNRESOLVED_VALUE])
+                )
+                for typevar in self.all_typevars
+            }
             if self._return_key in self.typevars_of_params:
                 return_value = return_value.substitute_typevars(typevar_values)
 
@@ -916,6 +923,15 @@ class BoundMethodSignature:
             return self.return_override
         return UNRESOLVED_VALUE
 
+    def substitute_typevars(self, typevars: TypeVarMap) -> "BoundMethodSignature":
+        return BoundMethodSignature(
+            self.signature.substitute_typevars(typevars),
+            self.self_composite.substitute_typevars(typevars),
+            self.return_override.substitute_typevars(typevars)
+            if self.return_override is not None
+            else None,
+        )
+
 
 @dataclass
 class PropertyArgSpec:
@@ -931,6 +947,11 @@ class PropertyArgSpec:
 
     def has_return_value(self) -> bool:
         return self.return_value is not UNRESOLVED_VALUE
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "PropertyArgSpec":
+        return PropertyArgSpec(
+            self.obj, self.return_value.substitute_typevars(typevars)
+        )
 
 
 MaybeSignature = Union[None, Signature, BoundMethodSignature, PropertyArgSpec]

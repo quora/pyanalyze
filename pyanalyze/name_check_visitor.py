@@ -100,6 +100,7 @@ from .value import (
     AnnotatedValue,
     CallableValue,
     CanAssignError,
+    KnownValueWithTypeVars,
     NewTypeValue,
     boolean_value,
     UNINITIALIZED_VALUE,
@@ -3999,6 +4000,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return None
                 else:
                     return ANY_SIGNATURE
+            if isinstance(value, KnownValueWithTypeVars):
+                return argspec.substitute_typevars(value.typevars)
             return argspec
         elif isinstance(value, UnboundMethodValue):
             method = value.get_method()
@@ -4011,7 +4014,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_override = self._argspec_to_retval[id(sig)]
                 except KeyError:
                     return_override = None
-                return make_bound_method(sig, value.composite, return_override)
+                bound = make_bound_method(sig, value.composite, return_override)
+                if bound is not None and value.typevars is not None:
+                    bound = bound.substitute_typevars(value.typevars)
+                return bound
             return None
         elif isinstance(value, CallableValue):
             return value.signature
