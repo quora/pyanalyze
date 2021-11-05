@@ -3333,18 +3333,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         value = root_composite.value
         index = index_composite.value
 
-        # TODO remove this, it should be done in these types' dunder
-        # methods instead.
-        if any(
-            value.is_type(typ) for typ in (list, tuple, str, bytes)
-        ) and not index.is_type(slice):
-            index = self._check_dunder_call(
-                node, index_composite, "__index__", [], allow_call=True
-            )
-            index_composite = Composite(
-                index, index_composite.varname, index_composite.node
-            )
-
         if isinstance(node.ctx, ast.Store):
             if (
                 composite_var is not None
