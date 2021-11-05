@@ -22,6 +22,7 @@ from .value import (
     AnnotatedValue,
     CallableValue,
     HasAttrExtension,
+    KnownValueWithTypeVars,
     TypeVarMap,
     Value,
     KnownValue,
@@ -210,6 +211,7 @@ def _get_attribute_from_typed(
 def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Value:
     if not isinstance(result, KnownValue):
         return result
+    typevars = result.typevars if isinstance(result, KnownValueWithTypeVars) else None
     cls_val = result.val
     if isinstance(cls_val, property):
         typ = ctx.get_property_type_from_config(cls_val)
@@ -217,9 +219,9 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
             return typ
         return ctx.get_property_type_from_argspec(cls_val)
     elif qcore.inspection.is_classmethod(cls_val):
-        return KnownValue(cls_val)
+        return result
     elif inspect.ismethod(cls_val):
-        return UnboundMethodValue(ctx.attr, ctx.root_composite)
+        return UnboundMethodValue(ctx.attr, ctx.root_composite, typevars=typevars)
     elif inspect.isfunction(cls_val):
         # either a staticmethod or an unbound method
         try:
@@ -227,33 +229,35 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         except AttributeError:
             # probably a super call; assume unbound method
             if ctx.attr != "__new__":
-                return UnboundMethodValue(ctx.attr, ctx.root_composite)
+                return UnboundMethodValue(
+                    ctx.attr, ctx.root_composite, typevars=typevars
+                )
             else:
                 # __new__ is implicitly a staticmethod
-                return KnownValue(cls_val)
+                return result
         if isinstance(descriptor, staticmethod) or ctx.attr == "__new__":
-            return KnownValue(cls_val)
+            return result
         else:
-            return UnboundMethodValue(ctx.attr, ctx.root_composite)
+            return UnboundMethodValue(ctx.attr, ctx.root_composite, typevars=typevars)
     elif isinstance(cls_val, (MethodDescriptorType, SlotWrapperType)):
         # built-in method; e.g. scope_lib.tests.SimpleDatabox.get
-        return UnboundMethodValue(ctx.attr, ctx.root_composite)
+        return UnboundMethodValue(ctx.attr, ctx.root_composite, typevars=typevars)
     elif (
         _static_hasattr(cls_val, "decorator")
         and _static_hasattr(cls_val, "instance")
         and not isinstance(cls_val.instance, type)
     ):
         # non-static method
-        return UnboundMethodValue(ctx.attr, ctx.root_composite)
+        return UnboundMethodValue(ctx.attr, ctx.root_composite, typevars=typevars)
     elif asynq.is_async_fn(cls_val):
         # static or class method
-        return KnownValue(cls_val)
+        return result
     elif _static_hasattr(cls_val, "__get__"):
         return ctx.get_property_type_from_config(cls_val)
     elif ctx.should_ignore_class_attribute(cls_val):
         return UNRESOLVED_VALUE
     else:
-        return KnownValue(cls_val)
+        return result
 
 
 def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
