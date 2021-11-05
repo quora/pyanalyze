@@ -355,6 +355,19 @@ class KnownValue(Value):
         else:
             return "Literal[%r]" % (self.val,)
 
+    def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
+        if not typevars or not callable(self.val):
+            return self
+        return KnownValueWithTypeVars(self.val, typevars)
+
+
+@dataclass(frozen=True)
+class KnownValueWithTypeVars(KnownValue):
+    """Subclass of KnownValue that records a TypeVar substitution."""
+
+    typevars: TypeVarMap = field(compare=False)
+    """TypeVars substituted on this value."""
+
 
 @dataclass(frozen=True)
 class UnboundMethodValue(Value):
@@ -378,6 +391,8 @@ class UnboundMethodValue(Value):
     with `secondary_attr_name` set to ``"asynq"``.
 
     """
+    typevars: Optional[TypeVarMap] = field(default=None, compare=False)
+    """Extra TypeVars applied to this method."""
 
     def get_method(self) -> Optional[Any]:
         """Return the runtime callable for this ``UnboundMethodValue``, or
@@ -408,6 +423,9 @@ class UnboundMethodValue(Value):
             self.attr_name,
             self.composite.substitute_typevars(typevars),
             self.secondary_attr_name,
+            typevars=typevars
+            if self.typevars is None
+            else {**self.typevars, **typevars},
         )
 
     def __str__(self) -> str:

@@ -625,7 +625,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(x, MultiValuedValue([KnownValue(None), TypedValue(int)]))
             assert_is_value(assert_not_none(x), TypedValue(int))
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_only_T(self):
         from typing import Generic, TypeVar
 
@@ -636,7 +636,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
                 pass
 
         def capybara(x: Capybara[int]) -> None:
-            x.add_one("x")
+            x.add_one("x")  # E: incompatible_argument
 
     @assert_passes()
     def test_multi_typevar(self):
@@ -652,6 +652,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(mktemp(), UNRESOLVED_VALUE)
             assert_is_value(mktemp(prefix="p"), KnownValue("p"))
             assert_is_value(mktemp(suffix="s"), KnownValue("s"))
+            assert_is_value(mktemp("p", "s"), KnownValue("p") | KnownValue("s"))
 
     @assert_passes()
     def test_generic_base(self):
@@ -690,12 +691,12 @@ class TestTypeVar(TestNameCheckVisitorBase):
             take_base(c)
 
     @skip_before((3, 10))
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_typeshed(self):
         from typing import List
 
         def capybara(lst: List[int]) -> None:
-            lst.append("x")
+            lst.append("x")  # E: incompatible_argument
 
     @assert_passes()
     def test_generic_super(self):
