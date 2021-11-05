@@ -1622,14 +1622,28 @@ class TestSubscripting(TestNameCheckVisitorBase):
             return [1, 2][CustomIndex()]
 
     @assert_passes()
+    def test_permissive_subclass(self):
+        # Inspired by pyspark.sql.types.Row
+        class LetItAllThrough(tuple):
+            def __getitem__(self, idx: object) -> object:
+                if isinstance(idx, (int, slice)):
+                    return super().__getitem__(idx)
+                else:
+                    return "whatever"
+
+        def capybara(liat: LetItAllThrough) -> None:
+            assert_is_value(liat["x"], TypedValue(object))
+            assert_is_value(liat[0], TypedValue(object))
+
+    @assert_passes()
     def test_slice(self):
         def capybara():
             return [1, 2][1:]
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_failure(self):
         def capybara():
-            return [1, 2][3.0]
+            return [1, 2][3.0]  # TODO: Should throw an error with #241
 
     @assert_passes()
     def test_union(self):
