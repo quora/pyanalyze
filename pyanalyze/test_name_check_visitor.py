@@ -1646,7 +1646,7 @@ class TestSubscripting(TestNameCheckVisitorBase):
     @assert_passes()
     def test_failure(self):
         def capybara():
-            return [1, 2][3.0]  # TODO: Should throw an error with #241
+            return [1, 2][3.0]  # E: unsupported_operation
 
     @assert_passes()
     def test_union(self):

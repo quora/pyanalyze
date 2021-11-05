@@ -6,6 +6,7 @@ from .safe import safe_hasattr, safe_isinstance, safe_issubclass
 from .stacked_scopes import (
     NULL_CONSTRAINT,
     AbstractConstraint,
+    Composite,
     Constraint,
     ConstraintType,
     PredicateProvider,
@@ -351,6 +352,11 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
         self_value = replace_known_sequence_value(ctx.vars["self"])
         if not isinstance(self_value, TypedValue):
             return UNRESOLVED_VALUE  # shouldn't happen
+        if not TypedValue(slice).is_assignable(key, ctx.visitor):
+            key = ctx.visitor._check_dunder_call(
+                ctx.ast_for_arg("obj"), Composite(key), "__index__", [], allow_call=True
+            )
+
         if isinstance(key, KnownValue):
             if isinstance(key.val, int):
                 if isinstance(self_value, SequenceIncompleteValue):
