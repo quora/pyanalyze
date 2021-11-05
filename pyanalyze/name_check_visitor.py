@@ -101,7 +101,6 @@ from .value import (
     CallableValue,
     CanAssignError,
     KnownValueWithTypeVars,
-    NewTypeValue,
     boolean_value,
     UNINITIALIZED_VALUE,
     UNRESOLVED_VALUE,
@@ -3267,17 +3266,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def _should_use_varname_value(self, value: Value) -> bool:
         """Returns whether a value should be replaced with VariableNameValue.
 
-        VariableNameValues are used for things like uids that are represented as integers, so we
-        mostly only want to replace integers. More generally, this function exists to avoid
-        throwing away more useful information like a KnownValue. Therefore, we want to avoid
-        replacing a function with a name that happens to ends in _uid, because knowing the exact
-        function being called gives more information than having a VariableNameValue. On the other
-        hand, an UNRESOLVED_VALUE carries no information, so we're fine always replacing it.
+        VariableNameValues are used for things like uids that are represented as integers, but
+        in places where we don't necessarily have precise annotations. Therefore, we replace
+        only UNRESOLVED_VALUE.
 
         """
-        return not isinstance(value, NewTypeValue) and (
-            value.is_type(int) or value is UNRESOLVED_VALUE
-        )
+        return value is UNRESOLVED_VALUE
 
     def _maybe_use_hardcoded_type(self, value: Value, name: str) -> Value:
         """Replaces a value with a name of hardcoded type where applicable."""
