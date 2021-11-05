@@ -1454,6 +1454,9 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_operator_constraints(self):
+        from typing import Union
+        from typing_extensions import Literal
+
         def capybara(cond):
             x = 1 if cond else 2
             assert_is_value(x, MultiValuedValue([KnownValue(1), KnownValue(2)]))
@@ -1465,6 +1468,22 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(2))
             else:
                 assert_is_value(x, KnownValue(1))
+
+        def pacarana(x: Union[Literal["x"], int]):
+            assert_is_value(x, KnownValue("x") | TypedValue(int))
+            if x == 0:
+                assert_is_value(x, KnownValue(0))
+            elif x == "x":
+                assert_is_value(x, KnownValue("x"))
+            else:
+                assert_is_value(x, TypedValue(int))
+
+        def moco(x: Union[Literal["x"], int]):
+            assert_is_value(x, KnownValue("x") | TypedValue(int))
+            if x != 0:
+                assert_is_value(x, KnownValue("x") | TypedValue(int))
+            else:
+                assert_is_value(x, KnownValue(0))
 
     @assert_passes()
     def test_preserve_annotated(self):

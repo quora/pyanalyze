@@ -2378,6 +2378,30 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(op, (ast.Is, ast.IsNot)):
             positive = isinstance(op, ast.Is)
             return Constraint(varname, ConstraintType.is_value, positive, other_val)
+        elif isinstance(op, (ast.Eq, ast.NotEq)):
+
+            def predicate_func(value: Value, positive: bool) -> Optional[Value]:
+                op = operator.eq if positive else operator.ne
+                if isinstance(value, KnownValue):
+                    try:
+                        result = op(value.val, other_val)
+                    except Exception:
+                        pass
+                    else:
+                        if not result:
+                            return None
+                elif positive:
+                    known_other = KnownValue(other_val)
+                    if value.is_assignable(known_other, self):
+                        return known_other
+                    else:
+                        return None
+                return value
+
+            positive = isinstance(op, ast.Eq)
+            return Constraint(
+                varname, ConstraintType.predicate, positive, predicate_func
+            )
         else:
             positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
 
