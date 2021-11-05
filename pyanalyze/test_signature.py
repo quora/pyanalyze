@@ -450,8 +450,8 @@ class TestCalls(TestNameCheckVisitorBase):
         def fn(qid):
             pass
 
-        uid = 1
-        fn(uid)
+        def capybara(uid):
+            fn(uid)
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_wrong_variable_name_value_in_attr(self):
