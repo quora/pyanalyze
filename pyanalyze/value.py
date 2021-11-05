@@ -511,7 +511,10 @@ class TypedValue(Value):
             args = self.args
         else:
             args = ()
-        generic_bases = ctx.get_generic_bases(self.typ, args)
+        if isinstance(self.typ, super):
+            generic_bases = ctx.get_generic_bases(self.typ.__self_class__, args)
+        else:
+            generic_bases = ctx.get_generic_bases(self.typ, args)
         if typ in generic_bases:
             return list(generic_bases[typ].values())
         return None
