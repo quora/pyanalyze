@@ -134,10 +134,9 @@ class TestStackedScopes(object):
     def test_typed_value_set(self):
         self.scopes.set("value", TypedValue(dict), None, None)
         assert_eq(TypedValue(dict), self.scopes.get("value", None, None))
-        self.scopes.set(
-            "value", DictIncompleteValue([]), None, None
-        )  # subclass of TypedValue
-        assert_eq(DictIncompleteValue([]), self.scopes.get("value", None, None))
+        div = DictIncompleteValue(dict, [])  # subclass of TypedValue
+        self.scopes.set("value", div, None, None)
+        assert_eq(div, self.scopes.get("value", None, None))
 
 
 class TestScoping(TestNameCheckVisitorBase):

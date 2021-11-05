@@ -236,7 +236,7 @@ def test_sequence_incomplete_value() -> None:
 
 
 def test_dict_incomplete_value() -> None:
-    val = value.DictIncompleteValue([(TypedValue(int), KnownValue("x"))])
+    val = value.DictIncompleteValue(dict, [(TypedValue(int), KnownValue("x"))])
     assert_eq("<dict containing {int: Literal['x']}>", str(val))
 
 
@@ -348,35 +348,40 @@ def test_typeddict_value() -> None:
     assert_can_assign(
         val,
         value.DictIncompleteValue(
-            [(KnownValue("a"), TypedValue(int)), (KnownValue("b"), TypedValue(str))]
+            dict,
+            [(KnownValue("a"), TypedValue(int)), (KnownValue("b"), TypedValue(str))],
         ),
     )
     assert_can_assign(
         val,
         value.DictIncompleteValue(
+            dict,
             [
                 (KnownValue("a"), TypedValue(int)),
                 (KnownValue("b"), TypedValue(str)),
                 (KnownValue("c"), value.UNRESOLVED_VALUE),
-            ]
+            ],
         ),
     )
     assert_can_assign(
         val,
         value.DictIncompleteValue(
+            dict,
             [
                 (KnownValue("a"), TypedValue(int)),
                 (value.UNRESOLVED_VALUE, TypedValue(str)),
-            ]
+            ],
         ),
     )
     assert_cannot_assign(
-        val, value.DictIncompleteValue([(value.UNRESOLVED_VALUE, TypedValue(str))])
+        val,
+        value.DictIncompleteValue(dict, [(value.UNRESOLVED_VALUE, TypedValue(str))]),
     )
     assert_cannot_assign(
         val,
         value.DictIncompleteValue(
-            [(KnownValue("a"), TypedValue(int)), (KnownValue("b"), TypedValue(float))]
+            dict,
+            [(KnownValue("a"), TypedValue(int)), (KnownValue("b"), TypedValue(float))],
         ),
     )
 

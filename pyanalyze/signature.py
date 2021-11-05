@@ -315,10 +315,11 @@ class Signature:
             )
         elif isinstance(argument, dict):
             return DictIncompleteValue(
+                dict,
                 [
                     (KnownValue(key), composite.value)
                     for key, composite in argument.items()
-                ]
+                ],
             )
         else:
             raise TypeError(repr(argument))

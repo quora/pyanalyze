@@ -176,6 +176,20 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
         def func() -> A:
             return A  # E: incompatible_return_value
 
+    @assert_passes()
+    def test_known_ordered(self):
+        from typing_extensions import OrderedDict
+
+        known_ordered = OrderedDict({1: 2})
+        bad_ordered = OrderedDict({"a": "b"})
+
+        def capybara(arg: OrderedDict[int, int]) -> None:
+            pass
+
+        def caller() -> None:
+            capybara(known_ordered)
+            capybara(bad_ordered)  # E: incompatible_argument
+
     @assert_fails(ErrorCode.undefined_name)
     def test_undefined_name(self):
         def run():
@@ -518,16 +532,17 @@ def run():
             )
             z = {a: b}
             assert_is_value(
-                z, DictIncompleteValue([(UNRESOLVED_VALUE, UNRESOLVED_VALUE)])
+                z, DictIncompleteValue(dict, [(UNRESOLVED_VALUE, UNRESOLVED_VALUE)])
             )
             q = {a: 3, b: 4}
             assert_is_value(
                 q,
                 DictIncompleteValue(
+                    dict,
                     [
                         (UNRESOLVED_VALUE, KnownValue(3)),
                         (UNRESOLVED_VALUE, KnownValue(4)),
-                    ]
+                    ],
                 ),
             )
 
@@ -950,7 +965,7 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
 
             vals3 = yield {1: square.asynq(1)}
             assert_is_value(
-                vals3, DictIncompleteValue([(KnownValue(1), TypedValue(int))])
+                vals3, DictIncompleteValue(dict, [(KnownValue(1), TypedValue(int))])
             )
 
             vals4 = yield {i: square.asynq(i) for i in [0, 1, 2]}

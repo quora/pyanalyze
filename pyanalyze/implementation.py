@@ -382,7 +382,7 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
             True,
             # This might create a duplicate but searching for that would
             # be O(n^2) and doesn't seem too useful.
-            DictIncompleteValue([*self_value.items, (key, value)]),
+            DictIncompleteValue(self_value.typ, [*self_value.items, (key, value)]),
         )
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(self_value, TypedValue):
@@ -534,7 +534,9 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
             for dict_key, dict_value in self_value.items
             if dict_key.is_assignable(key, ctx.visitor)
         ]
-        new_value = DictIncompleteValue([*self_value.items, (key, default)])
+        new_value = DictIncompleteValue(
+            self_value.typ, [*self_value.items, (key, default)]
+        )
         no_return_unless = Constraint(
             varname, ConstraintType.is_value_object, True, new_value
         )
