@@ -748,7 +748,7 @@ class DictIncompleteValue(GenericValue):
             [
                 (key.substitute_typevars(typevars), value.substitute_typevars(typevars))
                 for key, value in self.items
-            ]
+            ],
         )
 
 
@@ -1729,7 +1729,7 @@ def replace_known_sequence_value(value: Value) -> Value:
         elif isinstance(value.val, dict):
             return DictIncompleteValue(
                 type(value.val),
-                [(KnownValue(k), KnownValue(v)) for k, v in value.val.items()]
+                [(KnownValue(k), KnownValue(v)) for k, v in value.val.items()],
             )
     return value
 
