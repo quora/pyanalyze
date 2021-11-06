@@ -752,18 +752,15 @@ class DictIncompleteValue(GenericValue):
 
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
-    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys.
+    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys."""
 
-    Currently does not handle the distinction between required and non-required keys.
+    items: Dict[str, Tuple[bool, Value]]
+    """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
+    ones as (False, value)."""
 
-    """
-
-    items: Dict[str, Value]
-    """The items of the ``TypedDict``."""
-
-    def __init__(self, items: Dict[str, Value]) -> None:
+    def __init__(self, items: Dict[str, Tuple[bool, Value]]) -> None:
         if items:
-            value_type = unite_values(*items.values())
+            value_type = unite_values(*[val for _, val in items.values()])
         else:
             value_type = UNRESOLVED_VALUE
         super().__init__(dict, (TypedValue(str), value_type))
@@ -787,9 +784,9 @@ class TypedDictValue(GenericValue):
             }
             has_unknowns = len(known_part) < len(other.items)
             tv_maps = []
-            for key, value in self.items.items():
+            for key, (is_required, value) in self.items.items():
                 if key not in known_part:
-                    if not has_unknowns:
+                    if not has_unknowns and is_required:
                         return CanAssignError(f"Key {key} is missing in {other}")
                 else:
                     tv_map = value.can_assign(known_part[key], ctx)
@@ -799,36 +796,43 @@ class TypedDictValue(GenericValue):
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, TypedDictValue):
             tv_maps = []
-            for key, value in self.items.items():
+            for key, (is_required, value) in self.items.items():
                 if key not in other.items:
-                    return CanAssignError(f"Key {key} is missing in {other}")
-                tv_map = value.can_assign(other.items[key], ctx)
-                if isinstance(tv_map, CanAssignError):
-                    return CanAssignError(f"Types for key {key} are incompatible")
-                tv_maps.append(tv_map)
+                    if is_required:
+                        return CanAssignError(f"Key {key} is missing in {other}")
+                else:
+                    tv_map = value.can_assign(other.items[key][1], ctx)
+                    if isinstance(tv_map, CanAssignError):
+                        return CanAssignError(f"Types for key {key} are incompatible")
+                    tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, KnownValue) and isinstance(other.val, dict):
             tv_maps = []
-            for key, value in self.items.items():
+            for key, (is_required, value) in self.items.items():
                 if key not in other.val:
-                    return CanAssignError(f"Key {key} is missing in {other}")
-                tv_map = value.can_assign(KnownValue(other.val[key]), ctx)
-                if isinstance(tv_map, CanAssignError):
-                    return CanAssignError(f"Types for key {key} are incompatible")
-                tv_maps.append(tv_map)
+                    if is_required:
+                        return CanAssignError(f"Key {key} is missing in {other}")
+                else:
+                    tv_map = value.can_assign(KnownValue(other.val[key]), ctx)
+                    if isinstance(tv_map, CanAssignError):
+                        return CanAssignError(f"Types for key {key} are incompatible")
+                    tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return TypedDictValue(
             {
-                key: value.substitute_typevars(typevars)
-                for key, value in self.items.items()
+                key: (is_required, value.substitute_typevars(typevars))
+                for key, (is_required, value) in self.items.items()
             }
         )
 
     def __str__(self) -> str:
-        items = [f'"{key}": {value}' for key, value in self.items.items()]
+        items = [
+            f'"{key}": {value if required else "NotRequired[" + str(value) + "]"}'
+            for key, (required, value) in self.items.items()
+        ]
         return "TypedDict({%s})" % ", ".join(items)
 
     def __hash__(self) -> int:
@@ -836,7 +840,7 @@ class TypedDictValue(GenericValue):
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
-        for value in self.items.values():
+        for _, value in self.items.values():
             yield from value.walk_values()
 
 

@@ -423,7 +423,7 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
                 arg="k",
             )
         else:
-            expected_type = self_value.items[key.val]
+            _, expected_type = self_value.items[key.val]
             tv_map = expected_type.can_assign(value, ctx.visitor)
             if isinstance(tv_map, CanAssignError):
                 ctx.show_error(
@@ -510,7 +510,8 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
                 return UNRESOLVED_VALUE
             elif isinstance(key, KnownValue):
                 try:
-                    return self_value.items[key.val]
+                    _, value = self_value.items[key.val]
+                    return value
                 # probably KeyError, but catch anything in case it's an
                 # unhashable str subclass or something
                 except Exception:
@@ -565,7 +566,7 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
             return ImplReturn(UNRESOLVED_VALUE)
         elif isinstance(key, KnownValue):
             try:
-                expected_type = self_value.items[key.val]
+                _, expected_type = self_value.items[key.val]
             # probably KeyError, but catch anything in case it's an
             # unhashable str subclass or something
             except Exception:
@@ -579,7 +580,7 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
                         ErrorCode.incompatible_argument,
                         arg="default",
                     )
-                return ImplReturn(self_value.items[key.val])
+                return ImplReturn(expected_type)
         ctx.show_error(
             f"Key {key} does not exist in TypedDict",
             ErrorCode.invalid_typeddict_key,

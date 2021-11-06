@@ -1030,7 +1030,7 @@ def can_assign_var_keyword(
             return CanAssignError(
                 f"parameter {my_param.name!r} is not accepted by {kwargs_annotation}"
             )
-        their_annotation = kwargs_annotation.items[my_param.name]
+        their_annotation = kwargs_annotation.items[my_param.name][1]
         tv_map = their_annotation.can_assign(my_annotation, ctx)
         if isinstance(tv_map, CanAssignError):
             return CanAssignError(
