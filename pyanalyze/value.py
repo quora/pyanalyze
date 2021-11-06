@@ -801,7 +801,7 @@ class TypedDictValue(GenericValue):
                     if is_required:
                         return CanAssignError(f"Key {key} is missing in {other}")
                 else:
-                    tv_map = value.can_assign(other.items[key], ctx)
+                    tv_map = value.can_assign(other.items[key][1], ctx)
                     if isinstance(tv_map, CanAssignError):
                         return CanAssignError(f"Types for key {key} are incompatible")
                     tv_maps.append(tv_map)
