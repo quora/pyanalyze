@@ -408,7 +408,7 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
     key = ctx.vars["k"]
     value = ctx.vars["v"]
     # apparently for a[b] = c we get passed the AST node for a
-    varname = ctx.visitor.varname_for_constraint(ctx.node)
+    varname = ctx.varname_for_arg("self")
     if isinstance(self_value, TypedDictValue):
         if not isinstance(key, KnownValue) or not isinstance(key.val, str):
             ctx.show_error(
