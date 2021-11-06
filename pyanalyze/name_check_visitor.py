@@ -3325,13 +3325,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and isinstance(index, KnownValue)
             and is_hashable(index.val)
         ):
-            if isinstance(root_composite.varname, str):
-                composite_var = CompositeVariable(root_composite.varname, (index,))
-            else:
-                composite_var = CompositeVariable(
-                    root_composite.varname.varname,
-                    (*root_composite.varname.attributes, index),
-                )
+            composite_var = root_composite.get_extended_varname(index)
         else:
             composite_var = None
         if isinstance(root_composite.value, MultiValuedValue):
@@ -3535,15 +3529,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self.yield_checker.record_usage(attr_str, node)
 
         root_composite = self.composite_from_node(node.value)
-        root_varname = root_composite.varname
-        if root_varname is None:
-            composite = None
-        elif isinstance(root_varname, str):
-            composite = CompositeVariable(root_varname, (node.attr,))
-        else:
-            composite = CompositeVariable(
-                root_varname.varname, (*root_varname.attributes, node.attr)
-            )
+        composite = root_composite.get_extended_varname(node.attr)
         if self._is_write_ctx(node.ctx):
             if (
                 composite is not None
