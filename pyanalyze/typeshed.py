@@ -228,6 +228,8 @@ class TypeshedFinder(object):
                             return UNINITIALIZED_VALUE  # a method
                         elif isinstance(child_info.ast, ast3.AsyncFunctionDef):
                             return UNINITIALIZED_VALUE
+                        elif isinstance(child_info.ast, ast3.Assign):
+                            return UNINITIALIZED_VALUE
                     assert False, repr(child_info)
                 return UNINITIALIZED_VALUE
             elif isinstance(info.ast, ast3.Assign):
