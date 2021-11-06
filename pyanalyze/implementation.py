@@ -627,6 +627,25 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
         return ImplReturn(UNRESOLVED_VALUE)
 
 
+def _dict_keys_impl(ctx: CallContext) -> Value:
+    self_value = ctx.vars["self"]
+    key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
+    return GenericValue(collections.abc.KeysView, [key_type])
+
+
+def _dict_items_impl(ctx: CallContext) -> Value:
+    self_value = ctx.vars["self"]
+    key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
+    value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
+    return GenericValue(collections.abc.ItemsView, [key_type, value_type])
+
+
+def _dict_values_impl(ctx: CallContext) -> Value:
+    self_value = ctx.vars["self"]
+    value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
+    return GenericValue(collections.abc.ValuesView, [value_type])
+
+
 def _list_add_impl(ctx: CallContext) -> ImplReturn:
     def inner(left: Value, right: Value) -> Value:
         left = replace_known_sequence_value(left)
@@ -1125,6 +1144,39 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=dict.setdefault,
             impl=_dict_setdefault_impl,
+        ),
+        # Implementations of keys/items/values to compensate for incomplete
+        # typeshed support. In the stubs these return instances of a private class
+        # that doesn't exist in reality.
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=dict.keys,
+            impl=_dict_keys_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=dict.values,
+            impl=_dict_values_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=dict.items,
+            impl=_dict_items_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=collections.OrderedDict.keys,
+            impl=_dict_keys_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=collections.OrderedDict.values,
+            impl=_dict_values_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=collections.OrderedDict.items,
+            impl=_dict_items_impl,
         ),
         Signature.make(
             [
