@@ -1487,9 +1487,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else qcore.override(self, "current_class", None)
             )
             with class_ctx:
-                args = self._visit_function_args(
-                    node, function_info, defaults, kw_defaults
-                )
+                self._visit_function_args(node, function_info, defaults, kw_defaults)
 
             with qcore.override(
                 self, "state", VisitorState.collect_names
@@ -1629,7 +1627,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         function_info: FunctionInfo,
         defaults: Sequence[Optional[Value]],
         kw_defaults: Sequence[Optional[Value]],
-    ) -> List[ast.arg]:
+    ) -> None:
         """Visits and checks the arguments to a function. Returns the list of argument names."""
         self._check_method_first_arg(node, function_info=function_info)
 
@@ -1708,8 +1706,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 if arg_value is not UNRESOLVED_VALUE:
                     value = GenericValue(dict, [TypedValue(str), arg_value])
                 self.scopes.set(kwarg, value, kwarg, self.state)
-
-        return args
 
     def _value_of_annotated_arg(self, arg: ast.arg) -> Value:
         if arg.annotation is None:
@@ -4308,7 +4304,6 @@ def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
     if module is None:
         module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
     else:
-        module_vars = {key: KnownValue(value) for key, value in module.__dict__.items()}
         module_vars = {}
         annotations = getattr(module, "__annotations__", {})
         for key, value in module.__dict__.items():
@@ -4391,8 +4386,6 @@ def _is_coroutine_function(obj: object) -> bool:
 
 def _has_annotation_for_attr(typ: type, attr: str) -> bool:
     try:
-        # TODO maybe type.__annotations__ should be added to typeshed?
-        # static analysis: ignore[undefined_attribute]
         return attr in typ.__annotations__
     except Exception:
         # __annotations__ doesn't exist or isn't a dict

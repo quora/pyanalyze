@@ -299,7 +299,6 @@ class BaseNodeVisitor(ast.NodeVisitor):
         """Runs the check for all files in scope or changed files if we are test-local."""
         if "settings" not in kwargs:
             kwargs["settings"] = cls._get_default_settings()
-        all_failures = []
         files = cls.get_files_to_check(include_tests)
         all_failures = cls._run_on_files(files, **kwargs)
         if assert_passes:
@@ -471,19 +470,17 @@ class BaseNodeVisitor(ast.NodeVisitor):
     ) -> Sequence[str]:
         # only apply the first change because that change might affect other fixes
         # that test_scope came up for that file. So we break after finding first applicable fix.
-        for change in changes:
+        if changes:
             change = changes[0]
             additions = change.lines_to_add
-            if additions is None:
-                continue
-            lines_to_remove = change.linenos_to_delete
-            max_line = max(lines_to_remove)
-            # add the additions after the max_line
-            lines = lines[:max_line] + additions + lines[max_line:]
-            lines_to_remove = sorted(lines_to_remove, reverse=True)
-            for lineno in lines_to_remove:
-                del lines[lineno - 1]
-            break
+            if additions is not None:
+                lines_to_remove = change.linenos_to_delete
+                max_line = max(lines_to_remove)
+                # add the additions after the max_line
+                lines = lines[:max_line] + additions + lines[max_line:]
+                lines_to_remove = sorted(lines_to_remove, reverse=True)
+                for lineno in lines_to_remove:
+                    del lines[lineno - 1]
         return lines
 
     @classmethod
@@ -944,7 +941,7 @@ class NodeTransformer(ast.NodeVisitor):
 
     def generic_visit(self, node: ast.AST) -> ast.AST:
         attributes = {}
-        for field, old_value in ast.iter_fields(node):
+        for field, _ in ast.iter_fields(node):
             old_value = getattr(node, field, None)
             if isinstance(old_value, list):
                 new_value = []
