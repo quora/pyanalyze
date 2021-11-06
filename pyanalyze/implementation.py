@@ -628,20 +628,26 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
 
 
 def _dict_keys_impl(ctx: CallContext) -> Value:
-    self_value = ctx.vars["self"]
+    self_value = replace_known_sequence_value(ctx.vars["self"])
+    if not isinstance(self_value, TypedValue):
+        return TypedValue(collections.abc.KeysView)
     key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
     return GenericValue(collections.abc.KeysView, [key_type])
 
 
 def _dict_items_impl(ctx: CallContext) -> Value:
-    self_value = ctx.vars["self"]
+    self_value = replace_known_sequence_value(ctx.vars["self"])
+    if not isinstance(self_value, TypedValue):
+        return TypedValue(collections.abc.ItemsView)
     key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
     value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
     return GenericValue(collections.abc.ItemsView, [key_type, value_type])
 
 
 def _dict_values_impl(ctx: CallContext) -> Value:
-    self_value = ctx.vars["self"]
+    self_value = replace_known_sequence_value(ctx.vars["self"])
+    if not isinstance(self_value, TypedValue):
+        return TypedValue(collections.abc.ValuesView)
     value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
     return GenericValue(collections.abc.ValuesView, [value_type])
 
