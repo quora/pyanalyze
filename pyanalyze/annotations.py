@@ -282,9 +282,13 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             args_vals = [_type_from_runtime(arg, ctx) for arg in args]
             return SequenceIncompleteValue(tuple, args_vals)
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
+        required_keys = getattr(val, "__required_keys__", None)
         return TypedDictValue(
             {
-                key: _type_from_runtime(value, ctx)
+                key: (
+                    key in required_keys if required_keys is not None else True,
+                    _type_from_runtime(value, ctx),
+                )
                 for key, value in val.__annotations__.items()
             }
         )

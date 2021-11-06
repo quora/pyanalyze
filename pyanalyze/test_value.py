@@ -309,7 +309,9 @@ def test_variable_name_value() -> None:
 
 
 def test_typeddict_value() -> None:
-    val = value.TypedDictValue({"a": TypedValue(int), "b": TypedValue(str)})
+    val = value.TypedDictValue(
+        {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
+    )
     # dict iteration order in some Python versions is not deterministic
     assert_in(
         str(val), ['TypedDict({"a": int, "b": str})', 'TypedDict({"b": str, "a": int})']
@@ -331,18 +333,28 @@ def test_typeddict_value() -> None:
     # TypedDictValue
     assert_can_assign(val, val)
     assert_can_assign(
-        val, value.TypedDictValue({"a": KnownValue(1), "b": TypedValue(str)})
+        val,
+        value.TypedDictValue(
+            {"a": (True, KnownValue(1)), "b": (True, TypedValue(str))}
+        ),
     )
     assert_can_assign(
         val,
         value.TypedDictValue(
-            {"a": KnownValue(1), "b": TypedValue(str), "c": TypedValue(float)}
+            {
+                "a": (True, KnownValue(1)),
+                "b": (True, TypedValue(str)),
+                "c": (True, TypedValue(float)),
+            }
         ),
     )
     assert_cannot_assign(
-        val, value.TypedDictValue({"a": KnownValue(1), "b": TypedValue(int)})
+        val,
+        value.TypedDictValue(
+            {"a": (True, KnownValue(1)), "b": (True, TypedValue(int))}
+        ),
     )
-    assert_cannot_assign(val, value.TypedDictValue({"b": TypedValue(str)}))
+    assert_cannot_assign(val, value.TypedDictValue({"b": (True, TypedValue(str))}))
 
     # DictIncompleteValue
     assert_can_assign(

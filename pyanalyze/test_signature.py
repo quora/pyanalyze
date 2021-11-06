@@ -1,7 +1,6 @@
 # static analysis: ignore
 from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
-from pyanalyze.implementation import assert_is_value
 from qcore.asserts import assert_eq
 
 from .value import (
@@ -265,13 +264,19 @@ class TestCanAssign:
         )
         self.can(three_ints_sig, Signature.make([dict_int]))
         good_td = TypedDictValue(
-            {"a": TypedValue(int), "b": TypedValue(int), "c": TypedValue(int)}
+            {
+                "a": (True, TypedValue(int)),
+                "b": (True, TypedValue(int)),
+                "c": (True, TypedValue(int)),
+            }
         )
         self.can(
             three_ints_sig,
             Signature.make([P("a", annotation=good_td, kind=P.VAR_KEYWORD)]),
         )
-        bad_td = TypedDictValue({"a": TypedValue(int), "b": TypedValue(int)})
+        bad_td = TypedDictValue(
+            {"a": (True, TypedValue(int)), "b": (True, TypedValue(int))}
+        )
         self.cannot(
             three_ints_sig,
             Signature.make([P("a", annotation=bad_td, kind=P.VAR_KEYWORD)]),
