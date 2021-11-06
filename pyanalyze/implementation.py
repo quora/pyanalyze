@@ -434,6 +434,8 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
                 )
         return ImplReturn(KnownValue(None))
     elif isinstance(self_value, DictIncompleteValue):
+        if varname is None:
+            return ImplReturn(KnownValue(None))
         no_return_unless = Constraint(
             varname,
             ConstraintType.is_value_object,
@@ -453,6 +455,8 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
             no_return_unless = Constraint(
                 varname, ConstraintType.is_value_object, True, constrained_value
             )
+            if varname is None:
+                return ImplReturn(KnownValue(None))
             return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
         else:
             tv_map = key_type.can_assign(key, ctx.visitor)
