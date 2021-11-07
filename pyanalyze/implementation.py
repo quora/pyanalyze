@@ -35,7 +35,6 @@ from .value import (
     NO_RETURN_VALUE,
     KNOWN_MUTABLE_TYPES,
     Value,
-    VariableNameValue,
     WeakExtension,
     make_weak,
     unite_values,
