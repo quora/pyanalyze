@@ -1133,7 +1133,31 @@ class MultiValuedValue(Value):
     def __str__(self) -> str:
         if not self.vals:
             return "NoReturn"
-        return "Union[%s]" % ", ".join(map(str, self.vals))
+        literals: List[KnownValue] = []
+        has_none = False
+        others: List[Value] = []
+        for val in self.vals:
+            if val == KnownValue(None):
+                has_none = True
+            elif isinstance(val, KnownValue):
+                literals.append(val)
+            else:
+                others.append(val)
+        if not others:
+            if has_none:
+                literals.append(KnownValue(None))
+            body = ", ".join(repr(val.val) for val in literals)
+            return f"Literal[{body}]"
+        else:
+            if not literals and has_none and len(others) == 1:
+                return f"Optional[{others[0]}]"
+            elements = [str(val) for val in others]
+            if literals:
+                body = ", ".join(repr(val.val) for val in literals)
+                elements.append(f"Literal[{body}]")
+            if has_none:
+                elements.append("None")
+            return f"Union[{', '.join(elements)}]"
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
