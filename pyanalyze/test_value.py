@@ -195,6 +195,9 @@ def test_subclass_value() -> None:
     assert_eq(TypedValue(str), val.typ)
     assert val.is_type(str)
     assert not val.is_type(int)
+    val = SubclassValue(TypedValue(float))
+    assert_can_assign(val, KnownValue(int))
+    assert_can_assign(val, SubclassValue(TypedValue(int)))
 
 
 def test_generic_value() -> None:

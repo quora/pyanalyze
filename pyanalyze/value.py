@@ -972,9 +972,9 @@ class SubclassValue(Value):
             return self.typ.can_assign(other.typ, ctx)
         elif isinstance(other, KnownValue):
             if isinstance(other.val, type):
-                if isinstance(self.typ, TypedValue) and issubclass(
-                    other.val, self.typ.typ
-                ):
+                if isinstance(self.typ, TypedValue) and ctx.make_type_object(
+                    other.val
+                ).is_assignable_to_type(self.typ.typ):
                     return {}
                 elif isinstance(self.typ, TypeVarValue):
                     return {self.typ.typevar: TypedValue(other.val)}
