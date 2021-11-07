@@ -12,10 +12,10 @@ these subclasses and some related utilities.
     from pyanalyze import dump_value
 
     def function(x: int, y: list[int], z: Any):
-        dump_value(1)  # KnownValue(1)
-        dump_value(x)  # TypedValue(int)
-        dump_value(y)  # GenericValue(list, [TypedValue(int)])
-        dump_value(z)  # UnresolvedValue()
+        dump_value(1)  # Literal[1]
+        dump_value(x)  # int
+        dump_value(y)  # list[int]
+        dump_value(z)  # Any
 
 """
 
@@ -40,6 +40,8 @@ from typing import (
     TypeVar,
 )
 from typing_extensions import Literal
+
+from qcore import enum
 
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
@@ -75,7 +77,7 @@ class Value:
         This is the primary mechanism used for checking type compatibility.
 
         """
-        if other is UNRESOLVED_VALUE or isinstance(other, VariableNameValue):
+        if isinstance(other, AnyValue):
             return {}
         elif isinstance(other, MultiValuedValue):
             tv_maps = []
@@ -270,9 +272,34 @@ def dump_value(value: object) -> None:
     pass
 
 
+class AnySource(enum.Enum):
+    """Sources of Any values."""
+
+    default = 1
+    """Any that has not been categorized."""
+    explicit = 2
+    """The user wrote 'Any' in an annotation."""
+    error = 3
+    """An error occurred."""
+    unreachable = 4
+    """Value that is inferred to be unreachable."""
+    inference = 5
+    """Insufficiently powerful type inference."""
+    unannotated = 6
+    """Unannotated code."""
+    variable_name = 7
+    """A :class:`VariableNameValue`."""
+    from_another = 8
+    """An Any derived from another Any, for example as an attribute."""
+
+
 @dataclass(frozen=True)
-class UnresolvedValue(Value):
+class AnyValue(Value):
     """An unknown value, equivalent to ``typing.Any``."""
+
+    source: AnySource
+    """The source of this value, such as a user-defined annotation
+    or a previous error."""
 
     def __str__(self) -> str:
         return "Any"
@@ -281,8 +308,13 @@ class UnresolvedValue(Value):
         return {}  # Always allowed
 
 
-UNRESOLVED_VALUE = UnresolvedValue()
-"""The only instance of :class:`UnresolvedValue`."""
+UNRESOLVED_VALUE = AnyValue(AnySource.default)
+"""The default instance of :class:`AnyValue`.
+
+In the future, this should be replaced with instances of
+`AnyValue` with a specific source.
+
+"""
 
 
 @dataclass(frozen=True)
@@ -469,7 +501,7 @@ class TypedValue(Value):
                 other.typ.typ, self.typ
             ):
                 return {}
-            elif isinstance(other.typ, TypeVarValue) or other.typ is UNRESOLVED_VALUE:
+            elif isinstance(other.typ, (TypeVarValue, AnyValue)):
                 return {}
         elif isinstance(other, UnboundMethodValue):
             if self.typ in {Callable, collections.abc.Callable, object}:
@@ -477,7 +509,7 @@ class TypedValue(Value):
         return super().can_assign(other, ctx)
 
     def can_assign_thrift_enum(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if other is UNRESOLVED_VALUE:
+        if isinstance(other, AnyValue):
             return {}
         elif isinstance(other, KnownValue):
             if not isinstance(other.val, int):
@@ -1012,7 +1044,7 @@ class SubclassValue(Value):
     def make(cls, origin: Value) -> Value:
         if isinstance(origin, MultiValuedValue):
             return unite_values(*[cls.make(val) for val in origin.vals])
-        elif origin is UNRESOLVED_VALUE:
+        elif isinstance(origin, AnyValue):
             # Type[Any] is equivalent to plain type
             return TypedValue(type)
         elif isinstance(origin, (TypeVarValue, TypedValue)):
@@ -1383,7 +1415,7 @@ class AnnotatedValue(Value):
 
 
 @dataclass(frozen=True)
-class VariableNameValue(Value):
+class VariableNameValue(AnyValue):
     """Value that is stored in a variable associated with a particular kind of value.
 
     For example, any variable named `uid` will get resolved into a ``VariableNameValue``
@@ -1399,7 +1431,11 @@ class VariableNameValue(Value):
 
     """
 
-    varnames: List[str]
+    def __init__(self, varnames: Iterable[str]) -> None:
+        super().__init__(AnySource.variable_name)
+        object.__setattr__(self, "varnames", tuple(varnames))
+
+    varnames: Tuple[str, ...]
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if not isinstance(other, VariableNameValue):

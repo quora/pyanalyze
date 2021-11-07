@@ -49,6 +49,7 @@ from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
     AnnotatedValue,
+    AnyValue,
     KnownValue,
     ReferencingValue,
     SubclassValue,
@@ -267,11 +268,11 @@ class Constraint(AbstractConstraint):
             yield UNINITIALIZED_VALUE
             return
         if self.constraint_type == ConstraintType.is_instance:
-            if inner_value is UNRESOLVED_VALUE:
+            if isinstance(inner_value, AnyValue):
                 if self.positive:
                     yield TypedValue(self.value)
                 else:
-                    yield UNRESOLVED_VALUE
+                    yield inner_value
             elif isinstance(inner_value, KnownValue):
                 if self.positive:
                     if isinstance(inner_value.val, self.value):
@@ -304,7 +305,7 @@ class Constraint(AbstractConstraint):
         elif self.constraint_type == ConstraintType.is_value:
             if self.positive:
                 known_val = KnownValue(self.value)
-                if inner_value is UNRESOLVED_VALUE:
+                if isinstance(inner_value, AnyValue):
                     yield known_val
                 elif isinstance(inner_value, KnownValue):
                     if inner_value.val is self.value:
@@ -569,7 +570,7 @@ class Scope:
     ) -> None:
         if varname not in self:
             self.variables[varname] = value
-        elif value is UNRESOLVED_VALUE or not safe_equals(
+        elif isinstance(value, AnyValue) or not safe_equals(
             self.variables[varname], value
         ):
             existing = self.variables[varname]

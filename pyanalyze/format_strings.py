@@ -28,6 +28,7 @@ from typing_extensions import Literal
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
+    AnyValue,
     KnownValue,
     DictIncompleteValue,
     SequenceIncompleteValue,
@@ -150,7 +151,8 @@ class ConversionSpecifier:
         """Produces any errors from passing the given object to this specifier."""
         if isinstance(arg, AnnotatedValue):
             arg = arg.value
-        if arg is UNRESOLVED_VALUE or isinstance(arg, MultiValuedValue):
+        # TODO: handle MultiValuedValue usefully
+        if isinstance(arg, AnyValue) or isinstance(arg, MultiValuedValue):
             return
         if self.conversion_type in _NUMERIC_CONVERSION_TYPES:
             # to deal with some code that sets global state to None and changes it later
@@ -346,10 +348,10 @@ class PercentFormatString:
             else:
                 # it's a tuple but we don't know what's in it, so assume it's ok
                 return
-        elif args is UNRESOLVED_VALUE:
+        elif isinstance(args, AnyValue):
             return
         elif isinstance(args, MultiValuedValue):
-            if any(v is UNRESOLVED_VALUE or v.is_type(tuple) for v in args.vals):
+            if any(isinstance(v, AnyValue) or v.is_type(tuple) for v in args.vals):
                 return
             else:
                 all_args = (args,)

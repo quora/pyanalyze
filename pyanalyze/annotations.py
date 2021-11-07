@@ -60,6 +60,7 @@ from .find_unused import used
 from .signature import SigParameter, Signature
 from .value import (
     AnnotatedValue,
+    AnyValue,
     CallableValue,
     CustomCheckExtension,
     Extension,
@@ -538,8 +539,8 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 )
             ctx.show_error(f"Unrecognized subscripted annotation: {root}")
             return UNRESOLVED_VALUE
-    elif value is UNRESOLVED_VALUE:
-        return UNRESOLVED_VALUE
+    elif isinstance(value, AnyValue):
+        return value
     else:
         ctx.show_error(f"Unrecognized annotation {value}")
         return UNRESOLVED_VALUE
@@ -790,7 +791,7 @@ def _value_of_origin_args(
             origin = extra_origin
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
-            if all(val is UNRESOLVED_VALUE for val in args_vals):
+            if all(isinstance(val, AnyValue) for val in args_vals):
                 return _maybe_typed_value(origin, ctx)
             return GenericValue(origin, args_vals)
         else:

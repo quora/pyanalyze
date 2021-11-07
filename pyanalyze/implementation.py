@@ -16,6 +16,7 @@ from .stacked_scopes import (
 from .signature import ANY_SIGNATURE, SigParameter, Signature, ImplReturn, CallContext
 from .value import (
     AnnotatedValue,
+    AnyValue,
     CallableValue,
     CanAssignError,
     HasAttrGuardExtension,
@@ -386,7 +387,7 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
             else:
                 ctx.show_error(f"Invalid {typ.__name__} key {key}")
                 return UNRESOLVED_VALUE
-        elif key is UNRESOLVED_VALUE or isinstance(key, VariableNameValue):
+        elif isinstance(key, AnyValue):
             return UNRESOLVED_VALUE
         else:
             ctx.show_error(f"Invalid {typ.__name__} key {key}")
