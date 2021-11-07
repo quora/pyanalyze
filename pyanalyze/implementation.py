@@ -452,11 +452,11 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
             key_type = unite_values(key_type, key)
             value_type = unite_values(value_type, value)
             constrained_value = make_weak(GenericValue(dict, [key_type, value_type]))
+            if varname is None:
+                return ImplReturn(KnownValue(None))
             no_return_unless = Constraint(
                 varname, ConstraintType.is_value_object, True, constrained_value
             )
-            if varname is None:
-                return ImplReturn(KnownValue(None))
             return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
         else:
             tv_map = key_type.can_assign(key, ctx.visitor)
