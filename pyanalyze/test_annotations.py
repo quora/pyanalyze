@@ -5,6 +5,7 @@ from .implementation import assert_is_value
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
+    AnyValue,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
@@ -1018,7 +1019,7 @@ class TestCustomCheck(TestNameCheckVisitorBase):
                         return CanAssignError(
                             f"Value {value.val!r} is not greater than {self.value}"
                         )
-                elif value is UNRESOLVED_VALUE:
+                elif isinstance(value, AnyValue):
                     return {}
                 else:
                     return CanAssignError(f"Size of {value} is not known")

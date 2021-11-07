@@ -98,6 +98,8 @@ from .yield_checker import YieldChecker
 from .type_object import get_mro
 from .value import (
     AnnotatedValue,
+    AnySource,
+    AnyValue,
     CallableValue,
     CanAssignError,
     KnownValueWithTypeVars,
@@ -1518,7 +1520,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return_set: Value,
     ) -> Tuple[Value, bool, bool]:
         # Ignore generators for now.
-        if return_set is UNRESOLVED_VALUE or self.is_generator:
+        if isinstance(return_set, AnyValue) or self.is_generator:
             has_return = True
         elif return_set is UNINITIALIZED_VALUE:
             has_return = False
@@ -1694,7 +1696,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 # the vararg is wrapped in an arg object
                 vararg = node.args.vararg.arg
                 arg_value = self._value_of_annotated_arg(node.args.vararg)
-                if arg_value is UNRESOLVED_VALUE:
+                if isinstance(arg_value, AnyValue):
                     value = TypedValue(tuple)
                 else:
                     value = GenericValue(tuple, [arg_value])
@@ -1922,7 +1924,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             try:
                 pseudo_module = importer.import_module(pseudo_module_name, f.name)
             except Exception:
-                # sets the name of the imported module to an UnresolvedValue so we don't get further
+                # sets the name of the imported module to Any so we don't get further
                 # errors
                 self._handle_imports(node.names)
                 return
@@ -2043,14 +2045,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             with qcore.override(self, "in_comprehension_body", True):
                 key_value = self.visit(node.key)
                 value_value = self.visit(node.value)
-            if key_value is UNRESOLVED_VALUE and value_value is UNRESOLVED_VALUE:
+            if isinstance(key_value, AnyValue) and isinstance(value_value, AnyValue):
                 return TypedValue(dict)
             else:
                 return make_weak(GenericValue(dict, [key_value, value_value]))
 
         with qcore.override(self, "in_comprehension_body", True):
             member_value = self.visit(node.elt)
-        if member_value is UNRESOLVED_VALUE:
+        if isinstance(member_value, AnyValue):
             return TypedValue(typ)
         else:
             if typ is types.GeneratorType:
@@ -2583,7 +2585,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # Instead, we return Any if that's the right_result. This handles
             # the case above but might return the wrong result in some other rare
             # cases.
-            if right_result is UNRESOLVED_VALUE:
+            if isinstance(right_result, AnyValue):
                 return UNRESOLVED_VALUE
             return left_result
 
@@ -2713,7 +2715,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self._unwrap_yield_result(node, KnownValue(elt)) for elt in value.val
             ]
             return KnownValue(values)
-        elif value is UNRESOLVED_VALUE:
+        elif isinstance(value, AnyValue):
             return UNRESOLVED_VALUE
         elif isinstance(value, AnnotatedValue):
             return self._unwrap_yield_result(node, value.value)
@@ -3299,11 +3301,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         only UNRESOLVED_VALUE.
 
         """
-        return value is UNRESOLVED_VALUE
+        return (
+            isinstance(value, AnyValue) and value.source is not AnySource.variable_name
+        )
 
     def _maybe_use_hardcoded_type(self, value: Value, name: str) -> Value:
         """Replaces a value with a name of hardcoded type where applicable."""
-        if value is not UNRESOLVED_VALUE and not isinstance(value, MultiValuedValue):
+        if not isinstance(value, (AnyValue, MultiValuedValue)):
             return value
 
         try:
@@ -3423,7 +3427,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_value = UNRESOLVED_VALUE
 
                 if (
-                    return_value is UNRESOLVED_VALUE
+                    self._should_use_varname_value(return_value)
                     and isinstance(index, KnownValue)
                     and isinstance(index.val, str)
                 ):
@@ -3972,7 +3976,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return return_value, constraint
         else:
             if (
-                return_value is UNRESOLVED_VALUE
+                isinstance(return_value, AnyValue)
                 and isinstance(callee_wrapped, KnownValue)
                 and asynq.is_pure_async_fn(callee_wrapped.val)
             ):
@@ -4041,7 +4045,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # is consistent with the base class.
             # TODO: make the return annotation be of the type of the value.
             return ANY_SIGNATURE
-        elif value is UNRESOLVED_VALUE or isinstance(value, VariableNameValue):
+        elif isinstance(value, AnyValue):
             return ANY_SIGNATURE
         else:
             return None

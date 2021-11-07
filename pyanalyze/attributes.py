@@ -20,6 +20,7 @@ from .signature import Signature, MaybeSignature
 from .stacked_scopes import Composite
 from .value import (
     AnnotatedValue,
+    AnyValue,
     CallableValue,
     HasAttrExtension,
     KnownValueWithTypeVars,
@@ -34,7 +35,6 @@ from .value import (
     SubclassValue,
     TypedValue,
     TypeVarValue,
-    VariableNameValue,
 )
 
 # these don't appear to be in the standard types module
@@ -105,20 +105,20 @@ def get_attribute(ctx: AttrContext) -> Value:
     elif isinstance(root_value, SubclassValue):
         if isinstance(root_value.typ, TypedValue):
             attribute_value = _get_attribute_from_subclass(root_value.typ.typ, ctx)
-        elif root_value.typ is UNRESOLVED_VALUE:
+        elif isinstance(root_value.typ, AnyValue):
             attribute_value = UNRESOLVED_VALUE
         else:
             attribute_value = _get_attribute_from_known(type, ctx)
     elif isinstance(root_value, UnboundMethodValue):
         attribute_value = _get_attribute_from_unbound(root_value, ctx)
-    elif root_value is UNRESOLVED_VALUE or isinstance(root_value, VariableNameValue):
+    elif isinstance(root_value, AnyValue):
         attribute_value = UNRESOLVED_VALUE
     elif isinstance(root_value, MultiValuedValue):
         raise TypeError("caller should unwrap MultiValuedValue")
     else:
         attribute_value = UNINITIALIZED_VALUE
     if (
-        attribute_value is UNRESOLVED_VALUE or attribute_value is UNINITIALIZED_VALUE
+        isinstance(attribute_value, AnyValue) or attribute_value is UNINITIALIZED_VALUE
     ) and isinstance(ctx.root_value, AnnotatedValue):
         for guard in ctx.root_value.get_metadata_of_type(HasAttrExtension):
             if guard.attribute_name == KnownValue(ctx.attr):

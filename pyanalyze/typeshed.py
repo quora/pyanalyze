@@ -9,6 +9,7 @@ from .error_code import ErrorCode
 from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
 from .value import (
+    AnyValue,
     TypedValue,
     GenericValue,
     KnownValue,
@@ -517,7 +518,7 @@ class TypeshedFinder(object):
         val = self._parse_expr(node, module)
         ctx = _AnnotationContext(finder=self, module=module)
         typ = type_from_value(val, ctx=ctx)
-        if self.verbose and typ is UNRESOLVED_VALUE:
+        if self.verbose and isinstance(typ, AnyValue):
             self.log("Got UNRESOLVED_VALUE", (ast3.dump(node), module))
         return typ
 
