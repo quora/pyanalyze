@@ -28,6 +28,7 @@ from .stacked_scopes import Composite
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
+    AnyValue,
     AsyncTaskIncompleteValue,
     CallableValue,
     DictIncompleteValue,
@@ -131,6 +132,7 @@ def _make_module(code_str: str) -> types.ModuleType:
         SequenceIncompleteValue=SequenceIncompleteValue,
         TypedValue=TypedValue,
         UnboundMethodValue=UnboundMethodValue,
+        AnyValue=AnyValue,
         UNRESOLVED_VALUE=UNRESOLVED_VALUE,
         VariableNameValue=VariableNameValue,
         ReferencingValue=ReferencingValue,
