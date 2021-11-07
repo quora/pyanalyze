@@ -18,6 +18,7 @@ class PyanalyzeConfig(pyanalyze.config.Config):
         ErrorCode.use_fstrings,
         ErrorCode.missing_return_annotation,
         ErrorCode.missing_parameter_annotation,
+        ErrorCode.unused_variable,
     }
 
 

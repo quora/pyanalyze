@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from qcore.asserts import assert_eq
 
 from .value import (
+    AnnotatedValue,
     CanAssignError,
     GenericValue,
     KnownValue,
@@ -728,3 +729,19 @@ class TestAllowCall(TestNameCheckVisitorBase):
             assert_is_value(b.decode("ascii"), KnownValue("x"))
 
             s.encode("not an encoding")  # E: incompatible_call
+
+
+class TestAnnotated(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_preserve(self):
+        from typing_extensions import Annotated
+        from typing import TypeVar
+
+        T = TypeVar("T")
+
+        def f(x: T) -> T:
+            return x
+
+        def caller(x: Annotated[int, 42]):
+            assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue(42)]))
+            assert_is_value(f(x), AnnotatedValue(TypedValue(int), [KnownValue(42)]))

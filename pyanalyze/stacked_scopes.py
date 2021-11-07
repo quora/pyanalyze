@@ -103,6 +103,9 @@ class CompositeVariable:
     varname: str
     attributes: Sequence[Union[str, KnownValue]]
 
+    def extend_with(self, index: Union[str, KnownValue]) -> "CompositeVariable":
+        return CompositeVariable(self.varname, (*self.attributes, index))
+
 
 Varname = Union[str, CompositeVariable]
 # Nodes as used in scopes can be any object, as long as they are hashable.
@@ -120,6 +123,16 @@ class Composite(NamedTuple):
     value: Value
     varname: Optional[Varname] = None
     node: Optional[AST] = None
+
+    def get_extended_varname(
+        self, index: Union[str, KnownValue]
+    ) -> Optional[CompositeVariable]:
+        if self.varname is None:
+            return None
+        if isinstance(self.varname, str):
+            return CompositeVariable(self.varname, (index,))
+        else:
+            return self.varname.extend_with(index)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Composite":
         return Composite(
