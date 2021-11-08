@@ -252,7 +252,7 @@ def test_multi_valued_value() -> None:
         val | TypedValue(str),
     )
 
-    assert_eq("Union[int, None]", str(val))
+    assert_eq("Optional[int]", str(val))
     assert_can_assign(val, KnownValue(1))
     assert_can_assign(val, KnownValue(None))
     assert_cannot_assign(val, KnownValue(""))
@@ -260,6 +260,26 @@ def test_multi_valued_value() -> None:
     assert_can_assign(val, val)
     assert_cannot_assign(val, KnownValue(None) | TypedValue(str))
     assert_can_assign(val, UNRESOLVED_VALUE | TypedValue(int) | KnownValue(None))
+
+    assert_eq("Literal[1, 2]", str(KnownValue(1) | KnownValue(2)))
+    assert_eq(
+        "Literal[1, 2, None]", str(KnownValue(1) | KnownValue(2) | KnownValue(None))
+    )
+    assert_eq("Union[int, str]", str(TypedValue(int) | TypedValue(str)))
+    assert_eq(
+        "Union[int, str, None]",
+        str(TypedValue(int) | TypedValue(str) | KnownValue(None)),
+    )
+    assert_eq(
+        "Union[int, str, Literal[1, 2], None]",
+        str(
+            TypedValue(int)
+            | TypedValue(str)
+            | KnownValue(None)
+            | KnownValue(1)
+            | KnownValue(2)
+        ),
+    )
 
 
 def test_large_union_optimization() -> None:
