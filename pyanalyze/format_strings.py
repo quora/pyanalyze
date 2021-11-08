@@ -8,10 +8,8 @@ import ast
 from collections import defaultdict
 from dataclasses import dataclass, field
 import enum
-import numbers
 import re
 import sys
-from collections.abc import Mapping
 from typing import (
     Callable,
     Dict,
@@ -23,20 +21,19 @@ from typing import (
     List,
     Tuple,
 )
-from typing_extensions import Literal
+from typing_extensions import Literal, Protocol, runtime_checkable
 
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
-    AnyValue,
+    CanAssignContext,
     KnownValue,
     DictIncompleteValue,
     SequenceIncompleteValue,
     TypedValue,
-    MultiValuedValue,
-    UNRESOLVED_VALUE,
     Value,
-    VariableNameValue,
+    flatten_values,
+    replace_known_sequence_value,
 )
 
 # refer to https://docs.python.org/2/library/stdtypes.html#string-formatting-operations
@@ -61,6 +58,16 @@ _FORMAT_STRING_REGEX_TEXT = re.compile(_FORMAT_STRING_REGEX, _FLAGS)
 _NUMERIC_CONVERSION_TYPES = set("diouxXeEfFgG")
 _FORMAT_STRING_CONVERSIONS = {"r", "s", "a"}
 _IDENTIFIER_REGEX = re.compile(r"^[A-Za-z_][A-Za-z_\d]*$")
+
+
+@runtime_checkable
+class _SupportsIndex(Protocol):
+    def __index__(self) -> int:
+        raise NotImplementedError
+
+
+Numeric = TypedValue(float) | TypedValue(_SupportsIndex)
+
 
 #
 # % formatting
@@ -147,44 +154,43 @@ class ConversionSpecifier:
                     "the %b conversion specifier works only on Python 3 bytes patterns"
                 )
 
-    def accept(self, arg: Value) -> Iterable[str]:
+    def accept(self, arg: Value, ctx: CanAssignContext) -> Iterable[str]:
         """Produces any errors from passing the given object to this specifier."""
-        if isinstance(arg, AnnotatedValue):
-            arg = arg.value
-        # TODO: handle MultiValuedValue usefully
-        if isinstance(arg, AnyValue) or isinstance(arg, MultiValuedValue):
-            return
+        for val in flatten_values(arg, unwrap_annotated=True):
+            yield from self.accept_no_mvv(val, ctx)
+
+    def accept_no_mvv(self, arg: Value, ctx: CanAssignContext) -> Iterable[str]:
         if self.conversion_type in _NUMERIC_CONVERSION_TYPES:
             # to deal with some code that sets global state to None and changes it later
-            if (
-                not arg.is_type(numbers.Number)
-                and arg != KnownValue(None)
-                and not isinstance(arg, VariableNameValue)
-            ):
-                yield "%{} conversion specifier accepts numbers, not {!r}".format(
-                    self.conversion_type, arg
+            if not Numeric.is_assignable(arg, ctx):
+                yield (
+                    f"%{self.conversion_type} conversion specifier accepts numbers, not"
+                    f" {arg}"
                 )
         elif self.conversion_type in ("a", "r"):
             # accepts anything
             pass
         elif self.conversion_type == "c":
-            if arg.is_type(int) or arg.is_type(str):
-                if self.is_bytes and arg.is_type(str):
-                    yield (
-                        "%c on a bytes pattern requires an integer or a byte, not {!r}"
-                        .format(arg)
-                    )
-            elif self.is_bytes and arg.is_type(bytes):
-                # in Python 3, b'%c' % b'c' works but not '%c' % b'c'
-                pass
+            if TypedValue(int).is_assignable(arg, ctx):
+                if isinstance(arg, KnownValue) and arg.val not in range(256):
+                    yield f"%c requires an integer in range(256), not {arg}"
+            elif (self.is_bytes and TypedValue(bytes).is_assignable(arg, ctx)) or (
+                not self.is_bytes and TypedValue(str).is_assignable(arg, ctx)
+            ):
+                if (
+                    isinstance(arg, KnownValue)
+                    and isinstance(arg.val, (str, bytes))
+                    and len(arg.val) != 1
+                ):
+                    yield f"%c requires a single character, not {arg}"
             else:
-                yield "%c requires an integer or string, not {!r}".format(arg)
+                yield f"%c requires an integer or character, not {arg}"
         elif self.conversion_type == "b" or (
             self.is_bytes and self.conversion_type == "s"
         ):
             # in Python 3 bytes patterns, s is equivalent to b
-            if not arg.is_type(bytes):
-                yield "%{} accepts only bytes, not {}".format(self.conversion_type, arg)
+            if not TypedValue(bytes).is_assignable(arg, ctx):
+                yield f"%{self.conversion_type} accepts only bytes, not {arg}"
         elif self.conversion_type == "s":
             # accepts anything
             pass
@@ -198,10 +204,9 @@ class ConversionSpecifier:
 class StarConversionSpecifier:
     """Fake conversion specifier for the '*' special cases for field width and precision."""
 
-    def accept(self, arg: Value) -> Iterable[str]:
-        # it doesn't accept longs in Python 2
-        if arg is not UNRESOLVED_VALUE and not arg.is_type(int):
-            yield "'*' special specifier only accepts ints, not {}".format(arg)
+    def accept(self, arg: Value, ctx: CanAssignContext) -> Iterable[str]:
+        if not TypedValue(int).is_assignable(arg, ctx):
+            yield f"'*' special specifier only accepts ints, not {arg}"
 
 
 @dataclass
@@ -284,7 +289,7 @@ class PercentFormatString:
             if (b"%" in piece) if self.is_bytes else ("%" in piece):
                 yield "invalid conversion specifier in {}".format(piece)
 
-    def accept(self, args: Value) -> Iterable[str]:
+    def accept(self, args: Value, ctx: CanAssignContext) -> Iterable[str]:
         """Checks whether this format string can accept the given Value as arguments."""
         if not self.specifiers:
             # if there are no conversion specifiers and we're doing % formatting anyway, throw an
@@ -295,9 +300,9 @@ class PercentFormatString:
             if args != KnownValue(()) and args != KnownValue({}):
                 yield "use of % on string with no conversion specifiers"
         elif self.needs_mapping():
-            yield from self.accept_mapping_args(args)
+            yield from self.accept_mapping_args(args, ctx)
         else:
-            yield from self.accept_tuple_args(args)
+            yield from self.accept_tuple_args(args, ctx)
 
     def get_specifier_mapping(self) -> Dict[str, List[ConversionSpecifier]]:
         """Return a mapping from mapping key to conversion specifiers for that mapping key."""
@@ -307,22 +312,37 @@ class PercentFormatString:
                 out[specifier.mapping_key].append(specifier)
         return out
 
-    def accept_mapping_args(self, args: Value) -> Iterable[str]:
+    def accept_mapping_args(self, args: Value, ctx: CanAssignContext) -> Iterable[str]:
+        for val in flatten_values(args):
+            yield from self.accept_mapping_args_no_mvv(val, ctx)
+
+    def accept_mapping_args_no_mvv(
+        self, args: Value, ctx: CanAssignContext
+    ) -> Iterable[str]:
         cs_map = self.get_specifier_mapping()
-        if isinstance(args, KnownValue):
-            if isinstance(args.val, Mapping):
-                for key, value in args.val.items():
-                    for specifier in cs_map[key]:
-                        yield from specifier.accept(KnownValue(value))
-            else:
-                yield "% string requires a mapping, not {}".format(args)
-        elif isinstance(args, DictIncompleteValue):
-            for key, value in args.items:
-                if isinstance(key, KnownValue):
-                    for specifier in cs_map[key.val]:
-                        yield from specifier.accept(value)
-        elif args is not UNRESOLVED_VALUE and not args.is_type(Mapping):
-            yield "% string requires a mapping, not {}".format(args)
+        # CPython actually checks for the mp_subscript slot:
+        # https://github.com/python/cpython/blob/5f09bb021a2862ba89c3ecb53e7e6e95a9e07e1d/Objects/bytesobject.c#L647
+        # But I don't think there's a way to set that from Python other than
+        # inheriting from str.
+        if TypedValue(dict).is_assignable(args, ctx):
+            if isinstance(args, AnnotatedValue):
+                args = args.value
+            args = replace_known_sequence_value(args)
+            if isinstance(args, DictIncompleteValue):
+                seen_keys = set()
+                non_literals = []
+                for key, value in args.items:
+                    if isinstance(key, KnownValue):
+                        seen_keys.add(key.val)
+                        for specifier in cs_map[key.val]:
+                            yield from specifier.accept(value, ctx)
+                    else:
+                        non_literals.append(key)
+                keys_left = cs_map.keys() - seen_keys
+                if keys_left and not non_literals:
+                    yield f"No value specified for keys {', '.join(keys_left)}"
+        else:
+            yield f"% string requires a mapping, not {args}"
 
     def get_serial_specifiers(
         self,
@@ -336,27 +356,25 @@ class PercentFormatString:
             if specifier.conversion_type != "%":
                 yield specifier
 
-    def accept_tuple_args(self, args: Value) -> Iterable[str]:
-        specifiers = list(self.get_serial_specifiers())
-        if isinstance(args, AnnotatedValue):
-            args = args.value
-        if args.is_type(tuple):
+    def accept_tuple_args(self, args: Value, ctx: CanAssignContext) -> Iterable[str]:
+        for val in flatten_values(args):
+            yield from self.accept_tuple_args_no_mvv(val, ctx)
+
+    def accept_tuple_args_no_mvv(
+        self, args: Value, ctx: CanAssignContext
+    ) -> Iterable[str]:
+        if TypedValue(tuple).is_assignable(args, ctx):
+            if isinstance(args, AnnotatedValue):
+                args = args.value
+            args = replace_known_sequence_value(args)
             if isinstance(args, SequenceIncompleteValue):
                 all_args = args.members
-            elif isinstance(args, KnownValue):
-                all_args = tuple(KnownValue(elt) for elt in args.val)
             else:
                 # it's a tuple but we don't know what's in it, so assume it's ok
                 return
-        elif isinstance(args, AnyValue):
-            return
-        elif isinstance(args, MultiValuedValue):
-            if any(isinstance(v, AnyValue) or v.is_type(tuple) for v in args.vals):
-                return
-            else:
-                all_args = (args,)
         else:
             all_args = (args,)
+        specifiers = list(self.get_serial_specifiers())
         num_args = len(all_args)
         num_specifiers = len(specifiers)
         if num_args < num_specifiers:
@@ -369,7 +387,7 @@ class PercentFormatString:
             )
         else:
             for arg, specifier in zip(all_args, specifiers):
-                yield from specifier.accept(arg)
+                yield from specifier.accept(arg, ctx)
 
 
 def check_string_format(
@@ -378,6 +396,7 @@ def check_string_format(
     args_node: ast.AST,
     args: Value,
     on_error: Callable[..., None],
+    ctx: CanAssignContext,
 ) -> Tuple[Value, Optional[ast.AST]]:
     """Checks that arguments to %-formatted strings are correct."""
     if isinstance(format_str, bytes):
@@ -386,7 +405,7 @@ def check_string_format(
         fs = PercentFormatString.from_pattern(format_str)
     for err in fs.lint():
         on_error(node, err, error_code=ErrorCode.bad_format_string)
-    for err in fs.accept(args):
+    for err in fs.accept(args, ctx):
         on_error(node, err, error_code=ErrorCode.bad_format_string)
     return TypedValue(type(format_str)), maybe_replace_with_fstring(fs, args_node)
 

@@ -2507,7 +2507,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and isinstance(left.val, (bytes, str))
         ):
             value, replacement_node = format_strings.check_string_format(
-                left_node, left.val, right_node, right, self._show_error_if_checking
+                left_node,
+                left.val,
+                right_node,
+                right,
+                self._show_error_if_checking,
+                self,
             )
             if replacement_node is not None and isinstance(source_node, ast.BinOp):
                 replacement = self.replace_node(source_node, replacement_node)
