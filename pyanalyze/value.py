@@ -800,15 +800,8 @@ class TypedDictValue(GenericValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, DictIncompleteValue):
-            their_len = len(other.items)
-            my_len = len(self.items)
-            if my_len == 0:
+            if not self.items:
                 return {}
-            if their_len < my_len:
-                return CanAssignError(
-                    f"Cannot assign dict of length {their_len} to dict of length"
-                    f" {my_len}"
-                )
             known_part = {
                 key.val: value
                 for key, value in other.items
