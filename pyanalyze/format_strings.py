@@ -23,8 +23,6 @@ from typing import (
 )
 from typing_extensions import Literal, Protocol, runtime_checkable
 
-from pyanalyze.annotations import Context
-
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
@@ -65,7 +63,7 @@ _IDENTIFIER_REGEX = re.compile(r"^[A-Za-z_][A-Za-z_\d]*$")
 @runtime_checkable
 class _SupportsIndex(Protocol):
     def __index__(self) -> int:
-        ...
+        raise NotImplementedError
 
 
 Numeric = TypedValue(float) | TypedValue(_SupportsIndex)
@@ -206,7 +204,7 @@ class ConversionSpecifier:
 class StarConversionSpecifier:
     """Fake conversion specifier for the '*' special cases for field width and precision."""
 
-    def accept(self, arg: Value, ctx: Context) -> Iterable[str]:
+    def accept(self, arg: Value, ctx: CanAssignContext) -> Iterable[str]:
         if not TypedValue(int).is_assignable(arg, ctx):
             yield f"'*' special specifier only accepts ints, not {arg}"
 
