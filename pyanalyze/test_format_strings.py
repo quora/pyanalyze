@@ -19,7 +19,7 @@ from .value import (
     TypedValue,
 )
 
-from .test_node_visitor import assert_passes, assert_fails
+from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_value import CTX
 
@@ -366,56 +366,46 @@ class TestAccept(object):
 
 
 class TestPercentFormatString(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.bad_format_string)
-    def test_too_few_values(self):
+    @assert_passes(settings={ErrorCode.use_fstrings: False})
+    def test_basic(self):
         def capybara(x):
-            print("%s %s" % (x,))
-
-    @assert_fails(ErrorCode.bad_format_string)
-    def test_too_few_values_typed(self):
-        def capybara(x):
-            print("%s %s" % int(x))
-
-    @assert_passes()
-    def test_too_few_values_dict_typed(self):
-        def capybara(x):
+            print("%s %s" % (x,))  # E: bad_format_string
+            print("%s %s" % int(x))  # E: bad_format_string
             print("%(capybara)s %(paca)s" % dict(x))
-
-    @assert_passes()
-    def test_bad_key_in_known_dict(self):
-        def capybara():
+            # extra key is fine
             print("%(capybara)s" % {42: "capybara", "capybara": 42})
-
-    @assert_passes()
-    def test_bad_key_in_incomplete_dict(self):
-        def capybara(x):
             print("%(capybara)s" % {int(x): "capybara"})
-
-    @assert_passes()
-    def test_dict_key_is_not_format(self):
-        def capybara(x):
+            # if we're not using dict formatting, passing a dict is still fine
             print("hello %s" % {"foo": x})
             print("hello %s" % {"foo": "x"})
-
-    @assert_passes()
-    def test_wrong_type(self):
-        def capybara(x):
             print("%d %s" % ("foo", x))  # E: bad_format_string
-
-    @assert_passes()
-    def test_missing_key(self):
-        def capybara(x):
             print("%(foo)s" % {})  # E: bad_format_string
+            print("%d %s" % (None, x))  # E: bad_format_string
+            print("dinomys" % x)  # E: bad_format_string
 
-    @assert_passes()
-    def test_none_fails(self):
-        def capybara(foo):
-            print("%d %s" % (None, foo))  # E: bad_format_string
+    @assert_passes(settings={ErrorCode.use_fstrings: False})
+    def test_mvv(self):
+        from typing import Union
 
-    @assert_passes()
-    def test_no_format(self):
-        def pacarana(foo):
-            return "dinomys" % foo  # E: bad_format_string
+        def capybara(x: Union[int, float]):
+            print("%f" % (x,))
+            print("%*d" % (x, x))  # E: bad_format_string
+
+    @assert_passes(settings={ErrorCode.use_fstrings: False})
+    def test_character(self):
+        def capybara(i: int, s: str, b: bytes):
+            print("%c" % i)
+            print("%c" % s)
+            print("%c" % b)  # E: bad_format_string
+            print("%c" % 42)
+            print("%c" % 257)  # E: bad_format_string
+            print("%c" % -1)  # E: bad_format_string
+            print("%c" % "x")
+            print("%c" % "ab")  # E: bad_format_string
+
+            print(b"%c" % i)
+            print(b"%c" % s)  # E: bad_format_string
+            print(b"%c" % b)
 
     @assert_passes()
     def test_inference(self):
