@@ -5,13 +5,13 @@ from .implementation import assert_is_value
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
+    AnySource,
     AnyValue,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
     SequenceIncompleteValue,
     TypedValue,
-    UNRESOLVED_VALUE,
     SubclassValue,
     GenericValue,
 )
@@ -78,7 +78,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(x, GenericValue(list, [TypedValue(int)]))
             assert_is_value(y, TypedValue(list))
 
-    # on 3.6 and 3.7 SupportsInt becomes UNRESOLVED_VALUE because it's not
+    # on 3.6 and 3.7 SupportsInt becomes Any because it's not
     # runtime checkable.
     @skip_before((3, 8))
     @assert_passes()
@@ -136,7 +136,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             # Ideally should be ContextManager[int], but at least
             # it should not be Iterator[int], which is what pyanalyze
             # used to infer.
-            assert_is_value(capybara(), UNRESOLVED_VALUE)
+            assert_is_value(capybara(), AnyValue(AnySource.inference))
 
     @assert_passes()
     def test_none_annotations(self):
@@ -219,11 +219,13 @@ class TestAnnotations(TestNameCheckVisitorBase):
             def f(self) -> int:
                 pass
 
-    @assert_fails(ErrorCode.incompatible_return_value)
+    @assert_passes()
     def test_no_return_none(self):
         def f() -> None:
-            assert_is_value(g(), UNRESOLVED_VALUE)
-            return g()
+            # TODO this should really be unannotated. The Any comes from _visit_function_body
+            # but I'm not sure why we use that one.
+            assert_is_value(g(), AnyValue(AnySource.inference))
+            return g()  # E: incompatible_return_value
 
         def g():
             pass
@@ -264,7 +266,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             return 0
 
         def capybara():
-            assert_is_value(f(), UNRESOLVED_VALUE)
+            assert_is_value(f(), AnyValue(AnySource.explicit))
             assert_is_value(g(), KnownValue(0))
 
     @assert_passes()
@@ -282,7 +284,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
     def test_annassign(self):
         def capybara(y):
             x: int = y
-            assert_is_value(y, UNRESOLVED_VALUE)
+            assert_is_value(y, AnyValue(AnySource.unannotated))
             assert_is_value(x, TypedValue(int))
 
     @assert_fails(ErrorCode.incompatible_assignment)

@@ -20,6 +20,7 @@ from .signature import Signature, MaybeSignature
 from .stacked_scopes import Composite
 from .value import (
     AnnotatedValue,
+    AnySource,
     AnyValue,
     CallableValue,
     HasAttrExtension,
@@ -29,7 +30,6 @@ from .value import (
     KnownValue,
     GenericValue,
     UNINITIALIZED_VALUE,
-    UNRESOLVED_VALUE,
     MultiValuedValue,
     UnboundMethodValue,
     SubclassValue,
@@ -62,10 +62,10 @@ class AttrContext:
         return False
 
     def get_property_type_from_config(self, obj: Any) -> Value:
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
     def get_property_type_from_argspec(self, obj: Any) -> Value:
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
     def get_attribute_from_typeshed(self, typ: type) -> Value:
         return UNINITIALIZED_VALUE
@@ -106,13 +106,13 @@ def get_attribute(ctx: AttrContext) -> Value:
         if isinstance(root_value.typ, TypedValue):
             attribute_value = _get_attribute_from_subclass(root_value.typ.typ, ctx)
         elif isinstance(root_value.typ, AnyValue):
-            attribute_value = UNRESOLVED_VALUE
+            attribute_value = AnyValue(AnySource.from_another)
         else:
             attribute_value = _get_attribute_from_known(type, ctx)
     elif isinstance(root_value, UnboundMethodValue):
         attribute_value = _get_attribute_from_unbound(root_value, ctx)
     elif isinstance(root_value, AnyValue):
-        attribute_value = UNRESOLVED_VALUE
+        attribute_value = AnyValue(AnySource.from_another)
     elif isinstance(root_value, MultiValuedValue):
         raise TypeError("caller should unwrap MultiValuedValue")
     else:
@@ -170,9 +170,9 @@ def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
         # static or class method
         return KnownValue(cls_val)
     elif _static_hasattr(cls_val, "__get__"):
-        return UNRESOLVED_VALUE  # can't figure out what this will return
+        return AnyValue(AnySource.inference)  # can't figure out what this will return
     elif ctx.should_ignore_class_attribute(cls_val):
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
     else:
         return KnownValue(cls_val)
 
@@ -215,7 +215,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
     cls_val = result.val
     if isinstance(cls_val, property):
         typ = ctx.get_property_type_from_config(cls_val)
-        if typ is not UNRESOLVED_VALUE:
+        if not isinstance(typ, AnyValue):
             return typ
         return ctx.get_property_type_from_argspec(cls_val)
     elif qcore.inspection.is_classmethod(cls_val):
@@ -255,7 +255,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
     elif _static_hasattr(cls_val, "__get__"):
         return ctx.get_property_type_from_config(cls_val)
     elif ctx.should_ignore_class_attribute(cls_val):
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
     else:
         return result
 
@@ -266,11 +266,11 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
     if (obj is None or obj is NoneType) and ctx.should_ignore_none_attributes():
         # This usually indicates some context is set to None
         # in the module and initialized later.
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
     # Type alias to Any
     if obj is Any:
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.explicit)
 
     # Avoid generating huge Union type with the actual value
     if obj is sys and ctx.attr == "modules":
@@ -289,7 +289,7 @@ def _get_attribute_from_unbound(
 ) -> Value:
     method = root_value.get_method()
     if method is None:
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
     try:
         getattr(method, ctx.attr)
     except AttributeError:
@@ -316,7 +316,7 @@ class AnnotationsContext(Context):
             else:
                 globals = sys.modules[self.cls.__module__].__dict__
         except Exception:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
         else:
             return self.get_name_from_globals(node.id, globals)
 
@@ -412,7 +412,7 @@ def get_attrs_attribute(typ: object, ctx: AttrContext) -> Optional[Value]:
                             attr_attr.type, ctx=AnnotationsContext(ctx, typ)
                         )
                     else:
-                        return UNRESOLVED_VALUE
+                        return AnyValue(AnySource.unannotated)
     except Exception:
         # Guard against silly objects throwing exceptions on hasattr()
         # or similar shenanigans.

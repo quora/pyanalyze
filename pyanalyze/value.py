@@ -22,6 +22,7 @@ these subclasses and some related utilities.
 import collections.abc
 from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field, InitVar
+import enum
 import inspect
 from itertools import chain
 from typing import (
@@ -40,8 +41,6 @@ from typing import (
     TypeVar,
 )
 from typing_extensions import Literal
-
-from qcore import enum
 
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
@@ -291,6 +290,10 @@ class AnySource(enum.Enum):
     """A :class:`VariableNameValue`."""
     from_another = 8
     """An Any derived from another Any, for example as an attribute."""
+    generic_argument = 9
+    """Missing type argument to a generic class."""
+    marker = 10
+    """Marker object used internally."""
 
 
 @dataclass(frozen=True)
@@ -302,7 +305,9 @@ class AnyValue(Value):
     or a previous error."""
 
     def __str__(self) -> str:
-        return "Any"
+        if self.source is AnySource.default:
+            return "Any"
+        return f"Any[{self.source.name}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         return {}  # Always allowed
@@ -557,7 +562,7 @@ class TypedValue(Value):
         args = self.get_generic_args_for_type(typ, ctx)
         if args and index < len(args):
             return args[index]
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.generic_argument)
 
     def is_type(self, typ: type) -> bool:
         return self.type_object.is_assignable_to_type(typ)
@@ -660,7 +665,7 @@ class GenericValue(TypedValue):
         try:
             return self.args[index]
         except IndexError:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.generic_argument)
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -691,7 +696,7 @@ class SequenceIncompleteValue(GenericValue):
         if members:
             args = (unite_values(*members),)
         else:
-            args = (UNRESOLVED_VALUE,)
+            args = (AnyValue(AnySource.unreachable),)
         super().__init__(typ, args)
         self.members = tuple(members)
 
@@ -759,7 +764,7 @@ class DictIncompleteValue(GenericValue):
             key_type = unite_values(*[key for key, _ in items])
             value_type = unite_values(*[value for _, value in items])
         else:
-            key_type = value_type = UNRESOLVED_VALUE
+            key_type = value_type = AnyValue(AnySource.unreachable)
         super().__init__(dict, (key_type, value_type))
         self.items = items
 
@@ -794,7 +799,7 @@ class TypedDictValue(GenericValue):
         if items:
             value_type = unite_values(*[val for _, val in items.values()])
         else:
-            value_type = UNRESOLVED_VALUE
+            value_type = AnyValue(AnySource.unreachable)
         super().__init__(dict, (TypedValue(str), value_type))
         self.items = items
 
@@ -1033,7 +1038,7 @@ class SubclassValue(Value):
         if typ is not None:
             return KnownValue(typ)
         else:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
     def __str__(self) -> str:
         return f"Type[{self.typ}]"
@@ -1048,7 +1053,7 @@ class SubclassValue(Value):
         elif isinstance(origin, (TypeVarValue, TypedValue)):
             return cls(origin)
         else:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
 
 @dataclass(frozen=True, order=False)
@@ -1228,7 +1233,7 @@ class TypeVarValue(Value):
 
     def get_fallback_value(self) -> Value:
         # TODO: support bounds and bases here to do something smarter
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
 
 class Extension:
@@ -1662,7 +1667,7 @@ def concrete_values_from_iterable(
         return value.members
     tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(tv_map, CanAssignError):
-        return tv_map.get(T, UNRESOLVED_VALUE)
+        return tv_map.get(T, AnyValue(AnySource.generic_argument))
     return None
 
 
@@ -1693,7 +1698,11 @@ def unpack_values(
             good_subvals.append(subval)
         if not good_subvals:
             return _create_unpacked_list(
-                UNRESOLVED_VALUE, target_length, post_starred_length
+                AnyValue(AnySource.error)
+                if subvals
+                else AnyValue(AnySource.unreachable),
+                target_length,
+                post_starred_length,
             )
         return [unite_values(*vals) for vals in zip(*good_subvals)]
     elif isinstance(value, AnnotatedValue):
@@ -1731,7 +1740,7 @@ def unpack_values(
     tv_map = IterableValue.can_assign(value, ctx)
     if isinstance(tv_map, CanAssignError):
         return tv_map
-    iterable_type = tv_map.get(T, UNRESOLVED_VALUE)
+    iterable_type = tv_map.get(T, AnyValue(AnySource.generic_argument))
     return _create_unpacked_list(iterable_type, target_length, post_starred_length)
 
 

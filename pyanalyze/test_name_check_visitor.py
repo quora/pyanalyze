@@ -28,6 +28,7 @@ from .stacked_scopes import Composite
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
+    AnySource,
     AnyValue,
     AsyncTaskIncompleteValue,
     CallableValue,
@@ -132,6 +133,7 @@ def _make_module(code_str: str) -> types.ModuleType:
         SequenceIncompleteValue=SequenceIncompleteValue,
         TypedValue=TypedValue,
         UnboundMethodValue=UnboundMethodValue,
+        AnySource=AnySource,
         AnyValue=AnyValue,
         UNRESOLVED_VALUE=UNRESOLVED_VALUE,
         VariableNameValue=VariableNameValue,
@@ -491,32 +493,27 @@ def run():
 
     @assert_passes()
     def test_display_type_inference(self):
+        UNANNOTATED = AnyValue(AnySource.unannotated)
+
         def capybara(a, b):
             x = [a, b]
             assert_is_value(
-                x, SequenceIncompleteValue(list, [UNRESOLVED_VALUE, UNRESOLVED_VALUE])
+                x, SequenceIncompleteValue(list, [UNANNOTATED, UNANNOTATED])
             )
             y = a, 2
             assert_is_value(
-                y, SequenceIncompleteValue(tuple, [UNRESOLVED_VALUE, KnownValue(2)])
+                y, SequenceIncompleteValue(tuple, [UNANNOTATED, KnownValue(2)])
             )
 
             s = {a, b}
-            assert_is_value(
-                s, SequenceIncompleteValue(set, [UNRESOLVED_VALUE, UNRESOLVED_VALUE])
-            )
+            assert_is_value(s, SequenceIncompleteValue(set, [UNANNOTATED, UNANNOTATED]))
             z = {a: b}
-            assert_is_value(
-                z, DictIncompleteValue([(UNRESOLVED_VALUE, UNRESOLVED_VALUE)])
-            )
+            assert_is_value(z, DictIncompleteValue([(UNANNOTATED, UNANNOTATED)]))
             q = {a: 3, b: 4}
             assert_is_value(
                 q,
                 DictIncompleteValue(
-                    [
-                        (UNRESOLVED_VALUE, KnownValue(3)),
-                        (UNRESOLVED_VALUE, KnownValue(4)),
-                    ]
+                    [(UNANNOTATED, KnownValue(3)), (UNANNOTATED, KnownValue(4))]
                 ),
             )
 
@@ -557,13 +554,11 @@ def run():
                 capybara = "foo"
 
     @assert_passes()
-    def test_multiple_UNRESOLVED_VALUEs(self):
+    def test_multiple_anys(self):
         def fn(item):
             if False:
                 item = None
-            assert_is_value(
-                item, MultiValuedValue([KnownValue(None), UNRESOLVED_VALUE])
-            )
+            assert_is_value(item, KnownValue(None) | AnyValue(AnySource.unannotated))
 
     @assert_fails(ErrorCode.undefined_attribute)
     def test_bad_attribute_of_global(self):
@@ -836,13 +831,12 @@ class TestBoolOp(TestNameCheckVisitorBase):
             )
 
         def hutia(x=None):
-            assert_is_value(x, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(None)]))
-            assert_is_value(x or 1, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(1)]))
+            assert_is_value(x, AnyValue(AnySource.unannotated) | KnownValue(None))
+            assert_is_value(x or 1, AnyValue(AnySource.unannotated) | KnownValue(1))
             y = x or 1
-            assert_is_value(y, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(1)]))
+            assert_is_value(y, AnyValue(AnySource.unannotated) | KnownValue(1))
             assert_is_value(
-                (True if x else False) or None,
-                MultiValuedValue([KnownValue(True), KnownValue(None)]),
+                (True if x else False) or None, KnownValue(True) | KnownValue(None)
             )
 
 
@@ -886,10 +880,10 @@ class TestReturnTypeInference(TestNameCheckVisitorBase):
             )
             assert_is_value(WithAProperty().this_is_one, TypedValue(str))
             assert_is_value(pure_async_proxy(oid), TypedValue(ConstFuture))
-            assert_is_value(impure_async_proxy(), UNRESOLVED_VALUE)
+            assert_is_value(impure_async_proxy(), AnyValue(AnySource.unannotated))
             assert_is_value(
                 impure_async_proxy.asynq(),
-                AsyncTaskIncompleteValue(FutureBase, UNRESOLVED_VALUE),
+                AsyncTaskIncompleteValue(FutureBase, AnyValue(AnySource.unannotated)),
             )
 
 
@@ -1048,9 +1042,9 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
         class Capybara(object):
             def __init__(self):
                 for k, v in iter([("grass", "tasty")]):
-                    assert_is_value(k, UNRESOLVED_VALUE)
+                    assert_is_value(k, AnyValue(AnySource.generic_argument))
                     setattr(self, k, v)
-                assert_is_value(self.grass, UNRESOLVED_VALUE)
+                assert_is_value(self.grass, AnyValue(AnySource.inference))
 
     @assert_passes()
     def test_setattr_on_base(self):
@@ -1058,9 +1052,9 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
             def __init__(self):
                 for k, v in iter([("grass", "tasty")]):
                     # Make sure we're not smart enough to infer the attribute
-                    assert_is_value(k, UNRESOLVED_VALUE)
+                    assert_is_value(k, AnyValue(AnySource.generic_argument))
                     setattr(self, k, v)
-                assert_is_value(self.grass, UNRESOLVED_VALUE)
+                assert_is_value(self.grass, AnyValue(AnySource.inference))
 
         class Neochoerus(Capybara):
             def eat(self):
@@ -1442,7 +1436,7 @@ class TestNestedFunction(TestNameCheckVisitorBase):
 
             assert_is_value(nested, KnownValue(nested))
             # Should ideally be something more specific
-            assert_is_value(NestedClass, UNRESOLVED_VALUE)
+            assert_is_value(NestedClass, AnyValue(AnySource.inference))
 
     @assert_passes()
     def test_usage_in_nested_scope():
@@ -1580,7 +1574,9 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
                 [oid].append,
                 UnboundMethodValue(
                     "append",
-                    Composite(SequenceIncompleteValue(list, [UNRESOLVED_VALUE])),
+                    Composite(
+                        SequenceIncompleteValue(list, [AnyValue(AnySource.unannotated)])
+                    ),
                 ),
             )
 
@@ -1655,9 +1651,7 @@ class TestSubscripting(TestNameCheckVisitorBase):
         from typing import Dict, Any, Union
 
         def capybara(seq: Union[Dict[int, str], Any]) -> None:
-            assert_is_value(
-                seq[0], MultiValuedValue([TypedValue(str), UNRESOLVED_VALUE])
-            )
+            assert_is_value(seq[0], TypedValue(str) | AnyValue(AnySource.from_another))
 
     @assert_passes()
     def test_weak():
@@ -1691,7 +1685,7 @@ class TestOperators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_unary_op(self):
         def capybara(x):
-            assert_is_value(~x, UNRESOLVED_VALUE)
+            assert_is_value(~x, AnyValue(AnySource.from_another))
             assert_is_value(~3, KnownValue(-4))
 
     @assert_passes()
@@ -1732,9 +1726,9 @@ class TestOperators(TestNameCheckVisitorBase):
             ha = HasAdd()
             hr = HasRadd()
             assert_is_value(1 + hr, TypedValue(HasRadd))
-            assert_is_value(x + hr, UNRESOLVED_VALUE)
+            assert_is_value(x + hr, AnyValue(AnySource.from_another))
             assert_is_value(ha + 1, TypedValue(HasAdd))
-            assert_is_value(ha + x, UNRESOLVED_VALUE)
+            assert_is_value(ha + x, AnyValue(AnySource.from_another))
             assert_is_value(HasBoth() + HasBoth(), TypedValue(HasBoth))
 
     @assert_fails(ErrorCode.unsupported_operation)
@@ -1800,7 +1794,7 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
         from collections.abc import Awaitable
 
         async def capybara(x):
-            assert_is_value(x, UNRESOLVED_VALUE)
+            assert_is_value(x, AnyValue(AnySource.unannotated))
             return "hydrochoerus"
 
         async def kerodon(x):
@@ -1851,12 +1845,12 @@ class TestKeywordOnlyArguments(TestNameCheckVisitorBase):
     @assert_passes()
     def test_success(self):
         def capybara(a, *, b, c=3):
-            assert_is_value(a, UNRESOLVED_VALUE)
-            assert_is_value(b, UNRESOLVED_VALUE)
-            assert_is_value(c, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(3)]))
+            assert_is_value(a, AnyValue(AnySource.unannotated))
+            assert_is_value(b, AnyValue(AnySource.unannotated))
+            assert_is_value(c, AnyValue(AnySource.unannotated) | KnownValue(3))
             capybara(1, b=2)
 
-            fn = lambda a, *, b: assert_is_value(b, UNRESOLVED_VALUE)
+            fn = lambda a, *, b: assert_is_value(b, AnyValue(AnySource.unannotated))
             fn(a, b=b)
 
     @assert_fails(ErrorCode.incompatible_call)
@@ -2093,7 +2087,7 @@ class TestBadAsyncYield(TestNameCheckVisitorBase):
             else:
                 task = capybara.asynq(True)
             val3 = yield task
-            assert_is_value(val3, MultiValuedValue([KnownValue(4), UNRESOLVED_VALUE]))
+            assert_is_value(val3, KnownValue(4) | AnyValue(AnySource.inference))
 
 
 class TestAugAssign(TestNameCheckVisitorBase):
@@ -2121,7 +2115,7 @@ class TestUnpacking(TestNameCheckVisitorBase):
                 degu,
                 make_weak(
                     GenericValue(
-                        tuple, [MultiValuedValue([KnownValue(1), UNRESOLVED_VALUE])]
+                        tuple, [KnownValue(1) | AnyValue(AnySource.generic_argument)]
                     )
                 ),
             )
@@ -2177,13 +2171,15 @@ class TestUnpacking(TestNameCheckVisitorBase):
             g, h = union
             assert_is_value(
                 g,
-                MultiValuedValue([UNRESOLVED_VALUE, TypedValue(int), TypedValue(str)]),
+                AnyValue(AnySource.generic_argument)
+                | TypedValue(int)
+                | TypedValue(str),
             )
             assert_is_value(
                 h,
-                MultiValuedValue(
-                    [UNRESOLVED_VALUE, TypedValue(int), TypedValue(float)]
-                ),
+                AnyValue(AnySource.generic_argument)
+                | TypedValue(int)
+                | TypedValue(float),
             )
 
             long_tuple = (1, 2, 3, 4, 5, 6)
@@ -2210,9 +2206,12 @@ class TestUnpacking(TestNameCheckVisitorBase):
             assert_is_value(r, KnownValue(2))
             assert_is_value(s, SequenceIncompleteValue(list, []))
 
+            for sprime in []:
+                assert_is_value(sprime, AnyValue(AnySource.unreachable))
+
             for t, u in []:
-                assert_is_value(t, UNRESOLVED_VALUE)
-                assert_is_value(u, UNRESOLVED_VALUE)
+                assert_is_value(t, AnyValue(AnySource.unreachable))
+                assert_is_value(u, AnyValue(AnySource.unreachable))
 
             known_list = [1, 2]
             v, w = known_list
@@ -2327,7 +2326,7 @@ class TestTypedDict(TestNameCheckVisitorBase):
         T = TypedDict("T", {"a": int, "b": str})
 
         def capybara(x: T):
-            assert_is_value(x["not a key"], UNRESOLVED_VALUE)
+            assert_is_value(x["not a key"], AnyValue(AnySource.inference))
 
     @assert_passes()
     def test_invalid_key(self):

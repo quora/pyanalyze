@@ -1,7 +1,14 @@
 # static analysis: ignore
 from .error_code import ErrorCode
-from .implementation import assert_is_value, dump_value
-from .value import KnownValue, MultiValuedValue, TypedValue, UNRESOLVED_VALUE
+from .value import (
+    AnySource,
+    AnyValue,
+    GenericValue,
+    KnownValue,
+    MultiValuedValue,
+    TypedValue,
+    assert_is_value,
+)
 from .test_node_visitor import assert_passes, assert_fails
 from .test_name_check_visitor import TestNameCheckVisitorBase
 
@@ -18,7 +25,7 @@ class TestAttributes(TestNameCheckVisitorBase):
 
         def kerodon():
             c = Capybara(42, 43)
-            assert_is_value(c.value, UNRESOLVED_VALUE)
+            assert_is_value(c.value, AnyValue(AnySource.unannotated))
             assert_is_value(c.int_value, TypedValue(int))
 
     @assert_passes()
@@ -128,7 +135,7 @@ class TestAttributes(TestNameCheckVisitorBase):
             prop = CustomDescriptor()
 
         def use_it():
-            assert_is_value(Unhashable().prop, UNRESOLVED_VALUE)
+            assert_is_value(Unhashable().prop, AnyValue(AnySource.inference))
 
     @assert_passes()
     def test_tuple_subclass_with_getattr(self):
@@ -193,8 +200,8 @@ class TestAttributes(TestNameCheckVisitorBase):
         from codecs import StreamWriter
 
         def capybara(sn: SimpleNamespace, sw: StreamWriter):
-            assert_is_value(sn.whatever, UNRESOLVED_VALUE)
-            assert_is_value(sw.whatever, UNRESOLVED_VALUE)
+            assert_is_value(sn.whatever, AnyValue(AnySource.inference))
+            assert_is_value(sw.whatever, AnyValue(AnySource.inference))
 
     @assert_passes()
     def test_allow_function(self):
@@ -253,7 +260,7 @@ class TestHasAttrExtension(TestNameCheckVisitorBase):
 
         def capybara(x: Literal[1]) -> None:
             if hasattr(x, "x"):
-                assert_is_value(x.x, UNRESOLVED_VALUE)
+                assert_is_value(x.x, AnyValue(AnySource.inference))
 
     @assert_passes()
     def test_user_hasattr(self):
@@ -276,7 +283,7 @@ class TestHasAttrExtension(TestNameCheckVisitorBase):
 
         def capybara(x: Literal[1]) -> None:
             if my_hasattr(x, "x"):
-                assert_is_value(x.x, UNRESOLVED_VALUE)
+                assert_is_value(x.x, AnyValue(AnySource.explicit))
 
         def inty_capybara(x: Literal[1]) -> None:
             if has_int_attr(x, "inty"):

@@ -16,6 +16,7 @@ from .stacked_scopes import (
 from .signature import ANY_SIGNATURE, SigParameter, Signature, ImplReturn, CallContext
 from .value import (
     AnnotatedValue,
+    AnySource,
     AnyValue,
     CallableValue,
     CanAssignError,
@@ -31,7 +32,6 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     TypeVarValue,
-    UNRESOLVED_VALUE,
     NO_RETURN_VALUE,
     KNOWN_MUTABLE_TYPES,
     Value,
@@ -172,7 +172,9 @@ def _hasattr_impl(ctx: CallContext) -> Value:
         else:
             continue
         # interpret a hasattr check as a sign that the object (somehow) has the attribute
-        ctx.visitor._record_type_attr_set(typ, name.val, ctx.node, UNRESOLVED_VALUE)
+        ctx.visitor._record_type_attr_set(
+            typ, name.val, ctx.node, AnyValue(AnySource.inference)
+        )
 
     # if the value exists on the type or instance, hasattr should return True
     # don't interpret the opposite to mean it should return False, as the attribute may
@@ -183,7 +185,7 @@ def _hasattr_impl(ctx: CallContext) -> Value:
         return_value = KnownValue(True)
     else:
         return_value = TypedValue(bool)
-    metadata = [HasAttrGuardExtension("object", name, UNRESOLVED_VALUE)]
+    metadata = [HasAttrGuardExtension("object", name, AnyValue(AnySource.inference))]
     return AnnotatedValue(return_value, metadata)
 
 
@@ -227,7 +229,7 @@ def _super_impl(ctx: CallContext) -> Value:
             except KeyError:
                 # something weird with this function; give up
                 ctx.show_error("failed to find %first_arg", ErrorCode.bad_super_call)
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
             else:
                 if isinstance(first_arg, SubclassValue) and isinstance(
                     first_arg.typ, TypedValue
@@ -238,8 +240,8 @@ def _super_impl(ctx: CallContext) -> Value:
                 elif isinstance(first_arg, TypedValue):
                     return TypedValue(super(current_class, first_arg.typ))
                 else:
-                    return UNRESOLVED_VALUE
-        return UNRESOLVED_VALUE
+                    return AnyValue(AnySource.inference)
+        return AnyValue(AnySource.inference)
 
     if isinstance(typ, KnownValue):
         if inspect.isclass(typ.val):
@@ -248,9 +250,9 @@ def _super_impl(ctx: CallContext) -> Value:
             ctx.show_error(
                 "First argument to super must be a class", ErrorCode.bad_super_call
             )
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
     else:
-        return UNRESOLVED_VALUE  # probably a dynamically created class
+        return AnyValue(AnySource.inference)  # probably a dynamically created class
 
     if isinstance(obj, TypedValue) and obj.typ is not type:
         instance_type = obj.typ
@@ -259,7 +261,7 @@ def _super_impl(ctx: CallContext) -> Value:
         instance_type = obj.typ.typ
         is_value = False
     else:
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
     if not issubclass(instance_type, cls):
         ctx.show_error("Incompatible arguments to super", ErrorCode.bad_super_call)
@@ -275,7 +277,7 @@ def _super_impl(ctx: CallContext) -> Value:
         super_val = super(cls, instance_type)
     except Exception:
         ctx.show_error("Bad arguments to super", ErrorCode.bad_super_call)
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
     if is_value:
         return TypedValue(super_val)
@@ -351,7 +353,7 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
     def inner(key: Value) -> Value:
         self_value = replace_known_sequence_value(ctx.vars["self"])
         if not isinstance(self_value, TypedValue):
-            return UNRESOLVED_VALUE  # shouldn't happen
+            return AnyValue(AnySource.error)  # shouldn't happen
         if not TypedValue(slice).is_assignable(key, ctx.visitor):
             key = ctx.visitor._check_dunder_call(
                 ctx.ast_for_arg("obj"), Composite(key), "__index__", [], allow_call=True
@@ -367,7 +369,7 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                         return self_value.args[0]
                     else:
                         ctx.show_error(f"Tuple index out of range: {key}")
-                        return UNRESOLVED_VALUE
+                        return AnyValue(AnySource.error)
                 else:
                     return self_value.get_generic_arg_for_type(typ, ctx.visitor, 0)
             elif isinstance(key.val, slice):
@@ -377,7 +379,7 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                     return self_value
             else:
                 ctx.show_error(f"Invalid {typ.__name__} key {key}")
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
         elif isinstance(key, TypedValue):
             if issubclass(key.typ, int):
                 return self_value.get_generic_arg_for_type(typ, ctx.visitor, 0)
@@ -385,12 +387,12 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                 return self_value
             else:
                 ctx.show_error(f"Invalid {typ.__name__} key {key}")
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
         elif isinstance(key, AnyValue):
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.from_another)
         else:
             ctx.show_error(f"Invalid {typ.__name__} key {key}")
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
 
     return flatten_unions(inner, ctx.vars["obj"], unwrap_annotated=True)
 
@@ -492,14 +494,14 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
                     ErrorCode.unhashable_key,
                     arg="k",
                 )
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
         if isinstance(self_value, KnownValue):
             if isinstance(key, KnownValue):
                 try:
                     return_value = self_value.val[key.val]
                 except Exception:
                     # No error here, the key may have been added where we couldn't see it.
-                    return UNRESOLVED_VALUE
+                    return AnyValue(AnySource.error)
                 else:
                     return KnownValue(return_value)
             # else just treat it together with DictIncompleteValue
@@ -511,7 +513,7 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
                     ErrorCode.invalid_typeddict_key,
                     arg="k",
                 )
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
             elif isinstance(key, KnownValue):
                 try:
                     _, value = self_value.items[key.val]
@@ -524,7 +526,7 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
             # TODO strictly we should throw an error for any non-Literal or unknown key:
             # https://www.python.org/dev/peps/pep-0589/#supported-and-unsupported-operations
             # Don't do that yet because it may cause too much disruption.
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
         elif isinstance(self_value, DictIncompleteValue):
             possible_values = [
                 dict_value
@@ -533,12 +535,12 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
             ]
             if not possible_values:
                 # No error here, the key may have been added where we couldn't see it.
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
             return unite_values(*possible_values)
         elif isinstance(self_value, TypedValue):
             return self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
         else:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
     return flatten_unions(inner, ctx.vars["k"])
 
@@ -558,7 +560,7 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
                 ErrorCode.unhashable_key,
                 arg="key",
             )
-            return ImplReturn(UNRESOLVED_VALUE)
+            return ImplReturn(AnyValue(AnySource.error))
 
     if isinstance(self_value, TypedDictValue):
         if not TypedValue(str).is_assignable(key, ctx.visitor):
@@ -567,7 +569,7 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
                 ErrorCode.invalid_typeddict_key,
                 arg="key",
             )
-            return ImplReturn(UNRESOLVED_VALUE)
+            return ImplReturn(AnyValue(AnySource.error))
         elif isinstance(key, KnownValue):
             try:
                 _, expected_type = self_value.items[key.val]
@@ -629,7 +631,7 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
                 )
             return ImplReturn(new_value_type)
     else:
-        return ImplReturn(UNRESOLVED_VALUE)
+        return ImplReturn(AnyValue(AnySource.inference))
 
 
 def _dict_keys_impl(ctx: CallContext) -> Value:
@@ -694,7 +696,7 @@ def _list_extend_impl(ctx: CallContext) -> ImplReturn:
                         collections.abc.Iterable, ctx.visitor, 0
                     )
                 else:
-                    arg_type = UNRESOLVED_VALUE
+                    arg_type = AnyValue(AnySource.generic_argument)
                 generic_arg = unite_values(*cleaned_lst.members, arg_type)
                 constrained_value = make_weak(GenericValue(list, [generic_arg]))
             no_return_unless = Constraint(
@@ -1030,7 +1032,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 SigParameter("name", _POS_ONLY, annotation=TypedValue(str)),
                 SigParameter("default", _POS_ONLY, default=_NO_ARG_SENTINEL),
             ],
-            UNRESOLVED_VALUE,
+            AnyValue(AnySource.inference),
             callable=getattr,
         ),
         Signature.make(

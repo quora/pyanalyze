@@ -23,6 +23,8 @@ from .stacked_scopes import Composite
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
+    AnySource,
+    AnyValue,
     CanAssignError,
     Value,
     GenericValue,
@@ -33,7 +35,6 @@ from .value import (
     CanAssignContext,
     SequenceIncompleteValue,
     TypeVarMap,
-    UNRESOLVED_VALUE,
     concrete_values_from_iterable,
 )
 
@@ -61,13 +62,12 @@ def assert_can_assign(left: Value, right: Value, typevar_map: TypeVarMap = {}) -
     assert_eq(typevar_map, left.can_assign(right, CTX))
 
 
-def test_UNRESOLVED_VALUE() -> None:
-    assert not UNRESOLVED_VALUE.is_type(int)
-    assert_can_assign(UNRESOLVED_VALUE, KnownValue(1))
-    assert_can_assign(UNRESOLVED_VALUE, TypedValue(int))
-    assert_can_assign(
-        UNRESOLVED_VALUE, MultiValuedValue([KnownValue(1), TypedValue(int)])
-    )
+def test_any_value() -> None:
+    any = AnyValue(AnySource.unannotated)
+    assert not any.is_type(int)
+    assert_can_assign(any, KnownValue(1))
+    assert_can_assign(any, TypedValue(int))
+    assert_can_assign(any, MultiValuedValue([KnownValue(1), TypedValue(int)]))
 
 
 def test_known_value() -> None:
@@ -81,7 +81,7 @@ def test_known_value() -> None:
     assert_cannot_assign(val, KnownValue(1))
     assert_can_assign(val, val)
     assert_cannot_assign(val, TypedValue(int))
-    assert_can_assign(val, MultiValuedValue([val, UNRESOLVED_VALUE]))
+    assert_can_assign(val, MultiValuedValue([val, AnyValue(AnySource.marker)]))
     assert_cannot_assign(val, val | TypedValue(int))
     assert_cannot_assign(KnownValue(int), SubclassValue(TypedValue(int)))
     assert_cannot_assign(KnownValue(1), KnownValue(True))
@@ -204,7 +204,7 @@ def test_generic_value() -> None:
     val = GenericValue(list, [TypedValue(int)])
     assert_eq("list[int]", str(val))
     assert_can_assign(val, TypedValue(list))
-    assert_can_assign(val, GenericValue(list, [UNRESOLVED_VALUE]))
+    assert_can_assign(val, GenericValue(list, [AnyValue(AnySource.marker)]))
     assert_can_assign(val, GenericValue(list, [TypedValue(bool)]))
     assert_cannot_assign(val, GenericValue(list, [TypedValue(str)]))
     assert_cannot_assign(val, GenericValue(set, [TypedValue(int)]))
@@ -259,7 +259,9 @@ def test_multi_valued_value() -> None:
     assert_cannot_assign(val, TypedValue(float))
     assert_can_assign(val, val)
     assert_cannot_assign(val, KnownValue(None) | TypedValue(str))
-    assert_can_assign(val, UNRESOLVED_VALUE | TypedValue(int) | KnownValue(None))
+    assert_can_assign(
+        val, AnyValue(AnySource.marker) | TypedValue(int) | KnownValue(None)
+    )
 
     assert_eq("Literal[1, 2]", str(KnownValue(1) | KnownValue(2)))
     assert_eq(
@@ -340,7 +342,7 @@ def test_typeddict_value() -> None:
         str(val), ['TypedDict({"a": int, "b": str})', 'TypedDict({"b": str, "a": int})']
     )
 
-    assert_can_assign(val, UNRESOLVED_VALUE)
+    assert_can_assign(val, AnyValue(AnySource.marker))
     assert_can_assign(val, TypedValue(dict))
     assert_cannot_assign(val, TypedValue(str))
 
@@ -392,7 +394,7 @@ def test_typeddict_value() -> None:
             [
                 (KnownValue("a"), TypedValue(int)),
                 (KnownValue("b"), TypedValue(str)),
-                (KnownValue("c"), value.UNRESOLVED_VALUE),
+                (KnownValue("c"), AnyValue(AnySource.marker)),
             ]
         ),
     )
@@ -401,12 +403,12 @@ def test_typeddict_value() -> None:
         value.DictIncompleteValue(
             [
                 (KnownValue("a"), TypedValue(int)),
-                (value.UNRESOLVED_VALUE, TypedValue(str)),
+                (AnyValue(AnySource.marker), TypedValue(str)),
             ]
         ),
     )
     assert_cannot_assign(
-        val, value.DictIncompleteValue([(value.UNRESOLVED_VALUE, TypedValue(str))])
+        val, value.DictIncompleteValue([(AnyValue(AnySource.marker), TypedValue(str))])
     )
     assert_cannot_assign(
         val,
@@ -443,7 +445,7 @@ def test_annotated_value() -> None:
 
 def test_io() -> None:
     assert_can_assign(
-        GenericValue(typing.IO, [UNRESOLVED_VALUE]), TypedValue(io.BytesIO)
+        GenericValue(typing.IO, [AnyValue(AnySource.marker)]), TypedValue(io.BytesIO)
     )
 
 

@@ -49,6 +49,7 @@ from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
     AnnotatedValue,
+    AnySource,
     AnyValue,
     KnownValue,
     ReferencingValue,
@@ -59,7 +60,6 @@ from .value import (
     annotate_value,
     boolean_value,
     UNINITIALIZED_VALUE,
-    UNRESOLVED_VALUE,
     unite_values,
     flatten_values,
 )
@@ -288,7 +288,7 @@ class Constraint(AbstractConstraint):
                         yield TypedValue(self.value)
                     # TODO: Technically here we should infer an intersection type:
                     # a type that is a subclass of both types. In practice currently
-                    # _constrain_values() will eventually return UNRESOLVED_VALUE.
+                    # _constrain_values() will eventually return AnyValue.
                 else:
                     if not safe_issubclass(inner_value.typ, self.value):
                         yield value
@@ -614,7 +614,7 @@ class Scope:
             referenced, _ = value.scope.get(value.name, None, state)
             # globals that are None are probably set to something else later
             if safe_equals(referenced, KnownValue(None)):
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.inference)
             else:
                 return referenced
         else:
@@ -927,7 +927,7 @@ class FunctionScope(Scope):
             elif LEAVES_SCOPE not in scope or ignore_leaves_scope:
                 new_scopes.append(scope)
         if not new_scopes:
-            return {LEAVES_SCOPE: [UNRESOLVED_VALUE]}
+            return {LEAVES_SCOPE: [AnyValue(AnySource.marker)]}
         all_variables = set(chain.from_iterable(new_scopes))
         return {
             varname: uniq_chain(
@@ -1186,5 +1186,5 @@ def _constrain_value(
     if not values:
         # TODO: maybe show an error here? This branch should mean the code is
         # unreachable.
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.unreachable)
     return unite_values(*values)

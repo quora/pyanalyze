@@ -5,13 +5,15 @@ from qcore.asserts import assert_eq
 
 from .value import (
     AnnotatedValue,
+    AnySource,
+    AnyValue,
     CanAssignError,
     GenericValue,
     KnownValue,
+    MultiValuedValue,
     SequenceIncompleteValue,
     TypedDictValue,
     TypedValue,
-    UNRESOLVED_VALUE,
 )
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
@@ -28,7 +30,7 @@ DictObject = GenericValue(dict, [TypedValue(str), TypedValue(object)])
 
 
 def test_stringify() -> None:
-    assert_eq("() -> Any", str(Signature.make([])))
+    assert_eq("() -> Any[unannotated]", str(Signature.make([])))
     assert_eq("() -> int", str(Signature.make([], TypedValue(int))))
     assert_eq(
         "@asynq () -> int", str(Signature.make([], TypedValue(int), is_asynq=True))
@@ -55,7 +57,8 @@ class TestCanAssign:
 
     def test_return_value(self) -> None:
         self.can(
-            Signature.make([], UNRESOLVED_VALUE), Signature.make([], TypedValue(int))
+            Signature.make([], AnyValue(AnySource.marker)),
+            Signature.make([], TypedValue(int)),
         )
         self.can(
             Signature.make([], TypedValue(int)), Signature.make([], TypedValue(int))
@@ -383,7 +386,7 @@ class TestCalls(TestNameCheckVisitorBase):
         def capybara(x):
             obj = WithCall()
             assert_is_value(obj, TypedValue(WithCall))
-            assert_is_value(obj(x), UNRESOLVED_VALUE)
+            assert_is_value(obj(x), AnyValue(AnySource.from_another))
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_unbound_method(self):
@@ -424,7 +427,7 @@ class TestCalls(TestNameCheckVisitorBase):
                     TypedValue(bool),
                     [
                         HasAttrGuardExtension(
-                            "object", KnownValue("foo"), UNRESOLVED_VALUE
+                            "object", KnownValue("foo"), AnyValue(AnySource.inference)
                         )
                     ],
                 ),
@@ -655,7 +658,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
             raise NotImplementedError
 
         def capybara() -> None:
-            assert_is_value(mktemp(), UNRESOLVED_VALUE)
+            assert_is_value(mktemp(), AnyValue(AnySource.generic_argument))
             assert_is_value(mktemp(prefix="p"), KnownValue("p"))
             assert_is_value(mktemp(suffix="s"), KnownValue("s"))
             assert_is_value(mktemp("p", "s"), KnownValue("p") | KnownValue("s"))
