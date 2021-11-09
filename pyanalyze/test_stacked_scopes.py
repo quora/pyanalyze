@@ -1492,6 +1492,8 @@ class TestConstraints(TestNameCheckVisitorBase):
         from typing import Union
         from typing_extensions import Literal
 
+        container = {1, 2, 3}
+
         def capybara(cond):
             x = 1 if cond else 2
             assert_is_value(x, MultiValuedValue([KnownValue(1), KnownValue(2)]))
@@ -1519,6 +1521,12 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue("x") | TypedValue(int))
             else:
                 assert_is_value(x, KnownValue(0))
+
+        def hutia(x: str, y: object):
+            if x in ["a", "b"]:
+                assert_is_value(x, KnownValue("a") | KnownValue("b"))
+            if y in container:
+                assert_is_value(y, KnownValue(1) | KnownValue(2) | KnownValue(3))
 
     @assert_passes()
     def test_preserve_annotated(self):
