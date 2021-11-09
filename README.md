@@ -81,7 +81,7 @@ You want to detect when a call to `run_query()` contains syntactically invalid S
 import pyanalyze
 from pyanalyze.error_code import ErrorCode
 from pyanalyze.signature import CallContext, Signature, SigParameter
-from pyanalyze.value import KnownValue, TypedValue, UNRESOLVED_VALUE, Value
+from pyanalyze.value import KnownValue, TypedValue, AnyValue, AnySource, Value
 
 from database import run_query, parse_sql
 
@@ -93,7 +93,7 @@ def run_query_impl(ctx: CallContext) -> Value:
             "Argument to run_query() must be a string literal",
             ErrorCode.incompatible_call,
         )
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
     try:
         parsed = parse_sql(sql)
@@ -102,7 +102,7 @@ def run_query_impl(ctx: CallContext) -> Value:
             f"Invalid sql passed to run_query(): {e}",
             ErrorCode.incompatible_call,
         )
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
     # check that the parsed SQL is valid...
 
@@ -333,7 +333,7 @@ Just knowing that a name has been defined doesn't tell what you can do with the 
 
 The following subclasses of `Value` exist:
 
-- `UnresolvedValue` (with a single instance, `UNRESOLVED_VALUE`), representing that the script knows nothing about the value a node can contain. For example, if a file contains only the function `def f(x): return x`, the name `x` will have `UNRESOLVED_VALUE` as its value within the function, because there is no information to determine what value it can contain.
+- `AnyValue`, representing that the script knows nothing about the value a node can contain. For example, if a file contains only the function `def f(x): return x`, the name `x` will have an `AnyValue` as its value within the function, because there is no information to determine what value it can contain.
 - `KnownValue` represents a value for which the script knows the concrete Python value. If a file contains the line `x = 1` and no other assignments to `x`, `x` will contain `KnownValue(1)`.
 - `TypedValue` represents that the script knows the type but not the exact value. If the only assignment to `x` is a line `x = int(some_function())`, the script infers that `x` contains `TypedValue(int)`. More generally, the script infers any call to a class as resulting in an instance of that class. The type is also inferred for the `self` argument of methods, for comprehensions, for function arguments with type annotations, and in a few other cases. This class has several subtypes:
   - `NewTypeValue` corresponds to [`typing.NewType`](https://docs.python.org/3/library/typing.html#newtype); it indicates a distinct type that is identical to some other type at runtime. At Quora we use newtypes for helper types like `qtype.Uid`.
@@ -562,6 +562,7 @@ implements basic support for integers with a limited range:
 from dataclasses import dataclass
 from pyanalyze.extensions import CustomCheck
 from pyanalyze.value import (
+    AnyValue,
     flatten_values,
     CanAssign,
     CanAssignError,
@@ -620,7 +621,7 @@ class GreaterThan(CustomCheck):
                 return CanAssignError(
                     f"Value {value.val!r} is not greater than {self.value}"
                 )
-        elif value is UNRESOLVED_VALUE:
+        elif isinstance(value, AnyValue):
             # We let Any through.
             return {}
         else:

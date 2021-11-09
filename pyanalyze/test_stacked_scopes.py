@@ -8,13 +8,15 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
     AnnotatedValue,
+    AnySource,
+    AnyValue,
     DictIncompleteValue,
+    GenericValue,
     KnownValue,
     MultiValuedValue,
     ReferencingValue,
     TypedValue,
     UNINITIALIZED_VALUE,
-    UNRESOLVED_VALUE,
     assert_is_value,
     make_weak,
 )
@@ -94,11 +96,12 @@ class TestStackedScopes(object):
             self.scopes.set("same", KnownValue(1), None, None)
             assert_eq(KnownValue(1), self.scopes.get("same", None, None))
 
-            # even if they are UNRESOLVED_VALUE
-            self.scopes.set("unresolved", UNRESOLVED_VALUE, None, None)
-            assert_is(UNRESOLVED_VALUE, self.scopes.get("unresolved", None, None))
-            self.scopes.set("unresolved", UNRESOLVED_VALUE, None, None)
-            assert_is(UNRESOLVED_VALUE, self.scopes.get("unresolved", None, None))
+            # even if they are AnyValue
+            any = AnyValue(AnySource.marker)
+            self.scopes.set("unresolved", any, None, None)
+            assert_is(any, self.scopes.get("unresolved", None, None))
+            self.scopes.set("unresolved", any, None, None)
+            assert_is(any, self.scopes.get("unresolved", None, None))
 
     def test_referencing_value(self):
         with self.scopes.add_scope(ScopeType.module_scope, scope_node=None):
@@ -129,7 +132,10 @@ class TestStackedScopes(object):
                 self.scopes.set(
                     "is_none", ReferencingValue(outer, "is_none"), None, None
                 )
-                assert_is(UNRESOLVED_VALUE, self.scopes.get("is_none", None, None))
+                assert_eq(
+                    AnyValue(AnySource.inference),
+                    self.scopes.get("is_none", None, None),
+                )
 
     def test_typed_value_set(self):
         self.scopes.set("value", TypedValue(dict), None, None)
@@ -163,21 +169,24 @@ class TestScoping(TestNameCheckVisitorBase):
     @assert_passes()
     def test_function_argument(self):
         def capybara(x):
-            assert_is_value(x, UNRESOLVED_VALUE)
+            assert_is_value(x, AnyValue(AnySource.unannotated))
             x = 3
             assert_is_value(x, KnownValue(3))
 
     @assert_passes()
     def test_default_arg(self):
         def capybara(x=3):
-            assert_is_value(x, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(3)]))
+            assert_is_value(
+                x, MultiValuedValue([AnyValue(AnySource.unannotated), KnownValue(3)])
+            )
 
     @assert_passes()
     def test_args_kwargs(self):
         def capybara(*args, **kwargs):
             assert_is_value(args, TypedValue(tuple))
             assert_is_value(
-                kwargs, GenericValue(dict, [TypedValue(str), UNRESOLVED_VALUE])
+                kwargs,
+                GenericValue(dict, [TypedValue(str), AnyValue(AnySource.unannotated)]),
             )
 
     @assert_passes()
@@ -259,7 +268,10 @@ class TestTry(TestNameCheckVisitorBase):
                     ),
                 )
             assert_is_value(
-                x, MultiValuedValue([KnownValue(3), KnownValue(4), UNRESOLVED_VALUE])
+                x,
+                MultiValuedValue(
+                    [KnownValue(3), KnownValue(4), AnyValue(AnySource.error)]
+                ),
             )
 
     @assert_passes()
@@ -378,12 +390,14 @@ class TestLoops(TestNameCheckVisitorBase):
                 if i == 1:
                     print(x)
                     assert_is_value(
-                        x, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(3)])
+                        x, MultiValuedValue([AnyValue(AnySource.error), KnownValue(3)])
                     )
                 else:
                     x = 3
                     assert_is_value(x, KnownValue(3))
-            assert_is_value(x, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(3)]))
+            assert_is_value(
+                x, MultiValuedValue([AnyValue(AnySource.error), KnownValue(3)])
+            )
 
     @assert_passes()
     def test_second_assignment_in_loop(self):
@@ -434,7 +448,9 @@ class TestLoops(TestNameCheckVisitorBase):
                 y = 4
                 break
 
-            assert_is_value(y, MultiValuedValue([KnownValue(4), UNRESOLVED_VALUE]))
+            assert_is_value(
+                y, MultiValuedValue([KnownValue(4), AnyValue(AnySource.error)])
+            )
 
     @assert_passes(settings={ErrorCode.possibly_undefined_name: False})
     def test_use_after_for_conditional(self):
@@ -444,7 +460,9 @@ class TestLoops(TestNameCheckVisitorBase):
                     y = 4
                     break
 
-            assert_is_value(y, MultiValuedValue([KnownValue(4), UNRESOLVED_VALUE]))
+            assert_is_value(
+                y, MultiValuedValue([KnownValue(4), AnyValue(AnySource.error)])
+            )
 
     @assert_passes(settings={ErrorCode.possibly_undefined_name: False})
     def test_while(self):
@@ -452,7 +470,9 @@ class TestLoops(TestNameCheckVisitorBase):
             while bool():
                 x = 3
                 assert_is_value(x, KnownValue(3))
-            assert_is_value(x, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(3)]))
+            assert_is_value(
+                x, MultiValuedValue([AnyValue(AnySource.error), KnownValue(3)])
+            )
 
     @assert_passes()
     def test_while_always_entered(self):
@@ -732,7 +752,7 @@ class TestLeavesScope(TestNameCheckVisitorBase):
             if cond:
                 x = True
             else:
-                # For some reason in Python 2.7, False gets inferred as UNRESOLVED_VALUE
+                # For some reason in Python 2.7, False gets inferred as Any
                 # after the assert False, but True and None still work.
                 x = None
             y = None
@@ -850,19 +870,19 @@ class TestConstraints(TestNameCheckVisitorBase):
             pass
 
         def capybara(x):
-            assert_is_value(x, UNRESOLVED_VALUE)
+            assert_is_value(x, AnyValue(AnySource.unannotated))
             if isinstance(x, int):
                 assert_is_value(x, TypedValue(int))
             else:
-                assert_is_value(x, UNRESOLVED_VALUE)
+                assert_is_value(x, AnyValue(AnySource.unannotated))
 
             if isinstance(x, A):
                 assert_is_value(x, TypedValue(A))
                 if isinstance(x, B):
                     assert_is_value(x, TypedValue(B))
                     if isinstance(x, C):
-                        # Incompatible constraints result in UNRESOLVED_VALUE.
-                        assert_is_value(x, UNRESOLVED_VALUE)
+                        # Incompatible constraints result in Any.
+                        assert_is_value(x, AnyValue(AnySource.unreachable))
             if isinstance(x, B):
                 assert_is_value(x, TypedValue(B))
                 if isinstance(x, A):
@@ -951,7 +971,7 @@ class TestConstraints(TestNameCheckVisitorBase):
             assert_is_value(y, KnownValue(False))
 
         def mara(cond, cond2):
-            assert_is_value(cond, UNRESOLVED_VALUE)
+            assert_is_value(cond, AnyValue(AnySource.unannotated))
             assert_is_instance(cond, int)
             assert_is_value(cond, TypedValue(int))
 
@@ -986,16 +1006,18 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(y, KnownValue(True))
             else:
                 # no constraints from the inverse of an AND constraint
-                assert_is_value(x, UNRESOLVED_VALUE)
-                assert_is_value(y, UNRESOLVED_VALUE)
+                assert_is_value(x, AnyValue(AnySource.unannotated))
+                assert_is_value(y, AnyValue(AnySource.unannotated))
 
         def kerodon(x):
             if x is True and assert_is_value(x, KnownValue(True)):
                 pass
             # After the if it's either True (if the if branch was taken)
-            # or UNRESOLVED_VALUE (if it wasn't). This is not especially
+            # or Any (if it wasn't). This is not especially
             # useful in this case, but hopefully harmless.
-            assert_is_value(x, MultiValuedValue([KnownValue(True), UNRESOLVED_VALUE]))
+            assert_is_value(
+                x, MultiValuedValue([KnownValue(True), AnyValue(AnySource.unannotated)])
+            )
 
         def paca(x):
             if x:
@@ -1231,7 +1253,7 @@ class TestConstraints(TestNameCheckVisitorBase):
         def capybara(x):
             def nested():
                 while True:
-                    assert_is_value(x, UNRESOLVED_VALUE)
+                    assert_is_value(x, AnyValue(AnySource.unannotated))
                     if x:
                         pass
 
@@ -1241,9 +1263,9 @@ class TestConstraints(TestNameCheckVisitorBase):
     def test_nonlocal_unresolved_if(self):
         def capybara(x):
             def nested():
-                assert_is_value(x, UNRESOLVED_VALUE)
+                assert_is_value(x, AnyValue(AnySource.unannotated))
                 if x:
-                    assert_is_value(x, UNRESOLVED_VALUE)
+                    assert_is_value(x, AnyValue(AnySource.unannotated))
 
             return nested()
 
@@ -1407,7 +1429,11 @@ class TestConstraints(TestNameCheckVisitorBase):
                     x,
                     AnnotatedValue(
                         TypedValue(int),
-                        [HasAttrExtension(KnownValue("name"), UNRESOLVED_VALUE)],
+                        [
+                            HasAttrExtension(
+                                KnownValue("name"), AnyValue(AnySource.inference)
+                            )
+                        ],
                     ),
                 )
 
@@ -1425,29 +1451,39 @@ class TestConstraints(TestNameCheckVisitorBase):
                     value = ""
 
                 assert_is_value(
-                    value, MultiValuedValue([UNRESOLVED_VALUE, KnownValue("")])
+                    value,
+                    MultiValuedValue([AnyValue(AnySource.unannotated), KnownValue("")]),
                 )
 
                 self.value = value
 
                 assert_is_value(
-                    self.value, MultiValuedValue([UNRESOLVED_VALUE, KnownValue("")])
+                    self.value,
+                    MultiValuedValue([AnyValue(AnySource.unannotated), KnownValue("")]),
                 )
 
             def tree(self):
                 assert_is_value(
-                    self.value, MultiValuedValue([UNRESOLVED_VALUE, KnownValue("")])
+                    self.value,
+                    MultiValuedValue([AnyValue(AnySource.unannotated), KnownValue("")]),
                 )
                 if isinstance(self.value, Foo) and self.value.has_images():
                     assert_is_value(self.value, TypedValue(Foo))
                 else:
                     assert_is_value(
-                        self.value, MultiValuedValue([UNRESOLVED_VALUE, KnownValue("")])
+                        self.value,
+                        MultiValuedValue(
+                            [AnyValue(AnySource.unannotated), KnownValue("")]
+                        ),
                     )
                 assert_is_value(
                     self.value,
                     MultiValuedValue(
-                        [TypedValue(Foo), UNRESOLVED_VALUE, KnownValue("")]
+                        [
+                            TypedValue(Foo),
+                            AnyValue(AnySource.unannotated),
+                            KnownValue(""),
+                        ]
                     ),
                 )
 
@@ -1526,14 +1562,16 @@ class TestComposite(TestNameCheckVisitorBase):
 
             def eat(self):
                 assert_is_value(
-                    self.x, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(1)])
+                    self.x,
+                    MultiValuedValue([AnyValue(AnySource.unannotated), KnownValue(1)]),
                 )
                 self.x = 1
                 assert_is_value(self.x, KnownValue(1))
 
                 self = Capybara(2)
                 assert_is_value(
-                    self.x, MultiValuedValue([UNRESOLVED_VALUE, KnownValue(1)])
+                    self.x,
+                    MultiValuedValue([AnyValue(AnySource.unannotated), KnownValue(1)]),
                 )
 
     @assert_passes()
@@ -1568,7 +1606,7 @@ class TestComposite(TestNameCheckVisitorBase):
         from typing import Any, Dict
 
         def capybara(x: Dict[str, Any]) -> None:
-            assert_is_value(x["a"], UNRESOLVED_VALUE)
+            assert_is_value(x["a"], AnyValue(AnySource.explicit))
             x["a"] = 1
             assert_is_value(x["a"], KnownValue(1))
             if isinstance(x["c"], int):

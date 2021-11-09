@@ -98,12 +98,13 @@ from .yield_checker import YieldChecker
 from .type_object import get_mro
 from .value import (
     AnnotatedValue,
+    AnySource,
+    AnyValue,
     CallableValue,
     CanAssignError,
     KnownValueWithTypeVars,
     boolean_value,
     UNINITIALIZED_VALUE,
-    UNRESOLVED_VALUE,
     NO_RETURN_VALUE,
     make_weak,
     unite_values,
@@ -225,7 +226,9 @@ class _AttrContext(attributes.AttrContext):
         try:
             return self.visitor.config.PROPERTIES_OF_KNOWN_TYPE[obj]
         except (KeyError, TypeError):
-            return UNRESOLVED_VALUE  # can't figure out what this will return
+            return AnyValue(
+                AnySource.inference
+            )  # can't figure out what this will return
 
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         argspec = self.visitor.arg_spec_cache.get_argspec(obj)
@@ -236,7 +239,7 @@ class _AttrContext(attributes.AttrContext):
             # use it.
             if id(argspec) in self.visitor._argspec_to_retval:
                 return self.visitor._argspec_to_retval[id(argspec)]
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
     def get_attribute_from_typeshed(self, typ: type) -> Value:
         typeshed_type = self.visitor.arg_spec_cache.ts_finder.get_attribute(
@@ -246,7 +249,7 @@ class _AttrContext(attributes.AttrContext):
             typeshed_type is UNINITIALIZED_VALUE
             and attributes.may_have_dynamic_attributes(typ)
         ):
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
         return typeshed_type
 
     def should_ignore_none_attributes(self) -> bool:
@@ -340,7 +343,7 @@ class ClassAttributeChecker:
             pickle.loads(pickle.dumps(value))
         except Exception:
             # If we can't serialize it, don't attempt to store it.
-            value = UNRESOLVED_VALUE
+            value = AnyValue(AnySource.inference)
         scope = self.attribute_values[serialized]
         if attr_name not in scope:
             scope[attr_name] = value
@@ -415,7 +418,7 @@ class ClassAttributeChecker:
             if value is not None:
                 return value
         else:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
     def check_attribute_reads(self) -> None:
         """Checks that all recorded attribute reads refer to valid attributes.
@@ -720,7 +723,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         # State (to use in with qcore.override)
         self.state = VisitorState.collect_names
         # value currently being assigned
-        self.being_assigned = UNRESOLVED_VALUE
+        self.being_assigned = AnyValue(AnySource.inference)
         # current class (for inferring the type of cls and self arguments)
         self.current_class = None
         self.current_function_name = None
@@ -907,11 +910,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 "%s\nInternal error: %r" % (traceback.format_exc(), e),
                 error_code=ErrorCode.internal_error,
             )
-            ret = UNRESOLVED_VALUE
+            ret = AnyValue(AnySource.error)
         finally:
             self.node_context.contexts.pop()
         if ret is None:
-            ret = UNRESOLVED_VALUE
+            ret = AnyValue(AnySource.inference)
         if self.annotate:
             node.inferred_value = ret
         return ret
@@ -960,7 +963,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
 
     def _set_name_in_scope(
-        self, varname: str, node: object, value: Value = UNRESOLVED_VALUE
+        self, varname: str, node: object, value: Value = AnyValue(AnySource.inference)
     ) -> Value:
         current_scope = self.scopes.current_scope()
         scope_type = current_scope.scope_type
@@ -1038,7 +1041,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self._show_error_if_checking(
                     error_node, f"Undefined name: {node.id}", ErrorCode.undefined_name
                 )
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
         if isinstance(value, MultiValuedValue):
             subvals = value.vals
         elif isinstance(value, AnnotatedValue) and isinstance(
@@ -1057,7 +1060,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
                 new_mvv = MultiValuedValue(
                     [
-                        UNRESOLVED_VALUE if subval is UNINITIALIZED_VALUE else subval
+                        AnyValue(AnySource.error)
+                        if subval is UNINITIALIZED_VALUE
+                        else subval
                         for subval in subvals
                     ]
                 )
@@ -1162,7 +1167,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if self.scopes.scope_type() == ScopeType.module_scope:
                 cls_obj = self.scopes.get(node.name, node, self.state)
             else:
-                cls_obj = UNRESOLVED_VALUE
+                cls_obj = AnyValue(AnySource.inference)
 
             if isinstance(cls_obj, MultiValuedValue) and self.module is not None:
                 # if there are multiple, see if there is only one that matches this module
@@ -1195,7 +1200,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if isinstance(cls_obj, KnownValue):
                 return cls_obj
 
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Value:
         return self.visit_FunctionDef(node, is_coroutine=True)
@@ -1297,7 +1302,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return_value = expected_return_value
 
         if is_generator and return_value == KnownNone:
-            return_value = UNRESOLVED_VALUE
+            return_value = AnyValue(AnySource.inference)
 
         # pure async functions are otherwise incorrectly inferred as returning whatever the
         # underlying function returns
@@ -1399,7 +1404,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         with self.asynq_checker.set_func_name("<lambda>"):
             self._visit_function_body(node, defaults=defaults, kw_defaults=kw_defaults)
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
     def _visit_decorators_and_check_asynq(
         self, decorator_list: List[ast.expr]
@@ -1458,7 +1463,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if is_collecting and not self.scopes.contains_scope_of_type(
             ScopeType.function_scope
         ):
-            return UNRESOLVED_VALUE, False, False
+            return AnyValue(AnySource.inference), False, False
 
         # We pass in the node to add_scope() and visit the body once in collecting
         # mode if in a nested function, so that constraints on nonlocals in the outer
@@ -1487,16 +1492,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else qcore.override(self, "current_class", None)
             )
             with class_ctx:
-                args = self._visit_function_args(
-                    node, function_info, defaults, kw_defaults
-                )
+                self._visit_function_args(node, function_info, defaults, kw_defaults)
 
             with qcore.override(
                 self, "state", VisitorState.collect_names
             ), qcore.override(self, "return_values", []):
                 self._generic_visit_list(body)
             if is_collecting:
-                return UNRESOLVED_VALUE, False, self.is_generator
+                return AnyValue(AnySource.inference), False, self.is_generator
 
             # otherwise we may end up using results from the last yield (generated during the
             # collect state) to evaluate the first one visited during the check state
@@ -1520,7 +1523,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return_set: Value,
     ) -> Tuple[Value, bool, bool]:
         # Ignore generators for now.
-        if return_set is UNRESOLVED_VALUE or self.is_generator:
+        if isinstance(return_set, AnyValue) or self.is_generator:
             has_return = True
         elif return_set is UNINITIALIZED_VALUE:
             has_return = False
@@ -1538,7 +1541,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         # in practice this condition often occurs in abstract methods that just
         # raise NotImplementedError.
         if not return_values:
-            return UNRESOLVED_VALUE, has_return, self.is_generator
+            return AnyValue(AnySource.inference), has_return, self.is_generator
         else:
             return unite_values(*return_values), has_return, self.is_generator
 
@@ -1629,7 +1632,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         function_info: FunctionInfo,
         defaults: Sequence[Optional[Value]],
         kw_defaults: Sequence[Optional[Value]],
-    ) -> List[ast.arg]:
+    ) -> None:
         """Visits and checks the arguments to a function. Returns the list of argument names."""
         self._check_method_first_arg(node, function_info=function_info)
 
@@ -1681,9 +1684,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                             error_code=ErrorCode.missing_parameter_annotation,
                         )
                     if default is not None:
-                        value = unite_values(UNRESOLVED_VALUE, default)
+                        value = unite_values(AnyValue(AnySource.unannotated), default)
                     else:
-                        value = UNRESOLVED_VALUE
+                        value = AnyValue(AnySource.unannotated)
 
                 if is_self:
                     # we need this for the implementation of super()
@@ -1696,24 +1699,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 # the vararg is wrapped in an arg object
                 vararg = node.args.vararg.arg
                 arg_value = self._value_of_annotated_arg(node.args.vararg)
-                if arg_value is UNRESOLVED_VALUE:
+                if isinstance(arg_value, AnyValue):
                     value = TypedValue(tuple)
                 else:
                     value = GenericValue(tuple, [arg_value])
                 self.scopes.set(vararg, value, vararg, self.state)
             if node.args.kwarg is not None:
-                value = GenericValue(dict, [TypedValue(str), UNRESOLVED_VALUE])
                 kwarg = node.args.kwarg.arg
                 arg_value = self._value_of_annotated_arg(node.args.kwarg)
-                if arg_value is not UNRESOLVED_VALUE:
-                    value = GenericValue(dict, [TypedValue(str), arg_value])
+                value = GenericValue(dict, [TypedValue(str), arg_value])
                 self.scopes.set(kwarg, value, kwarg, self.state)
-
-        return args
 
     def _value_of_annotated_arg(self, arg: ast.arg) -> Value:
         if arg.annotation is None:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.unannotated)
         # Evaluate annotations in the surrounding scope,
         # not the function's scope.
         with self.scopes.ignore_topmost_scope(), qcore.override(
@@ -1926,7 +1925,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             try:
                 pseudo_module = importer.import_module(pseudo_module_name, f.name)
             except Exception:
-                # sets the name of the imported module to an UnresolvedValue so we don't get further
+                # sets the name of the imported module to Any so we don't get further
                 # errors
                 self._handle_imports(node.names)
                 return
@@ -2047,14 +2046,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             with qcore.override(self, "in_comprehension_body", True):
                 key_value = self.visit(node.key)
                 value_value = self.visit(node.value)
-            if key_value is UNRESOLVED_VALUE and value_value is UNRESOLVED_VALUE:
+            if isinstance(key_value, AnyValue) and isinstance(value_value, AnyValue):
                 return TypedValue(dict)
             else:
                 return make_weak(GenericValue(dict, [key_value, value_value]))
 
         with qcore.override(self, "in_comprehension_body", True):
             member_value = self.visit(node.elt)
-        if member_value is UNRESOLVED_VALUE:
+        if isinstance(member_value, AnyValue):
             return TypedValue(typ)
         else:
             if typ is types.GeneratorType:
@@ -2146,7 +2145,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def visit_Dict(self, node: ast.Dict) -> Value:
         ret = {}
         all_pairs = []
-        has_UNRESOLVED_VALUE = False
+        has_non_literal = False
         has_star_include = False
         for key_node, value_node in zip(node.keys, node.values):
             value_val = self.visit(value_node)
@@ -2159,7 +2158,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if not isinstance(key_val, KnownValue) or not isinstance(
                 value_val, KnownValue
             ):
-                has_UNRESOLVED_VALUE = True
+                has_non_literal = True
             value = value_val.val if isinstance(value_val, KnownValue) else None
 
             if not isinstance(key_val, KnownValue):
@@ -2190,7 +2189,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if has_star_include:
             # TODO more precise type
             return TypedValue(dict)
-        elif has_UNRESOLVED_VALUE:
+        elif has_non_literal:
             return DictIncompleteValue(dict, all_pairs)
         else:
             return KnownValue(ret)
@@ -2219,7 +2218,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                             "Two starred expressions in assignment",
                             error_code=ErrorCode.unexpected_node,
                         )
-                        with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
+                        with qcore.override(
+                            self, "being_assigned", AnyValue(AnySource.error)
+                        ):
                             return self.generic_visit(node)
                     else:
                         post_starred_length = 0
@@ -2238,7 +2239,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     ErrorCode.bad_unpack,
                     detail=str(being_assigned),
                 )
-                with qcore.override(self, "being_assigned", UNRESOLVED_VALUE):
+                with qcore.override(self, "being_assigned", AnyValue(AnySource.error)):
                     return self.generic_visit(node)
 
             for target, value in zip(node.elts, being_assigned):
@@ -2278,7 +2279,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                             f"{elt.value} is not iterable",
                             ErrorCode.unsupported_operation,
                         )
-                        values.append(UNRESOLVED_VALUE)
+                        values.append(AnyValue(AnySource.error))
                         has_unknown_value = True
                     elif isinstance(vals, Value):
                         # single value
@@ -2343,7 +2344,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if len(node.ops) != 1:
             # TODO handle multi-comparison properly
             self.generic_visit(node)
-            return UNRESOLVED_VALUE, NULL_CONSTRAINT
+            return AnyValue(AnySource.inference), NULL_CONSTRAINT
         op = node.ops[0]
         lhs, lhs_constraint = self._visit_possible_constraint(node.left)
         rhs, rhs_constraint = self._visit_possible_constraint(node.comparators[0])
@@ -2366,7 +2367,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(op, (ast.Is, ast.IsNot)):
             val = TypedValue(bool)
         else:
-            val = UNRESOLVED_VALUE
+            val = AnyValue(AnySource.inference)
         return val, constraint
 
     def _constraint_from_compare_op(
@@ -2440,7 +2441,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         constraint = Constraint(
             pred.varname, ConstraintType.predicate, True, predicate_func
         )
-        return UNRESOLVED_VALUE, constraint
+        return AnyValue(AnySource.inference), constraint
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Value:
         val, _ = self.constraint_from_unary_op(node)
@@ -2501,7 +2502,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     f"Unsupported operands for | in annotation: {left} and {right}",
                     error_code=ErrorCode.unsupported_operation,
                 )
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
 
         if (
             isinstance(op, ast.Mod)
@@ -2509,7 +2510,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and isinstance(left.val, (bytes, str))
         ):
             value, replacement_node = format_strings.check_string_format(
-                left_node, left.val, right_node, right, self._show_error_if_checking
+                left_node,
+                left.val,
+                right_node,
+                right,
+                self._show_error_if_checking,
+                self,
             )
             if replacement_node is not None and isinstance(source_node, ast.BinOp):
                 replacement = self.replace_node(source_node, replacement_node)
@@ -2546,7 +2552,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         # A proper solution may be to take the product of the MVVs on both sides and try
         # them all.
         if isinstance(left, MultiValuedValue) and isinstance(right, MultiValuedValue):
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
         with self.catch_errors() as left_errors:
             left_result = self._check_dunder_call(
@@ -2572,7 +2578,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     f"Unsupported operands for {description}: {left} and {right}",
                     error_code=ErrorCode.unsupported_operation,
                 )
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
             return right_result
         else:
             if right_errors:
@@ -2587,8 +2593,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # Instead, we return Any if that's the right_result. This handles
             # the case above but might return the wrong result in some other rare
             # cases.
-            if right_result is UNRESOLVED_VALUE:
-                return UNRESOLVED_VALUE
+            if isinstance(right_result, AnyValue):
+                return AnyValue(AnySource.from_another)
             return left_result
 
     # Indexing
@@ -2633,7 +2639,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(tv_map, CanAssignError):
             return self._check_dunder_call(node.value, composite, "__await__", [])
         else:
-            return tv_map.get(T, UNRESOLVED_VALUE)
+            return tv_map.get(T, AnyValue(AnySource.generic_argument))
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Value:
         self.is_generator = True
@@ -2646,7 +2652,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 f"Cannot use {value} in yield from",
                 error_code=ErrorCode.bad_yield_from,
             )
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
     def visit_Yield(self, node: ast.Yield) -> Value:
         if self._is_checking():
@@ -2675,7 +2681,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if self.async_kind != AsyncFunctionKind.non_async and value is not None:
             return self._unwrap_yield_result(node, value)
         else:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
     def _unwrap_yield_result(self, node: ast.AST, value: Value) -> Value:
         if isinstance(value, AsyncTaskIncompleteValue):
@@ -2717,8 +2723,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self._unwrap_yield_result(node, KnownValue(elt)) for elt in value.val
             ]
             return KnownValue(values)
-        elif value is UNRESOLVED_VALUE:
-            return UNRESOLVED_VALUE
+        elif isinstance(value, AnyValue):
+            return AnyValue(AnySource.from_another)
         elif isinstance(value, AnnotatedValue):
             return self._unwrap_yield_result(node, value.value)
         elif isinstance(value, MultiValuedValue):
@@ -2726,14 +2732,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 *[self._unwrap_yield_result(node, val) for val in value.vals]
             )
         elif _is_asynq_future(value):
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
         else:
             self._show_error_if_checking(
                 node,
                 "Invalid value yielded: %r" % (value,),
                 error_code=ErrorCode.bad_async_yield,
             )
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
 
     def visit_Return(self, node: ast.Return) -> None:
         # For return type inference, set the pseudo-variable RETURN_VALUE in the local scope.
@@ -2752,7 +2758,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if value is NO_RETURN_VALUE:
             return
         self.return_values.append(value)
-        self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
+        self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
         if (
             # TODO check generator types properly
             not (self.is_generator and self.async_kind == AsyncFunctionKind.non_async)
@@ -2778,7 +2784,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         # we need to record this in the return value so that functions that always raise
         # NotImplementedError aren't inferred as returning None
         self.return_values.append(None)
-        self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
+        self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
 
         raised_expr = node.exc
 
@@ -2820,7 +2826,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 node, error_code=ErrorCode.condition_always_true
             )
         elif val is False:
-            self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
+            self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
 
     def add_constraint(self, node: object, constraint: AbstractConstraint) -> None:
         self.scopes.current_scope().add_constraint(constraint, node, self.state)
@@ -2852,10 +2858,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return pair
 
     def visit_Break(self, node: ast.Break) -> None:
-        self._set_name_in_scope(LEAVES_LOOP, node, UNRESOLVED_VALUE)
+        self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
 
     def visit_Continue(self, node: ast.Continue) -> None:
-        self._set_name_in_scope(LEAVES_LOOP, node, UNRESOLVED_VALUE)
+        self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
 
     def visit_For(self, node: ast.For) -> None:
         iterated_value, num_members = self._member_value_of_iterator(node.iter)
@@ -2951,7 +2957,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     "Object %r is not iterable" % (iterated.val,),
                     ErrorCode.unsupported_operation,
                 )
-                return UNRESOLVED_VALUE, None
+                return AnyValue(AnySource.error), None
             if isinstance(iterated.val, range):
                 return TypedValue(int), len(iterated.val)
             # if the thing we're iterating over is e.g. a file or an infinite generator, calling
@@ -2959,12 +2965,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if not isinstance(
                 iterated.val, (list, set, tuple, dict, str, bytes, frozenset)
             ):
-                return UNRESOLVED_VALUE, None
+                return AnyValue(AnySource.inference), None
             try:
                 values = list(iterated.val)
             except Exception:
                 # we couldn't iterate over it for whatever reason; just ignore for now
-                return UNRESOLVED_VALUE, None
+                return AnyValue(AnySource.error), None
             return unite_values(*map(KnownValue, values)), len(values)
         elif isinstance(iterated, SequenceIncompleteValue):
             return unite_values(*iterated.members), len(iterated.members)
@@ -2999,9 +3005,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         ErrorCode.unsupported_operation,
                         detail=tv_map.display(),
                     )
-                return UNRESOLVED_VALUE, None
-            return tv_map.get(T, UNRESOLVED_VALUE), None
-        return UNRESOLVED_VALUE, None
+                return AnyValue(AnySource.error), None
+            return tv_map.get(T, AnyValue(AnySource.generic_argument)), None
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
@@ -3201,7 +3206,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # TODO disallow assignments to Final variables (current code
             # just avoids false positive errors).
             is_final = True
-            expected_type = UNRESOLVED_VALUE
+            expected_type = AnyValue(AnySource.marker)
         else:
             expected_type = self._value_of_annotation_type(annotation, node.annotation)
             is_final = False
@@ -3236,7 +3241,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(node.target, ast.Name):
             lhs = self.composite_from_name(node.target, force_read=True)
         else:
-            lhs = Composite(UNRESOLVED_VALUE, None, node.target)
+            lhs = Composite(AnyValue(AnySource.inference), None, node.target)
 
         value = self._visit_binop_internal(
             node.target, lhs, node.op, node.value, rhs, node, is_inplace=True
@@ -3285,7 +3290,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         else:
             # not sure when (if ever) the other contexts can happen
             self.show_error(node, f"Bad context: {node.ctx}", ErrorCode.unexpected_node)
-            return Composite(UNRESOLVED_VALUE, None, node)
+            return Composite(AnyValue(AnySource.error), None, node)
 
     def visit_Starred(self, node: ast.Starred) -> Value:
         val = self.visit(node.value)
@@ -3300,14 +3305,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         VariableNameValues are used for things like uids that are represented as integers, but
         in places where we don't necessarily have precise annotations. Therefore, we replace
-        only UNRESOLVED_VALUE.
+        only AnyValue.
 
         """
-        return value is UNRESOLVED_VALUE
+        return (
+            isinstance(value, AnyValue) and value.source is not AnySource.variable_name
+        )
 
     def _maybe_use_hardcoded_type(self, value: Value, name: str) -> Value:
         """Replaces a value with a name of hardcoded type where applicable."""
-        if value is not UNRESOLVED_VALUE and not isinstance(value, MultiValuedValue):
+        if not isinstance(value, (AnyValue, MultiValuedValue)):
             return value
 
         try:
@@ -3329,13 +3336,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and isinstance(index, KnownValue)
             and is_hashable(index.val)
         ):
-            if isinstance(root_composite.varname, str):
-                composite_var = CompositeVariable(root_composite.varname, (index,))
-            else:
-                composite_var = CompositeVariable(
-                    root_composite.varname.varname,
-                    (*root_composite.varname.attributes, index),
-                )
+            composite_var = root_composite.get_extended_varname(index)
         else:
             composite_var = None
         if isinstance(root_composite.value, MultiValuedValue):
@@ -3388,7 +3389,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     # static analysis: ignore[unsupported_operation]
                     return_value = KnownValue(type[index.val])
                 else:
-                    return_value = UNRESOLVED_VALUE
+                    return_value = AnyValue(AnySource.inference)
             elif (
                 isinstance(value, SequenceIncompleteValue)
                 and isinstance(index, KnownValue)
@@ -3419,7 +3420,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                             f"Object {value} does not support subscripting",
                             error_code=ErrorCode.unsupported_operation,
                         )
-                        return_value = UNRESOLVED_VALUE
+                        return_value = AnyValue(AnySource.error)
                     else:
                         return_value, _ = self.check_call(
                             node.value, cgi, [index_composite], allow_call=True
@@ -3430,10 +3431,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         f"Object {value} does not support subscripting",
                         error_code=ErrorCode.unsupported_operation,
                     )
-                    return_value = UNRESOLVED_VALUE
+                    return_value = AnyValue(AnySource.error)
 
                 if (
-                    return_value is UNRESOLVED_VALUE
+                    self._should_use_varname_value(return_value)
                     and isinstance(index, KnownValue)
                     and isinstance(index.val, str)
                 ):
@@ -3461,7 +3462,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 f"Unexpected subscript context: {node.ctx}",
                 ErrorCode.unexpected_node,
             )
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
 
     def _get_dunder(self, node: ast.AST, callee_val: Value, method_name: str) -> Value:
         lookup_val = callee_val.get_type_value()
@@ -3509,7 +3510,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> Value:
         method_object = self._get_dunder(node, callee_composite.value, method_name)
         if method_object is UNINITIALIZED_VALUE:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
         return_value, _ = self.check_call(
             node, method_object, [callee_composite, *args], allow_call=allow_call
         )
@@ -3539,15 +3540,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self.yield_checker.record_usage(attr_str, node)
 
         root_composite = self.composite_from_node(node.value)
-        root_varname = root_composite.varname
-        if root_varname is None:
-            composite = None
-        elif isinstance(root_varname, str):
-            composite = CompositeVariable(root_varname, (node.attr,))
-        else:
-            composite = CompositeVariable(
-                root_varname.varname, (*root_varname.attributes, node.attr)
-            )
+        composite = root_composite.get_extended_varname(node.attr)
         if self._is_write_ctx(node.ctx):
             if (
                 composite is not None
@@ -3582,7 +3575,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return Composite(value, composite, node)
         else:
             self.show_error(node, "Unknown context", ErrorCode.unexpected_node)
-            return Composite(UNRESOLVED_VALUE, composite, node)
+            return Composite(AnyValue(AnySource.error), composite, node)
 
     def get_attribute(
         self, root_composite: Composite, attr: str, node: Optional[ast.AST] = None
@@ -3642,7 +3635,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             root_value = root_value.value
         if isinstance(root_value, UnboundMethodValue):
             if self._should_ignore_val(node):
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
         elif isinstance(root_value, KnownValue):
             # super calls on mixin classes may use attributes that are defined only on child classes
             if isinstance(root_value.val, super):
@@ -3654,7 +3647,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     for cls in subclasses
                     if cls is not root_value.val.__thisclass__
                 ):
-                    return UNRESOLVED_VALUE
+                    return AnyValue(AnySource.inference)
 
             # Ignore objects that override __getattr__
             if not self._has_only_known_attributes(root_value.val) and (
@@ -3662,7 +3655,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 or self._should_ignore_val(node)
                 or safe_getattr(root_value.val, "_pyanalyze_is_nested_function", False)
             ):
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.inference)
         elif isinstance(root_value, TypedValue):
             root_type = root_value.typ
             if not self._has_only_known_attributes(root_type):
@@ -3673,7 +3666,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 if not self._has_only_known_attributes(root_type):
                     return self._maybe_get_attr_value(root_type, attr)
             else:
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.inference)
         elif isinstance(root_value, MultiValuedValue):
             return unite_values(
                 *[
@@ -3686,7 +3679,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             "%s has no attribute %r" % (root_value, attr),
             ErrorCode.undefined_attribute,
         )
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
     def _has_only_known_attributes(self, typ: object) -> bool:
         if not isinstance(typ, type):
@@ -3891,13 +3884,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             callee_wrapped.val is ignored for ignored in self.config.IGNORED_CALLEES
         ):
             self.log(logging.INFO, "Ignoring callee", callee_wrapped)
-            return UNRESOLVED_VALUE, NULL_CONSTRAINT
+            return AnyValue(AnySource.error), NULL_CONSTRAINT
 
         extended_argspec = self.signature_from_value(callee_wrapped, node)
         if extended_argspec is ANY_SIGNATURE:
             # don't bother calling it
             extended_argspec = None
-            return_value = UNRESOLVED_VALUE
+            return_value = AnyValue(AnySource.from_another)
             constraint = NULL_CONSTRAINT
             no_return_unless = NULL_CONSTRAINT
 
@@ -3907,7 +3900,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 f"{callee_wrapped} is not callable",
                 error_code=ErrorCode.not_callable,
             )
-            return_value = UNRESOLVED_VALUE
+            return_value = AnyValue(AnySource.error)
             constraint = NULL_CONSTRAINT
             no_return_unless = NULL_CONSTRAINT
 
@@ -3964,7 +3957,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     return_value = KnownValue(result)
 
         if return_value is NO_RETURN_VALUE:
-            self._set_name_in_scope(LEAVES_SCOPE, node, UNRESOLVED_VALUE)
+            self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
 
         # for .asynq functions, we use the argspec for the underlying function, but that means
         # that the return value is not wrapped in AsyncTask, so we do that manually here
@@ -3990,7 +3983,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return return_value, constraint
         else:
             if (
-                return_value is UNRESOLVED_VALUE
+                isinstance(return_value, AnyValue)
                 and isinstance(callee_wrapped, KnownValue)
                 and asynq.is_pure_async_fn(callee_wrapped.val)
             ):
@@ -4059,7 +4052,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # is consistent with the base class.
             # TODO: make the return annotation be of the type of the value.
             return ANY_SIGNATURE
-        elif value is UNRESOLVED_VALUE or isinstance(value, VariableNameValue):
+        elif isinstance(value, AnyValue):
             return ANY_SIGNATURE
         else:
             return None
@@ -4127,7 +4120,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if self.attribute_checker is not None:
             return self.attribute_checker.get_attribute_value(typ, attr_name)
         else:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
     # Finding unused objects
 
@@ -4310,7 +4303,6 @@ def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
     if module is None:
         module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
     else:
-        module_vars = {key: KnownValue(value) for key, value in module.__dict__.items()}
         module_vars = {}
         annotations = getattr(module, "__annotations__", {})
         for key, value in module.__dict__.items():
@@ -4393,8 +4385,6 @@ def _is_coroutine_function(obj: object) -> bool:
 
 def _has_annotation_for_attr(typ: type, attr: str) -> bool:
     try:
-        # TODO maybe type.__annotations__ should be added to typeshed?
-        # static analysis: ignore[undefined_attribute]
         return attr in typ.__annotations__
     except Exception:
         # __annotations__ doesn't exist or isn't a dict

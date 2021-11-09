@@ -14,7 +14,7 @@ from . import value
 
 def _failing_impl(ctx: CallContext) -> value.Value:
     ctx.show_error("Always errors")
-    return value.UNRESOLVED_VALUE
+    return value.AnyValue(value.AnySource.error)
 
 
 class TestConfig(Config):

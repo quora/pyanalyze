@@ -49,6 +49,8 @@ from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
     AnnotatedValue,
+    AnySource,
+    AnyValue,
     KnownValue,
     ReferencingValue,
     SubclassValue,
@@ -58,7 +60,6 @@ from .value import (
     annotate_value,
     boolean_value,
     UNINITIALIZED_VALUE,
-    UNRESOLVED_VALUE,
     unite_values,
     flatten_values,
 )
@@ -103,6 +104,9 @@ class CompositeVariable:
     varname: str
     attributes: Sequence[Union[str, KnownValue]]
 
+    def extend_with(self, index: Union[str, KnownValue]) -> "CompositeVariable":
+        return CompositeVariable(self.varname, (*self.attributes, index))
+
 
 Varname = Union[str, CompositeVariable]
 # Nodes as used in scopes can be any object, as long as they are hashable.
@@ -120,6 +124,16 @@ class Composite(NamedTuple):
     value: Value
     varname: Optional[Varname] = None
     node: Optional[AST] = None
+
+    def get_extended_varname(
+        self, index: Union[str, KnownValue]
+    ) -> Optional[CompositeVariable]:
+        if self.varname is None:
+            return None
+        if isinstance(self.varname, str):
+            return CompositeVariable(self.varname, (index,))
+        else:
+            return self.varname.extend_with(index)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Composite":
         return Composite(
@@ -254,11 +268,11 @@ class Constraint(AbstractConstraint):
             yield UNINITIALIZED_VALUE
             return
         if self.constraint_type == ConstraintType.is_instance:
-            if inner_value is UNRESOLVED_VALUE:
+            if isinstance(inner_value, AnyValue):
                 if self.positive:
                     yield TypedValue(self.value)
                 else:
-                    yield UNRESOLVED_VALUE
+                    yield inner_value
             elif isinstance(inner_value, KnownValue):
                 if self.positive:
                     if isinstance(inner_value.val, self.value):
@@ -274,7 +288,7 @@ class Constraint(AbstractConstraint):
                         yield TypedValue(self.value)
                     # TODO: Technically here we should infer an intersection type:
                     # a type that is a subclass of both types. In practice currently
-                    # _constrain_values() will eventually return UNRESOLVED_VALUE.
+                    # _constrain_values() will eventually return AnyValue.
                 else:
                     if not safe_issubclass(inner_value.typ, self.value):
                         yield value
@@ -291,7 +305,7 @@ class Constraint(AbstractConstraint):
         elif self.constraint_type == ConstraintType.is_value:
             if self.positive:
                 known_val = KnownValue(self.value)
-                if inner_value is UNRESOLVED_VALUE:
+                if isinstance(inner_value, AnyValue):
                     yield known_val
                 elif isinstance(inner_value, KnownValue):
                     if inner_value.val is self.value:
@@ -556,7 +570,7 @@ class Scope:
     ) -> None:
         if varname not in self:
             self.variables[varname] = value
-        elif value is UNRESOLVED_VALUE or not safe_equals(
+        elif isinstance(value, AnyValue) or not safe_equals(
             self.variables[varname], value
         ):
             existing = self.variables[varname]
@@ -600,7 +614,7 @@ class Scope:
             referenced, _ = value.scope.get(value.name, None, state)
             # globals that are None are probably set to something else later
             if safe_equals(referenced, KnownValue(None)):
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.inference)
             else:
                 return referenced
         else:
@@ -913,7 +927,7 @@ class FunctionScope(Scope):
             elif LEAVES_SCOPE not in scope or ignore_leaves_scope:
                 new_scopes.append(scope)
         if not new_scopes:
-            return {LEAVES_SCOPE: [UNRESOLVED_VALUE]}
+            return {LEAVES_SCOPE: [AnyValue(AnySource.marker)]}
         all_variables = set(chain.from_iterable(new_scopes))
         return {
             varname: uniq_chain(
@@ -1172,5 +1186,5 @@ def _constrain_value(
     if not values:
         # TODO: maybe show an error here? This branch should mean the code is
         # unreachable.
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.unreachable)
     return unite_values(*values)

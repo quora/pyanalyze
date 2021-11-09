@@ -14,12 +14,13 @@ from .stacked_scopes import Composite
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .tests import l0cached_async_fn
 from .value import (
+    AnySource,
+    AnyValue,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
     TypedValue,
     GenericValue,
-    UNRESOLVED_VALUE,
     SequenceIncompleteValue,
     assert_is_value,
 )
@@ -272,10 +273,14 @@ def test_get_argspec():
             Signature.make(
                 [
                     SigParameter(
-                        "args", SigParameter.VAR_POSITIONAL, annotation=UNRESOLVED_VALUE
+                        "args",
+                        SigParameter.VAR_POSITIONAL,
+                        annotation=AnyValue(AnySource.inference),
                     ),
                     SigParameter(
-                        "kwargs", SigParameter.VAR_KEYWORD, annotation=UNRESOLVED_VALUE
+                        "kwargs",
+                        SigParameter.VAR_KEYWORD,
+                        annotation=AnyValue(AnySource.inference),
                     ),
                 ],
                 callable=decorated,
@@ -326,7 +331,8 @@ class TestCoroutines(TestNameCheckVisitorBase):
         async def capybara():
             # annotated as def ... -> Future in typeshed
             assert_is_value(
-                asyncio.sleep(3), GenericValue(asyncio.Future, [UNRESOLVED_VALUE])
+                asyncio.sleep(3),
+                GenericValue(asyncio.Future, [AnyValue(AnySource.unannotated)]),
             )
             return 42
 

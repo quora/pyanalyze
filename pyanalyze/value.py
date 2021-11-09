@@ -12,16 +12,17 @@ these subclasses and some related utilities.
     from pyanalyze import dump_value
 
     def function(x: int, y: list[int], z: Any):
-        dump_value(1)  # KnownValue(1)
-        dump_value(x)  # TypedValue(int)
-        dump_value(y)  # GenericValue(list, [TypedValue(int)])
-        dump_value(z)  # UnresolvedValue()
+        dump_value(1)  # Literal[1]
+        dump_value(x)  # int
+        dump_value(y)  # list[int]
+        dump_value(z)  # Any
 
 """
 
 import collections.abc
 from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass, field, InitVar
+import enum
 import inspect
 from itertools import chain
 from typing import (
@@ -75,7 +76,7 @@ class Value:
         This is the primary mechanism used for checking type compatibility.
 
         """
-        if other is UNRESOLVED_VALUE or isinstance(other, VariableNameValue):
+        if isinstance(other, AnyValue):
             return {}
         elif isinstance(other, MultiValuedValue):
             tv_maps = []
@@ -270,19 +271,55 @@ def dump_value(value: object) -> None:
     pass
 
 
+class AnySource(enum.Enum):
+    """Sources of Any values."""
+
+    default = 1
+    """Any that has not been categorized."""
+    explicit = 2
+    """The user wrote 'Any' in an annotation."""
+    error = 3
+    """An error occurred."""
+    unreachable = 4
+    """Value that is inferred to be unreachable."""
+    inference = 5
+    """Insufficiently powerful type inference."""
+    unannotated = 6
+    """Unannotated code."""
+    variable_name = 7
+    """A :class:`VariableNameValue`."""
+    from_another = 8
+    """An Any derived from another Any, for example as an attribute."""
+    generic_argument = 9
+    """Missing type argument to a generic class."""
+    marker = 10
+    """Marker object used internally."""
+
+
 @dataclass(frozen=True)
-class UnresolvedValue(Value):
+class AnyValue(Value):
     """An unknown value, equivalent to ``typing.Any``."""
 
+    source: AnySource
+    """The source of this value, such as a user-defined annotation
+    or a previous error."""
+
     def __str__(self) -> str:
-        return "Any"
+        if self.source is AnySource.default:
+            return "Any"
+        return f"Any[{self.source.name}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         return {}  # Always allowed
 
 
-UNRESOLVED_VALUE = UnresolvedValue()
-"""The only instance of :class:`UnresolvedValue`."""
+UNRESOLVED_VALUE = AnyValue(AnySource.default)
+"""The default instance of :class:`AnyValue`.
+
+In the future, this should be replaced with instances of
+`AnyValue` with a specific source.
+
+"""
 
 
 @dataclass(frozen=True)
@@ -469,7 +506,7 @@ class TypedValue(Value):
                 other.typ.typ, self.typ
             ):
                 return {}
-            elif isinstance(other.typ, TypeVarValue) or other.typ is UNRESOLVED_VALUE:
+            elif isinstance(other.typ, (TypeVarValue, AnyValue)):
                 return {}
         elif isinstance(other, UnboundMethodValue):
             if self.typ in {Callable, collections.abc.Callable, object}:
@@ -477,7 +514,7 @@ class TypedValue(Value):
         return super().can_assign(other, ctx)
 
     def can_assign_thrift_enum(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if other is UNRESOLVED_VALUE:
+        if isinstance(other, AnyValue):
             return {}
         elif isinstance(other, KnownValue):
             if not isinstance(other.val, int):
@@ -525,7 +562,7 @@ class TypedValue(Value):
         args = self.get_generic_args_for_type(typ, ctx)
         if args and index < len(args):
             return args[index]
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.generic_argument)
 
     def is_type(self, typ: type) -> bool:
         return self.type_object.is_assignable_to_type(typ)
@@ -629,7 +666,7 @@ class GenericValue(TypedValue):
         try:
             return self.args[index]
         except IndexError:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.generic_argument)
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -660,7 +697,7 @@ class SequenceIncompleteValue(GenericValue):
         if members:
             args = (unite_values(*members),)
         else:
-            args = (UNRESOLVED_VALUE,)
+            args = (AnyValue(AnySource.unreachable),)
         super().__init__(typ, args)
         self.members = tuple(members)
 
@@ -728,7 +765,7 @@ class DictIncompleteValue(GenericValue):
             key_type = unite_values(*[key for key, _ in items])
             value_type = unite_values(*[value for _, value in items])
         else:
-            key_type = value_type = UNRESOLVED_VALUE
+            key_type = value_type = AnyValue(AnySource.unreachable)
         super().__init__(typ, (key_type, value_type))
         self.items = items
 
@@ -754,33 +791,28 @@ class DictIncompleteValue(GenericValue):
 
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
-    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys.
+    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys."""
 
-    Currently does not handle the distinction between required and non-required keys.
+    items: Dict[str, Tuple[bool, Value]]
+    """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
+    ones as (False, value)."""
 
-    """
-
-    items: Dict[str, Value]
-    """The items of the ``TypedDict``."""
-
-    def __init__(self, items: Dict[str, Value]) -> None:
+    def __init__(self, items: Dict[str, Tuple[bool, Value]]) -> None:
         if items:
-            value_type = unite_values(*items.values())
+            value_type = unite_values(*[val for _, val in items.values()])
         else:
-            value_type = UNRESOLVED_VALUE
+            value_type = AnyValue(AnySource.unreachable)
         super().__init__(dict, (TypedValue(str), value_type))
         self.items = items
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, DictIncompleteValue):
             their_len = len(other.items)
-            my_len = len(self.items)
-            if my_len == 0:
-                return {}
-            if their_len < my_len:
+            required_len = sum(1 for required, _ in self.items.items() if required)
+            if their_len < required_len:
                 return CanAssignError(
-                    f"Cannot assign dict of length {their_len} to dict of length"
-                    f" {my_len}"
+                    f"Cannot assign dict of size {their_len} to dict of size"
+                    f" {required_len}"
                 )
             known_part = {
                 key.val: value
@@ -789,9 +821,9 @@ class TypedDictValue(GenericValue):
             }
             has_unknowns = len(known_part) < len(other.items)
             tv_maps = []
-            for key, value in self.items.items():
+            for key, (is_required, value) in self.items.items():
                 if key not in known_part:
-                    if not has_unknowns:
+                    if not has_unknowns and is_required:
                         return CanAssignError(f"Key {key} is missing in {other}")
                 else:
                     tv_map = value.can_assign(known_part[key], ctx)
@@ -801,36 +833,43 @@ class TypedDictValue(GenericValue):
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, TypedDictValue):
             tv_maps = []
-            for key, value in self.items.items():
+            for key, (is_required, value) in self.items.items():
                 if key not in other.items:
-                    return CanAssignError(f"Key {key} is missing in {other}")
-                tv_map = value.can_assign(other.items[key], ctx)
-                if isinstance(tv_map, CanAssignError):
-                    return CanAssignError(f"Types for key {key} are incompatible")
-                tv_maps.append(tv_map)
+                    if is_required:
+                        return CanAssignError(f"Key {key} is missing in {other}")
+                else:
+                    tv_map = value.can_assign(other.items[key][1], ctx)
+                    if isinstance(tv_map, CanAssignError):
+                        return CanAssignError(f"Types for key {key} are incompatible")
+                    tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, KnownValue) and isinstance(other.val, dict):
             tv_maps = []
-            for key, value in self.items.items():
+            for key, (is_required, value) in self.items.items():
                 if key not in other.val:
-                    return CanAssignError(f"Key {key} is missing in {other}")
-                tv_map = value.can_assign(KnownValue(other.val[key]), ctx)
-                if isinstance(tv_map, CanAssignError):
-                    return CanAssignError(f"Types for key {key} are incompatible")
-                tv_maps.append(tv_map)
+                    if is_required:
+                        return CanAssignError(f"Key {key} is missing in {other}")
+                else:
+                    tv_map = value.can_assign(KnownValue(other.val[key]), ctx)
+                    if isinstance(tv_map, CanAssignError):
+                        return CanAssignError(f"Types for key {key} are incompatible")
+                    tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return TypedDictValue(
             {
-                key: value.substitute_typevars(typevars)
-                for key, value in self.items.items()
+                key: (is_required, value.substitute_typevars(typevars))
+                for key, (is_required, value) in self.items.items()
             }
         )
 
     def __str__(self) -> str:
-        items = [f'"{key}": {value}' for key, value in self.items.items()]
+        items = [
+            f'"{key}": {value if required else "NotRequired[" + str(value) + "]"}'
+            for key, (required, value) in self.items.items()
+        ]
         return "TypedDict({%s})" % ", ".join(items)
 
     def __hash__(self) -> int:
@@ -838,7 +877,7 @@ class TypedDictValue(GenericValue):
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
-        for value in self.items.values():
+        for _, value in self.items.values():
             yield from value.walk_values()
 
 
@@ -970,9 +1009,9 @@ class SubclassValue(Value):
             return self.typ.can_assign(other.typ, ctx)
         elif isinstance(other, KnownValue):
             if isinstance(other.val, type):
-                if isinstance(self.typ, TypedValue) and issubclass(
-                    other.val, self.typ.typ
-                ):
+                if isinstance(self.typ, TypedValue) and ctx.make_type_object(
+                    other.val
+                ).is_assignable_to_type(self.typ.typ):
                     return {}
                 elif isinstance(self.typ, TypeVarValue):
                     return {self.typ.typevar: TypedValue(other.val)}
@@ -1001,7 +1040,7 @@ class SubclassValue(Value):
         if typ is not None:
             return KnownValue(typ)
         else:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
     def __str__(self) -> str:
         return f"Type[{self.typ}]"
@@ -1010,13 +1049,13 @@ class SubclassValue(Value):
     def make(cls, origin: Value) -> Value:
         if isinstance(origin, MultiValuedValue):
             return unite_values(*[cls.make(val) for val in origin.vals])
-        elif origin is UNRESOLVED_VALUE:
+        elif isinstance(origin, AnyValue):
             # Type[Any] is equivalent to plain type
             return TypedValue(type)
         elif isinstance(origin, (TypeVarValue, TypedValue)):
             return cls(origin)
         else:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
 
 
 @dataclass(frozen=True, order=False)
@@ -1131,7 +1170,31 @@ class MultiValuedValue(Value):
     def __str__(self) -> str:
         if not self.vals:
             return "NoReturn"
-        return "Union[%s]" % ", ".join(map(str, self.vals))
+        literals: List[KnownValue] = []
+        has_none = False
+        others: List[Value] = []
+        for val in self.vals:
+            if val == KnownValue(None):
+                has_none = True
+            elif isinstance(val, KnownValue):
+                literals.append(val)
+            else:
+                others.append(val)
+        if not others:
+            if has_none:
+                literals.append(KnownValue(None))
+            body = ", ".join(repr(val.val) for val in literals)
+            return f"Literal[{body}]"
+        else:
+            if not literals and has_none and len(others) == 1:
+                return f"Optional[{others[0]}]"
+            elements = [str(val) for val in others]
+            if literals:
+                body = ", ".join(repr(val.val) for val in literals)
+                elements.append(f"Literal[{body}]")
+            if has_none:
+                elements.append("None")
+            return f"Union[{', '.join(elements)}]"
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -1172,7 +1235,7 @@ class TypeVarValue(Value):
 
     def get_fallback_value(self) -> Value:
         # TODO: support bounds and bases here to do something smarter
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
 
 class Extension:
@@ -1381,7 +1444,7 @@ class AnnotatedValue(Value):
 
 
 @dataclass(frozen=True)
-class VariableNameValue(Value):
+class VariableNameValue(AnyValue):
     """Value that is stored in a variable associated with a particular kind of value.
 
     For example, any variable named `uid` will get resolved into a ``VariableNameValue``
@@ -1397,7 +1460,11 @@ class VariableNameValue(Value):
 
     """
 
-    varnames: List[str]
+    def __init__(self, varnames: Iterable[str]) -> None:
+        super().__init__(AnySource.variable_name)
+        object.__setattr__(self, "varnames", tuple(varnames))
+
+    varnames: Tuple[str, ...]
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if not isinstance(other, VariableNameValue):
@@ -1602,7 +1669,7 @@ def concrete_values_from_iterable(
         return value.members
     tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(tv_map, CanAssignError):
-        return tv_map.get(T, UNRESOLVED_VALUE)
+        return tv_map.get(T, AnyValue(AnySource.generic_argument))
     return None
 
 
@@ -1633,7 +1700,11 @@ def unpack_values(
             good_subvals.append(subval)
         if not good_subvals:
             return _create_unpacked_list(
-                UNRESOLVED_VALUE, target_length, post_starred_length
+                AnyValue(AnySource.error)
+                if subvals
+                else AnyValue(AnySource.unreachable),
+                target_length,
+                post_starred_length,
             )
         return [unite_values(*vals) for vals in zip(*good_subvals)]
     elif isinstance(value, AnnotatedValue):
@@ -1671,7 +1742,7 @@ def unpack_values(
     tv_map = IterableValue.can_assign(value, ctx)
     if isinstance(tv_map, CanAssignError):
         return tv_map
-    iterable_type = tv_map.get(T, UNRESOLVED_VALUE)
+    iterable_type = tv_map.get(T, AnyValue(AnySource.generic_argument))
     return _create_unpacked_list(iterable_type, target_length, post_starred_length)
 
 

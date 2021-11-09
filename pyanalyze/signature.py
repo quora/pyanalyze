@@ -19,6 +19,8 @@ from .stacked_scopes import (
 )
 from .value import (
     AnnotatedValue,
+    AnySource,
+    AnyValue,
     AsyncTaskIncompleteValue,
     CanAssignContext,
     GenericValue,
@@ -31,7 +33,6 @@ from .value import (
     TypeGuardExtension,
     TypeVarValue,
     TypedDictValue,
-    UNRESOLVED_VALUE,
     Value,
     TypeVarMap,
     CanAssign,
@@ -202,7 +203,7 @@ class SigParameter(inspect.Parameter):
 
     def get_annotation(self) -> Value:
         if self.annotation is EMPTY:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.unannotated)
         return self.annotation
 
     def __str__(self) -> str:
@@ -306,7 +307,7 @@ class Signature:
 
     def _translate_bound_arg(self, argument: Any) -> Value:
         if argument is EMPTY:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.unannotated)
         elif isinstance(argument, Composite):
             return argument.value
         elif isinstance(argument, tuple):
@@ -413,7 +414,7 @@ class Signature:
                 # - type check that they are iterables/mappings
                 # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
                 # - else do something smart to still typecheck the call
-                return ImplReturn(UNRESOLVED_VALUE)
+                return ImplReturn(AnyValue(AnySource.inference))
 
         if self.is_ellipsis_args:
             if self.allow_call:
@@ -424,7 +425,7 @@ class Signature:
                     return ImplReturn(runtime_return)
             return_value = self.signature.return_annotation
             if return_value is EMPTY:
-                return ImplReturn(UNRESOLVED_VALUE)
+                return ImplReturn(AnyValue(AnySource.unannotated))
             return ImplReturn(return_value)
 
         try:
@@ -435,7 +436,7 @@ class Signature:
             else:
                 message = str(e)
             visitor.show_error(node, message, ErrorCode.incompatible_call)
-            return ImplReturn(UNRESOLVED_VALUE)
+            return ImplReturn(AnyValue(AnySource.error))
         bound_args.apply_defaults()
         variables = {
             name: self._translate_bound_arg(value)
@@ -459,7 +460,9 @@ class Signature:
                         tv_possible_values[typevar].append(value)
             typevar_values = {
                 typevar: unite_values(
-                    *tv_possible_values.get(typevar, [UNRESOLVED_VALUE])
+                    *tv_possible_values.get(
+                        typevar, [AnyValue(AnySource.generic_argument)]
+                    )
                 )
                 for typevar in self.all_typevars
             }
@@ -497,7 +500,7 @@ class Signature:
                 else:
                     return_value = runtime_return
         if return_value is EMPTY:
-            return ImplReturn(UNRESOLVED_VALUE)
+            return ImplReturn(AnyValue(AnySource.unannotated))
         else:
             return self._apply_annotated_constraints(return_value, bound_args)
 
@@ -801,7 +804,7 @@ class Signature:
 
         """
         if return_annotation is None:
-            return_annotation = UNRESOLVED_VALUE
+            return_annotation = AnyValue(AnySource.unannotated)
             has_return_annotation = False
         return cls(
             signature=inspect.Signature(
@@ -862,7 +865,7 @@ class Signature:
 
 
 ANY_SIGNATURE = Signature.make(
-    [], UNRESOLVED_VALUE, is_ellipsis_args=True, is_asynq=True
+    [], AnyValue(AnySource.explicit), is_ellipsis_args=True, is_asynq=True
 )
 """:class:`Signature` that should be compatible with any other
 :class:`Signature`."""
@@ -922,7 +925,7 @@ class BoundMethodSignature:
             return self.signature.return_value
         if self.return_override is not None:
             return self.return_override
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.unannotated)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "BoundMethodSignature":
         return BoundMethodSignature(
@@ -939,7 +942,7 @@ class PropertyArgSpec:
     """Pseudo-argspec for properties."""
 
     obj: object
-    return_value: Value = UNRESOLVED_VALUE
+    return_value: Value = AnyValue(AnySource.unannotated)
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
@@ -947,7 +950,7 @@ class PropertyArgSpec:
         raise TypeError("property object is not callable")
 
     def has_return_value(self) -> bool:
-        return self.return_value is not UNRESOLVED_VALUE
+        return not isinstance(self.return_value, AnyValue)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "PropertyArgSpec":
         return PropertyArgSpec(
@@ -1009,7 +1012,7 @@ def can_assign_var_positional(
             return CanAssignError(
                 f"{args_annotation} is not an iterable type", [tv_map]
             )
-        iterable_arg = tv_map.get(T, UNRESOLVED_VALUE)
+        iterable_arg = tv_map.get(T, AnyValue(AnySource.generic_argument))
         tv_map = iterable_arg.can_assign(my_annotation, ctx)
         if isinstance(tv_map, CanAssignError):
             return CanAssignError(
@@ -1031,7 +1034,7 @@ def can_assign_var_keyword(
             return CanAssignError(
                 f"parameter {my_param.name!r} is not accepted by {kwargs_annotation}"
             )
-        their_annotation = kwargs_annotation.items[my_param.name]
+        their_annotation = kwargs_annotation.items[my_param.name][1]
         tv_map = their_annotation.can_assign(my_annotation, ctx)
         if isinstance(tv_map, CanAssignError):
             return CanAssignError(
@@ -1046,7 +1049,7 @@ def can_assign_var_keyword(
             return CanAssignError(
                 f"{kwargs_annotation} is not a mapping type", [mapping_tv_map]
             )
-        key_arg = mapping_tv_map.get(K, UNRESOLVED_VALUE)
+        key_arg = mapping_tv_map.get(K, AnyValue(AnySource.generic_argument))
         tv_map = key_arg.can_assign(KnownValue(my_param.name), ctx)
         if isinstance(tv_map, CanAssignError):
             return CanAssignError(
@@ -1054,7 +1057,7 @@ def can_assign_var_keyword(
                 [tv_map],
             )
         tv_maps.append(tv_map)
-        value_arg = mapping_tv_map.get(V, UNRESOLVED_VALUE)
+        value_arg = mapping_tv_map.get(V, AnyValue(AnySource.generic_argument))
         tv_map = value_arg.can_assign(my_annotation, ctx)
         if isinstance(tv_map, CanAssignError):
             return CanAssignError(

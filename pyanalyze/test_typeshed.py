@@ -21,13 +21,16 @@ from .arg_spec import ArgSpecCache
 from .test_arg_spec import ClassWithCall
 from .typeshed import TypeshedFinder
 from .value import (
+    assert_is_value,
+    AnySource,
+    AnyValue,
     KnownValue,
     NewTypeValue,
     TypedValue,
     GenericValue,
+    make_weak,
     TypeVarValue,
     UNINITIALIZED_VALUE,
-    UNRESOLVED_VALUE,
     SequenceIncompleteValue,
     Value,
 )
@@ -159,7 +162,10 @@ class TestGetGenericBases:
         self.get_generic_bases = arg_spec_cache.get_generic_bases
 
     def test_runtime(self):
-        assert_eq({Parent: {T: UNRESOLVED_VALUE}}, self.get_generic_bases(Parent))
+        assert_eq(
+            {Parent: {T: AnyValue(AnySource.generic_argument)}},
+            self.get_generic_bases(Parent),
+        )
         assert_eq(
             {Parent: {T: TypeVarValue(T)}},
             self.get_generic_bases(Parent, [TypeVarValue(T)]),
@@ -168,7 +174,10 @@ class TestGetGenericBases:
             {Child: {}, Parent: {T: TypedValue(int)}}, self.get_generic_bases(Child)
         )
         assert_eq(
-            {GenericChild: {T: UNRESOLVED_VALUE}, Parent: {T: UNRESOLVED_VALUE}},
+            {
+                GenericChild: {T: AnyValue(AnySource.generic_argument)},
+                Parent: {T: AnyValue(AnySource.generic_argument)},
+            },
             self.get_generic_bases(GenericChild),
         )
         one = KnownValue(1)
@@ -209,12 +218,12 @@ class TestGetGenericBases:
                 time.struct_time: [],
                 # Ideally should be not Any, but we haven't implemented
                 # support for typeshed namedtuples.
-                tuple: [UNRESOLVED_VALUE],
-                collections.abc.Collection: [UNRESOLVED_VALUE],
-                collections.abc.Reversible: [UNRESOLVED_VALUE],
-                collections.abc.Iterable: [UNRESOLVED_VALUE],
-                collections.abc.Sequence: [UNRESOLVED_VALUE],
-                collections.abc.Container: [UNRESOLVED_VALUE],
+                tuple: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Collection: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Reversible: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Iterable: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Container: [AnyValue(AnySource.generic_argument)],
             },
             time.struct_time,
         )

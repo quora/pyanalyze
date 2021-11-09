@@ -1,17 +1,19 @@
 # static analysis: ignore
 from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
-from pyanalyze.implementation import assert_is_value
 from qcore.asserts import assert_eq
 
 from .value import (
+    AnnotatedValue,
+    AnySource,
+    AnyValue,
     CanAssignError,
     GenericValue,
     KnownValue,
+    MultiValuedValue,
     SequenceIncompleteValue,
     TypedDictValue,
     TypedValue,
-    UNRESOLVED_VALUE,
 )
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
@@ -28,7 +30,7 @@ DictObject = GenericValue(dict, [TypedValue(str), TypedValue(object)])
 
 
 def test_stringify() -> None:
-    assert_eq("() -> Any", str(Signature.make([])))
+    assert_eq("() -> Any[unannotated]", str(Signature.make([])))
     assert_eq("() -> int", str(Signature.make([], TypedValue(int))))
     assert_eq(
         "@asynq () -> int", str(Signature.make([], TypedValue(int), is_asynq=True))
@@ -55,7 +57,8 @@ class TestCanAssign:
 
     def test_return_value(self) -> None:
         self.can(
-            Signature.make([], UNRESOLVED_VALUE), Signature.make([], TypedValue(int))
+            Signature.make([], AnyValue(AnySource.marker)),
+            Signature.make([], TypedValue(int)),
         )
         self.can(
             Signature.make([], TypedValue(int)), Signature.make([], TypedValue(int))
@@ -265,13 +268,19 @@ class TestCanAssign:
         )
         self.can(three_ints_sig, Signature.make([dict_int]))
         good_td = TypedDictValue(
-            {"a": TypedValue(int), "b": TypedValue(int), "c": TypedValue(int)}
+            {
+                "a": (True, TypedValue(int)),
+                "b": (True, TypedValue(int)),
+                "c": (True, TypedValue(int)),
+            }
         )
         self.can(
             three_ints_sig,
             Signature.make([P("a", annotation=good_td, kind=P.VAR_KEYWORD)]),
         )
-        bad_td = TypedDictValue({"a": TypedValue(int), "b": TypedValue(int)})
+        bad_td = TypedDictValue(
+            {"a": (True, TypedValue(int)), "b": (True, TypedValue(int))}
+        )
         self.cannot(
             three_ints_sig,
             Signature.make([P("a", annotation=bad_td, kind=P.VAR_KEYWORD)]),
@@ -377,7 +386,7 @@ class TestCalls(TestNameCheckVisitorBase):
         def capybara(x):
             obj = WithCall()
             assert_is_value(obj, TypedValue(WithCall))
-            assert_is_value(obj(x), UNRESOLVED_VALUE)
+            assert_is_value(obj(x), AnyValue(AnySource.from_another))
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_unbound_method(self):
@@ -418,7 +427,7 @@ class TestCalls(TestNameCheckVisitorBase):
                     TypedValue(bool),
                     [
                         HasAttrGuardExtension(
-                            "object", KnownValue("foo"), UNRESOLVED_VALUE
+                            "object", KnownValue("foo"), AnyValue(AnySource.inference)
                         )
                     ],
                 ),
@@ -649,7 +658,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
             raise NotImplementedError
 
         def capybara() -> None:
-            assert_is_value(mktemp(), UNRESOLVED_VALUE)
+            assert_is_value(mktemp(), AnyValue(AnySource.generic_argument))
             assert_is_value(mktemp(prefix="p"), KnownValue("p"))
             assert_is_value(mktemp(suffix="s"), KnownValue("s"))
             assert_is_value(mktemp("p", "s"), KnownValue("p") | KnownValue("s"))
@@ -723,3 +732,19 @@ class TestAllowCall(TestNameCheckVisitorBase):
             assert_is_value(b.decode("ascii"), KnownValue("x"))
 
             s.encode("not an encoding")  # E: incompatible_call
+
+
+class TestAnnotated(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_preserve(self):
+        from typing_extensions import Annotated
+        from typing import TypeVar
+
+        T = TypeVar("T")
+
+        def f(x: T) -> T:
+            return x
+
+        def caller(x: Annotated[int, 42]):
+            assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue(42)]))
+            assert_is_value(f(x), AnnotatedValue(TypedValue(int), [KnownValue(42)]))

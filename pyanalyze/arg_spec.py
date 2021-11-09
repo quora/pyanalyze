@@ -21,12 +21,13 @@ from .signature import (
 )
 from .typeshed import TypeshedFinder
 from .value import (
+    AnySource,
+    AnyValue,
     TypeVarMap,
     TypedValue,
     GenericValue,
     NewTypeValue,
     KnownValue,
-    UNRESOLVED_VALUE,
     Value,
     VariableNameValue,
     TypeVarValue,
@@ -179,7 +180,7 @@ class ArgSpecCache:
             has_return_annotation = True
         else:
             if is_wrapped or sig.return_annotation is inspect.Signature.empty:
-                returns = UNRESOLVED_VALUE
+                returns = AnyValue(AnySource.unannotated)
                 has_return_annotation = False
             else:
                 returns = type_from_runtime(
@@ -218,7 +219,7 @@ class ArgSpecCache:
     ) -> SigParameter:
         """Given an inspect.Parameter, returns a Parameter object."""
         if is_wrapped:
-            typ = UNRESOLVED_VALUE
+            typ = AnyValue(AnySource.inference)
         else:
             typ = self._get_type_for_parameter(
                 parameter, func_globals, function_object, index
@@ -398,7 +399,9 @@ class ArgSpecCache:
                 signature = override
             else:
                 should_ignore = safe_in(obj, self.config.IGNORED_CALLEES)
-                return_type = UNRESOLVED_VALUE if should_ignore else TypedValue(obj)
+                return_type = (
+                    AnyValue(AnySource.error) if should_ignore else TypedValue(obj)
+                )
                 allow_call = safe_issubclass(
                     obj, self.config.CLASSES_SAFE_TO_INSTANTIATE
                 )
@@ -488,7 +491,7 @@ class ArgSpecCache:
         if safe_in(obj, self.config.FUNCTIONS_SAFE_TO_CALL):
             return Signature.make(
                 [],
-                UNRESOLVED_VALUE,
+                AnyValue(AnySource.inference),
                 is_ellipsis_args=True,
                 is_asynq=True,
                 allow_call=True,
@@ -527,7 +530,7 @@ class ArgSpecCache:
             try:
                 value = generic_args[i]
             except IndexError:
-                value = UNRESOLVED_VALUE
+                value = AnyValue(AnySource.generic_argument)
             tv_map[tv_value.typevar] = value
         return {
             base: {tv: value.substitute_typevars(tv_map) for tv, value in args.items()}

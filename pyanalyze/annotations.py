@@ -60,6 +60,8 @@ from .find_unused import used
 from .signature import SigParameter, Signature
 from .value import (
     AnnotatedValue,
+    AnySource,
+    AnyValue,
     CallableValue,
     CustomCheckExtension,
     Extension,
@@ -69,7 +71,6 @@ from .value import (
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
     TypeGuardExtension,
-    UNRESOLVED_VALUE,
     TypedValue,
     SequenceIncompleteValue,
     annotate_value,
@@ -121,15 +122,15 @@ class Context:
 
     def get_name(self, node: ast.Name) -> Value:
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
     def handle_undefined_name(self, name: str) -> Value:
         if self.should_suppress_undefined_names:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
         self.show_error(
             f"Undefined name {name!r} used in annotation", ErrorCode.undefined_name
         )
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
     def get_name_from_globals(self, name: str, globals: Mapping[str, Any]) -> Value:
         if name in globals:
@@ -229,7 +230,7 @@ def value_from_ast(ast_node: ast.AST, ctx: Context) -> Value:
     val = _Visitor(ctx).visit(ast_node)
     if val is None:
         ctx.show_error("Invalid type annotation")
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
     return val
 
 
@@ -282,16 +283,20 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             args_vals = [_type_from_runtime(arg, ctx) for arg in args]
             return SequenceIncompleteValue(tuple, args_vals)
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
+        required_keys = getattr(val, "__required_keys__", None)
         return TypedDictValue(
             {
-                key: _type_from_runtime(value, ctx)
+                key: (
+                    key in required_keys if required_keys is not None else True,
+                    _type_from_runtime(value, ctx),
+                )
                 for key, value in val.__annotations__.items()
             }
         )
     elif val is InitVar:
         # On 3.6 and 3.7, InitVar[T] just returns InitVar at runtime, so we can't
         # get the actual type out.
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
     elif isinstance(val, InitVar):
         # val.type exists only on 3.8+, but on earlier versions
         # InitVar instances aren't being created
@@ -326,17 +331,17 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
     elif is_typing_name(val, "NoReturn"):
         return NO_RETURN_VALUE
     elif val is typing.Any:
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.explicit)
     elif hasattr(val, "__supertype__"):
         if isinstance(val.__supertype__, type):
             # NewType
             return NewTypeValue(val)
         elif typing_inspect.is_tuple_type(val.__supertype__):
             # TODO figure out how to make NewTypes over tuples work
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
         else:
             ctx.show_error(f"Invalid NewType {val}")
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
     elif typing_inspect.is_typevar(val):
         return TypeVarValue(cast(TypeVar, val))
     elif typing_inspect.is_classvar(val):
@@ -357,11 +362,11 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
                 ctx.show_error(
                     f"Syntax error in forward reference: {val.__forward_arg__}"
                 )
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
             return _type_from_ast(code.body[0], ctx)
     elif val is Ellipsis:
         # valid in Callable[..., ]
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.explicit)
     elif is_instance_of_typing_name(val, "_TypeAlias"):
         # typing.Pattern and Match, which are not normal generic types for some reason
         return GenericValue(val.impl_type, [_type_from_runtime(val.type_var, ctx)])
@@ -389,7 +394,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
                 )
             )
         if not isinstance(arg_types, tuple):
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
         params = [
             SigParameter(
                 f"__arg{i}",
@@ -407,14 +412,14 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             typ = qcore.helpers.object_from_string(val.type_path)
         except Exception:
             ctx.show_error(f"Cannot resolve type {val.type_path!r}")
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
         return _type_from_runtime(typ, ctx)
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
             return _maybe_typed_value(origin, ctx)
         ctx.show_error(f"Invalid type annotation {val}")
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
 
 def _eval_forward_ref(val: str, ctx: Context) -> Value:
@@ -422,7 +427,7 @@ def _eval_forward_ref(val: str, ctx: Context) -> Value:
         tree = ast.parse(val, mode="eval")
     except SyntaxError:
         ctx.show_error(f"Syntax error in type annotation: {val}")
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
     else:
         return _type_from_ast(tree.body, ctx)
 
@@ -454,7 +459,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 )
         if not isinstance(value.root, KnownValue):
             ctx.show_error(f"Cannot resolve subscripted annotation: {value.root}")
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
         root = value.root.val
         if root is typing.Union:
             return unite_values(*[_type_from_value(elt, ctx) for elt in value.members])
@@ -465,7 +470,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 ctx.show_error(
                     f"Arguments to Literal[] must be literals, not {value.members}"
                 )
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
         elif root is typing.Tuple or root is tuple:
             if len(value.members) == 2 and value.members[1] == KnownValue(Ellipsis):
                 return GenericValue(tuple, [_type_from_value(value.members[0], ctx)])
@@ -478,14 +483,14 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         elif root is typing.Optional:
             if len(value.members) != 1:
                 ctx.show_error("Optional[] takes only one argument")
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
             return unite_values(
                 KnownValue(None), _type_from_value(value.members[0], ctx)
             )
         elif root is typing.Type or root is type:
             if len(value.members) != 1:
                 ctx.show_error("Type[] takes only one argument")
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
             argument = _type_from_value(value.members[0], ctx)
             return SubclassValue.make(argument)
         elif is_typing_name(root, "Annotated"):
@@ -494,7 +499,7 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
         elif is_typing_name(root, "TypeGuard"):
             if len(value.members) != 1:
                 ctx.show_error("TypeGuard requires a single argument")
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.error)
             return AnnotatedValue(
                 TypedValue(bool),
                 [TypeGuardExtension(_type_from_value(value.members[0], ctx))],
@@ -503,12 +508,14 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
             if len(value.members) == 2:
                 args, return_value = value.members
                 return _make_callable_from_value(args, return_value, ctx)
-            return UNRESOLVED_VALUE
+            ctx.show_error("Callable requires exactly two arguments")
+            return AnyValue(AnySource.error)
         elif root is AsynqCallable:
             if len(value.members) == 2:
                 args, return_value = value.members
                 return _make_callable_from_value(args, return_value, ctx, is_asynq=True)
-            return UNRESOLVED_VALUE
+            ctx.show_error("AsynqCallable requires exactly two arguments")
+            return AnyValue(AnySource.error)
         elif typing_inspect.is_generic_type(root):
             origin = typing_inspect.get_origin(root)
             if origin is None:
@@ -533,12 +540,12 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                     origin, [_type_from_value(elt, ctx) for elt in value.members]
                 )
             ctx.show_error(f"Unrecognized subscripted annotation: {root}")
-            return UNRESOLVED_VALUE
-    elif value is UNRESOLVED_VALUE:
-        return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
+    elif isinstance(value, AnyValue):
+        return value
     else:
         ctx.show_error(f"Unrecognized annotation {value}")
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
 
 class _DefaultContext(Context):
@@ -572,11 +579,11 @@ class _DefaultContext(Context):
             elif hasattr(builtins, node.id):
                 return KnownValue(getattr(builtins, node.id))
         if self.should_suppress_undefined_names:
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
         self.show_error(
             f"Undefined name {node.id!r} used in annotation", ErrorCode.undefined_name
         )
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
 
 @dataclass
@@ -613,10 +620,10 @@ class _Visitor(ast.NodeVisitor):
                 self.ctx.show_error(
                     f"{root_value.val!r} has no attribute {node.attr!r}"
                 )
-                return UNRESOLVED_VALUE
-        elif root_value is not UNRESOLVED_VALUE:
+                return AnyValue(AnySource.error)
+        elif not isinstance(root_value, AnyValue):
             self.ctx.show_error(f"Cannot resolve annotation {root_value}")
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
         elts = [self.visit(elt) for elt in node.elts]
@@ -689,7 +696,7 @@ class _Visitor(ast.NodeVisitor):
             return KnownValue(func.val(*args, **kwargs))
         elif isinstance(func.val, type):
             if func.val is object:
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.inference)
             return TypedValue(func.val)
         else:
             return None
@@ -772,7 +779,7 @@ def _value_of_origin_args(
         # This should never happen
         if not isinstance(metadata, Iterable):
             ctx.show_error("Unexpected format in Annotated")
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
         return _make_annotated(
             _type_from_runtime(origin, ctx),
             [KnownValue(data) for data in metadata],
@@ -786,7 +793,7 @@ def _value_of_origin_args(
             origin = extra_origin
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
-            if all(val is UNRESOLVED_VALUE for val in args_vals):
+            if all(isinstance(val, AnyValue) for val in args_vals):
                 return _maybe_typed_value(origin, ctx)
             return GenericValue(origin, args_vals)
         else:
@@ -794,7 +801,7 @@ def _value_of_origin_args(
     elif is_typing_name(origin, "TypeGuard"):
         if len(args) != 1:
             ctx.show_error("TypeGuard requires a single argument")
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.error)
         return AnnotatedValue(
             TypedValue(bool), [TypeGuardExtension(_type_from_runtime(args[0], ctx))]
         )
@@ -805,7 +812,7 @@ def _value_of_origin_args(
         ctx.show_error(
             f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]"
         )
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
 
 
 def _maybe_typed_value(val: type, ctx: Context) -> Value:
@@ -818,7 +825,7 @@ def _maybe_typed_value(val: type, ctx: Context) -> Value:
         # a Protocol
         if is_typing_name(val, "Protocol"):
             return TypedValue(typing_extensions.Protocol)
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.error)
     else:
         return TypedValue(val)
 

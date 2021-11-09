@@ -9,11 +9,12 @@ from .error_code import ErrorCode
 from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
 from .value import (
+    AnySource,
+    AnyValue,
     TypedValue,
     GenericValue,
     KnownValue,
     UNINITIALIZED_VALUE,
-    UNRESOLVED_VALUE,
     Value,
     TypeVarValue,
     extract_typevars,
@@ -198,7 +199,7 @@ class TypeshedFinder(object):
             val = getattr(builtins, name)
             if val is None or isinstance(val, type):
                 return KnownValue(val)
-        return UNRESOLVED_VALUE
+        return AnyValue(AnySource.inference)
 
     def _get_attribute_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str, attr: str
@@ -227,6 +228,8 @@ class TypeshedFinder(object):
                                 return self._parse_type(child_info.ast.returns, mod)
                             return UNINITIALIZED_VALUE  # a method
                         elif isinstance(child_info.ast, ast3.AsyncFunctionDef):
+                            return UNINITIALIZED_VALUE
+                        elif isinstance(child_info.ast, ast3.Assign):
                             return UNINITIALIZED_VALUE
                     assert False, repr(child_info)
                 return UNINITIALIZED_VALUE
@@ -406,7 +409,7 @@ class TypeshedFinder(object):
             # might be @overload or something else we don't recognize
             return None
         if node.returns is None:
-            return_value = UNRESOLVED_VALUE
+            return_value = AnyValue(AnySource.unannotated)
         else:
             return_value = self._parse_type(node.returns, mod)
         # ignore self type for class and static methods
@@ -476,7 +479,7 @@ class TypeshedFinder(object):
         kind: inspect._ParameterKind,
         objclass: Optional[type] = None,
     ) -> SigParameter:
-        typ = UNRESOLVED_VALUE
+        typ = AnyValue(AnySource.unannotated)
         if arg.annotation is not None:
             typ = self._parse_type(arg.annotation, module)
         elif objclass is not None:
@@ -504,7 +507,7 @@ class TypeshedFinder(object):
         else:
             default = self._parse_expr(default, module)
             if default == KnownValue(...):
-                default = UNRESOLVED_VALUE
+                default = AnyValue(AnySource.unannotated)
             return SigParameter(name, kind, annotation=typ, default=default)
 
     def _parse_expr(self, node: ast3.AST, module: str) -> Value:
@@ -515,8 +518,8 @@ class TypeshedFinder(object):
         val = self._parse_expr(node, module)
         ctx = _AnnotationContext(finder=self, module=module)
         typ = type_from_value(val, ctx=ctx)
-        if self.verbose and typ is UNRESOLVED_VALUE:
-            self.log("Got UNRESOLVED_VALUE", (ast3.dump(node), module))
+        if self.verbose and isinstance(typ, AnyValue):
+            self.log("Got Any", (ast3.dump(node), module))
         return typ
 
     def _parse_call_assignment(
@@ -532,7 +535,7 @@ class TypeshedFinder(object):
         if not isinstance(info.ast, ast3.Assign) or not isinstance(
             info.ast.value, ast3.Call
         ):
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
         ctx = _AnnotationContext(finder=self, module=module)
         return value_from_ast(cast(ast.AST, info.ast.value), ctx=ctx)
 
@@ -568,7 +571,7 @@ class TypeshedFinder(object):
                 return KnownValue(getattr(mod, info.name))
             except Exception:
                 self.log("Unable to import", (module, info))
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.inference)
         elif isinstance(info, tuple):
             module_path = ".".join(info)
             try:
@@ -576,7 +579,7 @@ class TypeshedFinder(object):
                 return KnownValue(sys.modules[module_path])
             except Exception:
                 self.log("Unable to import", module_path)
-                return UNRESOLVED_VALUE
+                return AnyValue(AnySource.inference)
         else:
             self.log("Ignoring info", info)
-            return UNRESOLVED_VALUE
+            return AnyValue(AnySource.inference)
