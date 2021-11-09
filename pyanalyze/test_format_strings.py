@@ -12,8 +12,10 @@ from .format_strings import (
     parse_format_string,
 )
 from .value import (
+    assert_is_value,
+    AnySource,
+    AnyValue,
     KnownValue,
-    UNRESOLVED_VALUE,
     DictIncompleteValue,
     SequenceIncompleteValue,
     TypedValue,
@@ -207,7 +209,7 @@ class TestAccept(object):
             )
 
     def test_conversion_specifier(self):
-        self.assert_errors(ConversionSpecifier("d"), UNRESOLVED_VALUE, [])
+        self.assert_errors(ConversionSpecifier("d"), AnyValue(AnySource.marker), [])
         self.assert_errors(
             ConversionSpecifier("d"),
             KnownValue("string"),

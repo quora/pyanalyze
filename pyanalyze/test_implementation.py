@@ -1,8 +1,22 @@
 # static analysis: ignore
-from pyanalyze.value import KnownValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes
 from .error_code import ErrorCode
+
+from .value import (
+    AnySource,
+    AnyValue,
+    assert_is_value,
+    CallableValue,
+    GenericValue,
+    SequenceIncompleteValue,
+    KnownValue,
+    TypedValue,
+    DictIncompleteValue,
+    SubclassValue,
+    MultiValuedValue,
+    make_weak,
+)
 
 
 class TestSuperCall(TestNameCheckVisitorBase):
@@ -315,12 +329,12 @@ class TestCast(TestNameCheckVisitorBase):
             assert_is_value(cast("str", 1), TypedValue(str))
             assert_is_value(cast("List[str]", 1), GenericValue(list, [TypedValue(str)]))
 
-    @assert_fails(ErrorCode.undefined_name)
-    def test(self):
+    @assert_passes()
+    def test_undefined_name(self):
         from typing import cast, List
 
         def capybara():
-            cast("List[fail]", 1)
+            cast("List[fail]", 1)  # E: undefined_name
 
 
 class TestSubclasses(TestNameCheckVisitorBase):
@@ -443,7 +457,6 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_list_extend(self):
         from typing import List
-        from pyanalyze.value import WeakExtension
 
         def capybara(x: int, y: str) -> None:
             lst = [x]
@@ -480,7 +493,6 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     def test_weak_value(self):
         from typing import List
         from typing_extensions import Literal
-        from pyanalyze.value import WeakExtension
 
         def func() -> List[Literal["c", "d"]]:
             return ["d", "c"]
@@ -553,7 +565,6 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     def test_starred_weak(self):
         from typing import List
         from typing_extensions import Literal
-        from pyanalyze.value import WeakExtension
 
         def capybara(arg) -> None:
             lst1: List[Literal["a"]] = ["a" for _ in arg]
@@ -721,14 +732,14 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(lst[:1], GenericValue(list, [TypedValue(int)]))
             assert_is_value(lst[i], TypedValue(int))
             assert_is_value(lst[s], GenericValue(list, [TypedValue(int)]))
-            assert_is_value(lst[unannotated], UNRESOLVED_VALUE)
+            assert_is_value(lst[unannotated], AnyValue(AnySource.from_another))
 
             empty = []
-            assert_is_value(empty[0], UNRESOLVED_VALUE)
+            assert_is_value(empty[0], AnyValue(AnySource.unreachable))
             assert_is_value(empty[1:], KnownValue([]))
-            assert_is_value(empty[i], UNRESOLVED_VALUE)
+            assert_is_value(empty[i], AnyValue(AnySource.unreachable))
             assert_is_value(empty[s], SequenceIncompleteValue(list, []))
-            assert_is_value(empty[unannotated], UNRESOLVED_VALUE)
+            assert_is_value(empty[unannotated], AnyValue(AnySource.from_another))
 
             known = [1, 2]
             assert_is_value(known[0], KnownValue(1))
@@ -740,7 +751,7 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(
                 known[s], SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)])
             )
-            assert_is_value(known[unannotated], UNRESOLVED_VALUE)
+            assert_is_value(known[unannotated], AnyValue(AnySource.from_another))
 
     @assert_passes()
     def test_tuple(self):
@@ -752,26 +763,28 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(tpl[:1], GenericValue(tuple, [TypedValue(int)]))
             assert_is_value(tpl[i], TypedValue(int))
             assert_is_value(tpl[s], GenericValue(tuple, [TypedValue(int)]))
-            assert_is_value(tpl[unannotated], UNRESOLVED_VALUE)
+            assert_is_value(tpl[unannotated], AnyValue(AnySource.from_another))
 
             empty = ()
-            assert_is_value(empty[0], UNRESOLVED_VALUE)  # E: incompatible_call
+            assert_is_value(empty[0], AnyValue(AnySource.error))  # E: incompatible_call
             assert_is_value(empty[1:], KnownValue(()))
-            assert_is_value(empty[i], UNRESOLVED_VALUE)
+            assert_is_value(empty[i], AnyValue(AnySource.unreachable))
             assert_is_value(empty[s], SequenceIncompleteValue(tuple, []))
-            assert_is_value(empty[unannotated], UNRESOLVED_VALUE)
+            assert_is_value(empty[unannotated], AnyValue(AnySource.from_another))
 
             known = (1, 2)
             assert_is_value(known[0], KnownValue(1))
             assert_is_value(known[-1], KnownValue(2))
-            assert_is_value(known[-5], UNRESOLVED_VALUE)  # E: incompatible_call
+            assert_is_value(
+                known[-5], AnyValue(AnySource.error)  # E: incompatible_call
+            )
             assert_is_value(known[1:], KnownValue((2,)))
             assert_is_value(known[::-1], KnownValue((2, 1)))
             assert_is_value(known[i], KnownValue(1) | KnownValue(2))
             assert_is_value(
                 known[s], SequenceIncompleteValue(tuple, [KnownValue(1), KnownValue(2)])
             )
-            assert_is_value(known[unannotated], UNRESOLVED_VALUE)
+            assert_is_value(known[unannotated], AnyValue(AnySource.from_another))
 
     @assert_passes()
     def test_list_index(self):
@@ -789,7 +802,7 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(tpl[0], KnownValue("a"))
             assert_is_value(tpl[2], TypedValue(int))
             assert_is_value(tpl[-2], KnownValue("b"))
-            assert_is_value(tpl[5], UNRESOLVED_VALUE)  # E: incompatible_call
+            assert_is_value(tpl[5], AnyValue(AnySource.error))  # E: incompatible_call
 
     @assert_passes()
     def test_tuple_annotation(self):
@@ -840,7 +853,11 @@ class TestDictGetItem(TestNameCheckVisitorBase):
                 MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue("s")]),
             )
             # unknown key
-            assert_is_value(incomplete_value["other string"], UNRESOLVED_VALUE)
+            assert_is_value(
+                # TODO why is this error?
+                incomplete_value["other string"],
+                AnyValue(AnySource.error),
+            )
 
             # MultiValuedValue
             key = "b" if unresolved else "c"
