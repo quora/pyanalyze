@@ -697,15 +697,16 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return all_failures
 
     @classmethod
-    def _check_file_single_arg(cls, args: Tuple[str, Dict[str, Any]]) -> List[Failure]:
+    def _check_file_single_arg(
+        cls, args: Tuple[str, Dict[str, Any]]
+    ) -> Tuple[List[Failure], Any]:
         filename, kwargs = args
         main_module = sys.modules["__main__"]
         try:
-            failures, _ = cls.check_file_in_worker(filename, **kwargs)
+            return cls.check_file_in_worker(filename, **kwargs)
         finally:
             # Some modules cause __main__ to get reassigned for unclear reasons. So let's put it back.
             sys.modules["__main__"] = main_module
-        return failures
 
     @classmethod
     def check_file_in_worker(
