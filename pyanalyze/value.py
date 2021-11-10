@@ -826,7 +826,7 @@ class TypedDictValue(GenericValue):
                 else:
                     tv_map = value.can_assign(known_part[key], ctx)
                     if isinstance(tv_map, CanAssignError):
-                        return CanAssignError(f"Types for key {key} are incompatible")
+                        return CanAssignError(f"Types for key {key} are incompatible", children=[tv_map])
                     tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, TypedDictValue):
@@ -838,7 +838,7 @@ class TypedDictValue(GenericValue):
                 else:
                     tv_map = value.can_assign(other.items[key][1], ctx)
                     if isinstance(tv_map, CanAssignError):
-                        return CanAssignError(f"Types for key {key} are incompatible")
+                        return CanAssignError(f"Types for key {key} are incompatible", children=[tv_map])
                     tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, KnownValue) and isinstance(other.val, dict):
@@ -850,7 +850,7 @@ class TypedDictValue(GenericValue):
                 else:
                     tv_map = value.can_assign(KnownValue(other.val[key]), ctx)
                     if isinstance(tv_map, CanAssignError):
-                        return CanAssignError(f"Types for key {key} are incompatible")
+                        return CanAssignError(f"Types for key {key} are incompatible", children=[tv_map])
                     tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
