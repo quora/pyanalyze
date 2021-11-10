@@ -87,6 +87,10 @@ def test_known_value() -> None:
     assert_cannot_assign(KnownValue(1), KnownValue(True))
     assert_cannot_assign(KnownValue(True), KnownValue(1))
 
+    nan = float("nan")
+    assert_can_assign(KnownValue(nan), KnownValue(nan))
+    assert_cannot_assign(KnownValue(nan), KnownValue(0.0))
+
 
 def test_unbound_method_value() -> None:
     val = value.UnboundMethodValue(

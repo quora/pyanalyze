@@ -368,6 +368,8 @@ class KnownValue(Value):
         if signature is not None:
             return CallableValue(signature).can_assign(other, ctx)
         if isinstance(other, KnownValue):
+            if self.val is other.val:
+                return {}
             if self.val == other.val and type(self.val) is type(other.val):
                 return {}
         return super().can_assign(other, ctx)
