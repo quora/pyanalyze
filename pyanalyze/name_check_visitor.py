@@ -2190,7 +2190,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # TODO more precise type
             return TypedValue(dict)
         elif has_non_literal:
-            return DictIncompleteValue(all_pairs)
+            return DictIncompleteValue(dict, all_pairs)
         else:
             return KnownValue(ret)
 
@@ -2742,7 +2742,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     (key, self._unwrap_yield_result(node, val))
                     for key, val in value.items
                 ]
-                return DictIncompleteValue(values)
+                return DictIncompleteValue(value.typ, values)
             elif isinstance(value, GenericValue):
                 val = self._unwrap_yield_result(node, value.get_arg(1))
                 return GenericValue(value.typ, [value.get_arg(0), val])
@@ -4210,6 +4210,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     @classmethod
     def get_default_modules(cls) -> Tuple[types.ModuleType, ...]:
+        if cls.config.DEFAULT_BASE_MODULE is None:
+            return ()
         return (cls.config.DEFAULT_BASE_MODULE,)
 
     @classmethod

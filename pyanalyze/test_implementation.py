@@ -653,16 +653,17 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             incomplete_value = {"a": str(TD)}
             assert_is_value(
                 incomplete_value,
-                DictIncompleteValue([(KnownValue("a"), TypedValue(str))]),
+                DictIncompleteValue(dict, [(KnownValue("a"), TypedValue(str))]),
             )
             assert_is_value(incomplete_value.setdefault("b"), KnownValue(None))
             assert_is_value(
                 incomplete_value,
                 DictIncompleteValue(
+                    dict,
                     [
                         (KnownValue("a"), TypedValue(str)),
                         (KnownValue("b"), KnownValue(None)),
-                    ]
+                    ],
                 ),
             )
             assert_is_value(
@@ -672,11 +673,12 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(
                 incomplete_value,
                 DictIncompleteValue(
+                    dict,
                     [
                         (KnownValue("a"), TypedValue(str)),
                         (KnownValue("b"), KnownValue(None)),
                         (KnownValue("a"), KnownValue(None)),
-                    ]
+                    ],
                 ),
             )
 
@@ -838,11 +840,12 @@ class TestDictGetItem(TestNameCheckVisitorBase):
             assert_is_value(
                 incomplete_value,
                 DictIncompleteValue(
+                    dict,
                     [
                         (TypedValue(int), KnownValue(1)),
                         (KnownValue("b"), KnownValue(2)),
                         (KnownValue("c"), KnownValue("s")),
-                    ]
+                    ],
                 ),
             )
 
@@ -937,16 +940,17 @@ class TestDictSetItem(TestNameCheckVisitorBase):
             assert_is_value(dct, KnownValue({}))
             dct["x"] = x
             assert_is_value(
-                dct, DictIncompleteValue([(KnownValue("x"), TypedValue(int))])
+                dct, DictIncompleteValue(dict, [(KnownValue("x"), TypedValue(int))])
             )
             dct[y] = "x"
             assert_is_value(
                 dct,
                 DictIncompleteValue(
+                    dict,
                     [
                         (KnownValue("x"), TypedValue(int)),
                         (TypedValue(str), KnownValue("x")),
-                    ]
+                    ],
                 ),
             )
 

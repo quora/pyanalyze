@@ -643,6 +643,7 @@ class GenericValue(TypedValue):
         return f"{stringify_object(self.typ)}[{args_str}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        other = replace_known_sequence_value(other)
         if isinstance(other, TypedValue) and isinstance(other.typ, type):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
             # If we don't think it's a generic base, try super;
@@ -754,20 +755,20 @@ class DictIncompleteValue(GenericValue):
     """A :class:`TypedValue` representing a dictionary of known size.
 
     For example, the expression ``{'foo': int(self.bar)}`` may be typed as
-    ``DictIncompleteValue([(KnownValue('foo'), TypedValue(int))])``.
+    ``DictIncompleteValue(dict, [(KnownValue('foo'), TypedValue(int))])``.
 
     """
 
     items: List[Tuple[Value, Value]]
     """List of pairs representing the keys and values of the dict."""
 
-    def __init__(self, items: List[Tuple[Value, Value]]) -> None:
+    def __init__(self, typ: type, items: List[Tuple[Value, Value]]) -> None:
         if items:
             key_type = unite_values(*[key for key, _ in items])
             value_type = unite_values(*[value for _, value in items])
         else:
             key_type = value_type = AnyValue(AnySource.unreachable)
-        super().__init__(dict, (key_type, value_type))
+        super().__init__(typ, (key_type, value_type))
         self.items = items
 
     def __str__(self) -> str:
@@ -782,10 +783,11 @@ class DictIncompleteValue(GenericValue):
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return DictIncompleteValue(
+            self.typ,
             [
                 (key.substitute_typevars(typevars), value.substitute_typevars(typevars))
                 for key, value in self.items
-            ]
+            ],
         )
 
 
@@ -1805,7 +1807,8 @@ def replace_known_sequence_value(value: Value) -> Value:
             )
         elif isinstance(value.val, dict):
             return DictIncompleteValue(
-                [(KnownValue(k), KnownValue(v)) for k, v in value.val.items()]
+                type(value.val),
+                [(KnownValue(k), KnownValue(v)) for k, v in value.val.items()],
             )
     return value
 

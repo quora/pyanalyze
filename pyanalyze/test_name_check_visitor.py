@@ -167,6 +167,33 @@ def test_annotation():
 
 
 class TestNameCheckVisitor(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_list_return(self):
+        from typing import List
+
+        class A:
+            pass
+
+        def func() -> List[A]:
+            return [A]  # E: incompatible_return_value
+
+        def func() -> A:
+            return A  # E: incompatible_return_value
+
+    @assert_passes()
+    def test_known_ordered(self):
+        from typing_extensions import OrderedDict
+
+        known_ordered = OrderedDict({1: 2})
+        bad_ordered = OrderedDict({"a": "b"})
+
+        def capybara(arg: OrderedDict[int, int]) -> None:
+            pass
+
+        def caller() -> None:
+            capybara(known_ordered)
+            capybara(bad_ordered)  # E: incompatible_argument
+
     @assert_fails(ErrorCode.undefined_name)
     def test_undefined_name(self):
         def run():
@@ -508,12 +535,12 @@ def run():
             s = {a, b}
             assert_is_value(s, SequenceIncompleteValue(set, [UNANNOTATED, UNANNOTATED]))
             z = {a: b}
-            assert_is_value(z, DictIncompleteValue([(UNANNOTATED, UNANNOTATED)]))
+            assert_is_value(z, DictIncompleteValue(dict, [(UNANNOTATED, UNANNOTATED)]))
             q = {a: 3, b: 4}
             assert_is_value(
                 q,
                 DictIncompleteValue(
-                    [(UNANNOTATED, KnownValue(3)), (UNANNOTATED, KnownValue(4))]
+                    dict, [(UNANNOTATED, KnownValue(3)), (UNANNOTATED, KnownValue(4))]
                 ),
             )
 
@@ -933,7 +960,7 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
 
             vals3 = yield {1: square.asynq(1)}
             assert_is_value(
-                vals3, DictIncompleteValue([(KnownValue(1), TypedValue(int))])
+                vals3, DictIncompleteValue(dict, [(KnownValue(1), TypedValue(int))])
             )
 
             vals4 = yield {i: square.asynq(i) for i in [0, 1, 2]}

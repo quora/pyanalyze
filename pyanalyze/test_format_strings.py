@@ -303,7 +303,7 @@ class TestAccept(object):
         # DictIncompleteValue
         self.assert_errors(
             PercentFormatString.from_pattern("%(a)s"),
-            DictIncompleteValue([(KnownValue("a"), KnownValue(2))]),
+            DictIncompleteValue(dict, [(KnownValue("a"), KnownValue(2))]),
             [],
         )
 
