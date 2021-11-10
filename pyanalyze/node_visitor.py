@@ -424,7 +424,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         changes = collections.defaultdict(list)
         with qcore.override(cls, "_changes_for_fixer", changes):
             try:
-                had_failure = cls._run(**kwargs)
+                had_failure = bool(cls._run(**kwargs))
             except VisitorError:
                 had_failure = True
         # ignore run_fixer if autofix is enabled
@@ -697,7 +697,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return all_failures
 
     @classmethod
-    def _check_file_single_arg(cls, args: Tuple[str, Dict[str, Any]]) -> List[Failure]:
+    def _check_file_single_arg(
+        cls, args: Tuple[str, Dict[str, Any]]
+    ) -> Tuple[List[Failure], Any]:
         filename, kwargs = args
         main_module = sys.modules["__main__"]
         try:

@@ -397,6 +397,44 @@ class Signature:
             constraint = NULL_CONSTRAINT
         return ImplReturn(ret.return_value, constraint, ret.no_return_unless)
 
+    def bind_arguments(
+        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+    ) -> Optional[inspect.BoundArguments]:
+        call_args = []
+        call_kwargs = {}
+        for composite, label in args:
+            if label is None:
+                call_args.append(composite)
+            elif isinstance(label, str):
+                call_kwargs[label] = composite
+            elif label is ARGS or label is KWARGS:
+                # TODO handle these:
+                # - type check that they are iterables/mappings
+                # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
+                # - else do something smart to still typecheck the call
+                return None
+
+        try:
+            bound_args = self.signature.bind(*call_args, **call_kwargs)
+        except TypeError as e:
+            if self.callable is not None:
+                message = f"In call to {stringify_object(self.callable)}: {e}"
+            else:
+                message = str(e)
+            visitor.show_error(node, message, ErrorCode.incompatible_call)
+            return None
+        bound_args.apply_defaults()
+        return bound_args
+
+    def get_default_return(self, source: AnySource = AnySource.error) -> ImplReturn:
+        return_value = self.signature.return_annotation
+        if return_value is EMPTY:
+            return ImplReturn(AnyValue(AnySource.unannotated))
+        if self._return_key in self.typevars_of_params:
+            typevar_values = {tv: AnyValue(source) for tv in self.all_typevars}
+            return_value = return_value.substitute_typevars(typevar_values)
+        return ImplReturn(return_value)
+
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> ImplReturn:
@@ -417,30 +455,9 @@ class Signature:
                 return ImplReturn(AnyValue(AnySource.unannotated))
             return ImplReturn(return_value)
 
-        call_args = []
-        call_kwargs = {}
-        for composite, label in args:
-            if label is None:
-                call_args.append(composite)
-            elif isinstance(label, str):
-                call_kwargs[label] = composite
-            elif label is ARGS or label is KWARGS:
-                # TODO handle these:
-                # - type check that they are iterables/mappings
-                # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
-                # - else do something smart to still typecheck the call
-                return ImplReturn(AnyValue(AnySource.inference))
-
-        try:
-            bound_args = self.signature.bind(*call_args, **call_kwargs)
-        except TypeError as e:
-            if self.callable is not None:
-                message = f"In call to {stringify_object(self.callable)}: {e}"
-            else:
-                message = str(e)
-            visitor.show_error(node, message, ErrorCode.incompatible_call)
-            return ImplReturn(AnyValue(AnySource.error))
-        bound_args.apply_defaults()
+        bound_args = self.bind_arguments(args, visitor, node)
+        if bound_args is None:
+            return self.get_default_return()
         variables = {
             name: self._translate_bound_arg(value)
             for name, value in bound_args.arguments.items()
