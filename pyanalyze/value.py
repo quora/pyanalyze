@@ -807,10 +807,13 @@ class TypedDictValue(GenericValue):
         super().__init__(dict, (TypedValue(str), value_type))
         self.items = items
 
+    def num_required_keys(self) -> int:
+        return sum(1 for required, _ in self.items.values() if required)
+
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, DictIncompleteValue):
             their_len = len(other.items)
-            required_len = sum(1 for required, _ in self.items.values() if required)
+            required_len = self.num_required_keys()
             if their_len < required_len:
                 return CanAssignError(
                     f"Cannot assign dict of size {their_len} to dict of size"
@@ -1622,7 +1625,13 @@ def boolean_value(value: Optional[Value]) -> Optional[bool]:
     """
     if isinstance(value, AnnotatedValue):
         value = value.value
-    if isinstance(value, KnownValue):
+    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
+        if len(value.members):
+            return True
+    elif isinstance(value, TypedDictValue):
+        if value.num_required_keys():
+            return True
+    elif isinstance(value, KnownValue):
         try:
             # don't pretend to know the boolean value of mutable types
             # since we may have missed a change

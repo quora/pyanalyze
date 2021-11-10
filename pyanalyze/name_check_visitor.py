@@ -107,6 +107,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     make_weak,
+    flatten_values,
     unite_values,
     KnownValue,
     TypedValue,
@@ -116,6 +117,7 @@ from .value import (
     ReferencingValue,
     SubclassValue,
     DictIncompleteValue,
+    TypedDictValue,
     SequenceIncompleteValue,
     AsyncTaskIncompleteValue,
     GenericValue,
@@ -263,7 +265,6 @@ class _AttrContext(attributes.AttrContext):
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
 _DEFAULT_FUNCTION_INFO = FunctionInfo(AsyncFunctionKind.normal, False, False, False, [])
-_BOOL_DUNDER = "__bool__"
 
 
 class ClassAttributeChecker:
@@ -3153,26 +3154,55 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         condition, constraint = self._visit_possible_constraint(node)
         if self._is_collecting():
             return condition, constraint
-        typ = condition.get_type()
-        if typ is not None and not self._can_be_used_as_boolean(typ):
+        if self.is_always_true(condition):
             self._show_error_if_checking(
                 node,
-                "Object of type {} will always evaluate to True in boolean context"
-                .format(typ),
+                f"{condition} will always evaluate to True in boolean context",
                 error_code=ErrorCode.non_boolean_in_boolean_context,
             )
         return condition, constraint
 
-    def _can_be_used_as_boolean(self, typ: type) -> bool:
-        if hasattr(typ, "__len__"):
+    def is_always_true(self, value: Value) -> bool:
+        return all(
+            self._is_always_true_inner(val)
+            for val in flatten_values(value, unwrap_annotated=True)
+        )
+
+    def _is_always_true_inner(self, value: Value) -> bool:
+        if isinstance(value, SequenceIncompleteValue) and len(value.members):
             return True
-        if hasattr(typ, _BOOL_DUNDER):
-            # asynq futures have __bool__, but it always throws an error to help find bugs at
-            # runtime, so special-case it. If necessary we could make this into a configuration
-            # option.
-            bool_fn = getattr(typ, _BOOL_DUNDER)
-            return bool_fn is not getattr(asynq.FutureBase, _BOOL_DUNDER)
-        return False
+        elif isinstance(value, DictIncompleteValue) and len(value.items):
+            return True
+        elif isinstance(value, TypedDictValue) and value.num_required_keys():
+            return True
+        elif isinstance(value, KnownValue):
+            # If we're doing "while True" it's probably on purpose
+            if isinstance(value.val, bool):
+                return False
+            try:
+                if value.val:
+                    return True
+            except Exception:
+                return False
+        elif isinstance(value, UnboundMethodValue) and not value.secondary_attr_name:
+            return True
+        else:
+            root_composite = Composite(value)
+            len_method = self.get_attribute(root_composite, "__len__")
+            if len_method is not UNINITIALIZED_VALUE:
+                return False
+            bool_method = self.get_attribute(root_composite, "__bool__")
+            if bool_method is not UNINITIALIZED_VALUE:
+                if (
+                    isinstance(bool_method, UnboundMethodValue)
+                    # asynq futures have __bool__, but it always throws an error to help find bugs at
+                    # runtime, so special-case it. If necessary we could make this into a configuration
+                    # option.
+                    and bool_method.get_method() == asynq.futures.FutureBase.__bool__
+                ):
+                    return True
+                return False
+            return True
 
     def visit_Expr(self, node: ast.Expr) -> Value:
         value = self.visit(node.value)
