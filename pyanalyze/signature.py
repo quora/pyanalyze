@@ -7,7 +7,9 @@ calls.
 """
 
 from collections import defaultdict
+
 from .error_code import ErrorCode
+from .safe import all_of_type
 from .stacked_scopes import (
     AndConstraint,
     Composite,
@@ -37,7 +39,9 @@ from .value import (
     TypeVarMap,
     CanAssign,
     CanAssignError,
+    concrete_values_from_iterable,
     extract_typevars,
+    replace_known_sequence_value,
     stringify_object,
     unify_typevar_maps,
     unite_values,
@@ -402,6 +406,17 @@ class Signature:
         but normally just uses :meth:`inspect.Signature.bind`.
 
         """
+        args = list(args)
+        if self.is_ellipsis_args:
+            if self.allow_call:
+                runtime_return = self._maybe_perform_call(args, visitor, node)
+                if runtime_return is not None:
+                    return ImplReturn(runtime_return)
+            return_value = self.signature.return_annotation
+            if return_value is EMPTY:
+                return ImplReturn(AnyValue(AnySource.unannotated))
+            return ImplReturn(return_value)
+
         call_args = []
         call_kwargs = {}
         for composite, label in args:
@@ -415,18 +430,6 @@ class Signature:
                 # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
                 # - else do something smart to still typecheck the call
                 return ImplReturn(AnyValue(AnySource.inference))
-
-        if self.is_ellipsis_args:
-            if self.allow_call:
-                runtime_return = self._maybe_perform_call(
-                    call_args, call_kwargs, visitor, node
-                )
-                if runtime_return is not None:
-                    return ImplReturn(runtime_return)
-            return_value = self.signature.return_annotation
-            if return_value is EMPTY:
-                return ImplReturn(AnyValue(AnySource.unannotated))
-            return ImplReturn(return_value)
 
         try:
             bound_args = self.signature.bind(*call_args, **call_kwargs)
@@ -487,9 +490,7 @@ class Signature:
             return_value = self.impl(ctx)
 
         if self.allow_call:
-            runtime_return = self._maybe_perform_call(
-                call_args, call_kwargs, visitor, node
-            )
+            runtime_return = self._maybe_perform_call(args, visitor, node)
             if runtime_return is not None:
                 if isinstance(return_value, ImplReturn):
                     return_value = ImplReturn(
@@ -505,26 +506,47 @@ class Signature:
             return self._apply_annotated_constraints(return_value, bound_args)
 
     def _maybe_perform_call(
-        self,
-        call_args: List[Composite],
-        call_kwargs: Dict[str, Composite],
-        visitor: "NameCheckVisitor",
-        node: ast.AST,
+        self, arguments: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> Optional[Value]:
         if self.callable is None:
             return None
         args = []
-        for composite in call_args:
-            if isinstance(composite.value, KnownValue):
-                args.append(composite.value.val)
-            else:
-                return None
         kwargs = {}
-        for key, composite in call_kwargs.items():
-            if isinstance(composite.value, KnownValue):
-                kwargs[key] = composite.value.val
+        for composite, label in arguments:
+            if label is None:
+                if isinstance(composite.value, KnownValue):
+                    args.append(composite.value.val)
+                else:
+                    return None
+            elif isinstance(label, str):
+                if isinstance(composite.value, KnownValue):
+                    kwargs[label] = composite.value.val
+                else:
+                    return None
+            elif label is ARGS:
+                values = concrete_values_from_iterable(composite.value, visitor)
+                if isinstance(values, collections.abc.Sequence) and all_of_type(
+                    values, KnownValue
+                ):
+                    args += [val.val for val in values]
+                else:
+                    return None
             else:
-                return None
+                assert label is KWARGS, label
+                value = replace_known_sequence_value(composite.value)
+                if isinstance(value, DictIncompleteValue):
+                    for key, val in value.items:
+                        if (
+                            isinstance(key, KnownValue)
+                            and isinstance(key.val, str)
+                            and isinstance(val, KnownValue)
+                        ):
+                            kwargs[key.val] = val.val
+                        else:
+                            return None
+                else:
+                    return None
+
         try:
             value = self.callable(*args, **kwargs)
         except Exception as e:
