@@ -1624,7 +1624,7 @@ class TestPython3Compatibility(TestNameCheckVisitorBase):
 
 
 class TestOperators(TestNameCheckVisitorBase):
-    @assert_passes()
+    @assert_passes(settings={ErrorCode.value_always_true: False})
     def test_not(self):
         def capybara(x):
             assert_is_value(not x, TypedValue(bool))
