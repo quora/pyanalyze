@@ -8,7 +8,7 @@ from functools import lru_cache
 import importlib.util
 from pathlib import Path
 import sys
-from typing import cast, Tuple
+from typing import List, cast, Tuple
 from types import ModuleType
 
 
@@ -31,7 +31,8 @@ def load_module_from_file(
     # somewhat properly
     abspath = Path(filename).resolve()
     candidate_paths = []
-    for sys_path_entry in sys.path:
+    path: List[str] = sys.path
+    for sys_path_entry in path:
         if not sys_path_entry:
             continue
         import_path = Path(sys_path_entry)

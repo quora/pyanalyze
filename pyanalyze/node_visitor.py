@@ -36,6 +36,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Type,
     Union,
     cast,
 )
@@ -140,11 +141,11 @@ class BaseNodeVisitor(ast.NodeVisitor):
     """Base Visitor class that can run on all files in a/ and show detailed error messages."""
 
     # Number of context lines to show around errors
-    CONTEXT_LINES = 3
-    error_code_enum = None
-    default_module = None  # module to run on by default
+    CONTEXT_LINES: int = 3
+    error_code_enum: Optional[Type[Enum]] = None
+    default_module: Optional[ModuleType] = None  # module to run on by default
     # whether to look at FILE_ENVIRON_KEY to find files to run on
-    should_check_environ_for_files = True
+    should_check_environ_for_files: bool = True
 
     _changes_for_fixer = collections.defaultdict(list)
 

@@ -93,6 +93,7 @@ DISABLED_IN_TESTS = {
 DISABLED_BY_DEFAULT = {
     *DISABLED_IN_TESTS,
     ErrorCode.method_first_arg,
+    ErrorCode.value_always_true,
     # TODO(jelle): This needs more work
     ErrorCode.unused_variable,
     ErrorCode.use_fstrings,

@@ -514,17 +514,12 @@ class ClassAttributeChecker:
             return
 
         # name mangling
-        if (
-            attr_name.startswith("__")
-            and hasattr(typ, "__name__")
-            and hasattr(typ, f"_{typ.__name__}{attr_name}")
-        ):
+        if attr_name.startswith("__") and hasattr(typ, f"_{typ.__name__}{attr_name}"):
             return
 
         # can't be sure whether it exists if class has __getattr__
         if hasattr(typ, "__getattr__") or (
-            hasattr(typ, "__getattribute__")
-            and typ.__getattribute__ is not object.__getattribute__
+            typ.__getattribute__ is not object.__getattribute__
         ):
             return
 
@@ -2858,14 +2853,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         boolability = get_boolability(test)
         if boolability is Boolability.value_always_false:
             self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
-        elif boolability is Boolability.type_always_true:
-            # We don't check value_always_true here; it's fine to have an assertion
-            # that the type checker statically thinks is True.
-            self._show_error_if_checking(node, error_code=ErrorCode.type_always_true)
-        elif boolability is Boolability.erroring_bool:
-            self._show_error_if_checking(
-                node, error_code=ErrorCode.type_does_not_support_bool
-            )
+        # We don't check value_always_true here; it's fine to have an assertion
+        # that the type checker statically thinks is True.
+        self._check_boolability(test, node, disabled={ErrorCode.value_always_true})
 
     def add_constraint(self, node: object, constraint: AbstractConstraint) -> None:
         self.scopes.current_scope().add_constraint(constraint, node, self.state)
@@ -3165,18 +3155,45 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         condition, constraint = self._visit_possible_constraint(node)
         if self._is_collecting():
             return condition, constraint
-        boolability = get_boolability(condition)
-        if boolability is Boolability.erroring_bool:
-            self.show_error(node, error_code=ErrorCode.type_does_not_support_bool)
-        elif check_boolability:
-            if boolability is Boolability.type_always_true:
-                self.show_error(node, error_code=ErrorCode.type_always_true)
-            elif boolability in (
-                Boolability.value_always_true,
-                Boolability.value_always_true_mutable,
-            ):
-                self.show_error(node, error_code=ErrorCode.value_always_true)
+        if check_boolability:
+            disabled = set()
+        else:
+            disabled = {ErrorCode.type_always_true, ErrorCode.value_always_true}
+        self._check_boolability(condition, node, disabled=disabled)
         return condition, constraint
+
+    def _check_boolability(
+        self,
+        value: Value,
+        node: ast.AST,
+        *,
+        disabled: Container[ErrorCode] = frozenset(),
+    ) -> None:
+        boolability = get_boolability(value)
+        if boolability is Boolability.erroring_bool:
+            if ErrorCode.type_does_not_support_bool not in disabled:
+                self.show_error(
+                    node,
+                    f"{value} does not support bool()",
+                    error_code=ErrorCode.type_does_not_support_bool,
+                )
+        elif boolability is Boolability.type_always_true:
+            if ErrorCode.type_always_true not in disabled:
+                self._show_error_if_checking(
+                    node,
+                    f"{value} is always True because it does not provide __bool__",
+                    error_code=ErrorCode.type_always_true,
+                )
+        elif boolability in (
+            Boolability.value_always_true,
+            Boolability.value_always_true_mutable,
+        ):
+            if ErrorCode.value_always_true not in disabled:
+                self.show_error(
+                    node,
+                    f"{value} is always True",
+                    error_code=ErrorCode.value_always_true,
+                )
 
     def visit_Expr(self, node: ast.Expr) -> Value:
         value = self.visit(node.value)
