@@ -13,12 +13,12 @@ class PyanalyzeConfig(pyanalyze.config.Config):
     DEFAULT_BASE_MODULE = pyanalyze
     ENFORCE_NO_UNUSED_OBJECTS = True
     ENABLED_ERRORS = {
-        ErrorCode.condition_always_true,
         ErrorCode.possibly_undefined_name,
         ErrorCode.use_fstrings,
         ErrorCode.missing_return_annotation,
         ErrorCode.missing_parameter_annotation,
         ErrorCode.unused_variable,
+        ErrorCode.value_always_true,
     }
 
 

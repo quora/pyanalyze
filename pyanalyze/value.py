@@ -807,10 +807,13 @@ class TypedDictValue(GenericValue):
         super().__init__(dict, (TypedValue(str), value_type))
         self.items = items
 
+    def num_required_keys(self) -> int:
+        return sum(1 for required, _ in self.items.values() if required)
+
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, DictIncompleteValue):
             their_len = len(other.items)
-            required_len = sum(1 for required, _ in self.items.values() if required)
+            required_len = self.num_required_keys()
             if their_len < required_len:
                 return CanAssignError(
                     f"Cannot assign dict of size {their_len} to dict of size"
@@ -1614,26 +1617,6 @@ def unite_values(*values: Value) -> Value:
         return MultiValuedValue(existing)
 
 
-def boolean_value(value: Optional[Value]) -> Optional[bool]:
-    """Given a Value, returns whether the object is statically known to be truthy.
-
-    Returns None if its truth value cannot be determined.
-
-    """
-    if isinstance(value, AnnotatedValue):
-        value = value.value
-    if isinstance(value, KnownValue):
-        try:
-            # don't pretend to know the boolean value of mutable types
-            # since we may have missed a change
-            if not isinstance(value.val, KNOWN_MUTABLE_TYPES):
-                return bool(value.val)
-        except Exception:
-            # Its __bool__ threw an exception. Just give up.
-            return None
-    return None
-
-
 T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
@@ -1670,8 +1653,6 @@ def concrete_values_from_iterable(
         if not value_subvals and len(set(map(len, seq_subvals))) == 1:
             return [unite_values(*vals) for vals in zip(*seq_subvals)]
         return unite_values(*value_subvals, *chain.from_iterable(seq_subvals))
-    elif isinstance(value, AnnotatedValue):
-        return concrete_values_from_iterable(value.value, ctx)
     value = replace_known_sequence_value(value)
     if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
         return value.members
@@ -1715,8 +1696,6 @@ def unpack_values(
                 post_starred_length,
             )
         return [unite_values(*vals) for vals in zip(*good_subvals)]
-    elif isinstance(value, AnnotatedValue):
-        return unpack_values(value.value, ctx, target_length, post_starred_length)
     value = replace_known_sequence_value(value)
 
     # We treat the different sequence types differently here.
@@ -1798,8 +1777,19 @@ def _unpack_value_sequence(
 
 
 def replace_known_sequence_value(value: Value) -> Value:
+    """Simplify a Value in a way that is easier to handle for most typechecking use cases.
+
+    Does the following:
+    - Replace AnnotatedValue with its inner type
+    - Replace TypeVarValue with its fallback type
+    - Replace KnownValues representing list, tuples, sets, or dicts with
+      SequenceIncompleteValue or DictIncompleteValue.
+
+    """
     if isinstance(value, AnnotatedValue):
-        value = value.value
+        return replace_known_sequence_value(value.value)
+    if isinstance(value, TypeVarValue):
+        return replace_known_sequence_value(value.get_fallback_value())
     if isinstance(value, KnownValue):
         if isinstance(value.val, (list, tuple, set)):
             return SequenceIncompleteValue(

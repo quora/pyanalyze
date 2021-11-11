@@ -55,7 +55,7 @@ from typed_ast import ast3
 T_co = TypeVar("T_co", covariant=True)
 
 
-IS_PRE_38 = sys.version_info < (3, 8)
+IS_PRE_38: bool = sys.version_info < (3, 8)
 
 
 @dataclass

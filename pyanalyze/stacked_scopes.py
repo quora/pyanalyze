@@ -45,6 +45,7 @@ from typing import (
     Union,
 )
 
+from .boolability import get_boolability
 from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
@@ -58,7 +59,6 @@ from .value import (
     TypedValue,
     Value,
     annotate_value,
-    boolean_value,
     UNINITIALIZED_VALUE,
     unite_values,
     flatten_values,
@@ -336,11 +336,12 @@ class Constraint(AbstractConstraint):
                 yield value
 
         elif self.constraint_type == ConstraintType.is_truthy:
+            boolability = get_boolability(inner_value)
             if self.positive:
-                if boolean_value(inner_value) is not False:
+                if not boolability.is_safely_false():
                     yield value
             else:
-                if boolean_value(inner_value) is not True:
+                if not boolability.is_safely_true():
                     yield value
 
         elif self.constraint_type == ConstraintType.predicate:

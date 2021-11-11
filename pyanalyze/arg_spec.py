@@ -419,17 +419,8 @@ class ArgSpecCache:
                     # In practice, we saw this make a difference with NamedTuples.
                     elif isinstance(obj.__new__, FunctionType):
                         constructor = obj.__new__
-                    elif hasattr(obj, "__init__"):
-                        constructor = obj.__init__
                     else:
-                        # old-style class
-                        return Signature.make(
-                            [],
-                            return_type,
-                            is_ellipsis_args=True,
-                            callable=obj,
-                            allow_call=allow_call,
-                        )
+                        constructor = obj.__init__
                     inspect_sig = self._safe_get_signature(constructor)
                 if inspect_sig is None:
                     return Signature.make(
@@ -456,7 +447,7 @@ class ArgSpecCache:
             return bound_sig
 
         if inspect.isbuiltin(obj):
-            if hasattr(obj, "__self__") and not isinstance(obj.__self__, ModuleType):
+            if not isinstance(obj.__self__, ModuleType):
                 cls = type(obj.__self__)
                 try:
                     method = getattr(cls, obj.__name__)
