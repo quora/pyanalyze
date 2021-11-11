@@ -57,6 +57,7 @@ from qcore.helpers import safe_str
 from . import attributes, format_strings, node_visitor, importer, method_return_type
 from .annotations import type_from_runtime, type_from_value, is_typing_name
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
+from .boolability import Boolability, get_boolability
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard
@@ -103,11 +104,9 @@ from .value import (
     CallableValue,
     CanAssignError,
     KnownValueWithTypeVars,
-    boolean_value,
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     make_weak,
-    flatten_values,
     unite_values,
     KnownValue,
     TypedValue,
@@ -117,7 +116,6 @@ from .value import (
     ReferencingValue,
     SubclassValue,
     DictIncompleteValue,
-    TypedDictValue,
     SequenceIncompleteValue,
     AsyncTaskIncompleteValue,
     GenericValue,
@@ -2488,11 +2486,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if isinstance(node.op, ast.Not):
             # not doesn't have its own special method
             val, constraint = self.constraint_from_condition(node.operand)
-            result = boolean_value(val)
-            if result is None:
-                val = TypedValue(bool)
+            boolability = get_boolability(val)
+            if boolability.is_safely_true():
+                val = KnownValue(False)
+            elif boolability.is_safely_false():
+                val = KnownValue(True)
             else:
-                val = KnownValue(not result)
+                val = TypedValue(bool)
             return val, constraint.invert()
         else:
             operand = self.composite_from_node(node.operand)
@@ -2855,13 +2855,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self.visit(node.msg)
         self.add_constraint(node, constraint)
         # code after an assert False is unreachable
-        val = boolean_value(test)
-        if val is True:
-            self._show_error_if_checking(
-                node, error_code=ErrorCode.condition_always_true
-            )
-        elif val is False:
+        boolability = get_boolability(test)
+        if boolability is Boolability.value_always_false:
             self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
+        elif boolability is Boolability.type_always_true:
+            # We don't check value_always_true here; it's fine to have an assertion
+            # that the type checker statically thinks is True.
+            self._show_error_if_checking(node, error_code=ErrorCode.type_always_true)
+        elif boolability is Boolability.erroring_bool:
+            self._show_error_if_checking(
+                node, error_code=ErrorCode.type_does_not_support_bool
+            )
 
     def add_constraint(self, node: object, constraint: AbstractConstraint) -> None:
         self.scopes.current_scope().add_constraint(constraint, node, self.state)
@@ -2928,8 +2932,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def visit_While(self, node: ast.While) -> None:
         # see comments under For for discussion
-        test, constraint = self.constraint_from_condition(node.test)
-        always_entered = boolean_value(test) is True
+
+        # We don't check boolability here because "while True" is legitimate and common.
+        test, constraint = self.constraint_from_condition(
+            node.test, check_boolability=False
+        )
+        always_entered = get_boolability(test) in (
+            Boolability.value_always_true,
+            Boolability.type_always_true,
+        )
         with self.scopes.subscope() as body_scope:
             with self.scopes.loop_scope():
                 # The "node" argument need not be an AST node but must be unique.
@@ -3149,60 +3160,23 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return unite_values(then_val, else_val)
 
     def constraint_from_condition(
-        self, node: ast.AST
+        self, node: ast.AST, check_boolability: bool = True
     ) -> Tuple[Value, AbstractConstraint]:
         condition, constraint = self._visit_possible_constraint(node)
         if self._is_collecting():
             return condition, constraint
-        if self.is_always_true(condition):
-            self._show_error_if_checking(
-                node,
-                f"{condition} will always evaluate to True in boolean context",
-                error_code=ErrorCode.non_boolean_in_boolean_context,
-            )
+        boolability = get_boolability(condition)
+        if boolability is Boolability.erroring_bool:
+            self.show_error(node, error_code=ErrorCode.type_does_not_support_bool)
+        elif check_boolability:
+            if boolability is Boolability.type_always_true:
+                self.show_error(node, error_code=ErrorCode.type_always_true)
+            elif boolability in (
+                Boolability.value_always_true,
+                Boolability.value_always_true_mutable,
+            ):
+                self.show_error(node, error_code=ErrorCode.value_always_true)
         return condition, constraint
-
-    def is_always_true(self, value: Value) -> bool:
-        return all(
-            self._is_always_true_inner(val)
-            for val in flatten_values(value, unwrap_annotated=True)
-        )
-
-    def _is_always_true_inner(self, value: Value) -> bool:
-        if isinstance(value, SequenceIncompleteValue) and len(value.members):
-            return True
-        elif isinstance(value, DictIncompleteValue) and len(value.items):
-            return True
-        elif isinstance(value, TypedDictValue) and value.num_required_keys():
-            return True
-        elif isinstance(value, KnownValue):
-            # If we're doing "while True" it's probably on purpose
-            if isinstance(value.val, bool):
-                return False
-            try:
-                if value.val:
-                    return True
-            except Exception:
-                return False
-        elif isinstance(value, UnboundMethodValue) and not value.secondary_attr_name:
-            return True
-        else:
-            root_composite = Composite(value)
-            len_method = self.get_attribute(root_composite, "__len__")
-            if len_method is not UNINITIALIZED_VALUE:
-                return False
-            bool_method = self.get_attribute(root_composite, "__bool__")
-            if bool_method is not UNINITIALIZED_VALUE:
-                if (
-                    isinstance(bool_method, UnboundMethodValue)
-                    # asynq futures have __bool__, but it always throws an error to help find bugs at
-                    # runtime, so special-case it. If necessary we could make this into a configuration
-                    # option.
-                    and bool_method.get_method() == asynq.futures.FutureBase.__bool__
-                ):
-                    return True
-                return False
-            return True
 
     def visit_Expr(self, node: ast.Expr) -> Value:
         value = self.visit(node.value)

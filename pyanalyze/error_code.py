@@ -41,7 +41,7 @@ class ErrorCode(enum.Enum):
 
     class_variable_redefinition = 21
     bad_global = 22
-    condition_always_true = 23
+    condition_always_true = 23  # deprecated
     inference_failure = 24
     bad_format_string = 25
     yield_without_value = 28
@@ -60,7 +60,7 @@ class ErrorCode(enum.Enum):
     missing_await = 43
     unused_variable = 44
     bad_nonlocal = 45
-    non_boolean_in_boolean_context = 46
+    non_boolean_in_boolean_context = 46  # deprecated
     use_fstrings = 47
     import_failed = 48
     unused_ignore = 49
@@ -78,6 +78,9 @@ class ErrorCode(enum.Enum):
     duplicate_enum_member = 61
     missing_return_annotation = 62
     missing_parameter_annotation = 63
+    type_always_true = 64
+    value_always_true = 65
+    type_does_not_support_bool = 66
 
 
 # Allow testing unannotated functions without too much fuss
@@ -90,8 +93,6 @@ DISABLED_IN_TESTS = {
 DISABLED_BY_DEFAULT = {
     *DISABLED_IN_TESTS,
     ErrorCode.method_first_arg,
-    # This is harmless and it has false positives when things are overridden in child classes
-    ErrorCode.condition_always_true,
     # TODO(jelle): This needs more work
     ErrorCode.unused_variable,
     ErrorCode.use_fstrings,
@@ -178,6 +179,9 @@ ERROR_DESCRIPTION = {
     ErrorCode.duplicate_enum_member: "Duplicate enum member",
     ErrorCode.missing_return_annotation: "Missing function return annotation",
     ErrorCode.missing_parameter_annotation: "Missing function parameter annotation",
+    ErrorCode.type_always_true: "Type will always evaluate to 'True'",
+    ErrorCode.value_always_true: "Value will always evaluate to 'True'",
+    ErrorCode.type_does_not_support_bool: "Type does not support bool()",
 }
 
 

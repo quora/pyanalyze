@@ -658,24 +658,6 @@ def run():
             global x
             assert_is_value(x, KnownValue(3))
 
-    @assert_fails(ErrorCode.condition_always_true)
-    def test_assert_never_fails(self):
-        def capybara():
-            assert "this doesn't work"
-
-    @assert_passes()
-    def test_assert_bad_bool(self):
-        class X(object):
-            def __bool__(self):
-                raise Exception("I am a poorly behaved object")
-
-            __nonzero__ = __bool__
-
-        x = X()
-
-        def capybara():
-            assert x
-
 
 class TestNoReturn(TestNameCheckVisitorBase):
     @assert_passes()
@@ -766,67 +748,6 @@ class TestSubclassValue(TestNameCheckVisitorBase):
         def caller() -> None:
             capybara(int)
             capybara(str)
-
-
-class TestConditionAlwaysTrue(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.non_boolean_in_boolean_context)
-    def test_if_expr(self):
-        True if object() else False
-
-    @assert_fails(ErrorCode.non_boolean_in_boolean_context)
-    def test_method(self):
-        class Capybara(object):
-            def eat(self):
-                pass
-
-            def maybe_eat(self):
-                if self.eat:
-                    self.eat()
-
-    @assert_fails(ErrorCode.non_boolean_in_boolean_context)
-    def test_typed_value(self):
-        class Capybara(object):
-            pass
-
-        if Capybara():
-            pass
-
-    @assert_passes()
-    def test_overrides_len(self):
-        class Capybara(object):
-            def __len__(self):
-                return 42
-
-        if Capybara():
-            pass
-
-    @assert_fails(ErrorCode.non_boolean_in_boolean_context)
-    def test_and(self):
-        object() and False
-
-    @assert_fails(ErrorCode.non_boolean_in_boolean_context)
-    def test_and_chain(self):
-        [] and object() and False
-
-    @assert_fails(ErrorCode.non_boolean_in_boolean_context)
-    def test_or(self):
-        object() or True
-
-    @assert_fails(ErrorCode.non_boolean_in_boolean_context)
-    def test_not(self):
-        not object()
-
-    @assert_fails(ErrorCode.non_boolean_in_boolean_context)
-    def test_async_yield_or(self):
-        from asynq import asynq
-
-        @asynq()
-        def kerodon():
-            return 42
-
-        @asynq()
-        def capybara():
-            yield kerodon.asynq() or 0
 
 
 class TestBoolOp(TestNameCheckVisitorBase):
