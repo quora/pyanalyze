@@ -67,8 +67,7 @@ _ASYNQ_BOOL = asynq.FutureBase.__bool__
 
 
 def get_boolability(value: Value) -> Boolability:
-    if isinstance(value, AnnotatedValue):
-        value = value.value
+    value = replace_known_sequence_value(value)
     if isinstance(value, MultiValuedValue):
         boolabilities = {_get_boolability_no_mvv(subval) for subval in value.vals}
         if Boolability.erroring_bool in boolabilities:

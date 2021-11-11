@@ -1,26 +1,130 @@
 # static analysis: ignore
+from asynq.futures import FutureBase
 from qcore.asserts import assert_eq
 
-
-from .error_code import ErrorCode
-from .asynq_checker import (
-    is_impure_async_fn,
-    _stringify_async_fn,
-    get_pure_async_equivalent,
-)
+from .boolability import Boolability, get_boolability
 from .stacked_scopes import Composite
-from .tests import (
-    PropertyObject,
-    async_fn,
-    cached_fn,
-    proxied_fn,
-    l0cached_async_fn,
-    Subclass,
-    ASYNQ_METHOD_NAME,
+from .value import (
+    AnnotatedValue,
+    AnySource,
+    AnyValue,
+    DictIncompleteValue,
+    KnownValue,
+    SequenceIncompleteValue,
+    TypedDictValue,
+    UnboundMethodValue,
+    TypedValue,
 )
-from .value import KnownValue, UnboundMethodValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes
+from .test_node_visitor import assert_passes
+
+
+class BadBool:
+    def __bool__(self):
+        raise Exception("fooled ya")
+
+
+class HasLen:
+    def __len__(self) -> int:
+        return 42
+
+
+def test_get_boolability() -> None:
+    future = TypedValue(FutureBase)
+    assert_eq(Boolability.boolable, get_boolability(AnyValue(AnySource.unannotated)))
+    assert_eq(
+        Boolability.type_always_true,
+        get_boolability(UnboundMethodValue("method", Composite(TypedValue(int)))),
+    )
+    assert_eq(
+        Boolability.boolable,
+        get_boolability(
+            UnboundMethodValue(
+                "method", Composite(TypedValue(int)), secondary_attr_name="whatever"
+            )
+        ),
+    )
+
+    # Sequence/dict values
+    assert_eq(
+        Boolability.type_always_true,
+        get_boolability(TypedDictValue({"a": (True, TypedValue(int))})),
+    )
+    assert_eq(
+        Boolability.boolable,
+        get_boolability(TypedDictValue({"a": (False, TypedValue(int))})),
+    )
+    assert_eq(
+        Boolability.type_always_true,
+        get_boolability(SequenceIncompleteValue(tuple, [KnownValue(1)])),
+    )
+    assert_eq(
+        Boolability.value_always_false,
+        get_boolability(SequenceIncompleteValue(tuple, [])),
+    )
+    assert_eq(
+        Boolability.value_always_true_mutable,
+        get_boolability(SequenceIncompleteValue(list, [KnownValue(1)])),
+    )
+    assert_eq(
+        Boolability.value_always_false_mutable,
+        get_boolability(SequenceIncompleteValue(list, [])),
+    )
+    assert_eq(
+        Boolability.value_always_true_mutable,
+        get_boolability(DictIncompleteValue(dict, [(KnownValue(1), KnownValue(1))])),
+    )
+    assert_eq(
+        Boolability.value_always_false_mutable,
+        get_boolability(DictIncompleteValue(dict, [])),
+    )
+
+    # KnownValue
+    assert_eq(Boolability.erroring_bool, get_boolability(KnownValue(BadBool())))
+    assert_eq(Boolability.value_always_true, get_boolability(KnownValue(1)))
+    assert_eq(Boolability.type_always_true, get_boolability(KnownValue(int)))
+    assert_eq(Boolability.value_always_false, get_boolability(KnownValue(0)))
+
+    # TypedValue
+    assert_eq(Boolability.boolable, get_boolability(TypedValue(HasLen)))
+    assert_eq(Boolability.erroring_bool, get_boolability(future))
+    assert_eq(Boolability.type_always_true, get_boolability(TypedValue(object)))
+    assert_eq(Boolability.boolable, get_boolability(TypedValue(int)))
+
+    # MultiValuedValue and AnnotatedValue
+    assert_eq(
+        Boolability.erroring_bool,
+        get_boolability(AnnotatedValue(future, [KnownValue(1)])),
+    )
+    assert_eq(Boolability.erroring_bool, get_boolability(future | KnownValue(1)))
+    assert_eq(Boolability.boolable, get_boolability(TypedValue(int) | TypedValue(str)))
+    assert_eq(Boolability.boolable, get_boolability(TypedValue(int) | KnownValue("")))
+    assert_eq(
+        Boolability.boolable, get_boolability(KnownValue(True) | KnownValue(False))
+    )
+    assert_eq(
+        Boolability.boolable, get_boolability(TypedValue(type) | KnownValue(False))
+    )
+    assert_eq(
+        Boolability.value_always_true,
+        get_boolability(TypedValue(type) | KnownValue(True)),
+    )
+    assert_eq(
+        Boolability.value_always_true_mutable,
+        get_boolability(TypedValue(type) | KnownValue([1])),
+    )
+    assert_eq(
+        Boolability.value_always_true_mutable,
+        get_boolability(KnownValue([1]) | KnownValue(True)),
+    )
+    assert_eq(
+        Boolability.value_always_false_mutable,
+        get_boolability(KnownValue(False) | KnownValue([])),
+    )
+    assert_eq(
+        Boolability.value_always_false,
+        get_boolability(KnownValue(False) | KnownValue("")),
+    )
 
 
 class TestAssert(TestNameCheckVisitorBase):
