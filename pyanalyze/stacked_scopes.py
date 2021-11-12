@@ -873,13 +873,6 @@ class FunctionScope(Scope):
                 )
             else:
                 return self.referencing_value_vars[varname]
-        # print(
-        #     "GET LOCAL",
-        #     varname,
-        #     state,
-        #     node in self.usage_to_definition_nodes,
-        #     self.name_to_current_definition_nodes,
-        # )
         if state is VisitorState.check_names:
             if node not in self.usage_to_definition_nodes:
                 return self.referencing_value_vars[varname]
