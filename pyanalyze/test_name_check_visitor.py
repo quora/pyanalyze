@@ -788,9 +788,9 @@ class TestBoolOp(TestNameCheckVisitorBase):
             )
 
 
-class TestReturnTypeInference(TestNameCheckVisitorBase):
+class TestReturn(TestNameCheckVisitorBase):
     @assert_passes()
-    def test(self):
+    def test_type_inference(self):
         from asynq import asynq, async_proxy, AsyncTask, ConstFuture, FutureBase
 
         def returns_3():
@@ -833,6 +833,66 @@ class TestReturnTypeInference(TestNameCheckVisitorBase):
                 impure_async_proxy.asynq(),
                 AsyncTaskIncompleteValue(FutureBase, AnyValue(AnySource.unannotated)),
             )
+
+    @assert_passes()
+    def test_missing_return(self):
+        from abc import abstractmethod
+        from typing_extensions import NoReturn
+
+        def foo(cond: bool) -> int:  # E: missing_return
+            if cond:
+                return 3
+
+        def capybara() -> int:  # E: missing_return
+            pass
+
+        class Absy:
+            @abstractmethod
+            def doesnt_return(self) -> int:  # ok
+                pass
+
+        def you_can_skip_return_none() -> None:
+            pass
+
+        def no_return_but_does_it() -> NoReturn:  # E: no_return_may_return
+            pass
+
+        def return_sometimes(cond: bool) -> NoReturn:  # E: no_return_may_return
+            if cond:
+                raise Exception
+
+        def no_return_returns() -> NoReturn:
+            return 42  # E: no_return_may_return
+
+    # Can't use assert_passes for those two because the location of the error
+    # changes between 3.7 and 3.8. Maybe we should hack the error code to
+    # always show the error for a function on the def line, not the decorator line.
+    @assert_fails(ErrorCode.missing_return)
+    def test_asynq_missing_return(self):
+        from asynq import asynq
+
+        @asynq()  # E: missing_return
+        def f() -> int:
+            yield f.asynq()
+
+    @assert_fails(ErrorCode.missing_return)
+    def test_asynq_missing_branch(self):
+        from asynq import asynq
+
+        @asynq()  # E: missing_return
+        def capybara(cond: bool) -> int:
+            if cond:
+                return 3
+            yield capybara.asynq(False)
+
+    @assert_passes()
+    def test_async_def(self):
+        async def capybara() -> int:  # E: missing_return
+            pass
+
+        async def acouchy(cond: bool) -> int:  # E: missing_return
+            if cond:
+                return 4
 
 
 class TestUnwrapYield(TestNameCheckVisitorBase):

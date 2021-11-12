@@ -416,8 +416,7 @@ class ClassAttributeChecker:
             value = self.attribute_values[serialized_base].get(attr_name)
             if value is not None:
                 return value
-        else:
-            return AnyValue(AnySource.inference)
+        return AnyValue(AnySource.inference)
 
     def check_attribute_reads(self) -> None:
         """Checks that all recorded attribute reads refer to valid attributes.
@@ -646,8 +645,7 @@ class StackedContexts(object):
         for node in reversed(self.contexts):
             if isinstance(node, typ):
                 return node
-        else:
-            return None
+        return None
 
     @contextlib.contextmanager
     def add(self, value: ast.AST) -> Iterator[None]:
@@ -1269,17 +1267,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             not has_return
             and expected_return_value is not None
             and expected_return_value != KnownNone
-            and expected_return_value is not NO_RETURN_VALUE
             and not any(
                 decorator == KnownValue(abstractmethod)
                 for _, decorator in info.decorators
             )
         ):
-            self._show_error_if_checking(
-                node,
-                "Function may exit without returning a value",
-                error_code=ErrorCode.incompatible_return_value,
-            )
+            if expected_return_value is NO_RETURN_VALUE:
+                self._show_error_if_checking(
+                    node, error_code=ErrorCode.no_return_may_return
+                )
+            else:
+                self._show_error_if_checking(node, error_code=ErrorCode.missing_return)
 
         if evaled_function:
             return evaled_function
@@ -1492,6 +1490,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self, "state", VisitorState.collect_names
             ), qcore.override(self, "return_values", []):
                 self._generic_visit_list(body)
+                scope.get_local(LEAVES_SCOPE, node, self.state)
             if is_collecting:
                 return AnyValue(AnySource.inference), False, self.is_generator
 
@@ -1504,10 +1503,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             ), qcore.override(self, "return_values", []):
                 self._generic_visit_list(body)
                 return_values = self.return_values
-                return_set = scope.get_local(LEAVES_SCOPE, None, self.state)
+                return_set = scope.get_local(LEAVES_SCOPE, node, self.state)
 
             self._check_function_unused_vars(scope)
-            return self._compute_return_type(node, name, return_values, return_set)
+            return self._compute_return_type(
+                node, name, return_values, return_set, function_info
+            )
 
     def _compute_return_type(
         self,
@@ -1515,9 +1516,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         name: Optional[str],
         return_values: Sequence[Optional[Value]],
         return_set: Value,
+        info: FunctionInfo,
     ) -> Tuple[Value, bool, bool]:
         # Ignore generators for now.
-        if isinstance(return_set, AnyValue) or self.is_generator:
+        if isinstance(return_set, AnyValue) or (
+            self.is_generator and info.async_kind is not AsyncFunctionKind.normal
+        ):
             has_return = True
         elif return_set is UNINITIALIZED_VALUE:
             has_return = False
@@ -2772,7 +2776,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return AnyValue(AnySource.error)
 
     def visit_Return(self, node: ast.Return) -> None:
-        # For return type inference, set the pseudo-variable RETURN_VALUE in the local scope.
         if node.value is None:
             value = KnownNone
             if self.current_function_name is not None:
@@ -2789,7 +2792,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return
         self.return_values.append(value)
         self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
-        if (
+        if self.expected_return_value is NO_RETURN_VALUE:
+            self._show_error_if_checking(
+                node, error_code=ErrorCode.no_return_may_return
+            )
+        elif (
             # TODO check generator types properly
             not (self.is_generator and self.async_kind == AsyncFunctionKind.non_async)
             and self.expected_return_value is not None
