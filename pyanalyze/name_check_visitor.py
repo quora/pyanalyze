@@ -416,8 +416,7 @@ class ClassAttributeChecker:
             value = self.attribute_values[serialized_base].get(attr_name)
             if value is not None:
                 return value
-        else:
-            return AnyValue(AnySource.inference)
+        return AnyValue(AnySource.inference)
 
     def check_attribute_reads(self) -> None:
         """Checks that all recorded attribute reads refer to valid attributes.
@@ -646,8 +645,7 @@ class StackedContexts(object):
         for node in reversed(self.contexts):
             if isinstance(node, typ):
                 return node
-        else:
-            return None
+        return None
 
     @contextlib.contextmanager
     def add(self, value: ast.AST) -> Iterator[None]:
@@ -1492,6 +1490,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self, "state", VisitorState.collect_names
             ), qcore.override(self, "return_values", []):
                 self._generic_visit_list(body)
+                scope.get_local(LEAVES_SCOPE, node, self.state)
             if is_collecting:
                 return AnyValue(AnySource.inference), False, self.is_generator
 
@@ -1504,7 +1503,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             ), qcore.override(self, "return_values", []):
                 self._generic_visit_list(body)
                 return_values = self.return_values
-                return_set = scope.get_local(LEAVES_SCOPE, None, self.state)
+                return_set = scope.get_local(LEAVES_SCOPE, node, self.state)
 
             self._check_function_unused_vars(scope)
             return self._compute_return_type(node, name, return_values, return_set)
@@ -2772,7 +2771,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return AnyValue(AnySource.error)
 
     def visit_Return(self, node: ast.Return) -> None:
-        # For return type inference, set the pseudo-variable RETURN_VALUE in the local scope.
         if node.value is None:
             value = KnownNone
             if self.current_function_name is not None:

@@ -854,6 +854,8 @@ def _make_callable_from_value(
         ]
         sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
         return CallableValue(sig)
+    else:
+        return AnyValue(AnySource.inference)
 
 
 def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:

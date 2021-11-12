@@ -146,8 +146,7 @@ class VarnameGenerator:
                 for prefix in ("render_", "get_"):
                     if varname.startswith(prefix):
                         return varname[len(prefix) :]
-                else:
-                    return varname
+                return varname
         elif isinstance(node, ast.Call):
             if (
                 isinstance(node.func, ast.Attribute)

@@ -788,9 +788,9 @@ class TestBoolOp(TestNameCheckVisitorBase):
             )
 
 
-class TestReturnTypeInference(TestNameCheckVisitorBase):
+class TestReturn(TestNameCheckVisitorBase):
     @assert_passes()
-    def test(self):
+    def test_type_inference(self):
         from asynq import asynq, async_proxy, AsyncTask, ConstFuture, FutureBase
 
         def returns_3():
@@ -833,6 +833,12 @@ class TestReturnTypeInference(TestNameCheckVisitorBase):
                 impure_async_proxy.asynq(),
                 AsyncTaskIncompleteValue(FutureBase, AnyValue(AnySource.unannotated)),
             )
+
+    @assert_passes()
+    def test_missing_return(self):
+        def foo(cond: bool) -> int:  # E: incompatible_return_value
+            if cond:
+                return 3
 
 
 class TestUnwrapYield(TestNameCheckVisitorBase):

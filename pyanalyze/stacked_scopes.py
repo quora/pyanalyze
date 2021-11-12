@@ -873,6 +873,13 @@ class FunctionScope(Scope):
                 )
             else:
                 return self.referencing_value_vars[varname]
+        # print(
+        #     "GET LOCAL",
+        #     varname,
+        #     state,
+        #     node in self.usage_to_definition_nodes,
+        #     self.name_to_current_definition_nodes,
+        # )
         if state is VisitorState.check_names:
             if node not in self.usage_to_definition_nodes:
                 return self.referencing_value_vars[varname]
@@ -928,7 +935,7 @@ class FunctionScope(Scope):
             elif LEAVES_SCOPE not in scope or ignore_leaves_scope:
                 new_scopes.append(scope)
         if not new_scopes:
-            return {LEAVES_SCOPE: [AnyValue(AnySource.marker)]}
+            return {LEAVES_SCOPE: []}
         all_variables = set(chain.from_iterable(new_scopes))
         return {
             varname: uniq_chain(
@@ -980,7 +987,6 @@ class FunctionScope(Scope):
             or (ctx.varname not in self.name_to_all_definition_nodes)
             or isinstance(self.referencing_value_vars[ctx.varname], ReferencingValue)
         )
-
         values = [
             UNINITIALIZED_VALUE
             if node is _UNINITIALIZED and not should_use_unconstrained
@@ -1108,8 +1114,7 @@ class StackedScopes:
                 continue
             if varname in scope:
                 return scope
-        else:
-            return None
+        return None
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
