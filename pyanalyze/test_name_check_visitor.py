@@ -883,7 +883,7 @@ class TestReturn(TestNameCheckVisitorBase):
         def capybara(cond: bool) -> int:
             if cond:
                 return 3
-            yield f.asynq()
+            yield capybara.asynq(False)
 
     @assert_passes()
     def test_async_def(self):
