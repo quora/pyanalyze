@@ -864,13 +864,20 @@ class TestReturn(TestNameCheckVisitorBase):
         def no_return_returns() -> NoReturn:
             return 42  # E: no_return_may_return
 
-    @assert_passes()
-    def test_asynq(self):
+    # Can't use assert_passes for those two because the location of the error
+    # changes between 3.7 and 3.8. Maybe we should hack the error code to
+    # always show the error for a function on the def line, not the decorator line.
+    @assert_fails(ErrorCode.missing_return)
+    def test_asynq_missing_return(self):
         from asynq import asynq
 
         @asynq()  # E: missing_return
         def f() -> int:
             yield f.asynq()
+
+    @assert_fails(ErrorCode.missing_return)
+    def test_asynq_missing_branch(self):
+        from asynq import asynq
 
         @asynq()  # E: missing_return
         def capybara(cond: bool) -> int:
