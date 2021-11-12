@@ -1267,17 +1267,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             not has_return
             and expected_return_value is not None
             and expected_return_value != KnownNone
-            and expected_return_value is not NO_RETURN_VALUE
             and not any(
                 decorator == KnownValue(abstractmethod)
                 for _, decorator in info.decorators
             )
         ):
-            self._show_error_if_checking(
-                node,
-                "Function may exit without returning a value",
-                error_code=ErrorCode.incompatible_return_value,
-            )
+            if expected_return_value is NO_RETURN_VALUE:
+                self._show_error_if_checking(
+                    node, error_code=ErrorCode.no_return_may_return
+                )
+            else:
+                self._show_error_if_checking(node, error_code=ErrorCode.missing_return)
 
         if evaled_function:
             return evaled_function
@@ -2787,7 +2787,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return
         self.return_values.append(value)
         self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
-        if (
+        if self.expected_return_value is NO_RETURN_VALUE:
+            self._show_error_if_checking(
+                node, error_code=ErrorCode.no_return_may_return
+            )
+        elif (
             # TODO check generator types properly
             not (self.is_generator and self.async_kind == AsyncFunctionKind.non_async)
             and self.expected_return_value is not None

@@ -81,6 +81,8 @@ class ErrorCode(enum.Enum):
     type_always_true = 64
     value_always_true = 65
     type_does_not_support_bool = 66
+    missing_return = 67
+    no_return_may_return = 68
 
 
 # Allow testing unannotated functions without too much fuss
@@ -183,6 +185,8 @@ ERROR_DESCRIPTION = {
     ErrorCode.type_always_true: "Type will always evaluate to 'True'",
     ErrorCode.value_always_true: "Value will always evaluate to 'True'",
     ErrorCode.type_does_not_support_bool: "Type does not support bool()",
+    ErrorCode.missing_return: "Function may exit without returning a value",
+    ErrorCode.no_return_may_return: "Function is annotated as NoReturn but may return",
 }
 
 

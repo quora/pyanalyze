@@ -836,9 +836,33 @@ class TestReturn(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_missing_return(self):
-        def foo(cond: bool) -> int:  # E: incompatible_return_value
+        from abc import abstractmethod
+        from typing_extensions import NoReturn
+
+        def foo(cond: bool) -> int:  # E: missing_return
             if cond:
                 return 3
+
+        def capybara() -> int:  # E: missing_return
+            pass
+
+        class Absy:
+            @abstractmethod
+            def doesnt_return(self) -> int:  # ok
+                pass
+
+        def you_can_skip_return_none() -> None:
+            pass
+
+        def no_return_but_does_it() -> NoReturn:  # E: no_return_may_return
+            pass
+
+        def return_sometimes(cond: bool) -> NoReturn:  # E: no_return_may_return
+            if cond:
+                raise Exception
+
+        def no_return_returns() -> NoReturn:
+            return 42  # E: no_return_may_return
 
 
 class TestUnwrapYield(TestNameCheckVisitorBase):
