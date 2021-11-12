@@ -184,16 +184,16 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def kerodon():
             capybara("not an int")
 
-    @assert_fails(ErrorCode.incompatible_return_value)
+    @assert_passes()
     def test_incompatible_return_value(self):
         def capybara() -> int:
-            return "not an int"
+            return "not an int"  # E: incompatible_return_value
 
-    @assert_fails(ErrorCode.incompatible_return_value)
+    @assert_passes()
     def test_incompatible_return_value_none(self):
         def capybara(x: bool) -> int:
             if not x:
-                return
+                return  # E: incompatible_return_value
             return 42
 
     @assert_passes()
@@ -205,9 +205,9 @@ class TestAnnotations(TestNameCheckVisitorBase):
                 return
             yield 42
 
-    @assert_fails(ErrorCode.incompatible_return_value)
+    @assert_passes()
     def test_incompatible_return_value_pass(self):
-        def f() -> int:
+        def f() -> int:  # E: missing_return
             pass
 
     @assert_passes()
@@ -1021,6 +1021,7 @@ class TestCustomCheck(TestNameCheckVisitorBase):
                         return CanAssignError(
                             f"Value {value.val!r} is not greater than {self.value}"
                         )
+                    return {}
                 elif isinstance(value, AnyValue):
                     return {}
                 else:
