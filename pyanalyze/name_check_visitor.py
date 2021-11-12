@@ -1506,7 +1506,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 return_set = scope.get_local(LEAVES_SCOPE, node, self.state)
 
             self._check_function_unused_vars(scope)
-            return self._compute_return_type(node, name, return_values, return_set)
+            return self._compute_return_type(
+                node, name, return_values, return_set, function_info
+            )
 
     def _compute_return_type(
         self,
@@ -1514,9 +1516,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         name: Optional[str],
         return_values: Sequence[Optional[Value]],
         return_set: Value,
+        info: FunctionInfo,
     ) -> Tuple[Value, bool, bool]:
         # Ignore generators for now.
-        if isinstance(return_set, AnyValue) or self.is_generator:
+        if isinstance(return_set, AnyValue) or (
+            self.is_generator and info.async_kind is not AsyncFunctionKind.normal
+        ):
             has_return = True
         elif return_set is UNINITIALIZED_VALUE:
             has_return = False

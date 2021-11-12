@@ -864,6 +864,29 @@ class TestReturn(TestNameCheckVisitorBase):
         def no_return_returns() -> NoReturn:
             return 42  # E: no_return_may_return
 
+    @assert_passes()
+    def test_asynq(self):
+        from asynq import asynq
+
+        @asynq()  # E: missing_return
+        def f() -> int:
+            yield f.asynq()
+
+        @asynq()  # E: missing_return
+        def capybara(cond: bool) -> int:
+            if cond:
+                return 3
+            yield f.asynq()
+
+    @assert_passes()
+    def test_async_def(self):
+        async def capybara() -> int:  # E: missing_return
+            pass
+
+        async def acouchy(cond: bool) -> int:  # E: missing_return
+            if cond:
+                return 4
+
 
 class TestUnwrapYield(TestNameCheckVisitorBase):
     @assert_passes()
