@@ -55,7 +55,12 @@ import qcore
 from qcore.helpers import safe_str
 
 from . import attributes, format_strings, node_visitor, importer, method_return_type
-from .annotations import type_from_runtime, type_from_value, is_typing_name
+from .annotations import (
+    is_instance_of_typing_name,
+    type_from_runtime,
+    type_from_value,
+    is_typing_name,
+)
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .boolability import Boolability, get_boolability
 from .config import Config
@@ -1723,9 +1728,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         with qcore.override(self, "in_annotation", True):
             return self.visit(node)
 
-    def _value_of_annotation_type(self, val: Value, node: ast.AST) -> Value:
+    def _value_of_annotation_type(
+        self, val: Value, node: ast.AST, is_typeddict: bool = False
+    ) -> Value:
         """Given a value encountered in a type annotation, return a type."""
-        return type_from_value(val, visitor=self, node=node)
+        return type_from_value(val, visitor=self, node=node, is_typeddict=is_typeddict)
 
     def _check_method_first_arg(
         self, node: FunctionNode, function_info: FunctionInfo = _DEFAULT_FUNCTION_INFO
@@ -3260,6 +3267,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 for name in names:
                     self.current_enum_members[value.val] = name
 
+    def is_in_typeddict_definition(self) -> bool:
+        return is_instance_of_typing_name(self.current_class, "_TypedDictMeta")
+
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         annotation = self._visit_annotation(node.annotation)
         if isinstance(annotation, KnownValue) and is_typing_name(
@@ -3270,7 +3280,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             is_final = True
             expected_type = AnyValue(AnySource.marker)
         else:
-            expected_type = self._value_of_annotation_type(annotation, node.annotation)
+            expected_type = self._value_of_annotation_type(
+                annotation,
+                node.annotation,
+                is_typeddict=self.is_in_typeddict_definition(),
+            )
             is_final = False
 
         if node.value:
