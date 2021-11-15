@@ -511,7 +511,7 @@ The type must be fully qualified.
 ```python
 from pyanalyze.extensions import ExternalType
 
-def function(arg: "other_module.Type") -> None:
+def function(arg: ExternalType["other_module.Type"]) -> None:
     pass
 ```
 
