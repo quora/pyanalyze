@@ -289,9 +289,13 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             return SequenceIncompleteValue(tuple, args_vals)
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
         required_keys = getattr(val, "__required_keys__", None)
+        # 3.8's typing.TypedDict doesn't have __required_keys__. With
+        # inheritance, this makes it apparently impossible to figure out which
+        # keys are required at runtime.
+        total = getattr(val, "__total__", True)
         return TypedDictValue(
             {
-                key: _get_typeddict_value(value, ctx, key, required_keys)
+                key: _get_typeddict_value(value, ctx, key, required_keys, total)
                 for key, value in val.__annotations__.items()
             }
         )
@@ -425,13 +429,17 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
 
 
 def _get_typeddict_value(
-    value: Value, ctx: Context, key: str, required_keys: Optional[Container[str]]
+    value: Value,
+    ctx: Context,
+    key: str,
+    required_keys: Optional[Container[str]],
+    total: bool,
 ) -> Tuple[bool, Value]:
     val = _type_from_runtime(value, ctx, is_typeddict=True)
     if isinstance(val, _Pep655Value):
         return (val.required, val.value)
     if required_keys is None:
-        required = True
+        required = total
     else:
         required = key in required_keys
     return required, val
