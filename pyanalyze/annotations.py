@@ -420,6 +420,16 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             ctx.show_error(f"Cannot resolve type {val.type_path!r}")
             return AnyValue(AnySource.error)
         return _type_from_runtime(typ, ctx)
+    # Python 3.6 only (on later versions Required/NotRequired match
+    # is_generic_type).
+    elif is_instance_of_typing_name(val, "_MaybeRequired"):
+        required = is_instance_of_typing_name(val, "_Required")
+        if is_typeddict:
+            return _Pep655Value(required, _type_from_runtime(val.__type__, "ctx"))
+        else:
+            cls = "Required" if required else "NotRequired"
+            ctx.show_error(f"{cls}[] used in unsupported context")
+            return AnyValue(AnySource.error)
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
