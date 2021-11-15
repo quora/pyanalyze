@@ -11,6 +11,7 @@ from .value import (
     MultiValuedValue,
     NewTypeValue,
     SequenceIncompleteValue,
+    TypedDictValue,
     TypedValue,
     SubclassValue,
     GenericValue,
@@ -1105,3 +1106,131 @@ class TestExternalType(TestNameCheckVisitorBase):
             capybara("x", 1)  # E: incompatible_argument
             capybara(1, sr)  # E: incompatible_argument
             capybara("x", sr)
+
+
+class TestRequired(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_typing_extensions(self):
+        from typing_extensions import NotRequired, Required, TypedDict
+
+        class RNR(TypedDict):
+            a: int
+            b: Required[str]
+            c: NotRequired[float]
+
+        def take_rnr(td: RNR) -> None:
+            assert_is_value(
+                td,
+                TypedDictValue(
+                    {
+                        "a": (True, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+
+        class NotTotal(TypedDict, total=False):
+            a: int
+            b: Required[str]
+            c: NotRequired[float]
+
+        def take_not_total(td: NotTotal) -> None:
+            assert_is_value(
+                td,
+                TypedDictValue(
+                    {
+                        "a": (False, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+
+        class Stringify(TypedDict):
+            a: "int"
+            b: "Required[str]"
+            c: "NotRequired[float]"
+
+        def take_stringify(td: Stringify) -> None:
+            assert_is_value(
+                td,
+                TypedDictValue(
+                    {
+                        "a": (True, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+
+    @skip_before((3, 8))
+    @assert_passes()
+    def test_typing(self):
+        from typing_extensions import NotRequired, Required
+        from typing import TypedDict
+
+        class RNR(TypedDict):
+            a: int
+            b: Required[str]
+            c: NotRequired[float]
+
+        def take_rnr(td: RNR) -> None:
+            assert_is_value(
+                td,
+                TypedDictValue(
+                    {
+                        "a": (True, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+
+        class NotTotal(TypedDict, total=False):
+            a: int
+            b: Required[str]
+            c: NotRequired[float]
+
+        def take_not_total(td: NotTotal) -> None:
+            assert_is_value(
+                td,
+                TypedDictValue(
+                    {
+                        "a": (False, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+
+        class Stringify(TypedDict):
+            a: "int"
+            b: "Required[str]"
+            c: "NotRequired[float]"
+
+        def take_stringify(td: Stringify) -> None:
+            assert_is_value(
+                td,
+                TypedDictValue(
+                    {
+                        "a": (True, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+
+    @assert_passes()
+    def test_unsupported_location(self):
+        from typing_extensions import NotRequired, Required
+
+        def f(x: Required[int]) -> None:  # E: invalid_annotation
+            pass
+
+        def g() -> Required[int]:  # E: invalid_annotation
+            return 3
+
+        class Capybara:
+            x: Required[int]  # E: invalid_annotation
+            y: NotRequired[int]  # E: invalid_annotation

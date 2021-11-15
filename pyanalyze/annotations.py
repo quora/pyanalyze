@@ -34,6 +34,7 @@ import builtins
 from collections.abc import Callable, Iterable
 from typing import (
     Any,
+    Container,
     Dict,
     cast,
     TypeVar,
@@ -200,6 +201,7 @@ def type_from_value(
     visitor: Optional["NameCheckVisitor"] = None,
     node: Optional[ast.AST] = None,
     ctx: Optional[Context] = None,
+    is_typeddict: bool = False,
 ) -> Value:
     """Given a :class:`Value <pyanalyze.value.Value` representing an annotation,
     return a :class:`Value <pyanalyze.value.Value>` representing the type.
@@ -220,10 +222,13 @@ def type_from_value(
 
     :param ctx: :class:`Context` to use for evaluation.
 
+    :param is_typeddict: Whether we are at the top level of a `TypedDict`
+                         definition.
+
     """
     if ctx is None:
         ctx = _DefaultContext(visitor, node)
-    return _type_from_value(value, ctx)
+    return _type_from_value(value, ctx, is_typeddict=is_typeddict)
 
 
 def value_from_ast(ast_node: ast.AST, ctx: Context) -> Value:
@@ -234,14 +239,14 @@ def value_from_ast(ast_node: ast.AST, ctx: Context) -> Value:
     return val
 
 
-def _type_from_ast(node: ast.AST, ctx: Context) -> Value:
+def _type_from_ast(node: ast.AST, ctx: Context, is_typeddict: bool = False) -> Value:
     val = value_from_ast(node, ctx)
-    return _type_from_value(val, ctx)
+    return _type_from_value(val, ctx, is_typeddict=is_typeddict)
 
 
-def _type_from_runtime(val: Any, ctx: Context) -> Value:
+def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Value:
     if isinstance(val, str):
-        return _eval_forward_ref(val, ctx)
+        return _eval_forward_ref(val, ctx, is_typeddict=is_typeddict)
     elif isinstance(val, tuple):
         # This happens under some Python versions for types
         # nested in tuples, e.g. on 3.6:
@@ -284,12 +289,13 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             return SequenceIncompleteValue(tuple, args_vals)
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
         required_keys = getattr(val, "__required_keys__", None)
+        # 3.8's typing.TypedDict doesn't have __required_keys__. With
+        # inheritance, this makes it apparently impossible to figure out which
+        # keys are required at runtime.
+        total = getattr(val, "__total__", True)
         return TypedDictValue(
             {
-                key: (
-                    key in required_keys if required_keys is not None else True,
-                    _type_from_runtime(value, ctx),
-                )
+                key: _get_typeddict_value(value, ctx, key, required_keys, total)
                 for key, value in val.__annotations__.items()
             }
         )
@@ -320,7 +326,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
         args = typing_inspect.get_args(val)
         if getattr(val, "_special", False):
             args = []  # distinguish List from List[T] on 3.7 and 3.8
-        return _value_of_origin_args(origin, args, val, ctx)
+        return _value_of_origin_args(origin, args, val, ctx, is_typeddict=is_typeddict)
     elif typing_inspect.is_callable_type(val):
         args = typing_inspect.get_args(val)
         return _value_of_origin_args(Callable, args, val, ctx)
@@ -363,7 +369,7 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
                     f"Syntax error in forward reference: {val.__forward_arg__}"
                 )
                 return AnyValue(AnySource.error)
-            return _type_from_ast(code.body[0], ctx)
+            return _type_from_ast(code.body[0], ctx, is_typeddict=is_typeddict)
     elif val is Ellipsis:
         # valid in Callable[..., ]
         return AnyValue(AnySource.explicit)
@@ -414,6 +420,16 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
             ctx.show_error(f"Cannot resolve type {val.type_path!r}")
             return AnyValue(AnySource.error)
         return _type_from_runtime(typ, ctx)
+    # Python 3.6 only (on later versions Required/NotRequired match
+    # is_generic_type).
+    elif is_instance_of_typing_name(val, "_MaybeRequired"):
+        required = is_instance_of_typing_name(val, "_Required")
+        if is_typeddict:
+            return _Pep655Value(required, _type_from_runtime(val.__type__, ctx))
+        else:
+            cls = "Required" if required else "NotRequired"
+            ctx.show_error(f"{cls}[] used in unsupported context")
+            return AnyValue(AnySource.error)
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
@@ -422,19 +438,36 @@ def _type_from_runtime(val: Any, ctx: Context) -> Value:
         return AnyValue(AnySource.error)
 
 
-def _eval_forward_ref(val: str, ctx: Context) -> Value:
+def _get_typeddict_value(
+    value: Value,
+    ctx: Context,
+    key: str,
+    required_keys: Optional[Container[str]],
+    total: bool,
+) -> Tuple[bool, Value]:
+    val = _type_from_runtime(value, ctx, is_typeddict=True)
+    if isinstance(val, _Pep655Value):
+        return (val.required, val.value)
+    if required_keys is None:
+        required = total
+    else:
+        required = key in required_keys
+    return required, val
+
+
+def _eval_forward_ref(val: str, ctx: Context, is_typeddict: bool = False) -> Value:
     try:
         tree = ast.parse(val, mode="eval")
     except SyntaxError:
         ctx.show_error(f"Syntax error in type annotation: {val}")
         return AnyValue(AnySource.error)
     else:
-        return _type_from_ast(tree.body, ctx)
+        return _type_from_ast(tree.body, ctx, is_typeddict=is_typeddict)
 
 
-def _type_from_value(value: Value, ctx: Context) -> Value:
+def _type_from_value(value: Value, ctx: Context, is_typeddict: bool = False) -> Value:
     if isinstance(value, KnownValue):
-        return _type_from_runtime(value.val, ctx)
+        return _type_from_runtime(value.val, ctx, is_typeddict=is_typeddict)
     elif isinstance(value, TypeVarValue):
         return value
     elif isinstance(value, MultiValuedValue):
@@ -504,6 +537,22 @@ def _type_from_value(value: Value, ctx: Context) -> Value:
                 TypedValue(bool),
                 [TypeGuardExtension(_type_from_value(value.members[0], ctx))],
             )
+        elif is_typing_name(root, "Required"):
+            if not is_typeddict:
+                ctx.show_error("Required[] used in unsupported context")
+                return AnyValue(AnySource.error)
+            if len(value.members) != 1:
+                ctx.show_error("Required[] requires a single argument")
+                return AnyValue(AnySource.error)
+            return _Pep655Value(True, _type_from_value(value.members[0], ctx))
+        elif is_typing_name(root, "NotRequired"):
+            if not is_typeddict:
+                ctx.show_error("NotRequired[] used in unsupported context")
+                return AnyValue(AnySource.error)
+            if len(value.members) != 1:
+                ctx.show_error("NotRequired[] requires a single argument")
+                return AnyValue(AnySource.error)
+            return _Pep655Value(False, _type_from_value(value.members[0], ctx))
         elif root is Callable or root is typing.Callable:
             if len(value.members) == 2:
                 args, return_value = value.members
@@ -590,6 +639,12 @@ class _DefaultContext(Context):
 class _SubscriptedValue(Value):
     root: Optional[Value]
     members: Sequence[Value]
+
+
+@dataclass
+class _Pep655Value(Value):
+    required: bool
+    value: Value
 
 
 class _Visitor(ast.NodeVisitor):
@@ -734,7 +789,11 @@ def _fill_typing_name_cache(name: str) -> Tuple[Any, ...]:
 
 
 def _value_of_origin_args(
-    origin: object, args: Sequence[object], val: object, ctx: Context
+    origin: object,
+    args: Sequence[object],
+    val: object,
+    ctx: Context,
+    is_typeddict: bool = False,
 ) -> Value:
     if origin is typing.Type or origin is type:
         if not args:
@@ -768,7 +827,7 @@ def _value_of_origin_args(
             SigParameter(
                 f"__arg{i}",
                 kind=SigParameter.POSITIONAL_ONLY,
-                annotation=_type_from_runtime(arg, ctx),
+                annotation=_type_from_runtime(arg, ctx, is_typeddict=True),
             )
             for i, arg in enumerate(arg_types)
         ]
@@ -805,6 +864,22 @@ def _value_of_origin_args(
         return AnnotatedValue(
             TypedValue(bool), [TypeGuardExtension(_type_from_runtime(args[0], ctx))]
         )
+    elif is_typing_name(origin, "Required"):
+        if not is_typeddict:
+            ctx.show_error("Required[] used in unsupported context")
+            return AnyValue(AnySource.error)
+        if len(args) != 1:
+            ctx.show_error("Required[] requires a single argument")
+            return AnyValue(AnySource.error)
+        return _Pep655Value(True, _type_from_runtime(args[0], ctx))
+    elif is_typing_name(origin, "NotRequired"):
+        if not is_typeddict:
+            ctx.show_error("NotRequired[] used in unsupported context")
+            return AnyValue(AnySource.error)
+        if len(args) != 1:
+            ctx.show_error("NotRequired[] requires a single argument")
+            return AnyValue(AnySource.error)
+        return _Pep655Value(False, _type_from_runtime(args[0], ctx))
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
         return _maybe_typed_value(val, ctx)
