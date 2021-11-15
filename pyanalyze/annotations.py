@@ -425,7 +425,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
     elif is_instance_of_typing_name(val, "_MaybeRequired"):
         required = is_instance_of_typing_name(val, "_Required")
         if is_typeddict:
-            return _Pep655Value(required, _type_from_runtime(val.__type__, "ctx"))
+            return _Pep655Value(required, _type_from_runtime(val.__type__, ctx))
         else:
             cls = "Required" if required else "NotRequired"
             ctx.show_error(f"{cls}[] used in unsupported context")
