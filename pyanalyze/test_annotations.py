@@ -1220,3 +1220,17 @@ class TestRequired(TestNameCheckVisitorBase):
                     }
                 ),
             )
+
+    @assert_passes()
+    def test_unsupported_location(self):
+        from typing_extensions import NotRequired, Required
+
+        def f(x: Required[int]) -> None:  # E: invalid_annotation
+            pass
+
+        def g() -> Required[int]:  # E: invalid_annotation
+            return 3
+
+        class Capybara:
+            x: Required[int]  # E: invalid_annotation
+            y: NotRequired[int]  # E: invalid_annotation
