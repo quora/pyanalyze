@@ -1891,7 +1891,9 @@ class NameCheckVisitor(
                 for name in node.names
             )
 
-    def _simulate_import(self, node: Union[ast.ImportFrom, ast.Import], *, force_public: bool = False) -> None:
+    def _simulate_import(
+        self, node: Union[ast.ImportFrom, ast.Import], *, force_public: bool = False
+    ) -> None:
         """Set the names retrieved from an import node in nontrivial situations.
 
         For simple imports (module-global imports that are not "from ... import *"), we can just
@@ -1940,7 +1942,10 @@ class NameCheckVisitor(
         ):  # not in the package
             if node.level == 1 or (node.level == 0 and node.module not in sys.modules):
                 self._set_name_in_scope(
-                    node.module, node, TypedValue(types.ModuleType), private=not force_public
+                    node.module,
+                    node,
+                    TypedValue(types.ModuleType),
+                    private=not force_public,
                 )
 
         with tempfile.NamedTemporaryFile(suffix=".py") as f:
@@ -1968,7 +1973,9 @@ class NameCheckVisitor(
                 hasattr(builtins, name) and value == getattr(builtins, name)
             ):
                 continue
-            self._set_name_in_scope(name, (node, name), KnownValue(value), private=not force_public)
+            self._set_name_in_scope(
+                name, (node, name), KnownValue(value), private=not force_public
+            )
 
     def _handle_imports(
         self, names: Iterable[ast.alias], *, force_public: bool = False
