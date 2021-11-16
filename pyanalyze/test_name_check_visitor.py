@@ -1672,15 +1672,15 @@ class TestSubscripting(TestNameCheckVisitorBase):
 
 
 class TestPython3Compatibility(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.mixing_bytes_and_text)
+    @assert_passes()
     def test_bytes_and_text(self):
         def capybara():
-            return b"foo" + "bar"
+            return b"foo" + "bar"  # E: unsupported_operation
 
-    @assert_fails(ErrorCode.mixing_bytes_and_text)
+    @assert_passes()
     def test_text_and_bytes(self):
         def capybara():
-            return "foo" + b"bar"
+            return "foo" + b"bar" # E: unsupported_operation
 
 
 class TestOperators(TestNameCheckVisitorBase):
