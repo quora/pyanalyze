@@ -28,8 +28,11 @@ jobs:
         - name: py39
           python: '3.9'
           toxenv: py39
+        - name: py310
+          python: '3.10'
+          toxenv: py310
         - name: black
-          python: '3.8'
+          python: '3.9'
           toxenv: black
 
     steps:

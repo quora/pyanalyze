@@ -8,7 +8,7 @@ from .annotations import Context, type_from_runtime, is_typing_name
 from .config import Config
 from .find_unused import used
 from . import implementation
-from .safe import safe_hasattr, safe_in, safe_issubclass
+from .safe import is_newtype, safe_hasattr, safe_in, safe_issubclass
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
@@ -349,28 +349,25 @@ class ArgSpecCache:
         if argspec is not None:
             return argspec
 
+        if is_newtype(obj):
+            return Signature.make(
+                [
+                    SigParameter(
+                        "x",
+                        SigParameter.POSITIONAL_ONLY,
+                        annotation=type_from_runtime(
+                            obj.__supertype__, ctx=self.default_context
+                        ),
+                    )
+                ],
+                NewTypeValue(obj),
+                callable=obj,
+            )
+
         if inspect.isfunction(obj):
             if hasattr(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
                 return self._cached_get_argspec(obj.inner, impl, is_asynq)
-
-            # NewTypes, but we don't currently know how to handle NewTypes over more
-            # complicated types.
-            if hasattr(obj, "__supertype__") and isinstance(obj.__supertype__, type):
-                # NewType
-                return Signature.make(
-                    [
-                        SigParameter(
-                            "x",
-                            SigParameter.POSITIONAL_ONLY,
-                            annotation=type_from_runtime(
-                                obj.__supertype__, ctx=self.default_context
-                            ),
-                        )
-                    ],
-                    NewTypeValue(obj),
-                    callable=obj,
-                )
 
             inspect_sig = self._safe_get_signature(obj)
             if inspect_sig is None:

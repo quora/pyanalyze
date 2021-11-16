@@ -3,7 +3,9 @@
 "Safe" operations that call into user code and catch any exceptions.
 
 """
-from typing import Any, Tuple, Union, Container, Type, TypeVar, Iterable
+import inspect
+import sys
+from typing import Any, Tuple, Union, Container, NewType, Type, TypeVar, Iterable
 from typing_extensions import Annotated
 
 from .extensions import ParameterTypeGuard
@@ -100,3 +102,19 @@ def all_of_type(
 ) -> Annotated[bool, ParameterTypeGuard["elts", Iterable[T]]]:
     """Returns whether all elements of elts are instances of typ."""
     return all(isinstance(elt, typ) for elt in elts)
+
+
+if sys.version_info >= (3, 10):
+
+    def is_newtype(obj: object) -> bool:
+        return isinstance(obj, NewType)
+
+
+else:
+
+    def is_newtype(obj: object) -> bool:
+        return (
+            inspect.isfunction(obj)
+            and hasattr(obj, "__supertype__")
+            and isinstance(obj.__supertype__, type)
+        )
