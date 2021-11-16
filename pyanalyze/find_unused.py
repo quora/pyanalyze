@@ -162,6 +162,9 @@ class UnusedObjectFinder:
             # Ignore attributes injected by Python
             if attr.startswith("__") and attr.endswith("__"):
                 continue
+            # Ignore stuff injected by pytest
+            if attr.startswith("@py"):
+                continue
             # Ignore tests
             if is_test_module and attr.startswith(("test", "Test")):
                 continue
