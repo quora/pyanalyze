@@ -1680,7 +1680,7 @@ class TestPython3Compatibility(TestNameCheckVisitorBase):
     @assert_passes()
     def test_text_and_bytes(self):
         def capybara():
-            return "foo" + b"bar" # E: unsupported_operation
+            return "foo" + b"bar"  # E: unsupported_operation
 
 
 class TestOperators(TestNameCheckVisitorBase):
