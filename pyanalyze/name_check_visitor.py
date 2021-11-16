@@ -67,6 +67,7 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard
 from .find_unused import UnusedObjectFinder, used
+from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, is_iterable, all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
@@ -678,7 +679,9 @@ class CallSiteCollector:
             pass
 
 
-class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
+class NameCheckVisitor(
+    node_visitor.ReplacingNodeVisitor, CanAssignContext, ErrorContext
+):
     """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
@@ -704,6 +707,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         attribute_checker: Optional[ClassAttributeChecker] = None,
         arg_spec_cache: Optional[ArgSpecCache] = None,
         collector: Optional[CallSiteCollector] = None,
+        reexport_tracker: Optional[ImplicitReexportTracker] = None,
         annotate: bool = False,
         add_ignores: bool = False,
     ) -> None:
@@ -745,6 +749,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if arg_spec_cache is None:
             arg_spec_cache = ArgSpecCache(self.config)
         self.arg_spec_cache = arg_spec_cache
+        if reexport_tracker is None:
+            reexport_tracker = ImplicitReexportTracker()
+        self.reexport_tracker = reexport_tracker
         if (
             self.attribute_checker is not None
             and self.module is not None
@@ -862,6 +869,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 and not self.has_file_level_ignore()
             ):
                 self.unused_finder.record_module_visited(self.module)
+            if self.module is not None and self.module.__name__ is not None:
+                self.reexport_tracker.record_module_completed(self.module.__name__)
         except node_visitor.VisitorError:
             raise
         except Exception as e:
@@ -960,16 +969,22 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
 
     def _set_name_in_scope(
-        self, varname: str, node: object, value: Value = AnyValue(AnySource.inference)
+        self,
+        varname: str,
+        node: object,
+        value: Value = AnyValue(AnySource.inference),
+        *,
+        private: bool = False,
     ) -> Value:
         current_scope = self.scopes.current_scope()
         scope_type = current_scope.scope_type
-        if (
-            self.module is not None
-            and scope_type == ScopeType.module_scope
-            and varname in current_scope
-        ):
-            return current_scope.get_local(varname, node, self.state)
+        if self.module is not None and scope_type == ScopeType.module_scope:
+            if self.module.__name__ is not None and not private:
+                self.reexport_tracker.record_exported_attribute(
+                    self.module.__name__, varname
+                )
+            if varname in current_scope:
+                return current_scope.get_local(varname, node, self.state)
         if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
             self._check_for_class_variable_redefinition(varname, node)
         current_scope.set(varname, value, node, self.state)
@@ -1825,10 +1840,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._maybe_record_usages_from_import(node)
 
         is_star_import = len(node.names) == 1 and node.names[0].name == "*"
+        force_public = self.filename.endswith("/__init__.py") and node.level == 1
         if self.scopes.scope_type() == ScopeType.module_scope and not is_star_import:
-            self._handle_imports(node.names)
+            self._handle_imports(node.names, force_public=force_public)
         else:
-            self._simulate_import(node)
+            self._simulate_import(node, force_public=force_public)
 
     def _maybe_record_usages_from_import(self, node: ast.ImportFrom) -> None:
         if self.unused_finder is None or self.module is None:
@@ -1875,7 +1891,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 for name in node.names
             )
 
-    def _simulate_import(self, node: Union[ast.ImportFrom, ast.Import]) -> None:
+    def _simulate_import(self, node: Union[ast.ImportFrom, ast.Import], *, force_public: bool = False) -> None:
         """Set the names retrieved from an import node in nontrivial situations.
 
         For simple imports (module-global imports that are not "from ... import *"), we can just
@@ -1891,13 +1907,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         """
         if self.module is None:
-            self._handle_imports(node.names)
+            self._handle_imports(node.names, force_public=force_public)
             return
 
         source_code = decompile(node)
 
         if self._is_unimportable_module(node):
-            self._handle_imports(node.names)
+            self._handle_imports(node.names, force_public=force_public)
             self.log(logging.INFO, "Ignoring import node", source_code)
             return
 
@@ -1923,7 +1939,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and "." not in node.module
         ):  # not in the package
             if node.level == 1 or (node.level == 0 and node.module not in sys.modules):
-                self._set_name_in_scope(node.module, node, TypedValue(types.ModuleType))
+                self._set_name_in_scope(
+                    node.module, node, TypedValue(types.ModuleType), private=not force_public
+                )
 
         with tempfile.NamedTemporaryFile(suffix=".py") as f:
             f.write(source_code.encode("utf-8"))
@@ -1934,7 +1952,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             except Exception:
                 # sets the name of the imported module to Any so we don't get further
                 # errors
-                self._handle_imports(node.names)
+                self._handle_imports(node.names, force_public=force_public)
                 return
             finally:
                 # clean up pyc file
@@ -1950,20 +1968,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 hasattr(builtins, name) and value == getattr(builtins, name)
             ):
                 continue
-            self._set_name_in_scope(name, (node, name), KnownValue(value))
+            self._set_name_in_scope(name, (node, name), KnownValue(value), private=not force_public)
 
-    def _imported_names_of_nodes(
-        self, names: Iterable[ast.alias]
-    ) -> Iterable[Tuple[str, ast.alias]]:
+    def _handle_imports(
+        self, names: Iterable[ast.alias], *, force_public: bool = False
+    ) -> None:
         for node in names:
             if node.asname is not None:
-                yield node.asname, node
+                self._set_name_in_scope(node.asname, node)
             else:
-                yield node.name.split(".")[0], node
-
-    def _handle_imports(self, names: Iterable[ast.alias]) -> None:
-        for varname, node in self._imported_names_of_nodes(names):
-            self._set_name_in_scope(varname, node)
+                varname = node.name.split(".")[0]
+                self._set_name_in_scope(varname, node, private=not force_public)
 
     # Comprehensions
 
@@ -3116,7 +3131,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 # statically findable
                 to_assign = TypedValue(BaseException)
             if node.name is not None:
-                self._set_name_in_scope(node.name, node, value=to_assign)
+                self._set_name_in_scope(node.name, node, value=to_assign, private=True)
 
         self._generic_visit_list(node.body)
 
@@ -3627,6 +3642,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self.asynq_checker.record_attribute_access(
                     root_composite.value, node.attr, node
                 )
+                if (
+                    isinstance(root_composite.value, KnownValue)
+                    and isinstance(root_composite.value.val, types.ModuleType)
+                    and root_composite.value.val.__name__ is not None
+                ):
+                    self.reexport_tracker.record_attribute_accessed(
+                        root_composite.value.val.__name__, node.attr, node, self
+                    )
             value = self._get_attribute_with_fallback(root_composite, node.attr, node)
             if self._should_use_varname_value(value):
                 varname_value = VariableNameValue.from_varname(
@@ -4272,6 +4295,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
         if "arg_spec_cache" not in kwargs:
             kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
+        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker())
         if attribute_checker is None:
             inner_attribute_checker_obj = attribute_checker = ClassAttributeChecker(
                 cls.config,
@@ -4317,6 +4341,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def check_all_files(cls, *args: Any, **kwargs: Any) -> List[node_visitor.Failure]:
         if "arg_spec_cache" not in kwargs:
             kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
+        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker())
         return super().check_all_files(*args, **kwargs)
 
     @classmethod

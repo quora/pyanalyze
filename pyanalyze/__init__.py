@@ -18,6 +18,7 @@ from .find_unused import used as used
 from . import implementation
 from . import method_return_type
 from . import node_visitor
+from . import reexport
 from . import safe
 from . import signature
 from . import stacked_scopes
@@ -34,3 +35,4 @@ used(assert_is_value)
 used(dump_value)
 used(extensions.LiteralOnly)
 used(value.UNRESOLVED_VALUE)  # keeping it around for now just in case
+used(reexport)
