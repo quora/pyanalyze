@@ -434,8 +434,6 @@ class TestLoops(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_range_always_entered(self):
-        from six.moves import range
-
         def capybara():
             for i in range(2):
                 assert_is_value(i, TypedValue(int))

@@ -153,13 +153,11 @@ class TestSuperCall(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_metaclass(self):
-        import six
-
         class CapybaraType(type):
             def __init__(self, name, bases, attrs):
                 super(CapybaraType, self).__init__(name, bases, attrs)
 
-        class Capybara(six.with_metaclass(CapybaraType)):
+        class Capybara(metaclass=CapybaraType):
             pass
 
     @assert_passes()
@@ -272,11 +270,9 @@ class TestTypeMethods(TestNameCheckVisitorBase):
 class TestEncodeDecode(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
-        import six
-
         def capybara(s: str, b: bytes):
             assert_is_value(s.encode("utf-8"), TypedValue(bytes))
-            assert_is_value(b.decode("utf-8"), TypedValue(six.text_type))
+            assert_is_value(b.decode("utf-8"), TypedValue(str))
 
     @assert_fails(ErrorCode.incompatible_argument)
     def test_encode_wrong_type(self):
