@@ -2525,15 +2525,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     ) -> Value:
         left = left_composite.value
         right = right_composite.value
-        if isinstance(op, ast.Add) and (
-            (left.is_type(bytes) and right.is_type(str))
-            or (left.is_type(str) and right.is_type(bytes))
-        ):
-            # TODO this might be redundant (can't we just get the right types from typeshed?)
-            self._show_error_if_checking(
-                source_node, error_code=ErrorCode.mixing_bytes_and_text
-            )
-        elif self.in_annotation and isinstance(op, ast.BitOr):
+        if self.in_annotation and isinstance(op, ast.BitOr):
             # Accept PEP 604 (int | None) in annotations
             if isinstance(left, KnownValue) and isinstance(right, KnownValue):
                 return KnownValue(Union[left.val, right.val])
@@ -3624,8 +3616,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             ):
                 self.scopes.set(composite, self.being_assigned, node, self.state)
 
-            typ = root_composite.value.get_type()
-            if typ is not None:
+            if isinstance(root_composite.value, TypedValue):
+                typ = root_composite.value.typ
                 self._record_type_attr_set(typ, node.attr, node, self.being_assigned)
             return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):

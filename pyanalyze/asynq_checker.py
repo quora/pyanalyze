@@ -18,7 +18,7 @@ from typing import Sequence, Any, Callable, List, Optional, Iterable
 from .config import Config
 from .error_code import ErrorCode
 from .stacked_scopes import Composite
-from .value import Value, KnownValue, TypedValue, UnboundMethodValue
+from .value import AnnotatedValue, Value, KnownValue, TypedValue, UnboundMethodValue
 
 
 class AsyncFunctionKind(enum.Enum):
@@ -93,9 +93,11 @@ class AsynqChecker:
                 replacement_node=replacement_node,
             )
         elif (
-            isinstance(value, UnboundMethodValue) and value.secondary_attr_name is None
+            isinstance(value, UnboundMethodValue)
+            and value.secondary_attr_name is None
+            and isinstance(value.composite.value, TypedValue)
         ):
-            inner_type = value.composite.value.get_type()
+            inner_type = value.composite.value.typ
             if hasattr(inner_type, value.attr_name + "_async"):
                 if isinstance(node.func, ast.Attribute):
                     func_node = ast.Attribute(
@@ -232,13 +234,15 @@ def _stringify_async_fn(value: Value) -> str:
     if isinstance(value, KnownValue):
         return _stringify_obj(value.val)
     elif isinstance(value, UnboundMethodValue):
-        ret = "%s.%s" % (
-            _stringify_obj(value.composite.value.get_type()),
-            value.attr_name,
-        )
+        typ = _stringify_async_fn(value.composite.value)
+        ret = f"{typ}.{value.attr_name}"
         if value.secondary_attr_name is not None:
             ret += f".{value.secondary_attr_name}"
         return ret
+    elif isinstance(value, TypedValue):
+        return _stringify_obj(value.typ)
+    elif isinstance(value, AnnotatedValue):
+        return _stringify_async_fn(value.value)
     else:
         return str(value)
 

@@ -54,7 +54,7 @@ class ErrorCode(enum.Enum):
     yield_in_comprehension = 37
     use_floor_div = 38
     task_needs_yield = 39
-    mixing_bytes_and_text = 40
+    mixing_bytes_and_text = 40  # deprecated
     bad_except_handler = 41
     implicit_non_ascii_string = 42
     missing_await = 43
