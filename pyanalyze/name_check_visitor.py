@@ -1799,6 +1799,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     # Imports
 
     def visit_Import(self, node: ast.Import) -> None:
+        self.generic_visit(node)
         if self.scopes.scope_type() == ScopeType.module_scope:
             self._handle_imports(node.names)
 
@@ -1808,6 +1809,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             self._simulate_import(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        self.generic_visit(node)
         # this is used to decide where to add additional imports (after the first import), so
         # exclude __future__ imports
         if (
