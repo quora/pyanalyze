@@ -750,7 +750,7 @@ class NameCheckVisitor(
             arg_spec_cache = ArgSpecCache(self.config)
         self.arg_spec_cache = arg_spec_cache
         if reexport_tracker is None:
-            reexport_tracker = ImplicitReexportTracker()
+            reexport_tracker = ImplicitReexportTracker(self.config)
         self.reexport_tracker = reexport_tracker
         if (
             self.attribute_checker is not None
@@ -1841,6 +1841,10 @@ class NameCheckVisitor(
 
         is_star_import = len(node.names) == 1 and node.names[0].name == "*"
         force_public = self.filename.endswith("/__init__.py") and node.level == 1
+        if force_public:
+            # from .a import b implicitly sets a in the parent module's namespace.
+            # We allow relying on this behavior.
+            self._set_name_in_scope(node.module, node)
         if self.scopes.scope_type() == ScopeType.module_scope and not is_star_import:
             self._handle_imports(node.names, force_public=force_public)
         else:
@@ -4302,7 +4306,7 @@ class NameCheckVisitor(
             attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
         if "arg_spec_cache" not in kwargs:
             kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
-        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker())
+        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker(cls.config))
         if attribute_checker is None:
             inner_attribute_checker_obj = attribute_checker = ClassAttributeChecker(
                 cls.config,
@@ -4348,7 +4352,7 @@ class NameCheckVisitor(
     def check_all_files(cls, *args: Any, **kwargs: Any) -> List[node_visitor.Failure]:
         if "arg_spec_cache" not in kwargs:
             kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
-        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker())
+        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker(cls.config))
         return super().check_all_files(*args, **kwargs)
 
     @classmethod

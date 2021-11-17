@@ -5,11 +5,12 @@ Functionality for dealing with implicit reexports.
 """
 from ast import AST
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from enum import Enum
 from typing import Dict, List, Set, Tuple
 
-from pyanalyze.error_code import ErrorCode
+from .config import Config
+from .error_code import ErrorCode
 
 
 class ErrorContext:
@@ -19,6 +20,7 @@ class ErrorContext:
 
 @dataclass
 class ImplicitReexportTracker:
+    config: InitVar[Config]
     completed_modules: Set[str] = field(default_factory=set)
     module_to_reexports: Dict[str, Set[str]] = field(
         default_factory=lambda: defaultdict(set)
@@ -26,6 +28,9 @@ class ImplicitReexportTracker:
     used_reexports: Dict[str, List[Tuple[str, AST, ErrorContext]]] = field(
         default_factory=lambda: defaultdict(list)
     )
+
+    def __post_init__(self, config: Config) -> None:
+        self.config.configure_reexports(self)
 
     def record_exported_attribute(self, module: str, attr: str) -> None:
         self.module_to_reexports[module].add(attr)
