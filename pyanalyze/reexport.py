@@ -7,14 +7,19 @@ from ast import AST
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from enum import Enum
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
+from .node_visitor import Failure
 from .config import Config
 from .error_code import ErrorCode
 
 
 class ErrorContext:
-    def show_error(self, node: AST, message: str, error_code: Enum) -> None:
+    all_failures: List[Failure]
+
+    def show_error(
+        self, node: AST, message: str, error_code: Enum
+    ) -> Optional[Failure]:
         raise NotImplementedError
 
 
@@ -52,8 +57,10 @@ class ImplicitReexportTracker:
             self.used_reexports[module].append((attr, node, ctx))
 
     def show_error(self, module: str, attr: str, node: AST, ctx: ErrorContext) -> None:
-        ctx.show_error(
+        failure = ctx.show_error(
             node,
             f"Attribute '{attr}' is not exported by module '{module}'",
             ErrorCode.implicit_reexport,
         )
+        if failure is not None:
+            ctx.all_failures.append(failure)
