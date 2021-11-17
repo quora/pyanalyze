@@ -30,7 +30,7 @@ class ImplicitReexportTracker:
     )
 
     def __post_init__(self, config: Config) -> None:
-        self.config.configure_reexports(self)
+        config.configure_reexports(self)
 
     def record_exported_attribute(self, module: str, attr: str) -> None:
         self.module_to_reexports[module].add(attr)
