@@ -1848,7 +1848,8 @@ class NameCheckVisitor(
         if self.scopes.scope_type() == ScopeType.module_scope and not is_star_import:
             self._handle_imports(node.names, force_public=force_public)
         else:
-            self._simulate_import(node, force_public=force_public)
+            # For now we always treat star imports as public. We might revisit this later.
+            self._simulate_import(node, force_public=True)
 
     def _maybe_record_usages_from_import(self, node: ast.ImportFrom) -> None:
         if self.unused_finder is None or self.module is None:
