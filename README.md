@@ -678,9 +678,38 @@ The code is formatted using [Black](https://github.com/psf/black).
 
 ## Changelog
 
-Unreleased
+Version 0.4.0 (November 18, 2021)
 
+- Support and test Python 3.10. Note that new features are not necessarily
+  supported.
+- Support PEP 655 (`typing_extensions.Required` and `NotRequired`)
+- Improve detection of missing return statements
+- Improve detection of suspicious boolean conditions
+- The return type of calls with `*args` or `**kwargs` is now inferred
+  correctly. The arguments are still not typechecked.
+- Fix bug affecting type compatibility between literals and generics
+- Improve type narrowing on the `in`/`not in` operator
+- Improve type checking for format strings
+- Add the `pyanalyze.value.AnyValue` class, replacing `pyanalyze.value.UNRESOLVED_VALUE`
+- Improve formatting for `Union` types in errors
+- Fix bug affecting type compatibility between types and literals
+- Support `total=False` in `TypedDict`
+- Deal with typeshed changes in `typeshed_client` 1.1.2
+- Better type checking for `list` and `tuple.__getitem__`
+- Improve type narrowing on the `==`/`!=` operator
+- Reduce usage of `VariableNameValue`
+- Improve `TypeVar` inference procedure
+- Add support for constraints on the type of `self`, including if it has a union type
+- Detect undefined `enum.Enum` members
+- Improve handling of `Annotated`
+- Add `pyanalyze.extensions.CustomCheck`
 - Add `pyanalyze.extensions.ExternalType`
+- If you have code dealing with `Value` objects, note that there are several changes:
+  - `value is UNRESOLVED_VALUE` will no longer be reliable. Use `isinstance(value, AnyValue)` instead.
+  - `TypedDictValue` now stores whether each key is required or not in its `items` dictionary.
+  - `UnboundMethodValue` now stores a `Composite` object instead of a `Value` object, and has a new
+    `typevars` field.
+  - There is a new `KnownValueWithTypeVars` class, but it should not be relevant to most use cases.
 
 Version 0.3.1 (August 11, 2021)
 

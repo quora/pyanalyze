@@ -4,7 +4,7 @@ from setuptools import setup
 from setuptools.extension import Extension
 
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 # Used in internal packaging system.
 if "SANTA_PACKAGE_VERSION" in os.environ:
     VERSION = "%s.%s" % (VERSION, os.environ["SANTA_PACKAGE_VERSION"])
