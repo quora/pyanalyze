@@ -169,8 +169,7 @@ class CallContext:
         to it.
 
         """
-        node = None
-        if arg is not None:
+        if node is None and arg is not None:
             node = self.ast_for_arg(arg)
         if node is None:
             node = self.node
