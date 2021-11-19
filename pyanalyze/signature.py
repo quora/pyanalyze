@@ -35,12 +35,14 @@ from .value import (
     TypeGuardExtension,
     TypeVarValue,
     TypedDictValue,
+    TypedValue,
     Value,
     TypeVarMap,
     CanAssign,
     CanAssignError,
     concrete_values_from_iterable,
     extract_typevars,
+    flatten_values,
     replace_known_sequence_value,
     stringify_object,
     unify_typevar_maps,
@@ -80,9 +82,18 @@ EMPTY = inspect.Parameter.empty
 
 ARGS = qcore.MarkerObject("*args")
 KWARGS = qcore.MarkerObject("**kwargs")
+
+
+@dataclass
+class PossibleKwarg:
+    """Label used for keyword arguments that may not be present at runtiime."""
+
+    name: str
+
+
 # Representation of a single argument to a call. Second member is
-# None for positional args, str for keyword args, ARGS for *args, KWARGS
-# for **kwargs.
+# None for positional args, str for keyword args,
+# ARGS for *args, KWARGS for **kwargs.
 Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 
@@ -230,6 +241,14 @@ class SigParameter(inspect.Parameter):
             formatted = "**" + formatted
 
         return formatted
+
+
+@dataclass
+class ActualArguments:
+    positionals: List[Composite]
+    star_args: Optional[Value]  # represents the type of the elements of *args
+    keywords: Dict[str, Tuple[bool, Value]]
+    star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
 
 
 @dataclass
@@ -397,34 +416,379 @@ class Signature:
             constraint = NULL_CONSTRAINT
         return ImplReturn(ret.return_value, constraint, ret.no_return_unless)
 
+    def preprocess_args(
+        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+    ) -> Optional[ActualArguments]:
+        """Preprocess the argument list. Produces an ActualArguments object."""
+
+        # Step 1: Split up args and kwargs if possible.
+        processed_args: List[Argument] = []
+        for arg, label in args:
+            if label is None or isinstance(label, str):
+                processed_args.append((arg, label))
+            elif label is ARGS:
+                concrete_values = concrete_values_from_iterable(arg.value, visitor)
+                if concrete_values is None:
+                    self.show_call_error(f"{arg.value} is not iterable", node, visitor)
+                    return None
+                elif isinstance(concrete_values, Value):
+                    # We don't know the precise types. Repack it in a tuple because
+                    # at this point it doesn't matter what the precise runtime type is.
+                    new_value = GenericValue(tuple, [concrete_values])
+                    new_composite = Composite(new_value, arg.varname, arg.node)
+                    processed_args.append((new_composite, ARGS))
+                else:
+                    # We figured out the exact types. Treat them as separate positional
+                    # args.
+                    for subval in concrete_values:
+                        processed_args.append((Composite(subval), None))
+            elif label is KWARGS:
+                items = {}
+                extra_values = []
+                # We union all the kwargs that may be provided by any union member, so that
+                # we give an error if
+                for subval in flatten_values(arg.value, unwrap_annotated=True):
+                    result = self.preprocess_kwargs_no_mvv(subval, visitor, node)
+                    if result is None:
+                        return None
+                    new_items, new_value = result
+                    if new_value is not None:
+                        extra_values.append(new_value)
+                    for key, (required, value) in new_items.items():
+                        if key in items:
+                            old_required, old_value = items[key]
+                            # If the item is not required in any of the dicts, we treat it as not
+                            # required at the end.
+                            items[key] = old_required and required, unite_values(
+                                old_value, value
+                            )
+                        else:
+                            items[key] = required, value
+                for key, (required, value) in items.items():
+                    if required:
+                        processed_args.append((Composite(value), key))
+                    else:
+                        processed_args.append((Composite(value), PossibleKwarg(key)))
+                if extra_values:
+                    new_value = GenericValue(
+                        dict, [TypedValue(str), unite_values(*extra_values)]
+                    )
+                    # don't preserve the varname because we may have mutilated the dict
+                    new_composite = Composite(new_value)
+                    processed_args.append((new_composite, KWARGS))
+            else:
+                assert False, f"unhandled label {label}"
+
+        # Step 2: enforce invariants about ARGS and KWARGS placement. We dump
+        # any single argument that come after *args into *args, and we merge all *args.
+        # But for keywords, we first get all the arguments with known keys, and after that unite
+        # all the **kwargs into a single argument.
+        more_processed_args: List[Composite] = []
+        more_processed_kwargs: Dict[str, Tuple[bool, Composite]] = {}
+        star_args: Optional[Value] = None
+        star_kwargs: Optional[Value] = None
+
+        for arg, label in processed_args:
+            if label is None:
+                # Should never happen because the parser doesn't let you
+                if more_processed_kwargs or star_kwargs is not None:
+                    self.show_call_error(
+                        "Positional argument follow keyword arguments", node, visitor
+                    )
+                    return None
+                if star_args is not None:
+                    star_args = unite_values(arg.value, star_args)
+                else:
+                    more_processed_args.append(arg)
+            elif label is ARGS:
+                # This is legal: f(x=3, *args)
+                # But this is not: f(**kwargs, **args)
+                if star_kwargs is not None:
+                    self.show_call_error("*args follows **kwargs", node, visitor)
+                    return None
+                if star_args is not None:
+                    assert isinstance(arg.value, GenericValue), repr(processed_args)
+                    star_args = unite_values(arg.value.args[0], star_args)
+                else:
+                    assert isinstance(arg.value, GenericValue), repr(processed_args)
+                    star_args = arg.value.args[0]
+            elif isinstance(label, str):
+                if label in more_processed_kwargs:
+                    self.show_call_error(
+                        f"Multiple values provided for argument '{label}'",
+                        node,
+                        visitor,
+                    )
+                    return None
+                more_processed_kwargs[label] = (True, arg)
+            elif isinstance(label, PossibleKwarg):
+                if label.name in more_processed_kwargs:
+                    self.show_call_error(
+                        f"Multiple values provided for argument '{label.name}'",
+                        node,
+                        visitor,
+                    )
+                    return None
+                more_processed_kwargs[label.name] = (False, arg)
+            elif label is KWARGS:
+                assert isinstance(arg.value, GenericValue), repr(processed_args)
+                new_kwargs = arg.value.args[1]
+                if star_kwargs is None:
+                    star_kwargs = new_kwargs
+                else:
+                    star_kwargs = unite_values(star_kwargs, new_kwargs)
+            else:
+                assert False, repr(label)
+
+        return ActualArguments(
+            more_processed_args, star_args, more_processed_kwargs, star_kwargs
+        )
+
+    def preprocess_kwargs_no_mvv(
+        self, value: Value, visitor: "NameCheckVisitor", node: ast.AST
+    ) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
+        """Preprocess a Value passed as **kwargs.
+
+        Three possible return types:
+        - None if there was a blocking error (the passed in type is not a mapping).
+        - A pair of two values:
+            - An {argument: (required, Value)} dict if we know the precise arguments (e.g.,
+              for a TypedDict).
+            - A single Value if the argument is a mapping, but we don't know all the precise keys.
+              This is None if all the keys are known.
+
+        """
+        value = replace_known_sequence_value(value)
+        if isinstance(value, TypedDictValue):
+            return value.items, None
+        elif isinstance(value, DictIncompleteValue):
+            items = {}
+            possible_values = []
+            for key, val in value.items:
+                if isinstance(key, KnownValue):
+                    if isinstance(key, str):
+                        items[key.val] = (True, val)
+                    else:
+                        self.show_call_error(
+                            "Dict passed as **kwargs contains non-string key"
+                            f" {key.val!r}",
+                            node,
+                            visitor,
+                        )
+                        return None
+                else:
+                    can_assign = TypedValue(str).can_assign(key, visitor)
+                    if isinstance(can_assign, CanAssignError):
+                        self.show_call_error(
+                            "Dict passed as **kwargs contains non-string key"
+                            f" {key.val!r}",
+                            node,
+                            visitor,
+                            detail=str(can_assign),
+                        )
+                        return None
+                    possible_values.append(val)
+            if possible_values:
+                extra_value = unite_values(*possible_values)
+            else:
+                extra_value = None
+            return items, extra_value
+        else:
+            mapping_tv_map = MappingValue.can_assign(value, visitor)
+            if isinstance(mapping_tv_map, CanAssignError):
+                self.show_call_error(
+                    f"{value} is not a mapping",
+                    node,
+                    visitor,
+                    detail=str(mapping_tv_map),
+                )
+            key_type = mapping_tv_map.get(K, AnyValue(AnySource.generic_argument))
+            key_tv_map = TypedValue(str).can_assign(key_type, visitor)
+            if isinstance(key_tv_map, CanAssignError):
+                self.show_call_error(
+                    f"Mapping contains non-string keys: {value}",
+                    node,
+                    visitor,
+                    detail=str(key_tv_map),
+                )
+                return None
+            value_type = mapping_tv_map.get(V, AnyValue(AnySource.generic_argument))
+            return {}, value_type
+
     def bind_arguments(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> Optional[inspect.BoundArguments]:
-        call_args = []
-        call_kwargs = {}
-        for composite, label in args:
-            if label is None:
-                call_args.append(composite)
-            elif isinstance(label, str):
-                call_kwargs[label] = composite
-            elif label is ARGS or label is KWARGS:
-                # TODO handle these:
-                # - type check that they are iterables/mappings
-                # - if it's a KnownValue or SequenceIncompleteValue, just add to call_args
-                # - else do something smart to still typecheck the call
-                return None
+        """Attempt to bind the parameters in the signature to the arguments actually passed in.
 
-        try:
-            bound_args = self.signature.bind(*call_args, **call_kwargs)
-        except TypeError as e:
-            if self.callable is not None:
-                message = f"In call to {stringify_object(self.callable)}: {e}"
-            else:
-                message = str(e)
-            visitor.show_error(node, message, ErrorCode.incompatible_call)
+        Nomenclature:
+        - parameters: the formal parameters of the callable
+        - arguments: the arguments passed in in this call
+        - bound arguments: the mapping of parameter names to values produced by this call
+
+        """
+        actual_args = self.preprocess_args(args, visitor, node)
+        if actual_args is None:
             return None
-        bound_args.apply_defaults()
-        return bound_args
+        positional_index = 0
+        keywords_consumed: Set[str] = set()
+        bound_args: Dict[str, Composite] = {}
+        star_args_consumed = False
+        star_kwargs_consumed = False
+
+        for param in self.signature.parameters.values():
+            if param.kind is SigParameter.POSITIONAL_ONLY:
+                if positional_index < len(actual_args.positionals):
+                    bound_args[param.name] = actual_args.positionals[positional_index]
+                    positional_index += 1
+                elif actual_args.star_args is not None:
+                    bound_args[param.name] = Composite(actual_args.star_args)
+                    star_args_consumed = True
+                elif param.default is EMPTY:
+                    self.show_call_error(
+                        f"Missing required positional argument: '{param.name}'",
+                        node,
+                        visitor,
+                    )
+                    return None
+                else:
+                    bound_args[param.name] = param.default
+            elif param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
+                if positional_index < len(actual_args.positionals):
+                    bound_args[param.name] = actual_args.positionals[positional_index]
+                    positional_index += 1
+                    if param.name in actual_args.keywords:
+                        self.show_call_error(
+                            f"Parameter '{param.name}' provided as both a positional"
+                            " and a keyword argument",
+                            node,
+                            visitor,
+                        )
+                        return None
+                elif actual_args.star_args is not None:
+                    bound_args[param.name] = Composite(actual_args.star_args)
+                    star_args_consumed = True
+                    if param.name in actual_args.keywords:
+                        self.show_call_error(
+                            f"Parameter '{param.name}' may be filled from both *args"
+                            " and a keyword argument",
+                            node,
+                            visitor,
+                        )
+                        return None
+                elif param.name in actual_args.keywords:
+                    definitely_provided, composite = actual_args.keywords[param.name]
+                    if not definitely_provided and param.default is EMPTY:
+                        self.show_call_error(
+                            f"Parameter '{param.name}' may not be provided by this"
+                            " call",
+                            node,
+                            visitor,
+                        )
+                        return None
+                    bound_args[param.name] = composite
+                    keywords_consumed.add(param.name)
+                elif actual_args.star_kwargs is not None:
+                    bound_args[param.name] = Composite(actual_args.star_kwargs)
+                    star_kwargs_consumed = True
+                elif param.default is EMPTY:
+                    self.show_call_error(
+                        f"Missing required argument: '{param.name}'", node, visitor
+                    )
+                    return None
+                else:
+                    bound_args[param.name] = param.default
+            elif param.kind is SigParameter.KEYWORD_ONLY:
+                if param.name in actual_args.keywords:
+                    definitely_provided, composite = actual_args.keywords[param.name]
+                    if not definitely_provided and param.default is EMPTY:
+                        self.show_call_error(
+                            f"Parameter '{param.name}' may not be provided by this"
+                            " call",
+                            node,
+                            visitor,
+                        )
+                        return None
+                    bound_args[param.name] = composite
+                    keywords_consumed.add(param.name)
+                elif actual_args.star_kwargs is not None:
+                    bound_args[param.name] = Composite(actual_args.star_kwargs)
+                    star_kwargs_consumed = True
+                    keywords_consumed.add(param.name)
+                elif param.default is EMPTY:
+                    self.show_call_error(
+                        f"Missing required argument: '{param.name}'", node, visitor
+                    )
+                    return None
+                else:
+                    bound_args[param.name] = param.default
+            elif param.kind is SigParameter.VAR_POSITIONAL:
+                star_args_consumed = True
+                positionals = []
+                while positional_index < len(actual_args.positionals):
+                    positionals.append(actual_args.positionals[positional_index].value)
+                    positional_index += 1
+                if actual_args.star_args is not None:
+                    element_value = unite_values(*positionals, actual_args.star_args)
+                    star_args_value = GenericValue(tuple, [element_value])
+                else:
+                    star_args_value = SequenceIncompleteValue(tuple, positionals)
+                bound_args[param.name] = Composite(star_args_value)
+            elif param.kind is SigParameter.VAR_KEYWORD:
+                star_kwargs_consumed = True
+                items = {}
+                for key, (definitely_provided, value) in actual_args.keywords.items():
+                    if key in keywords_consumed:
+                        continue
+                    items[key] = (definitely_provided, value)
+                if actual_args.star_kwargs is not None:
+                    value_value = unite_values(
+                        *(val for _, val in items.values()), actual_args.star_kwargs
+                    )
+                    star_kwargs_value = GenericValue(
+                        dict, [TypedValue(str), value_value]
+                    )
+                else:
+                    star_kwargs_value = TypedDictValue(items)
+                bound_args[param.name] = Composite(star_kwargs_value)
+            else:
+                assert False, f"unhandled param {param.kind}"
+
+        if not star_args_consumed and positional_index != len(actual_args.positionals):
+            self.show_call_error(
+                f"Takes {positional_index} positional arguments but"
+                f" {len(actual_args.positionals)} were given",
+                node,
+                visitor,
+            )
+            return None
+        if not star_kwargs_consumed:
+            extra_kwargs = set(actual_args.keywords) - keywords_consumed
+            if extra_kwargs:
+                extra_kwargs_str = ", ".join(map(repr, extra_kwargs))
+                if len(extra_kwargs) == 1:
+                    message = f"Got an unexpected keyword argument {extra_kwargs_str}"
+                else:
+                    message = f"Got unexpected keyword arguments {extra_kwargs_str}"
+                self.show_call_error(message, node, visitor)
+                return None
+        if not star_args_consumed and actual_args.star_args:
+            self.show_call_error("*args provided but not used", node, visitor)
+            return None
+        if not star_kwargs_consumed and actual_args.star_kwargs:
+            self.show_call_error("**kwargs provided but not used", node, visitor)
+            return None
+        return inspect.BoundArguments(self.signature, bound_args)
+
+    def show_call_error(
+        self,
+        message: str,
+        node: ast.AST,
+        visitor: "NameCheckVisitor",
+        detail: Optional[str] = None,
+    ) -> None:
+        if self.callable is not None:
+            message = f"In call to {stringify_object(self.callable)}: {message}"
+        visitor.show_error(node, message, ErrorCode.incompatible_call, detail=detail)
 
     def get_default_return(self, source: AnySource = AnySource.error) -> ImplReturn:
         return_value = self.signature.return_annotation
