@@ -681,7 +681,7 @@ class TestCalls(TestNameCheckVisitorBase):
         def many_args(a: int = 0, b: int = 1, c: int = 2) -> None:
             pass
 
-        def capybara():
+        def capybara(arg):
             kwargs = {key: 1 for key in ("a", "b", "c")}
             many_args(**kwargs)  # ok
             bad_kwargs = {key: 1 for key in ("a", "b", "c", "d")}
@@ -693,6 +693,11 @@ class TestCalls(TestNameCheckVisitorBase):
             many_args(**div)  # ok
             div["d"] = 3
             many_args(**div)  # E: incompatible_call
+
+            known_int_kwargs = {i: i for i in (1, 2, 3)}
+            many_args(**known_int_kwargs)  # E: incompatible_call
+            typed_int_kwargs = {int(x): 1 for x in arg}
+            many_args(**typed_int_kwargs)  # E: incompatible_call
 
     @skip_before((3, 8))
     def test_pos_only(self):

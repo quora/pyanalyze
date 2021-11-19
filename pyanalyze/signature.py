@@ -603,7 +603,7 @@ class Signature:
                     else:
                         self.show_call_error(
                             "Dict passed as **kwargs contains non-string key"
-                            f" {key.val!r}",
+                            f" {subkey.val!r}",
                             node,
                             visitor,
                         )
