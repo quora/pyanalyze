@@ -226,14 +226,18 @@ class CanAssignError:
 
     """
 
-    message: str
+    message: str = ""
     children: List["CanAssignError"] = field(default_factory=list)
 
     def display(self, depth: int = 2) -> str:
         """Display all errors in a human-readable format."""
-        result = f"{' ' * depth}{self.message}\n"
-        result += "".join(child.display(depth=depth + 2) for child in self.children)
-        return result
+        child_result = "".join(
+            child.display(depth=depth + 2) for child in self.children
+        )
+        if self.message:
+            return f"{' ' * depth}{self.message}\n{child_result}"
+        else:
+            return child_result
 
     def __str__(self) -> str:
         return self.display()
