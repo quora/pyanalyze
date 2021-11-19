@@ -247,7 +247,7 @@ class SigParameter(inspect.Parameter):
 class ActualArguments:
     positionals: List[Composite]
     star_args: Optional[Value]  # represents the type of the elements of *args
-    keywords: Dict[str, Tuple[bool, Value]]
+    keywords: Dict[str, Tuple[bool, Composite]]
     star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
 
 
@@ -422,7 +422,7 @@ class Signature:
         """Preprocess the argument list. Produces an ActualArguments object."""
 
         # Step 1: Split up args and kwargs if possible.
-        processed_args: List[Argument] = []
+        processed_args = []
         for arg, label in args:
             if label is None or isinstance(label, str):
                 processed_args.append((arg, label))
@@ -566,7 +566,7 @@ class Signature:
             possible_values = []
             for key, val in value.items:
                 if isinstance(key, KnownValue):
-                    if isinstance(key, str):
+                    if isinstance(key.val, str):
                         items[key.val] = (True, val)
                     else:
                         self.show_call_error(
@@ -580,8 +580,7 @@ class Signature:
                     can_assign = TypedValue(str).can_assign(key, visitor)
                     if isinstance(can_assign, CanAssignError):
                         self.show_call_error(
-                            "Dict passed as **kwargs contains non-string key"
-                            f" {key.val!r}",
+                            f"Dict passed as **kwargs contains non-string key {key!r}",
                             node,
                             visitor,
                             detail=str(can_assign),
@@ -602,6 +601,7 @@ class Signature:
                     visitor,
                     detail=str(mapping_tv_map),
                 )
+                return None
             key_type = mapping_tv_map.get(K, AnyValue(AnySource.generic_argument))
             key_tv_map = TypedValue(str).can_assign(key_type, visitor)
             if isinstance(key_tv_map, CanAssignError):
@@ -665,8 +665,6 @@ class Signature:
                         )
                         return None
                 elif actual_args.star_args is not None:
-                    bound_args[param.name] = Composite(actual_args.star_args)
-                    star_args_consumed = True
                     if param.name in actual_args.keywords:
                         self.show_call_error(
                             f"Parameter '{param.name}' may be filled from both *args"
@@ -675,6 +673,16 @@ class Signature:
                             visitor,
                         )
                         return None
+                    star_args_consumed = True
+                    # It may also come from **kwargs
+                    if actual_args.star_kwargs is not None:
+                        value = unite_values(
+                            actual_args.star_kwargs, actual_args.star_kwargs
+                        )
+                        star_kwargs_consumed = True
+                    else:
+                        value = actual_args.star_args
+                    bound_args[param.name] = Composite(value)
                 elif param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
                     if not definitely_provided and param.default is EMPTY:
@@ -736,10 +744,13 @@ class Signature:
             elif param.kind is SigParameter.VAR_KEYWORD:
                 star_kwargs_consumed = True
                 items = {}
-                for key, (definitely_provided, value) in actual_args.keywords.items():
+                for key, (
+                    definitely_provided,
+                    composite,
+                ) in actual_args.keywords.items():
                     if key in keywords_consumed:
                         continue
-                    items[key] = (definitely_provided, value)
+                    items[key] = (definitely_provided, composite.value)
                 if actual_args.star_kwargs is not None:
                     value_value = unite_values(
                         *(val for _, val in items.values()), actual_args.star_kwargs
