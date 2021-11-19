@@ -831,14 +831,19 @@ def _str_format_impl(ctx: CallContext) -> Value:
         return TypedValue(str)
     args = args_value.members
     kwargs_value = replace_known_sequence_value(ctx.vars["kwargs"])
-    if not isinstance(kwargs_value, DictIncompleteValue):
-        return TypedValue(str)
     kwargs = {}
-    for key_value, value_value in kwargs_value.items:
-        if isinstance(key_value, KnownValue) and isinstance(key_value.val, str):
-            kwargs[key_value.val] = value_value
-        else:
-            return TypedValue(str)
+    if isinstance(kwargs_value, DictIncompleteValue):
+        for key_value, value_value in kwargs_value.items:
+            if isinstance(key_value, KnownValue) and isinstance(key_value.val, str):
+                kwargs[key_value.val] = value_value
+            else:
+                return TypedValue(str)
+    elif isinstance(kwargs_value, TypedDictValue):
+        for key, (required, value_value) in kwargs_value.items.items():
+            if required:
+                kwargs[key] = value_value
+    else:
+        return TypedValue(str)
     template = self.val
     used_indices = set()
     used_kwargs = set()
