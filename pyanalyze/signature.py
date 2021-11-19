@@ -249,6 +249,7 @@ class ActualArguments:
     star_args: Optional[Value]  # represents the type of the elements of *args
     keywords: Dict[str, Tuple[bool, Composite]]
     star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
+    kwargs_required: bool
 
 
 @dataclass
@@ -423,6 +424,7 @@ class Signature:
 
         # Step 1: Split up args and kwargs if possible.
         processed_args = []
+        kwargs_requireds = []
         for arg, label in args:
             if label is None or isinstance(label, str):
                 processed_args.append((arg, label))
@@ -470,6 +472,7 @@ class Signature:
                     else:
                         processed_args.append((Composite(value), PossibleKwarg(key)))
                 if extra_values:
+                    kwargs_requireds.append(not items)
                     new_value = GenericValue(
                         dict, [TypedValue(str), unite_values(*extra_values)]
                     )
@@ -541,7 +544,11 @@ class Signature:
                 assert False, repr(label)
 
         return ActualArguments(
-            more_processed_args, star_args, more_processed_kwargs, star_kwargs
+            more_processed_args,
+            star_args,
+            more_processed_kwargs,
+            star_kwargs,
+            kwargs_required=any(kwargs_requireds),
         )
 
     def preprocess_kwargs_no_mvv(
@@ -785,7 +792,11 @@ class Signature:
         if not star_args_consumed and actual_args.star_args:
             self.show_call_error("*args provided but not used", node, visitor)
             return None
-        if not star_kwargs_consumed and actual_args.star_kwargs:
+        if (
+            not star_kwargs_consumed
+            and actual_args.star_kwargs
+            and actual_args.kwargs_required
+        ):
             self.show_call_error("**kwargs provided but not used", node, visitor)
             return None
         return inspect.BoundArguments(self.signature, bound_args)

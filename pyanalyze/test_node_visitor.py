@@ -49,6 +49,7 @@ class BaseNodeVisitorTester(object):
 
     def assert_passes(self, code_str, **kwargs):
         """Asserts that running the given code_str throws no errors."""
+        code_str = textwrap.dedent(code_str)
         errors = self._run_str(
             code_str, expect_failure=False, fail_after_first=False, **kwargs
         )

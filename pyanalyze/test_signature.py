@@ -308,13 +308,13 @@ class TestShadowing(TestNameCheckVisitorBase):
 
 
 class TestCalls(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_too_few_args(self):
         def fn(x, y):
             return x + y
 
         def run():
-            fn(1)
+            fn(1)  # E: incompatible_call
 
     @assert_passes()
     def test_correct_args(self):
@@ -324,13 +324,13 @@ class TestCalls(TestNameCheckVisitorBase):
         def run():
             fn(1, 2)
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_wrong_kwarg(self):
         def fn(x, y=3):
             return x + y
 
         def run():
-            fn(1, z=2)
+            fn(1, z=2)  # E: incompatible_call
 
     @assert_passes()
     def test_right_kwarg(self):
@@ -584,6 +584,140 @@ class TestCalls(TestNameCheckVisitorBase):
             assert_is_value(
                 pyanalyze.tests.WhatIsMyName(), TypedValue(pyanalyze.tests.WhatIsMyName)
             )
+
+    @assert_passes()
+    def test_star_args(self):
+        from typing import Sequence, Dict
+
+        def takes_args(*args: int) -> None:
+            pass
+
+        def takes_a_b(a: int, b: int) -> None:
+            pass
+
+        def capybara(
+            ints: Sequence[int], strs: Sequence[str], d: Dict[str, int]
+        ) -> None:
+            takes_args(*1)  # E: incompatible_call
+            takes_args(*("a",))  # E: incompatible_argument
+            takes_args(*(1, 2))  # ok
+            takes_args(1, 2)  # ok
+            takes_args("a")  # E: incompatible_argument
+            takes_args()  # ok
+            takes_args(*ints)  # ok
+            takes_args(*strs)  # E: incompatible_argument
+            takes_args(args=3)  # E: incompatible_call
+
+            takes_a_b(1, 2)  # ok
+            takes_a_b(*(1, 2))  # ok
+            takes_a_b(*(1, 2, 3))  # E: incompatible_call
+            takes_a_b(1, 2, *ints)  # E: incompatible_call
+            takes_a_b(*ints)  # ok
+            takes_a_b(1, *ints)  # ok
+            takes_a_b(1)  # E: incompatible_call
+            takes_a_b()  # E: incompatible_call
+            takes_a_b(1, 2, **d)  # E: incompatible_call
+            takes_a_b(**d)  # ok
+
+    @assert_passes()
+    def test_star_kwargs(self):
+        from typing_extensions import TypedDict, NotRequired
+        from typing import Dict, Any, Sequence
+
+        def takes_ab(a: int, b: str = "") -> None:
+            pass
+
+        class TD1(TypedDict):
+            a: int
+            b: NotRequired[str]
+
+        class TD2(TypedDict):
+            a: NotRequired[int]
+            b: str
+
+        def capybara(
+            good_dict: Dict[str, Any],
+            bad_dict: Dict[str, int],
+            very_bad_dict: Dict[int, str],
+            any_dict: Dict[Any, Any],
+            anys: Sequence[Any],
+            td1: TD1,
+            td2: TD2,
+            cond: Any,
+        ) -> None:
+            takes_ab(**{"a": 1})  # ok
+            takes_ab(**{"b": ""})  # E: incompatible_call
+            takes_ab(**good_dict)  # ok
+            takes_ab(**bad_dict)  # E: incompatible_argument
+            takes_ab(**("not", "a", "dict"))  # E: incompatible_call
+            takes_ab(**very_bad_dict)  # E: incompatible_call
+            takes_ab(**any_dict)  # ok
+            takes_ab(**{1: ""})  # E: incompatible_call
+            takes_ab(**td1)  # ok
+            takes_ab(**td2)  # E: incompatible_call
+            td1_or_2 = td1 if cond else td2
+            takes_ab(**td1_or_2)  # E: incompatible_call
+            td1_or_good = td1 if cond else good_dict
+            takes_ab(**td1_or_good)  # ok
+            takes_ab(**{"a": 1})  # ok
+            takes_ab(**{"a": cond})  # ok
+            takes_ab(**{cond: cond})  # ok
+            takes_ab(**{"a": 1, cond: ""})  # ok
+            takes_ab(**{"b": ""})  # E: incompatible_call
+            bad_div_or_good = {"b": ""} if cond else good_dict
+            # TODO ideally this should error, because if we take the {"b": ""}
+            # branch we're missing a required arg.
+            takes_ab(**bad_div_or_good)
+
+            takes_ab(a=3, **td1)  # E: incompatible_call
+            takes_ab(**{"a": 3}, **td1)  # E: incompatible_call
+            takes_ab(**{"a": 3}, **{"b": ""})  # ok
+
+            takes_ab(1, a=1)  # E: incompatible_call
+            takes_ab(*anys, a=1)  # E: incompatible_call
+
+    @skip_before((3, 8))
+    def test_pos_only(self):
+        self.assert_passes(
+            """
+            from typing import Sequence
+
+            def pos_only(pos: int, /) -> None:
+                pass
+
+            def capybara(ints: Sequence[int], strs: Sequence[str]) -> None:
+                pos_only(1)
+                pos_only(*ints)
+                pos_only(*strs)  # E: incompatible_argument
+                pos_only(pos=1)  # E: incompatible_call
+                pos_only()  # E: incompatible_call
+                pos_only(1, 2)  # E: incompatible_call
+            """
+        )
+
+    @assert_passes()
+    def test_kw_only(self):
+        from typing_extensions import NotRequired, TypedDict
+
+        class TD(TypedDict):
+            a: int
+            b: NotRequired[str]
+
+        class BadTD(TypedDict):
+            a: NotRequired[int]
+            b: NotRequired[str]
+
+        def kwonly(*, a: int, b: str = "") -> None:
+            pass
+
+        def capybara(td: TD, bad_td: BadTD) -> None:
+            kwonly(1)  # E: incompatible_call
+            kwonly()  # E: incompatible_call
+            kwonly(a=1)  # ok
+            kwonly(b="")  # E: incompatible_call
+            kwonly(a=1, b="")  # ok
+            kwonly(**td)  # ok
+            kwonly(**bad_td)  # E: incompatible_call
 
 
 class TestTypeVar(TestNameCheckVisitorBase):
