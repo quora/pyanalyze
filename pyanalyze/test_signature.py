@@ -676,6 +676,24 @@ class TestCalls(TestNameCheckVisitorBase):
             takes_ab(1, a=1)  # E: incompatible_call
             takes_ab(*anys, a=1)  # E: incompatible_call
 
+    @assert_passes()
+    def test_union_key(self):
+        def many_args(a: int = 0, b: int = 1, c: int = 2) -> None:
+            pass
+
+        def capybara():
+            kwargs = {key: 1 for key in ("a", "b", "c")}
+            many_args(**kwargs)  # ok
+            bad_kwargs = {key: 1 for key in ("a", "b", "c", "d")}
+            many_args(**bad_kwargs)  # E: incompatible_call
+
+            div = {}
+            for key in ("a", "b", "c"):
+                div[key] = 1
+            many_args(**div)  # ok
+            div["d"] = 3
+            many_args(**div)  # E: incompatible_call
+
     @skip_before((3, 8))
     def test_pos_only(self):
         self.assert_passes(

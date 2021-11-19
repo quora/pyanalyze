@@ -64,6 +64,7 @@ from typing import (
     NamedTuple,
     Optional,
     ClassVar,
+    Sequence,
     Union,
     Callable,
     Dict,
@@ -568,12 +569,37 @@ class Signature:
         if isinstance(value, TypedDictValue):
             return value.items, None
         elif isinstance(value, DictIncompleteValue):
-            items = {}
-            possible_values = []
-            for key, val in value.items:
-                if isinstance(key, KnownValue):
-                    if isinstance(key.val, str):
-                        items[key.val] = (True, val)
+            return self.preprocess_kwargs_kv_pairs(value.items, visitor, node)
+        else:
+            mapping_tv_map = MappingValue.can_assign(value, visitor)
+            if isinstance(mapping_tv_map, CanAssignError):
+                self.show_call_error(
+                    f"{value} is not a mapping",
+                    node,
+                    visitor,
+                    detail=str(mapping_tv_map),
+                )
+                return None
+            key_type = mapping_tv_map.get(K, AnyValue(AnySource.generic_argument))
+            value_type = mapping_tv_map.get(V, AnyValue(AnySource.generic_argument))
+            return self.preprocess_kwargs_kv_pairs(
+                [(key_type, value_type)], visitor, node
+            )
+
+    def preprocess_kwargs_kv_pairs(
+        self,
+        items: Sequence[Tuple[Value, Value]],
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+    ) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
+        out_items = {}
+        possible_values = []
+        for key, val in items:
+            possible_keys = []
+            for subkey in flatten_values(key, unwrap_annotated=True):
+                if isinstance(subkey, KnownValue):
+                    if isinstance(subkey.val, str):
+                        possible_keys.append(subkey.val)
                     else:
                         self.show_call_error(
                             "Dict passed as **kwargs contains non-string key"
@@ -592,34 +618,19 @@ class Signature:
                             detail=str(can_assign),
                         )
                         return None
-                    possible_values.append(val)
-            if possible_values:
-                extra_value = unite_values(*possible_values)
+                    possible_keys = []
+                    break
+            if possible_keys:
+                required = len(possible_keys) == 1
+                for key in possible_keys:
+                    out_items[key] = (required, val)
             else:
-                extra_value = None
-            return items, extra_value
+                possible_values.append(val)
+        if possible_values:
+            extra_value = unite_values(*possible_values)
         else:
-            mapping_tv_map = MappingValue.can_assign(value, visitor)
-            if isinstance(mapping_tv_map, CanAssignError):
-                self.show_call_error(
-                    f"{value} is not a mapping",
-                    node,
-                    visitor,
-                    detail=str(mapping_tv_map),
-                )
-                return None
-            key_type = mapping_tv_map.get(K, AnyValue(AnySource.generic_argument))
-            key_tv_map = TypedValue(str).can_assign(key_type, visitor)
-            if isinstance(key_tv_map, CanAssignError):
-                self.show_call_error(
-                    f"Mapping contains non-string keys: {value}",
-                    node,
-                    visitor,
-                    detail=str(key_tv_map),
-                )
-                return None
-            value_type = mapping_tv_map.get(V, AnyValue(AnySource.generic_argument))
-            return {}, value_type
+            extra_value = None
+        return out_items, extra_value
 
     def bind_arguments(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
