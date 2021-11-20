@@ -89,14 +89,6 @@ def is_hashable(obj: object) -> bool:
         return True
 
 
-def is_iterable(obj: object) -> bool:
-    """Returns whether a Python object is iterable."""
-    typ = type(obj)
-    if hasattr(typ, "__iter__"):
-        return True
-    return hasattr(typ, "__getitem__") and hasattr(typ, "__len__")
-
-
 def all_of_type(
     elts: Iterable[object], typ: Type[T]
 ) -> Annotated[bool, ParameterTypeGuard["elts", Iterable[T]]]:

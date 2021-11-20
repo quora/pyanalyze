@@ -67,7 +67,7 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard
 from .find_unused import UnusedObjectFinder, used
-from .safe import safe_getattr, is_hashable, safe_in, is_iterable, all_of_type
+from .safe import safe_getattr, is_hashable, safe_in, all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
     CompositeVariable,
