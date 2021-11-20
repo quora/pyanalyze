@@ -1619,7 +1619,6 @@ def unite_values(*values: Value) -> Value:
 
 T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
-ITERABLE_LENGTH_LIMIT = 100
 
 
 def concrete_values_from_iterable(
@@ -1668,10 +1667,7 @@ def concrete_values_from_iterable(
         if all(isinstance(key, KnownValue) for key, _ in value.items):
             return [key for key, _ in value.items]
     elif isinstance(value, KnownValue):
-        if (
-            isinstance(value.val, (str, bytes, range))
-            and len(value.val) < ITERABLE_LENGTH_LIMIT
-        ):
+        if isinstance(value.val, (str, bytes, range)):
             return [KnownValue(c) for c in value.val]
     elif value is NO_RETURN_VALUE:
         return NO_RETURN_VALUE
