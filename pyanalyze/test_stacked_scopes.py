@@ -1503,6 +1503,8 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(2))
             else:
                 assert_is_value(x, KnownValue(1))
+            if "x" in cond:
+                assert_is_value(cond, AnyValue(AnySource.unannotated))
 
         def pacarana(x: Union[Literal["x"], int]):
             assert_is_value(x, KnownValue("x") | TypedValue(int))

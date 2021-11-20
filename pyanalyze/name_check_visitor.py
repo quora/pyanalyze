@@ -2365,10 +2365,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             return self._constraint_from_predicate_provider(rhs_constraint, lhs.val, op)
         elif isinstance(rhs, KnownValue):
-            constraint = self._constraint_from_compare_op(node.left, rhs.val, op)
+            constraint = self._constraint_from_compare_op(
+                node.left, rhs.val, op, is_right=True
+            )
         elif isinstance(lhs, KnownValue):
             constraint = self._constraint_from_compare_op(
-                node.comparators[0], lhs.val, op
+                node.comparators[0], lhs.val, op, is_right=False
             )
         else:
             constraint = NULL_CONSTRAINT
@@ -2379,7 +2381,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return val, constraint
 
     def _constraint_from_compare_op(
-        self, constrained_node: ast.AST, other_val: object, op: ast.AST
+        self,
+        constrained_node: ast.AST,
+        other_val: object,
+        op: ast.AST,
+        *,
+        is_right: bool,
     ) -> AbstractConstraint:
         varname = self.composite_from_node(constrained_node).varname
         if varname is None:
@@ -2411,7 +2418,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return Constraint(
                 varname, ConstraintType.predicate, positive, predicate_func
             )
-        elif isinstance(op, (ast.In, ast.NotIn)):
+        elif isinstance(op, (ast.In, ast.NotIn)) and is_right:
 
             def predicate_func(value: Value, positive: bool) -> Optional[Value]:
                 op = _in if positive else _not_in
@@ -2452,7 +2459,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 op = positive_operator if positive else negative_operator
                 if isinstance(value, KnownValue):
                     try:
-                        result = op(value.val, other_val)
+                        if is_right:
+                            result = op(value.val, other_val)
+                        else:
+                            result = op(other_val, value.val)
                     except Exception:
                         pass
                     else:
