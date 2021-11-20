@@ -133,7 +133,6 @@ from .value import (
 )
 
 T = TypeVar("T")
-IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
