@@ -461,7 +461,9 @@ def test_io() -> None:
 
 
 def test_concrete_values_from_iterable() -> None:
-    assert_is(None, concrete_values_from_iterable(KnownValue(1), CTX))
+    assert_is_instance(
+        concrete_values_from_iterable(KnownValue(1), CTX), CanAssignError
+    )
     assert_eq((), concrete_values_from_iterable(KnownValue(()), CTX))
     assert_eq(
         (KnownValue(1), KnownValue(2)),

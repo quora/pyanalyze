@@ -2280,11 +2280,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             for elt in elts:
                 if isinstance(elt, _StarredValue):
                     vals = concrete_values_from_iterable(elt.value, self)
-                    if vals is None:
+                    if isinstance(vals, CanAssignError):
                         self.show_error(
                             elt.node,
                             f"{elt.value} is not iterable",
                             ErrorCode.unsupported_operation,
+                            detail=[vals],
                         )
                         values.append(AnyValue(AnySource.error))
                         has_unknown_value = True
@@ -2425,7 +2426,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 elif positive:
                     known_other = KnownValue(other_val)
                     member_values = concrete_values_from_iterable(known_other, self)
-                    if member_values is None:
+                    if isinstance(member_values, CanAssignError):
                         return value
                     elif isinstance(member_values, Value):
                         if value.is_assignable(member_values, self):
