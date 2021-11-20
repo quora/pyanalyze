@@ -1619,6 +1619,7 @@ def unite_values(*values: Value) -> Value:
 
 T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
+ITERABLE_LENGTH_LIMIT = 100
 
 
 def concrete_values_from_iterable(
@@ -1640,6 +1641,7 @@ def concrete_values_from_iterable(
     - ``tuple[int, ...]`` -> ``int``
 
     """
+    value = replace_known_sequence_value(value)
     if isinstance(value, MultiValuedValue):
         subvals = [concrete_values_from_iterable(val, ctx) for val in value.vals]
         errors = [subval for subval in subvals if isinstance(subval, CanAssignError)]
@@ -1656,9 +1658,23 @@ def concrete_values_from_iterable(
         if not value_subvals and len(set(map(len, seq_subvals))) == 1:
             return [unite_values(*vals) for vals in zip(*seq_subvals)]
         return unite_values(*value_subvals, *chain.from_iterable(seq_subvals))
-    value = replace_known_sequence_value(value)
-    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
+    if isinstance(value, SequenceIncompleteValue):
         return value.members
+    elif isinstance(value, TypedDictValue):
+        if all(required for required, _ in value.items.items()):
+            return [KnownValue(key) for key in value.items]
+        return MultiValuedValue([KnownValue(key) for key in value.items])
+    elif isinstance(value, DictIncompleteValue):
+        if all(isinstance(key, KnownValue) for key, _ in value.items):
+            return [key for key, _ in value.items]
+    elif isinstance(value, KnownValue):
+        if (
+            isinstance(value.val, (str, bytes, range))
+            and len(value.val) < ITERABLE_LENGTH_LIMIT
+        ):
+            return [KnownValue(c) for c in value.val]
+    elif value is NO_RETURN_VALUE:
+        return NO_RETURN_VALUE
     tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(tv_map, CanAssignError):
         return tv_map.get(T, AnyValue(AnySource.generic_argument))

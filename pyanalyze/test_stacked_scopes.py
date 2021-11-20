@@ -436,8 +436,8 @@ class TestLoops(TestNameCheckVisitorBase):
     def test_range_always_entered(self):
         def capybara():
             for i in range(2):
-                assert_is_value(i, TypedValue(int))
-            assert_is_value(i, TypedValue(int))
+                assert_is_value(i, KnownValue(0) | KnownValue(1))
+            assert_is_value(i, KnownValue(0) | KnownValue(1))
 
     @assert_passes(settings={ErrorCode.possibly_undefined_name: False})
     def test_use_after_for(self):

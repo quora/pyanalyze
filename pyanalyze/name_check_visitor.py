@@ -2285,7 +2285,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                             elt.node,
                             f"{elt.value} is not iterable",
                             ErrorCode.unsupported_operation,
-                            detail=[vals],
+                            detail=str(vals),
                         )
                         values.append(AnyValue(AnySource.error))
                         has_unknown_value = True
@@ -2995,63 +2995,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def _member_value_of_iterator_val(
         self, iterated: Value, node: ast.AST
     ) -> Tuple[Value, Optional[int]]:
-        if isinstance(iterated, KnownValue):
-            if iterated.val is not None and not is_iterable(iterated.val):
-                self._show_error_if_checking(
-                    node,
-                    "Object %r is not iterable" % (iterated.val,),
-                    ErrorCode.unsupported_operation,
-                )
-                return AnyValue(AnySource.error), None
-            if isinstance(iterated.val, range):
-                return TypedValue(int), len(iterated.val)
-            # if the thing we're iterating over is e.g. a file or an infinite generator, calling
-            # list() may hang the process
-            if not isinstance(
-                iterated.val, (list, set, tuple, dict, str, bytes, frozenset)
-            ):
-                return AnyValue(AnySource.inference), None
-            try:
-                values = list(iterated.val)
-            except Exception:
-                # we couldn't iterate over it for whatever reason; just ignore for now
-                return AnyValue(AnySource.error), None
-            return unite_values(*map(KnownValue, values)), len(values)
-        elif isinstance(iterated, SequenceIncompleteValue):
-            return unite_values(*iterated.members), len(iterated.members)
-        elif isinstance(iterated, DictIncompleteValue):
-            return (
-                unite_values(*[key for key, _ in iterated.items]),
-                len(iterated.items),
+        result = concrete_values_from_iterable(iterated, self)
+        if isinstance(result, CanAssignError):
+            self._show_error_if_checking(
+                node,
+                f"{iterated} is not iterable",
+                ErrorCode.unsupported_operation,
+                detail=str(result),
             )
-        elif iterated is NO_RETURN_VALUE:
-            return NO_RETURN_VALUE, None
-        elif isinstance(iterated, MultiValuedValue):
-            vals, nums = zip(
-                *[
-                    self._member_value_of_iterator_val(val, node)
-                    for val in iterated.vals
-                ]
-            )
-            num = nums[0] if len(set(nums)) == 1 else None
-            return unite_values(*vals), num
-        elif isinstance(iterated, AnnotatedValue):
-            return self._member_value_of_iterator_val(iterated.value, node)
+            return AnyValue(AnySource.error), None
+        elif isinstance(result, Value):
+            return result, None
         else:
-            tv_map = IterableValue.can_assign(iterated, self)
-            if isinstance(tv_map, CanAssignError):
-                if not (
-                    isinstance(iterated, TypedValue)
-                    and self._should_ignore_type(iterated.typ)
-                ):
-                    self._show_error_if_checking(
-                        node,
-                        f"{iterated} is not iterable",
-                        ErrorCode.unsupported_operation,
-                        detail=tv_map.display(),
-                    )
-                return AnyValue(AnySource.error), None
-            return tv_map.get(T, AnyValue(AnySource.generic_argument)), None
+            return unite_values(*result), len(result)
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
