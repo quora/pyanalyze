@@ -1623,43 +1623,58 @@ IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 def concrete_values_from_iterable(
     value: Value, ctx: CanAssignContext
-) -> Union[None, Value, Sequence[Value]]:
+) -> Union[CanAssignError, Value, Sequence[Value]]:
     """Return the exact values that can be extracted from an iterable.
 
     Three possible return types:
 
-    - ``None`` if the argument is not iterable
+    - :class:`CanAssignError` if the argument is not iterable
     - A sequence of :class:`Value` if we know the exact types in the iterable
     - A single :class:`Value` if we just know that the iterable contains this
       value, but not the precise number of them.
 
     Examples:
 
-    - ``int`` -> ``None``
+    - ``int`` -> ``CanAssignError``
     - ``tuple[int, str]`` -> ``(int, str)``
     - ``tuple[int, ...]`` -> ``int``
 
     """
+    value = replace_known_sequence_value(value)
     if isinstance(value, MultiValuedValue):
         subvals = [concrete_values_from_iterable(val, ctx) for val in value.vals]
-        if any(subval is None for subval in subvals):
-            return None
+        errors = [subval for subval in subvals if isinstance(subval, CanAssignError)]
+        if errors:
+            return CanAssignError(
+                "At least one member of Union is not iterable", errors
+            )
         value_subvals = [subval for subval in subvals if isinstance(subval, Value)]
         seq_subvals = [
             subval
             for subval in subvals
-            if subval is not None and not isinstance(subval, Value)
+            if not isinstance(subval, (Value, CanAssignError))
         ]
         if not value_subvals and len(set(map(len, seq_subvals))) == 1:
             return [unite_values(*vals) for vals in zip(*seq_subvals)]
         return unite_values(*value_subvals, *chain.from_iterable(seq_subvals))
-    value = replace_known_sequence_value(value)
-    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
+    if isinstance(value, SequenceIncompleteValue):
         return value.members
+    elif isinstance(value, TypedDictValue):
+        if all(required for required, _ in value.items.items()):
+            return [KnownValue(key) for key in value.items]
+        return MultiValuedValue([KnownValue(key) for key in value.items])
+    elif isinstance(value, DictIncompleteValue):
+        if all(isinstance(key, KnownValue) for key, _ in value.items):
+            return [key for key, _ in value.items]
+    elif isinstance(value, KnownValue):
+        if isinstance(value.val, (str, bytes, range)):
+            return [KnownValue(c) for c in value.val]
+    elif value is NO_RETURN_VALUE:
+        return NO_RETURN_VALUE
     tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(tv_map, CanAssignError):
         return tv_map.get(T, AnyValue(AnySource.generic_argument))
-    return None
+    return tv_map
 
 
 def unpack_values(

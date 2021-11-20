@@ -632,7 +632,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_setdefault(self):
         from typing_extensions import TypedDict
-        from typing import Dict
+        from typing import Dict, Sequence
 
         class TD(TypedDict):
             a: int
@@ -678,8 +678,8 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 ),
             )
 
-        def weak_typed():
-            weak_dict = {i: str(i) for i in range(5)}
+        def weak_typed(ints: Sequence[int]):
+            weak_dict = {i: str(i) for i in ints}
             assert_is_value(
                 weak_dict,
                 make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),
