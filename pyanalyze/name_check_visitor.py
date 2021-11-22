@@ -2011,6 +2011,8 @@ class NameCheckVisitor(
         if iterable_type is None:
             is_async = bool(node.is_async)
             iterable_type = self._member_value_of_iterator(node.iter, is_async)
+            if not isinstance(iterable_type, Value):
+                iterable_type = unite_values(*iterable_type)
         with qcore.override(self, "in_comprehension_body", True):
             with qcore.override(self, "being_assigned", iterable_type):
                 self.visit(node.target)

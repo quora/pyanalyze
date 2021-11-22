@@ -1365,6 +1365,10 @@ class TestIterationTarget(TestNameCheckVisitorBase):
                 lst2, SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)])
             )
 
+            lst3 = [i + j * 10 for i in range(2) for j in range(3)]
+            # TODO: should be list[int] instead
+            assert_is_value(lst3, TypedValue(list))
+
     @assert_passes()
     def test_dict_comprehension(self):
         from typing_extensions import Literal
