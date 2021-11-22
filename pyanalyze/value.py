@@ -390,7 +390,7 @@ class KnownValue(Value):
             return hash((type(self.val), self.val))
         except TypeError:
             # If the value is not directly hashable, hash it by identity instead.
-            return hash((type(self.val, id(self.val))))
+            return hash((type(self.val), id(self.val)))
 
     def __str__(self) -> str:
         if self.val is None:
@@ -763,17 +763,17 @@ class DictIncompleteValue(GenericValue):
 
     """
 
-    items: List[Tuple[Value, Value]]
-    """List of pairs representing the keys and values of the dict."""
+    items: Tuple[Tuple[Value, Value], ...]
+    """Sequence of pairs representing the keys and values of the dict."""
 
-    def __init__(self, typ: type, items: List[Tuple[Value, Value]]) -> None:
+    def __init__(self, typ: type, items: Sequence[Tuple[Value, Value]]) -> None:
         if items:
             key_type = unite_values(*[key for key, _ in items])
             value_type = unite_values(*[value for _, value in items])
         else:
             key_type = value_type = AnyValue(AnySource.unreachable)
         super().__init__(typ, (key_type, value_type))
-        self.items = items
+        self.items = tuple(items)
 
     def __str__(self) -> str:
         items = ", ".join(f"{key}: {value}" for key, value in self.items)
