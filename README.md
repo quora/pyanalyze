@@ -678,6 +678,13 @@ The code is formatted using [Black](https://github.com/psf/black).
 
 ## Changelog
 
+Unreleased
+
+- Add impl function for `list.__iadd__` (`+=`)
+- Changes affecting consumers of `Value` objects:
+  - All `Value` objects are now expected to be hashable.
+  - `DictIncompleteValue` and `AnnotatedValue` use tuples instead of lists internally.
+
 Version 0.4.0 (November 18, 2021)
 
 - Support and test Python 3.10. Note that new features are not necessarily
