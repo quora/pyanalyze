@@ -389,7 +389,9 @@ class KnownValue(Value):
         try:
             return hash((type(self.val), self.val))
         except TypeError:
-            # If the value is not directly hashable, hash it by identity instead.
+            # If the value is not directly hashable, hash it by identity instead. This breaks
+            # the rule that x == y should imply hash(x) == hash(y), but hopefully that will
+            # be fine.
             return hash((type(self.val), id(self.val)))
 
     def __str__(self) -> str:
