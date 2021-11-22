@@ -1262,7 +1262,7 @@ class Extension:
         return []
 
 
-@dataclass
+@dataclass(frozen=True)
 class CustomCheckExtension(Extension):
     custom_check: CustomCheck
 
@@ -1277,7 +1277,7 @@ class CustomCheckExtension(Extension):
         yield from self.custom_check.walk_values()
 
 
-@dataclass
+@dataclass(frozen=True)
 class ParameterTypeGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the parameter named `varname` is of type `guarded_type`.
@@ -1316,7 +1316,7 @@ class TypeGuardExtension(Extension):
         yield from self.guarded_type.walk_values()
 
 
-@dataclass
+@dataclass(frozen=True)
 class HasAttrGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the function argument named `varname` has an attribute
@@ -1342,7 +1342,7 @@ class HasAttrGuardExtension(Extension):
         yield from self.attribute_type.walk_values()
 
 
-@dataclass
+@dataclass(frozen=True)
 class HasAttrExtension(Extension):
     """Attached to an object to indicate that it has the given attribute.
 

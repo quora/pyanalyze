@@ -483,7 +483,7 @@ def run():
 
         def use_it():
             assert_is_value(
-                capybara, MultiValuedValue([KnownValue(None), KnownValue([0])])
+                capybara, KnownValue([0]) | KnownValue([0]) | KnownValue(None)
             )
 
     @assert_fails(ErrorCode.unsupported_operation)
