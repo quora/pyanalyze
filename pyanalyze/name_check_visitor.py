@@ -2020,10 +2020,12 @@ class NameCheckVisitor(
     def _member_value_of_generator(
         self, comprehension_node: ast.comprehension
     ) -> Value:
-        iterable_type, _ = self._member_value_of_iterator(
+        iterable_type = self._member_value_of_iterator(
             comprehension_node.iter, bool(comprehension_node.is_async)
         )
-        return iterable_type
+        if isinstance(iterable_type, Value):
+            return iterable_type
+        return unite_values(*iterable_type)
 
     def _visit_sequence_comp(
         self,
@@ -2938,11 +2940,15 @@ class NameCheckVisitor(
         self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
 
     def visit_For(self, node: ast.For) -> None:
-        iterated_value, num_members = self._member_value_of_iterator(node.iter)
+        iterated_value = self._member_value_of_iterator(node.iter)
         if self.config.FOR_LOOP_ALWAYS_ENTERED:
             always_entered = True
+        elif isinstance(iterated_value, Value):
+            always_entered = False
         else:
-            always_entered = num_members is not None and num_members > 0
+            always_entered = len(iterated_value) > 0
+        if not isinstance(iterated_value, Value):
+            iterated_value = unite_values(*iterated_value)
         with self.scopes.subscope() as body_scope:
             with self.scopes.loop_scope():
                 with qcore.override(self, "being_assigned", iterated_value):
@@ -3004,7 +3010,7 @@ class NameCheckVisitor(
 
     def _member_value_of_iterator(
         self, node: ast.AST, is_async: bool = False
-    ) -> Tuple[Value, Optional[int]]:
+    ) -> Union[Value, Sequence[Value]]:
         """Analyze an iterator AST node.
 
         Returns a tuple of two values:
@@ -3014,23 +3020,11 @@ class NameCheckVisitor(
         """
         composite = self.composite_from_node(node)
         if is_async:
-            return self._member_value_of_async_iterator_val(composite, node)
-        return self._member_value_of_iterator_val(composite[0], node)
-
-    def _member_value_of_async_iterator_val(
-        self, iterated: Composite, node: ast.AST
-    ) -> Tuple[Value, None]:
-        iterator = self._check_dunder_call(node, iterated, "__aiter__", [])
-        return (
-            self._check_dunder_call(
+            iterator = self._check_dunder_call(node, composite, "__aiter__", [])
+            return self._check_dunder_call(
                 node, Composite(iterator, None, node), "__anext__", []
-            ),
-            None,
-        )
-
-    def _member_value_of_iterator_val(
-        self, iterated: Value, node: ast.AST
-    ) -> Tuple[Value, Optional[int]]:
+            )
+        iterated = composite.value
         result = concrete_values_from_iterable(iterated, self)
         if isinstance(result, CanAssignError):
             self._show_error_if_checking(
@@ -3039,11 +3033,8 @@ class NameCheckVisitor(
                 ErrorCode.unsupported_operation,
                 detail=str(result),
             )
-            return AnyValue(AnySource.error), None
-        elif isinstance(result, Value):
-            return result, None
-        else:
-            return unite_values(*result), len(result)
+            return AnyValue(AnySource.error)
+        return result
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
