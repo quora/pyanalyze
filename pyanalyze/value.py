@@ -1400,8 +1400,14 @@ class AnnotatedValue(Value):
 
     value: Value
     """The underlying value."""
-    metadata: Sequence[Union[Value, Extension]]
+    metadata: Tuple[Union[Value, Extension], ...]
     """The extensions associated with this value."""
+
+    def __init__(
+        self, value: Value, metadata: Sequence[Union[Value, Extension]]
+    ) -> None:
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "metadata", tuple(metadata))
 
     def is_type(self, typ: type) -> bool:
         return self.value.is_type(typ)
@@ -1413,7 +1419,7 @@ class AnnotatedValue(Value):
         return self.value.get_type_value()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        metadata = [val.substitute_typevars(typevars) for val in self.metadata]
+        metadata = tuple(val.substitute_typevars(typevars) for val in self.metadata)
         return AnnotatedValue(self.value.substitute_typevars(typevars), metadata)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
@@ -1549,25 +1555,20 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
         )
     if isinstance(origin, AnnotatedValue):
         # Flatten it
-        metadata = [*origin.metadata, *metadata]
+        metadata = (*origin.metadata, *metadata)
         origin = origin.value
     # Make sure order is consistent; conceptually this is a set but
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
     unhashable_vals = []
-    uncomparable_vals = []
     for item in metadata:
         try:
             # Don't readd it to preserve original ordering.
             if item not in hashable_vals:
                 hashable_vals[item] = None
         except Exception:
-            try:
-                if item not in unhashable_vals:
-                    unhashable_vals.append(item)
-            except Exception:
-                uncomparable_vals.append(item)
-    metadata = list(hashable_vals) + unhashable_vals + uncomparable_vals
+            unhashable_vals.append(item)
+    metadata = (*hashable_vals, *unhashable_vals)
     return AnnotatedValue(origin, metadata)
 
 
