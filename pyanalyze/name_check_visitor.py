@@ -113,6 +113,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     make_weak,
+    unite_and_simplify,
     unite_values,
     KnownValue,
     TypedValue,
@@ -758,7 +759,9 @@ class NameCheckVisitor(
         ):
             self.attribute_checker.record_module_examined(self.module.__name__)
 
-        self.scopes = build_stacked_scopes(self.module)
+        self.scopes = build_stacked_scopes(
+            self.module, simplification_limit=self.config.UNION_SIMPLIFICATION_LIMIT
+        )
         self.node_context = StackedContexts()
         self.asynq_checker = AsynqChecker(
             self.config,
@@ -3043,7 +3046,9 @@ class NameCheckVisitor(
         elif isinstance(result, Value):
             return result, None
         else:
-            return unite_values(*result), len(result)
+            return unite_and_simplify(
+                *result, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            ), len(result)
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
@@ -4370,7 +4375,9 @@ class NameCheckVisitor(
             attribute_checker.filename_to_visitor.update(checker.filename_to_visitor)
 
 
-def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
+def build_stacked_scopes(
+    module: Optional[types.ModuleType], simplification_limit: Optional[int] = None
+) -> StackedScopes:
     # Build a StackedScopes object.
     # Not part of stacked_scopes.py to avoid a circular dependency.
     if module is None:
@@ -4390,7 +4397,7 @@ def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
                 else:
                     val = type_from_runtime(annotation, globals=module.__dict__)
             module_vars[key] = val
-    return StackedScopes(module_vars, module)
+    return StackedScopes(module_vars, module, simplification_limit=simplification_limit)
 
 
 def _get_task_cls(fn: Any) -> Any:
