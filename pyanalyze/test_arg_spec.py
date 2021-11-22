@@ -375,12 +375,8 @@ class TestClassInstantiation(TestNameCheckVisitorBase):
                 typ = list
             else:
                 typ = tuple
-            assert_is_value(
-                typ, MultiValuedValue([KnownValue(list), KnownValue(tuple)])
-            )
-            assert_is_value(
-                typ([1]), MultiValuedValue([KnownValue((1,)), KnownValue([1])])
-            )
+            assert_is_value(typ, KnownValue(list) | KnownValue(tuple))
+            assert_is_value(typ([1]), KnownValue([1]) | KnownValue((1,)))
 
     @assert_passes()
     def test_union_without_impl(self):

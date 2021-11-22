@@ -384,9 +384,7 @@ def run():
                 goes_in_set = []
             else:
                 goes_in_set = "capybara"
-            assert_is_value(
-                goes_in_set, MultiValuedValue([KnownValue("capybara"), KnownValue([])])
-            )
+            assert_is_value(goes_in_set, KnownValue([]) | KnownValue("capybara"))
             print({goes_in_set})
 
     @assert_fails(ErrorCode.duplicate_dict_key)
