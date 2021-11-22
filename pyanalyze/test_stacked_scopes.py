@@ -436,8 +436,8 @@ class TestLoops(TestNameCheckVisitorBase):
     def test_range_always_entered(self):
         def capybara():
             for i in range(2):
-                assert_is_value(i, TypedValue(int))
-            assert_is_value(i, TypedValue(int))
+                assert_is_value(i, KnownValue(0) | KnownValue(1))
+            assert_is_value(i, KnownValue(0) | KnownValue(1))
 
     @assert_passes(settings={ErrorCode.possibly_undefined_name: False})
     def test_use_after_for(self):
@@ -1503,6 +1503,8 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(2))
             else:
                 assert_is_value(x, KnownValue(1))
+            if "x" in cond:
+                assert_is_value(cond, AnyValue(AnySource.unannotated))
 
         def pacarana(x: Union[Literal["x"], int]):
             assert_is_value(x, KnownValue("x") | TypedValue(int))
