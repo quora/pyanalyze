@@ -999,7 +999,12 @@ class FunctionScope(Scope):
             else self._resolve_value(self.definition_node_to_value[node], ctx)
             for node in nodes
         ]
-        return _constrain_value(values, constraints, fallback_value=ctx.fallback_value)
+        return _constrain_value(
+            values,
+            constraints,
+            fallback_value=ctx.fallback_value,
+            simplification_limit=self.simplification_limit,
+        )
 
     def _add_composite(self, varname: Varname) -> None:
         if isinstance(varname, CompositeVariable):
@@ -1194,7 +1199,9 @@ def constrain_value(
     simplification_limit: Optional[int] = None,
 ) -> Value:
     """Create a version of this :term:`value` with the :term:`constraint` applied."""
-    return _constrain_value([value], constraint.apply())
+    return _constrain_value(
+        [value], constraint.apply(), simplification_limit=simplification_limit
+    )
 
 
 def uniq_chain(iterables: Iterable[Iterable[T]]) -> List[T]:
