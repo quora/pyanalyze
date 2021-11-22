@@ -703,14 +703,12 @@ def _list_extend_or_iadd_impl(
                     arg_type = AnyValue(AnySource.generic_argument)
                 generic_arg = unite_values(*cleaned_lst.members, arg_type)
                 constrained_value = make_weak(GenericValue(list, [generic_arg]))
+            if return_container:
+                return ImplReturn(constrained_value)
             no_return_unless = Constraint(
                 varname, ConstraintType.is_value_object, True, constrained_value
             )
-            if return_container:
-                ret = constrained_value
-            else:
-                ret = KnownValue(None)
-            return ImplReturn(ret, no_return_unless=no_return_unless)
+            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
         elif isinstance(cleaned_lst, GenericValue) and isinstance(iterable, TypedValue):
             actual_type = iterable.get_generic_arg_for_type(
                 collections.abc.Iterable, ctx.visitor, 0
@@ -763,7 +761,7 @@ def _maybe_broaden_weak_type(
             varname, ConstraintType.is_value_object, True, constrained_value
         )
         if return_container:
-            return ImplReturn(constrained_value, no_return_unless=no_return_unless)
+            return ImplReturn(constrained_value)
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
 
     tv_map = expected_type.can_assign(actual_type, ctx.visitor)
