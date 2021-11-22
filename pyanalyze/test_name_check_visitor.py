@@ -385,6 +385,7 @@ def run():
             else:
                 goes_in_set = "capybara"
             assert_is_value(goes_in_set, KnownValue([]) | KnownValue("capybara"))
+            # TODO why isn't this an error?
             print({goes_in_set})
 
     @assert_fails(ErrorCode.duplicate_dict_key)
@@ -477,12 +478,10 @@ def run():
 
         def set_it():
             global capybara
-            capybara = [0]
+            capybara = (0,)
 
         def use_it():
-            assert_is_value(
-                capybara, KnownValue([0]) | KnownValue([0]) | KnownValue(None)
-            )
+            assert_is_value(capybara, KnownValue((0,)) | KnownValue(None))
 
     @assert_fails(ErrorCode.unsupported_operation)
     def test_self_type_inference(self):
