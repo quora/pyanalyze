@@ -276,11 +276,13 @@ class Signature:
             return_typevars = list(extract_typevars(self.signature.return_annotation))
             if return_typevars:
                 self.typevars_of_params[self._return_key] = return_typevars
-        self.all_typevars = {
-            typevar
-            for tv_list in self.typevars_of_params.values()
-            for typevar in tv_list
-        }
+        self.all_typevars.update(
+            {
+                typevar
+                for tv_list in self.typevars_of_params.values()
+                for typevar in tv_list
+            }
+        )
 
     def _check_param_type_compatibility(
         self,
