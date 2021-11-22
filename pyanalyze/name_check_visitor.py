@@ -113,6 +113,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     make_weak,
+    unite_and_simplify,
     unite_values,
     KnownValue,
     TypedValue,
@@ -3043,7 +3044,7 @@ class NameCheckVisitor(
         elif isinstance(result, Value):
             return result, None
         else:
-            return unite_values(
+            return unite_and_simplify(
                 *result, limit=self.config.UNION_SIMPLIFICATION_LIMIT
             ), len(result)
 
