@@ -19,6 +19,7 @@ from .extensions import CustomCheck
 if TYPE_CHECKING:
     from .arg_spec import ArgSpecCache
     from .signature import Signature
+    from .reexport import ImplicitReexportTracker
 
 
 class Config(object):
@@ -285,3 +286,10 @@ class Config(object):
     def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
         """Return additional classes that should be considered bae classes of typ."""
         return set()
+
+    #
+    # Used by reexport.py
+    #
+    def configure_reexports(self, tracker: "ImplicitReexportTracker") -> None:
+        """Override this to set some names as explicitly re-exported."""
+        pass
