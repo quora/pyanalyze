@@ -104,6 +104,8 @@ DISABLED_BY_DEFAULT = {
     ErrorCode.possibly_undefined_name,
     ErrorCode.missing_f,
     ErrorCode.bare_ignore,
+    # TODO: turn this on
+    ErrorCode.implicit_reexport,
 }
 
 ERROR_DESCRIPTION = {
