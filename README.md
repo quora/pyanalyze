@@ -680,7 +680,10 @@ The code is formatted using [Black](https://github.com/psf/black).
 
 Unreleased
 
-- Add impl function for `list.__iadd__` (`+=`)
+- Add impl function for `list.__iadd__` (`+=`) (#280)
+- Detect usage of implicitly reexported names (#271)
+- Improve type inference for iterables (#277)
+- Fix bug in type narrowing for `in`/`not in` (#277)
 - Changes affecting consumers of `Value` objects:
   - All `Value` objects are now expected to be hashable.
   - `DictIncompleteValue` and `AnnotatedValue` use tuples instead of lists internally.
