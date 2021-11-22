@@ -681,6 +681,7 @@ The code is formatted using [Black](https://github.com/psf/black).
 Unreleased
 
 - Add impl function for `list.__iadd__` (`+=`) (#280)
+- Simplify some overly complex types to improve performance (#280)
 - Detect usage of implicitly reexported names (#271)
 - Improve type inference for iterables (#277)
 - Fix bug in type narrowing for `in`/`not in` (#277)
