@@ -3043,7 +3043,9 @@ class NameCheckVisitor(
         elif isinstance(result, Value):
             return result, None
         else:
-            return unite_values(*result), len(result)
+            return unite_values(
+                *result, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            ), len(result)
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the

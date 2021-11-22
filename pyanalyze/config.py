@@ -168,6 +168,9 @@ class Config(object):
     ASYNQ_DECORATORS = {asynq.asynq}
     ASYNC_PROXY_DECORATORS = {asynq.async_proxy}
 
+    # We may simplify unions with more than this many values.
+    UNION_SIMPLIFICATION_LIMIT = 100
+
     #
     # Used for VariableNameValue
     #

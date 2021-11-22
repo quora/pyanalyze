@@ -142,6 +142,10 @@ class Value:
         """Return the type of this object as used for dunder lookups."""
         return self
 
+    def simplify(self) -> "Value":
+        """Simplify this Value to reduce excessive detail."""
+        return self
+
     def __or__(self, other: "Value") -> "Value":
         """Shortcut for defining a MultiValuedValue."""
         return unite_values(self, other)
@@ -400,10 +404,16 @@ class KnownValue(Value):
         else:
             return "Literal[%r]" % (self.val,)
 
-    def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
+    def substitute_typevars(self, typevars: TypeVarMap) -> "KnownValue":
         if not typevars or not callable(self.val):
             return self
         return KnownValueWithTypeVars(self.val, typevars)
+
+    def simplify(self) -> Value:
+        val = replace_known_sequence_value(self)
+        if isinstance(val, KnownValue):
+            return TypedValue(val)
+        return val.simplify()
 
 
 @dataclass(frozen=True)
@@ -755,6 +765,10 @@ class SequenceIncompleteValue(GenericValue):
         for member in self.members:
             yield from member.walk_values()
 
+    def simplify(self) -> GenericValue:
+        members = [member.simplify() for member in self.members]
+        return GenericValue(self.typ, [unite_values(*members)])
+
 
 @dataclass(unsafe_hash=True, init=False)
 class DictIncompleteValue(GenericValue):
@@ -795,6 +809,11 @@ class DictIncompleteValue(GenericValue):
                 for key, value in self.items
             ],
         )
+
+    def simplify(self) -> GenericValue:
+        keys = [key.simplify() for key, _ in self.items]
+        values = [value.simplify() for _, value in self.items]
+        return GenericValue(self.typ, [unite_values(*keys), unite_values(*values)])
 
 
 @dataclass(init=False)
@@ -1218,6 +1237,9 @@ class MultiValuedValue(Value):
         for val in self.vals:
             yield from val.walk_values()
 
+    def simplify(self) -> Value:
+        return unite_values(*[val.simplify() for val in self.vals])
+
 
 NO_RETURN_VALUE = MultiValuedValue([])
 """The empty union, equivalent to ``typing.NoReturn``."""
@@ -1465,6 +1487,9 @@ class AnnotatedValue(Value):
     def __str__(self) -> str:
         return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
 
+    def simplify(self) -> Value:
+        return AnnotatedValue(self.value.simplify(), self.metadata)
+
 
 @dataclass(frozen=True)
 class VariableNameValue(AnyValue):
@@ -1576,6 +1601,14 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
             unhashable_vals.append(item)
     metadata = (*hashable_vals, *unhashable_vals)
     return AnnotatedValue(origin, metadata)
+
+
+def unite_and_simplify(*values: Value, limit: int) -> Value:
+    united = unite_values(*values)
+    if not isinstance(united, MultiValuedValue) or len(united.vals) < limit:
+        return united
+    simplified = [val.simplify() for val in united.vals]
+    return unite_values(*simplified)
 
 
 def unite_values(*values: Value) -> Value:
