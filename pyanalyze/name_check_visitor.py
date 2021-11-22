@@ -2066,7 +2066,8 @@ class NameCheckVisitor(
             if (
                 len(node.generators) == 1
                 and not node.generators[0].ifs
-                and len(iterable_type)
+                and 0
+                < len(iterable_type)
                 <= self.config.COMPREHENSION_LENGTH_INFERENCE_LIMIT
             ):
                 generator = node.generators[0]
