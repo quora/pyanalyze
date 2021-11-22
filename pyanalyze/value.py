@@ -1301,7 +1301,7 @@ class ParameterTypeGuardExtension(Extension):
         yield from self.guarded_type.walk_values()
 
 
-@dataclass
+@dataclass(frozen=True)
 class TypeGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the first function argument is of type `guarded_type`.

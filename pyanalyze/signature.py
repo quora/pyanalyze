@@ -232,7 +232,7 @@ class SigParameter(inspect.Parameter):
         return formatted
 
 
-@dataclass
+@dataclass(frozen=True)
 class Signature:
     """Represents the signature of a Python callable.
 
@@ -259,10 +259,10 @@ class Signature:
     allow_call: bool = False
     """Whether type checking can call the actual function to retrieve a precise return value."""
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
-        init=False, default_factory=dict, repr=False, compare=False
+        init=False, default_factory=dict, repr=False, compare=False, hash=False
     )
     all_typevars: Set["TypeVar"] = field(
-        init=False, default_factory=set, repr=False, compare=False
+        init=False, default_factory=set, repr=False, compare=False, hash=False
     )
 
     def __post_init__(self) -> None:
@@ -910,7 +910,7 @@ ANY_SIGNATURE = Signature.make(
 :class:`Signature`."""
 
 
-@dataclass
+@dataclass(frozen=True)
 class BoundMethodSignature:
     """Signature for a method bound to a particular value."""
 
@@ -976,7 +976,7 @@ class BoundMethodSignature:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class PropertyArgSpec:
     """Pseudo-argspec for properties."""
 
