@@ -386,7 +386,11 @@ class KnownValue(Value):
 
     def __hash__(self) -> int:
         # Make sure e.g. 1 and True are handled differently.
-        return hash((type(self.val), self.val))
+        try:
+            return hash((type(self.val), self.val))
+        except TypeError:
+            # If the value is not directly hashable, hash it by identity instead.
+            return hash((type(self.val, id(self.val))))
 
     def __str__(self) -> str:
         if self.val is None:
