@@ -171,6 +171,8 @@ class Config(object):
     # If we iterate over something longer than this, we don't try to infer precise
     # types for comprehensions. Increasing this can hurt performance.
     COMPREHENSION_LENGTH_INFERENCE_LIMIT = 25
+    # We may simplify unions with more than this many values.
+    UNION_SIMPLIFICATION_LIMIT = 100
 
     #
     # Used for VariableNameValue

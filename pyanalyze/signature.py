@@ -232,7 +232,7 @@ class SigParameter(inspect.Parameter):
         return formatted
 
 
-@dataclass
+@dataclass(frozen=True)
 class Signature:
     """Represents the signature of a Python callable.
 
@@ -259,10 +259,10 @@ class Signature:
     allow_call: bool = False
     """Whether type checking can call the actual function to retrieve a precise return value."""
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
-        init=False, default_factory=dict, repr=False, compare=False
+        init=False, default_factory=dict, repr=False, compare=False, hash=False
     )
     all_typevars: Set["TypeVar"] = field(
-        init=False, default_factory=set, repr=False, compare=False
+        init=False, default_factory=set, repr=False, compare=False, hash=False
     )
 
     def __post_init__(self) -> None:
@@ -276,11 +276,13 @@ class Signature:
             return_typevars = list(extract_typevars(self.signature.return_annotation))
             if return_typevars:
                 self.typevars_of_params[self._return_key] = return_typevars
-        self.all_typevars = {
-            typevar
-            for tv_list in self.typevars_of_params.values()
-            for typevar in tv_list
-        }
+        self.all_typevars.update(
+            {
+                typevar
+                for tv_list in self.typevars_of_params.values()
+                for typevar in tv_list
+            }
+        )
 
     def _check_param_type_compatibility(
         self,
@@ -910,7 +912,7 @@ ANY_SIGNATURE = Signature.make(
 :class:`Signature`."""
 
 
-@dataclass
+@dataclass(frozen=True)
 class BoundMethodSignature:
     """Signature for a method bound to a particular value."""
 
@@ -976,7 +978,7 @@ class BoundMethodSignature:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class PropertyArgSpec:
     """Pseudo-argspec for properties."""
 
