@@ -412,7 +412,7 @@ class KnownValue(Value):
     def simplify(self) -> Value:
         val = replace_known_sequence_value(self)
         if isinstance(val, KnownValue):
-            return TypedValue(val)
+            return TypedValue(type(val.val))
         return val.simplify()
 
 
