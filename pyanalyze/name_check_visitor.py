@@ -2059,6 +2059,40 @@ class NameCheckVisitor(
         iterable_type: Union[Value, Sequence[Value]],
     ) -> Value:
         if not isinstance(iterable_type, Value):
+            # If it is a simple comprehension (only one generator, no ifs) and we know
+            # the exact iterated values, we try to infer an IncompleteValue instead.
+            if (
+                len(node.generators) == 1
+                and not node.generators[0].ifs
+                and len(iterable_type)
+                <= self.config.COMPREHENSION_LENGTH_INFERENCE_LIMIT
+            ):
+                generator = node.generators[0]
+                if isinstance(node, ast.DictComp):
+                    items = []
+                    self.node_context.contexts.append(generator)
+                    try:
+                        for val in iterable_type:
+                            self.visit_comprehension(generator, iterable_type=val)
+                            with qcore.override(self, "in_comprehension_body", True):
+                                items.append(
+                                    (self.visit(node.key), self.visit(node.value))
+                                )
+                    finally:
+                        self.node_context.contexts.pop()
+                    return DictIncompleteValue(typ, items)
+                elif isinstance(node, (ast.ListComp, ast.SetComp)):
+                    elts = []
+                    self.node_context.contexts.append(generator)
+                    try:
+                        for val in iterable_type:
+                            self.visit_comprehension(generator, iterable_type=val)
+                            with qcore.override(self, "in_comprehension_body", True):
+                                elts.append(self.visit(node.elt))
+                    finally:
+                        self.node_context.contexts.pop()
+                    return SequenceIncompleteValue(typ, elts)
+
             iterable_type = unite_values(*iterable_type)
         # need to visit the generator expression first so that we know of variables
         # created in them

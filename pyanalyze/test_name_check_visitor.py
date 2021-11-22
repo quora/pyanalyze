@@ -899,6 +899,8 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
         from asynq import asynq
+        from typing import Sequence
+        from typing_extensions import Literal
 
         @asynq()
         def async_fn(n):
@@ -914,7 +916,7 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
                 return "capybara"
 
         @asynq()
-        def caller():
+        def caller(ints: Sequence[Literal[0, 1, 2]]):
             val1 = yield async_fn.asynq(1)
             assert_is_value(val1, KnownValue("async_fn"))
             val2 = yield square.asynq(3)
@@ -935,7 +937,7 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
                 ),
             )
 
-            vals2 = yield [square.asynq(i) for i in [0, 1, 2]]
+            vals2 = yield [square.asynq(i) for i in ints]
             for val in vals2:
                 assert_is_value(val, TypedValue(int))
 
@@ -944,7 +946,7 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
                 vals3, DictIncompleteValue(dict, [(KnownValue(1), TypedValue(int))])
             )
 
-            vals4 = yield {i: square.asynq(i) for i in [0, 1, 2]}
+            vals4 = yield {i: square.asynq(i) for i in ints}
             assert_is_value(
                 vals4,
                 GenericValue(
@@ -1348,22 +1350,46 @@ class TestIterationTarget(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_list_comprehension(self):
-        def capybara():
-            lst = [x for x in (1, 2)]
+        from typing_extensions import Literal
+        from typing import Sequence
+
+        def capybara(ints: Sequence[Literal[1, 2]]):
+            lst = [x for x in ints]
             mvv = MultiValuedValue([KnownValue(1), KnownValue(2)])
             assert_is_value(lst, make_weak(GenericValue(list, [mvv])))
             for y in lst:
                 assert_is_value(y, mvv)
 
+            lst2 = [x for x in (1, 2)]
+            assert_is_value(
+                lst2, SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)])
+            )
+
     @assert_passes()
     def test_dict_comprehension(self):
-        def capybara():
-            dct = {x: x for x in (1, 2, 3)}
+        from typing_extensions import Literal
+        from typing import Sequence
+
+        def capybara(ints: Sequence[Literal[1, 2, 3]]):
+            dct = {x: x for x in ints}
             mvv = MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue(3)])
             assert_is_value(dct, make_weak(GenericValue(dict, [mvv, mvv])))
 
             for key in dct:
                 assert_is_value(key, mvv)
+
+            dct2 = {x: x for x in (1, 2, 3)}
+            assert_is_value(
+                dct2,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        (KnownValue(1), KnownValue(1)),
+                        (KnownValue(2), KnownValue(2)),
+                        (KnownValue(3), KnownValue(3)),
+                    ],
+                ),
+            )
 
     @assert_passes()
     def test_maybe_empty(self):
