@@ -2009,7 +2009,8 @@ class NameCheckVisitor(
         self, node: ast.comprehension, iterable_type: Optional[Value] = None
     ) -> None:
         if iterable_type is None:
-            iterable_type = self._member_value_of_generator(node)
+            is_async = bool(node.is_async)
+            iterable_type = self._member_value_of_iterator(node.iter, is_async)
         with qcore.override(self, "in_comprehension_body", True):
             with qcore.override(self, "being_assigned", iterable_type):
                 self.visit(node.target)
@@ -2017,23 +2018,16 @@ class NameCheckVisitor(
                 _, constraint = self.constraint_from_condition(cond)
                 self.add_constraint(cond, constraint)
 
-    def _member_value_of_generator(
-        self, comprehension_node: ast.comprehension
-    ) -> Value:
-        iterable_type = self._member_value_of_iterator(
-            comprehension_node.iter, bool(comprehension_node.is_async)
-        )
-        if isinstance(iterable_type, Value):
-            return iterable_type
-        return unite_values(*iterable_type)
-
     def _visit_sequence_comp(
         self,
         node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
         typ: type,
     ) -> Value:
         # the iteree of the first generator is executed in the enclosing scope
-        iterable_type = self._member_value_of_generator(node.generators[0])
+        is_async = bool(node.generators[0].is_async)
+        iterable_type = self._member_value_of_iterator(
+            node.generators[0].iter, is_async
+        )
         if self.state == VisitorState.collect_names:
             # Visit it once to get usage nodes for usage of nested variables. This enables
             # us to inherit constraints on nested variables.
@@ -2062,8 +2056,10 @@ class NameCheckVisitor(
         self,
         node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
         typ: type,
-        iterable_type: Value,
+        iterable_type: Union[Value, Sequence[Value]],
     ) -> Value:
+        if not isinstance(iterable_type, Value):
+            iterable_type = unite_values(*iterable_type)
         # need to visit the generator expression first so that we know of variables
         # created in them
         for i, generator in enumerate(node.generators):
