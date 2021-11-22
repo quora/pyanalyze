@@ -794,7 +794,11 @@ class FunctionScope(Scope):
         simplification_limit: Optional[int] = None,
     ) -> None:
         super().__init__(
-            ScopeType.function_scope, {}, parent_scope, scope_node, simplification_limit
+            ScopeType.function_scope,
+            {},
+            parent_scope,
+            scope_node,
+            simplification_limit=simplification_limit,
         )
         self.name_to_current_definition_nodes = defaultdict(list)
         self.usage_to_definition_nodes = defaultdict(list)
