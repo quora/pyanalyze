@@ -696,6 +696,9 @@ class GenericValue(TypedValue):
             self.typ, [arg.substitute_typevars(typevars) for arg in self.args]
         )
 
+    def simplify(self) -> Value:
+        return GenericValue(self.typ, [arg.simplify() for arg in self.args])
+
 
 @dataclass(unsafe_hash=True, init=False)
 class SequenceIncompleteValue(GenericValue):
@@ -760,12 +763,16 @@ class SequenceIncompleteValue(GenericValue):
             return f"tuple[{members}]"
         return f"<{stringify_object(self.typ)} containing [{members}]>"
 
-    def walk_values(self) -> Iterable["Value"]:
+    def walk_values(self) -> Iterable[Value]:
         yield self
         for member in self.members:
             yield from member.walk_values()
 
     def simplify(self) -> GenericValue:
+        if self.typ is tuple:
+            return SequenceIncompleteValue(
+                tuple, [member.simplify() for member in self.members]
+            )
         members = [member.simplify() for member in self.members]
         return GenericValue(self.typ, [unite_values(*members)])
 
