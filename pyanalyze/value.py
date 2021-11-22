@@ -1584,7 +1584,6 @@ def unite_values(*values: Value) -> Value:
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
     unhashable_vals = []
-    uncomparable_vals = []
     for value in values:
         if isinstance(value, MultiValuedValue):
             subvals = value.vals
@@ -1602,12 +1601,8 @@ def unite_values(*values: Value) -> Value:
                 if subval not in hashable_vals:
                     hashable_vals[subval] = None
             except Exception:
-                try:
-                    if subval not in unhashable_vals:
-                        unhashable_vals.append(subval)
-                except Exception:
-                    uncomparable_vals.append(subval)
-    existing = list(hashable_vals) + unhashable_vals + uncomparable_vals
+                unhashable_vals.append(subval)
+    existing = list(hashable_vals) + unhashable_vals
     num = len(existing)
     if num == 0:
         return NO_RETURN_VALUE
