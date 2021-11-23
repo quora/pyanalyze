@@ -76,7 +76,7 @@ def get_boolability(value: Value) -> Boolability:
             return Boolability.erroring_bool
         elif Boolability.boolable in boolabilities:
             return Boolability.boolable
-        elif Boolability.unsafely_boolable in boolabilities:
+        elif boolabilities == {Boolability.unsafely_boolable}:
             return Boolability.unsafely_boolable
         elif (boolabilities & _TRUE_BOOLABILITIES) and (
             boolabilities & _FALSE_BOOLABILITIES
