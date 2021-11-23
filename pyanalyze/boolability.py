@@ -19,6 +19,7 @@ from .value import (
     DictIncompleteValue,
     KnownValue,
     MultiValuedValue,
+    NewTypeValue,
     SequenceIncompleteValue,
     SubclassValue,
     TypedDictValue,
@@ -172,13 +173,14 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
                     f" {value!r}"
                 )
     elif isinstance(value, TypedValue):
-        return _get_type_boolability(value.typ)
+        return _get_type_boolability(value)
     else:
         assert False, f"unhandled value {value!r}"
 
 
-def _get_type_boolability(typ: type) -> Boolability:
-    if typ in (float, int):
+def _get_type_boolability(value: TypedValue) -> Boolability:
+    typ = value.typ
+    if typ in (float, int) and not isinstance(value, NewTypeValue):
         return Boolability.unsafely_boolable
     if safe_hasattr(typ, "__len__"):
         return Boolability.boolable
