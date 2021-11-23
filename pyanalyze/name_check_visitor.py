@@ -2370,7 +2370,7 @@ class NameCheckVisitor(
                     GenericValue(
                         typ,
                         [
-                            unite_values(
+                            unite_and_simplify(
                                 *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
                             )
                         ],
