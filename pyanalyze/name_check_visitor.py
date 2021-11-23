@@ -67,7 +67,8 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard
 from .find_unused import UnusedObjectFinder, used
-from .safe import safe_getattr, is_hashable, safe_in, is_iterable, all_of_type
+from .reexport import ErrorContext, ImplicitReexportTracker
+from .safe import safe_getattr, is_hashable, safe_in, all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
     CompositeVariable,
@@ -112,6 +113,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     make_weak,
+    unite_and_simplify,
     unite_values,
     KnownValue,
     TypedValue,
@@ -133,7 +135,6 @@ from .value import (
 )
 
 T = TypeVar("T")
-IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
@@ -678,7 +679,9 @@ class CallSiteCollector:
             pass
 
 
-class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
+class NameCheckVisitor(
+    node_visitor.ReplacingNodeVisitor, CanAssignContext, ErrorContext
+):
     """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
@@ -704,6 +707,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         attribute_checker: Optional[ClassAttributeChecker] = None,
         arg_spec_cache: Optional[ArgSpecCache] = None,
         collector: Optional[CallSiteCollector] = None,
+        reexport_tracker: Optional[ImplicitReexportTracker] = None,
         annotate: bool = False,
         add_ignores: bool = False,
     ) -> None:
@@ -745,6 +749,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if arg_spec_cache is None:
             arg_spec_cache = ArgSpecCache(self.config)
         self.arg_spec_cache = arg_spec_cache
+        if reexport_tracker is None:
+            reexport_tracker = ImplicitReexportTracker(self.config)
+        self.reexport_tracker = reexport_tracker
         if (
             self.attribute_checker is not None
             and self.module is not None
@@ -752,7 +759,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             self.attribute_checker.record_module_examined(self.module.__name__)
 
-        self.scopes = build_stacked_scopes(self.module)
+        self.scopes = build_stacked_scopes(
+            self.module, simplification_limit=self.config.UNION_SIMPLIFICATION_LIMIT
+        )
         self.node_context = StackedContexts()
         self.asynq_checker = AsynqChecker(
             self.config,
@@ -862,6 +871,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 and not self.has_file_level_ignore()
             ):
                 self.unused_finder.record_module_visited(self.module)
+            if self.module is not None and self.module.__name__ is not None:
+                self.reexport_tracker.record_module_completed(self.module.__name__)
         except node_visitor.VisitorError:
             raise
         except Exception as e:
@@ -960,16 +971,22 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             )
 
     def _set_name_in_scope(
-        self, varname: str, node: object, value: Value = AnyValue(AnySource.inference)
+        self,
+        varname: str,
+        node: object,
+        value: Value = AnyValue(AnySource.inference),
+        *,
+        private: bool = False,
     ) -> Value:
         current_scope = self.scopes.current_scope()
         scope_type = current_scope.scope_type
-        if (
-            self.module is not None
-            and scope_type == ScopeType.module_scope
-            and varname in current_scope
-        ):
-            return current_scope.get_local(varname, node, self.state)
+        if self.module is not None and scope_type == ScopeType.module_scope:
+            if self.module.__name__ is not None and not private:
+                self.reexport_tracker.record_exported_attribute(
+                    self.module.__name__, varname
+                )
+            if varname in current_scope:
+                return current_scope.get_local(varname, node, self.state)
         if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
             self._check_for_class_variable_redefinition(varname, node)
         current_scope.set(varname, value, node, self.state)
@@ -1825,10 +1842,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._maybe_record_usages_from_import(node)
 
         is_star_import = len(node.names) == 1 and node.names[0].name == "*"
+        force_public = self.filename.endswith("/__init__.py") and node.level == 1
+        if force_public:
+            # from .a import b implicitly sets a in the parent module's namespace.
+            # We allow relying on this behavior.
+            self._set_name_in_scope(node.module, node)
         if self.scopes.scope_type() == ScopeType.module_scope and not is_star_import:
-            self._handle_imports(node.names)
+            self._handle_imports(node.names, force_public=force_public)
         else:
-            self._simulate_import(node)
+            # For now we always treat star imports as public. We might revisit this later.
+            self._simulate_import(node, force_public=True)
 
     def _maybe_record_usages_from_import(self, node: ast.ImportFrom) -> None:
         if self.unused_finder is None or self.module is None:
@@ -1875,7 +1898,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 for name in node.names
             )
 
-    def _simulate_import(self, node: Union[ast.ImportFrom, ast.Import]) -> None:
+    def _simulate_import(
+        self, node: Union[ast.ImportFrom, ast.Import], *, force_public: bool = False
+    ) -> None:
         """Set the names retrieved from an import node in nontrivial situations.
 
         For simple imports (module-global imports that are not "from ... import *"), we can just
@@ -1891,13 +1916,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         """
         if self.module is None:
-            self._handle_imports(node.names)
+            self._handle_imports(node.names, force_public=force_public)
             return
 
         source_code = decompile(node)
 
         if self._is_unimportable_module(node):
-            self._handle_imports(node.names)
+            self._handle_imports(node.names, force_public=force_public)
             self.log(logging.INFO, "Ignoring import node", source_code)
             return
 
@@ -1923,7 +1948,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             and "." not in node.module
         ):  # not in the package
             if node.level == 1 or (node.level == 0 and node.module not in sys.modules):
-                self._set_name_in_scope(node.module, node, TypedValue(types.ModuleType))
+                self._set_name_in_scope(
+                    node.module,
+                    node,
+                    TypedValue(types.ModuleType),
+                    private=not force_public,
+                )
 
         with tempfile.NamedTemporaryFile(suffix=".py") as f:
             f.write(source_code.encode("utf-8"))
@@ -1934,7 +1964,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             except Exception:
                 # sets the name of the imported module to Any so we don't get further
                 # errors
-                self._handle_imports(node.names)
+                self._handle_imports(node.names, force_public=force_public)
                 return
             finally:
                 # clean up pyc file
@@ -1950,20 +1980,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 hasattr(builtins, name) and value == getattr(builtins, name)
             ):
                 continue
-            self._set_name_in_scope(name, (node, name), KnownValue(value))
+            self._set_name_in_scope(
+                name, (node, name), KnownValue(value), private=not force_public
+            )
 
-    def _imported_names_of_nodes(
-        self, names: Iterable[ast.alias]
-    ) -> Iterable[Tuple[str, ast.alias]]:
+    def _handle_imports(
+        self, names: Iterable[ast.alias], *, force_public: bool = False
+    ) -> None:
         for node in names:
             if node.asname is not None:
-                yield node.asname, node
+                self._set_name_in_scope(node.asname, node)
             else:
-                yield node.name.split(".")[0], node
-
-    def _handle_imports(self, names: Iterable[ast.alias]) -> None:
-        for varname, node in self._imported_names_of_nodes(names):
-            self._set_name_in_scope(varname, node)
+                varname = node.name.split(".")[0]
+                self._set_name_in_scope(varname, node, private=not force_public)
 
     # Comprehensions
 
@@ -1983,7 +2012,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self, node: ast.comprehension, iterable_type: Optional[Value] = None
     ) -> None:
         if iterable_type is None:
-            iterable_type = self._member_value_of_generator(node)
+            is_async = bool(node.is_async)
+            iterable_type = self._member_value_of_iterator(node.iter, is_async)
+            if not isinstance(iterable_type, Value):
+                iterable_type = unite_and_simplify(
+                    *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                )
         with qcore.override(self, "in_comprehension_body", True):
             with qcore.override(self, "being_assigned", iterable_type):
                 self.visit(node.target)
@@ -1991,21 +2025,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 _, constraint = self.constraint_from_condition(cond)
                 self.add_constraint(cond, constraint)
 
-    def _member_value_of_generator(
-        self, comprehension_node: ast.comprehension
-    ) -> Value:
-        iterable_type, _ = self._member_value_of_iterator(
-            comprehension_node.iter, bool(comprehension_node.is_async)
-        )
-        return iterable_type
-
     def _visit_sequence_comp(
         self,
         node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
         typ: type,
     ) -> Value:
         # the iteree of the first generator is executed in the enclosing scope
-        iterable_type = self._member_value_of_generator(node.generators[0])
+        is_async = bool(node.generators[0].is_async)
+        iterable_type = self._member_value_of_iterator(
+            node.generators[0].iter, is_async
+        )
         if self.state == VisitorState.collect_names:
             # Visit it once to get usage nodes for usage of nested variables. This enables
             # us to inherit constraints on nested variables.
@@ -2034,8 +2063,47 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self,
         node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
         typ: type,
-        iterable_type: Value,
+        iterable_type: Union[Value, Sequence[Value]],
     ) -> Value:
+        if not isinstance(iterable_type, Value):
+            # If it is a simple comprehension (only one generator, no ifs) and we know
+            # the exact iterated values, we try to infer an IncompleteValue instead.
+            if (
+                len(node.generators) == 1
+                and not node.generators[0].ifs
+                and 0
+                < len(iterable_type)
+                <= self.config.COMPREHENSION_LENGTH_INFERENCE_LIMIT
+            ):
+                generator = node.generators[0]
+                if isinstance(node, ast.DictComp):
+                    items = []
+                    self.node_context.contexts.append(generator)
+                    try:
+                        for val in iterable_type:
+                            self.visit_comprehension(generator, iterable_type=val)
+                            with qcore.override(self, "in_comprehension_body", True):
+                                items.append(
+                                    (self.visit(node.key), self.visit(node.value))
+                                )
+                    finally:
+                        self.node_context.contexts.pop()
+                    return DictIncompleteValue(typ, items)
+                elif isinstance(node, (ast.ListComp, ast.SetComp)):
+                    elts = []
+                    self.node_context.contexts.append(generator)
+                    try:
+                        for val in iterable_type:
+                            self.visit_comprehension(generator, iterable_type=val)
+                            with qcore.override(self, "in_comprehension_body", True):
+                                elts.append(self.visit(node.elt))
+                    finally:
+                        self.node_context.contexts.pop()
+                    return SequenceIncompleteValue(typ, elts)
+
+            iterable_type = unite_and_simplify(
+                *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            )
         # need to visit the generator expression first so that we know of variables
         # created in them
         for i, generator in enumerate(node.generators):
@@ -2280,11 +2348,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             for elt in elts:
                 if isinstance(elt, _StarredValue):
                     vals = concrete_values_from_iterable(elt.value, self)
-                    if vals is None:
+                    if isinstance(vals, CanAssignError):
                         self.show_error(
                             elt.node,
                             f"{elt.value} is not iterable",
                             ErrorCode.unsupported_operation,
+                            detail=str(vals),
                         )
                         values.append(AnyValue(AnySource.error))
                         has_unknown_value = True
@@ -2297,7 +2366,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 else:
                     values.append(elt)
             if has_unknown_value:
-                return make_weak(GenericValue(typ, [unite_values(*values)]))
+                return make_weak(
+                    GenericValue(
+                        typ,
+                        [
+                            unite_and_simplify(
+                                *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                            )
+                        ],
+                    )
+                )
             else:
                 return SequenceIncompleteValue(typ, values)
 
@@ -2364,10 +2442,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             return self._constraint_from_predicate_provider(rhs_constraint, lhs.val, op)
         elif isinstance(rhs, KnownValue):
-            constraint = self._constraint_from_compare_op(node.left, rhs.val, op)
+            constraint = self._constraint_from_compare_op(
+                node.left, rhs.val, op, is_right=True
+            )
         elif isinstance(lhs, KnownValue):
             constraint = self._constraint_from_compare_op(
-                node.comparators[0], lhs.val, op
+                node.comparators[0], lhs.val, op, is_right=False
             )
         else:
             constraint = NULL_CONSTRAINT
@@ -2378,7 +2458,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return val, constraint
 
     def _constraint_from_compare_op(
-        self, constrained_node: ast.AST, other_val: object, op: ast.AST
+        self,
+        constrained_node: ast.AST,
+        other_val: object,
+        op: ast.AST,
+        *,
+        is_right: bool,
     ) -> AbstractConstraint:
         varname = self.composite_from_node(constrained_node).varname
         if varname is None:
@@ -2410,7 +2495,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return Constraint(
                 varname, ConstraintType.predicate, positive, predicate_func
             )
-        elif isinstance(op, (ast.In, ast.NotIn)):
+        elif isinstance(op, (ast.In, ast.NotIn)) and is_right:
 
             def predicate_func(value: Value, positive: bool) -> Optional[Value]:
                 op = _in if positive else _not_in
@@ -2425,7 +2510,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 elif positive:
                     known_other = KnownValue(other_val)
                     member_values = concrete_values_from_iterable(known_other, self)
-                    if member_values is None:
+                    if isinstance(member_values, CanAssignError):
                         return value
                     elif isinstance(member_values, Value):
                         if value.is_assignable(member_values, self):
@@ -2451,7 +2536,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 op = positive_operator if positive else negative_operator
                 if isinstance(value, KnownValue):
                     try:
-                        result = op(value.val, other_val)
+                        if is_right:
+                            result = op(value.val, other_val)
+                        else:
+                            result = op(other_val, value.val)
                     except Exception:
                         pass
                     else:
@@ -2901,11 +2989,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
 
     def visit_For(self, node: ast.For) -> None:
-        iterated_value, num_members = self._member_value_of_iterator(node.iter)
+        iterated_value = self._member_value_of_iterator(node.iter)
         if self.config.FOR_LOOP_ALWAYS_ENTERED:
             always_entered = True
+        elif isinstance(iterated_value, Value):
+            always_entered = False
         else:
-            always_entered = num_members is not None and num_members > 0
+            always_entered = len(iterated_value) > 0
+        if not isinstance(iterated_value, Value):
+            iterated_value = unite_values(*iterated_value)
         with self.scopes.subscope() as body_scope:
             with self.scopes.loop_scope():
                 with qcore.override(self, "being_assigned", iterated_value):
@@ -2967,7 +3059,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def _member_value_of_iterator(
         self, node: ast.AST, is_async: bool = False
-    ) -> Tuple[Value, Optional[int]]:
+    ) -> Union[Value, Sequence[Value]]:
         """Analyze an iterator AST node.
 
         Returns a tuple of two values:
@@ -2977,80 +3069,21 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         """
         composite = self.composite_from_node(node)
         if is_async:
-            return self._member_value_of_async_iterator_val(composite, node)
-        return self._member_value_of_iterator_val(composite[0], node)
-
-    def _member_value_of_async_iterator_val(
-        self, iterated: Composite, node: ast.AST
-    ) -> Tuple[Value, None]:
-        iterator = self._check_dunder_call(node, iterated, "__aiter__", [])
-        return (
-            self._check_dunder_call(
+            iterator = self._check_dunder_call(node, composite, "__aiter__", [])
+            return self._check_dunder_call(
                 node, Composite(iterator, None, node), "__anext__", []
-            ),
-            None,
-        )
-
-    def _member_value_of_iterator_val(
-        self, iterated: Value, node: ast.AST
-    ) -> Tuple[Value, Optional[int]]:
-        if isinstance(iterated, KnownValue):
-            if iterated.val is not None and not is_iterable(iterated.val):
-                self._show_error_if_checking(
-                    node,
-                    "Object %r is not iterable" % (iterated.val,),
-                    ErrorCode.unsupported_operation,
-                )
-                return AnyValue(AnySource.error), None
-            if isinstance(iterated.val, range):
-                return TypedValue(int), len(iterated.val)
-            # if the thing we're iterating over is e.g. a file or an infinite generator, calling
-            # list() may hang the process
-            if not isinstance(
-                iterated.val, (list, set, tuple, dict, str, bytes, frozenset)
-            ):
-                return AnyValue(AnySource.inference), None
-            try:
-                values = list(iterated.val)
-            except Exception:
-                # we couldn't iterate over it for whatever reason; just ignore for now
-                return AnyValue(AnySource.error), None
-            return unite_values(*map(KnownValue, values)), len(values)
-        elif isinstance(iterated, SequenceIncompleteValue):
-            return unite_values(*iterated.members), len(iterated.members)
-        elif isinstance(iterated, DictIncompleteValue):
-            return (
-                unite_values(*[key for key, _ in iterated.items]),
-                len(iterated.items),
             )
-        elif iterated is NO_RETURN_VALUE:
-            return NO_RETURN_VALUE, None
-        elif isinstance(iterated, MultiValuedValue):
-            vals, nums = zip(
-                *[
-                    self._member_value_of_iterator_val(val, node)
-                    for val in iterated.vals
-                ]
+        iterated = composite.value
+        result = concrete_values_from_iterable(iterated, self)
+        if isinstance(result, CanAssignError):
+            self._show_error_if_checking(
+                node,
+                f"{iterated} is not iterable",
+                ErrorCode.unsupported_operation,
+                detail=str(result),
             )
-            num = nums[0] if len(set(nums)) == 1 else None
-            return unite_values(*vals), num
-        elif isinstance(iterated, AnnotatedValue):
-            return self._member_value_of_iterator_val(iterated.value, node)
-        else:
-            tv_map = IterableValue.can_assign(iterated, self)
-            if isinstance(tv_map, CanAssignError):
-                if not (
-                    isinstance(iterated, TypedValue)
-                    and self._should_ignore_type(iterated.typ)
-                ):
-                    self._show_error_if_checking(
-                        node,
-                        f"{iterated} is not iterable",
-                        ErrorCode.unsupported_operation,
-                        detail=tv_map.display(),
-                    )
-                return AnyValue(AnySource.error), None
-            return tv_map.get(T, AnyValue(AnySource.generic_argument)), None
+            return AnyValue(AnySource.error)
+        return result
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
@@ -3116,7 +3149,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 # statically findable
                 to_assign = TypedValue(BaseException)
             if node.name is not None:
-                self._set_name_in_scope(node.name, node, value=to_assign)
+                self._set_name_in_scope(node.name, node, value=to_assign, private=True)
 
         self._generic_visit_list(node.body)
 
@@ -3565,7 +3598,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     )
                     for composite in composites
                 ]
-            return unite_values(*values)
+            return unite_and_simplify(
+                *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            )
         return self._check_dunder_call_no_mvv(
             node, callee_composite, method_name, args, allow_call
         )
@@ -3627,6 +3662,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 self.asynq_checker.record_attribute_access(
                     root_composite.value, node.attr, node
                 )
+                if (
+                    isinstance(root_composite.value, KnownValue)
+                    and isinstance(root_composite.value.val, types.ModuleType)
+                    and root_composite.value.val.__name__ is not None
+                ):
+                    self.reexport_tracker.record_attribute_accessed(
+                        root_composite.value.val.__name__, node.attr, node, self
+                    )
             value = self._get_attribute_with_fallback(root_composite, node.attr, node)
             if self._should_use_varname_value(value):
                 varname_value = VariableNameValue.from_varname(
@@ -4274,6 +4317,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
         if "arg_spec_cache" not in kwargs:
             kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
+        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker(cls.config))
         if attribute_checker is None:
             inner_attribute_checker_obj = attribute_checker = ClassAttributeChecker(
                 cls.config,
@@ -4319,6 +4363,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     def check_all_files(cls, *args: Any, **kwargs: Any) -> List[node_visitor.Failure]:
         if "arg_spec_cache" not in kwargs:
             kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
+        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker(cls.config))
         return super().check_all_files(*args, **kwargs)
 
     @classmethod
@@ -4369,7 +4414,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             attribute_checker.filename_to_visitor.update(checker.filename_to_visitor)
 
 
-def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
+def build_stacked_scopes(
+    module: Optional[types.ModuleType], simplification_limit: Optional[int] = None
+) -> StackedScopes:
     # Build a StackedScopes object.
     # Not part of stacked_scopes.py to avoid a circular dependency.
     if module is None:
@@ -4389,7 +4436,7 @@ def build_stacked_scopes(module: Optional[types.ModuleType]) -> StackedScopes:
                 else:
                     val = type_from_runtime(annotation, globals=module.__dict__)
             module_vars[key] = val
-    return StackedScopes(module_vars, module)
+    return StackedScopes(module_vars, module, simplification_limit=simplification_limit)
 
 
 def _get_task_cls(fn: Any) -> Any:

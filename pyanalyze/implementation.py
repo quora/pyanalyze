@@ -679,7 +679,9 @@ def _list_add_impl(ctx: CallContext) -> ImplReturn:
     return flatten_unions(inner, ctx.vars["self"], ctx.vars["x"])
 
 
-def _list_extend_impl(ctx: CallContext) -> ImplReturn:
+def _list_extend_or_iadd_impl(
+    ctx: CallContext, iterable_arg: str, name: str, *, return_container: bool = False
+) -> ImplReturn:
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
 
     def inner(lst: Value, iterable: Value) -> ImplReturn:
@@ -701,6 +703,8 @@ def _list_extend_impl(ctx: CallContext) -> ImplReturn:
                     arg_type = AnyValue(AnySource.generic_argument)
                 generic_arg = unite_values(*cleaned_lst.members, arg_type)
                 constrained_value = make_weak(GenericValue(list, [generic_arg]))
+            if return_container:
+                return ImplReturn(constrained_value)
             no_return_unless = Constraint(
                 varname, ConstraintType.is_value_object, True, constrained_value
             )
@@ -710,18 +714,27 @@ def _list_extend_impl(ctx: CallContext) -> ImplReturn:
                 collections.abc.Iterable, ctx.visitor, 0
             )
             return _maybe_broaden_weak_type(
-                "list.extend",
-                "iterable",
+                name,
+                iterable_arg,
                 lst,
                 cleaned_lst,
                 actual_type,
                 ctx,
                 list,
                 varname,
+                return_container=return_container,
             )
-        return ImplReturn(KnownValue(None))
+        return ImplReturn(lst if return_container else KnownValue(None))
 
-    return flatten_unions(inner, ctx.vars["self"], ctx.vars["iterable"])
+    return flatten_unions(inner, ctx.vars["self"], ctx.vars[iterable_arg])
+
+
+def _list_extend_impl(ctx: CallContext) -> ImplReturn:
+    return _list_extend_or_iadd_impl(ctx, "iterable", "list.extend")
+
+
+def _list_iadd_impl(ctx: CallContext) -> ImplReturn:
+    return _list_extend_or_iadd_impl(ctx, "x", "list.__iadd__", return_container=True)
 
 
 def _is_weak(val: Value) -> bool:
@@ -737,6 +750,8 @@ def _maybe_broaden_weak_type(
     ctx: CallContext,
     typ: type,
     varname: Varname,
+    *,
+    return_container: bool = False,
 ) -> ImplReturn:
     expected_type = container_type.get_generic_arg_for_type(typ, ctx.visitor, 0)
     if _is_weak(original_container_type):
@@ -745,6 +760,8 @@ def _maybe_broaden_weak_type(
         no_return_unless = Constraint(
             varname, ConstraintType.is_value_object, True, constrained_value
         )
+        if return_container:
+            return ImplReturn(constrained_value)
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
 
     tv_map = expected_type.can_assign(actual_type, ctx.visitor)
@@ -755,6 +772,8 @@ def _maybe_broaden_weak_type(
             arg=arg,
             detail=str(tv_map),
         )
+    if return_container:
+        return ImplReturn(original_container_type)
     return ImplReturn(KnownValue(None))
 
 
@@ -1102,6 +1121,16 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=list.__add__,
             impl=_list_add_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(list)),
+                SigParameter(
+                    "x", _POS_ONLY, annotation=TypedValue(collections.abc.Iterable)
+                ),
+            ],
+            callable=list.__iadd__,
+            impl=_list_iadd_impl,
         ),
         Signature.make(
             [

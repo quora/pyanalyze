@@ -83,6 +83,7 @@ class ErrorCode(enum.Enum):
     type_does_not_support_bool = 66
     missing_return = 67
     no_return_may_return = 68
+    implicit_reexport = 69
 
 
 # Allow testing unannotated functions without too much fuss
@@ -103,6 +104,8 @@ DISABLED_BY_DEFAULT = {
     ErrorCode.possibly_undefined_name,
     ErrorCode.missing_f,
     ErrorCode.bare_ignore,
+    # TODO: turn this on
+    ErrorCode.implicit_reexport,
 }
 
 ERROR_DESCRIPTION = {
@@ -187,6 +190,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.type_does_not_support_bool: "Type does not support bool()",
     ErrorCode.missing_return: "Function may exit without returning a value",
     ErrorCode.no_return_may_return: "Function is annotated as NoReturn but may return",
+    ErrorCode.implicit_reexport: "Use of implicitly re-exported name",
 }
 
 

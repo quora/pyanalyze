@@ -142,6 +142,10 @@ class Value:
         """Return the type of this object as used for dunder lookups."""
         return self
 
+    def simplify(self) -> "Value":
+        """Simplify this Value to reduce excessive detail."""
+        return self
+
     def __or__(self, other: "Value") -> "Value":
         """Shortcut for defining a MultiValuedValue."""
         return unite_values(self, other)
@@ -390,7 +394,13 @@ class KnownValue(Value):
 
     def __hash__(self) -> int:
         # Make sure e.g. 1 and True are handled differently.
-        return hash((type(self.val), self.val))
+        try:
+            return hash((type(self.val), self.val))
+        except TypeError:
+            # If the value is not directly hashable, hash it by identity instead. This breaks
+            # the rule that x == y should imply hash(x) == hash(y), but hopefully that will
+            # be fine.
+            return hash((type(self.val), id(self.val)))
 
     def __str__(self) -> str:
         if self.val is None:
@@ -398,10 +408,16 @@ class KnownValue(Value):
         else:
             return "Literal[%r]" % (self.val,)
 
-    def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
+    def substitute_typevars(self, typevars: TypeVarMap) -> "KnownValue":
         if not typevars or not callable(self.val):
             return self
         return KnownValueWithTypeVars(self.val, typevars)
+
+    def simplify(self) -> Value:
+        val = replace_known_sequence_value(self)
+        if isinstance(val, KnownValue):
+            return TypedValue(type(val.val))
+        return val.simplify()
 
 
 @dataclass(frozen=True)
@@ -684,6 +700,9 @@ class GenericValue(TypedValue):
             self.typ, [arg.substitute_typevars(typevars) for arg in self.args]
         )
 
+    def simplify(self) -> Value:
+        return GenericValue(self.typ, [arg.simplify() for arg in self.args])
+
 
 @dataclass(unsafe_hash=True, init=False)
 class SequenceIncompleteValue(GenericValue):
@@ -748,10 +767,18 @@ class SequenceIncompleteValue(GenericValue):
             return f"tuple[{members}]"
         return f"<{stringify_object(self.typ)} containing [{members}]>"
 
-    def walk_values(self) -> Iterable["Value"]:
+    def walk_values(self) -> Iterable[Value]:
         yield self
         for member in self.members:
             yield from member.walk_values()
+
+    def simplify(self) -> GenericValue:
+        if self.typ is tuple:
+            return SequenceIncompleteValue(
+                tuple, [member.simplify() for member in self.members]
+            )
+        members = [member.simplify() for member in self.members]
+        return GenericValue(self.typ, [unite_values(*members)])
 
 
 @dataclass(unsafe_hash=True, init=False)
@@ -763,17 +790,17 @@ class DictIncompleteValue(GenericValue):
 
     """
 
-    items: List[Tuple[Value, Value]]
-    """List of pairs representing the keys and values of the dict."""
+    items: Tuple[Tuple[Value, Value], ...]
+    """Sequence of pairs representing the keys and values of the dict."""
 
-    def __init__(self, typ: type, items: List[Tuple[Value, Value]]) -> None:
+    def __init__(self, typ: type, items: Sequence[Tuple[Value, Value]]) -> None:
         if items:
             key_type = unite_values(*[key for key, _ in items])
             value_type = unite_values(*[value for _, value in items])
         else:
             key_type = value_type = AnyValue(AnySource.unreachable)
         super().__init__(typ, (key_type, value_type))
-        self.items = items
+        self.items = tuple(items)
 
     def __str__(self) -> str:
         items = ", ".join(f"{key}: {value}" for key, value in self.items)
@@ -793,6 +820,11 @@ class DictIncompleteValue(GenericValue):
                 for key, value in self.items
             ],
         )
+
+    def simplify(self) -> GenericValue:
+        keys = [key.simplify() for key, _ in self.items]
+        values = [value.simplify() for _, value in self.items]
+        return GenericValue(self.typ, [unite_values(*keys), unite_values(*values)])
 
 
 @dataclass(init=False)
@@ -1216,6 +1248,9 @@ class MultiValuedValue(Value):
         for val in self.vals:
             yield from val.walk_values()
 
+    def simplify(self) -> Value:
+        return unite_values(*[val.simplify() for val in self.vals])
+
 
 NO_RETURN_VALUE = MultiValuedValue([])
 """The empty union, equivalent to ``typing.NoReturn``."""
@@ -1266,7 +1301,7 @@ class Extension:
         return []
 
 
-@dataclass
+@dataclass(frozen=True)
 class CustomCheckExtension(Extension):
     custom_check: CustomCheck
 
@@ -1281,7 +1316,7 @@ class CustomCheckExtension(Extension):
         yield from self.custom_check.walk_values()
 
 
-@dataclass
+@dataclass(frozen=True)
 class ParameterTypeGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the parameter named `varname` is of type `guarded_type`.
@@ -1301,7 +1336,7 @@ class ParameterTypeGuardExtension(Extension):
         yield from self.guarded_type.walk_values()
 
 
-@dataclass
+@dataclass(frozen=True)
 class TypeGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the first function argument is of type `guarded_type`.
@@ -1320,7 +1355,7 @@ class TypeGuardExtension(Extension):
         yield from self.guarded_type.walk_values()
 
 
-@dataclass
+@dataclass(frozen=True)
 class HasAttrGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the function argument named `varname` has an attribute
@@ -1346,7 +1381,7 @@ class HasAttrGuardExtension(Extension):
         yield from self.attribute_type.walk_values()
 
 
-@dataclass
+@dataclass(frozen=True)
 class HasAttrExtension(Extension):
     """Attached to an object to indicate that it has the given attribute.
 
@@ -1404,8 +1439,14 @@ class AnnotatedValue(Value):
 
     value: Value
     """The underlying value."""
-    metadata: Sequence[Union[Value, Extension]]
+    metadata: Tuple[Union[Value, Extension], ...]
     """The extensions associated with this value."""
+
+    def __init__(
+        self, value: Value, metadata: Sequence[Union[Value, Extension]]
+    ) -> None:
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "metadata", tuple(metadata))
 
     def is_type(self, typ: type) -> bool:
         return self.value.is_type(typ)
@@ -1417,7 +1458,7 @@ class AnnotatedValue(Value):
         return self.value.get_type_value()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        metadata = [val.substitute_typevars(typevars) for val in self.metadata]
+        metadata = tuple(val.substitute_typevars(typevars) for val in self.metadata)
         return AnnotatedValue(self.value.substitute_typevars(typevars), metadata)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
@@ -1456,6 +1497,9 @@ class AnnotatedValue(Value):
 
     def __str__(self) -> str:
         return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
+
+    def simplify(self) -> Value:
+        return AnnotatedValue(self.value.simplify(), self.metadata)
 
 
 @dataclass(frozen=True)
@@ -1553,26 +1597,29 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
         )
     if isinstance(origin, AnnotatedValue):
         # Flatten it
-        metadata = [*origin.metadata, *metadata]
+        metadata = (*origin.metadata, *metadata)
         origin = origin.value
     # Make sure order is consistent; conceptually this is a set but
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
     unhashable_vals = []
-    uncomparable_vals = []
     for item in metadata:
         try:
             # Don't readd it to preserve original ordering.
             if item not in hashable_vals:
                 hashable_vals[item] = None
         except Exception:
-            try:
-                if item not in unhashable_vals:
-                    unhashable_vals.append(item)
-            except Exception:
-                uncomparable_vals.append(item)
-    metadata = list(hashable_vals) + unhashable_vals + uncomparable_vals
+            unhashable_vals.append(item)
+    metadata = (*hashable_vals, *unhashable_vals)
     return AnnotatedValue(origin, metadata)
+
+
+def unite_and_simplify(*values: Value, limit: int) -> Value:
+    united = unite_values(*values)
+    if not isinstance(united, MultiValuedValue) or len(united.vals) < limit:
+        return united
+    simplified = [val.simplify() for val in united.vals]
+    return unite_values(*simplified)
 
 
 def unite_values(*values: Value) -> Value:
@@ -1588,7 +1635,6 @@ def unite_values(*values: Value) -> Value:
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
     unhashable_vals = []
-    uncomparable_vals = []
     for value in values:
         if isinstance(value, MultiValuedValue):
             subvals = value.vals
@@ -1606,12 +1652,8 @@ def unite_values(*values: Value) -> Value:
                 if subval not in hashable_vals:
                     hashable_vals[subval] = None
             except Exception:
-                try:
-                    if subval not in unhashable_vals:
-                        unhashable_vals.append(subval)
-                except Exception:
-                    uncomparable_vals.append(subval)
-    existing = list(hashable_vals) + unhashable_vals + uncomparable_vals
+                unhashable_vals.append(subval)
+    existing = list(hashable_vals) + unhashable_vals
     num = len(existing)
     if num == 0:
         return NO_RETURN_VALUE
@@ -1627,43 +1669,58 @@ IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 def concrete_values_from_iterable(
     value: Value, ctx: CanAssignContext
-) -> Union[None, Value, Sequence[Value]]:
+) -> Union[CanAssignError, Value, Sequence[Value]]:
     """Return the exact values that can be extracted from an iterable.
 
     Three possible return types:
 
-    - ``None`` if the argument is not iterable
+    - :class:`CanAssignError` if the argument is not iterable
     - A sequence of :class:`Value` if we know the exact types in the iterable
     - A single :class:`Value` if we just know that the iterable contains this
       value, but not the precise number of them.
 
     Examples:
 
-    - ``int`` -> ``None``
+    - ``int`` -> ``CanAssignError``
     - ``tuple[int, str]`` -> ``(int, str)``
     - ``tuple[int, ...]`` -> ``int``
 
     """
+    value = replace_known_sequence_value(value)
     if isinstance(value, MultiValuedValue):
         subvals = [concrete_values_from_iterable(val, ctx) for val in value.vals]
-        if any(subval is None for subval in subvals):
-            return None
+        errors = [subval for subval in subvals if isinstance(subval, CanAssignError)]
+        if errors:
+            return CanAssignError(
+                "At least one member of Union is not iterable", errors
+            )
         value_subvals = [subval for subval in subvals if isinstance(subval, Value)]
         seq_subvals = [
             subval
             for subval in subvals
-            if subval is not None and not isinstance(subval, Value)
+            if not isinstance(subval, (Value, CanAssignError))
         ]
         if not value_subvals and len(set(map(len, seq_subvals))) == 1:
             return [unite_values(*vals) for vals in zip(*seq_subvals)]
         return unite_values(*value_subvals, *chain.from_iterable(seq_subvals))
-    value = replace_known_sequence_value(value)
-    if isinstance(value, SequenceIncompleteValue) and value.typ is tuple:
+    if isinstance(value, SequenceIncompleteValue):
         return value.members
+    elif isinstance(value, TypedDictValue):
+        if all(required for required, _ in value.items.items()):
+            return [KnownValue(key) for key in value.items]
+        return MultiValuedValue([KnownValue(key) for key in value.items])
+    elif isinstance(value, DictIncompleteValue):
+        if all(isinstance(key, KnownValue) for key, _ in value.items):
+            return [key for key, _ in value.items]
+    elif isinstance(value, KnownValue):
+        if isinstance(value.val, (str, bytes, range)):
+            return [KnownValue(c) for c in value.val]
+    elif value is NO_RETURN_VALUE:
+        return NO_RETURN_VALUE
     tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(tv_map, CanAssignError):
         return tv_map.get(T, AnyValue(AnySource.generic_argument))
-    return None
+    return tv_map
 
 
 def unpack_values(

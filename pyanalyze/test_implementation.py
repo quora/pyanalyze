@@ -179,7 +179,10 @@ class TestSuperCall(TestNameCheckVisitorBase):
 class TestSequenceImpl(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
-        def capybara(x):
+        from typing import Sequence
+        from typing_extensions import Literal
+
+        def capybara(x, ints: Sequence[Literal[1, 2]]):
             # no arguments
             assert_is_value(set(), KnownValue(set()))
             assert_is_value(list(), KnownValue([]))
@@ -189,10 +192,8 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
 
             # Comprehensions
             one_two = MultiValuedValue([KnownValue(1), KnownValue(2)])
-            assert_is_value(tuple(i for i in (1, 2)), GenericValue(tuple, [one_two]))
-            assert_is_value(
-                tuple({i: i for i in (1, 2)}), GenericValue(tuple, [one_two])
-            )
+            assert_is_value(tuple(i for i in ints), GenericValue(tuple, [one_two]))
+            assert_is_value(tuple({i: i for i in ints}), GenericValue(tuple, [one_two]))
 
             # SequenceIncompleteValue
             assert_is_value(
@@ -486,6 +487,41 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
 
     @assert_passes()
+    def test_list_iadd(self):
+        from typing import List
+
+        def capybara(x: int, y: str) -> None:
+            lst = [x]
+            assert_is_value(lst, SequenceIncompleteValue(list, [TypedValue(int)]))
+            lst += [y]
+            assert_is_value(
+                lst, SequenceIncompleteValue(list, [TypedValue(int), TypedValue(str)])
+            )
+            # If we extend with a set, don't use a SequenceIncompleteValue any more,
+            # because we don't know how many values were added or in what order.
+            # (Technically we do know for a one-element set, but that doesn't seem worth
+            # writing a special case for.)
+            lst += {float(1.0)}
+            assert_is_value(
+                lst,
+                make_weak(
+                    GenericValue(
+                        list,
+                        [
+                            MultiValuedValue(
+                                [TypedValue(int), TypedValue(str), TypedValue(float)]
+                            )
+                        ],
+                    )
+                ),
+            )
+
+            lst: List[int] = [3]
+            assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
+            lst += [x]
+            assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
+
+    @assert_passes()
     def test_weak_value(self):
         from typing import List
         from typing_extensions import Literal
@@ -600,9 +636,9 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     def test_list_extend_union(self):
         def capybara(cond):
             if cond:
-                lst = [1 for _ in range(3)]
+                lst = [1 for _ in cond]
             else:
-                lst = [2 for _ in range(3)]
+                lst = [2 for _ in cond]
             assert_is_value(
                 lst,
                 MultiValuedValue(
@@ -632,7 +668,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_setdefault(self):
         from typing_extensions import TypedDict
-        from typing import Dict
+        from typing import Dict, Sequence
 
         class TD(TypedDict):
             a: int
@@ -678,8 +714,8 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 ),
             )
 
-        def weak_typed():
-            weak_dict = {i: str(i) for i in range(5)}
+        def weak_typed(ints: Sequence[int]):
+            weak_dict = {i: str(i) for i in ints}
             assert_is_value(
                 weak_dict,
                 make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),

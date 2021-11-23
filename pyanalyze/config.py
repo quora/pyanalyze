@@ -19,6 +19,7 @@ from .extensions import CustomCheck
 if TYPE_CHECKING:
     from .arg_spec import ArgSpecCache
     from .signature import Signature
+    from .reexport import ImplicitReexportTracker
 
 
 class Config(object):
@@ -167,6 +168,12 @@ class Config(object):
     ASYNQ_DECORATORS = {asynq.asynq}
     ASYNC_PROXY_DECORATORS = {asynq.async_proxy}
 
+    # If we iterate over something longer than this, we don't try to infer precise
+    # types for comprehensions. Increasing this can hurt performance.
+    COMPREHENSION_LENGTH_INFERENCE_LIMIT = 25
+    # We may simplify unions with more than this many values.
+    UNION_SIMPLIFICATION_LIMIT = 100
+
     #
     # Used for VariableNameValue
     #
@@ -285,3 +292,10 @@ class Config(object):
     def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
         """Return additional classes that should be considered bae classes of typ."""
         return set()
+
+    #
+    # Used by reexport.py
+    #
+    def configure_reexports(self, tracker: "ImplicitReexportTracker") -> None:
+        """Override this to set some names as explicitly re-exported."""
+        pass

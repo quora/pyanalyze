@@ -635,10 +635,10 @@ class _DefaultContext(Context):
         return AnyValue(AnySource.error)
 
 
-@dataclass
+@dataclass(frozen=True)
 class _SubscriptedValue(Value):
     root: Optional[Value]
-    members: Sequence[Value]
+    members: Tuple[Value, ...]
 
 
 @dataclass
@@ -663,7 +663,7 @@ class _Visitor(ast.NodeVisitor):
         if isinstance(index, SequenceIncompleteValue):
             members = index.members
         else:
-            members = [index]
+            members = (index,)
         return _SubscriptedValue(value, members)
 
     def visit_Attribute(self, node: ast.Attribute) -> Optional[Value]:
@@ -716,7 +716,7 @@ class _Visitor(ast.NodeVisitor):
     def visit_BinOp(self, node: ast.BinOp) -> Optional[Value]:
         if isinstance(node.op, ast.BitOr):
             return _SubscriptedValue(
-                KnownValue(Union), [self.visit(node.left), self.visit(node.right)]
+                KnownValue(Union), (self.visit(node.left), self.visit(node.right))
             )
         else:
             return None

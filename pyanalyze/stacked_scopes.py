@@ -60,6 +60,7 @@ from .value import (
     Value,
     annotate_value,
     UNINITIALIZED_VALUE,
+    unite_and_simplify,
     unite_values,
     flatten_values,
 )
@@ -519,6 +520,7 @@ class Scope:
     parent_scope: Optional["Scope"] = None
     scope_node: Optional[Node] = None
     scope_object: Optional[object] = None
+    simplification_limit: Optional[int] = None
 
     def __post_init__(self) -> None:
         if self.parent_scope is not None:
@@ -785,8 +787,19 @@ class FunctionScope(Scope):
     accessed_from_special_nodes: Set[Varname]
     current_loop_scopes: List[SubScope]
 
-    def __init__(self, parent_scope: Scope, scope_node: Optional[Node] = None) -> None:
-        super().__init__(ScopeType.function_scope, {}, parent_scope, scope_node)
+    def __init__(
+        self,
+        parent_scope: Scope,
+        scope_node: Optional[Node] = None,
+        simplification_limit: Optional[int] = None,
+    ) -> None:
+        super().__init__(
+            ScopeType.function_scope,
+            {},
+            parent_scope,
+            scope_node,
+            simplification_limit=simplification_limit,
+        )
         self.name_to_current_definition_nodes = defaultdict(list)
         self.usage_to_definition_nodes = defaultdict(list)
         self.definition_node_to_value = {_UNINITIALIZED: _empty_constrained}
@@ -961,7 +974,11 @@ class FunctionScope(Scope):
                     self.parent_scope
                 ), "constrained value must have definition nodes or parent scope"
                 parent_val, _ = self.parent_scope.get(ctx.varname, None, ctx.state)
-                resolved = _constrain_value([parent_val], val.constraints)
+                resolved = _constrain_value(
+                    [parent_val],
+                    val.constraints,
+                    simplification_limit=self.simplification_limit,
+                )
             val.resolution_cache[key] = resolved
             return resolved
         else:
@@ -986,7 +1003,12 @@ class FunctionScope(Scope):
             else self._resolve_value(self.definition_node_to_value[node], ctx)
             for node in nodes
         ]
-        return _constrain_value(values, constraints, fallback_value=ctx.fallback_value)
+        return _constrain_value(
+            values,
+            constraints,
+            fallback_value=ctx.fallback_value,
+            simplification_limit=self.simplification_limit,
+        )
 
     def _add_composite(self, varname: Varname) -> None:
         if isinstance(varname, CompositeVariable):
@@ -1018,8 +1040,13 @@ class StackedScopes:
     )
 
     def __init__(
-        self, module_vars: Dict[str, Value], module: Optional[ModuleType]
+        self,
+        module_vars: Dict[str, Value],
+        module: Optional[ModuleType],
+        *,
+        simplification_limit: Optional[int] = None,
     ) -> None:
+        self.simplification_limit = simplification_limit
         self.scopes = [
             self._builtin_scope,
             Scope(
@@ -1027,6 +1054,7 @@ class StackedScopes:
                 module_vars,
                 self._builtin_scope,
                 scope_object=module,
+                simplification_limit=simplification_limit,
             ),
         ]
 
@@ -1039,10 +1067,17 @@ class StackedScopes:
     ) -> Iterable[None]:
         """Context manager that adds a scope of this type to the top of the stack."""
         if scope_type is ScopeType.function_scope:
-            scope = FunctionScope(self.scopes[-1], scope_node)
+            scope = FunctionScope(
+                self.scopes[-1], scope_node, self.simplification_limit
+            )
         else:
             scope = Scope(
-                scope_type, {}, self.scopes[-1], scope_node, scope_object=scope_object
+                scope_type,
+                {},
+                self.scopes[-1],
+                scope_node,
+                scope_object=scope_object,
+                simplification_limit=self.simplification_limit,
             )
         self.scopes.append(scope)
         try:
@@ -1161,9 +1196,16 @@ class StackedScopes:
         )
 
 
-def constrain_value(value: Value, constraint: AbstractConstraint) -> Value:
+def constrain_value(
+    value: Value,
+    constraint: AbstractConstraint,
+    *,
+    simplification_limit: Optional[int] = None,
+) -> Value:
     """Create a version of this :term:`value` with the :term:`constraint` applied."""
-    return _constrain_value([value], constraint.apply())
+    return _constrain_value(
+        [value], constraint.apply(), simplification_limit=simplification_limit
+    )
 
 
 def uniq_chain(iterables: Iterable[Iterable[T]]) -> List[T]:
@@ -1174,7 +1216,9 @@ def uniq_chain(iterables: Iterable[Iterable[T]]) -> List[T]:
 def _constrain_value(
     values: Iterable[Value],
     constraints: Iterable[Constraint],
+    *,
     fallback_value: Optional[Value] = None,
+    simplification_limit: Optional[int] = None,
 ) -> Value:
     # Flatten MultiValuedValue so that we can apply constraints.
     values = [val for val_or_mvv in values for val in flatten_values(val_or_mvv)]
@@ -1186,4 +1230,6 @@ def _constrain_value(
         # TODO: maybe show an error here? This branch should mean the code is
         # unreachable.
         return AnyValue(AnySource.unreachable)
+    if simplification_limit is not None:
+        return unite_and_simplify(*values, limit=simplification_limit)
     return unite_values(*values)
