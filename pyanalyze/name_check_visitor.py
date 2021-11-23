@@ -2015,7 +2015,9 @@ class NameCheckVisitor(
             is_async = bool(node.is_async)
             iterable_type = self._member_value_of_iterator(node.iter, is_async)
             if not isinstance(iterable_type, Value):
-                iterable_type = unite_values(*iterable_type)
+                iterable_type = unite_and_simplify(
+                    *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                )
         with qcore.override(self, "in_comprehension_body", True):
             with qcore.override(self, "being_assigned", iterable_type):
                 self.visit(node.target)
@@ -2099,7 +2101,9 @@ class NameCheckVisitor(
                         self.node_context.contexts.pop()
                     return SequenceIncompleteValue(typ, elts)
 
-            iterable_type = unite_values(*iterable_type)
+            iterable_type = unite_and_simplify(
+                *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            )
         # need to visit the generator expression first so that we know of variables
         # created in them
         for i, generator in enumerate(node.generators):
@@ -2362,7 +2366,16 @@ class NameCheckVisitor(
                 else:
                     values.append(elt)
             if has_unknown_value:
-                return make_weak(GenericValue(typ, [unite_values(*values)]))
+                return make_weak(
+                    GenericValue(
+                        typ,
+                        [
+                            unite_values(
+                                *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                            )
+                        ],
+                    )
+                )
             else:
                 return SequenceIncompleteValue(typ, values)
 
@@ -3585,7 +3598,9 @@ class NameCheckVisitor(
                     )
                     for composite in composites
                 ]
-            return unite_values(*values)
+            return unite_and_simplify(
+                *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            )
         return self._check_dunder_call_no_mvv(
             node, callee_composite, method_name, args, allow_call
         )
