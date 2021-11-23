@@ -2012,7 +2012,12 @@ class NameCheckVisitor(
         self, node: ast.comprehension, iterable_type: Optional[Value] = None
     ) -> None:
         if iterable_type is None:
-            iterable_type = self._member_value_of_generator(node)
+            is_async = bool(node.is_async)
+            iterable_type = self._member_value_of_iterator(node.iter, is_async)
+            if not isinstance(iterable_type, Value):
+                iterable_type = unite_and_simplify(
+                    *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                )
         with qcore.override(self, "in_comprehension_body", True):
             with qcore.override(self, "being_assigned", iterable_type):
                 self.visit(node.target)
@@ -2020,21 +2025,16 @@ class NameCheckVisitor(
                 _, constraint = self.constraint_from_condition(cond)
                 self.add_constraint(cond, constraint)
 
-    def _member_value_of_generator(
-        self, comprehension_node: ast.comprehension
-    ) -> Value:
-        iterable_type, _ = self._member_value_of_iterator(
-            comprehension_node.iter, bool(comprehension_node.is_async)
-        )
-        return iterable_type
-
     def _visit_sequence_comp(
         self,
         node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
         typ: type,
     ) -> Value:
         # the iteree of the first generator is executed in the enclosing scope
-        iterable_type = self._member_value_of_generator(node.generators[0])
+        is_async = bool(node.generators[0].is_async)
+        iterable_type = self._member_value_of_iterator(
+            node.generators[0].iter, is_async
+        )
         if self.state == VisitorState.collect_names:
             # Visit it once to get usage nodes for usage of nested variables. This enables
             # us to inherit constraints on nested variables.
@@ -2063,8 +2063,47 @@ class NameCheckVisitor(
         self,
         node: Union[ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp],
         typ: type,
-        iterable_type: Value,
+        iterable_type: Union[Value, Sequence[Value]],
     ) -> Value:
+        if not isinstance(iterable_type, Value):
+            # If it is a simple comprehension (only one generator, no ifs) and we know
+            # the exact iterated values, we try to infer an IncompleteValue instead.
+            if (
+                len(node.generators) == 1
+                and not node.generators[0].ifs
+                and 0
+                < len(iterable_type)
+                <= self.config.COMPREHENSION_LENGTH_INFERENCE_LIMIT
+            ):
+                generator = node.generators[0]
+                if isinstance(node, ast.DictComp):
+                    items = []
+                    self.node_context.contexts.append(generator)
+                    try:
+                        for val in iterable_type:
+                            self.visit_comprehension(generator, iterable_type=val)
+                            with qcore.override(self, "in_comprehension_body", True):
+                                items.append(
+                                    (self.visit(node.key), self.visit(node.value))
+                                )
+                    finally:
+                        self.node_context.contexts.pop()
+                    return DictIncompleteValue(typ, items)
+                elif isinstance(node, (ast.ListComp, ast.SetComp)):
+                    elts = []
+                    self.node_context.contexts.append(generator)
+                    try:
+                        for val in iterable_type:
+                            self.visit_comprehension(generator, iterable_type=val)
+                            with qcore.override(self, "in_comprehension_body", True):
+                                elts.append(self.visit(node.elt))
+                    finally:
+                        self.node_context.contexts.pop()
+                    return SequenceIncompleteValue(typ, elts)
+
+            iterable_type = unite_and_simplify(
+                *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            )
         # need to visit the generator expression first so that we know of variables
         # created in them
         for i, generator in enumerate(node.generators):
@@ -2327,7 +2366,16 @@ class NameCheckVisitor(
                 else:
                     values.append(elt)
             if has_unknown_value:
-                return make_weak(GenericValue(typ, [unite_values(*values)]))
+                return make_weak(
+                    GenericValue(
+                        typ,
+                        [
+                            unite_and_simplify(
+                                *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                            )
+                        ],
+                    )
+                )
             else:
                 return SequenceIncompleteValue(typ, values)
 
@@ -2941,11 +2989,15 @@ class NameCheckVisitor(
         self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
 
     def visit_For(self, node: ast.For) -> None:
-        iterated_value, num_members = self._member_value_of_iterator(node.iter)
+        iterated_value = self._member_value_of_iterator(node.iter)
         if self.config.FOR_LOOP_ALWAYS_ENTERED:
             always_entered = True
+        elif isinstance(iterated_value, Value):
+            always_entered = False
         else:
-            always_entered = num_members is not None and num_members > 0
+            always_entered = len(iterated_value) > 0
+        if not isinstance(iterated_value, Value):
+            iterated_value = unite_values(*iterated_value)
         with self.scopes.subscope() as body_scope:
             with self.scopes.loop_scope():
                 with qcore.override(self, "being_assigned", iterated_value):
@@ -3007,7 +3059,7 @@ class NameCheckVisitor(
 
     def _member_value_of_iterator(
         self, node: ast.AST, is_async: bool = False
-    ) -> Tuple[Value, Optional[int]]:
+    ) -> Union[Value, Sequence[Value]]:
         """Analyze an iterator AST node.
 
         Returns a tuple of two values:
@@ -3017,23 +3069,11 @@ class NameCheckVisitor(
         """
         composite = self.composite_from_node(node)
         if is_async:
-            return self._member_value_of_async_iterator_val(composite, node)
-        return self._member_value_of_iterator_val(composite[0], node)
-
-    def _member_value_of_async_iterator_val(
-        self, iterated: Composite, node: ast.AST
-    ) -> Tuple[Value, None]:
-        iterator = self._check_dunder_call(node, iterated, "__aiter__", [])
-        return (
-            self._check_dunder_call(
+            iterator = self._check_dunder_call(node, composite, "__aiter__", [])
+            return self._check_dunder_call(
                 node, Composite(iterator, None, node), "__anext__", []
-            ),
-            None,
-        )
-
-    def _member_value_of_iterator_val(
-        self, iterated: Value, node: ast.AST
-    ) -> Tuple[Value, Optional[int]]:
+            )
+        iterated = composite.value
         result = concrete_values_from_iterable(iterated, self)
         if isinstance(result, CanAssignError):
             self._show_error_if_checking(
@@ -3042,13 +3082,8 @@ class NameCheckVisitor(
                 ErrorCode.unsupported_operation,
                 detail=str(result),
             )
-            return AnyValue(AnySource.error), None
-        elif isinstance(result, Value):
-            return result, None
-        else:
-            return unite_and_simplify(
-                *result, limit=self.config.UNION_SIMPLIFICATION_LIMIT
-            ), len(result)
+            return AnyValue(AnySource.error)
+        return result
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
@@ -3563,7 +3598,9 @@ class NameCheckVisitor(
                     )
                     for composite in composites
                 ]
-            return unite_values(*values)
+            return unite_and_simplify(
+                *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            )
         return self._check_dunder_call_no_mvv(
             node, callee_composite, method_name, args, allow_call
         )

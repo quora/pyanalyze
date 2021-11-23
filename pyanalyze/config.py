@@ -168,6 +168,9 @@ class Config(object):
     ASYNQ_DECORATORS = {asynq.asynq}
     ASYNC_PROXY_DECORATORS = {asynq.async_proxy}
 
+    # If we iterate over something longer than this, we don't try to infer precise
+    # types for comprehensions. Increasing this can hurt performance.
+    COMPREHENSION_LENGTH_INFERENCE_LIMIT = 25
     # We may simplify unions with more than this many values.
     UNION_SIMPLIFICATION_LIMIT = 100
 
