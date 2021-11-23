@@ -92,7 +92,11 @@ def get_boolability(value: Value) -> Boolability:
             # Choose the lowest-valued (and therefore weakest) one.
             return min(boolabilities, key=lambda b: b.value)
     else:
-        return _get_boolability_no_mvv(value)
+        boolability = _get_boolability_no_mvv(value)
+        if boolability is Boolability.unsafely_boolable:
+            # an int by itself is safe
+            return Boolability.boolable
+        return boolability
 
 
 def _get_boolability_no_mvv(value: Value) -> Boolability:
