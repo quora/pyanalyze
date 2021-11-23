@@ -78,8 +78,8 @@ def get_boolability(value: Value) -> Boolability:
             return Boolability.boolable
         elif Boolability.unsafely_boolable in boolabilities:
             if len(boolabilities) == 1:
-                return Boolability.unsafely_boolable
-            return Boolability.boolable
+                return Boolability.boolable
+            return Boolability.unsafely_boolable
         elif (boolabilities & _TRUE_BOOLABILITIES) and (
             boolabilities & _FALSE_BOOLABILITIES
         ):
@@ -178,7 +178,7 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
 
 
 def _get_type_boolability(typ: type) -> Boolability:
-    if typ in (str, float, int, bytes):
+    if typ in (float, int):
         return Boolability.unsafely_boolable
     if safe_hasattr(typ, "__len__"):
         return Boolability.boolable
