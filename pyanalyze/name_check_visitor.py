@@ -4019,7 +4019,9 @@ class NameCheckVisitor(
 
         else:
             arguments = [
-                (arg, ARGS) if isinstance(arg.value, _StarredValue) else (arg, None)
+                (Composite(arg.value.value, arg.varname, arg.node), ARGS)
+                if isinstance(arg.value, _StarredValue)
+                else (arg, None)
                 for arg in args
             ] + [
                 (value, KWARGS) if keyword is None else (value, keyword)

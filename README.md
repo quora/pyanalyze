@@ -680,6 +680,7 @@ The code is formatted using [Black](https://github.com/psf/black).
 
 Unreleased
 
+- Type check calls with `*args` or `**kwargs` (#275)
 - Infer more precise types for comprehensions over known iterables (#279)
 - Add impl function for `list.__iadd__` (`+=`) (#280)
 - Simplify some overly complex types to improve performance (#280)
