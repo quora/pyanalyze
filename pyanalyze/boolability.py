@@ -149,10 +149,7 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
                 return Boolability.value_always_false_mutable
         type_boolability = _get_type_boolability(type(value.val))
         if boolean_value:
-            if type_boolability in (
-                Boolability.boolable,
-                Boolability.unsafely_boolable,
-            ):
+            if type_boolability is Boolability.boolable:
                 return Boolability.value_always_true
             elif type_boolability is Boolability.type_always_true:
                 return Boolability.type_always_true
@@ -162,10 +159,7 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
                     f" {value!r}"
                 )
         else:
-            if type_boolability in (
-                Boolability.boolable,
-                Boolability.unsafely_boolable,
-            ):
+            if type_boolability is Boolability.boolable:
                 return Boolability.value_always_false
             else:
                 assert False, (
@@ -173,15 +167,14 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
                     f" {value!r}"
                 )
     elif isinstance(value, TypedValue):
-        return _get_type_boolability(value)
+        if value.typ in (float, int) and not isinstance(value, NewTypeValue):
+            return Boolability.unsafely_boolable
+        return _get_type_boolability(value.typ)
     else:
         assert False, f"unhandled value {value!r}"
 
 
-def _get_type_boolability(value: TypedValue) -> Boolability:
-    typ = value.typ
-    if typ in (float, int) and not isinstance(value, NewTypeValue):
-        return Boolability.unsafely_boolable
+def _get_type_boolability(typ: type) -> Boolability:
     if safe_hasattr(typ, "__len__"):
         return Boolability.boolable
     dunder_bool = safe_getattr(typ, "__bool__", None)
