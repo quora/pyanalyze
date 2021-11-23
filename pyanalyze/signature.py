@@ -432,8 +432,13 @@ class Signature:
                 processed_args.append((arg, label))
             elif label is ARGS:
                 concrete_values = concrete_values_from_iterable(arg.value, visitor)
-                if concrete_values is None:
-                    self.show_call_error(f"{arg.value} is not iterable", node, visitor)
+                if isinstance(concrete_values, CanAssignError):
+                    self.show_call_error(
+                        f"{arg.value} is not iterable",
+                        node,
+                        visitor,
+                        detail=str(concrete_values),
+                    )
                     return None
                 elif isinstance(concrete_values, Value):
                     # We don't know the precise types. Repack it in a tuple because
