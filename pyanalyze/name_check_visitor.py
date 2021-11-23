@@ -3200,6 +3200,10 @@ class NameCheckVisitor(
                     f"{value} is always True",
                     error_code=ErrorCode.value_always_true,
                 )
+        elif boolability is Boolability.unsafely_boolable:
+            self.show_error(
+                node, f"Unsafe bool: {value}", error_code=ErrorCode.unsafe_bool
+            )
 
     def visit_Expr(self, node: ast.Expr) -> Value:
         value = self.visit(node.value)

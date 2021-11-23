@@ -34,15 +34,17 @@ class Boolability(enum.Enum):
     """Throws an error if bool() is called on it."""
     boolable = 2
     """Can be safely used as a bool."""
-    value_always_false_mutable = 3
+    unsafely_boolable = 3
+    """Can be used as a bool, but may indicate a bug."""
+    value_always_false_mutable = 4
     """Always False, but of a mutable type."""
-    value_always_true_mutable = 4
+    value_always_true_mutable = 5
     """Always True, but of a mutable type."""
-    value_always_false = 5
+    value_always_false = 6
     """Always False."""
-    value_always_true = 6
+    value_always_true = 7
     """Always True, but of a type that can also be false."""
-    type_always_true = 7
+    type_always_true = 8
     """Value of a type that is always True (because it does not override __bool__)."""
 
     def is_safely_true(self) -> bool:
@@ -74,6 +76,8 @@ def get_boolability(value: Value) -> Boolability:
             return Boolability.erroring_bool
         elif Boolability.boolable in boolabilities:
             return Boolability.boolable
+        elif Boolability.unsafely_boolable in boolabilities:
+            return Boolability.unsafely_boolable
         elif (boolabilities & _TRUE_BOOLABILITIES) and (
             boolabilities & _FALSE_BOOLABILITIES
         ):
@@ -142,7 +146,10 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
                 return Boolability.value_always_false_mutable
         type_boolability = _get_type_boolability(type(value.val))
         if boolean_value:
-            if type_boolability is Boolability.boolable:
+            if type_boolability in (
+                Boolability.boolable,
+                Boolability.unsafely_boolable,
+            ):
                 return Boolability.value_always_true
             elif type_boolability is Boolability.type_always_true:
                 return Boolability.type_always_true
@@ -152,7 +159,10 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
                     f" {value!r}"
                 )
         else:
-            if type_boolability is Boolability.boolable:
+            if type_boolability in (
+                Boolability.boolable,
+                Boolability.unsafely_boolable,
+            ):
                 return Boolability.value_always_false
             else:
                 assert False, (
@@ -166,6 +176,8 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
 
 
 def _get_type_boolability(typ: type) -> Boolability:
+    if typ in (str, float, int, bytes):
+        return Boolability.unsafely_boolable
     if safe_hasattr(typ, "__len__"):
         return Boolability.boolable
     dunder_bool = safe_getattr(typ, "__bool__", None)
