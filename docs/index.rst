@@ -10,6 +10,7 @@ pyanalyze: A semi-static typechecker
    :maxdepth: 2
    :caption: Contents:
 
+   typesystem
    design
    glossary
    reference/annotations
