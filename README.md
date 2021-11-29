@@ -184,3 +184,8 @@ Pyanalyze supports Python 3.6 through 3.9. Because it imports the code it checks
 Pyanalyze has hundreds of unit tests that check its behavior. To run them, you can just run `pytest` in the project directory.
 
 The code is formatted using [Black](https://github.com/psf/black).
+
+## Documentation
+
+Documentation is available at [ReadTheDocs](https://pyanalyze.readthedocs.io/en/latest/)
+or on [GitHub](https://github.com/quora/pyanalyze/tree/master/docs).
