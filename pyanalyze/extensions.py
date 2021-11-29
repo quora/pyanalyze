@@ -24,7 +24,7 @@ class CustomCheck:
     return value is equivalent to that of :meth:`pyanalyze.value.Value.can_assign`.
 
     A simple example is :class:`LiteralOnly`, which is also exposed by pyanalyze
-    itself:
+    itself::
 
         class LiteralOnly(CustomCheck):
             def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
@@ -39,11 +39,12 @@ class CustomCheck:
         func("x")  # ok
         func(str(some_call()))  # error
 
-    ``CustomCheck``s can also be generic over a ``TypeVar``. To implement support
-    for ``TypeVar``s, two more methods must be overridden:
-    - ``walk_values()`` should yield all ``TypeVar``s contained in the check,
+    A ``CustomCheck`` can also be generic over a ``TypeVar``. To implement support
+    for ``TypeVar``, two more methods must be overridden:
+
+    - ``walk_values()`` should yield all ``TypeVar`` objects contained in the check,
       wrapped in a :class:`pyanalyze.value.TypeVarValue`.
-    - ``substitute_typevars()`` takes a map from ``TypeVar``s to
+    - ``substitute_typevars()`` takes a map from ``TypeVar`` to
       :class:`pyanalyze.value.Value` objects and returns a new ``CustomCheck``.
 
     """

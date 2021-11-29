@@ -1841,6 +1841,7 @@ def replace_known_sequence_value(value: Value) -> Value:
     """Simplify a Value in a way that is easier to handle for most typechecking use cases.
 
     Does the following:
+
     - Replace AnnotatedValue with its inner type
     - Replace TypeVarValue with its fallback type
     - Replace KnownValues representing list, tuples, sets, or dicts with

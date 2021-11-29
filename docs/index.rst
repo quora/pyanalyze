@@ -3,13 +3,16 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to pyanalyze's documentation!
-=====================================
+pyanalyze: A semi-static typechecker
+====================================
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
+   faq
+   typesystem
+   design
    glossary
    reference/annotations
    reference/ast_annotator
@@ -18,6 +21,7 @@ Welcome to pyanalyze's documentation!
    reference/signature
    reference/stacked_scopes
    reference/value
+   changelog
 
 
 Indices and tables

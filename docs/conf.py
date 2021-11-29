@@ -12,6 +12,7 @@
 #
 import os
 import sys
+from pkg_resources import get_distribution
 
 sys.path.insert(0, os.path.abspath(".."))
 
@@ -23,7 +24,7 @@ copyright = "2021, Jelle Zijlstra"
 author = "Jelle Zijlstra"
 
 # The full version, including alpha/beta/rc tags
-release = "0.2.0"
+release = get_distribution("pyanalyze").version
 
 
 # -- General configuration ---------------------------------------------------
@@ -32,6 +33,17 @@ release = "0.2.0"
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = ["sphinx.ext.autodoc"]
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.napoleon",
+    "myst_parser",
+]
+
+# If you need extensions of a certain version or higher, list them here.
+needs_extensions = {"myst_parser": "0.13.7"}
+
+
 autodoc_member_order = "bysource"
 autodoc_default_options = {"inherited-members": False, "member-order": "bysource"}
 autodoc_inherit_docstrings = False
@@ -55,4 +67,8 @@ html_theme = "alabaster"
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
+html_static_path = []
+
+# The suffix(es) of source filenames.
+# You can specify multiple suffix as a list of string:
+source_suffix = [".rst", ".md"]
