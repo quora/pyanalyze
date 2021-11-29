@@ -19,6 +19,7 @@ pyanalyze: A semi-static typechecker
    reference/signature
    reference/stacked_scopes
    reference/value
+   changelog
 
 
 Indices and tables
