@@ -457,7 +457,7 @@ class Signature:
                 # We union all the kwargs that may be provided by any union member, so that
                 # we give an error if
                 for subval in flatten_values(arg.value, unwrap_annotated=True):
-                    result = self.preprocess_kwargs_no_mvv(subval, visitor, node)
+                    result = self._preprocess_kwargs_no_mvv(subval, visitor, node)
                     if result is None:
                         return None
                     new_items, new_value = result
@@ -558,12 +558,13 @@ class Signature:
             kwargs_required=any(kwargs_requireds),
         )
 
-    def preprocess_kwargs_no_mvv(
+    def _preprocess_kwargs_no_mvv(
         self, value: Value, visitor: "NameCheckVisitor", node: ast.AST
     ) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
         """Preprocess a Value passed as **kwargs.
 
         Three possible return types:
+
         - None if there was a blocking error (the passed in type is not a mapping).
         - A pair of two values:
             - An {argument: (required, Value)} dict if we know the precise arguments (e.g.,
