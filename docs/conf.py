@@ -33,6 +33,17 @@ release = get_distribution("pyanalyze").version
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = ["sphinx.ext.autodoc"]
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.napoleon",
+    "myst_parser",
+]
+
+# If you need extensions of a certain version or higher, list them here.
+needs_extensions = {"myst_parser": "0.13.7"}
+
+
 autodoc_member_order = "bysource"
 autodoc_default_options = {"inherited-members": False, "member-order": "bysource"}
 autodoc_inherit_docstrings = False
