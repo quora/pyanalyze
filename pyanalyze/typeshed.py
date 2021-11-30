@@ -99,7 +99,7 @@ class TypeshedFinder(object):
             return
         print("%s: %r" % (message, obj))
 
-    def get_argspec(self, obj: Any) -> Optional[Signature]:
+    def get_argspec(self, obj: object) -> Optional[Signature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
