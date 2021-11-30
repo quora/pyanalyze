@@ -7,13 +7,13 @@ Several type system extensions are used with the ``Annotated`` type from
 be gracefully ignored by other type checkers.
 
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import pyanalyze
-from typing import Any, Iterable, Tuple, List, Union, TypeVar, TYPE_CHECKING
+from typing import Any, Container, Iterable, Tuple, List, Union, TypeVar, TYPE_CHECKING
 from typing_extensions import Literal, NoReturn
 
 if TYPE_CHECKING:
-    from .value import Value, CanAssign, CanAssignContext, TypeVarMap
+    from .value import Value, CanAssign, CanAssignContext, TypeVarMap, AnySource
 
 
 class CustomCheck:
@@ -81,6 +81,34 @@ class LiteralOnly(CustomCheck):
             if not isinstance(subval, pyanalyze.value.KnownValue):
                 return pyanalyze.value.CanAssignError("Value must be a literal")
         return {}
+
+
+@dataclass(frozen=True)
+class NoAny(CustomCheck):
+    """Custom check that disallows passing `Any`."""
+
+    deep: bool = False
+    """If true, disallow `Any` in nested positions (e.g., `list[Any]`)."""
+    allowed_sources: Container["AnySource"] = field(
+        default_factory=lambda: {pyanalyze.value.AnySource.unreachable}
+    )
+    """Allow `Any` with these sources."""
+
+    def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
+        if self.deep:
+            vals = value.walk_values()
+        else:
+            vals = pyanalyze.value.flatten_values(value)
+        for subval in vals:
+            if self._is_disallowed(subval):
+                return pyanalyze.value.CanAssignError(f"Value may not be {subval}")
+        return {}
+
+    def _is_disallowed(self, value: "Value") -> bool:
+        return (
+            isinstance(value, pyanalyze.value.AnyValue)
+            and value.source not in self.allowed_sources
+        )
 
 
 class _AsynqCallableMeta(type):

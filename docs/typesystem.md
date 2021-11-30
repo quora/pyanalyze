@@ -168,8 +168,6 @@ class LiteralOnly(CustomCheck):
         return {}
 ```
 
-This is also exposed publicly as `pyanalyze.extensions.LiteralOnly`.
-
 It is used as follows:
 
 ```python
@@ -285,6 +283,10 @@ def caller(x: int) -> None:
 This is not a full, usable implementation of ranged integers; for that we would
 also need to add support for this check to operators like `int.__add__`.
 
+Two custom checks are exposed by `pyanalyze.extensions`:
+
+- `pyanalyze.extensions.LiteralOnly`, which allows only literal values (as discussed above)
+- `pyanalyze.extensions.NoAny`, which disallows passing untyped values
 
 ## Limitations
 
