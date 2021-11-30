@@ -692,6 +692,8 @@ class NameCheckVisitor(
     ] = Config()  # subclasses may override this with a more specific config
 
     checker: Checker
+    arg_spec_cache: ArgSpecCache
+    reexport_tracker: ImplicitReexportTracker
     being_assigned: Value
     current_class: Optional[type]
     current_function_name: Optional[str]
