@@ -4431,10 +4431,11 @@ def build_stacked_scopes(
                 # Malformed __annotations__
                 val = KnownValue(value)
             else:
-                if is_typing_name(annotation, "Final"):
+                maybe_val = type_from_runtime(annotation, globals=module.__dict__)
+                if maybe_val == AnyValue(AnySource.incomplete_annotation):
                     val = KnownValue(value)
                 else:
-                    val = type_from_runtime(annotation, globals=module.__dict__)
+                    val = maybe_val
             module_vars[key] = val
     return StackedScopes(module_vars, module, simplification_limit=simplification_limit)
 

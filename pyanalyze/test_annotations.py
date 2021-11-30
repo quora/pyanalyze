@@ -453,10 +453,18 @@ def f(x: int, y: List[str]):
 
         x: Final = 3
 
+        class Mara:
+            x: Final[str] = "x"
+
         def capybara():
             y: Final = 4
             assert_is_value(x, KnownValue(3))
             assert_is_value(y, KnownValue(4))
+
+            z: Final[int] = 4
+            assert_is_value(z, TypedValue(int))
+
+            assert_is_value(Mara().x, TypedValue(str))
 
     @assert_passes()
     def test_type(self):
@@ -525,9 +533,14 @@ def capybara(x: int | None, y: int | str) -> None:
 
         class Capybara:
             x: ClassVar[str]
+            Alias: ClassVar = int
+
+            y: Alias
 
         def caller(c: Capybara):
             assert_is_value(c.x, TypedValue(str))
+            assert_is_value(c.y, TypedValue(int))
+            assert_is_value(c.Alias, KnownValue(int))
 
 
 class TestAnnotated(TestNameCheckVisitorBase):

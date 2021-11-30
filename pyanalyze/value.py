@@ -302,6 +302,8 @@ class AnySource(enum.Enum):
     """Missing type argument to a generic class."""
     marker = 10
     """Marker object used internally."""
+    incomplete_annotation = 11
+    """A special form like ClassVar without a type argument."""
 
 
 @dataclass(frozen=True)
