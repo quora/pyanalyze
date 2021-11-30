@@ -331,7 +331,7 @@ class Signature:
                 return False
         return True
 
-    def _translate_bound_arg(self, argument: Any) -> Value:
+    def _translate_bound_arg(self, argument: object) -> Value:
         if argument is EMPTY:
             return AnyValue(AnySource.unannotated)
         elif isinstance(argument, Composite):

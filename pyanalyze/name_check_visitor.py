@@ -163,11 +163,11 @@ UNARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
 }
 
 
-def _in(a: Any, b: Any) -> bool:
+def _in(a: object, b: Container[object]) -> bool:
     return operator.contains(b, a)
 
 
-def _not_in(a: Any, b: Any) -> bool:
+def _not_in(a: object, b: Container[object]) -> bool:
     return not operator.contains(b, a)
 
 
@@ -218,17 +218,17 @@ class _AttrContext(attributes.AttrContext):
         self.node = node
         self.visitor = visitor
 
-    def record_usage(self, obj: Any, val: Value) -> None:
+    def record_usage(self, obj: object, val: Value) -> None:
         self.visitor._maybe_record_usage(obj, self.attr, val)
 
-    def record_attr_read(self, obj: Any) -> None:
+    def record_attr_read(self, obj: type) -> None:
         if self.node is not None:
             self.visitor._record_type_attr_read(obj, self.attr, self.node)
 
-    def should_ignore_class_attribute(self, obj: Any) -> bool:
+    def should_ignore_class_attribute(self, obj: object) -> bool:
         return self.visitor.config.should_ignore_class_attribute(obj)
 
-    def get_property_type_from_config(self, obj: Any) -> Value:
+    def get_property_type_from_config(self, obj: object) -> Value:
         try:
             return self.visitor.config.PROPERTIES_OF_KNOWN_TYPE[obj]
         except (KeyError, TypeError):
@@ -236,7 +236,7 @@ class _AttrContext(attributes.AttrContext):
                 AnySource.inference
             )  # can't figure out what this will return
 
-    def get_property_type_from_argspec(self, obj: Any) -> Value:
+    def get_property_type_from_argspec(self, obj: object) -> Value:
         argspec = self.visitor.arg_spec_cache.get_argspec(obj)
         if argspec is not None:
             if argspec.has_return_value():
@@ -799,7 +799,7 @@ class NameCheckVisitor(
     # The type for typ should be type, but that leads Cython to reject calls that pass
     # an instance of ABCMeta.
     def get_generic_bases(
-        self, typ: Any, generic_args: Sequence[Value] = ()
+        self, typ: type, generic_args: Sequence[Value] = ()
     ) -> Dict[type, TypeVarMap]:
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
 
@@ -1157,7 +1157,7 @@ class NameCheckVisitor(
         return isinstance(ctx, (ast.Load, ast.Del))
 
     @contextlib.contextmanager
-    def _set_current_class(self, current_class: Any) -> Iterator[None]:
+    def _set_current_class(self, current_class: type) -> Iterator[None]:
         if isinstance(
             current_class, type
         ) and self.config.should_check_class_for_duplicate_values(current_class):
@@ -2458,12 +2458,7 @@ class NameCheckVisitor(
         return val, constraint
 
     def _constraint_from_compare_op(
-        self,
-        constrained_node: ast.AST,
-        other_val: object,
-        op: ast.AST,
-        *,
-        is_right: bool,
+        self, constrained_node: ast.AST, other_val: Any, op: ast.AST, *, is_right: bool
     ) -> AbstractConstraint:
         varname = self.composite_from_node(constrained_node).varname
         if varname is None:
@@ -2550,7 +2545,7 @@ class NameCheckVisitor(
             return Constraint(varname, ConstraintType.predicate, True, predicate_func)
 
     def _constraint_from_predicate_provider(
-        self, pred: PredicateProvider, other_val: object, op: ast.AST
+        self, pred: PredicateProvider, other_val: Any, op: ast.AST
     ) -> Tuple[Value, AbstractConstraint]:
         positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
 
@@ -4238,7 +4233,7 @@ class NameCheckVisitor(
     # Finding unused objects
 
     def _maybe_record_usage(
-        self, module_or_class: Any, attribute: str, value: Value
+        self, module_or_class: object, attribute: str, value: Value
     ) -> None:
         if self.unused_finder is None:
             return
@@ -4256,7 +4251,7 @@ class NameCheckVisitor(
             if inner is self.current_class:
                 return
 
-        if self.module is not None:
+        if self.module is not None and isinstance(module_or_class, types.ModuleType):
             self.unused_finder.record(module_or_class, attribute, self.module.__name__)
 
     @classmethod
@@ -4438,7 +4433,7 @@ def build_stacked_scopes(
     return StackedScopes(module_vars, module, simplification_limit=simplification_limit)
 
 
-def _get_task_cls(fn: Any) -> Any:
+def _get_task_cls(fn: object) -> Type[asynq.FutureBase]:
     """Returns the task class for an async function."""
 
     if hasattr(fn, "task_cls"):
