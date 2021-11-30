@@ -34,5 +34,6 @@ used(ast_annotator)
 used(assert_is_value)
 used(dump_value)
 used(extensions.LiteralOnly)
+used(extensions.NoAny)
 used(value.UNRESOLVED_VALUE)  # keeping it around for now just in case
 used(reexport)
