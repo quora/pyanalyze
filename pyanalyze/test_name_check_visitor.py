@@ -15,13 +15,14 @@ import types
 
 from qcore.asserts import assert_eq, assert_is, assert_in
 
+from pyanalyze.checker import Checker
+
 from .name_check_visitor import (
     _get_task_cls,
     _static_hasattr,
     ClassAttributeChecker,
     NameCheckVisitor,
 )
-from .arg_spec import ArgSpecCache
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
 from .stacked_scopes import Composite
@@ -91,6 +92,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
             default_settings.update(settings)
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
         mod = _make_module(code_str)
+        kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
         with ClassAttributeChecker(
             self.visitor_cls.config, enabled=check_attributes
         ) as attribute_checker:
@@ -102,7 +104,6 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 attribute_checker=attribute_checker,
                 settings=default_settings,
                 verbosity=verbosity,
-                arg_spec_cache=ArgSpecCache(self.visitor_cls.config),
                 **kwargs,
             ).check_for_test(apply_changes=apply_changes)
 
@@ -156,12 +157,10 @@ def _make_module(code_str: str) -> types.ModuleType:
 
 
 def test_annotation():
-    args = (ast.Name("int", ast.Load()), [], [])
-    if sys.version_info < (3, 5):
-        args = args + (None, None)
-    tree = ast.Call(*args)
+    tree = ast.Call(ast.Name("int", ast.Load()), [], [])
+    checker = Checker(ConfiguredNameCheckVisitor.config)
     ConfiguredNameCheckVisitor(
-        "<test input>", "int()", tree, module=ast, annotate=True
+        "<test input>", "int()", tree, module=ast, annotate=True, checker=checker
     ).check()
     assert_eq(TypedValue(int), tree.inferred_value)
 

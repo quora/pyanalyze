@@ -9,7 +9,7 @@ from qcore.asserts import (
     assert_is_instance,
     assert_is_not,
 )
-from typing import NewType, Sequence, Dict
+from typing import NewType, Sequence, Dict, Union
 from typing_extensions import Protocol, runtime_checkable
 import typing
 import types
@@ -18,9 +18,10 @@ from unittest import mock
 
 from . import tests
 from . import value
-from .arg_spec import ArgSpecCache
+from .checker import Checker
 from .stacked_scopes import Composite
 from .test_config import TestConfig
+from .type_object import TypeObject
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -41,12 +42,15 @@ from .value import (
 
 class Context(CanAssignContext):
     def __init__(self) -> None:
-        self.arg_spec_cache = ArgSpecCache(TestConfig())
+        self.checker = Checker(TestConfig())
+
+    def make_type_object(self, typ: Union[type, super]) -> TypeObject:
+        return self.checker.make_type_object(typ)
 
     def get_generic_bases(
         self, typ: type, generic_args: Sequence[Value] = ()
     ) -> Dict[type, TypeVarMap]:
-        return self.arg_spec_cache.get_generic_bases(typ, generic_args)
+        return self.checker.arg_spec_cache.get_generic_bases(typ, generic_args)
 
 
 CTX = Context()
