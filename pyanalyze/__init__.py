@@ -10,6 +10,7 @@ from . import annotations
 from . import arg_spec
 from . import asynq_checker
 from . import boolability
+from . import checker
 from . import config
 from . import error_code
 from . import extensions
@@ -37,3 +38,4 @@ used(extensions.LiteralOnly)
 used(extensions.NoAny)
 used(value.UNRESOLVED_VALUE)  # keeping it around for now just in case
 used(reexport)
+used(checker)

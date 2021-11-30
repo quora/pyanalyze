@@ -33,6 +33,7 @@ import tempfile
 import traceback
 import types
 from typing import (
+    ClassVar,
     Iterator,
     Mapping,
     Iterable,
@@ -63,6 +64,7 @@ from .annotations import (
 )
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .boolability import Boolability, get_boolability
+from .checker import Checker
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard
@@ -102,7 +104,7 @@ from .signature import (
 )
 from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from .yield_checker import YieldChecker
-from .type_object import get_mro
+from .type_object import TypeObject, get_mro
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -685,8 +687,11 @@ class NameCheckVisitor(
     """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
-    config = Config()  # subclasses may override this with a more specific config
+    config: ClassVar[
+        Config
+    ] = Config()  # subclasses may override this with a more specific config
 
+    checker: Checker
     being_assigned: Value
     current_class: Optional[type]
     current_function_name: Optional[str]
@@ -699,6 +704,7 @@ class NameCheckVisitor(
         filename: str,
         contents: str,
         tree: ast.Module,
+        *,
         settings: Optional[Mapping[ErrorCode, bool]] = None,
         fail_after_first: bool = False,
         verbosity: int = logging.CRITICAL,
@@ -710,6 +716,7 @@ class NameCheckVisitor(
         reexport_tracker: Optional[ImplicitReexportTracker] = None,
         annotate: bool = False,
         add_ignores: bool = False,
+        checker: Checker,
     ) -> None:
         super().__init__(
             filename,
@@ -720,6 +727,7 @@ class NameCheckVisitor(
             verbosity=verbosity,
             add_ignores=add_ignores,
         )
+        self.checker = checker
 
         # State (to use in with qcore.override)
         self.state = VisitorState.collect_names
@@ -793,8 +801,8 @@ class NameCheckVisitor(
         self._statement_types = set()
         self._fill_method_cache()
 
-    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
-        return self.config.get_additional_bases(typ)
+    def make_type_object(self, typ: Union[type, super]) -> TypeObject:
+        return self.checker.make_type_object(typ)
 
     # The type for typ should be type, but that leads Cython to reject calls that pass
     # an instance of ABCMeta.
@@ -4256,7 +4264,7 @@ class NameCheckVisitor(
 
     @classmethod
     def _get_argument_parser(cls) -> ArgumentParser:
-        parser = super(NameCheckVisitor, cls)._get_argument_parser()
+        parser = super()._get_argument_parser()
         parser.add_argument(
             "--find-unused",
             action="store_true",
@@ -4293,6 +4301,14 @@ class NameCheckVisitor(
         return cls.config.DEFAULT_DIRS
 
     @classmethod
+    def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
+        kwargs = dict(kwargs)
+        kwargs.setdefault("arg_spec_cache", ArgSpecCache(cls.config))
+        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker(cls.config))
+        kwargs.setdefault("checker", Checker(cls.config))
+        return kwargs
+
+    @classmethod
     def _run_on_files(
         cls,
         files: List[str],
@@ -4327,7 +4343,7 @@ class NameCheckVisitor(
                 print_output=False,
             )
         with inner_attribute_checker_obj as inner_attribute_checker, unused_finder as inner_unused_finder:
-            all_failures = super(NameCheckVisitor, cls)._run_on_files(
+            all_failures = super()._run_on_files(
                 files,
                 attribute_checker=attribute_checker
                 if attribute_checker is not None

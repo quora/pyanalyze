@@ -4,6 +4,7 @@ from qcore.asserts import assert_eq
 import functools
 from typing import TypeVar, NewType
 
+from .checker import Checker
 from .test_name_check_visitor import (
     TestNameCheckVisitorBase,
     ConfiguredNameCheckVisitor,
@@ -91,8 +92,11 @@ def decorator(fn):
 
 
 def test_get_argspec():
-    visitor = ConfiguredNameCheckVisitor(__file__, "", {}, fail_after_first=False)
-    config = visitor.config
+    config = ConfiguredNameCheckVisitor.config
+    checker = Checker(config)
+    visitor = ConfiguredNameCheckVisitor(
+        __file__, "", {}, fail_after_first=False, checker=checker
+    )
     cwc_typed = TypedValue(ClassWithCall)
     cwc_self = SigParameter("self", annotation=cwc_typed)
 

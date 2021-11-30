@@ -300,6 +300,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         """Runs the check for all files in scope or changed files if we are test-local."""
         if "settings" not in kwargs:
             kwargs["settings"] = cls._get_default_settings()
+        kwargs = cls.prepare_constructor_kwargs(kwargs)
         files = cls.get_files_to_check(include_tests)
         all_failures = cls._run_on_files(files, **kwargs)
         if assert_passes:
@@ -324,6 +325,10 @@ class BaseNodeVisitor(ast.NodeVisitor):
             ]
         else:
             return sorted(set(cls._get_all_python_files(include_tests=include_tests)))
+
+    @classmethod
+    def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
+        return kwargs
 
     @classmethod
     def main(cls) -> int:
@@ -367,8 +372,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
         run_fixer = kwargs.pop("run_fixer", False)
         autofix = kwargs.pop("autofix", False)
         repeat_until_no_errors = kwargs.pop("repeat_until_no_errors", False)
+        num_iterations = kwargs.pop("num_iterations", 1)
+        kwargs = cls.prepare_constructor_kwargs(kwargs)
         if repeat_until_no_errors:
-            num_iterations = kwargs.pop("num_iterations", 1)
             iteration = 0
             print("Running iteration 0")
             while cls._run_and_apply_changes(kwargs, autofix=True):
@@ -420,7 +426,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _run_and_apply_changes(
-        cls, kwargs: Dict[str, Any], autofix: bool = False
+        cls, kwargs: Mapping[str, Any], autofix: bool = False
     ) -> bool:
         changes = collections.defaultdict(list)
         with qcore.override(cls, "_changes_for_fixer", changes):

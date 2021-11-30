@@ -1,4 +1,5 @@
 # static analysis: ignore
+from typing import Dict, Union
 from .error_code import ErrorCode
 from .value import (
     AnySource,
@@ -11,6 +12,8 @@ from .value import (
 )
 from .test_node_visitor import assert_passes, assert_fails
 from .test_name_check_visitor import TestNameCheckVisitorBase
+
+_global_dict: Dict[Union[int, str], float] = {}
 
 
 class TestAttributes(TestNameCheckVisitorBase):
@@ -231,7 +234,7 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_module_annotations(self):
-        from pyanalyze import value
+        from pyanalyze import test_attributes
         from pyanalyze.type_object import TypeObject
         from typing import Optional
 
@@ -239,13 +242,9 @@ class TestAttributes(TestNameCheckVisitorBase):
 
         def capybara():
             assert_is_value(
-                value._type_object_cache,
+                test_attributes._global_dict,
                 GenericValue(
-                    dict,
-                    [
-                        MultiValuedValue([TypedValue(type), TypedValue(super)]),
-                        TypedValue(TypeObject),
-                    ],
+                    dict, [TypedValue(int) | TypedValue(str), TypedValue(float)]
                 ),
             )
             assert_is_value(

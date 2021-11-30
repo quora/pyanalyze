@@ -34,7 +34,6 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
-    Set,
     Tuple,
     Union,
     Type,
@@ -54,8 +53,6 @@ BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 
 TypeVarMap = Mapping["TypeVar", "Value"]
-
-_type_object_cache: Dict[Union[type, super], TypeObject] = {}
 
 
 class Value:
@@ -161,27 +158,9 @@ class CanAssignContext:
 
     """
 
-    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
-        """Return classes that should be considered base classes of `typ`.
-
-        This can be used to make the type checker treat a type as a subclass
-        of another when it is not actually a subtype at runtime.
-
-        """
-        return set()
-
     def make_type_object(self, typ: Union[type, super]) -> TypeObject:
-        # Undocumented because TypeObject isn't a very useful concept;
-        # we may be able to deprecate it.
-        try:
-            in_cache = typ in _type_object_cache
-        except Exception:
-            return TypeObject(typ, self.get_additional_bases(typ))
-        if in_cache:
-            return _type_object_cache[typ]
-        type_object = TypeObject(typ, self.get_additional_bases(typ))
-        _type_object_cache[typ] = type_object
-        return type_object
+        """Return a :class:`pyanalyze.type_object.TypeObject` for this concrete type."""
+        raise NotImplementedError
 
     def get_generic_bases(
         self, typ: type, generic_args: Sequence["Value"] = ()

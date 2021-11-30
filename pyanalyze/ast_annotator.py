@@ -164,6 +164,7 @@ def _annotate_module(
 
     """
     with ClassAttributeChecker(visitor_cls.config, enabled=True) as attribute_checker:
+        kwargs = visitor_cls.prepare_constructor_kwargs({})
         visitor = visitor_cls(
             filename,
             code_str,
@@ -172,5 +173,6 @@ def _annotate_module(
             settings={error_code: show_errors for error_code in ErrorCode},
             attribute_checker=attribute_checker,
             annotate=True,
+            **kwargs,
         )
         visitor.check(ignore_missing_module=True)
