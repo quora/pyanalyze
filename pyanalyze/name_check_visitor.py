@@ -711,9 +711,7 @@ class NameCheckVisitor(
         unused_finder: Optional[UnusedObjectFinder] = None,
         module: Optional[types.ModuleType] = None,
         attribute_checker: Optional[ClassAttributeChecker] = None,
-        arg_spec_cache: Optional[ArgSpecCache] = None,
         collector: Optional[CallSiteCollector] = None,
-        reexport_tracker: Optional[ImplicitReexportTracker] = None,
         annotate: bool = False,
         add_ignores: bool = False,
         checker: Checker,
@@ -754,12 +752,8 @@ class NameCheckVisitor(
         # Data storage objects
         self.unused_finder = unused_finder
         self.attribute_checker = attribute_checker
-        if arg_spec_cache is None:
-            arg_spec_cache = ArgSpecCache(self.config)
-        self.arg_spec_cache = arg_spec_cache
-        if reexport_tracker is None:
-            reexport_tracker = ImplicitReexportTracker(self.config)
-        self.reexport_tracker = reexport_tracker
+        self.arg_spec_cache = checker.arg_spec_cache
+        self.reexport_tracker = checker.reexport_tracker
         if (
             self.attribute_checker is not None
             and self.module is not None
@@ -4303,8 +4297,6 @@ class NameCheckVisitor(
     @classmethod
     def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
         kwargs = dict(kwargs)
-        kwargs.setdefault("arg_spec_cache", ArgSpecCache(cls.config))
-        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker(cls.config))
         kwargs.setdefault("checker", Checker(cls.config))
         return kwargs
 
@@ -4324,9 +4316,6 @@ class NameCheckVisitor(
             attribute_checker_enabled = True
         else:
             attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
-        if "arg_spec_cache" not in kwargs:
-            kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
-        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker(cls.config))
         if attribute_checker is None:
             inner_attribute_checker_obj = attribute_checker = ClassAttributeChecker(
                 cls.config,
@@ -4367,13 +4356,6 @@ class NameCheckVisitor(
         if attribute_checker is not None:
             all_failures += attribute_checker.all_failures
         return all_failures
-
-    @classmethod
-    def check_all_files(cls, *args: Any, **kwargs: Any) -> List[node_visitor.Failure]:
-        if "arg_spec_cache" not in kwargs:
-            kwargs["arg_spec_cache"] = ArgSpecCache(cls.config)
-        kwargs.setdefault("reexport_tracker", ImplicitReexportTracker(cls.config))
-        return super().check_all_files(*args, **kwargs)
 
     @classmethod
     def _should_ignore_module(cls, module_name: str) -> bool:

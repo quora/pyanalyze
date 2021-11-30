@@ -23,7 +23,6 @@ from .name_check_visitor import (
     ClassAttributeChecker,
     NameCheckVisitor,
 )
-from .arg_spec import ArgSpecCache
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
 from .stacked_scopes import Composite

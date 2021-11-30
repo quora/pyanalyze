@@ -18,7 +18,6 @@ from unittest import mock
 
 from . import tests
 from . import value
-from .arg_spec import ArgSpecCache
 from .checker import Checker
 from .stacked_scopes import Composite
 from .test_config import TestConfig
@@ -44,7 +43,6 @@ from .value import (
 class Context(CanAssignContext):
     def __init__(self) -> None:
         self.checker = Checker(TestConfig())
-        self.arg_spec_cache = ArgSpecCache(TestConfig())
 
     def make_type_object(self, typ: Union[type, super]) -> TypeObject:
         return self.checker.make_type_object(typ)
@@ -52,7 +50,7 @@ class Context(CanAssignContext):
     def get_generic_bases(
         self, typ: type, generic_args: Sequence[Value] = ()
     ) -> Dict[type, TypeVarMap]:
-        return self.arg_spec_cache.get_generic_bases(typ, generic_args)
+        return self.checker.arg_spec_cache.get_generic_bases(typ, generic_args)
 
 
 CTX = Context()
