@@ -453,10 +453,18 @@ def f(x: int, y: List[str]):
 
         x: Final = 3
 
+        class Mara:
+            x: Final[str] = "x"
+
         def capybara():
             y: Final = 4
             assert_is_value(x, KnownValue(3))
             assert_is_value(y, KnownValue(4))
+
+            z: Final[int] = 4
+            assert_is_value(z, TypedValue(int))
+
+            assert_is_value(Mara().x, TypedValue(str))
 
     @assert_passes()
     def test_type(self):

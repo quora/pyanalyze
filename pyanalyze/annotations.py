@@ -864,6 +864,12 @@ def _value_of_origin_args(
         return AnnotatedValue(
             TypedValue(bool), [TypeGuardExtension(_type_from_runtime(args[0], ctx))]
         )
+    elif is_typing_name(origin, "Final"):
+        if len(args) != 1:
+            ctx.show_error("Final requires a single argument")
+            return AnyValue(AnySource.error)
+        # TODO(#160): properly support Final
+        return _type_from_runtime(args[0], ctx)
     elif is_typing_name(origin, "Required"):
         if not is_typeddict:
             ctx.show_error("Required[] used in unsupported context")
