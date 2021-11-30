@@ -350,15 +350,14 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             return AnyValue(AnySource.error)
     elif typing_inspect.is_typevar(val):
         return TypeVarValue(cast(TypeVar, val))
-    elif typing_inspect.is_classvar(val):
-        if is_typing_name(val, "ClassVar"):
-            # Might change behavior depending on
-            # https://github.com/python/typing/discussions/973
-            ctx.show_error("ClassVar[] must have one argument")
-            return AnyValue(AnySource.error)
+    elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
+        return AnyValue(AnySource.incomplete_annotation)
+    elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):
         if hasattr(val, "__type__"):
+            # 3.6
             typ = val.__type__
         else:
+            # 3.7+
             typ = val.__args__[0]
         return _type_from_runtime(typ, ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
@@ -874,6 +873,11 @@ def _value_of_origin_args(
             ctx.show_error("Final requires a single argument")
             return AnyValue(AnySource.error)
         # TODO(#160): properly support Final
+        return _type_from_runtime(args[0], ctx)
+    elif is_typing_name(origin, "ClassVar"):
+        if len(args) != 1:
+            ctx.show_error("ClassVar requires a single argument")
+            return AnyValue(AnySource.error)
         return _type_from_runtime(args[0], ctx)
     elif is_typing_name(origin, "Required"):
         if not is_typeddict:

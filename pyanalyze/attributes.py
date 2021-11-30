@@ -344,7 +344,8 @@ def _get_attribute_from_mro(
             pass
         else:
             attr_type = type_from_runtime(annotation, ctx=AnnotationsContext(ctx, typ))
-            return (attr_type, typ, False)
+            if attr_type != AnyValue(AnySource.incomplete_annotation):
+                return (attr_type, typ, False)
 
     try:
         mro = list(typ.mro())
@@ -363,21 +364,20 @@ def _get_attribute_from_mro(
                 annotation = base_cls.__dict__["__annotations__"][ctx.attr]
             except Exception:
                 # no __annotations__, or it's not a dict, or the attr isn't there
-                try:
-                    # Make sure we use only the object from this class, but do invoke
-                    # the descriptor protocol with getattr.
-                    base_cls.__dict__[ctx.attr]
-                    return KnownValue(getattr(typ, ctx.attr)), base_cls, True
-                except Exception:
-                    pass
+                pass
             else:
-                return (
-                    type_from_runtime(
-                        annotation, ctx=AnnotationsContext(ctx, base_cls)
-                    ),
-                    base_cls,
-                    False,
+                typ = type_from_runtime(
+                    annotation, ctx=AnnotationsContext(ctx, base_cls)
                 )
+                if typ != AnyValue(AnySource.incomplete_annotation):
+                    return (typ, base_cls, False)
+            try:
+                # Make sure we use only the object from this class, but do invoke
+                # the descriptor protocol with getattr.
+                base_cls.__dict__[ctx.attr]
+                return KnownValue(getattr(typ, ctx.attr)), base_cls, True
+            except Exception:
+                pass
 
     attrs_type = get_attrs_attribute(typ, ctx)
     if attrs_type is not None:
