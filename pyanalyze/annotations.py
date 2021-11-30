@@ -351,6 +351,11 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
     elif typing_inspect.is_typevar(val):
         return TypeVarValue(cast(TypeVar, val))
     elif typing_inspect.is_classvar(val):
+        if is_typing_name(val, "ClassVar"):
+            # Might change behavior depending on
+            # https://github.com/python/typing/discussions/973
+            ctx.show_error("ClassVar[] must have one argument")
+            return AnyValue(AnySource.error)
         if hasattr(val, "__type__"):
             typ = val.__type__
         else:

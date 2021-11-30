@@ -533,9 +533,13 @@ def capybara(x: int | None, y: int | str) -> None:
 
         class Capybara:
             x: ClassVar[str]
+            Alias: ClassVar = int  # E: invalid_annotation
+
+            y: Alias
 
         def caller(c: Capybara):
             assert_is_value(c.x, TypedValue(str))
+            assert_is_value(c.y, TypedValue(int))
 
 
 class TestAnnotated(TestNameCheckVisitorBase):
