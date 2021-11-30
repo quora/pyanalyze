@@ -251,8 +251,6 @@ class ActualArguments:
     star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
     kwargs_required: bool
 
-    x: ClassVar = str
-
 
 @dataclass(frozen=True)
 class Signature:
