@@ -90,7 +90,7 @@ class NoAny(CustomCheck):
     deep: bool = False
     """If true, disallow `Any` in nested positions (e.g., `list[Any]`)."""
     allowed_sources: Container["AnySource"] = field(
-        default_factory=lambda: {pyanalyze.value.AnySource.unreachable}
+        default_factory=lambda: frozenset({pyanalyze.value.AnySource.unreachable})
     )
     """Allow `Any` with these sources."""
 

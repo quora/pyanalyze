@@ -970,7 +970,7 @@ class TestCustomCheck(TestNameCheckVisitorBase):
             pass
 
         def none_at_all(
-            x: Annotated[List[int], NoAny(deep=True, allowed_sources=set())]
+            x: Annotated[List[int], NoAny(deep=True, allowed_sources=frozenset())]
         ) -> None:
             pass
 
