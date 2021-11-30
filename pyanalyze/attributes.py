@@ -366,11 +366,11 @@ def _get_attribute_from_mro(
                 # no __annotations__, or it's not a dict, or the attr isn't there
                 pass
             else:
-                typ = type_from_runtime(
+                attr_type = type_from_runtime(
                     annotation, ctx=AnnotationsContext(ctx, base_cls)
                 )
-                if typ != AnyValue(AnySource.incomplete_annotation):
-                    return (typ, base_cls, False)
+                if attr_type != AnyValue(AnySource.incomplete_annotation):
+                    return (attr_type, base_cls, False)
             try:
                 # Make sure we use only the object from this class, but do invoke
                 # the descriptor protocol with getattr.
