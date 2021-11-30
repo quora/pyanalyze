@@ -1681,11 +1681,11 @@ class NameCheckVisitor(
                                 detail=tv_map.display(),
                             )
                 elif is_self:
+                    assert self.current_class is not None
                     if function_info.is_classmethod or getattr(node, "name", None) in (
                         "__init_subclass__",
                         "__new__",
                     ):
-                        assert self.current_class is not None
                         value = SubclassValue(TypedValue(self.current_class))
                     else:
                         # normal method
@@ -4147,9 +4147,8 @@ class NameCheckVisitor(
             typ = value.typ
             if typ is collections.abc.Callable or typ is types.FunctionType:
                 return ANY_SIGNATURE
-            if not hasattr(typ, "__call__") or (
-                getattr(typ.__call__, "__objclass__", None) is type
-                and not issubclass(typ, type)
+            if getattr(typ.__call__, "__objclass__", None) is type and not issubclass(
+                typ, type
             ):
                 return None
             call_fn = typ.__call__
@@ -4196,9 +4195,8 @@ class NameCheckVisitor(
             return callee_wrapped.signature
         elif isinstance(callee_wrapped, TypedValue):
             typ = callee_wrapped.typ
-            if not hasattr(typ, "__call__") or (
-                getattr(typ.__call__, "__objclass__", None) is type
-                and not issubclass(typ, type)
+            if getattr(typ.__call__, "__objclass__", None) is type and not issubclass(
+                typ, type
             ):
                 self._show_error_if_checking(
                     node,

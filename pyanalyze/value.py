@@ -505,7 +505,7 @@ class TypedValue(Value):
 
     """
 
-    typ: Any
+    typ: type
     """The underlying type."""
     type_object: TypeObject = field(init=False, repr=False, hash=False, compare=False)
 
