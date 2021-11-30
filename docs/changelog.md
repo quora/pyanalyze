@@ -2,8 +2,7 @@
 
 ## Unreleased
 
-- Show an error for `ClassVar` without arguments (#284)
-- Support `Final` with arguments (#284)
+- Support `Final` with arguments and `ClassVar` without arguments (#284)
 - Add `pyanalyze.extensions.NoAny` (#283)
 - Overhaul documentation (#282)
 - Type check calls with `*args` or `**kwargs` (#275)
