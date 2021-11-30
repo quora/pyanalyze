@@ -958,6 +958,44 @@ class TestCustomCheck(TestNameCheckVisitorBase):
             capybara("x" if x else x)  # E: incompatible_argument
 
     @assert_passes()
+    def test_no_any(self) -> None:
+        from pyanalyze.extensions import NoAny
+        from typing_extensions import Annotated
+        from typing import List
+
+        def shallow(x: Annotated[List[int], NoAny()]) -> None:
+            pass
+
+        def deep(x: Annotated[List[int], NoAny(deep=True)]) -> None:
+            pass
+
+        def none_at_all(
+            x: Annotated[List[int], NoAny(deep=True, allowed_sources=frozenset())]
+        ) -> None:
+            pass
+
+        def capybara(unannotated) -> None:
+            shallow(unannotated)  # E: incompatible_argument
+            shallow([1])
+            shallow([int(unannotated)])
+            shallow([unannotated])
+            deep(unannotated)  # E: incompatible_argument
+            deep([1])
+            deep([int(unannotated)])
+            deep([unannotated])  # E: incompatible_argument
+            none_at_all(unannotated)  # E: incompatible_argument
+            none_at_all([1])
+            none_at_all([int(unannotated)])
+            none_at_all([unannotated])  # E: incompatible_argument
+
+            lst = []
+            for x in lst:
+                assert_is_value(x, AnyValue(AnySource.unreachable))
+                shallow(x)
+                deep(x)
+                none_at_all(x)  # E: incompatible_argument
+
+    @assert_passes()
     def test_not_none(self) -> None:
         from dataclasses import dataclass
         from pyanalyze.extensions import CustomCheck

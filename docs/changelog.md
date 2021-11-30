@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `pyanalyze.extensions.NoAny` (#283)
 - Overhaul documentation (#282)
 - Type check calls with `*args` or `**kwargs` (#275)
 - Infer more precise types for comprehensions over known iterables (#279)
