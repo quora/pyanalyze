@@ -1070,41 +1070,42 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
 
 
 class TestBadRaise(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.bad_exception)
-    def test_bad_value(self):
-        def tainotherium():
-            raise NotImplemented
+    @assert_passes()
+    def test_raise(self):
+        def bad_value():
+            raise NotImplemented  # E: bad_exception
 
-    @assert_fails(ErrorCode.bad_exception)
-    def test_bad_type(self):
-        def tainotherium():
+        def bad_type():
             # make sure this isn't inferenced to KnownValue, so this tests what it's supposed to
             # test
             assert_is_value(int("3"), TypedValue(int))
-            raise int("3")
+            raise int("3")  # E: bad_exception
 
-    @assert_fails(ErrorCode.bad_exception)
-    def test_wrong_type(self):
-        def tainotherium():
-            raise bool
+        def wrong_type():
+            raise bool  # E: bad_exception
 
-    @assert_passes()
-    def test_raise_type(self):
-        def tainotherium():
+        def raise_type():
             raise NotImplementedError
 
-    @assert_passes()
-    def test_reraise(self):
-        def tainotherium():
+        def reraise():
             try:
                 pass
             except OSError:
                 raise
 
-    @assert_passes()
-    def test_raise_value(self):
-        def tainotherium():
+        def raise_value():
             raise ValueError("not valuable")
+
+    @assert_passes()
+    def test_from(self):
+        def none():
+            raise Exception() from None
+
+        def other_exc():
+            raise Exception() from Exception()
+
+        def not_exc():
+            raise Exception() from 42  # E: bad_exception
 
 
 class TestVariableNameValue(TestNameCheckVisitorBase):
