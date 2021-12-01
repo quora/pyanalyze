@@ -5,10 +5,10 @@ An object that represents a type.
 """
 from dataclasses import dataclass, field
 import inspect
-from typing import Set, Dict, Sequence, Union
+from typing import Container, Set, Dict, Sequence, Union
 from unittest import mock
 
-from .safe import safe_issubclass
+from .safe import safe_isinstance, safe_issubclass
 
 _cache: Dict[type, "TypeObject"] = {}
 
@@ -62,3 +62,13 @@ class TypeObject:
             if safe_issubclass(base, typ):
                 return True
         return self.is_universally_assignable
+
+    def is_assignable_to_type_object(self, other: "TypeObject") -> bool:
+        return self.is_assignable_to_type(other.typ)
+
+    def is_instance(self, obj: object) -> bool:
+        """Whether obj is an instance of this type."""
+        return safe_isinstance(obj, self.typ)
+
+    def is_exactly(self, types: Container[type]) -> bool:
+        return self.typ in types
