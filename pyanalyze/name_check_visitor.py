@@ -2811,8 +2811,7 @@ class NameCheckVisitor(
         elif isinstance(value, TypedValue) and (
             # asynq only supports exactly list and tuple, not subclasses
             # https://github.com/quora/asynq/blob/b07682d8b11e53e4ee5c585020cc9033e239c7eb/asynq/async_task.py#L446
-            value.typ is list
-            or value.typ is tuple
+            value.get_type_object().is_exactly({list, tuple})
         ):
             if isinstance(value, SequenceIncompleteValue):
                 values = [
@@ -2824,7 +2823,9 @@ class NameCheckVisitor(
                 return GenericValue(value.typ, [member_value])
             else:
                 return TypedValue(value.typ)
-        elif isinstance(value, TypedValue) and value.typ is dict:
+        elif isinstance(value, TypedValue) and value.get_type_object().is_exactly(
+            {dict}
+        ):
             if isinstance(value, DictIncompleteValue):
                 values = [
                     (key, self._unwrap_yield_result(node, val))

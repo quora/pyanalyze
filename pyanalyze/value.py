@@ -38,13 +38,14 @@ from typing import (
     Union,
     Type,
     TypeVar,
+    cast,
 )
 from typing_extensions import Literal
 
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
-from .safe import safe_isinstance, safe_issubclass
+from .safe import safe_issubclass
 from .type_object import TypeObject
 
 T = TypeVar("T")
@@ -345,7 +346,9 @@ class KnownValue(Value):
     def get_type(self) -> type:
         return type(self.val)
 
-    def get_type_object(self) -> TypeObject:
+    def get_type_object(self, ctx: Optional[CanAssignContext] = None) -> TypeObject:
+        if ctx is not None:
+            return ctx.make_type_object(type(self.val))
         return TypeObject.make(type(self.val))
 
     def get_type_value(self) -> Value:
@@ -486,23 +489,31 @@ class TypedValue(Value):
 
     typ: type
     """The underlying type."""
-    type_object: TypeObject = field(init=False, repr=False, hash=False, compare=False)
+    _type_object: Optional[TypeObject] = field(
+        init=False, repr=False, hash=False, compare=False, default=None
+    )
 
-    def __post_init__(self) -> None:
-        self.type_object = TypeObject.make(self.typ)
+    def get_type_object(self, ctx: Optional[CanAssignContext] = None) -> TypeObject:
+        if self._type_object is None:
+            if ctx is None:
+                # TODO: remoove this behavior and make ctx required
+                return TypeObject(self.typ)
+            self._type_object = ctx.make_type_object(self.typ)
+        return self._type_object
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if self.type_object.is_thrift_enum:
+        self_tobj = self.get_type_object(ctx)
+        if self_tobj.is_thrift_enum:
             # Special case: Thrift enums. These are conceptually like
             # enums, but they are ints at runtime.
             return self.can_assign_thrift_enum(other, ctx)
         elif isinstance(other, KnownValue):
-            if safe_isinstance(other.val, self.typ):
+            if self_tobj.is_instance(other.val):
                 return {}
-            if ctx.make_type_object(type(other.val)).is_assignable_to_type(self.typ):
+            if other.get_type_object(ctx).is_assignable_to_type_object(self_tobj):
                 return {}
         elif isinstance(other, TypedValue):
-            if ctx.make_type_object(other.typ).is_assignable_to_type(self.typ):
+            if other.get_type_object(ctx).is_assignable_to_type_object(self_tobj):
                 return {}
         elif isinstance(other, SubclassValue):
             if isinstance(other.typ, TypedValue) and isinstance(
@@ -512,7 +523,9 @@ class TypedValue(Value):
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):
                 return {}
         elif isinstance(other, UnboundMethodValue):
-            if self.typ in {Callable, collections.abc.Callable, object}:
+            if self_tobj.is_exactly(
+                {cast(type, Callable), collections.abc.Callable, object}
+            ):
                 return {}
         return super().can_assign(other, ctx)
 
@@ -525,9 +538,8 @@ class TypedValue(Value):
             if other.val in self.typ._VALUES_TO_NAMES:
                 return {}
         elif isinstance(other, TypedValue):
-            if other.type_object.is_assignable_to_type(
-                self.typ
-            ) or other.type_object.is_assignable_to_type(int):
+            tobj = other.get_type_object(ctx)
+            if tobj.is_assignable_to_type(self.typ) or tobj.is_assignable_to_type(int):
                 return {}
         elif isinstance(other, MultiValuedValue):
             tv_maps = []
@@ -568,7 +580,7 @@ class TypedValue(Value):
         return AnyValue(AnySource.generic_argument)
 
     def is_type(self, typ: type) -> bool:
-        return self.type_object.is_assignable_to_type(typ)
+        return self.get_type_object().is_assignable_to_type(typ)
 
     def get_type(self) -> type:
         return self.typ
