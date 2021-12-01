@@ -139,6 +139,8 @@ from .value import (
 T = TypeVar("T")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
+ExceptionValue = TypedValue(BaseException) | SubclassValue(TypedValue(BaseException))
+ExceptionOrNone = ExceptionValue | KnownNone
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
 
 
@@ -2916,27 +2918,22 @@ class NameCheckVisitor(
 
         if raised_expr is not None:
             raised_value = self.visit(raised_expr)
-            if isinstance(raised_value, KnownValue):
-                val = raised_value.val
-                # technically you can also raise an instance of an old-style class but we don't care
-                if not (
-                    isinstance(val, BaseException)
-                    or (inspect.isclass(val) and issubclass(val, BaseException))
-                ):
-                    self._show_error_if_checking(
-                        node, error_code=ErrorCode.bad_exception
-                    )
-            elif isinstance(raised_value, TypedValue):
-                typ = raised_value.typ
-                # we let you do except Exception as e: raise type(e)
-                if not (issubclass(typ, BaseException) or typ is type):
-                    self._show_error_if_checking(
-                        node, error_code=ErrorCode.bad_exception
-                    )
-            # TODO handle other values
+            can_assign = ExceptionValue.can_assign(raised_value, self)
+            if isinstance(can_assign, CanAssignError):
+                self._show_error_if_checking(
+                    node, error_code=ErrorCode.bad_exception, detail=str(can_assign)
+                )
 
         if node.cause is not None:
-            self.visit(node.cause)
+            cause_value = self.visit(node.cause)
+            can_assign = ExceptionOrNone.can_assign(cause_value, self)
+            if isinstance(can_assign, CanAssignError):
+                self._show_error_if_checking(
+                    node,
+                    "Invalid object in raise from",
+                    error_code=ErrorCode.bad_exception,
+                    detail=str(can_assign),
+                )
 
     def visit_Assert(self, node: ast.Assert) -> None:
         test, constraint = self._visit_possible_constraint(node.test)
