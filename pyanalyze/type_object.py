@@ -64,6 +64,8 @@ class TypeObject:
         return self.is_universally_assignable
 
     def is_assignable_to_type_object(self, other: "TypeObject") -> bool:
+        if isinstance(other.typ, super):
+            return False
         return self.is_assignable_to_type(other.typ)
 
     def is_instance(self, obj: object) -> bool:

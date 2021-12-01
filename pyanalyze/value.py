@@ -38,6 +38,7 @@ from typing import (
     Union,
     Type,
     TypeVar,
+    cast,
 )
 from typing_extensions import Literal
 
@@ -522,7 +523,9 @@ class TypedValue(Value):
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):
                 return {}
         elif isinstance(other, UnboundMethodValue):
-            if self_tobj.is_exactly({Callable, collections.abc.Callable, object}):
+            if self_tobj.is_exactly(
+                {cast(type, Callable), collections.abc.Callable, object}
+            ):
                 return {}
         return super().can_assign(other, ctx)
 
