@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Improve type checking of `raise` statements (#289)
 - Support `Final` with arguments and `ClassVar` without arguments (#284)
 - Add `pyanalyze.extensions.NoAny` (#283)
 - Overhaul documentation (#282)
