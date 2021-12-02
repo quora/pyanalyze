@@ -73,13 +73,15 @@ PERCENT_TESTCASES = [
 def test_parse_percent():
     for pattern, specifiers, raw_pieces in PERCENT_TESTCASES:
         is_bytes = isinstance(pattern, bytes)
-        assert_eq(
+        if is_bytes:
+            expected = PercentFormatString.from_bytes_pattern(pattern)
+        else:
+            expected = PercentFormatString.from_pattern(pattern)
+        assert (
             PercentFormatString(
                 pattern, is_bytes, specifiers=specifiers, raw_pieces=raw_pieces
-            ),
-            PercentFormatString.from_bytes_pattern(pattern)
-            if is_bytes
-            else PercentFormatString.from_pattern(pattern),
+            )
+            == expected
         )
 
 
