@@ -7,6 +7,7 @@ from .value import TypedValue
 from .arg_spec import ArgSpecCache
 from .config import Config
 from .reexport import ImplicitReexportTracker
+from .safe import is_typing_name
 from .type_object import TypeObject
 
 from dataclasses import dataclass, field
@@ -43,8 +44,16 @@ class Checker:
     def _build_type_object(self, typ: Union[type, super, str]) -> TypeObject:
         if isinstance(typ, str):
             # Synthetic type
-            bases = self.arg_spec_cache.ts_finder.get_bases_recursively(typ)
+            base_values = self.arg_spec_cache.ts_finder.get_bases_recursively(typ)
+            bases = set(
+                base.typ for base in base_values if isinstance(base, TypedValue)
+            )
+            is_protocol = any(is_typing_name(base, "Protocol") for base in bases)
+            if is_protocol:
+                protocol_members = self.arg_spec_cache.ts_finder.get_all_attributes(typ)
+            else:
+                protocol_members = set()
             return TypeObject(
-                typ, set(base.typ for base in bases if isinstance(base, TypedValue))
+                typ, bases, is_protocol=is_protocol, protocol_members=protocol_members
             )
         return TypeObject(typ, self.get_additional_bases(typ))

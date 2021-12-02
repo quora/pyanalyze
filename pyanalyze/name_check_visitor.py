@@ -3721,6 +3721,9 @@ class NameCheckVisitor(
             return unite_values(*values)
         return self._get_attribute_no_mvv(root_composite, attr, node)
 
+    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
+        return self.get_attribute(Composite(root_value), attribute)
+
     def _get_attribute_no_mvv(
         self, root_composite: Composite, attr: str, node: Optional[ast.AST] = None
     ) -> Value:

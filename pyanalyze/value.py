@@ -46,7 +46,6 @@ import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
 from .safe import safe_issubclass
-from .type_object import TypeObject
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
@@ -160,7 +159,9 @@ class CanAssignContext:
 
     """
 
-    def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
+    def make_type_object(
+        self, typ: Union[type, super, str]
+    ) -> "pyanalyze.type_object.TypeObject":
         """Return a :class:`pyanalyze.type_object.TypeObject` for this concrete type."""
         raise NotImplementedError
 
@@ -200,6 +201,9 @@ class CanAssignContext:
 
         """
         return None
+
+    def get_attribute_from_value(self, root_value: "Value", attribute: str) -> "Value":
+        return UNINITIALIZED_VALUE
 
 
 @dataclass(frozen=True)
@@ -347,10 +351,12 @@ class KnownValue(Value):
     def get_type(self) -> type:
         return type(self.val)
 
-    def get_type_object(self, ctx: Optional[CanAssignContext] = None) -> TypeObject:
+    def get_type_object(
+        self, ctx: Optional[CanAssignContext] = None
+    ) -> "pyanalyze.type_object.TypeObject":
         if ctx is not None:
             return ctx.make_type_object(type(self.val))
-        return TypeObject(type(self.val))
+        return pyanalyze.type_object.TypeObject(type(self.val))
 
     def get_type_value(self) -> Value:
         return KnownValue(type(self.val))
@@ -490,15 +496,17 @@ class TypedValue(Value):
 
     typ: Union[type, str]
     """The underlying type, or a fully qualified reference to one."""
-    _type_object: Optional[TypeObject] = field(
+    _type_object: Optional["pyanalyze.type_object.TypeObject"] = field(
         init=False, repr=False, hash=False, compare=False, default=None
     )
 
-    def get_type_object(self, ctx: Optional[CanAssignContext] = None) -> TypeObject:
+    def get_type_object(
+        self, ctx: Optional[CanAssignContext] = None
+    ) -> "pyanalyze.type_object.TypeObject":
         if self._type_object is None:
             if ctx is None:
                 # TODO: remoove this behavior and make ctx required
-                return TypeObject(self.typ)
+                return pyanalyze.type_object.TypeObject(self.typ)
             self._type_object = ctx.make_type_object(self.typ)
         return self._type_object
 
@@ -511,11 +519,9 @@ class TypedValue(Value):
         elif isinstance(other, KnownValue):
             if self_tobj.is_instance(other.val):
                 return {}
-            if other.get_type_object(ctx).is_assignable_to_type_object(self_tobj):
-                return {}
+            return self_tobj.can_assign_type_object(other.get_type_object(ctx), ctx)
         elif isinstance(other, TypedValue):
-            if other.get_type_object(ctx).is_assignable_to_type_object(self_tobj):
-                return {}
+            return self_tobj.can_assign_type_object(other.get_type_object(ctx), ctx)
         elif isinstance(other, SubclassValue):
             if isinstance(other.typ, TypedValue) and isinstance(
                 other.typ.typ, self.typ
@@ -541,10 +547,9 @@ class TypedValue(Value):
                 return {}
         elif isinstance(other, TypedValue):
             tobj = other.get_type_object(ctx)
-            if tobj.is_assignable_to_type_object(
-                self.get_type_object(ctx)
-            ) or tobj.is_assignable_to_type(int):
+            if tobj.is_assignable_to_type(int):
                 return {}
+            return self.get_type_object(ctx).can_assign_type_object(tobj, ctx)
         elif isinstance(other, MultiValuedValue):
             tv_maps = []
             for val in other.vals:
@@ -729,9 +734,10 @@ class SequenceIncompleteValue(GenericValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, SequenceIncompleteValue):
-            if not other.get_type_object(ctx).is_assignable_to_type_object(
-                self.get_type_object(ctx)
-            ):
+            tv_map = self.get_type_object(ctx).can_assign_type_object(
+                other.get_type_object(ctx), ctx
+            )
+            if isinstance(tv_map, CanAssignError):
                 return CanAssignError(
                     f"Cannot assign {stringify_object(other.typ)} to"
                     f" {stringify_object(self.typ)}"
@@ -989,6 +995,8 @@ class CallableValue(TypedValue):
             signature = ctx.signature_from_value(other)
             if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
+            if isinstance(signature, pyanalyze.signature.BoundMethodSignature):
+                signature = signature.get_signature()
             if isinstance(signature, pyanalyze.signature.Signature):
                 return self.signature.can_assign(signature, ctx)
 
@@ -1061,10 +1069,10 @@ class SubclassValue(Value):
             return self.typ.can_assign(other.typ, ctx)
         elif isinstance(other, KnownValue):
             if isinstance(other.val, type):
-                if isinstance(self.typ, TypedValue) and ctx.make_type_object(
-                    other.val
-                ).is_assignable_to_type_object(self.typ.get_type_object(ctx)):
-                    return {}
+                if isinstance(self.typ, TypedValue):
+                    self_tobj = self.typ.get_type_object(ctx)
+                    other_tobj = ctx.make_type_object(other.val)
+                    return self_tobj.can_assign_type_object(other_tobj, ctx)
                 elif isinstance(self.typ, TypeVarValue):
                     return {self.typ.typevar: TypedValue(other.val)}
         elif isinstance(other, TypedValue):

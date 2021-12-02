@@ -45,9 +45,30 @@ class TestSyntheticType(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_protocol(self):
+        # Note that csv.writer expects this protocol:
+        # class _Writer(Protocol):
+        #    def write(self, s: str) -> Any: ...
         import csv
         import io
 
-        def capybara():
+        class BadWrite:
+            def write(self, s: int) -> object:
+                return object()
+
+        class GoodWrite:
+            def write(self, s: str) -> object:
+                return object()
+
+        class BadArgName:
+            def write(self, st: str) -> object:
+                return object()
+
+        def capybara(s: str):
             writer = io.StringIO()
             assert_is_value(csv.writer(writer), TypedValue("_csv._writer"))
+
+            csv.writer(1)  # E: incompatible_argument
+            csv.writer(s)  # E: incompatible_argument
+            csv.writer(BadWrite())  # E: incompatible_argument
+            csv.writer(GoodWrite())
+            csv.writer(BadArgName())  # E: incompatible_argument

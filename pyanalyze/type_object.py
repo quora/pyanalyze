@@ -7,8 +7,20 @@ from dataclasses import dataclass, field
 import inspect
 from typing import Container, Set, Sequence, Union
 from unittest import mock
+from pyanalyze.attributes import AttrContext, get_attribute
 
-from .safe import safe_isinstance, safe_issubclass, is_typing_name
+from pyanalyze.stacked_scopes import Composite
+
+from .safe import safe_isinstance, safe_issubclass, safe_in
+from .value import (
+    UNINITIALIZED_VALUE,
+    CanAssign,
+    CanAssignContext,
+    CanAssignError,
+    TypedValue,
+    stringify_object,
+    unify_typevar_maps,
+)
 
 
 def get_mro(typ: Union[type, super]) -> Sequence[type]:
@@ -28,6 +40,7 @@ class TypeObject:
     typ: Union[type, super, str]
     base_classes: Set[Union[type, str]] = field(default_factory=set)
     is_protocol: bool = False
+    protocol_members: Set[str] = field(default_factory=set)
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
 
@@ -35,9 +48,6 @@ class TypeObject:
         if isinstance(self.typ, str):
             # Synthetic type
             self.is_universally_assignable = False
-            self.is_protocol = any(
-                is_typing_name(base, "Protocol") for base in self.base_classes
-            )
             self.is_thrift_enum = False
             return
         if isinstance(self.typ, super):
@@ -73,6 +83,46 @@ class TypeObject:
             )
         return self.is_assignable_to_type(other.typ)
 
+    def can_assign_type_object(
+        self, other: "TypeObject", ctx: CanAssignContext
+    ) -> CanAssign:
+        if other.is_universally_assignable:
+            return {}
+        if isinstance(self.typ, super):
+            return CanAssignError(f"Cannot assign to super object {self}")
+        if not self.is_protocol:
+            if other.is_protocol:
+                if self.typ is object:
+                    return {}
+                return CanAssignError(
+                    f"Cannot assign protocol {other} to non-protocol {self}"
+                )
+            if isinstance(self.typ, str):
+                if safe_in(self.typ, other.base_classes):
+                    return {}
+                return CanAssignError(f"Cannot assign {other} to {self}")
+            else:
+                for base in other.base_classes:
+                    if isinstance(base, type) and safe_issubclass(base, self.typ):
+                        return {}
+                return CanAssignError(f"Cannot assign {other} to {self}")
+        else:
+            self_val = TypedValue(self.typ)
+            other_val = TypedValue(other.typ)
+            tv_maps = []
+            for member in self.protocol_members:
+                expected = ctx.get_attribute_from_value(self_val, member)
+                actual = ctx.get_attribute_from_value(other_val, member)
+                if actual is UNINITIALIZED_VALUE:
+                    return CanAssignError(f"{other} has no attribute {member!r}")
+                tv_map = expected.can_assign(actual, ctx)
+                if isinstance(tv_map, CanAssignError):
+                    return CanAssignError(
+                        f"Value of protocol member {member!r} conflicts", [tv_map]
+                    )
+                tv_maps.append(tv_map)
+            return unify_typevar_maps(tv_maps)
+
     def is_instance(self, obj: object) -> bool:
         """Whether obj is an instance of this type."""
         return safe_isinstance(obj, self.typ)
@@ -86,3 +136,9 @@ class TypeObject:
         else:
             # TODO handle this for synthetic types (if necessary)
             return False
+
+    def __str__(self) -> str:
+        if isinstance(self.typ, str):
+            return self.typ
+        else:
+            return stringify_object(self.typ)
