@@ -393,10 +393,6 @@ def _get_attribute_from_mro(
         pass
     else:
         for base_cls in mro:
-            typeshed_type = ctx.get_attribute_from_typeshed(base_cls, on_class=on_class)
-            if typeshed_type is not UNINITIALIZED_VALUE:
-                return typeshed_type, base_cls, False
-
             try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.
@@ -417,6 +413,10 @@ def _get_attribute_from_mro(
                 return KnownValue(getattr(typ, ctx.attr)), base_cls, True
             except Exception:
                 pass
+
+            typeshed_type = ctx.get_attribute_from_typeshed(base_cls, on_class=on_class)
+            if typeshed_type is not UNINITIALIZED_VALUE:
+                return typeshed_type, base_cls, False
 
     attrs_type = get_attrs_attribute(typ, ctx)
     if attrs_type is not None:
