@@ -57,23 +57,17 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
 
     def test_get_bases(self):
         tsf = TypeshedFinder(verbose=True)
-        assert_eq(
-            [
-                GenericValue(MutableSequence, (TypeVarValue(typevar=Anything),)),
-                GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
-            ],
-            tsf.get_bases(list),
-        )
-        assert_eq(
-            [
-                GenericValue(Collection, (TypeVarValue(typevar=Anything),)),
-                GenericValue(Reversible, (TypeVarValue(typevar=Anything),)),
-                GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
-            ],
-            tsf.get_bases(Sequence),
-        )
-        assert_eq(
-            [GenericValue(Collection, (TypeVarValue(Anything),))], tsf.get_bases(Set)
+        assert [
+            GenericValue(MutableSequence, (TypeVarValue(typevar=Anything),)),
+            GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
+        ] == tsf.get_bases(list)
+        assert [
+            GenericValue(Collection, (TypeVarValue(typevar=Anything),)),
+            GenericValue(Reversible, (TypeVarValue(typevar=Anything),)),
+            GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
+        ] == tsf.get_bases(Sequence)
+        assert [GenericValue(Collection, (TypeVarValue(Anything),))] == tsf.get_bases(
+            Set
         )
 
     def test_newtype(self):
@@ -104,9 +98,9 @@ def f(x: NT, y: Alias) -> None:
             newtype = next(iter(tsf._assignment_cache.values()))
             assert_is_instance(newtype, KnownValue)
             ntv = NewTypeValue(newtype.val)
-            assert_eq("NT", ntv.name)
-            assert_eq(int, ntv.typ)
-            assert_eq(
+            assert "NT" == ntv.name
+            assert int == ntv.typ
+            assert (
                 Signature.make(
                     [
                         SigParameter("x", annotation=ntv),
@@ -114,8 +108,8 @@ def f(x: NT, y: Alias) -> None:
                     ],
                     KnownValue(None),
                     callable=runtime_f,
-                ),
-                sig,
+                )
+                == sig
             )
 
     @assert_passes()
@@ -140,12 +134,9 @@ def f(x: NT, y: Alias) -> None:
 
     def test_get_attribute(self) -> None:
         tsf = TypeshedFinder(verbose=True)
-        assert_is(
-            UNINITIALIZED_VALUE, tsf.get_attribute(object, "nope", on_class=False)
-        )
-        assert_eq(
-            TypedValue(bool),
-            tsf.get_attribute(staticmethod, "__isabstractmethod__", on_class=False),
+        assert UNINITIALIZED_VALUE is tsf.get_attribute(object, "nope", on_class=False)
+        assert TypedValue(bool) == tsf.get_attribute(
+            staticmethod, "__isabstractmethod__", on_class=False
         )
 
 
@@ -167,28 +158,22 @@ class TestGetGenericBases:
         self.get_generic_bases = arg_spec_cache.get_generic_bases
 
     def test_runtime(self):
-        assert_eq(
-            {Parent: {T: AnyValue(AnySource.generic_argument)}},
-            self.get_generic_bases(Parent),
+        assert {
+            Parent: {T: AnyValue(AnySource.generic_argument)}
+        } == self.get_generic_bases(Parent)
+        assert {Parent: {T: TypeVarValue(T)}} == self.get_generic_bases(
+            Parent, [TypeVarValue(T)]
         )
-        assert_eq(
-            {Parent: {T: TypeVarValue(T)}},
-            self.get_generic_bases(Parent, [TypeVarValue(T)]),
+        assert {Child: {}, Parent: {T: TypedValue(int)}} == self.get_generic_bases(
+            Child
         )
-        assert_eq(
-            {Child: {}, Parent: {T: TypedValue(int)}}, self.get_generic_bases(Child)
-        )
-        assert_eq(
-            {
-                GenericChild: {T: AnyValue(AnySource.generic_argument)},
-                Parent: {T: AnyValue(AnySource.generic_argument)},
-            },
-            self.get_generic_bases(GenericChild),
-        )
+        assert {
+            GenericChild: {T: AnyValue(AnySource.generic_argument)},
+            Parent: {T: AnyValue(AnySource.generic_argument)},
+        } == self.get_generic_bases(GenericChild)
         one = KnownValue(1)
-        assert_eq(
-            {GenericChild: {T: one}, Parent: {T: one}},
-            self.get_generic_bases(GenericChild, [one]),
+        assert {GenericChild: {T: one}, Parent: {T: one}} == self.get_generic_bases(
+            GenericChild, [one]
         )
 
     def check(
@@ -389,15 +374,14 @@ class TestGetGenericBases:
 class TestAttribute:
     def test_basic(self) -> None:
         tsf = TypeshedFinder(verbose=True)
-        assert_eq(
-            TypedValue(bool),
-            tsf.get_attribute(staticmethod, "__isabstractmethod__", on_class=False),
+        assert TypedValue(bool) == tsf.get_attribute(
+            staticmethod, "__isabstractmethod__", on_class=False
         )
 
     def test_property(self) -> None:
         tsf = TypeshedFinder(verbose=True)
-        assert_eq(TypedValue(int), tsf.get_attribute(int, "real", on_class=False))
+        assert TypedValue(int) == tsf.get_attribute(int, "real", on_class=False)
 
     def test_http_error(self) -> None:
         tsf = TypeshedFinder(verbose=True)
-        assert_is(True, tsf.has_attribute(HTTPError, "read"))
+        assert True is tsf.has_attribute(HTTPError, "read")

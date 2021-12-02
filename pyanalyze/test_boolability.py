@@ -31,99 +31,77 @@ class HasLen:
 
 def test_get_boolability() -> None:
     future = TypedValue(FutureBase)
-    assert_eq(Boolability.boolable, get_boolability(AnyValue(AnySource.unannotated)))
-    assert_eq(
-        Boolability.type_always_true,
-        get_boolability(UnboundMethodValue("method", Composite(TypedValue(int)))),
+    assert Boolability.boolable == get_boolability(AnyValue(AnySource.unannotated))
+    assert Boolability.type_always_true == get_boolability(
+        UnboundMethodValue("method", Composite(TypedValue(int)))
     )
-    assert_eq(
-        Boolability.boolable,
-        get_boolability(
-            UnboundMethodValue(
-                "method", Composite(TypedValue(int)), secondary_attr_name="whatever"
-            )
-        ),
+    assert Boolability.boolable == get_boolability(
+        UnboundMethodValue(
+            "method", Composite(TypedValue(int)), secondary_attr_name="whatever"
+        )
     )
 
     # Sequence/dict values
-    assert_eq(
-        Boolability.type_always_true,
-        get_boolability(TypedDictValue({"a": (True, TypedValue(int))})),
+    assert Boolability.type_always_true == get_boolability(
+        TypedDictValue({"a": (True, TypedValue(int))})
     )
-    assert_eq(
-        Boolability.boolable,
-        get_boolability(TypedDictValue({"a": (False, TypedValue(int))})),
+    assert Boolability.boolable == get_boolability(
+        TypedDictValue({"a": (False, TypedValue(int))})
     )
-    assert_eq(
-        Boolability.type_always_true,
-        get_boolability(SequenceIncompleteValue(tuple, [KnownValue(1)])),
+    assert Boolability.type_always_true == get_boolability(
+        SequenceIncompleteValue(tuple, [KnownValue(1)])
     )
-    assert_eq(
-        Boolability.value_always_false,
-        get_boolability(SequenceIncompleteValue(tuple, [])),
+    assert Boolability.value_always_false == get_boolability(
+        SequenceIncompleteValue(tuple, [])
     )
-    assert_eq(
-        Boolability.value_always_true_mutable,
-        get_boolability(SequenceIncompleteValue(list, [KnownValue(1)])),
+    assert Boolability.value_always_true_mutable == get_boolability(
+        SequenceIncompleteValue(list, [KnownValue(1)])
     )
-    assert_eq(
-        Boolability.value_always_false_mutable,
-        get_boolability(SequenceIncompleteValue(list, [])),
+    assert Boolability.value_always_false_mutable == get_boolability(
+        SequenceIncompleteValue(list, [])
     )
-    assert_eq(
-        Boolability.value_always_true_mutable,
-        get_boolability(DictIncompleteValue(dict, [(KnownValue(1), KnownValue(1))])),
+    assert Boolability.value_always_true_mutable == get_boolability(
+        DictIncompleteValue(dict, [(KnownValue(1), KnownValue(1))])
     )
-    assert_eq(
-        Boolability.value_always_false_mutable,
-        get_boolability(DictIncompleteValue(dict, [])),
+    assert Boolability.value_always_false_mutable == get_boolability(
+        DictIncompleteValue(dict, [])
     )
 
     # KnownValue
-    assert_eq(Boolability.erroring_bool, get_boolability(KnownValue(BadBool())))
-    assert_eq(Boolability.value_always_true, get_boolability(KnownValue(1)))
-    assert_eq(Boolability.type_always_true, get_boolability(KnownValue(int)))
-    assert_eq(Boolability.value_always_false, get_boolability(KnownValue(0)))
+    assert Boolability.erroring_bool == get_boolability(KnownValue(BadBool()))
+    assert Boolability.value_always_true == get_boolability(KnownValue(1))
+    assert Boolability.type_always_true == get_boolability(KnownValue(int))
+    assert Boolability.value_always_false == get_boolability(KnownValue(0))
 
     # TypedValue
-    assert_eq(Boolability.boolable, get_boolability(TypedValue(HasLen)))
-    assert_eq(Boolability.erroring_bool, get_boolability(future))
-    assert_eq(Boolability.type_always_true, get_boolability(TypedValue(object)))
-    assert_eq(Boolability.boolable, get_boolability(TypedValue(int)))
+    assert Boolability.boolable == get_boolability(TypedValue(HasLen))
+    assert Boolability.erroring_bool == get_boolability(future)
+    assert Boolability.type_always_true == get_boolability(TypedValue(object))
+    assert Boolability.boolable == get_boolability(TypedValue(int))
 
     # MultiValuedValue and AnnotatedValue
-    assert_eq(
-        Boolability.erroring_bool,
-        get_boolability(AnnotatedValue(future, [KnownValue(1)])),
+    assert Boolability.erroring_bool == get_boolability(
+        AnnotatedValue(future, [KnownValue(1)])
     )
-    assert_eq(Boolability.erroring_bool, get_boolability(future | KnownValue(1)))
-    assert_eq(Boolability.boolable, get_boolability(TypedValue(int) | TypedValue(str)))
-    assert_eq(Boolability.boolable, get_boolability(TypedValue(int) | KnownValue("")))
-    assert_eq(
-        Boolability.boolable, get_boolability(KnownValue(True) | KnownValue(False))
+    assert Boolability.erroring_bool == get_boolability(future | KnownValue(1))
+    assert Boolability.boolable == get_boolability(TypedValue(int) | TypedValue(str))
+    assert Boolability.boolable == get_boolability(TypedValue(int) | KnownValue(""))
+    assert Boolability.boolable == get_boolability(KnownValue(True) | KnownValue(False))
+    assert Boolability.boolable == get_boolability(TypedValue(type) | KnownValue(False))
+    assert Boolability.value_always_true == get_boolability(
+        TypedValue(type) | KnownValue(True)
     )
-    assert_eq(
-        Boolability.boolable, get_boolability(TypedValue(type) | KnownValue(False))
+    assert Boolability.value_always_true_mutable == get_boolability(
+        TypedValue(type) | KnownValue([1])
     )
-    assert_eq(
-        Boolability.value_always_true,
-        get_boolability(TypedValue(type) | KnownValue(True)),
+    assert Boolability.value_always_true_mutable == get_boolability(
+        KnownValue([1]) | KnownValue(True)
     )
-    assert_eq(
-        Boolability.value_always_true_mutable,
-        get_boolability(TypedValue(type) | KnownValue([1])),
+    assert Boolability.value_always_false_mutable == get_boolability(
+        KnownValue(False) | KnownValue([])
     )
-    assert_eq(
-        Boolability.value_always_true_mutable,
-        get_boolability(KnownValue([1]) | KnownValue(True)),
-    )
-    assert_eq(
-        Boolability.value_always_false_mutable,
-        get_boolability(KnownValue(False) | KnownValue([])),
-    )
-    assert_eq(
-        Boolability.value_always_false,
-        get_boolability(KnownValue(False) | KnownValue("")),
+    assert Boolability.value_always_false == get_boolability(
+        KnownValue(False) | KnownValue("")
     )
 
 

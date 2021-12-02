@@ -30,17 +30,14 @@ DictObject = GenericValue(dict, [TypedValue(str), TypedValue(object)])
 
 
 def test_stringify() -> None:
-    assert_eq("() -> Any[unannotated]", str(Signature.make([])))
-    assert_eq("() -> int", str(Signature.make([], TypedValue(int))))
-    assert_eq(
-        "@asynq () -> int", str(Signature.make([], TypedValue(int), is_asynq=True))
+    assert "() -> Any[unannotated]" == str(Signature.make([]))
+    assert "() -> int" == str(Signature.make([], TypedValue(int)))
+    assert "@asynq () -> int" == str(Signature.make([], TypedValue(int), is_asynq=True))
+    assert "(...) -> int" == str(
+        Signature.make([], TypedValue(int), is_ellipsis_args=True)
     )
-    assert_eq(
-        "(...) -> int", str(Signature.make([], TypedValue(int), is_ellipsis_args=True))
-    )
-    assert_eq(
-        "(x: int) -> int",
-        str(Signature.make([P("x", annotation=TypedValue(int))], TypedValue(int))),
+    assert "(x: int) -> int" == str(
+        Signature.make([P("x", annotation=TypedValue(int))], TypedValue(int))
     )
 
 
