@@ -1,4 +1,4 @@
-from qcore.asserts import AssertRaises, assert_eq
+from qcore.asserts import AssertRaises
 import typing_inspect
 from typing import List, Optional, Union, TypeVar
 

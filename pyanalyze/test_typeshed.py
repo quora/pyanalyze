@@ -1,5 +1,4 @@
 # static analysis: ignore
-from qcore.asserts import assert_eq, assert_is, assert_is_instance
 from qcore.testing import Anything
 import collections.abc
 from collections.abc import MutableSequence, Sequence, Collection, Reversible, Set
@@ -9,7 +8,6 @@ from pathlib import Path
 import sys
 import tempfile
 import time
-from pyanalyze.extensions import reveal_type
 from typeshed_client import Resolver, get_search_context
 import typing
 from typing import Dict, Generic, List, TypeVar, NewType, Union
@@ -96,7 +94,7 @@ def f(x: NT, y: Alias) -> None:
 
             sig = tsf.get_argspec_for_fully_qualified_name("newt.f", runtime_f)
             newtype = next(iter(tsf._assignment_cache.values()))
-            assert_is_instance(newtype, KnownValue)
+            assert isinstance(newtype, KnownValue)
             ntv = NewTypeValue(newtype.val)
             assert "NT" == ntv.name
             assert int == ntv.typ

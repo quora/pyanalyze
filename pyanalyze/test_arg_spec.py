@@ -1,6 +1,5 @@
 # static analysis: ignore
 from asynq import asynq
-from qcore.asserts import assert_eq
 import functools
 from typing import TypeVar, NewType
 

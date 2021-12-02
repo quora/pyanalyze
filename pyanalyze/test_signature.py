@@ -1,7 +1,6 @@
 # static analysis: ignore
 from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
-from qcore.asserts import assert_eq
 
 from .value import (
     AnnotatedValue,

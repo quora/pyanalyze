@@ -1,6 +1,5 @@
 # static analysis: ignore
 from asynq.futures import FutureBase
-from qcore.asserts import assert_eq
 
 from .boolability import Boolability, get_boolability
 from .stacked_scopes import Composite

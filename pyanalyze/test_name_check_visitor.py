@@ -1,22 +1,12 @@
 # static analysis: ignore
-"""
-
-Tests for the test_scope.py script.
-
-"""
-
 import ast
-from pyanalyze.analysis_lib import make_module
 from asynq import FutureBase, AsyncTask
 import collections
 import os
-import sys
 import types
 
-from qcore.asserts import assert_eq, assert_is, assert_in
-
-from pyanalyze.checker import Checker
-
+from .analysis_lib import make_module
+from .checker import Checker
 from .name_check_visitor import (
     _get_task_cls,
     _static_hasattr,

@@ -1,7 +1,4 @@
 # static analysis: ignore
-from qcore.asserts import assert_eq
-
-
 from .error_code import ErrorCode
 from .asynq_checker import (
     is_impure_async_fn,

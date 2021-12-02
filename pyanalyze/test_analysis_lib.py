@@ -1,5 +1,4 @@
 import ast
-from qcore.asserts import assert_eq
 
 from .analysis_lib import get_indentation, get_line_range_for_node
 

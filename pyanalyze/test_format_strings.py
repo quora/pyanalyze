@@ -1,6 +1,4 @@
 # static analysis: ignore
-from qcore.asserts import assert_eq, assert_ge
-
 from .error_code import ErrorCode
 from .format_strings import (
     ConversionSpecifier,
@@ -20,7 +18,6 @@ from .value import (
     SequenceIncompleteValue,
     TypedValue,
 )
-
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_value import CTX
@@ -156,21 +153,19 @@ DOT_FORMAT_ERRORS = [
 
 def test_parse_format_string():
     for format_string, expected in DOT_FORMAT_TESTCASES:
-        assert_eq(
-            (FormatString(expected), []),
-            parse_format_string(format_string),
-            extra=format_string,
-        )
+        assert (FormatString(expected), []) == parse_format_string(
+            format_string
+        ), format_string
     for format_string, position, message in DOT_FORMAT_ERRORS:
         _, errors = parse_format_string(format_string)
         assert len(errors) >= 1
-        assert_eq((position, message), errors[0], extra=format_string)
+        assert (position, message) == errors[0], format_string
 
 
 def assert_lints(pattern, errors):
     """Asserts that linting this pattern produces the given errors."""
     fs = PercentFormatString.from_pattern(pattern)
-    assert_eq(errors, list(fs.lint()), extra="while linting {}".format(pattern))
+    assert errors == list(fs.lint()), f"while linting {pattern}"
 
 
 def test_lint():

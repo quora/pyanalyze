@@ -2,7 +2,6 @@ import collections.abc
 import enum
 import io
 import pickle
-from qcore.asserts import assert_is_instance
 from typing import NewType, Sequence, Union
 from typing_extensions import Protocol, runtime_checkable
 import typing
@@ -53,7 +52,7 @@ CTX = Context()
 
 def assert_cannot_assign(left: Value, right: Value) -> None:
     tv_map = left.can_assign(right, CTX)
-    assert_is_instance(tv_map, CanAssignError)
+    assert isinstance(tv_map, CanAssignError)
     print(tv_map.display())
 
 
@@ -453,9 +452,7 @@ def test_io() -> None:
 
 
 def test_concrete_values_from_iterable() -> None:
-    assert_is_instance(
-        concrete_values_from_iterable(KnownValue(1), CTX), CanAssignError
-    )
+    assert isinstance(concrete_values_from_iterable(KnownValue(1), CTX), CanAssignError)
     assert () == concrete_values_from_iterable(KnownValue(()), CTX)
     assert (KnownValue(1), KnownValue(2)) == concrete_values_from_iterable(
         KnownValue((1, 2)), CTX

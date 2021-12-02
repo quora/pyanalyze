@@ -11,7 +11,6 @@ import re
 import sys
 import textwrap
 
-from qcore.asserts import assert_in, assert_not_in, assert_eq, assert_is_not
 from .node_visitor import (
     BaseNodeVisitor,
     VisitorError,
@@ -89,8 +88,9 @@ class BaseNodeVisitorTester(object):
     def assert_fails(self, expected_error_code, code_str, **kwargs):
         """Asserts that running the given code_str fails with expected_error_code."""
         exc = self._run_str(code_str, expect_failure=True, **kwargs)
-        message = "%s does not have code %r" % (exc, expected_error_code)
-        assert_eq(expected_error_code, exc.error_code, message)
+        assert (
+            expected_error_code == exc.error_code
+        ), f"{exc} does not have code {expected_error_code}"
 
     def assert_is_changed(self, code_str, expected_code_str, repeat=False, **kwargs):
         """Asserts that the given code_str is corrected by the visitor to expected_code_str.
@@ -269,7 +269,7 @@ class TestDuplicateVisitor(BaseNodeVisitorTester):
 
     def test_no_duplicate(self):
         errors = self._run_str("while True: pass", fail_after_first=False)
-        assert_eq(1, len(errors), extra=errors)
+        assert len(errors) == 1, errors
 
 
 class NoWhileVisitor(BaseNodeVisitor):

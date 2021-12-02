@@ -1,6 +1,4 @@
 # static analysis: ignore
-from qcore.asserts import assert_eq, assert_in, assert_not_in, assert_is
-
 from .error_code import ErrorCode
 from .name_check_visitor import build_stacked_scopes
 from .stacked_scopes import ScopeType, uniq_chain
