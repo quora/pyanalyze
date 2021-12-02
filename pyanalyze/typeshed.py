@@ -96,6 +96,7 @@ class TypeshedFinder(object):
         self.verbose = verbose
         self.resolver = typeshed_client.Resolver()
         self._assignment_cache = {}
+        self._attribute_cache = {}
 
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
@@ -200,9 +201,15 @@ class TypeshedFinder(object):
     def get_attribute_for_fq_name(
         self, fq_name: str, attr: str, *, on_class: bool
     ) -> Value:
-        info = self._get_info_for_name(fq_name)
-        mod, _ = fq_name.rsplit(".", maxsplit=1)
-        return self._get_attribute_from_info(info, mod, attr, on_class=on_class)
+        key = (fq_name, attr, on_class)
+        try:
+            return self._attribute_cache[key]
+        except KeyError:
+            info = self._get_info_for_name(fq_name)
+            mod, _ = fq_name.rsplit(".", maxsplit=1)
+            val = self._get_attribute_from_info(info, mod, attr, on_class=on_class)
+            self._attribute_cache[key] = val
+            return val
 
     def get_attribute_recursively(
         self, fq_name: str, attr: str, *, on_class: bool
