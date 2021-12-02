@@ -147,7 +147,4 @@ class TypeObject:
             return False
 
     def __str__(self) -> str:
-        if isinstance(self.typ, str):
-            return self.typ
-        else:
-            return stringify_object(self.typ)
+        return stringify_object(self.typ)
