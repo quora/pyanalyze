@@ -316,7 +316,7 @@ class TypeshedFinder(object):
             elif isinstance(info.ast, ast3.Assign):
                 val = self._parse_type(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
-                    return self.get_attribute(val.val, attr)
+                    return self.get_attribute(val.val, attr, on_class=on_class)
                 else:
                     return UNINITIALIZED_VALUE
             else:
