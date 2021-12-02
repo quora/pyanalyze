@@ -1,6 +1,5 @@
 # static analysis: ignore
 from asynq import asynq
-from qcore.asserts import assert_eq
 import functools
 from typing import TypeVar, NewType
 
@@ -104,137 +103,100 @@ def test_get_argspec():
 
         # there's special logic for this in signature_from_value; TODO move that into
         # ExtendedArgSpec
-        assert_eq(
-            Signature.make([SigParameter("arg")], callable=ClassWithCall.__call__),
-            visitor.signature_from_value(cwc_typed),
-        )
+        assert Signature.make(
+            [SigParameter("arg")], callable=ClassWithCall.__call__
+        ) == visitor.signature_from_value(cwc_typed)
 
-        assert_eq(
-            BoundMethodSignature(
-                Signature.make(
-                    [SigParameter("cls")],
-                    callable=ClassWithCall.normal_classmethod.__func__,
-                ),
-                Composite(KnownValue(ClassWithCall)),
-            ),
-            ArgSpecCache(config).get_argspec(ClassWithCall.normal_classmethod),
-        )
-        assert_eq(
+        assert BoundMethodSignature(
             Signature.make(
-                [SigParameter("arg")], callable=ClassWithCall.normal_staticmethod
+                [SigParameter("cls")],
+                callable=ClassWithCall.normal_classmethod.__func__,
             ),
-            ArgSpecCache(config).get_argspec(ClassWithCall.normal_staticmethod),
-        )
+            Composite(KnownValue(ClassWithCall)),
+        ) == ArgSpecCache(config).get_argspec(ClassWithCall.normal_classmethod)
+        assert Signature.make(
+            [SigParameter("arg")], callable=ClassWithCall.normal_staticmethod
+        ) == ArgSpecCache(config).get_argspec(ClassWithCall.normal_staticmethod)
 
-        assert_eq(
-            Signature.make(
-                [
-                    SigParameter("capybara"),
-                    SigParameter("hutia", default=KnownValue(3)),
-                    SigParameter("tucotucos", SigParameter.VAR_POSITIONAL),
-                    SigParameter("proechimys", SigParameter.VAR_KEYWORD),
-                ],
-                callable=function,
-            ),
-            ArgSpecCache(config).get_argspec(function),
-        )
+        assert Signature.make(
+            [
+                SigParameter("capybara"),
+                SigParameter("hutia", default=KnownValue(3)),
+                SigParameter("tucotucos", SigParameter.VAR_POSITIONAL),
+                SigParameter("proechimys", SigParameter.VAR_KEYWORD),
+            ],
+            callable=function,
+        ) == ArgSpecCache(config).get_argspec(function)
 
-        assert_eq(
-            Signature.make(
-                [SigParameter("x"), SigParameter("y")],
-                callable=async_function.fn,
-                is_asynq=True,
-            ),
-            ArgSpecCache(config).get_argspec(async_function),
-        )
+        assert Signature.make(
+            [SigParameter("x"), SigParameter("y")],
+            callable=async_function.fn,
+            is_asynq=True,
+        ) == ArgSpecCache(config).get_argspec(async_function)
 
-        assert_eq(
-            Signature.make(
-                [SigParameter("x"), SigParameter("y")],
-                callable=async_function.fn,
-                is_asynq=True,
-            ),
-            ArgSpecCache(config).get_argspec(async_function.asynq),
-        )
+        assert Signature.make(
+            [SigParameter("x"), SigParameter("y")],
+            callable=async_function.fn,
+            is_asynq=True,
+        ) == ArgSpecCache(config).get_argspec(async_function.asynq)
 
         instance = ClassWithCall(1)
 
-        assert_eq(
-            BoundMethodSignature(
-                Signature.make(
-                    [SigParameter("self"), SigParameter("x")],
-                    callable=instance.async_method.decorator.fn,
-                    is_asynq=True,
-                ),
-                Composite(KnownValue(instance)),
-            ),
-            ArgSpecCache(config).get_argspec(instance.async_method),
-        )
-
-        assert_eq(
-            BoundMethodSignature(
-                Signature.make(
-                    [SigParameter("self"), SigParameter("x")],
-                    callable=instance.async_method.decorator.fn,
-                    is_asynq=True,
-                ),
-                Composite(KnownValue(instance)),
-            ),
-            ArgSpecCache(config).get_argspec(instance.async_method.asynq),
-        )
-
-        assert_eq(
+        assert BoundMethodSignature(
             Signature.make(
-                [SigParameter("y")],
-                callable=ClassWithCall.async_staticmethod.fn,
+                [SigParameter("self"), SigParameter("x")],
+                callable=instance.async_method.decorator.fn,
                 is_asynq=True,
             ),
-            ArgSpecCache(config).get_argspec(ClassWithCall.async_staticmethod),
-        )
+            Composite(KnownValue(instance)),
+        ) == ArgSpecCache(config).get_argspec(instance.async_method)
 
-        assert_eq(
+        assert BoundMethodSignature(
             Signature.make(
-                [SigParameter("y")],
-                callable=ClassWithCall.async_staticmethod.fn,
+                [SigParameter("self"), SigParameter("x")],
+                callable=instance.async_method.decorator.fn,
                 is_asynq=True,
             ),
-            ArgSpecCache(config).get_argspec(ClassWithCall.async_staticmethod.asynq),
-        )
+            Composite(KnownValue(instance)),
+        ) == ArgSpecCache(config).get_argspec(instance.async_method.asynq)
 
-        assert_eq(
-            BoundMethodSignature(
-                Signature.make(
-                    [SigParameter("cls"), SigParameter("z")],
-                    callable=ClassWithCall.async_classmethod.decorator.fn,
-                    is_asynq=True,
-                ),
-                Composite(KnownValue(ClassWithCall)),
-            ),
-            ArgSpecCache(config).get_argspec(ClassWithCall.async_classmethod),
-        )
+        assert Signature.make(
+            [SigParameter("y")],
+            callable=ClassWithCall.async_staticmethod.fn,
+            is_asynq=True,
+        ) == ArgSpecCache(config).get_argspec(ClassWithCall.async_staticmethod)
 
-        assert_eq(
-            BoundMethodSignature(
-                Signature.make(
-                    [SigParameter("cls"), SigParameter("z")],
-                    callable=ClassWithCall.async_classmethod.decorator.fn,
-                    is_asynq=True,
-                ),
-                Composite(KnownValue(ClassWithCall)),
-            ),
-            ArgSpecCache(config).get_argspec(ClassWithCall.async_classmethod.asynq),
-        )
+        assert Signature.make(
+            [SigParameter("y")],
+            callable=ClassWithCall.async_staticmethod.fn,
+            is_asynq=True,
+        ) == ArgSpecCache(config).get_argspec(ClassWithCall.async_staticmethod.asynq)
 
-        assert_eq(
-            BoundMethodSignature(
-                Signature.make(
-                    [SigParameter("cls"), SigParameter("ac")],
-                    callable=ClassWithCall.pure_async_classmethod.decorator.fn,
-                ),
-                Composite(KnownValue(ClassWithCall)),
+        assert BoundMethodSignature(
+            Signature.make(
+                [SigParameter("cls"), SigParameter("z")],
+                callable=ClassWithCall.async_classmethod.decorator.fn,
+                is_asynq=True,
             ),
-            ArgSpecCache(config).get_argspec(ClassWithCall.pure_async_classmethod),
-        )
+            Composite(KnownValue(ClassWithCall)),
+        ) == ArgSpecCache(config).get_argspec(ClassWithCall.async_classmethod)
+
+        assert BoundMethodSignature(
+            Signature.make(
+                [SigParameter("cls"), SigParameter("z")],
+                callable=ClassWithCall.async_classmethod.decorator.fn,
+                is_asynq=True,
+            ),
+            Composite(KnownValue(ClassWithCall)),
+        ) == ArgSpecCache(config).get_argspec(ClassWithCall.async_classmethod.asynq)
+
+        assert BoundMethodSignature(
+            Signature.make(
+                [SigParameter("cls"), SigParameter("ac")],
+                callable=ClassWithCall.pure_async_classmethod.decorator.fn,
+            ),
+            Composite(KnownValue(ClassWithCall)),
+        ) == ArgSpecCache(config).get_argspec(ClassWithCall.pure_async_classmethod)
 
         # This behaves differently in 3.9 (decorator) than in 3.6-3.8 (__func__). Not
         # sure why.
@@ -243,60 +205,48 @@ def test_get_argspec():
         else:
             callable = ClassWithCall.classmethod_before_async.__func__.fn
 
-        assert_eq(
-            BoundMethodSignature(
-                Signature.make(
-                    [SigParameter("cls"), SigParameter("ac")],
-                    callable=callable,
-                    is_asynq=True,
-                ),
-                Composite(KnownValue(ClassWithCall)),
+        assert BoundMethodSignature(
+            Signature.make(
+                [SigParameter("cls"), SigParameter("ac")],
+                callable=callable,
+                is_asynq=True,
             ),
-            ArgSpecCache(config).get_argspec(ClassWithCall.classmethod_before_async),
-        )
+            Composite(KnownValue(ClassWithCall)),
+        ) == ArgSpecCache(config).get_argspec(ClassWithCall.classmethod_before_async)
 
-        assert_eq(
-            Signature.make(
-                [
-                    SigParameter("args", annotation=TypedValue(int)),
-                    SigParameter("kwargs", annotation=TypedValue(str)),
-                ],
-                KnownValue(None),
-                callable=wrapped,
-            ),
-            ArgSpecCache(config).get_argspec(wrapped),
-        )
+        assert Signature.make(
+            [
+                SigParameter("args", annotation=TypedValue(int)),
+                SigParameter("kwargs", annotation=TypedValue(str)),
+            ],
+            KnownValue(None),
+            callable=wrapped,
+        ) == ArgSpecCache(config).get_argspec(wrapped)
         decorated = decorator(wrapped)
-        assert_eq(
-            Signature.make(
-                [
-                    SigParameter(
-                        "args",
-                        SigParameter.VAR_POSITIONAL,
-                        annotation=AnyValue(AnySource.inference),
-                    ),
-                    SigParameter(
-                        "kwargs",
-                        SigParameter.VAR_KEYWORD,
-                        annotation=AnyValue(AnySource.inference),
-                    ),
-                ],
-                callable=decorated,
-            ),
-            ArgSpecCache(config).get_argspec(decorated),
-        )
-        assert_eq(
-            Signature.make(
-                [
-                    SigParameter(
-                        "x", SigParameter.POSITIONAL_ONLY, annotation=TypedValue(int)
-                    )
-                ],
-                NewTypeValue(NT),
-                callable=NT,
-            ),
-            ArgSpecCache(config).get_argspec(NT),
-        )
+        assert Signature.make(
+            [
+                SigParameter(
+                    "args",
+                    SigParameter.VAR_POSITIONAL,
+                    annotation=AnyValue(AnySource.inference),
+                ),
+                SigParameter(
+                    "kwargs",
+                    SigParameter.VAR_KEYWORD,
+                    annotation=AnyValue(AnySource.inference),
+                ),
+            ],
+            callable=decorated,
+        ) == ArgSpecCache(config).get_argspec(decorated)
+        assert Signature.make(
+            [
+                SigParameter(
+                    "x", SigParameter.POSITIONAL_ONLY, annotation=TypedValue(int)
+                )
+            ],
+            NewTypeValue(NT),
+            callable=NT,
+        ) == ArgSpecCache(config).get_argspec(NT)
 
 
 def test_is_dot_asynq_function():

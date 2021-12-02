@@ -2,13 +2,6 @@ import collections.abc
 import enum
 import io
 import pickle
-from qcore.asserts import (
-    assert_eq,
-    assert_in,
-    assert_is,
-    assert_is_instance,
-    assert_is_not,
-)
 from typing import NewType, Sequence, Union
 from typing_extensions import Protocol, runtime_checkable
 import typing
@@ -59,12 +52,12 @@ CTX = Context()
 
 def assert_cannot_assign(left: Value, right: Value) -> None:
     tv_map = left.can_assign(right, CTX)
-    assert_is_instance(tv_map, CanAssignError)
+    assert isinstance(tv_map, CanAssignError)
     print(tv_map.display())
 
 
 def assert_can_assign(left: Value, right: Value, typevar_map: TypeVarMap = {}) -> None:
-    assert_eq(typevar_map, left.can_assign(right, CTX))
+    assert typevar_map == left.can_assign(right, CTX)
 
 
 def test_any_value() -> None:
@@ -77,9 +70,9 @@ def test_any_value() -> None:
 
 def test_known_value() -> None:
     val = KnownValue(3)
-    assert_eq(3, val.val)
-    assert_eq("Literal[3]", str(val))
-    assert_eq("Literal['']", str(KnownValue("")))
+    assert 3 == val.val
+    assert "Literal[3]" == str(val)
+    assert "Literal['']" == str(KnownValue(""))
     assert val.is_type(int)
     assert not val.is_type(str)
 
@@ -101,11 +94,11 @@ def test_unbound_method_value() -> None:
     val = value.UnboundMethodValue(
         "get_prop_with_get", Composite(value.TypedValue(tests.PropertyObject))
     )
-    assert_eq("<method get_prop_with_get on pyanalyze.tests.PropertyObject>", str(val))
-    assert_eq("get_prop_with_get", val.attr_name)
-    assert_eq(TypedValue(tests.PropertyObject), val.composite.value)
-    assert_is(None, val.secondary_attr_name)
-    assert_eq(tests.PropertyObject.get_prop_with_get, val.get_method())
+    assert "<method get_prop_with_get on pyanalyze.tests.PropertyObject>" == str(val)
+    assert "get_prop_with_get" == val.attr_name
+    assert TypedValue(tests.PropertyObject) == val.composite.value
+    assert None is val.secondary_attr_name
+    assert tests.PropertyObject.get_prop_with_get == val.get_method()
     assert val.is_type(object)
     assert not val.is_type(str)
 
@@ -114,24 +107,24 @@ def test_unbound_method_value() -> None:
         Composite(value.TypedValue(tests.PropertyObject)),
         secondary_attr_name="asynq",
     )
-    assert_eq(
-        "<method get_prop_with_get.asynq on pyanalyze.tests.PropertyObject>", str(val)
+    assert "<method get_prop_with_get.asynq on pyanalyze.tests.PropertyObject>" == str(
+        val
     )
-    assert_eq("get_prop_with_get", val.attr_name)
-    assert_eq(TypedValue(tests.PropertyObject), val.composite.value)
-    assert_eq("asynq", val.secondary_attr_name)
+    assert "get_prop_with_get" == val.attr_name
+    assert TypedValue(tests.PropertyObject) == val.composite.value
+    assert "asynq" == val.secondary_attr_name
     method = val.get_method()
-    assert_is_not(None, method)
-    assert_in(method.__name__, tests.ASYNQ_METHOD_NAMES)
-    assert_eq(tests.PropertyObject.get_prop_with_get, method.__self__)
+    assert None is not method
+    assert method.__name__ in tests.ASYNQ_METHOD_NAMES
+    assert tests.PropertyObject.get_prop_with_get == method.__self__
     assert val.is_type(object)
     assert not val.is_type(str)
 
 
 def test_typed_value() -> None:
     val = TypedValue(str)
-    assert_is(str, val.typ)
-    assert_eq("str", str(val))
+    assert str is val.typ
+    assert "str" == str(val)
     assert val.is_type(str)
     assert not val.is_type(int)
 
@@ -142,7 +135,7 @@ def test_typed_value() -> None:
     assert_cannot_assign(val, MultiValuedValue([KnownValue("x"), TypedValue(int)]))
 
     float_val = TypedValue(float)
-    assert_eq("float", str(float_val))
+    assert "float" == str(float_val)
     assert_can_assign(float_val, KnownValue(1.0))
     assert_can_assign(float_val, KnownValue(1))
     assert_cannot_assign(float_val, KnownValue(""))
@@ -200,8 +193,8 @@ def test_subclass_value() -> None:
     assert_can_assign(val, TypedValue(type))
     assert_cannot_assign(val, SubclassValue(TypedValue(str)))
     val = SubclassValue(TypedValue(str))
-    assert_eq("Type[str]", str(val))
-    assert_eq(TypedValue(str), val.typ)
+    assert "Type[str]" == str(val)
+    assert TypedValue(str) == val.typ
     assert val.is_type(str)
     assert not val.is_type(int)
     val = SubclassValue(TypedValue(float))
@@ -211,13 +204,13 @@ def test_subclass_value() -> None:
 
 def test_generic_value() -> None:
     val = GenericValue(list, [TypedValue(int)])
-    assert_eq("list[int]", str(val))
+    assert "list[int]" == str(val)
     assert_can_assign(val, TypedValue(list))
     assert_can_assign(val, GenericValue(list, [AnyValue(AnySource.marker)]))
     assert_can_assign(val, GenericValue(list, [TypedValue(bool)]))
     assert_cannot_assign(val, GenericValue(list, [TypedValue(str)]))
     assert_cannot_assign(val, GenericValue(set, [TypedValue(int)]))
-    assert_eq("tuple[int, ...]", str(value.GenericValue(tuple, [TypedValue(int)])))
+    assert "tuple[int, ...]" == str(value.GenericValue(tuple, [TypedValue(int)]))
 
     it = GenericValue(collections.abc.Iterable, [TypedValue(object)])
     assert_can_assign(
@@ -237,31 +230,27 @@ def test_sequence_incomplete_value() -> None:
         val, value.SequenceIncompleteValue(tuple, [TypedValue(bool), TypedValue(str)])
     )
 
-    assert_eq("tuple[int, str]", str(val))
-    assert_eq(
-        "tuple[int]", str(value.SequenceIncompleteValue(tuple, [TypedValue(int)]))
-    )
-    assert_eq(
-        "<list containing [int]>",
-        str(value.SequenceIncompleteValue(list, [TypedValue(int)])),
+    assert "tuple[int, str]" == str(val)
+    assert "tuple[int]" == str(value.SequenceIncompleteValue(tuple, [TypedValue(int)]))
+    assert "<list containing [int]>" == str(
+        value.SequenceIncompleteValue(list, [TypedValue(int)])
     )
 
 
 def test_dict_incomplete_value() -> None:
     val = value.DictIncompleteValue(dict, [(TypedValue(int), KnownValue("x"))])
-    assert_eq("<dict containing {int: Literal['x']}>", str(val))
+    assert "<dict containing {int: Literal['x']}>" == str(val)
 
 
 def test_multi_valued_value() -> None:
     val = TypedValue(int) | KnownValue(None)
-    assert_eq(MultiValuedValue([TypedValue(int), KnownValue(None)]), val)
-    assert_eq(val, val | KnownValue(None))
-    assert_eq(
-        MultiValuedValue([TypedValue(int), KnownValue(None), TypedValue(str)]),
-        val | TypedValue(str),
-    )
+    assert MultiValuedValue([TypedValue(int), KnownValue(None)]) == val
+    assert val == val | KnownValue(None)
+    assert MultiValuedValue(
+        [TypedValue(int), KnownValue(None), TypedValue(str)]
+    ) == val | TypedValue(str)
 
-    assert_eq("Optional[int]", str(val))
+    assert "Optional[int]" == str(val)
     assert_can_assign(val, KnownValue(1))
     assert_can_assign(val, KnownValue(None))
     assert_cannot_assign(val, KnownValue(""))
@@ -272,24 +261,20 @@ def test_multi_valued_value() -> None:
         val, AnyValue(AnySource.marker) | TypedValue(int) | KnownValue(None)
     )
 
-    assert_eq("Literal[1, 2]", str(KnownValue(1) | KnownValue(2)))
-    assert_eq(
-        "Literal[1, 2, None]", str(KnownValue(1) | KnownValue(2) | KnownValue(None))
+    assert "Literal[1, 2]" == str(KnownValue(1) | KnownValue(2))
+    assert "Literal[1, 2, None]" == str(
+        KnownValue(1) | KnownValue(2) | KnownValue(None)
     )
-    assert_eq("Union[int, str]", str(TypedValue(int) | TypedValue(str)))
-    assert_eq(
-        "Union[int, str, None]",
-        str(TypedValue(int) | TypedValue(str) | KnownValue(None)),
+    assert "Union[int, str]" == str(TypedValue(int) | TypedValue(str))
+    assert "Union[int, str, None]" == str(
+        TypedValue(int) | TypedValue(str) | KnownValue(None)
     )
-    assert_eq(
-        "Union[int, str, Literal[1, 2], None]",
-        str(
-            TypedValue(int)
-            | TypedValue(str)
-            | KnownValue(None)
-            | KnownValue(1)
-            | KnownValue(2)
-        ),
+    assert "Union[int, str, Literal[1, 2], None]" == str(
+        TypedValue(int)
+        | TypedValue(str)
+        | KnownValue(None)
+        | KnownValue(1)
+        | KnownValue(2)
     )
 
 
@@ -329,13 +314,13 @@ def test_variable_name_value() -> None:
         "actor_id": value.VariableNameValue(["actor_id"]),
     }
 
-    assert_is(None, value.VariableNameValue.from_varname("capybaras", varname_map))
+    assert None is value.VariableNameValue.from_varname("capybaras", varname_map)
 
     val = value.VariableNameValue.from_varname("uid", varname_map)
-    assert_is_not(None, val)
-    assert_is(val, value.VariableNameValue.from_varname("viewer", varname_map))
-    assert_is(val, value.VariableNameValue.from_varname("old_uid", varname_map))
-    assert_is_not(val, value.VariableNameValue.from_varname("actor_id", varname_map))
+    assert None is not val
+    assert val is value.VariableNameValue.from_varname("viewer", varname_map)
+    assert val is value.VariableNameValue.from_varname("old_uid", varname_map)
+    assert val is not value.VariableNameValue.from_varname("actor_id", varname_map)
     assert_can_assign(TypedValue(int), val)
     assert_can_assign(KnownValue(1), val)
     assert_can_assign(val, TypedValue(int))
@@ -347,9 +332,10 @@ def test_typeddict_value() -> None:
         {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
     )
     # dict iteration order in some Python versions is not deterministic
-    assert_in(
-        str(val), ['TypedDict({"a": int, "b": str})', 'TypedDict({"b": str, "a": int})']
-    )
+    assert str(val) in [
+        'TypedDict({"a": int, "b": str})',
+        'TypedDict({"b": str, "a": int})',
+    ]
 
     assert_can_assign(val, AnyValue(AnySource.marker))
     assert_can_assign(val, TypedValue(dict))
@@ -466,64 +452,55 @@ def test_io() -> None:
 
 
 def test_concrete_values_from_iterable() -> None:
-    assert_is_instance(
-        concrete_values_from_iterable(KnownValue(1), CTX), CanAssignError
+    assert isinstance(concrete_values_from_iterable(KnownValue(1), CTX), CanAssignError)
+    assert () == concrete_values_from_iterable(KnownValue(()), CTX)
+    assert (KnownValue(1), KnownValue(2)) == concrete_values_from_iterable(
+        KnownValue((1, 2)), CTX
     )
-    assert_eq((), concrete_values_from_iterable(KnownValue(()), CTX))
-    assert_eq(
-        (KnownValue(1), KnownValue(2)),
-        concrete_values_from_iterable(KnownValue((1, 2)), CTX),
+    assert (KnownValue(1), KnownValue(2)) == concrete_values_from_iterable(
+        SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]), CTX
     )
-    assert_eq(
-        (KnownValue(1), KnownValue(2)),
-        concrete_values_from_iterable(
-            SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]), CTX
+    assert TypedValue(int) == concrete_values_from_iterable(
+        GenericValue(list, [TypedValue(int)]), CTX
+    )
+    assert [
+        KnownValue(1) | KnownValue(3),
+        KnownValue(2) | KnownValue(4),
+    ] == concrete_values_from_iterable(
+        MultiValuedValue(
+            [
+                SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                KnownValue((3, 4)),
+            ]
         ),
+        CTX,
     )
-    assert_eq(
-        TypedValue(int),
-        concrete_values_from_iterable(GenericValue(list, [TypedValue(int)]), CTX),
-    )
-    assert_eq(
-        [KnownValue(1) | KnownValue(3), KnownValue(2) | KnownValue(4)],
-        concrete_values_from_iterable(
-            MultiValuedValue(
-                [
-                    SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
-                    KnownValue((3, 4)),
-                ]
-            ),
-            CTX,
+    assert MultiValuedValue(
+        [KnownValue(1), KnownValue(2), TypedValue(int)]
+    ) == concrete_values_from_iterable(
+        MultiValuedValue(
+            [
+                SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                GenericValue(list, [TypedValue(int)]),
+            ]
         ),
+        CTX,
     )
-    assert_eq(
-        MultiValuedValue([KnownValue(1), KnownValue(2), TypedValue(int)]),
-        concrete_values_from_iterable(
-            MultiValuedValue(
-                [
-                    SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
-                    GenericValue(list, [TypedValue(int)]),
-                ]
-            ),
-            CTX,
+    assert MultiValuedValue(
+        [KnownValue(1), KnownValue(2), KnownValue(3)]
+    ) == concrete_values_from_iterable(
+        MultiValuedValue(
+            [
+                SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                KnownValue((3,)),
+            ]
         ),
-    )
-    assert_eq(
-        MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue(3)]),
-        concrete_values_from_iterable(
-            MultiValuedValue(
-                [
-                    SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
-                    KnownValue((3,)),
-                ]
-            ),
-            CTX,
-        ),
+        CTX,
     )
 
 
 def _assert_pickling_roundtrip(obj: object) -> None:
-    assert_eq(obj, pickle.loads(pickle.dumps(obj)))
+    assert obj == pickle.loads(pickle.dumps(obj))
 
 
 def test_pickling() -> None:

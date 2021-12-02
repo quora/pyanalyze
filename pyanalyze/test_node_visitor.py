@@ -11,7 +11,6 @@ import re
 import sys
 import textwrap
 
-from qcore.asserts import assert_in, assert_not_in, assert_eq, assert_is_not
 from .node_visitor import (
     BaseNodeVisitor,
     VisitorError,
@@ -89,8 +88,9 @@ class BaseNodeVisitorTester(object):
     def assert_fails(self, expected_error_code, code_str, **kwargs):
         """Asserts that running the given code_str fails with expected_error_code."""
         exc = self._run_str(code_str, expect_failure=True, **kwargs)
-        message = "%s does not have code %r" % (exc, expected_error_code)
-        assert_eq(expected_error_code, exc.error_code, message)
+        assert (
+            expected_error_code == exc.error_code
+        ), f"{exc} does not have code {expected_error_code}"
 
     def assert_is_changed(self, code_str, expected_code_str, repeat=False, **kwargs):
         """Asserts that the given code_str is corrected by the visitor to expected_code_str.
@@ -225,14 +225,14 @@ h.translate('{foo')  # line 5
         try:
             self._run_str(code_string)
         except VisitorError as e:
-            assert_not_in("   1:", str(e))
+            assert "   1:" not in str(e)
             for lineno in range(2, 9):
-                assert_in("   %d:" % lineno, str(e))
-                assert_in("# line %d" % lineno, str(e))
+                assert "   %d:" % lineno in str(e)
+                assert "# line %d" % lineno in str(e)
             # should be outside the three context lines
             for lineno in (1, 9):
-                assert_not_in("   %d:" % lineno, str(e))
-                assert_not_in("# line %d" % lineno, str(e))
+                assert "   %d:" % lineno not in str(e)
+                assert "# line %d" % lineno not in str(e)
         else:
             assert False, "Expected a parse error"
 
@@ -269,7 +269,7 @@ class TestDuplicateVisitor(BaseNodeVisitorTester):
 
     def test_no_duplicate(self):
         errors = self._run_str("while True: pass", fail_after_first=False)
-        assert_eq(1, len(errors), extra=errors)
+        assert len(errors) == 1, errors
 
 
 class NoWhileVisitor(BaseNodeVisitor):
@@ -340,7 +340,7 @@ class TestReplaceNodeTransformer(object):
             node.body[0].value.func, replacement_node
         ).visit(node)
         # ensure it doesn't mutate the existing node in place
-        assert_is_not(new_node, node)
+        assert new_node is not node
         assert_code_equal("d(c)\n", decompile(new_node))
 
     def test_not_found(self):
@@ -349,7 +349,7 @@ class TestReplaceNodeTransformer(object):
         new_node = ReplaceNodeTransformer(random_node, node.body[0].value.func).visit(
             node
         )
-        assert_is_not(new_node, node)
+        assert new_node is not node
         assert_code_equal("a.b(c)\n", decompile(new_node))
 
 

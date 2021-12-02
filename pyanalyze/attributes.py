@@ -401,6 +401,7 @@ def _get_attribute_from_mro(
             # don't have any attributes we care about.
             if (
                 sys.version_info < (3, 7)
+                and isinstance(base_cls, type)
                 and base_cls.__module__ == "typing"
                 and Generic in base_cls.mro()
             ):

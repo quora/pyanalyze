@@ -1,6 +1,4 @@
 # static analysis: ignore
-from qcore.asserts import assert_eq, assert_in, assert_not_in, assert_is
-
 from .error_code import ErrorCode
 from .name_check_visitor import build_stacked_scopes
 from .stacked_scopes import ScopeType, uniq_chain
@@ -33,75 +31,73 @@ class TestStackedScopes(object):
         self.scopes = build_stacked_scopes(Module)
 
     def test_scope_type(self):
-        assert_eq(ScopeType.module_scope, self.scopes.scope_type())
+        assert ScopeType.module_scope == self.scopes.scope_type()
 
         with self.scopes.add_scope(ScopeType.function_scope, scope_node=None):
-            assert_eq(ScopeType.function_scope, self.scopes.scope_type())
+            assert ScopeType.function_scope == self.scopes.scope_type()
 
-        assert_eq(ScopeType.module_scope, self.scopes.scope_type())
+        assert ScopeType.module_scope == self.scopes.scope_type()
 
     def test_current_and_module_scope(self):
-        assert_in("foo", self.scopes.current_scope())
-        assert_in("foo", self.scopes.module_scope())
+        assert "foo" in self.scopes.current_scope()
+        assert "foo" in self.scopes.module_scope()
 
         with self.scopes.add_scope(ScopeType.function_scope, scope_node=None):
-            assert_not_in("foo", self.scopes.current_scope())
-            assert_in("foo", self.scopes.module_scope())
+            assert "foo" not in self.scopes.current_scope()
+            assert "foo" in self.scopes.module_scope()
 
-        assert_in("foo", self.scopes.current_scope())
-        assert_in("foo", self.scopes.module_scope())
+        assert "foo" in self.scopes.current_scope()
+        assert "foo" in self.scopes.module_scope()
 
     def test_get(self):
-        assert_eq(KnownValue(1), self.scopes.get("foo", None, None))
+        assert KnownValue(1) == self.scopes.get("foo", None, None)
 
         with self.scopes.add_scope(ScopeType.module_scope, scope_node=None):
             self.scopes.set("foo", KnownValue(2), None, None)
-            assert_eq(KnownValue(2), self.scopes.get("foo", None, None))
+            assert KnownValue(2) == self.scopes.get("foo", None, None)
 
-        assert_eq(KnownValue(1), self.scopes.get("foo", None, None))
+        assert KnownValue(1) == self.scopes.get("foo", None, None)
 
-        assert_is(UNINITIALIZED_VALUE, self.scopes.get("doesnt_exist", None, None))
+        assert UNINITIALIZED_VALUE is self.scopes.get("doesnt_exist", None, None)
 
         # outer class scopes aren't used
         with self.scopes.add_scope(ScopeType.class_scope, scope_node=None):
             self.scopes.set("cls1", KnownValue(1), None, None)
-            assert_eq(KnownValue(1), self.scopes.get("cls1", None, None))
+            assert KnownValue(1) == self.scopes.get("cls1", None, None)
 
             with self.scopes.add_scope(ScopeType.class_scope, scope_node=None):
                 self.scopes.set("cls2", KnownValue(1), None, None)
-                assert_eq(KnownValue(1), self.scopes.get("cls2", None, None))
+                assert KnownValue(1) == self.scopes.get("cls2", None, None)
 
-                assert_is(UNINITIALIZED_VALUE, self.scopes.get("cls1", None, None))
+                assert UNINITIALIZED_VALUE is self.scopes.get("cls1", None, None)
 
-            assert_eq(KnownValue(1), self.scopes.get("cls1", None, None))
+            assert KnownValue(1) == self.scopes.get("cls1", None, None)
 
     def test_set(self):
         with self.scopes.add_scope(ScopeType.module_scope, scope_node=None):
             self.scopes.set("multivalue", KnownValue(1), None, None)
-            assert_eq(KnownValue(1), self.scopes.get("multivalue", None, None))
+            assert KnownValue(1) == self.scopes.get("multivalue", None, None)
             self.scopes.set("multivalue", KnownValue(2), None, None)
-            assert_eq(
-                MultiValuedValue([KnownValue(1), KnownValue(2)]),
-                self.scopes.get("multivalue", None, None),
+            assert MultiValuedValue([KnownValue(1), KnownValue(2)]) == self.scopes.get(
+                "multivalue", None, None
             )
             self.scopes.set("multivalue", KnownValue(3), None, None)
-            assert_eq(
-                MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue(3)]),
-                self.scopes.get("multivalue", None, None),
-            )
+            assert MultiValuedValue(
+                [KnownValue(1), KnownValue(2), KnownValue(3)]
+            ) == self.scopes.get("multivalue", None, None)
 
             # if the values set are the same, don't make a MultiValuedValue
             self.scopes.set("same", KnownValue(1), None, None)
-            assert_eq(KnownValue(1), self.scopes.get("same", None, None))
+            assert KnownValue(1) == self.scopes.get("same", None, None)
             self.scopes.set("same", KnownValue(1), None, None)
-            assert_eq(KnownValue(1), self.scopes.get("same", None, None))
+            assert KnownValue(1) == self.scopes.get("same", None, None)
 
             # even if they are AnyValue
             any = AnyValue(AnySource.marker)
             self.scopes.set("unresolved", any, None, None)
-            assert_is(any, self.scopes.get("unresolved", None, None))
+            assert any is self.scopes.get("unresolved", None, None)
             self.scopes.set("unresolved", any, None, None)
-            assert_is(any, self.scopes.get("unresolved", None, None))
+            assert any is self.scopes.get("unresolved", None, None)
 
     def test_referencing_value(self):
         with self.scopes.add_scope(ScopeType.module_scope, scope_node=None):
@@ -112,11 +108,11 @@ class TestStackedScopes(object):
             with self.scopes.add_scope(ScopeType.module_scope, scope_node=None):
                 val = ReferencingValue(outer, "reference")
                 self.scopes.set("reference", val, None, None)
-                assert_eq(KnownValue(1), self.scopes.get("reference", None, None))
+                assert KnownValue(1) == self.scopes.get("reference", None, None)
                 self.scopes.set("reference", KnownValue(2), None, None)
-                assert_eq(multivalue, self.scopes.get("reference", None, None))
+                assert multivalue == self.scopes.get("reference", None, None)
 
-            assert_eq(multivalue, self.scopes.get("reference", None, None))
+            assert multivalue == self.scopes.get("reference", None, None)
 
             self.scopes.set(
                 "nonexistent",
@@ -124,7 +120,7 @@ class TestStackedScopes(object):
                 None,
                 None,
             )
-            assert_is(UNINITIALIZED_VALUE, self.scopes.get("nonexistent", None, None))
+            assert UNINITIALIZED_VALUE is self.scopes.get("nonexistent", None, None)
 
             self.scopes.set("is_none", KnownValue(None), None, None)
 
@@ -132,17 +128,16 @@ class TestStackedScopes(object):
                 self.scopes.set(
                     "is_none", ReferencingValue(outer, "is_none"), None, None
                 )
-                assert_eq(
-                    AnyValue(AnySource.inference),
-                    self.scopes.get("is_none", None, None),
+                assert AnyValue(AnySource.inference) == self.scopes.get(
+                    "is_none", None, None
                 )
 
     def test_typed_value_set(self):
         self.scopes.set("value", TypedValue(dict), None, None)
-        assert_eq(TypedValue(dict), self.scopes.get("value", None, None))
+        assert TypedValue(dict) == self.scopes.get("value", None, None)
         div = DictIncompleteValue(dict, [])  # subclass of TypedValue
         self.scopes.set("value", div, None, None)
-        assert_eq(div, self.scopes.get("value", None, None))
+        assert div == self.scopes.get("value", None, None)
 
 
 class TestScoping(TestNameCheckVisitorBase):
@@ -948,8 +943,8 @@ class TestConstraints(TestNameCheckVisitorBase):
 
             assert_is_value(x, MultiValuedValue([KnownValue(True), KnownValue(False)]))
             assert_is_value(y, MultiValuedValue([KnownValue(True), KnownValue(False)]))
-            assert_is(x, True)
-            assert_is(True, y)
+            assert x is True
+            assert True is y
             assert_is_value(x, KnownValue(True))
             assert_is_value(y, KnownValue(True))
 
@@ -963,8 +958,8 @@ class TestConstraints(TestNameCheckVisitorBase):
 
             assert_is_value(x, MultiValuedValue([KnownValue(True), KnownValue(False)]))
             assert_is_value(y, MultiValuedValue([KnownValue(True), KnownValue(False)]))
-            assert_is_not(x, True)
-            assert_is_not(True, y)
+            assert x is not True
+            assert True is not y
             assert_is_value(x, KnownValue(False))
             assert_is_value(y, KnownValue(False))
 
@@ -1631,6 +1626,6 @@ class TestComposite(TestNameCheckVisitorBase):
 
 
 def test_uniq_chain():
-    assert_eq([], uniq_chain([]))
-    assert_eq(list(range(3)), uniq_chain(range(3) for _ in range(3)))
-    assert_eq([1], uniq_chain([1, 1, 1] for _ in range(3)))
+    assert [] == uniq_chain([])
+    assert list(range(3)) == uniq_chain(range(3) for _ in range(3))
+    assert [1] == uniq_chain([1, 1, 1] for _ in range(3))

@@ -1,6 +1,5 @@
 # static analysis: ignore
 import ast
-from qcore.asserts import assert_eq
 
 from .yield_checker import VarnameGenerator, _camel_case_to_snake_case
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -651,7 +650,7 @@ class TestVarnameGenerator(object):
         # the result is Module(body=[Expr(value=<what we want>)])
         node = ast.parse(code).body[0].value
         gen = VarnameGenerator(lambda name: name not in disallowed_names)
-        assert_eq(expected_var_name, gen.get(node))
+        assert expected_var_name == gen.get(node)
 
     def test_name(self):
         self.check("x", "x_result")
@@ -679,10 +678,10 @@ class TestVarnameGenerator(object):
 
 
 def test_camel_case_to_snake_case():
-    assert_eq("hello", _camel_case_to_snake_case("hello"))
-    assert_eq("capybara", _camel_case_to_snake_case("Capybara"))
-    assert_eq("capybara_result", _camel_case_to_snake_case("CapybaraResult"))
-    assert_eq("http_error", _camel_case_to_snake_case("HTTPError"))
-    assert_eq("ñoldor", _camel_case_to_snake_case("Ñoldor"))
-    assert_eq("αθήνα", _camel_case_to_snake_case("Αθήνα"))
-    assert_eq("ссср_союз", _camel_case_to_snake_case("СССРСоюз"))
+    assert "hello" == _camel_case_to_snake_case("hello")
+    assert "capybara" == _camel_case_to_snake_case("Capybara")
+    assert "capybara_result" == _camel_case_to_snake_case("CapybaraResult")
+    assert "http_error" == _camel_case_to_snake_case("HTTPError")
+    assert "ñoldor" == _camel_case_to_snake_case("Ñoldor")
+    assert "αθήνα" == _camel_case_to_snake_case("Αθήνα")
+    assert "ссср_союз" == _camel_case_to_snake_case("СССРСоюз")

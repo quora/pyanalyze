@@ -404,6 +404,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
                 )
             )
         if not isinstance(arg_types, tuple):
+            ctx.show_error("Invalid arguments to AsynqCallable")
             return AnyValue(AnySource.error)
         params = [
             SigParameter(

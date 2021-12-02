@@ -1,7 +1,4 @@
 # static analysis: ignore
-from qcore.asserts import assert_eq
-
-
 from .error_code import ErrorCode
 from .asynq_checker import (
     is_impure_async_fn,
@@ -379,7 +376,7 @@ class TestAsyncMethods(TestNameCheckVisitorBase):
 
 def test_stringify_async_fn():
     def check(expected, val):
-        assert_eq("pyanalyze.tests." + expected, _stringify_async_fn(val))
+        assert "pyanalyze.tests." + expected == _stringify_async_fn(val)
 
     check("async_fn", KnownValue(async_fn))
     check("async_fn." + ASYNQ_METHOD_NAME, KnownValue(async_fn.asynq))
@@ -416,13 +413,10 @@ def test_stringify_async_fn():
     check(
         "Subclass.async_method", KnownValue(super(Subclass, Subclass(1)).async_method)
     )
-    assert_eq(
-        "super(pyanalyze.tests.Subclass, self).async_method",
-        _stringify_async_fn(
-            UnboundMethodValue(
-                "async_method", Composite(TypedValue(super(Subclass, Subclass)))
-            )
-        ),
+    assert "super(pyanalyze.tests.Subclass, self).async_method" == _stringify_async_fn(
+        UnboundMethodValue(
+            "async_method", Composite(TypedValue(super(Subclass, Subclass)))
+        )
     )
 
 
@@ -462,11 +456,11 @@ def test_get_pure_async_equivalent():
     ]
     for fn in known_values:
         expected = "{}.asynq".format(_stringify_async_fn(KnownValue(fn)))
-        assert_eq(expected, get_pure_async_equivalent(KnownValue(fn)))
+        assert expected == get_pure_async_equivalent(KnownValue(fn))
 
-    assert_eq(
-        "pyanalyze.tests.PropertyObject.async_method.asynq",
-        get_pure_async_equivalent(
+    assert (
+        "pyanalyze.tests.PropertyObject.async_method.asynq"
+        == get_pure_async_equivalent(
             UnboundMethodValue("async_method", Composite(TypedValue(PropertyObject)))
-        ),
+        )
     )

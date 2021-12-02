@@ -1,7 +1,6 @@
 import ast
 from pathlib import Path
 from typing import Callable, Type
-from qcore.asserts import assert_eq
 
 from .ast_annotator import annotate_file, annotate_code
 from .analysis_lib import files_with_extension_from_directory
@@ -17,7 +16,7 @@ def _check_inferred_value(
     for node in ast.walk(tree):
         if isinstance(node, node_type) and predicate(node):
             assert hasattr(node, "inferred_value"), repr(node)
-            assert_eq(value, node.inferred_value, extra=ast.dump(node))
+            assert value == node.inferred_value, ast.dump(node)
 
 
 def test_annotate_code() -> None:
