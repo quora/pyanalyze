@@ -139,9 +139,12 @@ def f(x: NT, y: Alias) -> None:
 
     def test_get_attribute(self) -> None:
         tsf = TypeshedFinder(verbose=True)
-        assert_is(UNINITIALIZED_VALUE, tsf.get_attribute(object, "nope"))
+        assert_is(
+            UNINITIALIZED_VALUE, tsf.get_attribute(object, "nope", on_class=False)
+        )
         assert_eq(
-            TypedValue(bool), tsf.get_attribute(staticmethod, "__isabstractmethod__")
+            TypedValue(bool),
+            tsf.get_attribute(staticmethod, "__isabstractmethod__", on_class=False),
         )
 
 
@@ -367,12 +370,13 @@ class TestAttribute:
     def test_basic(self) -> None:
         tsf = TypeshedFinder(verbose=True)
         assert_eq(
-            TypedValue(bool), tsf.get_attribute(staticmethod, "__isabstractmethod__")
+            TypedValue(bool),
+            tsf.get_attribute(staticmethod, "__isabstractmethod__", on_class=False),
         )
 
     def test_property(self) -> None:
         tsf = TypeshedFinder(verbose=True)
-        assert_eq(TypedValue(int), tsf.get_attribute(int, "real"))
+        assert_eq(TypedValue(int), tsf.get_attribute(int, "real", on_class=False))
 
     def test_http_error(self) -> None:
         tsf = TypeshedFinder(verbose=True)

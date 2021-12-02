@@ -185,7 +185,7 @@ class TypeshedFinder(object):
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._get_bases_from_info(info, mod)
 
-    def get_attribute(self, typ: type, attr: str) -> Value:
+    def get_attribute(self, typ: type, attr: str, *, on_class: bool) -> Value:
         """Return the stub for this attribute.
 
         Does not look at parent classes. Returns UNINITIALIZED_VALUE if no
@@ -195,15 +195,17 @@ class TypeshedFinder(object):
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
             return UNINITIALIZED_VALUE
-        return self.get_attribute_for_fq_name(fq_name, attr)
+        return self.get_attribute_for_fq_name(fq_name, attr, on_class=on_class)
 
-    def get_attribute_for_fq_name(self, fq_name: str, attr: str) -> Value:
+    def get_attribute_for_fq_name(
+        self, fq_name: str, attr: str, *, on_class: bool
+    ) -> Value:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
-        return self._get_attribute_from_info(info, mod, attr)
+        return self._get_attribute_from_info(info, mod, attr, on_class=on_class)
 
     def get_attribute_recursively(
-        self, fq_name: str, attr: str
+        self, fq_name: str, attr: str, *, on_class: bool
     ) -> Tuple[Value, Union[type, str, None]]:
         """Get an attribute from a fully qualified class.
 
@@ -213,9 +215,13 @@ class TypeshedFinder(object):
         for base in self.get_bases_recursively(fq_name):
             if isinstance(base, TypedValue):
                 if isinstance(base.typ, str):
-                    possible_value = self.get_attribute_for_fq_name(base.typ, attr)
+                    possible_value = self.get_attribute_for_fq_name(
+                        base.typ, attr, on_class=on_class
+                    )
                 else:
-                    possible_value = self.get_attribute(base.typ, attr)
+                    possible_value = self.get_attribute(
+                        base.typ, attr, on_class=on_class
+                    )
                 if possible_value is not UNINITIALIZED_VALUE:
                     return possible_value, base.typ
         return UNINITIALIZED_VALUE, None
@@ -258,13 +264,18 @@ class TypeshedFinder(object):
         return AnyValue(AnySource.inference)
 
     def _get_attribute_from_info(
-        self, info: typeshed_client.resolver.ResolvedName, mod: str, attr: str
+        self,
+        info: typeshed_client.resolver.ResolvedName,
+        mod: str,
+        attr: str,
+        *,
+        on_class: bool,
     ) -> Value:
         if info is None:
             return UNINITIALIZED_VALUE
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_attribute_from_info(
-                info.info, ".".join(info.source_module), attr
+                info.info, ".".join(info.source_module), attr, on_class=on_class
             )
         elif isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, ast3.ClassDef):
@@ -283,7 +294,7 @@ class TypeshedFinder(object):
                             ]:
                                 return self._parse_type(child_info.ast.returns, mod)
                             sig = self._get_signature_from_func_def(
-                                child_info.ast, None, mod, autobind=True
+                                child_info.ast, None, mod, autobind=not on_class
                             )
                             if sig is None:
                                 return AnyValue(AnySource.inference)

@@ -251,9 +251,9 @@ class _AttrContext(attributes.AttrContext):
                 return self.visitor._argspec_to_retval[id(argspec)]
         return AnyValue(AnySource.inference)
 
-    def get_attribute_from_typeshed(self, typ: type) -> Value:
+    def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
         typeshed_type = self.visitor.arg_spec_cache.ts_finder.get_attribute(
-            typ, self.attr
+            typ, self.attr, on_class=on_class
         )
         if (
             typeshed_type is UNINITIALIZED_VALUE
@@ -263,10 +263,10 @@ class _AttrContext(attributes.AttrContext):
         return typeshed_type
 
     def get_attribute_from_typeshed_recursively(
-        self, fq_name: str
+        self, fq_name: str, *, on_class: bool
     ) -> Tuple[Value, object]:
         return self.visitor.arg_spec_cache.ts_finder.get_attribute_recursively(
-            fq_name, self.attr
+            fq_name, self.attr, on_class=on_class
         )
 
     def should_ignore_none_attributes(self) -> bool:

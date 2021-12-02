@@ -67,11 +67,11 @@ class AttrContext:
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         return AnyValue(AnySource.inference)
 
-    def get_attribute_from_typeshed(self, typ: type) -> Value:
+    def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
         return UNINITIALIZED_VALUE
 
     def get_attribute_from_typeshed_recursively(
-        self, fq_name: str
+        self, fq_name: str, *, on_class: bool
     ) -> Tuple[Value, object]:
         return UNINITIALIZED_VALUE, None
 
@@ -156,7 +156,7 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
         return TypedValue(dict)
     elif ctx.attr == "__bases__":
         return GenericValue(tuple, [SubclassValue(TypedValue(object))])
-    result, _, should_unwrap = _get_attribute_from_mro(typ, ctx)
+    result, _, should_unwrap = _get_attribute_from_mro(typ, ctx, on_class=True)
     if should_unwrap:
         result = _unwrap_value_from_subclass(result, ctx)
     ctx.record_usage(typ, result)
@@ -213,7 +213,7 @@ def _get_attribute_from_typed(
         return KnownValue(typ)
     elif ctx.attr == "__dict__":
         return TypedValue(dict)
-    result, provider, should_unwrap = _get_attribute_from_mro(typ, ctx)
+    result, provider, should_unwrap = _get_attribute_from_mro(typ, ctx, on_class=False)
     result = _substitute_typevars(typ, generic_args, result, provider, ctx)
     if should_unwrap:
         result = _unwrap_value_from_typed(result, typ, ctx)
@@ -313,7 +313,7 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
     if obj is sys and ctx.attr == "modules":
         return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
 
-    result, _, _ = _get_attribute_from_mro(obj, ctx)
+    result, _, _ = _get_attribute_from_mro(obj, ctx, on_class=True)
     if isinstance(obj, (types.ModuleType, type)):
         ctx.record_usage(obj, result)
     else:
@@ -362,7 +362,7 @@ class AnnotationsContext(Context):
 
 
 def _get_attribute_from_mro(
-    typ: object, ctx: AttrContext
+    typ: object, ctx: AttrContext, on_class: bool
 ) -> Tuple[Value, object, bool]:
     # Then go through the MRO and find base classes that may define the attribute.
     if safe_isinstance(typ, type) and safe_issubclass(typ, Enum):
@@ -391,7 +391,7 @@ def _get_attribute_from_mro(
         pass
     else:
         for base_cls in mro:
-            typeshed_type = ctx.get_attribute_from_typeshed(base_cls)
+            typeshed_type = ctx.get_attribute_from_typeshed(base_cls, on_class=on_class)
             if typeshed_type is not UNINITIALIZED_VALUE:
                 return typeshed_type, base_cls, False
 
