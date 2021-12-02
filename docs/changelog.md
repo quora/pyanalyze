@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Basic support for stub-only types (#290)
+- Require `typing_inspect>=0.7.0` (#290)
 - Improve type checking of `raise` statements (#289)
 - Support `Final` with arguments and `ClassVar` without arguments (#284)
 - Add `pyanalyze.extensions.NoAny` (#283)

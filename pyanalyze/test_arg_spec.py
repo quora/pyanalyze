@@ -98,21 +98,15 @@ def test_get_argspec():
         __file__, "", {}, fail_after_first=False, checker=checker
     )
     cwc_typed = TypedValue(ClassWithCall)
-    cwc_self = SigParameter("self", annotation=cwc_typed)
 
     # test everything twice because calling qcore.get_original_fn has side effects
     for _ in range(2):
 
-        # there's special logic for this in _get_argspec_from_value; TODO move that into
+        # there's special logic for this in signature_from_value; TODO move that into
         # ExtendedArgSpec
         assert_eq(
-            BoundMethodSignature(
-                Signature.make(
-                    [cwc_self, SigParameter("arg")], callable=ClassWithCall.__call__
-                ),
-                Composite(cwc_typed),
-            ),
-            visitor._get_argspec_from_value(cwc_typed, None),
+            Signature.make([SigParameter("arg")], callable=ClassWithCall.__call__),
+            visitor.signature_from_value(cwc_typed),
         )
 
         assert_eq(

@@ -6,11 +6,13 @@ from collections.abc import MutableSequence, Sequence, Collection, Reversible, S
 import contextlib
 import io
 from pathlib import Path
+import sys
 import tempfile
 import time
+from pyanalyze.extensions import reveal_type
 from typeshed_client import Resolver, get_search_context
 import typing
-from typing import Dict, Generic, List, TypeVar, NewType
+from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
 
 from .test_config import TestConfig
@@ -138,9 +140,12 @@ def f(x: NT, y: Alias) -> None:
 
     def test_get_attribute(self) -> None:
         tsf = TypeshedFinder(verbose=True)
-        assert_is(UNINITIALIZED_VALUE, tsf.get_attribute(object, "nope"))
+        assert_is(
+            UNINITIALIZED_VALUE, tsf.get_attribute(object, "nope", on_class=False)
+        )
         assert_eq(
-            TypedValue(bool), tsf.get_attribute(staticmethod, "__isabstractmethod__")
+            TypedValue(bool),
+            tsf.get_attribute(staticmethod, "__isabstractmethod__", on_class=False),
         )
 
 
@@ -188,13 +193,13 @@ class TestGetGenericBases:
 
     def check(
         self,
-        expected: Dict[type, List[Value]],
-        base: type,
+        expected: Dict[Union[type, str], List[Value]],
+        base: Union[type, str],
         args: typing.Sequence[Value] = (),
     ) -> None:
         actual = self.get_generic_bases(base, args)
         cleaned = {base: list(tv_map.values()) for base, tv_map in actual.items()}
-        assert_eq(expected, cleaned, extra=actual)
+        assert expected == cleaned
 
     def test_coroutine(self):
         one = KnownValue(1)
@@ -212,10 +217,45 @@ class TestGetGenericBases:
     def test_callable(self):
         self.check({collections.abc.Callable: []}, collections.abc.Callable)
 
-    def test_struct_time(self):
+    def test_dict_items(self):
+        TInt = TypedValue(int)
+        TStr = TypedValue(str)
+        TTuple = SequenceIncompleteValue(tuple, [TInt, TStr])
         self.check(
             {
+                "builtins._dict_items": [TInt, TStr],
+                collections.abc.Iterable: [TTuple],
+                collections.abc.Sized: [],
+                collections.abc.Container: [TTuple],
+                collections.abc.Collection: [TTuple],
+                collections.abc.Set: [TTuple],
+                collections.abc.MappingView: [],
+                collections.abc.ItemsView: [TInt, TStr],
+            },
+            "builtins._dict_items",
+            [TInt, TStr],
+        )
+
+    def test_struct_time(self):
+        if sys.version_info < (3, 9):
+            # Until 3.8 NamedTuple is actually a class.
+            expected = {
                 time.struct_time: [],
+                "time._struct_time": [],
+                typing.NamedTuple: [],
+                # Ideally should be not Any, but we haven't implemented
+                # support for typeshed namedtuples.
+                tuple: [AnyValue(AnySource.explicit)],
+                collections.abc.Collection: [AnyValue(AnySource.explicit)],
+                collections.abc.Reversible: [AnyValue(AnySource.explicit)],
+                collections.abc.Iterable: [AnyValue(AnySource.explicit)],
+                collections.abc.Sequence: [AnyValue(AnySource.explicit)],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
+            }
+        else:
+            expected = {
+                time.struct_time: [],
+                "time._struct_time": [],
                 # Ideally should be not Any, but we haven't implemented
                 # support for typeshed namedtuples.
                 tuple: [AnyValue(AnySource.generic_argument)],
@@ -224,9 +264,8 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Container: [AnyValue(AnySource.generic_argument)],
-            },
-            time.struct_time,
-        )
+            }
+        self.check(expected, time.struct_time)
 
     def test_context_manager(self):
         int_tv = TypedValue(int)
@@ -351,12 +390,13 @@ class TestAttribute:
     def test_basic(self) -> None:
         tsf = TypeshedFinder(verbose=True)
         assert_eq(
-            TypedValue(bool), tsf.get_attribute(staticmethod, "__isabstractmethod__")
+            TypedValue(bool),
+            tsf.get_attribute(staticmethod, "__isabstractmethod__", on_class=False),
         )
 
     def test_property(self) -> None:
         tsf = TypeshedFinder(verbose=True)
-        assert_eq(TypedValue(int), tsf.get_attribute(int, "real"))
+        assert_eq(TypedValue(int), tsf.get_attribute(int, "real", on_class=False))
 
     def test_http_error(self) -> None:
         tsf = TypeshedFinder(verbose=True)

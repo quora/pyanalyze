@@ -11,7 +11,7 @@ import inspect
 import qcore
 import sys
 import types
-from typing import Any, Dict, Sequence, Tuple, Optional
+from typing import Any, Generic, Sequence, Tuple, Optional, Union
 
 
 from .annotations import type_from_runtime, Context
@@ -23,9 +23,9 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    GenericBases,
     HasAttrExtension,
     KnownValueWithTypeVars,
-    TypeVarMap,
     Value,
     KnownValue,
     GenericValue,
@@ -67,8 +67,13 @@ class AttrContext:
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         return AnyValue(AnySource.inference)
 
-    def get_attribute_from_typeshed(self, typ: type) -> Value:
+    def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
         return UNINITIALIZED_VALUE
+
+    def get_attribute_from_typeshed_recursively(
+        self, fq_name: str, *, on_class: bool
+    ) -> Tuple[Value, object]:
+        return UNINITIALIZED_VALUE, None
 
     def should_ignore_none_attributes(self) -> bool:
         return False
@@ -77,8 +82,8 @@ class AttrContext:
         return None
 
     def get_generic_bases(
-        self, typ: type, generic_args: Sequence[Value]
-    ) -> Dict[type, TypeVarMap]:
+        self, typ: Union[type, str], generic_args: Sequence[Value]
+    ) -> GenericBases:
         return {}
 
 
@@ -101,9 +106,17 @@ def get_attribute(ctx: AttrContext) -> Value:
             args = root_value.args
         else:
             args = ()
-        attribute_value = _get_attribute_from_typed(root_value.typ, args, ctx)
+        if isinstance(root_value.typ, str):
+            attribute_value = _get_attribute_from_synthetic_type(
+                root_value.typ, args, ctx
+            )
+        else:
+            attribute_value = _get_attribute_from_typed(root_value.typ, args, ctx)
     elif isinstance(root_value, SubclassValue):
         if isinstance(root_value.typ, TypedValue):
+            if isinstance(root_value.typ.typ, str):
+                # TODO handle synthetic types
+                return AnyValue(AnySource.inference)
             attribute_value = _get_attribute_from_subclass(root_value.typ.typ, ctx)
         elif isinstance(root_value.typ, AnyValue):
             attribute_value = AnyValue(AnySource.from_another)
@@ -143,7 +156,7 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
         return TypedValue(dict)
     elif ctx.attr == "__bases__":
         return GenericValue(tuple, [SubclassValue(TypedValue(object))])
-    result, _, should_unwrap = _get_attribute_from_mro(typ, ctx)
+    result, _, should_unwrap = _get_attribute_from_mro(typ, ctx, on_class=True)
     if should_unwrap:
         result = _unwrap_value_from_subclass(result, ctx)
     ctx.record_usage(typ, result)
@@ -177,6 +190,21 @@ def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
         return KnownValue(cls_val)
 
 
+def _get_attribute_from_synthetic_type(
+    fq_name: str, generic_args: Sequence[Value], ctx: AttrContext
+) -> Value:
+    # First check values that are special in Python
+    if ctx.attr == "__class__":
+        # TODO: a KnownValue for synthetic types?
+        return AnyValue(AnySource.inference)
+    elif ctx.attr == "__dict__":
+        return TypedValue(dict)
+    result, provider = ctx.get_attribute_from_typeshed_recursively(
+        fq_name, on_class=False
+    )
+    return _substitute_typevars(fq_name, generic_args, result, provider, ctx)
+
+
 def _get_attribute_from_typed(
     typ: type, generic_args: Sequence[Value], ctx: AttrContext
 ) -> Value:
@@ -187,8 +215,22 @@ def _get_attribute_from_typed(
         return KnownValue(typ)
     elif ctx.attr == "__dict__":
         return TypedValue(dict)
-    result, provider, should_unwrap = _get_attribute_from_mro(typ, ctx)
-    if isinstance(typ, type):
+    result, provider, should_unwrap = _get_attribute_from_mro(typ, ctx, on_class=False)
+    result = _substitute_typevars(typ, generic_args, result, provider, ctx)
+    if should_unwrap:
+        result = _unwrap_value_from_typed(result, typ, ctx)
+    ctx.record_usage(typ, result)
+    return result
+
+
+def _substitute_typevars(
+    typ: Union[type, str],
+    generic_args: Sequence[Value],
+    result: Value,
+    provider: object,
+    ctx: AttrContext,
+) -> Value:
+    if isinstance(typ, (type, str)):
         generic_bases = ctx.get_generic_bases(typ, generic_args)
     else:
         generic_bases = {}
@@ -202,9 +244,6 @@ def _get_attribute_from_typed(
         ]
         tv_map = dict(zip(typevars, generic_args))
         result = result.substitute_typevars(tv_map)
-    if should_unwrap:
-        result = _unwrap_value_from_typed(result, typ, ctx)
-    ctx.record_usage(typ, result)
     return result
 
 
@@ -253,6 +292,9 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         # static or class method
         return result
     elif _static_hasattr(cls_val, "__get__"):
+        typeshed_type = ctx.get_attribute_from_typeshed(typ, on_class=False)
+        if typeshed_type is not UNINITIALIZED_VALUE:
+            return typeshed_type
         return ctx.get_property_type_from_config(cls_val)
     elif ctx.should_ignore_class_attribute(cls_val):
         return AnyValue(AnySource.error)
@@ -276,7 +318,7 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
     if obj is sys and ctx.attr == "modules":
         return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
 
-    result, _, _ = _get_attribute_from_mro(obj, ctx)
+    result, _, _ = _get_attribute_from_mro(obj, ctx, on_class=True)
     if isinstance(obj, (types.ModuleType, type)):
         ctx.record_usage(obj, result)
     else:
@@ -325,7 +367,7 @@ class AnnotationsContext(Context):
 
 
 def _get_attribute_from_mro(
-    typ: object, ctx: AttrContext
+    typ: object, ctx: AttrContext, on_class: bool
 ) -> Tuple[Value, object, bool]:
     # Then go through the MRO and find base classes that may define the attribute.
     if safe_isinstance(typ, type) and safe_issubclass(typ, Enum):
@@ -354,10 +396,15 @@ def _get_attribute_from_mro(
         pass
     else:
         for base_cls in mro:
-            typeshed_type = ctx.get_attribute_from_typeshed(base_cls)
-            if typeshed_type is not UNINITIALIZED_VALUE:
-                return typeshed_type, base_cls, False
-
+            # On 3.6 (before PEP 560), the MRO for classes inheriting from typing generics
+            # includes a bunch of classes in the typing module that
+            # don't have any attributes we care about.
+            if (
+                sys.version_info < (3, 7)
+                and base_cls.__module__ == "typing"
+                and Generic in base_cls.mro()
+            ):
+                continue
             try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.
@@ -378,6 +425,10 @@ def _get_attribute_from_mro(
                 return KnownValue(getattr(typ, ctx.attr)), base_cls, True
             except Exception:
                 pass
+
+            typeshed_type = ctx.get_attribute_from_typeshed(base_cls, on_class=on_class)
+            if typeshed_type is not UNINITIALIZED_VALUE:
+                return typeshed_type, base_cls, False
 
     attrs_type = get_attrs_attribute(typ, ctx)
     if attrs_type is not None:

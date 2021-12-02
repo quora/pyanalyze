@@ -5,8 +5,11 @@
 """
 import inspect
 import sys
-from typing import Any, Tuple, Union, Container, NewType, Type, TypeVar, Iterable
+from typing import Any, Dict, Tuple, Union, Container, NewType, Type, TypeVar, Iterable
 from typing_extensions import Annotated
+import typing
+import typing_extensions
+import mypy_extensions
 
 from .extensions import ParameterTypeGuard
 
@@ -110,3 +113,36 @@ else:
             and hasattr(obj, "__supertype__")
             and isinstance(obj.__supertype__, type)
         )
+
+
+def is_typing_name(obj: object, name: str) -> bool:
+    objs, names = _fill_typing_name_cache(name)
+    for typing_obj in objs:
+        if obj is typing_obj:
+            return True
+    return obj in names
+
+
+def is_instance_of_typing_name(obj: object, name: str) -> bool:
+    objs, _ = _fill_typing_name_cache(name)
+    return isinstance(obj, objs)
+
+
+_typing_name_cache: Dict[str, Tuple[Tuple[Any, ...], Tuple[str, ...]]] = {}
+
+
+def _fill_typing_name_cache(name: str) -> Tuple[Tuple[Any, ...], Tuple[str, ...]]:
+    try:
+        return _typing_name_cache[name]
+    except KeyError:
+        objs = []
+        names = []
+        for mod in (typing, typing_extensions, mypy_extensions):
+            try:
+                objs.append(getattr(mod, name))
+                names.append(f"{mod}.{name}")
+            except AttributeError:
+                pass
+        result = tuple(objs), tuple(names)
+        _typing_name_cache[name] = result
+        return result

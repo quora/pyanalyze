@@ -160,6 +160,8 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
                     f" {value!r}"
                 )
     elif isinstance(value, TypedValue):
+        if isinstance(value.typ, str):
+            return Boolability.boolable  # TODO deal with synthetic types
         return _get_type_boolability(value.typ)
     else:
         assert False, f"unhandled value {value!r}"

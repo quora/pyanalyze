@@ -282,7 +282,11 @@ class Constraint(AbstractConstraint):
                     if not isinstance(inner_value.val, self.value):
                         yield value
             elif isinstance(inner_value, TypedValue):
-                if self.positive:
+                if isinstance(inner_value.typ, str):
+                    # TODO handle synthetic types correctly here (which would require
+                    # a CanAssignContext).
+                    yield value
+                elif self.positive:
                     if safe_issubclass(inner_value.typ, self.value):
                         yield value
                     elif safe_issubclass(self.value, inner_value.typ):
@@ -318,6 +322,8 @@ class Constraint(AbstractConstraint):
                     if (
                         isinstance(inner_value.typ, TypedValue)
                         and isinstance(self.value, type)
+                        # TODO consider synthetic types
+                        and isinstance(inner_value.typ.typ, type)
                         and safe_issubclass(self.value, inner_value.typ.typ)
                     ):
                         yield known_val

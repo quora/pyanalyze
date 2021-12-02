@@ -4,11 +4,11 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .annotations import Context, type_from_runtime, is_typing_name
+from .annotations import Context, type_from_runtime
 from .config import Config
 from .find_unused import used
 from . import implementation
-from .safe import is_newtype, safe_hasattr, safe_in, safe_issubclass
+from .safe import is_newtype, safe_hasattr, safe_in, safe_issubclass, is_typing_name
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
@@ -23,7 +23,7 @@ from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
     AnyValue,
-    TypeVarMap,
+    GenericBases,
     TypedValue,
     GenericValue,
     NewTypeValue,
@@ -44,7 +44,7 @@ import qcore
 import inspect
 import sys
 from types import FunctionType, ModuleType
-from typing import Any, Sequence, Generic, Iterable, Mapping, Optional, Dict
+from typing import Any, Sequence, Generic, Iterable, Mapping, Optional, Union
 import typing_inspect
 
 
@@ -501,9 +501,14 @@ class ArgSpecCache:
             return None
 
     def get_generic_bases(
-        self, typ: type, generic_args: Sequence[Value] = ()
-    ) -> Dict[type, TypeVarMap]:
-        if typ is Generic or is_typing_name(typ, "Protocol") or typ is object:
+        self, typ: Union[type, str], generic_args: Sequence[Value] = ()
+    ) -> GenericBases:
+        if (
+            typ is Generic
+            or is_typing_name(typ, "Protocol")
+            or typ is object
+            or typ in ("typing.Generic", "builtins.object")
+        ):
             return {}
         generic_bases = self._get_generic_bases_cached(typ)
         if typ not in generic_bases:
@@ -525,16 +530,22 @@ class ArgSpecCache:
             for base, args in generic_bases.items()
         }
 
-    def _get_generic_bases_cached(self, typ: type) -> Dict[type, TypeVarMap]:
+    def _get_generic_bases_cached(self, typ: Union[type, str]) -> GenericBases:
         try:
             return self.generic_bases_cache[typ]
         except KeyError:
             pass
         except Exception:
             return {}  # We don't support unhashable types.
-        bases = self.ts_finder.get_bases(typ)
+        if isinstance(typ, str):
+            bases = self.ts_finder.get_bases_for_fq_name(typ)
+        else:
+            bases = self.ts_finder.get_bases(typ)
         generic_bases = self._extract_bases(typ, bases)
         if generic_bases is None:
+            assert isinstance(
+                typ, type
+            ), f"failed to extract typeshed bases for {typ!r}"
             bases = [
                 type_from_runtime(base, ctx=self.default_context)
                 for base in self.get_runtime_bases(typ)
@@ -547,8 +558,8 @@ class ArgSpecCache:
         return generic_bases
 
     def _extract_bases(
-        self, typ: type, bases: Optional[Sequence[Value]]
-    ) -> Optional[Dict[type, TypeVarMap]]:
+        self, typ: Union[type, str], bases: Optional[Sequence[Value]]
+    ) -> Optional[GenericBases]:
         if bases is None:
             return None
         # Put Generic first since it determines the order of the typevars. This matters
@@ -563,7 +574,10 @@ class ArgSpecCache:
         generic_bases[typ] = {tv: TypeVarValue(tv) for tv in my_typevars}
         for base in bases:
             if isinstance(base, TypedValue):
-                assert base.typ is not typ, base
+                if isinstance(base.typ, str):
+                    assert base.typ != typ, base
+                else:
+                    assert base.typ is not typ, base
                 if isinstance(base, GenericValue):
                     args = base.args
                 else:

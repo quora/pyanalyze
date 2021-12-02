@@ -4,13 +4,15 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
-from .annotations import Context, is_typing_name, type_from_value, value_from_ast
+from .annotations import Context, type_from_value, value_from_ast
 from .error_code import ErrorCode
+from .safe import is_typing_name
 from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
 from .value import (
     AnySource,
     AnyValue,
+    CallableValue,
     TypedValue,
     GenericValue,
     KnownValue,
@@ -20,6 +22,7 @@ from .value import (
     extract_typevars,
 )
 
+from abc import abstractmethod
 import ast
 import builtins
 from collections.abc import (
@@ -37,6 +40,7 @@ import inspect
 import sys
 from types import GeneratorType
 from typing import (
+    Tuple,
     cast,
     Any,
     Generic,
@@ -93,6 +97,7 @@ class TypeshedFinder(object):
         self.verbose = verbose
         self.resolver = typeshed_client.Resolver()
         self._assignment_cache = {}
+        self._attribute_cache = {}
 
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
@@ -133,24 +138,56 @@ class TypeshedFinder(object):
 
     def get_bases(self, typ: type) -> Optional[List[Value]]:
         """Return the base classes for this type, including generic bases."""
-        # The way AbstractSet/Set is handled between collections and typing is
-        # too confusing, just hardcode it. Same for (Abstract)ContextManager.
-        if typ is AbstractSet:
-            return [GenericValue(Collection, (TypeVarValue(T_co),))]
-        if typ is AbstractContextManager:
-            return [GenericValue(Generic, (TypeVarValue(T_co),))]
-        if typ is Callable or typ is collections.abc.Callable:
-            return None
-        if typ is TypedDict:
-            return [GenericValue(MutableMapping, [TypedValue(str), TypedValue(object)])]
-        fq_name = self._get_fq_name(typ)
-        if fq_name is None:
-            return None
+        return self.get_bases_for_value(TypedValue(typ))
+
+    def get_bases_for_value(self, val: Value) -> Optional[List[Value]]:
+        if isinstance(val, TypedValue):
+            if isinstance(val.typ, type):
+                typ = val.typ
+                # The way AbstractSet/Set is handled between collections and typing is
+                # too confusing, just hardcode it. Same for (Abstract)ContextManager.
+                if typ is AbstractSet:
+                    return [GenericValue(Collection, (TypeVarValue(T_co),))]
+                if typ is AbstractContextManager:
+                    return [GenericValue(Generic, (TypeVarValue(T_co),))]
+                if typ is Callable or typ is collections.abc.Callable:
+                    return None
+                if typ is TypedDict:
+                    return [
+                        GenericValue(
+                            MutableMapping, [TypedValue(str), TypedValue(object)]
+                        )
+                    ]
+                fq_name = self._get_fq_name(typ)
+                if fq_name is None:
+                    return None
+            else:
+                fq_name = val.typ
+            return self.get_bases_for_fq_name(fq_name)
+        return None
+
+    def get_bases_recursively(self, fq_name: str) -> List[Value]:
+        stack = [TypedValue(fq_name)]
+        seen = set()
+        bases = []
+        # TODO return MRO order
+        while stack:
+            next_base = stack.pop()
+            if next_base in seen:
+                continue
+            seen.add(next_base)
+            bases.append(next_base)
+            new_bases = self.get_bases_for_value(next_base)
+            if new_bases is not None:
+                bases += new_bases
+        return bases
+
+    def get_bases_for_fq_name(self, fq_name: str) -> Optional[List[Value]]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._get_bases_from_info(info, mod)
 
-    def get_attribute(self, typ: type, attr: str) -> Value:
+    def get_attribute(self, typ: type, attr: str, *, on_class: bool) -> Value:
         """Return the stub for this attribute.
 
         Does not look at parent classes. Returns UNINITIALIZED_VALUE if no
@@ -160,11 +197,44 @@ class TypeshedFinder(object):
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
             return UNINITIALIZED_VALUE
-        info = self._get_info_for_name(fq_name)
-        mod, _ = fq_name.rsplit(".", maxsplit=1)
-        return self._get_attribute_from_info(info, mod, attr)
+        return self.get_attribute_for_fq_name(fq_name, attr, on_class=on_class)
 
-    def has_attribute(self, typ: type, attr: str) -> bool:
+    def get_attribute_for_fq_name(
+        self, fq_name: str, attr: str, *, on_class: bool
+    ) -> Value:
+        key = (fq_name, attr, on_class)
+        try:
+            return self._attribute_cache[key]
+        except KeyError:
+            info = self._get_info_for_name(fq_name)
+            mod, _ = fq_name.rsplit(".", maxsplit=1)
+            val = self._get_attribute_from_info(info, mod, attr, on_class=on_class)
+            self._attribute_cache[key] = val
+            return val
+
+    def get_attribute_recursively(
+        self, fq_name: str, attr: str, *, on_class: bool
+    ) -> Tuple[Value, Union[type, str, None]]:
+        """Get an attribute from a fully qualified class.
+
+        Returns a tuple (value, provider).
+
+        """
+        for base in self.get_bases_recursively(fq_name):
+            if isinstance(base, TypedValue):
+                if isinstance(base.typ, str):
+                    possible_value = self.get_attribute_for_fq_name(
+                        base.typ, attr, on_class=on_class
+                    )
+                else:
+                    possible_value = self.get_attribute(
+                        base.typ, attr, on_class=on_class
+                    )
+                if possible_value is not UNINITIALIZED_VALUE:
+                    return possible_value, base.typ
+        return UNINITIALIZED_VALUE, None
+
+    def has_attribute(self, typ: Union[type, str], attr: str) -> bool:
         """Whether this type has this attribute in the stubs.
 
         Also looks at base classes.
@@ -172,7 +242,7 @@ class TypeshedFinder(object):
         """
         if self._has_own_attribute(typ, attr):
             return True
-        bases = self.get_bases(typ)
+        bases = self.get_bases_for_value(TypedValue(typ))
         if bases is not None:
             for base in bases:
                 if not isinstance(base, TypedValue):
@@ -202,13 +272,18 @@ class TypeshedFinder(object):
         return AnyValue(AnySource.inference)
 
     def _get_attribute_from_info(
-        self, info: typeshed_client.resolver.ResolvedName, mod: str, attr: str
+        self,
+        info: typeshed_client.resolver.ResolvedName,
+        mod: str,
+        attr: str,
+        *,
+        on_class: bool,
     ) -> Value:
         if info is None:
             return UNINITIALIZED_VALUE
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_attribute_from_info(
-                info.info, ".".join(info.source_module), attr
+                info.info, ".".join(info.source_module), attr, on_class=on_class
             )
         elif isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, ast3.ClassDef):
@@ -226,7 +301,13 @@ class TypeshedFinder(object):
                                 KnownValue(property)
                             ]:
                                 return self._parse_type(child_info.ast.returns, mod)
-                            return UNINITIALIZED_VALUE  # a method
+                            sig = self._get_signature_from_func_def(
+                                child_info.ast, None, mod, autobind=not on_class
+                            )
+                            if sig is None:
+                                return AnyValue(AnySource.inference)
+                            else:
+                                return CallableValue(sig)
                         elif isinstance(child_info.ast, ast3.AsyncFunctionDef):
                             return UNINITIALIZED_VALUE
                         elif isinstance(child_info.ast, ast3.Assign):
@@ -236,20 +317,23 @@ class TypeshedFinder(object):
             elif isinstance(info.ast, ast3.Assign):
                 val = self._parse_type(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
-                    return self.get_attribute(val.val, attr)
+                    return self.get_attribute(val.val, attr, on_class=on_class)
                 else:
                     return UNINITIALIZED_VALUE
             else:
                 return UNINITIALIZED_VALUE
         return UNINITIALIZED_VALUE
 
-    def _has_own_attribute(self, typ: type, attr: str) -> bool:
+    def _has_own_attribute(self, typ: Union[type, str], attr: str) -> bool:
         # Special case since otherwise we think every object has every attribute
         if typ is object and attr == "__getattribute__":
             return False
-        fq_name = self._get_fq_name(typ)
-        if fq_name is None:
-            return False
+        if isinstance(typ, str):
+            fq_name = typ
+        else:
+            fq_name = self._get_fq_name(typ)
+            if fq_name is None:
+                return False
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._has_attribute_from_info(info, mod, attr)
@@ -371,14 +455,8 @@ class TypeshedFinder(object):
         objclass: Optional[type] = None,
     ) -> Optional[Signature]:
         if isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, ast3.FunctionDef):
-                return self._get_signature_from_func_def(
-                    info.ast, obj, mod, objclass, is_async_fn=False
-                )
-            elif isinstance(info.ast, ast3.AsyncFunctionDef):
-                return self._get_signature_from_func_def(
-                    info.ast, obj, mod, objclass, is_async_fn=True
-                )
+            if isinstance(info.ast, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
+                return self._get_signature_from_func_def(info.ast, obj, mod, objclass)
             else:
                 self.log("Ignoring unrecognized AST", (fq_name, info))
                 return None
@@ -403,9 +481,21 @@ class TypeshedFinder(object):
         mod: str,
         objclass: Optional[type] = None,
         *,
-        is_async_fn: bool,
+        autobind: bool = False,
     ) -> Optional[Signature]:
-        if node.decorator_list:
+        is_classmethod = is_staticmethod = False
+        for decorator_ast in node.decorator_list:
+            decorator = self._parse_expr(decorator_ast, mod)
+            if decorator == KnownValue(abstractmethod):
+                continue
+            elif decorator == KnownValue(classmethod):
+                is_classmethod = True
+                if autobind:  # TODO support classmethods otherwise
+                    continue
+            elif decorator == KnownValue(staticmethod):
+                is_staticmethod = True
+                if autobind:  # TODO support staticmethods otherwise
+                    continue
             # might be @overload or something else we don't recognize
             return None
         if node.returns is None:
@@ -424,6 +514,9 @@ class TypeshedFinder(object):
                 args.args, defaults, mod, SigParameter.POSITIONAL_OR_KEYWORD, objclass
             )
         )
+        if autobind:
+            if is_classmethod or not is_staticmethod:
+                arguments = arguments[1:]
 
         if args.vararg is not None:
             vararg_param = self._parse_param(
@@ -454,7 +547,7 @@ class TypeshedFinder(object):
             cleaned_arguments,
             callable=obj,
             return_annotation=GenericValue(Awaitable, [return_value])
-            if is_async_fn
+            if isinstance(node, ast3.AsyncFunctionDef)
             else return_value,
         )
 
@@ -570,6 +663,8 @@ class TypeshedFinder(object):
                 mod = sys.modules[module]
                 return KnownValue(getattr(mod, info.name))
             except Exception:
+                if isinstance(info.ast, ast3.ClassDef):
+                    return TypedValue(f"{module}.{info.name}")
                 self.log("Unable to import", (module, info))
                 return AnyValue(AnySource.inference)
         elif isinstance(info, tuple):

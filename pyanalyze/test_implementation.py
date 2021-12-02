@@ -912,15 +912,24 @@ class TestDictGetItem(TestNameCheckVisitorBase):
         class ReversedDict(Generic[V, K], Dict[K, V]):
             pass
 
+        class NormalDict(Generic[K, V], Dict[K, V]):
+            pass
+
         class TD(TypedDict):
             a: int
 
-        def capybara(td: TD, dct: Dict[str, int], rev: ReversedDict[str, int]):
+        def capybara(
+            td: TD,
+            dct: Dict[str, int],
+            rev: ReversedDict[str, int],
+            nd: NormalDict[int, str],
+        ):
             d = {1: 2}
             assert_is_value(d[1], KnownValue(2))
             assert_is_value(td["a"], TypedValue(int))
 
             assert_is_value(dct["key"], TypedValue(int))
+            assert_is_value(nd[1], TypedValue(str))
             assert_is_value(rev[1], TypedValue(str))
 
 

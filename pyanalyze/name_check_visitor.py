@@ -111,6 +111,7 @@ from .value import (
     AnyValue,
     CallableValue,
     CanAssignError,
+    GenericBases,
     KnownValueWithTypeVars,
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
@@ -132,7 +133,6 @@ from .value import (
     TypeVarValue,
     CanAssignContext,
     concrete_values_from_iterable,
-    TypeVarMap,
     unpack_values,
 )
 
@@ -251,9 +251,9 @@ class _AttrContext(attributes.AttrContext):
                 return self.visitor._argspec_to_retval[id(argspec)]
         return AnyValue(AnySource.inference)
 
-    def get_attribute_from_typeshed(self, typ: type) -> Value:
+    def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
         typeshed_type = self.visitor.arg_spec_cache.ts_finder.get_attribute(
-            typ, self.attr
+            typ, self.attr, on_class=on_class
         )
         if (
             typeshed_type is UNINITIALIZED_VALUE
@@ -262,12 +262,19 @@ class _AttrContext(attributes.AttrContext):
             return AnyValue(AnySource.inference)
         return typeshed_type
 
+    def get_attribute_from_typeshed_recursively(
+        self, fq_name: str, *, on_class: bool
+    ) -> Tuple[Value, object]:
+        return self.visitor.arg_spec_cache.ts_finder.get_attribute_recursively(
+            fq_name, self.attr, on_class=on_class
+        )
+
     def should_ignore_none_attributes(self) -> bool:
         return self.visitor.config.IGNORE_NONE_ATTRIBUTES
 
     def get_generic_bases(
-        self, typ: type, generic_args: Sequence[Value]
-    ) -> Dict[type, TypeVarMap]:
+        self, typ: Union[type, str], generic_args: Sequence[Value]
+    ) -> GenericBases:
         return self.visitor.get_generic_bases(typ, generic_args)
 
 
@@ -805,8 +812,8 @@ class NameCheckVisitor(
     # The type for typ should be type, but that leads Cython to reject calls that pass
     # an instance of ABCMeta.
     def get_generic_bases(
-        self, typ: type, generic_args: Sequence[Value] = ()
-    ) -> Dict[type, TypeVarMap]:
+        self, typ: Union[type, str], generic_args: Sequence[Value] = ()
+    ) -> GenericBases:
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
 
     def get_signature(self, obj: object, is_asynq: bool = False) -> Optional[Signature]:
@@ -2815,7 +2822,9 @@ class NameCheckVisitor(
             # https://github.com/quora/asynq/blob/b07682d8b11e53e4ee5c585020cc9033e239c7eb/asynq/async_task.py#L446
             value.get_type_object().is_exactly({list, tuple})
         ):
-            if isinstance(value, SequenceIncompleteValue):
+            if isinstance(value, SequenceIncompleteValue) and isinstance(
+                value.typ, type
+            ):
                 values = [
                     self._unwrap_yield_result(node, member) for member in value.members
                 ]
@@ -3652,7 +3661,10 @@ class NameCheckVisitor(
 
             if isinstance(root_composite.value, TypedValue):
                 typ = root_composite.value.typ
-                self._record_type_attr_set(typ, node.attr, node, self.being_assigned)
+                if isinstance(typ, type):
+                    self._record_type_attr_set(
+                        typ, node.attr, node, self.being_assigned
+                    )
             return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):
             if self._is_checking():
@@ -3768,12 +3780,16 @@ class NameCheckVisitor(
                 return AnyValue(AnySource.inference)
         elif isinstance(root_value, TypedValue):
             root_type = root_value.typ
-            if not self._has_only_known_attributes(root_type):
+            if isinstance(root_type, type) and not self._has_only_known_attributes(
+                root_type
+            ):
                 return self._maybe_get_attr_value(root_type, attr)
         elif isinstance(root_value, SubclassValue):
             if isinstance(root_value.typ, TypedValue):
                 root_type = root_value.typ.typ
-                if not self._has_only_known_attributes(root_type):
+                if isinstance(root_type, type) and not self._has_only_known_attributes(
+                    root_type
+                ):
                     return self._maybe_get_attr_value(root_type, attr)
             else:
                 return AnyValue(AnySource.inference)
@@ -4144,6 +4160,11 @@ class NameCheckVisitor(
             typ = value.typ
             if typ is collections.abc.Callable or typ is types.FunctionType:
                 return ANY_SIGNATURE
+            if isinstance(typ, str):
+                call_method = self.get_attribute(Composite(value), "__call__")
+                if call_method is UNINITIALIZED_VALUE:
+                    return None
+                return self.signature_from_value(call_method, node=node)
             if getattr(typ.__call__, "__objclass__", None) is type and not issubclass(
                 typ, type
             ):
@@ -4167,44 +4188,6 @@ class NameCheckVisitor(
             return ANY_SIGNATURE
         else:
             return None
-
-    def _get_argspec_from_value(
-        self, callee_wrapped: Value, node: ast.AST
-    ) -> MaybeSignature:
-        if isinstance(callee_wrapped, KnownValue):
-            argspec = self.arg_spec_cache.get_argspec(callee_wrapped.val)
-            if argspec is None:
-                method_object = self.get_attribute(
-                    Composite(callee_wrapped), "__call__", node
-                )
-                if method_object is UNINITIALIZED_VALUE:
-                    self._show_error_if_checking(
-                        node,
-                        f"{callee_wrapped} is not callable",
-                        ErrorCode.not_callable,
-                    )
-            return argspec
-        elif isinstance(callee_wrapped, UnboundMethodValue):
-            method = callee_wrapped.get_method()
-            if method is not None:
-                return self.arg_spec_cache.get_argspec(method)
-        elif isinstance(callee_wrapped, CallableValue):
-            return callee_wrapped.signature
-        elif isinstance(callee_wrapped, TypedValue):
-            typ = callee_wrapped.typ
-            if getattr(typ.__call__, "__objclass__", None) is type and not issubclass(
-                typ, type
-            ):
-                self._show_error_if_checking(
-                    node,
-                    "Object of type %r is not callable" % (typ,),
-                    ErrorCode.not_callable,
-                )
-                return None
-            call_fn = typ.__call__
-            argspec = self.arg_spec_cache.get_argspec(call_fn)
-            return make_bound_method(argspec, Composite(callee_wrapped))
-        return None
 
     # Attribute checking
 
