@@ -37,6 +37,7 @@ import inspect
 import sys
 from types import GeneratorType
 from typing import (
+    Tuple,
     cast,
     Any,
     Generic,
@@ -133,19 +134,51 @@ class TypeshedFinder(object):
 
     def get_bases(self, typ: type) -> Optional[List[Value]]:
         """Return the base classes for this type, including generic bases."""
-        # The way AbstractSet/Set is handled between collections and typing is
-        # too confusing, just hardcode it. Same for (Abstract)ContextManager.
-        if typ is AbstractSet:
-            return [GenericValue(Collection, (TypeVarValue(T_co),))]
-        if typ is AbstractContextManager:
-            return [GenericValue(Generic, (TypeVarValue(T_co),))]
-        if typ is Callable or typ is collections.abc.Callable:
-            return None
-        if typ is TypedDict:
-            return [GenericValue(MutableMapping, [TypedValue(str), TypedValue(object)])]
-        fq_name = self._get_fq_name(typ)
-        if fq_name is None:
-            return None
+        return self.get_bases_for_value(TypedValue(typ))
+
+    def get_bases_for_value(self, val: Value) -> Optional[List[Value]]:
+        if isinstance(val, TypedValue):
+            if isinstance(val.typ, type):
+                typ = val.typ
+                # The way AbstractSet/Set is handled between collections and typing is
+                # too confusing, just hardcode it. Same for (Abstract)ContextManager.
+                if typ is AbstractSet:
+                    return [GenericValue(Collection, (TypeVarValue(T_co),))]
+                if typ is AbstractContextManager:
+                    return [GenericValue(Generic, (TypeVarValue(T_co),))]
+                if typ is Callable or typ is collections.abc.Callable:
+                    return None
+                if typ is TypedDict:
+                    return [
+                        GenericValue(
+                            MutableMapping, [TypedValue(str), TypedValue(object)]
+                        )
+                    ]
+                fq_name = self._get_fq_name(typ)
+                if fq_name is None:
+                    return None
+            else:
+                fq_name = val.typ
+            return self.get_bases_for_fq_name(fq_name)
+        return None
+
+    def get_bases_recursively(self, fq_name: str) -> List[Value]:
+        stack = [TypedValue(fq_name)]
+        seen = set()
+        bases = []
+        # TODO return MRO order
+        while stack:
+            next_base = stack.pop()
+            if next_base in seen:
+                continue
+            seen.add(next_base)
+            bases.append(next_base)
+            new_bases = self.get_bases_for_value(next_base)
+            if new_bases is not None:
+                bases += new_bases
+        return bases
+
+    def get_bases_for_fq_name(self, fq_name: str) -> Optional[List[Value]]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._get_bases_from_info(info, mod)
@@ -160,11 +193,32 @@ class TypeshedFinder(object):
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
             return UNINITIALIZED_VALUE
+        return self.get_attribute_for_fq_name(fq_name, attr)
+
+    def get_attribute_for_fq_name(self, fq_name: str, attr: str) -> Value:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._get_attribute_from_info(info, mod, attr)
 
-    def has_attribute(self, typ: type, attr: str) -> bool:
+    def get_attribute_recursively(
+        self, fq_name: str, attr: str
+    ) -> Tuple[Value, Union[type, str, None]]:
+        """Get an attribute from a fully qualified class.
+
+        Returns a tuple (value, provider).
+
+        """
+        for base in self.get_bases_recursively(fq_name):
+            if isinstance(base, TypedValue):
+                if isinstance(base.typ, str):
+                    possible_value = self.get_attribute_for_fq_name(base.typ, attr)
+                else:
+                    possible_value = self.get_attribute(base.typ, attr)
+                if possible_value is not UNINITIALIZED_VALUE:
+                    return possible_value, base.typ
+        return UNINITIALIZED_VALUE, None
+
+    def has_attribute(self, typ: Union[type, str], attr: str) -> bool:
         """Whether this type has this attribute in the stubs.
 
         Also looks at base classes.
@@ -172,7 +226,7 @@ class TypeshedFinder(object):
         """
         if self._has_own_attribute(typ, attr):
             return True
-        bases = self.get_bases(typ)
+        bases = self.get_bases_for_value(TypedValue(typ))
         if bases is not None:
             for base in bases:
                 if not isinstance(base, TypedValue):
@@ -243,13 +297,16 @@ class TypeshedFinder(object):
                 return UNINITIALIZED_VALUE
         return UNINITIALIZED_VALUE
 
-    def _has_own_attribute(self, typ: type, attr: str) -> bool:
+    def _has_own_attribute(self, typ: Union[type, str], attr: str) -> bool:
         # Special case since otherwise we think every object has every attribute
         if typ is object and attr == "__getattribute__":
             return False
-        fq_name = self._get_fq_name(typ)
-        if fq_name is None:
-            return False
+        if isinstance(typ, str):
+            fq_name = typ
+        else:
+            fq_name = self._get_fq_name(typ)
+            if fq_name is None:
+                return False
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._has_attribute_from_info(info, mod, attr)
@@ -570,6 +627,8 @@ class TypeshedFinder(object):
                 mod = sys.modules[module]
                 return KnownValue(getattr(mod, info.name))
             except Exception:
+                if isinstance(info.ast, ast3.ClassDef):
+                    return TypedValue(f"{module}.{info.name}")
                 self.log("Unable to import", (module, info))
                 return AnyValue(AnySource.inference)
         elif isinstance(info, tuple):

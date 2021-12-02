@@ -255,15 +255,15 @@ def _super_impl(ctx: CallContext) -> Value:
         return AnyValue(AnySource.inference)  # probably a dynamically created class
 
     if isinstance(obj, TypedValue) and obj.typ is not type:
-        instance_type = obj.typ
+        tobj = obj.get_type_object(ctx.visitor)
         is_value = True
     elif isinstance(obj, SubclassValue) and isinstance(obj.typ, TypedValue):
-        instance_type = obj.typ.typ
+        tobj = obj.typ.get_type_object(ctx.visitor)
         is_value = False
     else:
         return AnyValue(AnySource.inference)
 
-    if not issubclass(instance_type, cls):
+    if not tobj.is_assignable_to_type(cls):
         ctx.show_error("Incompatible arguments to super", ErrorCode.bad_super_call)
 
     current_class = ctx.visitor.asynq_checker.current_class
@@ -273,8 +273,11 @@ def _super_impl(ctx: CallContext) -> Value:
             ErrorCode.bad_super_call,
         )
 
+    if isinstance(tobj.typ, str):
+        return AnyValue(AnySource.inference)
+
     try:
-        super_val = super(cls, instance_type)
+        super_val = super(cls, tobj.typ)
     except Exception:
         ctx.show_error("Bad arguments to super", ErrorCode.bad_super_call)
         return AnyValue(AnySource.error)
@@ -381,9 +384,10 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                 ctx.show_error(f"Invalid {typ.__name__} key {key}")
                 return AnyValue(AnySource.error)
         elif isinstance(key, TypedValue):
-            if issubclass(key.typ, int):
+            tobj = key.get_type_object(ctx.visitor)
+            if tobj.is_assignable_to_type(int):
                 return self_value.get_generic_arg_for_type(typ, ctx.visitor, 0)
-            elif issubclass(key.typ, slice):
+            elif tobj.is_assignable_to_type(slice):
                 return self_value
             else:
                 ctx.show_error(f"Invalid {typ.__name__} key {key}")
@@ -688,9 +692,9 @@ def _list_extend_or_iadd_impl(
         cleaned_lst = replace_known_sequence_value(lst)
         iterable = replace_known_sequence_value(iterable)
         if isinstance(cleaned_lst, SequenceIncompleteValue):
-            if isinstance(iterable, SequenceIncompleteValue) and issubclass(
-                iterable.typ, (list, tuple)
-            ):
+            if isinstance(
+                iterable, SequenceIncompleteValue
+            ) and iterable.get_type_object(ctx.visitor).is_exactly((list, tuple)):
                 constrained_value = SequenceIncompleteValue(
                     list, (*cleaned_lst.members, *iterable.members)
                 )
@@ -959,8 +963,10 @@ def _qcore_assert_impl(
 
 
 def len_of_value(val: Value) -> Value:
-    if isinstance(val, SequenceIncompleteValue) and not issubclass(
-        val.typ, KNOWN_MUTABLE_TYPES
+    if (
+        isinstance(val, SequenceIncompleteValue)
+        and isinstance(val.typ, type)
+        and not issubclass(val.typ, KNOWN_MUTABLE_TYPES)
     ):
         return KnownValue(len(val.members))
     elif isinstance(val, KnownValue):

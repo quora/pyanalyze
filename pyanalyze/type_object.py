@@ -5,12 +5,10 @@ An object that represents a type.
 """
 from dataclasses import dataclass, field
 import inspect
-from typing import Container, Set, Dict, Sequence, Union
+from typing import Container, Set, Sequence, Union
 from unittest import mock
 
 from .safe import safe_isinstance, safe_issubclass
-
-_cache: Dict[type, "TypeObject"] = {}
 
 
 def get_mro(typ: Union[type, super]) -> Sequence[type]:
@@ -27,12 +25,17 @@ def get_mro(typ: Union[type, super]) -> Sequence[type]:
 
 @dataclass
 class TypeObject:
-    typ: Union[type, super]
-    base_classes: Set[type] = field(default_factory=set)
+    typ: Union[type, super, str]
+    base_classes: Set[Union[type, str]] = field(default_factory=set)
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
 
     def __post_init__(self) -> None:
+        if isinstance(self.typ, str):
+            # Synthetic type
+            self.is_universally_assignable = False
+            self.is_thrift_enum = False
+            return
         if isinstance(self.typ, super):
             self.is_universally_assignable = False
         else:
@@ -45,27 +48,20 @@ class TypeObject:
             # a subtype of float.
             self.base_classes.add(float)
 
-    @classmethod
-    def make(cls, typ: type) -> "TypeObject":
-        try:
-            in_cache = typ in _cache
-        except Exception:
-            return cls(typ)
-        if in_cache:
-            return _cache[typ]
-        type_object = cls(typ)
-        _cache[typ] = type_object
-        return type_object
-
     def is_assignable_to_type(self, typ: type) -> bool:
         for base in self.base_classes:
-            if safe_issubclass(base, typ):
-                return True
+            if isinstance(base, str):
+                continue
+            else:
+                if safe_issubclass(base, typ):
+                    return True
         return self.is_universally_assignable
 
     def is_assignable_to_type_object(self, other: "TypeObject") -> bool:
         if isinstance(other.typ, super):
             return False
+        if isinstance(other.typ, str):
+            return self.is_universally_assignable or other.typ in self.base_classes
         return self.is_assignable_to_type(other.typ)
 
     def is_instance(self, obj: object) -> bool:
@@ -74,3 +70,10 @@ class TypeObject:
 
     def is_exactly(self, types: Container[type]) -> bool:
         return self.typ in types
+
+    def is_metatype_of(self, other: "TypeObject") -> bool:
+        if isinstance(self.typ, type) and isinstance(other.typ, type):
+            return issubclass(self.typ, type) and safe_isinstance(other.typ, self.typ)
+        else:
+            # TODO handle this for synthetic types (if necessary)
+            return False

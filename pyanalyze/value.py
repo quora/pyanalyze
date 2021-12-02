@@ -54,6 +54,7 @@ BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 
 TypeVarMap = Mapping["TypeVar", "Value"]
+GenericBases = Mapping[Union[type, str], TypeVarMap]
 
 
 class Value:
@@ -159,13 +160,13 @@ class CanAssignContext:
 
     """
 
-    def make_type_object(self, typ: Union[type, super]) -> TypeObject:
+    def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
         """Return a :class:`pyanalyze.type_object.TypeObject` for this concrete type."""
         raise NotImplementedError
 
     def get_generic_bases(
-        self, typ: type, generic_args: Sequence["Value"] = ()
-    ) -> Dict[type, TypeVarMap]:
+        self, typ: Union[type, str], generic_args: Sequence["Value"] = ()
+    ) -> GenericBases:
         """Return the base classes for `typ` with their generic arguments.
 
         For example, calling
@@ -349,7 +350,7 @@ class KnownValue(Value):
     def get_type_object(self, ctx: Optional[CanAssignContext] = None) -> TypeObject:
         if ctx is not None:
             return ctx.make_type_object(type(self.val))
-        return TypeObject.make(type(self.val))
+        return TypeObject(type(self.val))
 
     def get_type_value(self) -> Value:
         return KnownValue(type(self.val))
@@ -487,8 +488,8 @@ class TypedValue(Value):
 
     """
 
-    typ: type
-    """The underlying type."""
+    typ: Union[type, str]
+    """The underlying type, or a fully qualified reference to one."""
     _type_object: Optional[TypeObject] = field(
         init=False, repr=False, hash=False, compare=False, default=None
     )
@@ -535,11 +536,14 @@ class TypedValue(Value):
         elif isinstance(other, KnownValue):
             if not isinstance(other.val, int):
                 return CanAssignError(f"{other} is not an int")
+            assert hasattr(self.typ, "_VALUES_TO_NAMES"), f"{self} is not a Thrift enum"
             if other.val in self.typ._VALUES_TO_NAMES:
                 return {}
         elif isinstance(other, TypedValue):
             tobj = other.get_type_object(ctx)
-            if tobj.is_assignable_to_type(self.typ) or tobj.is_assignable_to_type(int):
+            if tobj.is_assignable_to_type_object(
+                self.get_type_object(ctx)
+            ) or tobj.is_assignable_to_type(int):
                 return {}
         elif isinstance(other, MultiValuedValue):
             tv_maps = []
@@ -557,7 +561,7 @@ class TypedValue(Value):
         return CanAssignError(f"Cannot assign {other} to Thrift enum {self}")
 
     def get_generic_args_for_type(
-        self, typ: Union[type, super], ctx: CanAssignContext
+        self, typ: Union[type, super, str], ctx: CanAssignContext
     ) -> Optional[List[Value]]:
         if isinstance(self, GenericValue):
             args = self.args
@@ -582,10 +586,14 @@ class TypedValue(Value):
     def is_type(self, typ: type) -> bool:
         return self.get_type_object().is_assignable_to_type(typ)
 
-    def get_type(self) -> type:
+    def get_type(self) -> Optional[type]:
+        if isinstance(self.typ, str):
+            return None
         return self.typ
 
     def get_type_value(self) -> Value:
+        if isinstance(self.typ, str):
+            return AnyValue(AnySource.inference)
         return KnownValue(self.typ)
 
     def __str__(self) -> str:
@@ -643,7 +651,7 @@ class GenericValue(TypedValue):
     args: Tuple[Value, ...]
     """The generic arguments to the type."""
 
-    def __init__(self, typ: type, args: Iterable[Value]) -> None:
+    def __init__(self, typ: Union[type, str], args: Iterable[Value]) -> None:
         super().__init__(typ)
         self.args = tuple(args)
 
@@ -711,7 +719,7 @@ class SequenceIncompleteValue(GenericValue):
     members: Tuple[Value, ...]
     """The elements of the sequence."""
 
-    def __init__(self, typ: type, members: Sequence[Value]) -> None:
+    def __init__(self, typ: Union[type, str], members: Sequence[Value]) -> None:
         if members:
             args = (unite_values(*members),)
         else:
@@ -721,7 +729,9 @@ class SequenceIncompleteValue(GenericValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, SequenceIncompleteValue):
-            if not issubclass(other.typ, self.typ):
+            if not other.get_type_object(ctx).is_assignable_to_type_object(
+                self.get_type_object(ctx)
+            ):
                 return CanAssignError(
                     f"Cannot assign {stringify_object(other.typ)} to"
                     f" {stringify_object(self.typ)}"
@@ -786,7 +796,9 @@ class DictIncompleteValue(GenericValue):
     items: Tuple[Tuple[Value, Value], ...]
     """Sequence of pairs representing the keys and values of the dict."""
 
-    def __init__(self, typ: type, items: Sequence[Tuple[Value, Value]]) -> None:
+    def __init__(
+        self, typ: Union[type, str], items: Sequence[Tuple[Value, Value]]
+    ) -> None:
         if items:
             key_type = unite_values(*[key for key, _ in items])
             value_type = unite_values(*[value for _, value in items])
@@ -932,7 +944,7 @@ class AsyncTaskIncompleteValue(GenericValue):
     value: Value
     """The value returned by the task on completion."""
 
-    def __init__(self, typ: type, value: Value) -> None:
+    def __init__(self, typ: Union[type, str], value: Value) -> None:
         super().__init__(typ, (value,))
         self.value = value
 
@@ -1040,7 +1052,7 @@ class SubclassValue(Value):
         yield from self.typ.walk_values()
 
     def is_type(self, typ: type) -> bool:
-        if isinstance(self.typ, TypedValue):
+        if isinstance(self.typ, TypedValue) and isinstance(self.typ.typ, type):
             return safe_issubclass(self.typ.typ, typ)
         return False
 
@@ -1051,7 +1063,7 @@ class SubclassValue(Value):
             if isinstance(other.val, type):
                 if isinstance(self.typ, TypedValue) and ctx.make_type_object(
                     other.val
-                ).is_assignable_to_type(self.typ.typ):
+                ).is_assignable_to_type_object(self.typ.get_type_object(ctx)):
                     return {}
                 elif isinstance(self.typ, TypeVarValue):
                     return {self.typ.typevar: TypedValue(other.val)}
@@ -1059,12 +1071,13 @@ class SubclassValue(Value):
             if other.typ is type:
                 return {}
             # metaclass
-            elif issubclass(other.typ, type) and (
+            tobj = other.get_type_object(ctx)
+            if tobj.is_assignable_to_type(type) and (
                 (
                     isinstance(self.typ, TypedValue)
-                    and isinstance(self.typ.typ, other.typ)
+                    and tobj.is_metatype_of(self.typ.get_type_object(ctx))
                 )
-                or isinstance(self.typ, (TypeVarValue))
+                or isinstance(self.typ, TypeVarValue)
             ):
                 return {}
         return super().can_assign(other, ctx)
@@ -1866,6 +1879,8 @@ def extract_typevars(value: Value) -> Iterable["TypeVar"]:
 
 def stringify_object(obj: Any) -> str:
     # Stringify arbitrary Python objects such as methods and types.
+    if isinstance(obj, str):
+        return obj
     try:
         objclass = getattr(obj, "__objclass__", None)
         if objclass is not None:

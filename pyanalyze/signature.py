@@ -991,7 +991,7 @@ class Signature:
                 "return annotation is not compatible", [return_tv_map]
             )
         if self.is_ellipsis_args or other.is_ellipsis_args:
-            return {}
+            return return_tv_map
         tv_maps = [return_tv_map]
         their_params = list(other.signature.parameters.values())
         their_args = other.get_param_of_kind(SigParameter.VAR_POSITIONAL)

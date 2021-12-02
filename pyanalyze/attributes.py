@@ -11,7 +11,7 @@ import inspect
 import qcore
 import sys
 import types
-from typing import Any, Dict, Sequence, Tuple, Optional
+from typing import Any, Sequence, Tuple, Optional, Union
 
 
 from .annotations import type_from_runtime, Context
@@ -23,9 +23,9 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    GenericBases,
     HasAttrExtension,
     KnownValueWithTypeVars,
-    TypeVarMap,
     Value,
     KnownValue,
     GenericValue,
@@ -70,6 +70,11 @@ class AttrContext:
     def get_attribute_from_typeshed(self, typ: type) -> Value:
         return UNINITIALIZED_VALUE
 
+    def get_attribute_from_typeshed_recursively(
+        self, fq_name: str
+    ) -> Tuple[Value, object]:
+        return UNINITIALIZED_VALUE, None
+
     def should_ignore_none_attributes(self) -> bool:
         return False
 
@@ -77,8 +82,8 @@ class AttrContext:
         return None
 
     def get_generic_bases(
-        self, typ: type, generic_args: Sequence[Value]
-    ) -> Dict[type, TypeVarMap]:
+        self, typ: Union[type, str], generic_args: Sequence[Value]
+    ) -> GenericBases:
         return {}
 
 
@@ -101,9 +106,17 @@ def get_attribute(ctx: AttrContext) -> Value:
             args = root_value.args
         else:
             args = ()
-        attribute_value = _get_attribute_from_typed(root_value.typ, args, ctx)
+        if isinstance(root_value.typ, str):
+            attribute_value = _get_attribute_from_synthetic_type(
+                root_value.typ, args, ctx
+            )
+        else:
+            attribute_value = _get_attribute_from_typed(root_value.typ, args, ctx)
     elif isinstance(root_value, SubclassValue):
         if isinstance(root_value.typ, TypedValue):
+            if isinstance(root_value.typ.typ, str):
+                # TODO handle synthetic types
+                return AnyValue(AnySource.inference)
             attribute_value = _get_attribute_from_subclass(root_value.typ.typ, ctx)
         elif isinstance(root_value.typ, AnyValue):
             attribute_value = AnyValue(AnySource.from_another)
@@ -177,6 +190,19 @@ def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
         return KnownValue(cls_val)
 
 
+def _get_attribute_from_synthetic_type(
+    fq_name: str, generic_args: Sequence[Value], ctx: AttrContext
+) -> Value:
+    # First check values that are special in Python
+    if ctx.attr == "__class__":
+        # TODO: a KnownValue for synthetic types?
+        return AnyValue(AnySource.inference)
+    elif ctx.attr == "__dict__":
+        return TypedValue(dict)
+    result, provider = ctx.get_attribute_from_typeshed_recursively(fq_name)
+    return _substitute_typevars(fq_name, generic_args, result, provider, ctx)
+
+
 def _get_attribute_from_typed(
     typ: type, generic_args: Sequence[Value], ctx: AttrContext
 ) -> Value:
@@ -188,7 +214,21 @@ def _get_attribute_from_typed(
     elif ctx.attr == "__dict__":
         return TypedValue(dict)
     result, provider, should_unwrap = _get_attribute_from_mro(typ, ctx)
-    if isinstance(typ, type):
+    result = _substitute_typevars(typ, generic_args, result, provider, ctx)
+    if should_unwrap:
+        result = _unwrap_value_from_typed(result, typ, ctx)
+    ctx.record_usage(typ, result)
+    return result
+
+
+def _substitute_typevars(
+    typ: Union[type, str],
+    generic_args: Sequence[Value],
+    result: Value,
+    provider: object,
+    ctx: AttrContext,
+) -> Value:
+    if isinstance(typ, (type, str)):
         generic_bases = ctx.get_generic_bases(typ, generic_args)
     else:
         generic_bases = {}
@@ -202,9 +242,6 @@ def _get_attribute_from_typed(
         ]
         tv_map = dict(zip(typevars, generic_args))
         result = result.substitute_typevars(tv_map)
-    if should_unwrap:
-        result = _unwrap_value_from_typed(result, typ, ctx)
-    ctx.record_usage(typ, result)
     return result
 
 

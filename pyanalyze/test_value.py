@@ -9,7 +9,7 @@ from qcore.asserts import (
     assert_is_instance,
     assert_is_not,
 )
-from typing import NewType, Sequence, Dict, Union
+from typing import NewType, Sequence, Union
 from typing_extensions import Protocol, runtime_checkable
 import typing
 import types
@@ -27,6 +27,7 @@ from .value import (
     AnySource,
     AnyValue,
     CanAssignError,
+    GenericBases,
     Value,
     GenericValue,
     KnownValue,
@@ -48,8 +49,8 @@ class Context(CanAssignContext):
         return self.checker.make_type_object(typ)
 
     def get_generic_bases(
-        self, typ: type, generic_args: Sequence[Value] = ()
-    ) -> Dict[type, TypeVarMap]:
+        self, typ: Union[type, str], generic_args: Sequence[Value] = ()
+    ) -> GenericBases:
         return self.checker.arg_spec_cache.get_generic_bases(typ, generic_args)
 
 

@@ -494,6 +494,11 @@ def _type_from_value(value: Value, ctx: Context, is_typeddict: bool = False) -> 
                     root_type.typ,
                     [_type_from_value(member, ctx) for member in value.members],
                 )
+        if isinstance(value.root, TypedValue) and isinstance(value.root.typ, str):
+            return GenericValue(
+                value.root.typ, [_type_from_value(elt, ctx) for elt in value.members]
+            )
+
         if not isinstance(value.root, KnownValue):
             ctx.show_error(f"Cannot resolve subscripted annotation: {value.root}")
             return AnyValue(AnySource.error)
@@ -595,6 +600,9 @@ def _type_from_value(value: Value, ctx: Context, is_typeddict: bool = False) -> 
             ctx.show_error(f"Unrecognized subscripted annotation: {root}")
             return AnyValue(AnySource.error)
     elif isinstance(value, AnyValue):
+        return value
+    elif isinstance(value, TypedValue) and isinstance(value.typ, str):
+        # Synthetic type
         return value
     else:
         ctx.show_error(f"Unrecognized annotation {value}")
@@ -762,34 +770,36 @@ class _Visitor(ast.NodeVisitor):
 
 
 def is_typing_name(obj: object, name: str) -> bool:
-    objs = _fill_typing_name_cache(name)
+    objs, names = _fill_typing_name_cache(name)
     for typing_obj in objs:
         if obj is typing_obj:
             return True
-    return False
+    return obj in names
 
 
 def is_instance_of_typing_name(obj: object, name: str) -> bool:
-    objs = _fill_typing_name_cache(name)
+    objs, _ = _fill_typing_name_cache(name)
     return isinstance(obj, objs)
 
 
-_typing_name_cache: Dict[str, Tuple[Any, ...]] = {}
+_typing_name_cache: Dict[str, Tuple[Tuple[Any, ...], Tuple[str, ...]]] = {}
 
 
-def _fill_typing_name_cache(name: str) -> Tuple[Any, ...]:
+def _fill_typing_name_cache(name: str) -> Tuple[Tuple[Any, ...], Tuple[str, ...]]:
     try:
         return _typing_name_cache[name]
     except KeyError:
         objs = []
+        names = []
         for mod in (typing, typing_extensions, mypy_extensions):
             try:
                 objs.append(getattr(mod, name))
+                names.append(f"{mod}.{name}")
             except AttributeError:
                 pass
-        objs_tuple = tuple(objs)
-        _typing_name_cache[name] = objs_tuple
-        return objs_tuple
+        result = tuple(objs), tuple(names)
+        _typing_name_cache[name] = result
+        return result
 
 
 def _value_of_origin_args(
