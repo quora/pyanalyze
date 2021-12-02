@@ -72,3 +72,28 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             csv.writer(BadWrite())  # E: incompatible_argument
             csv.writer(GoodWrite())
             csv.writer(BadArgName())  # E: incompatible_argument
+
+    @assert_passes()
+    def test_custom_subclasscheck(self):
+        class _ThriftEnumMeta(type):
+            def __subclasscheck__(self, subclass):
+                return hasattr(subclass, "_VALUES_TO_NAMES")
+
+        class ThriftEnum(metaclass=_ThriftEnumMeta):
+            pass
+
+        class IsOne:
+            _VALUES_TO_NAMES = {}
+
+        class IsntOne:
+            _NAMES_TO_VALUES = {}
+
+        def want_enum(te: ThriftEnum) -> None:
+            pass
+
+        def capybara(good_instance: IsOne, bad_instance: IsntOne, te: ThriftEnum):
+            want_enum(good_instance)
+            want_enum(bad_instance)  # E: incompatible_argument
+            want_enum(IsOne())
+            want_enum(IsntOne())  # E: incompatible_argument
+            want_enum(te)

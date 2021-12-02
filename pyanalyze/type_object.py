@@ -86,6 +86,8 @@ class TypeObject:
         if other.is_universally_assignable:
             return {}
         if isinstance(self.typ, super):
+            if isinstance(other.typ, super):
+                return {}
             return CanAssignError(f"Cannot assign to super object {self}")
         if not self.is_protocol:
             if other.is_protocol:
@@ -100,6 +102,8 @@ class TypeObject:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             else:
                 for base in other.base_classes:
+                    if base is self.typ:
+                        return {}
                     if isinstance(base, type) and safe_issubclass(base, self.typ):
                         return {}
                 return CanAssignError(f"Cannot assign {other} to {self}")
