@@ -116,3 +116,40 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             pkgutil.read_code(1)  # E: incompatible_argument
             pkgutil.read_code(Good())
             pkgutil.read_code(Bad())  # E: incompatible_argument
+
+    @assert_passes()
+    def test_protocol_inheritance(self):
+        import cgi
+
+        # cgi.parse requires SupportsItemAccess[str, str]
+
+        class Good:
+            def __contains__(self, obj: object) -> bool:
+                return False
+
+            def __getitem__(self, k: str) -> str:
+                raise KeyError(k)
+
+            def __setitem__(self, k: str, v: str) -> None:
+                pass
+
+            def __delitem__(self, v: str) -> None:
+                pass
+
+        class Bad:
+            def __contains__(self, obj: object) -> bool:
+                return False
+
+            def __getitem__(self, k: bytes) -> str:
+                raise KeyError(k)
+
+            def __setitem__(self, k: str, v: str) -> None:
+                pass
+
+            def __delitem__(self, v: str) -> None:
+                pass
+
+        def capybara():
+            cgi.parse(environ=Good())
+            cgi.parse(environ=Bad())  # E: incompatible_argument
+            cgi.parse(environ=1)  # E: incompatible_argument

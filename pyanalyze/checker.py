@@ -3,6 +3,7 @@
 The checker maintains global state that is preserved across different modules.
 
 """
+import itertools
 from .value import TypedValue
 from .arg_spec import ArgSpecCache
 from .config import Config
@@ -50,7 +51,12 @@ class Checker:
             )
             is_protocol = any(is_typing_name(base, "Protocol") for base in bases)
             if is_protocol:
-                protocol_members = self.arg_spec_cache.ts_finder.get_all_attributes(typ)
+                protocol_members = set(
+                    itertools.chain.from_iterable(
+                        self.arg_spec_cache.ts_finder.get_all_attributes(base)
+                        for base in bases
+                    )
+                )
             else:
                 protocol_members = set()
             return TypeObject(
