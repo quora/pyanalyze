@@ -97,3 +97,22 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             want_enum(IsOne())
             want_enum(IsntOne())  # E: incompatible_argument
             want_enum(te)
+
+    @assert_passes()
+    def test_generic_stubonly(self):
+        import pkgutil
+
+        # pkgutil.read_code requires SupportsRead[bytes]
+
+        class Good:
+            def read(self, length: int = 0) -> bytes:
+                return b""
+
+        class Bad:
+            def read(self, length: int = 0) -> str:
+                return ""
+
+        def capybara():
+            pkgutil.read_code(1)  # E: incompatible_argument
+            pkgutil.read_code(Good())
+            pkgutil.read_code(Bad())  # E: incompatible_argument

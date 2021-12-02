@@ -14,7 +14,9 @@ from .value import (
     CanAssign,
     CanAssignContext,
     CanAssignError,
+    KnownValue,
     TypedValue,
+    Value,
     stringify_object,
     unify_typevar_maps,
 )
@@ -80,9 +82,13 @@ class TypeObject:
             )
         return self.is_assignable_to_type(other.typ)
 
-    def can_assign_type_object(
-        self, other: "TypeObject", ctx: CanAssignContext
+    def can_assign(
+        self,
+        self_val: Value,
+        other_val: Union[KnownValue, TypedValue],
+        ctx: CanAssignContext,
     ) -> CanAssign:
+        other = other_val.get_type_object(ctx)
         if other.is_universally_assignable:
             return {}
         if isinstance(self.typ, super):
@@ -108,12 +114,10 @@ class TypeObject:
                         return {}
                 return CanAssignError(f"Cannot assign {other} to {self}")
         else:
-            self_val = TypedValue(self.typ)
             if isinstance(other.typ, super):
                 return CanAssignError(
                     f"Cannot assign super object {other} to protocol {self}"
                 )
-            other_val = TypedValue(other.typ)
             tv_maps = []
             for member in self.protocol_members:
                 expected = ctx.get_attribute_from_value(self_val, member)

@@ -519,9 +519,9 @@ class TypedValue(Value):
         elif isinstance(other, KnownValue):
             if self_tobj.is_instance(other.val):
                 return {}
-            return self_tobj.can_assign_type_object(other.get_type_object(ctx), ctx)
+            return self_tobj.can_assign(self, other, ctx)
         elif isinstance(other, TypedValue):
-            return self_tobj.can_assign_type_object(other.get_type_object(ctx), ctx)
+            return self_tobj.can_assign(self, other, ctx)
         elif isinstance(other, SubclassValue):
             if isinstance(other.typ, TypedValue) and isinstance(
                 other.typ.typ, self.typ
@@ -549,7 +549,7 @@ class TypedValue(Value):
             tobj = other.get_type_object(ctx)
             if tobj.is_assignable_to_type(int):
                 return {}
-            return self.get_type_object(ctx).can_assign_type_object(tobj, ctx)
+            return self.get_type_object(ctx).can_assign(self, other, ctx)
         elif isinstance(other, MultiValuedValue):
             tv_maps = []
             for val in other.vals:
@@ -734,9 +734,7 @@ class SequenceIncompleteValue(GenericValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, SequenceIncompleteValue):
-            tv_map = self.get_type_object(ctx).can_assign_type_object(
-                other.get_type_object(ctx), ctx
-            )
+            tv_map = self.get_type_object(ctx).can_assign(self, other, ctx)
             if isinstance(tv_map, CanAssignError):
                 return CanAssignError(
                     f"Cannot assign {stringify_object(other.typ)} to"
@@ -1071,8 +1069,7 @@ class SubclassValue(Value):
             if isinstance(other.val, type):
                 if isinstance(self.typ, TypedValue):
                     self_tobj = self.typ.get_type_object(ctx)
-                    other_tobj = ctx.make_type_object(other.val)
-                    return self_tobj.can_assign_type_object(other_tobj, ctx)
+                    return self_tobj.can_assign(self, TypedValue(other.val), ctx)
                 elif isinstance(self.typ, TypeVarValue):
                     return {self.typ.typevar: TypedValue(other.val)}
         elif isinstance(other, TypedValue):

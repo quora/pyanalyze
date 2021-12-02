@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add support for stub-only Protocols (#295)
 - Basic support for stub-only types (#290)
 - Require `typing_inspect>=0.7.0` (#290)
 - Improve type checking of `raise` statements (#289)
