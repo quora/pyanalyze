@@ -40,6 +40,7 @@ import inspect
 import sys
 from types import GeneratorType
 from typing import (
+    Set,
     Tuple,
     cast,
     Any,
@@ -254,6 +255,17 @@ class TypeshedFinder(object):
                     return True
         return False
 
+    def get_all_attributes(self, typ: Union[type, str]) -> Set[str]:
+        if isinstance(typ, str):
+            fq_name = typ
+        else:
+            fq_name = self._get_fq_name(typ)
+            if fq_name is None:
+                return set()
+        info = self._get_info_for_name(fq_name)
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
+        return self._get_all_attributes_from_info(info, mod)
+
     def has_stubs(self, typ: type) -> bool:
         fq_name = self._get_fq_name(typ)
         if fq_name is None:
@@ -337,6 +349,29 @@ class TypeshedFinder(object):
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._has_attribute_from_info(info, mod, attr)
+
+    def _get_all_attributes_from_info(
+        self, info: typeshed_client.resolver.ResolvedName, mod: str
+    ) -> Set[str]:
+        if info is None:
+            return set()
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._get_all_attributes_from_info(
+                info.info, ".".join(info.source_module)
+            )
+        elif isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.ClassDef):
+                if info.child_nodes is not None:
+                    return set(info.child_nodes)
+            elif isinstance(info.ast, ast3.Assign):
+                val = self._parse_expr(info.ast.value, mod)
+                if isinstance(val, KnownValue) and isinstance(val.val, type):
+                    return self.get_all_attributes(val.val)
+                else:
+                    return set()
+            else:
+                return set()
+        return set()
 
     def _has_attribute_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str, attr: str

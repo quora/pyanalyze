@@ -24,6 +24,7 @@ from . import safe
 from . import signature
 from . import stacked_scopes
 from . import test_config
+from . import type_object
 from . import typeshed
 from . import tests
 from . import value

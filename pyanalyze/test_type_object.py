@@ -45,9 +45,111 @@ class TestSyntheticType(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_protocol(self):
+        # Note that csv.writer expects this protocol:
+        # class _Writer(Protocol):
+        #    def write(self, s: str) -> Any: ...
         import csv
         import io
 
-        def capybara():
+        class BadWrite:
+            def write(self, s: int) -> object:
+                return object()
+
+        class GoodWrite:
+            def write(self, s: str) -> object:
+                return object()
+
+        class BadArgName:
+            def write(self, st: str) -> object:
+                return object()
+
+        def capybara(s: str):
             writer = io.StringIO()
             assert_is_value(csv.writer(writer), TypedValue("_csv._writer"))
+
+            csv.writer(1)  # E: incompatible_argument
+            csv.writer(s)  # E: incompatible_argument
+            csv.writer(BadWrite())  # E: incompatible_argument
+            csv.writer(GoodWrite())
+            csv.writer(BadArgName())  # E: incompatible_argument
+
+    @assert_passes()
+    def test_custom_subclasscheck(self):
+        class _ThriftEnumMeta(type):
+            def __subclasscheck__(self, subclass):
+                return hasattr(subclass, "_VALUES_TO_NAMES")
+
+        class ThriftEnum(metaclass=_ThriftEnumMeta):
+            pass
+
+        class IsOne:
+            _VALUES_TO_NAMES = {}
+
+        class IsntOne:
+            _NAMES_TO_VALUES = {}
+
+        def want_enum(te: ThriftEnum) -> None:
+            pass
+
+        def capybara(good_instance: IsOne, bad_instance: IsntOne, te: ThriftEnum):
+            want_enum(good_instance)
+            want_enum(bad_instance)  # E: incompatible_argument
+            want_enum(IsOne())
+            want_enum(IsntOne())  # E: incompatible_argument
+            want_enum(te)
+
+    @assert_passes()
+    def test_generic_stubonly(self):
+        import pkgutil
+
+        # pkgutil.read_code requires SupportsRead[bytes]
+
+        class Good:
+            def read(self, length: int = 0) -> bytes:
+                return b""
+
+        class Bad:
+            def read(self, length: int = 0) -> str:
+                return ""
+
+        def capybara():
+            pkgutil.read_code(1)  # E: incompatible_argument
+            pkgutil.read_code(Good())
+            pkgutil.read_code(Bad())  # E: incompatible_argument
+
+    @assert_passes()
+    def test_protocol_inheritance(self):
+        import cgi
+
+        # cgi.parse requires SupportsItemAccess[str, str]
+
+        class Good:
+            def __contains__(self, obj: object) -> bool:
+                return False
+
+            def __getitem__(self, k: str) -> str:
+                raise KeyError(k)
+
+            def __setitem__(self, k: str, v: str) -> None:
+                pass
+
+            def __delitem__(self, v: str) -> None:
+                pass
+
+        class Bad:
+            def __contains__(self, obj: object) -> bool:
+                return False
+
+            def __getitem__(self, k: bytes) -> str:
+                raise KeyError(k)
+
+            def __setitem__(self, k: str, v: str) -> None:
+                pass
+
+            def __delitem__(self, v: str) -> None:
+                pass
+
+        def capybara():
+            cgi.parse(environ=Good())
+            cgi.parse(environ=Bad())  # E: incompatible_argument
+            cgi.parse(environ=1)  # E: incompatible_argument
