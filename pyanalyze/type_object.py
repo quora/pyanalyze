@@ -146,5 +146,19 @@ class TypeObject:
             # TODO handle this for synthetic types (if necessary)
             return False
 
+    def has_attribute(self, attr: str, ctx: CanAssignContext) -> bool:
+        """Whether this type definitely has this attribute."""
+        if self.is_protocol:
+            return attr in self.protocol_members
+        # We don't use ctx.get_attribute because that may have false positives.
+        for base in self.base_classes:
+            try:
+                present = attr in base.__dict__
+            except Exception:
+                present = False
+            if present:
+                return True
+        return False
+
     def __str__(self) -> str:
         return stringify_object(self.typ)

@@ -5,6 +5,7 @@ Module responsible for importing files.
 """
 
 from functools import lru_cache
+import importlib
 import importlib.util
 from pathlib import Path
 import sys
@@ -99,7 +100,7 @@ def load_module_from_file(
     return import_module(str(abspath), abspath), False
 
 
-def import_module(module_path: str, filename: str) -> ModuleType:
+def import_module(module_path: str, filename: Path) -> ModuleType:
     """Import a file under an arbitrary module name."""
     spec = importlib.util.spec_from_file_location(module_path, filename)
     module = importlib.util.module_from_spec(spec)

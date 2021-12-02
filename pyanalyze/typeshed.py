@@ -33,13 +33,14 @@ from collections.abc import (
     Sized,
 )
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import collections.abc
 import qcore
 import inspect
 import sys
 from types import GeneratorType
 from typing import (
+    Dict,
     Set,
     Tuple,
     cast,
@@ -93,19 +94,22 @@ _TYPING_ALIASES = {
 }
 
 
-class TypeshedFinder(object):
-    def __init__(self, verbose: bool = True) -> None:
-        self.verbose = True
-        self.resolver = typeshed_client.Resolver()
-        self._assignment_cache = {}
-        self._attribute_cache = {}
+@dataclass
+class TypeshedFinder:
+    verbose: bool = True
+    resolver: typeshed_client.Resolver = field(default_factory=typeshed_client.Resolver)
+    _assignment_cache: Dict[Tuple[str, ast3.AST], Value] = field(
+        default_factory=dict, repr=False, init=False
+    )
+    _attribute_cache: Dict[Tuple[str, str, bool], Value] = field(
+        default_factory=dict, repr=False, init=False
+    )
 
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
             return
         print("%s: %r" % (message, obj))
 
-    @qcore.debug.trace()
     def get_argspec(self, obj: object) -> Optional[Signature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
@@ -128,6 +132,7 @@ class TypeshedFinder(object):
             and hasattr(obj, "__name__")
             and hasattr(obj, "__module__")
             and obj.__qualname__ != obj.__name__
+            and "." in obj.__qualname__
         ):
             parent_name, own_name = obj.__qualname__.rsplit(".", maxsplit=1)
             parent_fqn = f"{obj.__module__}.{parent_name}"
@@ -182,6 +187,18 @@ class TypeshedFinder(object):
                     return None
             else:
                 fq_name = val.typ
+                if fq_name == "collections.abc.Set":
+                    return [GenericValue(Collection, (TypeVarValue(T_co),))]
+                elif fq_name == "contextlib.AbstractContextManager":
+                    return [GenericValue(Generic, (TypeVarValue(T_co),))]
+                elif fq_name in ("typing.Callable", "collections.abc.Callable"):
+                    return None
+                elif is_typing_name(fq_name, "TypedDict"):
+                    return [
+                        GenericValue(
+                            MutableMapping, [TypedValue(str), TypedValue(object)]
+                        )
+                    ]
             return self.get_bases_for_fq_name(fq_name)
         return None
 
