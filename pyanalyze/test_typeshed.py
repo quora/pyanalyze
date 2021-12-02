@@ -9,9 +9,10 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+from pyanalyze.extensions import reveal_type
 from typeshed_client import Resolver, get_search_context
 import typing
-from typing import Dict, Generic, List, TypeVar, NewType
+from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
 
 from .test_config import TestConfig
@@ -192,13 +193,13 @@ class TestGetGenericBases:
 
     def check(
         self,
-        expected: Dict[type, List[Value]],
-        base: type,
+        expected: Dict[Union[type, str], List[Value]],
+        base: Union[type, str],
         args: typing.Sequence[Value] = (),
     ) -> None:
         actual = self.get_generic_bases(base, args)
         cleaned = {base: list(tv_map.values()) for base, tv_map in actual.items()}
-        assert_eq(expected, cleaned, extra=actual)
+        assert expected == cleaned
 
     def test_coroutine(self):
         one = KnownValue(1)
@@ -215,6 +216,25 @@ class TestGetGenericBases:
 
     def test_callable(self):
         self.check({collections.abc.Callable: []}, collections.abc.Callable)
+
+    def test_dict_items(self):
+        TInt = TypedValue(int)
+        TStr = TypedValue(str)
+        TTuple = SequenceIncompleteValue(tuple, [TInt, TStr])
+        self.check(
+            {
+                "builtins._dict_items": [TInt, TStr],
+                collections.abc.Iterable: [TTuple],
+                collections.abc.Sized: [],
+                collections.abc.Container: [TTuple],
+                collections.abc.Collection: [TTuple],
+                collections.abc.Set: [TTuple],
+                collections.abc.MappingView: [],
+                collections.abc.ItemsView: [TInt, TStr],
+            },
+            "builtins._dict_items",
+            [TInt, TStr],
+        )
 
     def test_struct_time(self):
         if sys.version_info < (3, 9):

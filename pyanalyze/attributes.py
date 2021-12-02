@@ -199,7 +199,9 @@ def _get_attribute_from_synthetic_type(
         return AnyValue(AnySource.inference)
     elif ctx.attr == "__dict__":
         return TypedValue(dict)
-    result, provider = ctx.get_attribute_from_typeshed_recursively(fq_name)
+    result, provider = ctx.get_attribute_from_typeshed_recursively(
+        fq_name, on_class=False
+    )
     return _substitute_typevars(fq_name, generic_args, result, provider, ctx)
 
 

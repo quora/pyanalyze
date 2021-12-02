@@ -665,7 +665,7 @@ class GenericValue(TypedValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         other = replace_known_sequence_value(other)
-        if isinstance(other, TypedValue) and isinstance(other.typ, type):
+        if isinstance(other, TypedValue) and not isinstance(other.typ, super):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
             # If we don't think it's a generic base, try super;
             # runtime isinstance() may disagree.
