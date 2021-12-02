@@ -36,6 +36,7 @@ from typing import (
     Any,
     Container,
     Dict,
+    NamedTuple,
     cast,
     TypeVar,
     ContextManager,
@@ -438,6 +439,8 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         origin = get_origin(val)
         if isinstance(origin, type):
             return _maybe_typed_value(origin, ctx)
+        elif val is NamedTuple:
+            return TypedValue(tuple)
         ctx.show_error(f"Invalid type annotation {val}")
         return AnyValue(AnySource.error)
 

@@ -216,6 +216,7 @@ class TestGetGenericBases:
         self.check(
             {
                 time.struct_time: [],
+                "time._struct_time": [],
                 # Ideally should be not Any, but we haven't implemented
                 # support for typeshed namedtuples.
                 tuple: [AnyValue(AnySource.generic_argument)],
