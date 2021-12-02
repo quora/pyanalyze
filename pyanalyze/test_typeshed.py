@@ -6,6 +6,7 @@ from collections.abc import MutableSequence, Sequence, Collection, Reversible, S
 import contextlib
 import io
 from pathlib import Path
+import sys
 import tempfile
 import time
 from typeshed_client import Resolver, get_search_context
@@ -213,8 +214,23 @@ class TestGetGenericBases:
         self.check({collections.abc.Callable: []}, collections.abc.Callable)
 
     def test_struct_time(self):
-        self.check(
-            {
+        if sys.version_info < (3, 9):
+            # Until 3.8 NamedTuple is actually a class.
+            expected = {
+                time.struct_time: [],
+                "time._struct_time": [],
+                typing.NamedTuple: [],
+                # Ideally should be not Any, but we haven't implemented
+                # support for typeshed namedtuples.
+                tuple: [AnyValue(AnySource.explicit)],
+                collections.abc.Collection: [AnyValue(AnySource.explicit)],
+                collections.abc.Reversible: [AnyValue(AnySource.explicit)],
+                collections.abc.Iterable: [AnyValue(AnySource.explicit)],
+                collections.abc.Sequence: [AnyValue(AnySource.explicit)],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
+            }
+        else:
+            expected = {
                 time.struct_time: [],
                 "time._struct_time": [],
                 # Ideally should be not Any, but we haven't implemented
@@ -225,9 +241,8 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Container: [AnyValue(AnySource.generic_argument)],
-            },
-            time.struct_time,
-        )
+            }
+        self.check(expected, time.struct_time)
 
     def test_context_manager(self):
         int_tv = TypedValue(int)
