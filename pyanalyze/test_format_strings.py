@@ -163,7 +163,7 @@ def test_parse_format_string():
         )
     for format_string, position, message in DOT_FORMAT_ERRORS:
         _, errors = parse_format_string(format_string)
-        assert_ge(len(errors), 1)
+        assert len(errors) >= 1
         assert_eq((position, message), errors[0], extra=format_string)
 
 

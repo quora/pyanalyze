@@ -41,15 +41,15 @@ class TestStackedScopes(object):
         assert ScopeType.module_scope == self.scopes.scope_type()
 
     def test_current_and_module_scope(self):
-        assert_in("foo", self.scopes.current_scope())
-        assert_in("foo", self.scopes.module_scope())
+        assert "foo" in self.scopes.current_scope()
+        assert "foo" in self.scopes.module_scope()
 
         with self.scopes.add_scope(ScopeType.function_scope, scope_node=None):
-            assert_not_in("foo", self.scopes.current_scope())
-            assert_in("foo", self.scopes.module_scope())
+            assert "foo" not in self.scopes.current_scope()
+            assert "foo" in self.scopes.module_scope()
 
-        assert_in("foo", self.scopes.current_scope())
-        assert_in("foo", self.scopes.module_scope())
+        assert "foo" in self.scopes.current_scope()
+        assert "foo" in self.scopes.module_scope()
 
     def test_get(self):
         assert KnownValue(1) == self.scopes.get("foo", None, None)
@@ -960,8 +960,8 @@ class TestConstraints(TestNameCheckVisitorBase):
 
             assert_is_value(x, MultiValuedValue([KnownValue(True), KnownValue(False)]))
             assert_is_value(y, MultiValuedValue([KnownValue(True), KnownValue(False)]))
-            assert_is_not(x, True)
-            assert_is_not(True, y)
+            assert x is not True
+            assert True is not y
             assert_is_value(x, KnownValue(False))
             assert_is_value(y, KnownValue(False))
 

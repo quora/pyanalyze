@@ -1,6 +1,5 @@
 # static analysis: ignore
 import ast
-from qcore.asserts import assert_eq
 
 from .yield_checker import VarnameGenerator, _camel_case_to_snake_case
 from .test_name_check_visitor import TestNameCheckVisitorBase

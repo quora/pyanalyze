@@ -2078,9 +2078,9 @@ class TestClass(object):
 """
         )
 
-        assert_in("TestClass.first_function", call_map["TestClass.second_function"])
-        assert_in("TestClass.__init__", call_map["TestClass.first_function"])
-        assert_in("TestClass.second_function", call_map["print"])
+        assert "TestClass.first_function" in call_map["TestClass.second_function"]
+        assert "TestClass.__init__" in call_map["TestClass.first_function"]
+        assert "TestClass.second_function" in call_map["print"]
 
     def test_nested_function_call(self):
         call_map = self.run_and_get_call_map(
@@ -2093,8 +2093,8 @@ class TestClass(object):
 """
         )
 
-        assert_in("TestClass.__init__", call_map["second_function"])
-        assert_in("second_function", call_map["print"])
+        assert "TestClass.__init__" in call_map["second_function"]
+        assert "second_function" in call_map["print"]
 
 
 def test_get_task_cls():

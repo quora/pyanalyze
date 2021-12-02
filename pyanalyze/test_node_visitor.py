@@ -225,14 +225,14 @@ h.translate('{foo')  # line 5
         try:
             self._run_str(code_string)
         except VisitorError as e:
-            assert_not_in("   1:", str(e))
+            assert "   1:" not in str(e)
             for lineno in range(2, 9):
-                assert_in("   %d:" % lineno, str(e))
-                assert_in("# line %d" % lineno, str(e))
+                assert "   %d:" % lineno in str(e)
+                assert "# line %d" % lineno in str(e)
             # should be outside the three context lines
             for lineno in (1, 9):
-                assert_not_in("   %d:" % lineno, str(e))
-                assert_not_in("# line %d" % lineno, str(e))
+                assert "   %d:" % lineno not in str(e)
+                assert "# line %d" % lineno not in str(e)
         else:
             assert False, "Expected a parse error"
 
@@ -340,7 +340,7 @@ class TestReplaceNodeTransformer(object):
             node.body[0].value.func, replacement_node
         ).visit(node)
         # ensure it doesn't mutate the existing node in place
-        assert_is_not(new_node, node)
+        assert new_node is not node
         assert_code_equal("d(c)\n", decompile(new_node))
 
     def test_not_found(self):
@@ -349,7 +349,7 @@ class TestReplaceNodeTransformer(object):
         new_node = ReplaceNodeTransformer(random_node, node.body[0].value.func).visit(
             node
         )
-        assert_is_not(new_node, node)
+        assert new_node is not node
         assert_code_equal("a.b(c)\n", decompile(new_node))
 
 

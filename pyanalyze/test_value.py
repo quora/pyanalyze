@@ -2,13 +2,7 @@ import collections.abc
 import enum
 import io
 import pickle
-from qcore.asserts import (
-    assert_eq,
-    assert_in,
-    assert_is,
-    assert_is_instance,
-    assert_is_not,
-)
+from qcore.asserts import assert_is_instance
 from typing import NewType, Sequence, Union
 from typing_extensions import Protocol, runtime_checkable
 import typing
@@ -121,8 +115,8 @@ def test_unbound_method_value() -> None:
     assert TypedValue(tests.PropertyObject) == val.composite.value
     assert "asynq" == val.secondary_attr_name
     method = val.get_method()
-    assert_is_not(None, method)
-    assert_in(method.__name__, tests.ASYNQ_METHOD_NAMES)
+    assert None is not method
+    assert method.__name__ in tests.ASYNQ_METHOD_NAMES
     assert tests.PropertyObject.get_prop_with_get == method.__self__
     assert val.is_type(object)
     assert not val.is_type(str)
@@ -324,10 +318,10 @@ def test_variable_name_value() -> None:
     assert None is value.VariableNameValue.from_varname("capybaras", varname_map)
 
     val = value.VariableNameValue.from_varname("uid", varname_map)
-    assert_is_not(None, val)
+    assert None is not val
     assert val is value.VariableNameValue.from_varname("viewer", varname_map)
     assert val is value.VariableNameValue.from_varname("old_uid", varname_map)
-    assert_is_not(val, value.VariableNameValue.from_varname("actor_id", varname_map))
+    assert val is not value.VariableNameValue.from_varname("actor_id", varname_map)
     assert_can_assign(TypedValue(int), val)
     assert_can_assign(KnownValue(1), val)
     assert_can_assign(val, TypedValue(int))
@@ -339,9 +333,10 @@ def test_typeddict_value() -> None:
         {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
     )
     # dict iteration order in some Python versions is not deterministic
-    assert_in(
-        str(val), ['TypedDict({"a": int, "b": str})', 'TypedDict({"b": str, "a": int})']
-    )
+    assert str(val) in [
+        'TypedDict({"a": int, "b": str})',
+        'TypedDict({"b": str, "a": int})',
+    ]
 
     assert_can_assign(val, AnyValue(AnySource.marker))
     assert_can_assign(val, TypedValue(dict))
