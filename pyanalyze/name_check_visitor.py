@@ -4161,13 +4161,9 @@ class NameCheckVisitor(
             if typ is collections.abc.Callable or typ is types.FunctionType:
                 return ANY_SIGNATURE
             if isinstance(typ, str):
-                (
-                    call_method,
-                    _,
-                ) = self.arg_spec_cache.ts_finder.get_attribute_recursively(
-                    typ, "__call__"
-                )
-                # TODO: confirm this handles self correctly
+                call_method = self.get_attribute(Composite(value), "__call__")
+                if call_method is UNINITIALIZED_VALUE:
+                    return None
                 return self.signature_from_value(call_method, node=node)
             if getattr(typ.__call__, "__objclass__", None) is type and not issubclass(
                 typ, type

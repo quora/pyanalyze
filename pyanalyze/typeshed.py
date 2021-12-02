@@ -11,6 +11,7 @@ from .signature import SigParameter, Signature
 from .value import (
     AnySource,
     AnyValue,
+    CallableValue,
     TypedValue,
     GenericValue,
     KnownValue,
@@ -20,6 +21,7 @@ from .value import (
     extract_typevars,
 )
 
+from abc import abstractmethod
 import ast
 import builtins
 from collections.abc import (
@@ -280,7 +282,13 @@ class TypeshedFinder(object):
                                 KnownValue(property)
                             ]:
                                 return self._parse_type(child_info.ast.returns, mod)
-                            return UNINITIALIZED_VALUE  # a method
+                            sig = self._get_signature_from_func_def(
+                                child_info.ast, None, mod, autobind=True
+                            )
+                            if sig is None:
+                                return AnyValue(AnySource.inference)
+                            else:
+                                return CallableValue(sig)
                         elif isinstance(child_info.ast, ast3.AsyncFunctionDef):
                             return UNINITIALIZED_VALUE
                         elif isinstance(child_info.ast, ast3.Assign):
@@ -428,14 +436,8 @@ class TypeshedFinder(object):
         objclass: Optional[type] = None,
     ) -> Optional[Signature]:
         if isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, ast3.FunctionDef):
-                return self._get_signature_from_func_def(
-                    info.ast, obj, mod, objclass, is_async_fn=False
-                )
-            elif isinstance(info.ast, ast3.AsyncFunctionDef):
-                return self._get_signature_from_func_def(
-                    info.ast, obj, mod, objclass, is_async_fn=True
-                )
+            if isinstance(info.ast, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
+                return self._get_signature_from_func_def(info.ast, obj, mod, objclass)
             else:
                 self.log("Ignoring unrecognized AST", (fq_name, info))
                 return None
@@ -460,9 +462,21 @@ class TypeshedFinder(object):
         mod: str,
         objclass: Optional[type] = None,
         *,
-        is_async_fn: bool,
+        autobind: bool = False,
     ) -> Optional[Signature]:
-        if node.decorator_list:
+        is_classmethod = is_staticmethod = False
+        for decorator_ast in node.decorator_list:
+            decorator = self._parse_expr(decorator_ast, mod)
+            if decorator == KnownValue(abstractmethod):
+                continue
+            elif decorator == KnownValue(classmethod):
+                is_classmethod = True
+                if autobind:  # TODO support classmethods otherwise
+                    continue
+            elif decorator == KnownValue(staticmethod):
+                is_staticmethod = True
+                if autobind:  # TODO support staticmethods otherwise
+                    continue
             # might be @overload or something else we don't recognize
             return None
         if node.returns is None:
@@ -481,6 +495,9 @@ class TypeshedFinder(object):
                 args.args, defaults, mod, SigParameter.POSITIONAL_OR_KEYWORD, objclass
             )
         )
+        if autobind:
+            if is_classmethod or not is_staticmethod:
+                arguments = arguments[1:]
 
         if args.vararg is not None:
             vararg_param = self._parse_param(
@@ -511,7 +528,7 @@ class TypeshedFinder(object):
             cleaned_arguments,
             callable=obj,
             return_annotation=GenericValue(Awaitable, [return_value])
-            if is_async_fn
+            if isinstance(node, ast3.AsyncFunctionDef)
             else return_value,
         )
 
