@@ -120,7 +120,7 @@ def is_typing_name(obj: object, name: str) -> bool:
     for typing_obj in objs:
         if obj is typing_obj:
             return True
-    return obj in names
+    return safe_in(obj, names)
 
 
 def is_instance_of_typing_name(obj: object, name: str) -> bool:
