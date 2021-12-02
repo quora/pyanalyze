@@ -153,3 +153,27 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             cgi.parse(environ=Good())
             cgi.parse(environ=Bad())  # E: incompatible_argument
             cgi.parse(environ=1)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_iterable(self):
+        from typing import Iterable, Iterator
+
+        class Bad:
+            def __iter__(self, some, random, args):
+                pass
+
+        class Good:
+            def __iter__(self) -> Iterator[int]:
+                raise NotImplementedError
+
+        class BadType:
+            def __iter__(self) -> Iterator[str]:
+                raise NotImplementedError
+
+        def want_iter_int(f: Iterable[int]) -> None:
+            pass
+
+        def capybara():
+            want_iter_int(Bad())  # E: incompatible_argument
+            want_iter_int(Good())
+            want_iter_int(BadType())  # E: incompatible_argument

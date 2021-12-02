@@ -95,7 +95,7 @@ _TYPING_ALIASES = {
 
 class TypeshedFinder(object):
     def __init__(self, verbose: bool = True) -> None:
-        self.verbose = verbose
+        self.verbose = True
         self.resolver = typeshed_client.Resolver()
         self._assignment_cache = {}
         self._attribute_cache = {}
@@ -105,6 +105,7 @@ class TypeshedFinder(object):
             return
         print("%s: %r" % (message, obj))
 
+    @qcore.debug.trace()
     def get_argspec(self, obj: object) -> Optional[Signature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
@@ -122,6 +123,23 @@ class TypeshedFinder(object):
         if inspect.ismethod(obj):
             self.log("Ignoring method", obj)
             return None
+        if (
+            hasattr(obj, "__qualname__")
+            and hasattr(obj, "__name__")
+            and hasattr(obj, "__module__")
+            and obj.__qualname__ != obj.__name__
+        ):
+            parent_name, own_name = obj.__qualname__.rsplit(".", maxsplit=1)
+            parent_fqn = f"{obj.__module__}.{parent_name}"
+            parent_info = self._get_info_for_name(parent_fqn)
+            if parent_info is not None:
+                maybe_info = self._get_child_info(parent_info, own_name, obj.__module__)
+                if maybe_info is not None:
+                    info, mod = maybe_info
+                    fq_name = f"{parent_fqn}.{own_name}"
+                    sig = self._get_signature_from_info(info, obj, fq_name, mod)
+                    return sig
+
         fq_name = self._get_fq_name(obj)
         if fq_name is None:
             return None
@@ -167,8 +185,19 @@ class TypeshedFinder(object):
             return self.get_bases_for_fq_name(fq_name)
         return None
 
-    def get_bases_recursively(self, fq_name: str) -> List[Value]:
-        stack = [TypedValue(fq_name)]
+    def is_protocol(self, typ: type) -> bool:
+        """Return whether this type is marked as a Protocol in the stubs."""
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return False
+        bases = self.get_bases_recursively(fq_name)
+        return any(
+            isinstance(base, TypedValue) and is_typing_name(base.typ, "Protocol")
+            for base in bases
+        )
+
+    def get_bases_recursively(self, typ: Union[type, str]) -> List[Value]:
+        stack = [TypedValue(typ)]
         seen = set()
         bases = []
         # TODO return MRO order
@@ -335,6 +364,24 @@ class TypeshedFinder(object):
             else:
                 return UNINITIALIZED_VALUE
         return UNINITIALIZED_VALUE
+
+    def _get_child_info(
+        self, info: typeshed_client.resolver.ResolvedName, attr: str, mod: str
+    ) -> Optional[Tuple[typeshed_client.resolver.ResolvedName, str]]:
+        if info is None:
+            return None
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._get_child_info(info.info, attr, ".".join(info.source_module))
+        elif isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.ClassDef):
+                if info.child_nodes and attr in info.child_nodes:
+                    return info.child_nodes[attr], mod
+                return None
+            elif isinstance(info.ast, ast3.Assign):
+                return None  # TODO maybe we need this for aliased methods
+            else:
+                return None
+        return None
 
     def _has_own_attribute(self, typ: Union[type, str], attr: str) -> bool:
         # Special case since otherwise we think every object has every attribute
