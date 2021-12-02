@@ -7,9 +7,6 @@ from dataclasses import dataclass, field
 import inspect
 from typing import Container, Set, Sequence, Union
 from unittest import mock
-from pyanalyze.attributes import AttrContext, get_attribute
-
-from pyanalyze.stacked_scopes import Composite
 
 from .safe import safe_isinstance, safe_issubclass, safe_in
 from .value import (
@@ -108,6 +105,10 @@ class TypeObject:
                 return CanAssignError(f"Cannot assign {other} to {self}")
         else:
             self_val = TypedValue(self.typ)
+            if isinstance(other.typ, super):
+                return CanAssignError(
+                    f"Cannot assign super object {other} to protocol {self}"
+                )
             other_val = TypedValue(other.typ)
             tv_maps = []
             for member in self.protocol_members:
