@@ -42,3 +42,12 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             assert_is_value(c._clear_cache(), KnownValue(None))
             assert_is_value(c(), TypedValue(int))
             c.doesnt_exist  # E: undefined_attribute
+
+    @assert_passes()
+    def test_protocol(self):
+        import csv
+        import io
+
+        def capybara():
+            writer = io.StringIO()
+            assert_is_value(csv.writer(writer), TypedValue("_csv._writer"))

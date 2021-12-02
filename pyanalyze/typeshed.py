@@ -4,8 +4,9 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
-from .annotations import Context, is_typing_name, type_from_value, value_from_ast
+from .annotations import Context, type_from_value, value_from_ast
 from .error_code import ErrorCode
+from .safe import is_typing_name
 from .stacked_scopes import uniq_chain
 from .signature import SigParameter, Signature
 from .value import (

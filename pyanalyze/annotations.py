@@ -24,7 +24,6 @@ show errors.
 
 """
 from dataclasses import dataclass, InitVar, field
-import mypy_extensions
 import typing_extensions
 import typing
 import typing_inspect
@@ -35,7 +34,6 @@ from collections.abc import Callable, Iterable
 from typing import (
     Any,
     Container,
-    Dict,
     NamedTuple,
     cast,
     TypeVar,
@@ -60,6 +58,7 @@ from .extensions import (
 )
 from .find_unused import used
 from .signature import SigParameter, Signature
+from .safe import is_typing_name, is_instance_of_typing_name
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -770,39 +769,6 @@ class _Visitor(ast.NodeVisitor):
             return TypedValue(func.val)
         else:
             return None
-
-
-def is_typing_name(obj: object, name: str) -> bool:
-    objs, names = _fill_typing_name_cache(name)
-    for typing_obj in objs:
-        if obj is typing_obj:
-            return True
-    return obj in names
-
-
-def is_instance_of_typing_name(obj: object, name: str) -> bool:
-    objs, _ = _fill_typing_name_cache(name)
-    return isinstance(obj, objs)
-
-
-_typing_name_cache: Dict[str, Tuple[Tuple[Any, ...], Tuple[str, ...]]] = {}
-
-
-def _fill_typing_name_cache(name: str) -> Tuple[Tuple[Any, ...], Tuple[str, ...]]:
-    try:
-        return _typing_name_cache[name]
-    except KeyError:
-        objs = []
-        names = []
-        for mod in (typing, typing_extensions, mypy_extensions):
-            try:
-                objs.append(getattr(mod, name))
-                names.append(f"{mod}.{name}")
-            except AttributeError:
-                pass
-        result = tuple(objs), tuple(names)
-        _typing_name_cache[name] = result
-        return result
 
 
 def _value_of_origin_args(

@@ -8,7 +8,7 @@ import inspect
 from typing import Container, Set, Sequence, Union
 from unittest import mock
 
-from .safe import safe_isinstance, safe_issubclass
+from .safe import safe_isinstance, safe_issubclass, is_typing_name
 
 
 def get_mro(typ: Union[type, super]) -> Sequence[type]:
@@ -27,6 +27,7 @@ def get_mro(typ: Union[type, super]) -> Sequence[type]:
 class TypeObject:
     typ: Union[type, super, str]
     base_classes: Set[Union[type, str]] = field(default_factory=set)
+    is_protocol: bool = False
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
 
@@ -34,6 +35,9 @@ class TypeObject:
         if isinstance(self.typ, str):
             # Synthetic type
             self.is_universally_assignable = False
+            self.is_protocol = any(
+                is_typing_name(base, "Protocol") for base in self.base_classes
+            )
             self.is_thrift_enum = False
             return
         if isinstance(self.typ, super):
@@ -61,7 +65,12 @@ class TypeObject:
         if isinstance(other.typ, super):
             return False
         if isinstance(other.typ, str):
-            return self.is_universally_assignable or other.typ in self.base_classes
+            return (
+                self.is_universally_assignable
+                # TODO actually check protocols
+                or other.is_protocol
+                or other.typ in self.base_classes
+            )
         return self.is_assignable_to_type(other.typ)
 
     def is_instance(self, obj: object) -> bool:

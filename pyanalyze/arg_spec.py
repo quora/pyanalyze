@@ -4,11 +4,11 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .annotations import Context, type_from_runtime, is_typing_name
+from .annotations import Context, type_from_runtime
 from .config import Config
 from .find_unused import used
 from . import implementation
-from .safe import is_newtype, safe_hasattr, safe_in, safe_issubclass
+from .safe import is_newtype, safe_hasattr, safe_in, safe_issubclass, is_typing_name
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
