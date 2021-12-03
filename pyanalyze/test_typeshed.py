@@ -43,9 +43,13 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
     @assert_passes()
     def test_types(self):
         import math
+        from typing import Container
 
         assert_is_value(math.exp(1.0), TypedValue(float))
         assert_is_value("".isspace(), TypedValue(bool))
+
+        def capybara(x: Container[int]) -> None:
+            assert_is_value(x.__contains__(1), TypedValue(bool))
 
     @assert_passes()
     def test_dict_update(self):
