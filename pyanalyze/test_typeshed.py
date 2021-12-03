@@ -43,9 +43,13 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
     @assert_passes()
     def test_types(self):
         import math
+        from typing import Container
 
         assert_is_value(math.exp(1.0), TypedValue(float))
         assert_is_value("".isspace(), TypedValue(bool))
+
+        def capybara(x: Container[int]) -> None:
+            assert_is_value(x.__contains__(1), TypedValue(bool))
 
     @assert_passes()
     def test_dict_update(self):
@@ -124,6 +128,11 @@ def f(x: NT, y: Alias) -> None:
     def test_str_find(self):
         def capybara(s: str) -> None:
             assert_is_value(s.find("x"), TypedValue(int))
+
+    @assert_passes()
+    def test_str_count(self):
+        def capybara(s: str) -> None:
+            assert_is_value(s.count("x"), TypedValue(int))
 
     def test_has_stubs(self) -> None:
         tsf = TypeshedFinder(verbose=True)
