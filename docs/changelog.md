@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support Protocols for runtime types that are also defined in stubs (#297)
 - Improve handling of positional-only arguments in stub files (#303)
 - Fix bug where pyanalyze incorrectly inferred that an attribute always exists (#302)
 - Fix compatibility of signatures with extra parameters (#301)
