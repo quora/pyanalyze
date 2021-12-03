@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Stop inferring `Any` for non-runtime checkable Protocols on Python 3.6 and 3.7 (#310)
 - Fix false positive where `multiprocessing.Pool.map_async`
   was identified as an asynq method (#306)
 - Fix handling of nested classes (#305)
