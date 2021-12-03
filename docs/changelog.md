@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix false positive where `multiprocessing.Pool.map_async`
+  was identified as an asynq method (#306)
 - Fix handling of nested classes (#305)
 - Support Protocols for runtime types that are also defined in stubs (#297)
 - Better detect signatures of methods in stub files (#304)

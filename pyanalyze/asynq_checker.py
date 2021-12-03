@@ -14,9 +14,9 @@ import inspect
 import types
 from typing import Sequence, Any, Callable, List, Optional, Iterable
 
-
 from .config import Config
 from .error_code import ErrorCode
+from .safe import safe_getattr, safe_hasattr
 from .stacked_scopes import Composite
 from .value import AnnotatedValue, Value, KnownValue, TypedValue, UnboundMethodValue
 
@@ -98,21 +98,28 @@ class AsynqChecker:
             and isinstance(value.composite.value, TypedValue)
         ):
             inner_type = value.composite.value.typ
-            if hasattr(inner_type, value.attr_name + "_async"):
-                if isinstance(node.func, ast.Attribute):
-                    func_node = ast.Attribute(
-                        value=node.func.value, attr=value.attr_name + "_async"
-                    )
-                    call_node = replace_func_on_call_node(node, func_node)
-                    replacement_node = ast.Yield(value=call_node)
-                else:
-                    replacement_node = None
-                self._show_impure_async_error(
-                    node,
-                    replacement_call="%s.%s_async"
-                    % (_stringify_obj(inner_type), value.attr_name),
-                    replacement_node=replacement_node,
+            if not safe_hasattr(inner_type, value.attr_name + "_async"):
+                return
+            module = safe_getattr(inner_type, "__module__", None)
+            if (
+                isinstance(module, str)
+                and module.split(".")[0] in self.config.NON_ASYNQ_MODULES
+            ):
+                return
+            if isinstance(node.func, ast.Attribute):
+                func_node = ast.Attribute(
+                    value=node.func.value, attr=value.attr_name + "_async"
                 )
+                call_node = replace_func_on_call_node(node, func_node)
+                replacement_node = ast.Yield(value=call_node)
+            else:
+                replacement_node = None
+            self._show_impure_async_error(
+                node,
+                replacement_call="%s.%s_async"
+                % (_stringify_obj(inner_type), value.attr_name),
+                replacement_node=replacement_node,
+            )
 
     def record_attribute_access(
         self, root_value: Value, attr_name: str, node: ast.Attribute
