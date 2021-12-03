@@ -15,7 +15,6 @@ from ast_decompiler import decompile
 import asyncio
 import builtins
 import collections.abc
-from collections.abc import Awaitable
 import contextlib
 from dataclasses import dataclass
 from functools import reduce
@@ -1347,7 +1346,7 @@ class NameCheckVisitor(
             is_coroutine = _is_coroutine_function(potential_function)
 
         if is_coroutine or info.is_decorated_coroutine:
-            return_value = GenericValue(Awaitable, [return_value])
+            return_value = GenericValue(collections.abc.Awaitable, [return_value])
 
         try:
             argspec = self.arg_spec_cache.get_argspec(potential_function)
@@ -2766,9 +2765,12 @@ class NameCheckVisitor(
 
     def visit_Await(self, node: ast.Await) -> Value:
         composite = self.composite_from_node(node.value)
-        tv_map = AwaitableValue.can_assign(composite[0], self)
+        return self.unpack_awaitable(composite, node.value)
+
+    def unpack_awaitable(self, composite: Composite, node: ast.AST) -> Value:
+        tv_map = AwaitableValue.can_assign(composite.value, self)
         if isinstance(tv_map, CanAssignError):
-            return self._check_dunder_call(node.value, composite, "__await__", [])
+            return self._check_dunder_call(node, composite, "__await__", [])
         else:
             return tv_map.get(T, AnyValue(AnySource.generic_argument))
 
@@ -2777,7 +2779,7 @@ class NameCheckVisitor(
         value = self.visit(node.value)
         if not TypedValue(collections.abc.Iterable).is_assignable(
             value, self
-        ) and not TypedValue(Awaitable).is_assignable(value, self):
+        ) and not AwaitableValue.is_assignable(value, self):
             self._show_error_if_checking(
                 node,
                 f"Cannot use {value} in yield from",
@@ -3076,9 +3078,10 @@ class NameCheckVisitor(
         composite = self.composite_from_node(node)
         if is_async:
             iterator = self._check_dunder_call(node, composite, "__aiter__", [])
-            return self._check_dunder_call(
+            anext = self._check_dunder_call(
                 node, Composite(iterator, None, node), "__anext__", []
             )
+            return self.unpack_awaitable(Composite(anext), node)
         iterated = composite.value
         result = concrete_values_from_iterable(iterated, self)
         if isinstance(result, CanAssignError):
@@ -3252,7 +3255,7 @@ class NameCheckVisitor(
             )
         # If the value is an awaitable or is assignable to asyncio.Future, show
         # an error about a missing await.
-        elif value.is_type(Awaitable) or (value.is_type(asyncio.Future)):
+        elif value.is_type(collections.abc.Awaitable) or value.is_type(asyncio.Future):
             if self.is_async_def:
                 new_node = ast.Expr(value=ast.Await(value=node.value))
             else:
