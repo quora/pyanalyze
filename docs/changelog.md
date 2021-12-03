@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Improve handling of positional-only arguments in stub files (#303)
 - Enhance `reveal_type()` output for `UnboundMethodValue` (#300)
 - Fix handling of `async for` (#298)
 - Add support for stub-only Protocols (#295)
