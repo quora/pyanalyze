@@ -79,15 +79,16 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(x, GenericValue(list, [TypedValue(int)]))
             assert_is_value(y, TypedValue(list))
 
-    # on 3.6 and 3.7 SupportsInt becomes Any because it's not
-    # runtime checkable.
-    @skip_before((3, 8))
     @assert_passes()
     def test_supports_int(self):
         from typing import SupportsInt
 
         def capybara(z: SupportsInt) -> None:
             assert_is_value(z, TypedValue(SupportsInt))
+
+        def mara():
+            capybara(1.0)
+            capybara([])  # E: incompatible_argument
 
     @assert_passes()
     def test_supports_int_accepted(self):
