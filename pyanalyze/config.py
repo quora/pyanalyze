@@ -230,6 +230,9 @@ class Config(object):
     # BASE_CLASSES_CHECKED_FOR_ASYNQ
     METHODS_NOT_CHECKED_FOR_ASYNQ = set()
 
+    # We ignore _async methdos in these modules.
+    NON_ASYNQ_MODULES = {"multiprocessing"}
+
     #
     # Used by method_return_type.py
     #

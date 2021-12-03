@@ -355,7 +355,8 @@ class TestAsyncMethods(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_pure_asynq_method(self):
-        from asynq import asynq, ConstFuture
+        from asynq import asynq
+        import multiprocessing
 
         class Capybara(object):
             def __init__(self, x):
@@ -372,6 +373,9 @@ class TestAsyncMethods(TestNameCheckVisitorBase):
         def use_capybara(x):
             cap = Capybara(x)
             assert_is_value((yield cap.get_async()), TypedValue(int))
+            pool = multiprocessing.Pool()
+            # should not try to use map_async
+            pool.map(len, [(1,)])
 
 
 def test_stringify_async_fn():
