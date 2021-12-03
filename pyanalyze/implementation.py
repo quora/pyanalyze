@@ -179,7 +179,9 @@ def _hasattr_impl(ctx: CallContext) -> Value:
     # if the value exists on the type or instance, hasattr should return True
     # don't interpret the opposite to mean it should return False, as the attribute may
     # exist on a child class or get assigned at runtime
-    if isinstance(obj, TypedValue) and safe_hasattr(obj.typ, name.val):
+    if isinstance(obj, TypedValue) and obj.get_type_object(ctx.visitor).has_attribute(
+        name.val, ctx.visitor
+    ):
         return_value = KnownValue(True)
     elif isinstance(obj, KnownValue) and safe_hasattr(obj.val, name.val):
         return_value = KnownValue(True)
