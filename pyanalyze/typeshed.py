@@ -127,6 +127,24 @@ class TypeshedFinder:
         if inspect.ismethod(obj):
             self.log("Ignoring method", obj)
             return None
+        if (
+            hasattr(obj, "__qualname__")
+            and hasattr(obj, "__name__")
+            and hasattr(obj, "__module__")
+            and obj.__qualname__ != obj.__name__
+            and "." in obj.__qualname__
+        ):
+            parent_name, own_name = obj.__qualname__.rsplit(".", maxsplit=1)
+            parent_fqn = f"{obj.__module__}.{parent_name}"
+            parent_info = self._get_info_for_name(parent_fqn)
+            if parent_info is not None:
+                maybe_info = self._get_child_info(parent_info, own_name, obj.__module__)
+                if maybe_info is not None:
+                    info, mod = maybe_info
+                    fq_name = f"{parent_fqn}.{own_name}"
+                    sig = self._get_signature_from_info(info, obj, fq_name, mod)
+                    return sig
+
         fq_name = self._get_fq_name(obj)
         if fq_name is None:
             return None
@@ -340,6 +358,24 @@ class TypeshedFinder:
             else:
                 return UNINITIALIZED_VALUE
         return UNINITIALIZED_VALUE
+
+    def _get_child_info(
+        self, info: typeshed_client.resolver.ResolvedName, attr: str, mod: str
+    ) -> Optional[Tuple[typeshed_client.resolver.ResolvedName, str]]:
+        if info is None:
+            return None
+        elif isinstance(info, typeshed_client.ImportedInfo):
+            return self._get_child_info(info.info, attr, ".".join(info.source_module))
+        elif isinstance(info, typeshed_client.NameInfo):
+            if isinstance(info.ast, ast3.ClassDef):
+                if info.child_nodes and attr in info.child_nodes:
+                    return info.child_nodes[attr], mod
+                return None
+            elif isinstance(info.ast, ast3.Assign):
+                return None  # TODO maybe we need this for aliased methods
+            else:
+                return None
+        return None
 
     def _has_own_attribute(self, typ: Union[type, str], attr: str) -> bool:
         # Special case since otherwise we think every object has every attribute
