@@ -125,6 +125,11 @@ def f(x: NT, y: Alias) -> None:
         def capybara(s: str) -> None:
             assert_is_value(s.find("x"), TypedValue(int))
 
+    @assert_passes()
+    def test_str_count(self):
+        def capybara(s: str) -> None:
+            assert_is_value(s.count("x"), TypedValue(int))
+
     def test_has_stubs(self) -> None:
         tsf = TypeshedFinder(verbose=True)
         assert tsf.has_stubs(object)

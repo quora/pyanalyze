@@ -634,15 +634,17 @@ class TypeshedFinder:
             arguments.append(kwarg_param.replace(annotation=annotation))
         # some typeshed types have a positional-only after a normal argument,
         # and Signature doesn't like that
-        seen_positional = False
+        seen_non_positional = False
         cleaned_arguments = []
         for arg in arguments:
-            if arg.kind is SigParameter.POSITIONAL_ONLY and not seen_positional:
-                seen_positional = True
+            if arg.kind is SigParameter.POSITIONAL_ONLY and seen_non_positional:
                 cleaned_arguments = [
                     arg.replace(kind=SigParameter.POSITIONAL_ONLY)
                     for arg in cleaned_arguments
                 ]
+                seen_non_positional = False
+            else:
+                seen_non_positional = True
             cleaned_arguments.append(arg)
         return Signature.make(
             cleaned_arguments,
