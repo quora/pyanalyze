@@ -177,3 +177,24 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             want_iter_int(Bad())  # E: incompatible_argument
             want_iter_int(Good())
             want_iter_int(BadType())  # E: incompatible_argument
+
+    @assert_passes()
+    def test_container(self):
+        from typing import Container, Any
+
+        class Good:
+            def __contains__(self, whatever: object) -> bool:
+                return False
+
+        class Bad:
+            def __contains__(self, too, many, arguments) -> bool:
+                return True
+
+        def want_container(c: Container[Any]) -> None:
+            pass
+
+        def capybara() -> None:
+            want_container(Bad())  # E: incompatible_argument
+            want_container(Good())
+            want_container([1])
+            want_container(1)  # E: incompatible_argument
