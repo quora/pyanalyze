@@ -515,20 +515,34 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_hasattr(self):
+        from pyanalyze.value import HasAttrGuardExtension
+
         class Quemisia(object):
             def gravis(self):
                 if hasattr(self, "xaymaca"):
                     print(self.xaymaca)
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_hasattr_wrong_args(self):
-        def run():
-            hasattr()
+        def wrong_args():
+            hasattr()  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_argument)
-    def test_hasattr_mistyped_args(self):
-        def run():
-            hasattr(True, False)
+        def mistyped_args():
+            hasattr(True, False)  # E: incompatible_argument
+
+        def only_on_class(o: object):
+            val = hasattr(o, "__qualname__")
+            assert_is_value(
+                val,
+                AnnotatedValue(
+                    TypedValue(bool),
+                    [
+                        HasAttrGuardExtension(
+                            "object",
+                            KnownValue("__qualname__"),
+                            AnyValue(AnySource.inference),
+                        )
+                    ],
+                ),
+            )
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_keyword_only_args(self):
