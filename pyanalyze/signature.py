@@ -1174,6 +1174,29 @@ class Signature:
                         )
                     tv_maps.append(tv_map)
 
+        for param in their_params:
+            if (
+                param.kind is SigParameter.VAR_POSITIONAL
+                or param.kind is SigParameter.VAR_KEYWORD
+            ):
+                continue  # ok if they have extra *args or **kwargs
+            elif param.default is not EMPTY:
+                continue
+            elif param.kind is SigParameter.POSITIONAL_ONLY:
+                if param.name not in consumed_positional:
+                    return CanAssignError(
+                        f"takes extra positional-only paramter {param.name!r}"
+                    )
+            elif param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
+                if (
+                    param.name not in consumed_positional
+                    and param.name not in consumed_keyword
+                ):
+                    return CanAssignError(f"takes extra paramter {param.name!r}")
+            elif param.kind is SigParameter.KEYWORD_ONLY:
+                if param.name not in consumed_keyword:
+                    return CanAssignError(f"takes extra paramter {param.name!r}")
+
         return unify_typevar_maps(tv_maps)
 
     def get_param_of_kind(self, kind: inspect._ParameterKind) -> Optional[SigParameter]:
