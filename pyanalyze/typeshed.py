@@ -187,11 +187,34 @@ class TypeshedFinder:
                     return None
             else:
                 fq_name = val.typ
+                if fq_name == "collections.abc.Set":
+                    return [GenericValue(Collection, (TypeVarValue(T_co),))]
+                elif fq_name == "contextlib.AbstractContextManager":
+                    return [GenericValue(Generic, (TypeVarValue(T_co),))]
+                elif fq_name in ("typing.Callable", "collections.abc.Callable"):
+                    return None
+                elif is_typing_name(fq_name, "TypedDict"):
+                    return [
+                        GenericValue(
+                            MutableMapping, [TypedValue(str), TypedValue(object)]
+                        )
+                    ]
             return self.get_bases_for_fq_name(fq_name)
         return None
 
-    def get_bases_recursively(self, fq_name: str) -> List[Value]:
-        stack = [TypedValue(fq_name)]
+    def is_protocol(self, typ: type) -> bool:
+        """Return whether this type is marked as a Protocol in the stubs."""
+        fq_name = self._get_fq_name(typ)
+        if fq_name is None:
+            return False
+        bases = self.get_bases_recursively(fq_name)
+        return any(
+            isinstance(base, TypedValue) and is_typing_name(base.typ, "Protocol")
+            for base in bases
+        )
+
+    def get_bases_recursively(self, typ: Union[type, str]) -> List[Value]:
+        stack = [TypedValue(typ)]
         seen = set()
         bases = []
         # TODO return MRO order

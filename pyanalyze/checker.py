@@ -12,7 +12,7 @@ from .safe import is_typing_name
 from .type_object import TypeObject
 
 from dataclasses import dataclass, field
-from typing import Set, Union, Dict
+from typing import Iterable, Set, Union, Dict
 
 
 @dataclass
@@ -45,21 +45,37 @@ class Checker:
     def _build_type_object(self, typ: Union[type, super, str]) -> TypeObject:
         if isinstance(typ, str):
             # Synthetic type
-            base_values = self.arg_spec_cache.ts_finder.get_bases_recursively(typ)
-            bases = set(
-                base.typ for base in base_values if isinstance(base, TypedValue)
-            )
+            bases = self._get_typeshed_bases(typ)
             is_protocol = any(is_typing_name(base, "Protocol") for base in bases)
             if is_protocol:
-                protocol_members = set(
-                    itertools.chain.from_iterable(
-                        self.arg_spec_cache.ts_finder.get_all_attributes(base)
-                        for base in bases
-                    )
-                )
+                protocol_members = self._get_protocol_members(bases)
             else:
                 protocol_members = set()
             return TypeObject(
                 typ, bases, is_protocol=is_protocol, protocol_members=protocol_members
             )
-        return TypeObject(typ, self.get_additional_bases(typ))
+        elif isinstance(typ, super):
+            return TypeObject(typ, self.get_additional_bases(typ))
+        else:
+            additional_bases = self.get_additional_bases(typ)
+            is_protocol = self.arg_spec_cache.ts_finder.is_protocol(typ)
+            if is_protocol:
+                bases = self._get_typeshed_bases(typ)
+                return TypeObject(
+                    typ,
+                    additional_bases,
+                    is_protocol=True,
+                    protocol_members=self._get_protocol_members(bases),
+                )
+            return TypeObject(typ, additional_bases)
+
+    def _get_typeshed_bases(self, typ: Union[type, str]) -> Set[Union[type, str]]:
+        base_values = self.arg_spec_cache.ts_finder.get_bases_recursively(typ)
+        return set(base.typ for base in base_values if isinstance(base, TypedValue))
+
+    def _get_protocol_members(self, bases: Iterable[Union[type, str]]) -> Set[str]:
+        return set(
+            itertools.chain.from_iterable(
+                self.arg_spec_cache.ts_finder.get_all_attributes(base) for base in bases
+            )
+        )
