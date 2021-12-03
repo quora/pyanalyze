@@ -578,10 +578,14 @@ class TypeshedFinder:
         seen_non_positional = False
         cleaned_arguments = []
         for arg in arguments:
-            if arg.kind is not SigParameter.POSITIONAL_ONLY:
+            if arg.kind is SigParameter.POSITIONAL_ONLY and seen_non_positional:
+                cleaned_arguments = [
+                    arg.replace(kind=SigParameter.POSITIONAL_ONLY)
+                    for arg in cleaned_arguments
+                ]
+                seen_non_positional = False
+            else:
                 seen_non_positional = True
-            elif seen_non_positional:
-                arg = arg.replace(kind=SigParameter.POSITIONAL_OR_KEYWORD)
             cleaned_arguments.append(arg)
         return Signature.make(
             cleaned_arguments,
