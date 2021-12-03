@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix handling of nested classes (#305)
 - Fix bug where pyanalyze incorrectly inferred that an attribute always exists (#302)
 - Fix compatibility of signatures with extra parameters (#301)
 - Enhance `reveal_type()` output for `UnboundMethodValue` (#300)

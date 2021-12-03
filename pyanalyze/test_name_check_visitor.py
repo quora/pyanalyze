@@ -401,12 +401,15 @@ def run():
         def run():
             print({key: 1})
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_nested_classes(self):
         class Caviids(object):
             class Capybaras(object):
                 if False:
-                    print(neochoerus)
+                    print(neochoerus)  # E: undefined_name
+
+            def method(self, cap: Capybaras):
+                assert_is_value(cap, TypedValue(Caviids.Capybaras))
 
     @assert_fails(ErrorCode.undefined_name)
     def test_class_in_function(self):
