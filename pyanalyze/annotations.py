@@ -24,7 +24,6 @@ show errors.
 
 """
 from dataclasses import dataclass, InitVar, field
-import typing_extensions
 import typing
 import typing_inspect
 import qcore
