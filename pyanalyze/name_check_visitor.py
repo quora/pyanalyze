@@ -3600,7 +3600,12 @@ class NameCheckVisitor(
 
     def _get_dunder(self, node: ast.AST, callee_val: Value, method_name: str) -> Value:
         lookup_val = callee_val.get_type_value()
-        method_object = self.get_attribute(Composite(lookup_val), method_name, node)
+        method_object = self.get_attribute(
+            Composite(lookup_val),
+            method_name,
+            node,
+            ignore_none=self.config.IGNORE_NONE_ATTRIBUTES,
+        )
         if method_object is UNINITIALIZED_VALUE:
             self.show_error(
                 node,
@@ -3725,7 +3730,11 @@ class NameCheckVisitor(
             return Composite(AnyValue(AnySource.error), composite, node)
 
     def get_attribute(
-        self, root_composite: Composite, attr: str, node: Optional[ast.AST] = None
+        self,
+        root_composite: Composite,
+        attr: str,
+        node: Optional[ast.AST] = None,
+        ignore_none: bool = False,
     ) -> Value:
         """Get an attribute of this value.
 
@@ -3738,13 +3747,16 @@ class NameCheckVisitor(
                     Composite(subval, root_composite.varname, root_composite.node),
                     attr,
                     node,
+                    ignore_none=ignore_none,
                 )
                 for subval in root_composite.value.vals
             ]
             if any(value is UNINITIALIZED_VALUE for value in values):
                 return UNINITIALIZED_VALUE
             return unite_values(*values)
-        return self._get_attribute_no_mvv(root_composite, attr, node)
+        return self._get_attribute_no_mvv(
+            root_composite, attr, node, ignore_none=ignore_none
+        )
 
     def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
         return self.get_attribute(Composite(root_value), attribute)
@@ -4167,7 +4179,12 @@ class NameCheckVisitor(
         if isinstance(value, KnownValue):
             argspec = self.arg_spec_cache.get_argspec(value.val)
             if argspec is None:
-                method_object = self.get_attribute(Composite(value), "__call__", node)
+                method_object = self.get_attribute(
+                    Composite(value),
+                    "__call__",
+                    node,
+                    ignore_none=self.config.IGNORE_NONE_ATTRIBUTES,
+                )
                 if method_object is UNINITIALIZED_VALUE:
                     return None
                 else:
@@ -4198,7 +4215,11 @@ class NameCheckVisitor(
             if typ is collections.abc.Callable or typ is types.FunctionType:
                 return ANY_SIGNATURE
             if isinstance(typ, str):
-                call_method = self.get_attribute(Composite(value), "__call__")
+                call_method = self.get_attribute(
+                    Composite(value),
+                    "__call__",
+                    ignore_none=self.config.IGNORE_NONE_ATTRIBUTES,
+                )
                 if call_method is UNINITIALIZED_VALUE:
                     return None
                 return self.signature_from_value(call_method, node=node)
