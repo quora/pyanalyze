@@ -208,6 +208,8 @@ class TypeshedFinder:
         if fq_name is None:
             return False
         bases = self.get_bases_for_fq_name(fq_name)
+        if bases is None:
+            return False
         return any(
             isinstance(base, TypedValue) and is_typing_name(base.typ, "Protocol")
             for base in bases
