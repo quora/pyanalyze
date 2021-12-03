@@ -34,6 +34,7 @@ from .value import (
     TypeVarValue,
     NO_RETURN_VALUE,
     KNOWN_MUTABLE_TYPES,
+    UnboundMethodValue,
     Value,
     WeakExtension,
     make_weak,
@@ -829,8 +830,12 @@ def _reveal_type_impl(ctx: CallContext) -> Value:
         message = f"Revealed type is '{value!s}'"
         if isinstance(value, KnownValue):
             sig = ctx.visitor.arg_spec_cache.get_argspec(value.val)
-            if sig is not None:
-                message += f", signature is {sig!s}"
+        elif isinstance(value, UnboundMethodValue):
+            sig = value.get_signature(ctx.visitor)
+        else:
+            sig = None
+        if sig is not None:
+            message += f", signature is {sig!s}"
         ctx.show_error(message, ErrorCode.inference_failure, arg="value")
     return KnownValue(None)
 
