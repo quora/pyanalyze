@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Better detect signatures of methods in stub files (#304)
 - Improve handling of positional-only arguments in stub files (#303)
 - Fix bug where pyanalyze incorrectly inferred that an attribute always exists (#302)
 - Fix compatibility of signatures with extra parameters (#301)
