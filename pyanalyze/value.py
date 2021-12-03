@@ -468,6 +468,24 @@ class UnboundMethodValue(Value):
     def get_type_value(self) -> Value:
         return KnownValue(type(self.get_method()))
 
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        signature = self.get_signature(ctx)
+        if signature is None:
+            return {}
+        return CallableValue(signature).can_assign(other, ctx)
+
+    def get_signature(
+        self, ctx: CanAssignContext
+    ) -> Optional["pyanalyze.signature.Signature"]:
+        signature = ctx.signature_from_value(self)
+        if signature is None:
+            return None
+        if isinstance(signature, pyanalyze.signature.BoundMethodSignature):
+            signature = signature.get_signature()
+        if isinstance(signature, pyanalyze.signature.PropertyArgSpec):
+            return None
+        return signature
+
     def substitute_typevars(self, typevars: TypeVarMap) -> "Value":
         return UnboundMethodValue(
             self.attr_name,

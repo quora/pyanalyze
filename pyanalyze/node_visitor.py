@@ -149,7 +149,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     _changes_for_fixer = collections.defaultdict(list)
 
-    tree: Optional[ast.Module]
+    tree: ast.Module
     all_failures: List[Failure]
 
     def __init__(

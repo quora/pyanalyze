@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fix compatibility of signatures with extra parameters (#301)
+- Enhance `reveal_type()` output for `UnboundMethodValue` (#300)
 - Fix handling of `async for` (#298)
 - Add support for stub-only Protocols (#295)
 - Basic support for stub-only types (#290)
