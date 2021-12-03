@@ -165,4 +165,10 @@ class TypeObject:
         return False
 
     def __str__(self) -> str:
-        return stringify_object(self.typ)
+        base = stringify_object(self.typ)
+        if self.is_protocol:
+            return (
+                f"{base} (Protocol with members"
+                f" {', '.join(map(repr, self.protocol_members))})"
+            )
+        return base

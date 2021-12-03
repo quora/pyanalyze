@@ -215,3 +215,54 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             want_container(Good())
             want_container([1])
             want_container(1)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_runtime_protocol(self):
+        from typing_extensions import Protocol
+
+        class P(Protocol):
+            a: int
+
+            def b(self) -> int:
+                raise NotImplementedError
+
+        class Q(P, Protocol):
+            c: str
+
+        class NotAProtocol(P):
+            c: str
+
+        def want_p(x: P):
+            print(x.a + x.b())
+
+        def want_q(q: Q):
+            pass
+
+        def want_not_a_proto(nap: NotAProtocol):
+            pass
+
+        class GoodP:
+            a: int
+
+            def b(self) -> int:
+                return 3
+
+        class BadP:
+            def a(self) -> int:
+                return 5
+
+            def b(self) -> int:
+                return 4
+
+        class GoodQ(GoodP):
+            c: str
+
+        class BadQ(GoodP):
+            c: float
+
+        def capybara():
+            want_p(GoodP())
+            want_p(BadP())  # E: incompatible_argument
+            want_q(GoodQ())
+            want_q(BadQ())  # E: incompatible_argument
+            want_not_a_proto(GoodQ())  # E: incompatible_argument
