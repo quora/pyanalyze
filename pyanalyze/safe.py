@@ -50,11 +50,13 @@ def safe_issubclass(cls: type, class_or_tuple: Union[type, Tuple[type, ...]]) ->
     Therefore, it is not necessary to use ``safe_issubclass()`` if the class
     is known to not override ``__subclasscheck__``.
 
+    Defaults to True if ``issubclass()`` throws.
+
     """
     try:
         return issubclass(cls, class_or_tuple)
     except Exception:
-        return False
+        return True
 
 
 def safe_isinstance(obj: object, class_or_tuple: Union[type, Tuple[type, ...]]) -> bool:
@@ -65,11 +67,13 @@ def safe_isinstance(obj: object, class_or_tuple: Union[type, Tuple[type, ...]]) 
     Therefore, it is not necessary to use ``safe_isinstance()`` if the class
     is known to not override ``__instancecheck__``.
 
+    Defaults to True if ``isinstance()`` throws.
+
     """
     try:
         return isinstance(obj, class_or_tuple)
     except Exception:
-        return False
+        return True
 
 
 def safe_in(item: T, collection: Container[T]) -> bool:

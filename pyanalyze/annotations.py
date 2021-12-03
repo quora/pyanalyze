@@ -331,7 +331,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         args = typing_inspect.get_args(val)
         return _value_of_origin_args(Callable, args, val, ctx)
     elif isinstance(val, type):
-        return _maybe_typed_value(val, ctx)
+        return _maybe_typed_value(val)
     elif val is None:
         return KnownValue(None)
     elif is_typing_name(val, "NoReturn"):
@@ -438,7 +438,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
-            return _maybe_typed_value(origin, ctx)
+            return _maybe_typed_value(origin)
         elif val is NamedTuple:
             return TypedValue(tuple)
         ctx.show_error(f"Invalid type annotation {val}")
@@ -837,10 +837,10 @@ def _value_of_origin_args(
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(isinstance(val, AnyValue) for val in args_vals):
-                return _maybe_typed_value(origin, ctx)
+                return _maybe_typed_value(origin)
             return GenericValue(origin, args_vals)
         else:
-            return _maybe_typed_value(origin, ctx)
+            return _maybe_typed_value(origin)
     elif is_typing_name(origin, "TypeGuard"):
         if len(args) != 1:
             ctx.show_error("TypeGuard requires a single argument")
@@ -877,7 +877,7 @@ def _value_of_origin_args(
         return _Pep655Value(False, _type_from_runtime(args[0], ctx))
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
-        return _maybe_typed_value(val, ctx)
+        return _maybe_typed_value(val)
     else:
         ctx.show_error(
             f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]"
@@ -885,19 +885,10 @@ def _value_of_origin_args(
         return AnyValue(AnySource.error)
 
 
-def _maybe_typed_value(val: type, ctx: Context) -> Value:
+def _maybe_typed_value(val: type) -> Value:
     if val is type(None):
         return KnownValue(None)
-    try:
-        isinstance(1, val)
-    except Exception:
-        # type that doesn't support isinstance, e.g.
-        # a Protocol
-        if is_typing_name(val, "Protocol"):
-            return TypedValue(typing_extensions.Protocol)
-        return AnyValue(AnySource.error)
-    else:
-        return TypedValue(val)
+    return TypedValue(val)
 
 
 def _make_callable_from_value(
