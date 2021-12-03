@@ -125,7 +125,11 @@ class TypeObject:
                 tv_maps = []
                 for member in self.protocol_members:
                     expected = ctx.get_attribute_from_value(self_val, member)
-                    actual = ctx.get_attribute_from_value(other_val, member)
+                    # For __call__, we check compatiiblity with the other object itself.
+                    if member == "__call__":
+                        actual = other_val
+                    else:
+                        actual = ctx.get_attribute_from_value(other_val, member)
                     if actual is UNINITIALIZED_VALUE:
                         return CanAssignError(f"{other} has no attribute {member!r}")
                     tv_map = expected.can_assign(actual, ctx)

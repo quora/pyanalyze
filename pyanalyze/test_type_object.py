@@ -266,3 +266,24 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             want_q(GoodQ())
             want_q(BadQ())  # E: incompatible_argument
             want_not_a_proto(GoodQ())  # E: incompatible_argument
+
+    @assert_passes()
+    def test_callable_protocol(self):
+        from typing_extensions import Protocol
+
+        class P(Protocol):
+            def __call__(self, x: int) -> str:
+                return str(x)
+
+        def want_p(p: P) -> str:
+            return p(1)
+
+        def good(x: int) -> str:
+            return "hello"
+
+        def bad(x: str) -> str:
+            return x
+
+        def capybara():
+            want_p(good)
+            want_p(bad)  # E: incompatible_argument
