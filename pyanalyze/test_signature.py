@@ -71,10 +71,20 @@ class TestCanAssign:
         pos_only_object = P("y", annotation=TypedValue(object), kind=P.POSITIONAL_ONLY)
         pos_only_bool = P("z", annotation=TypedValue(bool), kind=P.POSITIONAL_ONLY)
         pos_kw_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_OR_KEYWORD)
+        pos_only_with_default = P(
+            "d",
+            annotation=TypedValue(int),
+            kind=P.POSITIONAL_ONLY,
+            default=KnownValue(0),
+        )
         pos_only_sig = Signature.make([pos_only_int])
         self.can(pos_only_sig, pos_only_sig)
         self.can(pos_only_sig, Signature.make([pos_kw_int]))
         self.can(pos_only_sig, Signature.make([pos_only_object]))
+        self.can(pos_only_sig, Signature.make([pos_only_with_default]))
+        self.can(pos_only_sig, Signature.make([pos_only_int, pos_only_with_default]))
+        self.cannot(Signature.make([pos_only_with_default]), pos_only_sig)
+        self.cannot(pos_only_sig, Signature.make([pos_only_int, pos_only_bool]))
         self.cannot(pos_only_sig, Signature.make([pos_only_bool]))
         self.cannot(
             pos_only_sig,
@@ -99,9 +109,17 @@ class TestCanAssign:
         )
         pos_kw_bool = P("a", annotation=TypedValue(bool), kind=P.POSITIONAL_OR_KEYWORD)
         pos_only_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY)
+        pos_kw_with_default = P(
+            "d",
+            annotation=TypedValue(int),
+            kind=P.POSITIONAL_OR_KEYWORD,
+            default=KnownValue(0),
+        )
         pos_kw_sig = Signature.make([pos_kw_int])
         self.can(pos_kw_sig, pos_kw_sig)
         self.can(pos_kw_sig, Signature.make([pos_kw_object]))
+        self.can(pos_kw_sig, Signature.make([pos_kw_int, pos_kw_with_default]))
+        self.cannot(pos_kw_sig, Signature.make([pos_kw_int, pos_kw_int_b]))
         self.cannot(pos_kw_sig, Signature.make([pos_kw_bool]))
         self.cannot(pos_kw_sig, Signature.make([pos_only_int]))
         self.cannot(pos_kw_sig, Signature.make([pos_kw_int_b]))
@@ -190,7 +208,12 @@ class TestCanAssign:
             var_pos_sig,
             Signature.make(
                 [
-                    P("d", annotation=TypedValue(object), kind=P.POSITIONAL_ONLY),
+                    P(
+                        "d",
+                        annotation=TypedValue(object),
+                        kind=P.POSITIONAL_ONLY,
+                        default=KnownValue(True),
+                    ),
                     var_pos_int,
                 ]
             ),
@@ -199,7 +222,12 @@ class TestCanAssign:
             var_pos_sig,
             Signature.make(
                 [
-                    P("d", annotation=TypedValue(bool), kind=P.POSITIONAL_ONLY),
+                    P(
+                        "d",
+                        annotation=TypedValue(bool),
+                        kind=P.POSITIONAL_ONLY,
+                        default=KnownValue(True),
+                    ),
                     var_pos_int,
                 ]
             ),
@@ -216,13 +244,29 @@ class TestCanAssign:
         self.can(
             var_kw_sig,
             Signature.make(
-                [P("d", annotation=TypedValue(object), kind=P.KEYWORD_ONLY), var_kw_int]
+                [
+                    P(
+                        "d",
+                        annotation=TypedValue(object),
+                        kind=P.KEYWORD_ONLY,
+                        default=KnownValue(True),
+                    ),
+                    var_kw_int,
+                ]
             ),
         )
         self.cannot(
             var_kw_sig,
             Signature.make(
-                [P("d", annotation=TypedValue(bool), kind=P.KEYWORD_ONLY), var_kw_int]
+                [
+                    P(
+                        "d",
+                        annotation=TypedValue(bool),
+                        kind=P.KEYWORD_ONLY,
+                        default=KnownValue(True),
+                    ),
+                    var_kw_int,
+                ]
             ),
         )
 
@@ -515,20 +559,34 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_hasattr(self):
+        from pyanalyze.value import HasAttrGuardExtension
+
         class Quemisia(object):
             def gravis(self):
                 if hasattr(self, "xaymaca"):
                     print(self.xaymaca)
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_hasattr_wrong_args(self):
-        def run():
-            hasattr()
+        def wrong_args():
+            hasattr()  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_argument)
-    def test_hasattr_mistyped_args(self):
-        def run():
-            hasattr(True, False)
+        def mistyped_args():
+            hasattr(True, False)  # E: incompatible_argument
+
+        def only_on_class(o: object):
+            val = hasattr(o, "__qualname__")
+            assert_is_value(
+                val,
+                AnnotatedValue(
+                    TypedValue(bool),
+                    [
+                        HasAttrGuardExtension(
+                            "object",
+                            KnownValue("__qualname__"),
+                            AnyValue(AnySource.inference),
+                        )
+                    ],
+                ),
+            )
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_keyword_only_args(self):
