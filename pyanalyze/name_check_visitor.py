@@ -1188,12 +1188,22 @@ class NameCheckVisitor(
         value = self._visit_class_and_get_value(node)
         return self._set_name_in_scope(node.name, node, value)
 
+    def _get_class_object(self, node: ast.ClassDef) -> Value:
+        if self.scopes.scope_type() == ScopeType.module_scope:
+            return self.scopes.get(node.name, node, self.state)
+        elif (
+            self.scopes.scope_type() == ScopeType.class_scope
+            and self.current_class is not None
+            and hasattr(self.current_class, "__dict__")
+        ):
+            runtime_obj = self.current_class.__dict__.get(node.name)
+            if isinstance(runtime_obj, type):
+                return KnownValue(runtime_obj)
+        return AnyValue(AnySource.inference)
+
     def _visit_class_and_get_value(self, node: ast.ClassDef) -> Value:
         if self._is_checking():
-            if self.scopes.scope_type() == ScopeType.module_scope:
-                cls_obj = self.scopes.get(node.name, node, self.state)
-            else:
-                cls_obj = AnyValue(AnySource.inference)
+            cls_obj = self._get_class_object(node)
 
             if isinstance(cls_obj, MultiValuedValue) and self.module is not None:
                 # if there are multiple, see if there is only one that matches this module
