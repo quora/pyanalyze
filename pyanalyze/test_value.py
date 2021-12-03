@@ -1,3 +1,4 @@
+import ast
 import collections.abc
 import enum
 import io
@@ -12,6 +13,8 @@ from unittest import mock
 from . import tests
 from . import value
 from .checker import Checker
+from .name_check_visitor import NameCheckVisitor
+from .signature import Signature, MaybeSignature
 from .stacked_scopes import Composite
 from .test_config import TestConfig
 from .type_object import TypeObject
@@ -19,6 +22,7 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
+    CallableValue,
     CanAssignError,
     GenericBases,
     Value,
@@ -37,6 +41,7 @@ from .value import (
 class Context(CanAssignContext):
     def __init__(self) -> None:
         self.checker = Checker(TestConfig())
+        self.visitor = NameCheckVisitor("", "", ast.parse(""), checker=self.checker)
 
     def make_type_object(self, typ: Union[type, super]) -> TypeObject:
         return self.checker.make_type_object(typ)
@@ -45,6 +50,9 @@ class Context(CanAssignContext):
         self, typ: Union[type, str], generic_args: Sequence[Value] = ()
     ) -> GenericBases:
         return self.checker.arg_spec_cache.get_generic_bases(typ, generic_args)
+
+    def signature_from_value(self, value: Value) -> MaybeSignature:
+        return self.visitor.signature_from_value(value)
 
 
 CTX = Context()
@@ -91,9 +99,8 @@ def test_known_value() -> None:
 
 
 def test_unbound_method_value() -> None:
-    val = value.UnboundMethodValue(
-        "get_prop_with_get", Composite(value.TypedValue(tests.PropertyObject))
-    )
+    po_composite = Composite(value.TypedValue(tests.PropertyObject))
+    val = value.UnboundMethodValue("get_prop_with_get", po_composite)
     assert "<method get_prop_with_get on pyanalyze.tests.PropertyObject>" == str(val)
     assert "get_prop_with_get" == val.attr_name
     assert TypedValue(tests.PropertyObject) == val.composite.value
@@ -103,9 +110,7 @@ def test_unbound_method_value() -> None:
     assert not val.is_type(str)
 
     val = value.UnboundMethodValue(
-        "get_prop_with_get",
-        Composite(value.TypedValue(tests.PropertyObject)),
-        secondary_attr_name="asynq",
+        "get_prop_with_get", po_composite, secondary_attr_name="asynq"
     )
     assert "<method get_prop_with_get.asynq on pyanalyze.tests.PropertyObject>" == str(
         val
@@ -114,11 +119,19 @@ def test_unbound_method_value() -> None:
     assert TypedValue(tests.PropertyObject) == val.composite.value
     assert "asynq" == val.secondary_attr_name
     method = val.get_method()
-    assert None is not method
+    assert method is not None
     assert method.__name__ in tests.ASYNQ_METHOD_NAMES
     assert tests.PropertyObject.get_prop_with_get == method.__self__
     assert val.is_type(object)
     assert not val.is_type(str)
+
+    val = value.UnboundMethodValue("non_async_method", po_composite)
+    assert val.get_method() is not None
+    assert val.get_signature(CTX) is not None
+    assert_can_assign(val, val)
+    assert_cannot_assign(val, KnownValue(1))
+    assert_can_assign(val, CallableValue(Signature.make([], is_ellipsis_args=True)))
+    assert_can_assign(val, CallableValue(Signature.make([])))
 
 
 def test_typed_value() -> None:
