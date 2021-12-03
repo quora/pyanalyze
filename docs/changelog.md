@@ -2,8 +2,6 @@
 
 ## Unreleased
 
-- Flag more operations on `None` when the `IGNORE_NONE_ATTRIBUTES` legacy
-  config option is on (#308)
 - Fix false positive where `multiprocessing.Pool.map_async`
   was identified as an asynq method (#306)
 - Fix handling of nested classes (#305)
