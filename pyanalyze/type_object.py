@@ -118,18 +118,22 @@ class TypeObject:
                 return CanAssignError(
                     f"Cannot assign super object {other} to protocol {self}"
                 )
-            tv_maps = []
-            for member in self.protocol_members:
-                expected = ctx.get_attribute_from_value(self_val, member)
-                actual = ctx.get_attribute_from_value(other_val, member)
-                if actual is UNINITIALIZED_VALUE:
-                    return CanAssignError(f"{other} has no attribute {member!r}")
-                tv_map = expected.can_assign(actual, ctx)
-                if isinstance(tv_map, CanAssignError):
-                    return CanAssignError(
-                        f"Value of protocol member {member!r} conflicts", [tv_map]
-                    )
-                tv_maps.append(tv_map)
+            # This is a guard against infinite recursion if the Protocol is recursive
+            if ctx.can_assume_compatibility(self, other):
+                return {}
+            with ctx.assume_compatibility(self, other):
+                tv_maps = []
+                for member in self.protocol_members:
+                    expected = ctx.get_attribute_from_value(self_val, member)
+                    actual = ctx.get_attribute_from_value(other_val, member)
+                    if actual is UNINITIALIZED_VALUE:
+                        return CanAssignError(f"{other} has no attribute {member!r}")
+                    tv_map = expected.can_assign(actual, ctx)
+                    if isinstance(tv_map, CanAssignError):
+                        return CanAssignError(
+                            f"Value of protocol member {member!r} conflicts", [tv_map]
+                        )
+                    tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
 
     def is_instance(self, obj: object) -> bool:

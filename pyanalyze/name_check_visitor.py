@@ -33,6 +33,7 @@ import traceback
 import types
 from typing import (
     ClassVar,
+    ContextManager,
     Iterator,
     Mapping,
     Iterable,
@@ -807,6 +808,14 @@ class NameCheckVisitor(
 
     def make_type_object(self, typ: Union[type, super]) -> TypeObject:
         return self.checker.make_type_object(typ)
+
+    def can_assume_compatibility(self, left: TypeObject, right: TypeObject) -> bool:
+        return self.checker.can_assume_compatibility(left, right)
+
+    def assume_compatibility(
+        self, left: TypeObject, right: TypeObject
+    ) -> ContextManager[None]:
+        return self.checker.assume_compatibility(left, right)
 
     # The type for typ should be type, but that leads Cython to reject calls that pass
     # an instance of ABCMeta.

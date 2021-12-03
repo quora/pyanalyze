@@ -4,15 +4,16 @@ The checker maintains global state that is preserved across different modules.
 
 """
 import itertools
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Iterable, Iterator, List, Set, Tuple, Union, Dict
+
 from .value import TypedValue
 from .arg_spec import ArgSpecCache
 from .config import Config
 from .reexport import ImplicitReexportTracker
 from .safe import is_typing_name
 from .type_object import TypeObject
-
-from dataclasses import dataclass, field
-from typing import Iterable, Set, Union, Dict
 
 
 @dataclass
@@ -22,6 +23,9 @@ class Checker:
     reexport_tracker: ImplicitReexportTracker = field(init=False)
     type_object_cache: Dict[Union[type, super, str], TypeObject] = field(
         default_factory=dict, init=False, repr=False
+    )
+    assumed_compatibilities: List[Tuple[TypeObject, TypeObject]] = field(
+        default_factory=list
     )
 
     def __post_init__(self) -> None:
@@ -79,3 +83,19 @@ class Checker:
                 self.arg_spec_cache.ts_finder.get_all_attributes(base) for base in bases
             )
         )
+
+    def can_assume_compatibility(self, left: TypeObject, right: TypeObject) -> bool:
+        return (left, right) in self.assumed_compatibilities
+
+    @contextmanager
+    def assume_compatibility(
+        self, left: TypeObject, right: TypeObject
+    ) -> Iterator[None]:
+        """Context manager that notes that left and right can be assumed to be compatible."""
+        pair = (left, right)
+        self.assumed_compatibilities.append(pair)
+        try:
+            yield
+        finally:
+            new_pair = self.assumed_compatibilities.pop()
+            assert pair == new_pair

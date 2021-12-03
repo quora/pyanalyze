@@ -179,6 +179,23 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             want_iter_int(BadType())  # E: incompatible_argument
 
     @assert_passes()
+    def test_self_iterator(self):
+        from typing import Iterator
+
+        class MyIter:
+            def __iter__(self) -> "MyIter":
+                return self
+
+            def __next__(self) -> int:
+                return 42
+
+        def want_iter(it: Iterator[int]):
+            pass
+
+        def capybara():
+            want_iter(MyIter())
+
+    @assert_passes()
     def test_container(self):
         from typing import Container, Any
 

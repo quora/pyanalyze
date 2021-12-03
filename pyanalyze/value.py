@@ -21,6 +21,7 @@ these subclasses and some related utilities.
 
 import collections.abc
 from collections import OrderedDict, defaultdict, deque
+from contextlib import contextmanager
 from dataclasses import dataclass, field, InitVar
 import enum
 import inspect
@@ -30,6 +31,7 @@ from typing import (
     Callable,
     Dict,
     Iterable,
+    Iterator,
     List,
     Mapping,
     Optional,
@@ -204,6 +206,21 @@ class CanAssignContext:
 
     def get_attribute_from_value(self, root_value: "Value", attribute: str) -> "Value":
         return UNINITIALIZED_VALUE
+
+    def can_assume_compatibility(
+        self,
+        left: "pyanalyze.type_object.TypeObject",
+        right: "pyanalyze.type_object.TypeObject",
+    ) -> bool:
+        return False
+
+    @contextmanager
+    def assume_compatibility(
+        self,
+        left: "pyanalyze.type_object.TypeObject",
+        right: "pyanalyze.type_object.TypeObject",
+    ) -> Iterator[None]:
+        yield
 
 
 @dataclass(frozen=True)
