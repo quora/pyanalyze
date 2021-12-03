@@ -33,13 +33,14 @@ from collections.abc import (
     Sized,
 )
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import collections.abc
 import qcore
 import inspect
 import sys
 from types import GeneratorType
 from typing import (
+    Dict,
     Set,
     Tuple,
     cast,
@@ -93,12 +94,16 @@ _TYPING_ALIASES = {
 }
 
 
-class TypeshedFinder(object):
-    def __init__(self, verbose: bool = True) -> None:
-        self.verbose = verbose
-        self.resolver = typeshed_client.Resolver()
-        self._assignment_cache = {}
-        self._attribute_cache = {}
+@dataclass
+class TypeshedFinder:
+    verbose: bool = True
+    resolver: typeshed_client.Resolver = field(default_factory=typeshed_client.Resolver)
+    _assignment_cache: Dict[Tuple[str, ast3.AST], Value] = field(
+        default_factory=dict, repr=False, init=False
+    )
+    _attribute_cache: Dict[Tuple[str, str, bool], Value] = field(
+        default_factory=dict, repr=False, init=False
+    )
 
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
