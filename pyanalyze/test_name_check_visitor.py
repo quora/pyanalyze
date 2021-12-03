@@ -1849,7 +1849,7 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
     @assert_passes()
     def test_async_comprehension(self):
         class ANext:
-            def __anext__(self) -> int:
+            async def __anext__(self) -> int:
                 return 42
 
         class AIter:
@@ -1860,10 +1860,28 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
             x = [y async for y in AIter()]
             assert_is_value(x, make_weak(GenericValue(list, [TypedValue(int)])))
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
+    def test_async_generator(self):
+        import collections.abc
+        from typing import AsyncIterator
+
+        async def f() -> AsyncIterator[int]:
+            yield 1
+            yield 2
+
+        async def capybara():
+            x = f()
+            assert_is_value(
+                x, GenericValue(collections.abc.AsyncIterator, [TypedValue(int)])
+            )
+            ints = [i async for i in x]
+            # TODO should be list[int] but we lose the type argument somewhere
+            assert_is_value(ints, TypedValue(list))
+
+    @assert_passes()
     def test_bad_async_comprehension(self):
         async def f():
-            return [x async for x in []]
+            return [x async for x in []]  # E: unsupported_operation
 
 
 class TestKeywordOnlyArguments(TestNameCheckVisitorBase):
