@@ -122,8 +122,10 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
             else:
                 return Boolability.value_always_false_mutable
     elif isinstance(value, DictIncompleteValue):
-        if value.items:
+        if any(pair.is_required and not pair.is_many for pair in value.kv_pairs):
             return Boolability.value_always_true_mutable
+        elif value.kv_pairs:
+            return Boolability.boolable
         else:
             return Boolability.value_always_false_mutable
     elif isinstance(value, SubclassValue):

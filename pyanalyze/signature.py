@@ -28,6 +28,7 @@ from .value import (
     GenericValue,
     HasAttrExtension,
     HasAttrGuardExtension,
+    KVPair,
     KnownValue,
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
@@ -331,26 +332,6 @@ class Signature:
                 return False
         return True
 
-    def _translate_bound_arg(self, argument: object) -> Value:
-        if argument is EMPTY:
-            return AnyValue(AnySource.unannotated)
-        elif isinstance(argument, Composite):
-            return argument.value
-        elif isinstance(argument, tuple):
-            return SequenceIncompleteValue(
-                tuple, [composite.value for composite in argument]
-            )
-        elif isinstance(argument, dict):
-            return DictIncompleteValue(
-                dict,
-                [
-                    (KnownValue(key), composite.value)
-                    for key, composite in argument.items()
-                ],
-            )
-        else:
-            raise TypeError(repr(argument))
-
     def _apply_annotated_constraints(
         self, raw_return: Union[Value, ImplReturn], bound_args: inspect.BoundArguments
     ) -> ImplReturn:
@@ -577,7 +558,7 @@ class Signature:
         if isinstance(value, TypedDictValue):
             return value.items, None
         elif isinstance(value, DictIncompleteValue):
-            return self.preprocess_kwargs_kv_pairs(value.items, visitor, node)
+            return self.preprocess_kwargs_kv_pairs(value.kv_pairs, visitor, node)
         else:
             mapping_tv_map = MappingValue.can_assign(value, visitor)
             if isinstance(mapping_tv_map, CanAssignError):
@@ -591,20 +572,39 @@ class Signature:
             key_type = mapping_tv_map.get(K, AnyValue(AnySource.generic_argument))
             value_type = mapping_tv_map.get(V, AnyValue(AnySource.generic_argument))
             return self.preprocess_kwargs_kv_pairs(
-                [(key_type, value_type)], visitor, node
+                [KVPair(key_type, value_type, is_many=True)], visitor, node
             )
 
     def preprocess_kwargs_kv_pairs(
-        self,
-        items: Sequence[Tuple[Value, Value]],
-        visitor: "NameCheckVisitor",
-        node: ast.AST,
+        self, items: Sequence[KVPair], visitor: "NameCheckVisitor", node: ast.AST
     ) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
         out_items = {}
         possible_values = []
-        for key, val in items:
+        covered_keys: Set[Value] = set()
+        for pair in reversed(items):
+            if not pair.is_many:
+                if isinstance(pair.key, AnnotatedValue):
+                    key = pair.key.value
+                else:
+                    key = pair.key
+                if isinstance(key, KnownValue):
+                    if isinstance(key.val, str):
+                        if key in covered_keys:
+                            continue
+                        out_items[key.val] = (pair.is_required, pair.value)
+                        continue
+                    else:
+                        self.show_call_error(
+                            "Dict passed as **kwargs contains non-string key"
+                            f" {key.val!r}",
+                            node,
+                            visitor,
+                        )
+                        return None
+
             possible_keys = []
-            for subkey in flatten_values(key, unwrap_annotated=True):
+            has_non_literal = False
+            for subkey in flatten_values(pair.key, unwrap_annotated=True):
                 if isinstance(subkey, KnownValue):
                     if isinstance(subkey.val, str):
                         possible_keys.append(subkey.val)
@@ -617,7 +617,7 @@ class Signature:
                         )
                         return None
                 else:
-                    can_assign = TypedValue(str).can_assign(key, visitor)
+                    can_assign = TypedValue(str).can_assign(subkey, visitor)
                     if isinstance(can_assign, CanAssignError):
                         self.show_call_error(
                             f"Dict passed as **kwargs contains non-string key {key!r}",
@@ -626,14 +626,12 @@ class Signature:
                             detail=str(can_assign),
                         )
                         return None
-                    possible_keys = []
-                    break
-            if possible_keys:
-                required = len(possible_keys) == 1
+                    has_non_literal = True
+            if possible_keys and not has_non_literal:
                 for key in possible_keys:
-                    out_items[key] = (required, val)
+                    out_items[key] = (False, pair.value)
             else:
-                possible_values.append(val)
+                possible_values.append(pair.value)
         if possible_values:
             extra_value = unite_values(*possible_values)
         else:
@@ -863,8 +861,7 @@ class Signature:
         if bound_args is None:
             return self.get_default_return()
         variables = {
-            name: self._translate_bound_arg(value)
-            for name, value in bound_args.arguments.items()
+            key: composite.value for key, composite in bound_args.arguments.items()
         }
         return_value = self.signature.return_annotation
         typevar_values: Dict[TypeVar, Value] = {}
@@ -956,13 +953,15 @@ class Signature:
                 assert label is KWARGS, label
                 value = replace_known_sequence_value(composite.value)
                 if isinstance(value, DictIncompleteValue):
-                    for key, val in value.items:
+                    for pair in value.kv_pairs:
                         if (
-                            isinstance(key, KnownValue)
-                            and isinstance(key.val, str)
-                            and isinstance(val, KnownValue)
+                            pair.is_required
+                            and not pair.is_many
+                            and isinstance(pair.key, KnownValue)
+                            and isinstance(pair.key.val, str)
+                            and isinstance(pair.value, KnownValue)
                         ):
-                            kwargs[key.val] = val.val
+                            kwargs[pair.key.val] = pair.value.val
                         else:
                             return None
                 else:

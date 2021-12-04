@@ -112,6 +112,7 @@ from .value import (
     CallableValue,
     CanAssignError,
     GenericBases,
+    KVPair,
     KnownValueWithTypeVars,
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
@@ -2123,7 +2124,7 @@ class NameCheckVisitor(
                             self.visit_comprehension(generator, iterable_type=val)
                             with qcore.override(self, "in_comprehension_body", True):
                                 items.append(
-                                    (self.visit(node.key), self.visit(node.value))
+                                    KVPair(self.visit(node.key), self.visit(node.value))
                                 )
                     finally:
                         self.node_context.contexts.pop()
@@ -2258,11 +2259,8 @@ class NameCheckVisitor(
 
     def visit_Dict(self, node: ast.Dict) -> Value:
         ret = {}
-        all_pairs = []
+        all_pairs: List[KVPair] = []
         has_non_literal = False
-        has_unresolved_star_include = False
-        key_types = []
-        value_types = []
         for key_node, value_node in zip(node.keys, node.values):
             value_val = self.visit(value_node)
             # ** unpacking
@@ -2270,17 +2268,13 @@ class NameCheckVisitor(
                 has_non_literal = True
                 value_val = replace_known_sequence_value(value_val)
                 if isinstance(value_val, DictIncompleteValue):
-                    all_pairs += value_val.items
-                elif (
-                    isinstance(value_val, TypedDictValue)
-                    and value_val.all_keys_required()
-                ):
+                    all_pairs += value_val.kv_pairs
+                elif isinstance(value_val, TypedDictValue):
                     all_pairs += [
-                        (KnownValue(key), value)
-                        for key, (_, value) in value_val.items.items()
+                        KVPair(KnownValue(key), value, is_required=required)
+                        for key, (required, value) in value_val.items.items()
                     ]
                 else:
-                    has_unresolved_star_include = True
                     can_assign = MappingValue.can_assign(value_val, self)
                     if isinstance(can_assign, CanAssignError):
                         self._show_error_if_checking(
@@ -2290,15 +2284,12 @@ class NameCheckVisitor(
                             detail=str(can_assign),
                         )
                         return TypedValue(dict)
-                    key_types.append(
-                        can_assign.get(K, AnyValue(AnySource.generic_argument))
-                    )
-                    value_types.append(
-                        can_assign.get(V, AnyValue(AnySource.generic_argument))
-                    )
+                    key_type = can_assign.get(K, AnyValue(AnySource.generic_argument))
+                    value_type = can_assign.get(V, AnyValue(AnySource.generic_argument))
+                    all_pairs.append(KVPair(key_type, value_type, is_many=True))
                 continue
             key_val = self.visit(key_node)
-            all_pairs.append((key_val, value_val))
+            all_pairs.append(KVPair(key_val, value_val))
             if not isinstance(key_val, KnownValue) or not isinstance(
                 value_val, KnownValue
             ):
@@ -2330,19 +2321,7 @@ class NameCheckVisitor(
                 )
             ret[key] = value
 
-        if has_unresolved_star_include:
-            key_type = unite_and_simplify(
-                *key_types,
-                *(key for key, _ in all_pairs),
-                limit=self.config.UNION_SIMPLIFICATION_LIMIT,
-            )
-            value_type = unite_and_simplify(
-                *value_types,
-                *(value for _, value in all_pairs),
-                limit=self.config.UNION_SIMPLIFICATION_LIMIT,
-            )
-            return GenericValue(dict, [key_type, value_type])
-        elif has_non_literal:
+        if has_non_literal:
             return DictIncompleteValue(dict, all_pairs)
         else:
             return KnownValue(ret)
@@ -2906,11 +2885,16 @@ class NameCheckVisitor(
             {dict}
         ):
             if isinstance(value, DictIncompleteValue):
-                values = [
-                    (key, self._unwrap_yield_result(node, val))
-                    for key, val in value.items
+                pairs = [
+                    KVPair(
+                        pair.key,
+                        self._unwrap_yield_result(node, pair.value),
+                        pair.is_many,
+                        pair.is_required,
+                    )
+                    for pair in value.kv_pairs
                 ]
-                return DictIncompleteValue(value.typ, values)
+                return DictIncompleteValue(value.typ, pairs)
             elif isinstance(value, GenericValue):
                 val = self._unwrap_yield_result(node, value.get_arg(1))
                 return GenericValue(value.typ, [value.get_arg(0), val])

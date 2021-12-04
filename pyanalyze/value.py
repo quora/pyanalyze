@@ -36,6 +36,7 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
+    Set,
     Tuple,
     Union,
     Type,
@@ -825,52 +826,104 @@ class SequenceIncompleteValue(GenericValue):
         return GenericValue(self.typ, [unite_values(*members)])
 
 
+@dataclass(frozen=True)
+class KVPair:
+    """Represents a single entry in a :class:`DictIncompleteValue`."""
+
+    key: Value
+    """Represents the key."""
+    value: Value
+    """Represents the value."""
+    is_many: bool = False
+    """Whether this key-value pair represents possibly multiple keys."""
+    is_required: bool = True
+    """Whether this key-value pair is definitely present."""
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "KVPair":
+        return KVPair(
+            self.key.substitute_typevars(typevars),
+            self.value.substitute_typevars(typevars),
+            self.is_many,
+            self.is_required,
+        )
+
+    def __str__(self) -> str:
+        query = "" if self.is_required else "?"
+        text = f"{self.key}{query}: {self.value}"
+        if self.is_many:
+            return f"**{{{text}}}"
+        else:
+            return text
+
+
 @dataclass(unsafe_hash=True, init=False)
 class DictIncompleteValue(GenericValue):
     """A :class:`TypedValue` representing a dictionary of known size.
 
     For example, the expression ``{'foo': int(self.bar)}`` may be typed as
-    ``DictIncompleteValue(dict, [(KnownValue('foo'), TypedValue(int))])``.
+    ``DictIncompleteValue(dict, [KVPair(KnownValue('foo'), TypedValue(int))])``.
 
     """
 
-    items: Tuple[Tuple[Value, Value], ...]
-    """Sequence of pairs representing the keys and values of the dict."""
+    kv_pairs: Tuple[KVPair, ...]
+    """Sequence of :class:`KVPair` objects representing the keys and values of the dict."""
 
-    def __init__(
-        self, typ: Union[type, str], items: Sequence[Tuple[Value, Value]]
-    ) -> None:
-        if items:
-            key_type = unite_values(*[key for key, _ in items])
-            value_type = unite_values(*[value for _, value in items])
+    def __init__(self, typ: Union[type, str], kv_pairs: Sequence[KVPair]) -> None:
+        if kv_pairs:
+            key_type = unite_values(*[pair.key for pair in kv_pairs])
+            value_type = unite_values(*[pair.value for pair in kv_pairs])
         else:
             key_type = value_type = AnyValue(AnySource.unreachable)
         super().__init__(typ, (key_type, value_type))
-        self.items = tuple(items)
+        self.kv_pairs = tuple(kv_pairs)
 
     def __str__(self) -> str:
-        items = ", ".join(f"{key}: {value}" for key, value in self.items)
+        items = ", ".join(map(str, self.kv_pairs))
         return f"<{stringify_object(self.typ)} containing {{{items}}}>"
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
-        for key, value in self.items:
-            yield from key.walk_values()
-            yield from value.walk_values()
+        for pair in self.kv_pairs:
+            yield from pair.key.walk_values()
+            yield from pair.value.walk_values()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return DictIncompleteValue(
-            self.typ,
-            [
-                (key.substitute_typevars(typevars), value.substitute_typevars(typevars))
-                for key, value in self.items
-            ],
+            self.typ, [pair.substitute_typevars(typevars) for pair in self.kv_pairs]
         )
 
     def simplify(self) -> GenericValue:
-        keys = [key.simplify() for key, _ in self.items]
-        values = [value.simplify() for _, value in self.items]
+        keys = [pair.key.simplify() for pair in self.kv_pairs]
+        values = [pair.value.simplify() for pair in self.kv_pairs]
         return GenericValue(self.typ, [unite_values(*keys), unite_values(*values)])
+
+    @property
+    def items(self) -> Sequence[Tuple[Value, Value]]:
+        """Sequence of pairs representing the keys and values of the dict."""
+        return [(pair.key, pair.value) for pair in self.kv_pairs]
+
+    def get_value(self, key: Value, ctx: CanAssignContext) -> Value:
+        """Return the :class:`Value` for a specific key."""
+        possible_values = []
+        covered_keys: Set[Value] = set()
+        for pair in reversed(self.kv_pairs):
+            if not pair.is_many:
+                if isinstance(pair.key, AnnotatedValue):
+                    my_key = pair.key.value
+                else:
+                    my_key = pair.key
+                if isinstance(my_key, KnownValue):
+                    if my_key == key and pair.is_required:
+                        return unite_values(*possible_values, pair.value)
+                    elif my_key in covered_keys:
+                        continue
+                    elif pair.is_required:
+                        covered_keys.add(my_key)
+            if key.is_assignable(pair.key, ctx) or pair.key.is_assignable(key, ctx):
+                possible_values.append(pair.value)
+        if not possible_values:
+            return UNINITIALIZED_VALUE
+        return unite_values(*possible_values)
 
 
 @dataclass(init=False)
@@ -897,31 +950,20 @@ class TypedDictValue(GenericValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, DictIncompleteValue):
-            their_len = len(other.items)
-            required_len = self.num_required_keys()
-            if their_len < required_len:
-                return CanAssignError(
-                    f"Cannot assign dict of size {their_len} to dict of size"
-                    f" {required_len}"
-                )
-            known_part = {
-                key.val: value
-                for key, value in other.items
-                if isinstance(key, KnownValue) and isinstance(key.val, str)
-            }
-            has_unknowns = len(known_part) < len(other.items)
             tv_maps = []
             for key, (is_required, value) in self.items.items():
-                if key not in known_part:
-                    if not has_unknowns and is_required:
+                their_value = other.get_value(KnownValue(key), ctx)
+                if their_value is UNINITIALIZED_VALUE:
+                    if is_required:
                         return CanAssignError(f"Key {key} is missing in {other}")
-                else:
-                    tv_map = value.can_assign(known_part[key], ctx)
-                    if isinstance(tv_map, CanAssignError):
-                        return CanAssignError(
-                            f"Types for key {key} are incompatible", children=[tv_map]
-                        )
-                    tv_maps.append(tv_map)
+                    else:
+                        continue
+                tv_map = value.can_assign(their_value, ctx)
+                if isinstance(tv_map, CanAssignError):
+                    return CanAssignError(
+                        f"Types for key {key} are incompatible", children=[tv_map]
+                    )
+                tv_maps.append(tv_map)
             return unify_typevar_maps(tv_maps)
         elif isinstance(other, TypedDictValue):
             tv_maps = []
@@ -1761,8 +1803,8 @@ def concrete_values_from_iterable(
             return [KnownValue(key) for key in value.items]
         return MultiValuedValue([KnownValue(key) for key in value.items])
     elif isinstance(value, DictIncompleteValue):
-        if all(isinstance(key, KnownValue) for key, _ in value.items):
-            return [key for key, _ in value.items]
+        if all(pair.is_required and not pair.is_many for pair in value.kv_pairs):
+            return [pair.key for pair in value.kv_pairs]
     elif isinstance(value, KnownValue):
         if isinstance(value.val, (str, bytes, range)):
             return [KnownValue(c) for c in value.val]
@@ -1911,7 +1953,7 @@ def replace_known_sequence_value(value: Value) -> Value:
         elif isinstance(value.val, dict):
             return DictIncompleteValue(
                 type(value.val),
-                [(KnownValue(k), KnownValue(v)) for k, v in value.val.items()],
+                [KVPair(KnownValue(k), KnownValue(v)) for k, v in value.val.items()],
             )
     return value
 

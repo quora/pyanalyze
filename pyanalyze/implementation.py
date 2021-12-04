@@ -15,12 +15,14 @@ from .stacked_scopes import (
 )
 from .signature import ANY_SIGNATURE, SigParameter, Signature, ImplReturn, CallContext
 from .value import (
+    UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
     CallableValue,
     CanAssignError,
     HasAttrGuardExtension,
+    KVPair,
     ParameterTypeGuardExtension,
     TypedValue,
     SubclassValue,
@@ -37,6 +39,7 @@ from .value import (
     UnboundMethodValue,
     Value,
     WeakExtension,
+    concrete_values_from_iterable,
     make_weak,
     unite_values,
     flatten_values,
@@ -307,33 +310,19 @@ def _sequence_impl(typ: type, ctx: CallContext) -> Value:
     iterable = ctx.vars["iterable"]
     if iterable is _NO_ARG_SENTINEL:
         return KnownValue(typ())
-    elif isinstance(iterable, KnownValue):
-        try:
-            return KnownValue(typ(iterable.val))
-        except TypeError:
-            if iterable.val is not None:
-                ctx.show_error(
-                    f"Object {iterable.val!r} is not iterable",
-                    ErrorCode.unsupported_operation,
-                    arg="iterable",
-                )
-            return TypedValue(typ)
-    elif isinstance(iterable, SequenceIncompleteValue):
-        return SequenceIncompleteValue(typ, iterable.members)
-    elif isinstance(iterable, DictIncompleteValue):
-        return SequenceIncompleteValue(typ, [key for key, _ in iterable.items])
-    else:
-        tv_map = IterableValue.can_assign(iterable, ctx.visitor)
-        if isinstance(tv_map, CanAssignError):
-            ctx.show_error(
-                f"{iterable} is not iterable",
-                ErrorCode.unsupported_operation,
-                arg="iterable",
-                detail=str(tv_map),
-            )
-        elif T in tv_map:
-            return GenericValue(typ, [tv_map[T]])
+    cvi = concrete_values_from_iterable(iterable, ctx.visitor)
+    if isinstance(cvi, CanAssignError):
+        ctx.show_error(
+            f"{iterable} is not iterable",
+            ErrorCode.unsupported_operation,
+            arg="iterable",
+            detail=str(cvi),
+        )
         return TypedValue(typ)
+    elif isinstance(cvi, Value):
+        return GenericValue(typ, [cvi])
+    else:
+        return SequenceIncompleteValue(typ, cvi)
 
 
 def _list_append_impl(ctx: CallContext) -> ImplReturn:
@@ -449,9 +438,9 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
             varname,
             ConstraintType.is_value_object,
             True,
-            # This might create a duplicate but searching for that would
-            # be O(n^2) and doesn't seem too useful.
-            DictIncompleteValue(self_value.typ, [*self_value.items, (key, value)]),
+            DictIncompleteValue(
+                self_value.typ, [*self_value.kv_pairs, KVPair(key, value)]
+            ),
         )
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(self_value, TypedValue):
@@ -535,15 +524,12 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
             # Don't do that yet because it may cause too much disruption.
             return AnyValue(AnySource.inference)
         elif isinstance(self_value, DictIncompleteValue):
-            possible_values = [
-                dict_value
-                for dict_key, dict_value in self_value.items
-                if dict_key.is_assignable(key, ctx.visitor)
-            ]
-            if not possible_values:
+            val = self_value.get_value(key, ctx.visitor)
+            if val is UNINITIALIZED_VALUE:
                 # No error here, the key may have been added where we couldn't see it.
+                # TODO try out changing this
                 return AnyValue(AnySource.error)
-            return unite_values(*possible_values)
+            return val
         elif isinstance(self_value, TypedValue):
             return self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
         else:
@@ -601,21 +587,19 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
         )
         return ImplReturn(default)
     elif isinstance(self_value, DictIncompleteValue):
-        possible_values = [
-            dict_value
-            for dict_key, dict_value in self_value.items
-            if dict_key.is_assignable(key, ctx.visitor)
-        ]
+        existing_value = self_value.get_value(key, ctx.visitor)
+        is_present = existing_value is not UNINITIALIZED_VALUE
         new_value = DictIncompleteValue(
-            self_value.typ, [*self_value.items, (key, default)]
+            self_value.typ,
+            [*self_value.kv_pairs, KVPair(key, default, is_required=not is_present)],
         )
         no_return_unless = Constraint(
             varname, ConstraintType.is_value_object, True, new_value
         )
-        if not possible_values:
+        if not is_present:
             return ImplReturn(default, no_return_unless=no_return_unless)
         return ImplReturn(
-            unite_values(default, *possible_values), no_return_unless=no_return_unless
+            unite_values(default, existing_value), no_return_unless=no_return_unless
         )
     elif isinstance(self_value, TypedValue):
         key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
@@ -863,9 +847,9 @@ def _str_format_impl(ctx: CallContext) -> Value:
     kwargs_value = replace_known_sequence_value(ctx.vars["kwargs"])
     kwargs = {}
     if isinstance(kwargs_value, DictIncompleteValue):
-        for key_value, value_value in kwargs_value.items:
-            if isinstance(key_value, KnownValue) and isinstance(key_value.val, str):
-                kwargs[key_value.val] = value_value
+        for pair in kwargs_value.kv_pairs:
+            if isinstance(pair.key, KnownValue) and isinstance(pair.key.val, str):
+                kwargs[pair.key.val] = pair.value
             else:
                 return TypedValue(str)
     elif isinstance(kwargs_value, TypedDictValue):

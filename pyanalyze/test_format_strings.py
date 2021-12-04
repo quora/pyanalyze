@@ -10,6 +10,7 @@ from .format_strings import (
     parse_format_string,
 )
 from .value import (
+    KVPair,
     assert_is_value,
     AnySource,
     AnyValue,
@@ -300,7 +301,7 @@ class TestAccept(object):
         # DictIncompleteValue
         self.assert_errors(
             PercentFormatString.from_pattern("%(a)s"),
-            DictIncompleteValue(dict, [(KnownValue("a"), KnownValue(2))]),
+            DictIncompleteValue(dict, [KVPair(KnownValue("a"), KnownValue(2))]),
             [],
         )
 

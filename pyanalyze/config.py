@@ -130,6 +130,7 @@ class Config(object):
         CustomCheck,
         value.Value,
         value.Extension,
+        value.KVPair,
         asynq.ConstFuture,
         range,
         tuple,

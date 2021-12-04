@@ -24,6 +24,7 @@ from .value import (
     AsyncTaskIncompleteValue,
     CallableValue,
     DictIncompleteValue,
+    KVPair,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
@@ -117,6 +118,7 @@ def _make_module(code_str: str) -> types.ModuleType:
         AsyncTaskIncompleteValue=AsyncTaskIncompleteValue,
         CallableValue=CallableValue,
         DictIncompleteValue=DictIncompleteValue,
+        KVPair=KVPair,
         GenericValue=GenericValue,
         KnownValue=KnownValue,
         MultiValuedValue=MultiValuedValue,
@@ -524,12 +526,18 @@ def run():
             s = {a, b}
             assert_is_value(s, SequenceIncompleteValue(set, [UNANNOTATED, UNANNOTATED]))
             z = {a: b}
-            assert_is_value(z, DictIncompleteValue(dict, [(UNANNOTATED, UNANNOTATED)]))
+            assert_is_value(
+                z, DictIncompleteValue(dict, [KVPair(UNANNOTATED, UNANNOTATED)])
+            )
             q = {a: 3, b: 4}
             assert_is_value(
                 q,
                 DictIncompleteValue(
-                    dict, [(UNANNOTATED, KnownValue(3)), (UNANNOTATED, KnownValue(4))]
+                    dict,
+                    [
+                        KVPair(UNANNOTATED, KnownValue(3)),
+                        KVPair(UNANNOTATED, KnownValue(4)),
+                    ],
                 ),
             )
 
@@ -932,7 +940,8 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
 
             vals3 = yield {1: square.asynq(1)}
             assert_is_value(
-                vals3, DictIncompleteValue(dict, [(KnownValue(1), TypedValue(int))])
+                vals3,
+                DictIncompleteValue(dict, [KVPair(KnownValue(1), TypedValue(int))]),
             )
 
             vals4 = yield {i: square.asynq(i) for i in ints}
@@ -1378,9 +1387,9 @@ class TestIterationTarget(TestNameCheckVisitorBase):
                 DictIncompleteValue(
                     dict,
                     [
-                        (KnownValue(1), KnownValue(1)),
-                        (KnownValue(2), KnownValue(2)),
-                        (KnownValue(3), KnownValue(3)),
+                        KVPair(KnownValue(1), KnownValue(1)),
+                        KVPair(KnownValue(2), KnownValue(2)),
+                        KVPair(KnownValue(3), KnownValue(3)),
                     ],
                 ),
             )
@@ -2166,14 +2175,20 @@ class TestUnpacking(TestNameCheckVisitorBase):
                 d2,
                 DictIncompleteValue(
                     dict,
-                    [(KnownValue(3), KnownValue(4)), (KnownValue(1), KnownValue(2))],
+                    [
+                        KVPair(KnownValue(3), KnownValue(4)),
+                        KVPair(KnownValue(1), KnownValue(2)),
+                    ],
                 ),
             )
             assert_is_value(
                 {1: 2, **d},
-                GenericValue(
+                DictIncompleteValue(
                     dict,
-                    [KnownValue(1) | TypedValue(str), KnownValue(2) | TypedValue(int)],
+                    [
+                        KVPair(KnownValue(1), KnownValue(2)),
+                        KVPair(TypedValue(str), TypedValue(int), is_many=True),
+                    ],
                 ),
             )
             assert_is_value(
@@ -2181,19 +2196,20 @@ class TestUnpacking(TestNameCheckVisitorBase):
                 DictIncompleteValue(
                     dict,
                     [
-                        (KnownValue(1), KnownValue(2)),
-                        (KnownValue("a"), TypedValue(int)),
-                        (KnownValue("b"), TypedValue(str)),
+                        KVPair(KnownValue(1), KnownValue(2)),
+                        KVPair(KnownValue("a"), TypedValue(int)),
+                        KVPair(KnownValue("b"), TypedValue(str)),
                     ],
                 ),
             )
             assert_is_value(
                 {1: 2, **ptd},
-                GenericValue(
+                DictIncompleteValue(
                     dict,
                     [
-                        KnownValue(1) | TypedValue(str),
-                        KnownValue(2) | TypedValue(int) | TypedValue(str),
+                        KVPair(KnownValue(1), KnownValue(2)),
+                        KVPair(KnownValue("a"), TypedValue(int)),
+                        KVPair(KnownValue("b"), TypedValue(str), is_required=False),
                     ],
                 ),
             )

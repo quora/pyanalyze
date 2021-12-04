@@ -323,21 +323,22 @@ class PercentFormatString:
         # CPython actually checks for the mp_subscript slot:
         # https://github.com/python/cpython/blob/5f09bb021a2862ba89c3ecb53e7e6e95a9e07e1d/Objects/bytesobject.c#L647
         # But I don't think there's a way to set that from Python other than
-        # inheriting from str.
+        # inheriting from dict.
         if TypedValue(dict).is_assignable(args, ctx):
-            if isinstance(args, AnnotatedValue):
-                args = args.value
             args = replace_known_sequence_value(args)
+            # TODO handle other kinds of dict
             if isinstance(args, DictIncompleteValue):
                 seen_keys = set()
                 non_literals = []
-                for key, value in args.items:
-                    if isinstance(key, KnownValue):
-                        seen_keys.add(key.val)
-                        for specifier in cs_map[key.val]:
-                            yield from specifier.accept(value, ctx)
+                for pair in args.kv_pairs:
+                    if isinstance(pair.key, KnownValue) and isinstance(
+                        pair.key.val, str
+                    ):
+                        seen_keys.add(pair.key.val)
+                        for specifier in cs_map[pair.key.val]:
+                            yield from specifier.accept(pair.value, ctx)
                     else:
-                        non_literals.append(key)
+                        non_literals.append(pair.key)
                 keys_left = cs_map.keys() - seen_keys
                 if keys_left and not non_literals:
                     yield f"No value specified for keys {', '.join(keys_left)}"

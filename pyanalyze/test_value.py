@@ -25,6 +25,7 @@ from .value import (
     CallableValue,
     CanAssignError,
     GenericBases,
+    KVPair,
     Value,
     GenericValue,
     KnownValue,
@@ -254,8 +255,17 @@ def test_sequence_incomplete_value() -> None:
 
 
 def test_dict_incomplete_value() -> None:
-    val = value.DictIncompleteValue(dict, [(TypedValue(int), KnownValue("x"))])
+    val = value.DictIncompleteValue(dict, [KVPair(TypedValue(int), KnownValue("x"))])
     assert "<dict containing {int: Literal['x']}>" == str(val)
+
+    val = value.DictIncompleteValue(
+        dict,
+        [
+            KVPair(KnownValue("a"), TypedValue(int)),
+            KVPair(KnownValue("b"), TypedValue(str)),
+        ],
+    )
+    assert val.get_value(KnownValue("a"), CTX) == TypedValue(int)
 
 
 def test_multi_valued_value() -> None:
@@ -397,17 +407,19 @@ def test_typeddict_value() -> None:
         val,
         value.DictIncompleteValue(
             dict,
-            [(KnownValue("a"), TypedValue(int)), (KnownValue("b"), TypedValue(str))],
+            [
+                KVPair(KnownValue("a"), TypedValue(int)),
+                KVPair(KnownValue("b"), TypedValue(str)),
+            ],
         ),
     )
-    assert_can_assign(
+    assert_cannot_assign(
         val,
         value.DictIncompleteValue(
             dict,
             [
-                (KnownValue("a"), TypedValue(int)),
-                (KnownValue("b"), TypedValue(str)),
-                (KnownValue("c"), AnyValue(AnySource.marker)),
+                KVPair(KnownValue("a"), TypedValue(str)),
+                KVPair(KnownValue("b"), TypedValue(str)),
             ],
         ),
     )
@@ -416,22 +428,58 @@ def test_typeddict_value() -> None:
         value.DictIncompleteValue(
             dict,
             [
-                (KnownValue("a"), TypedValue(int)),
-                (AnyValue(AnySource.marker), TypedValue(str)),
+                KVPair(KnownValue("a"), TypedValue(str)),
+                KVPair(KnownValue("a"), TypedValue(int)),
+                KVPair(KnownValue("b"), TypedValue(str)),
             ],
         ),
     )
     assert_cannot_assign(
         val,
         value.DictIncompleteValue(
-            dict, [(AnyValue(AnySource.marker), TypedValue(str))]
+            dict,
+            [
+                KVPair(KnownValue("a"), TypedValue(str)),
+                KVPair(KnownValue("a"), TypedValue(int), is_required=False),
+                KVPair(KnownValue("b"), TypedValue(str)),
+            ],
+        ),
+    )
+    assert_can_assign(
+        val,
+        value.DictIncompleteValue(
+            dict,
+            [
+                KVPair(KnownValue("a"), TypedValue(int)),
+                KVPair(KnownValue("b"), TypedValue(str)),
+                KVPair(KnownValue("c"), AnyValue(AnySource.marker)),
+            ],
         ),
     )
     assert_cannot_assign(
         val,
         value.DictIncompleteValue(
             dict,
-            [(KnownValue("a"), TypedValue(int)), (KnownValue("b"), TypedValue(float))],
+            [
+                KVPair(KnownValue("a"), TypedValue(int)),
+                KVPair(AnyValue(AnySource.marker), TypedValue(str)),
+            ],
+        ),
+    )
+    assert_cannot_assign(
+        val,
+        value.DictIncompleteValue(
+            dict, [KVPair(AnyValue(AnySource.marker), TypedValue(str))]
+        ),
+    )
+    assert_cannot_assign(
+        val,
+        value.DictIncompleteValue(
+            dict,
+            [
+                KVPair(KnownValue("a"), TypedValue(int)),
+                KVPair(KnownValue("b"), TypedValue(float)),
+            ],
         ),
     )
 
