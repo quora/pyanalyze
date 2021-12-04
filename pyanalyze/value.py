@@ -718,15 +718,68 @@ class GenericValue(TypedValue):
             for i, (my_arg, their_arg) in enumerate(zip(self.args, generic_args)):
                 tv_map = my_arg.can_assign(their_arg, ctx)
                 if isinstance(tv_map, CanAssignError):
-                    return CanAssignError(
-                        f"In generic argument {i} to {self}", [tv_map]
-                    )
+                    return self.maybe_specify_error(i, other, tv_map, ctx)
                 tv_maps.append(tv_map)
             if not tv_maps:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
 
         return super().can_assign(other, ctx)
+
+    def maybe_specify_error(
+        self, i: int, other: Value, error: CanAssignError, ctx: CanAssignContext
+    ) -> CanAssignError:
+        expected = self.get_arg(i)
+        if isinstance(other, DictIncompleteValue) and self.typ in {
+            dict,
+            collections.abc.Mapping,
+            collections.abc.MutableMapping,
+        }:
+            if i == 0:
+                for pair in reversed(other.kv_pairs):
+                    can_assign = expected.can_assign(pair.key, ctx)
+                    if isinstance(can_assign, CanAssignError):
+                        return CanAssignError(
+                            f"In key of key-value pair {pair}", [can_assign]
+                        )
+            elif i == 1:
+                for pair in reversed(other.kv_pairs):
+                    can_assign = expected.can_assign(pair.value, ctx)
+                    if isinstance(can_assign, CanAssignError):
+                        return CanAssignError(
+                            f"In value of key-value pair {pair}", [can_assign]
+                        )
+        elif isinstance(other, TypedDictValue) and self.typ in {
+            dict,
+            collections.abc.Mapping,
+            collections.abc.MutableMapping,
+        }:
+            if i == 0:
+                for key in other.items:
+                    can_assign = expected.can_assign(KnownValue(key), ctx)
+                    if isinstance(can_assign, CanAssignError):
+                        return CanAssignError(f"In TypedDict key {key!r}", [can_assign])
+            elif i == 1:
+                for key, (_, value) in other.items.items():
+                    can_assign = expected.can_assign(value, ctx)
+                    if isinstance(can_assign, CanAssignError):
+                        return CanAssignError(f"In TypedDict key {key!r}", [can_assign])
+        elif isinstance(other, SequenceIncompleteValue) and self.typ in {
+            list,
+            set,
+            tuple,
+            collections.abc.Iterable,
+            collections.abc.Sequence,
+            collections.abc.MutableSequence,
+            collections.abc.Container,
+            collections.abc.Collection,
+        }:
+            for i, key in enumerate(other.members):
+                can_assign = expected.can_assign(key, ctx)
+                if isinstance(can_assign, CanAssignError):
+                    return CanAssignError(f"In element {i}", [can_assign])
+
+        return CanAssignError(f"In generic argument {i} to {self}", [error])
 
     def get_arg(self, index: int) -> Value:
         try:

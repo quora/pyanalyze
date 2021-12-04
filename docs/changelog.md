@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Improve error messages involving concrete dictionary and sequence values (#312)
 - More precise type inference for dict literals (#312)
 - Add support for runtime Protocols (#311)
 - Stop inferring `Any` for non-runtime checkable Protocols on Python 3.6 and 3.7 (#310)
