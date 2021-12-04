@@ -2269,7 +2269,6 @@ class NameCheckVisitor(
             if key_node is None:
                 has_non_literal = True
                 value_val = replace_known_sequence_value(value_val)
-                print("VVV", value_val)
                 if isinstance(value_val, DictIncompleteValue):
                     all_pairs += value_val.items
                 elif (
