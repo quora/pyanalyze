@@ -139,6 +139,7 @@ EXCLUDED_PROTOCOL_MEMBERS = {
     "__origin__",
     "__tree_hash__",
     "_gorg",
+    "_is_runtime_protocol",
 }
 
 
@@ -149,9 +150,7 @@ def _extract_protocol_members(typ: type) -> Set[str]:
         or is_typing_name(typ, "Protocol")
     ):
         return set()
-    members = set()
-    if hasattr(typ, "__dict__"):
-        members |= set(typ.__dict__) - EXCLUDED_PROTOCOL_MEMBERS
+    members = set(typ.__dict__) - EXCLUDED_PROTOCOL_MEMBERS
     if hasattr(typ, "__annotations__"):
         members |= set(typ.__annotations__)
     return members
