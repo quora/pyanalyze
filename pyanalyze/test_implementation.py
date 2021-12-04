@@ -213,7 +213,6 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
             tuple(int(x))  # E: unsupported_operation
 
 
-
 class TestFormat(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):
