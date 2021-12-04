@@ -892,6 +892,9 @@ class TypedDictValue(GenericValue):
     def num_required_keys(self) -> int:
         return sum(1 for required, _ in self.items.values() if required)
 
+    def all_keys_required(self) -> bool:
+        return all(required for required, _ in self.items.values())
+
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, DictIncompleteValue):
             their_len = len(other.items)

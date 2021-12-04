@@ -2148,10 +2148,55 @@ class TestAugAssign(TestNameCheckVisitorBase):
 class TestUnpacking(TestNameCheckVisitorBase):
     @assert_passes()
     def test_dict_unpacking(self):
-        def capybara():
+        from typing import Dict
+        from typing_extensions import TypedDict, NotRequired
+
+        class FullTD(TypedDict):
+            a: int
+            b: str
+
+        class PartialTD(TypedDict):
+            a: int
+            b: NotRequired[str]
+
+        def capybara(d: Dict[str, int], ftd: FullTD, ptd: PartialTD):
             d1 = {1: 2}
             d2 = {3: 4, **d1}
-            assert_is_value(d2, TypedValue(dict))
+            assert_is_value(
+                d2,
+                DictIncompleteValue(
+                    dict,
+                    [(KnownValue(3), KnownValue(4)), (KnownValue(1), KnownValue(2))],
+                ),
+            )
+            assert_is_value(
+                {1: 2, **d},
+                GenericValue(
+                    dict,
+                    [KnownValue(1) | TypedValue(str), KnownValue(2) | TypedValue(int)],
+                ),
+            )
+            assert_is_value(
+                {1: 2, **ftd},
+                DictIncompleteValue(
+                    dict,
+                    [
+                        (KnownValue(1), KnownValue(2)),
+                        (KnownValue("a"), TypedValue(int)),
+                        (KnownValue("b"), TypedValue(str)),
+                    ],
+                ),
+            )
+            assert_is_value(
+                {1: 2, **ptd},
+                GenericValue(
+                    dict,
+                    [
+                        KnownValue(1) | TypedValue(str),
+                        KnownValue(2) | TypedValue(int) | TypedValue(str),
+                    ],
+                ),
+            )
 
     @assert_passes()
     def test_iterable_unpacking(self):

@@ -115,7 +115,9 @@ from .value import (
     KnownValueWithTypeVars,
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
+    TypedDictValue,
     make_weak,
+    replace_known_sequence_value,
     unite_and_simplify,
     unite_values,
     KnownValue,
@@ -141,6 +143,9 @@ AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
 ExceptionValue = TypedValue(BaseException) | SubclassValue(TypedValue(BaseException))
 ExceptionOrNone = ExceptionValue | KnownNone
+K = TypeVar("K")
+V = TypeVar("V")
+MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
 
 
@@ -2255,12 +2260,43 @@ class NameCheckVisitor(
         ret = {}
         all_pairs = []
         has_non_literal = False
-        has_star_include = False
+        has_unresolved_star_include = False
+        key_types = []
+        value_types = []
         for key_node, value_node in zip(node.keys, node.values):
             value_val = self.visit(value_node)
-            # This happens in Python 3 for syntax like "{a: b, **c}"
+            # ** unpacking
             if key_node is None:
-                has_star_include = True
+                has_non_literal = True
+                value_val = replace_known_sequence_value(value_val)
+                print("VVV", value_val)
+                if isinstance(value_val, DictIncompleteValue):
+                    all_pairs += value_val.items
+                elif (
+                    isinstance(value_val, TypedDictValue)
+                    and value_val.all_keys_required()
+                ):
+                    all_pairs += [
+                        (KnownValue(key), value)
+                        for key, (_, value) in value_val.items.items()
+                    ]
+                else:
+                    has_unresolved_star_include = True
+                    can_assign = MappingValue.can_assign(value_val, self)
+                    if isinstance(can_assign, CanAssignError):
+                        self._show_error_if_checking(
+                            value_node,
+                            f"{value_val} is not a mapping",
+                            ErrorCode.unsupported_operation,
+                            detail=str(can_assign),
+                        )
+                        return TypedValue(dict)
+                    key_types.append(
+                        can_assign.get(K, AnyValue(AnySource.generic_argument))
+                    )
+                    value_types.append(
+                        can_assign.get(V, AnyValue(AnySource.generic_argument))
+                    )
                 continue
             key_val = self.visit(key_node)
             all_pairs.append((key_val, value_val))
@@ -2295,9 +2331,18 @@ class NameCheckVisitor(
                 )
             ret[key] = value
 
-        if has_star_include:
-            # TODO more precise type
-            return TypedValue(dict)
+        if has_unresolved_star_include:
+            key_type = unite_and_simplify(
+                *key_types,
+                *(key for key, _ in all_pairs),
+                limit=self.config.UNION_SIMPLIFICATION_LIMIT,
+            )
+            value_type = unite_and_simplify(
+                *value_types,
+                *(value for _, value in all_pairs),
+                limit=self.config.UNION_SIMPLIFICATION_LIMIT,
+            )
+            return GenericValue(dict, [key_type, value_type])
         elif has_non_literal:
             return DictIncompleteValue(dict, all_pairs)
         else:
