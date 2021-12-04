@@ -514,6 +514,20 @@ def test_concrete_values_from_iterable() -> None:
         CTX,
     )
 
+    class HasGetItem:
+        def __getitem__(self, i: int) -> str:
+            return str(i)
+
+    assert concrete_values_from_iterable(TypedValue(HasGetItem), CTX) == TypedValue(str)
+
+    class BadGetItem:
+        def __getitem__(self, i: int, extra: bool) -> str:
+            return str(i) + str(extra)
+
+    assert isinstance(
+        concrete_values_from_iterable(TypedValue(BadGetItem), CTX), CanAssignError
+    )
+
 
 def _assert_pickling_roundtrip(obj: object) -> None:
     assert obj == pickle.loads(pickle.dumps(obj))

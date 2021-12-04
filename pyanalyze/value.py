@@ -42,7 +42,7 @@ from typing import (
     TypeVar,
     cast,
 )
-from typing_extensions import Literal
+from typing_extensions import Literal, Protocol
 
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
@@ -1715,6 +1715,14 @@ T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
+class GetItemProto(Protocol[T]):
+    def __getitem__(self, i: int) -> T:
+        raise NotImplementedError
+
+
+GetItemProtoValue = GenericValue(GetItemProto, [TypeVarValue(T)])
+
+
 def concrete_values_from_iterable(
     value: Value, ctx: CanAssignContext
 ) -> Union[CanAssignError, Value, Sequence[Value]]:
@@ -1765,10 +1773,13 @@ def concrete_values_from_iterable(
             return [KnownValue(c) for c in value.val]
     elif value is NO_RETURN_VALUE:
         return NO_RETURN_VALUE
-    tv_map = IterableValue.can_assign(value, ctx)
-    if not isinstance(tv_map, CanAssignError):
-        return tv_map.get(T, AnyValue(AnySource.generic_argument))
-    return tv_map
+    iter_tv_map = IterableValue.can_assign(value, ctx)
+    if not isinstance(iter_tv_map, CanAssignError):
+        return iter_tv_map.get(T, AnyValue(AnySource.generic_argument))
+    getitem_tv_map = GetItemProtoValue.can_assign(value, ctx)
+    if not isinstance(getitem_tv_map, CanAssignError):
+        return getitem_tv_map.get(T, AnyValue(AnySource.generic_argument))
+    return iter_tv_map
 
 
 def unpack_values(

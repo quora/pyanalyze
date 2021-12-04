@@ -1400,6 +1400,23 @@ class TestIterationTarget(TestNameCheckVisitorBase):
             for c in lst:
                 assert_is_value(c, KnownValue("x"))
 
+    @assert_passes()
+    def test_old_style(self):
+        class HasGetItem:
+            def __getitem__(self, i: int) -> str:
+                return str(i)
+
+        class BadGetItem:
+            def __getitem__(self, i: int, extra: bool) -> str:
+                return str(i) + str(extra)
+
+        def capybara():
+            for x in HasGetItem():
+                assert_is_value(x, TypedValue(str))
+
+            for x in BadGetItem():  # E: unsupported_operation
+                assert_is_value(x, AnyValue(AnySource.error))
+
 
 class TestAddImports(TestNameCheckVisitorBase):
     def test_top_level(self):
