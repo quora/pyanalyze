@@ -206,15 +206,11 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
             # argument that is iterable but does not have __iter__
             assert_is_value(tuple(str(x)), GenericValue(tuple, [TypedValue(str)]))
 
-    @assert_fails(ErrorCode.unsupported_operation)
-    def test_tuple_known_int(self):
+    @assert_passes()
+    def test_not_iterable(self):
         def capybara(x):
-            tuple(3)
-
-    @assert_fails(ErrorCode.unsupported_operation)
-    def test_tuple_typed_int(self):
-        def capybara(x):
-            tuple(int(x))
+            tuple(3)  # E: unsupported_operation
+            tuple(int(x))  # E: unsupported_operation
 
 
 class TestFormat(TestNameCheckVisitorBase):
