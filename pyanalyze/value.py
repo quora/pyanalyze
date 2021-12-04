@@ -48,7 +48,7 @@ from typing_extensions import Literal
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
-from .safe import safe_issubclass
+from .safe import all_of_type, safe_issubclass
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
@@ -769,6 +769,15 @@ class SequenceIncompleteValue(GenericValue):
             args = (AnyValue(AnySource.unreachable),)
         super().__init__(typ, args)
         self.members = tuple(members)
+
+    @classmethod
+    def make_or_known(
+        cls, typ: type, members: Sequence[Value]
+    ) -> Union[KnownValue, "SequenceIncompleteValue"]:
+        if all_of_type(members, KnownValue):
+            return KnownValue(typ(member.val for member in members))
+        else:
+            return SequenceIncompleteValue(typ, members)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, SequenceIncompleteValue):

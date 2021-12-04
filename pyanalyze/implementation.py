@@ -33,7 +33,6 @@ from .value import (
     TypedDictValue,
     KnownValue,
     MultiValuedValue,
-    TypeVarValue,
     NO_RETURN_VALUE,
     KNOWN_MUTABLE_TYPES,
     UnboundMethodValue,
@@ -55,12 +54,9 @@ import qcore
 import inspect
 import warnings
 from types import FunctionType
-from typing import cast, Dict, NewType, Callable, TypeVar, Optional, Union
+from typing import cast, Dict, NewType, Callable, Optional, Union
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
-
-T = TypeVar("T")
-IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
 def _maybe_or_constraint(
@@ -322,7 +318,7 @@ def _sequence_impl(typ: type, ctx: CallContext) -> Value:
     elif isinstance(cvi, Value):
         return GenericValue(typ, [cvi])
     else:
-        return SequenceIncompleteValue(typ, cvi)
+        return SequenceIncompleteValue.make_or_known(typ, cvi)
 
 
 def _list_append_impl(ctx: CallContext) -> ImplReturn:
@@ -334,7 +330,7 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
             varname,
             ConstraintType.is_value_object,
             True,
-            SequenceIncompleteValue(list, (*lst.members, element)),
+            SequenceIncompleteValue.make_or_known(list, (*lst.members, element)),
         )
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(lst, GenericValue):
@@ -369,7 +365,9 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                     return self_value.get_generic_arg_for_type(typ, ctx.visitor, 0)
             elif isinstance(key.val, slice):
                 if isinstance(self_value, SequenceIncompleteValue):
-                    return SequenceIncompleteValue(list, self_value.members[key.val])
+                    return SequenceIncompleteValue.make_or_known(
+                        list, self_value.members[key.val]
+                    )
                 else:
                     return self_value
             else:
@@ -659,7 +657,9 @@ def _list_add_impl(ctx: CallContext) -> ImplReturn:
         if isinstance(left, SequenceIncompleteValue) and isinstance(
             right, SequenceIncompleteValue
         ):
-            return SequenceIncompleteValue(list, [*left.members, *right.members])
+            return SequenceIncompleteValue.make_or_known(
+                list, [*left.members, *right.members]
+            )
         elif isinstance(left, TypedValue) and isinstance(right, TypedValue):
             left_arg = left.get_generic_arg_for_type(list, ctx.visitor, 0)
             right_arg = right.get_generic_arg_for_type(list, ctx.visitor, 0)
@@ -682,7 +682,7 @@ def _list_extend_or_iadd_impl(
             if isinstance(
                 iterable, SequenceIncompleteValue
             ) and iterable.get_type_object(ctx.visitor).is_exactly((list, tuple)):
-                constrained_value = SequenceIncompleteValue(
+                constrained_value = SequenceIncompleteValue.make_or_known(
                     list, (*cleaned_lst.members, *iterable.members)
                 )
             else:
@@ -777,7 +777,7 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
             varname,
             ConstraintType.is_value_object,
             True,
-            SequenceIncompleteValue(set, (*set_value.members, element)),
+            SequenceIncompleteValue.make_or_known(set, (*set_value.members, element)),
         )
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(set_value, GenericValue):

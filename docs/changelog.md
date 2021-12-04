@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Support `**` unpacking in dict literals (#312)
+- More precise type inference for dict literals (#312)
 - Add support for runtime Protocols (#311)
 - Stop inferring `Any` for non-runtime checkable Protocols on Python 3.6 and 3.7 (#310)
 - Fix false positive where `multiprocessing.Pool.map_async`
@@ -32,6 +32,8 @@
 - Changes affecting consumers of `Value` objects:
   - All `Value` objects are now expected to be hashable.
   - `DictIncompleteValue` and `AnnotatedValue` use tuples instead of lists internally.
+  - `DictIncompleteValue` now stores a sequence of `KVPair` object instead
+    of just key-value pairs, enabling more granular information.
 
 ## Version 0.4.0 (November 18, 2021)
 

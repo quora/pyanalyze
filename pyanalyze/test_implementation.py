@@ -189,12 +189,7 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
             assert_is_value(list(), KnownValue([]))
 
             # KnownValue
-            assert_is_value(
-                tuple([1, 2, 3]),
-                SequenceIncompleteValue(
-                    tuple, [KnownValue(1), KnownValue(2), KnownValue(3)]
-                ),
-            )
+            assert_is_value(tuple([1, 2, 3]), KnownValue((1, 2, 3)))
 
             # Comprehensions
             one_two = MultiValuedValue([KnownValue(1), KnownValue(2)])
@@ -379,9 +374,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst = ["x"]
             assert_is_value(lst, KnownValue(["x"]))
             lst.append(3)
-            assert_is_value(
-                lst, SequenceIncompleteValue(list, [KnownValue("x"), KnownValue(3)])
-            )
+            assert_is_value(lst, KnownValue(["x", 3]))
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_list_append_pos_only(self):

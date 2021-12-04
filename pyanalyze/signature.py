@@ -620,7 +620,8 @@ class Signature:
                     can_assign = TypedValue(str).can_assign(subkey, visitor)
                     if isinstance(can_assign, CanAssignError):
                         self.show_call_error(
-                            f"Dict passed as **kwargs contains non-string key {key!r}",
+                            "Dict passed as **kwargs contains non-string key"
+                            f" {subkey!r}",
                             node,
                             visitor,
                             detail=str(can_assign),
