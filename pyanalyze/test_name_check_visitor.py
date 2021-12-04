@@ -1400,12 +1400,7 @@ class TestIterationTarget(TestNameCheckVisitorBase):
             lst = []
             if cond:
                 lst.append("x")
-            assert_is_value(
-                lst,
-                MultiValuedValue(
-                    [SequenceIncompleteValue(list, [KnownValue("x")]), KnownValue([])]
-                ),
-            )
+            assert_is_value(lst, KnownValue(["x"]) | KnownValue([]))
             for c in lst:
                 assert_is_value(c, KnownValue("x"))
 
