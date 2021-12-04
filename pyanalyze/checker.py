@@ -6,6 +6,7 @@ The checker maintains global state that is preserved across different modules.
 import itertools
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+import sys
 from typing import Iterable, Iterator, List, Set, Tuple, Union, Dict
 
 from .value import TypedValue
@@ -151,6 +152,7 @@ def _extract_protocol_members(typ: type) -> Set[str]:
     ):
         return set()
     members = set(typ.__dict__) - EXCLUDED_PROTOCOL_MEMBERS
-    if hasattr(typ, "__annotations__"):
+    # Starting in 3.10 __annotations__ always exists on types
+    if sys.version_info >= (3, 10) or hasattr(typ, "__annotations__"):
         members |= set(typ.__annotations__)
     return members
