@@ -637,6 +637,8 @@ class TypedValue(Value):
         return KnownValue(self.typ)
 
     def __str__(self) -> str:
+        if self._type_object is not None:
+            return str(self._type_object)
         return stringify_object(self.typ)
 
 

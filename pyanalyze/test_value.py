@@ -54,6 +54,9 @@ class Context(CanAssignContext):
     def signature_from_value(self, value: Value) -> MaybeSignature:
         return self.visitor.signature_from_value(value)
 
+    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
+        return self.visitor.get_attribute(Composite(root_value), attribute)
+
 
 CTX = Context()
 
