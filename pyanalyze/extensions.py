@@ -114,7 +114,7 @@ class NoAny(CustomCheck):
 class _AsynqCallableMeta(type):
     def __getitem__(
         self, params: Tuple[Union[Literal[Ellipsis], List[object]], object]
-    ) -> "AsynqCallable":
+    ) -> Any:
         if not isinstance(params, tuple) or len(params) != 2:
             raise TypeError(
                 "AsynqCallable[...] should be instantiated "
@@ -145,7 +145,8 @@ class AsynqCallable(metaclass=_AsynqCallableMeta):
     args: Union[Literal[Ellipsis], Tuple[object, ...]]
     return_type: object
 
-    def __getitem__(self, item: object) -> "AsynqCallable":
+    # Returns AsynqCallable but pyanalyze interprets that as AsynqCallable[..., Any]
+    def __getitem__(self, item: object) -> Any:
         if not isinstance(item, tuple):
             item = (item,)
         params = self.__parameters__
