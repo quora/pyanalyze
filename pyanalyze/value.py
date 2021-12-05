@@ -1477,8 +1477,24 @@ class TypeVarValue(Value):
                 return CanAssignError(
                     f"Value of TypeVar {self} cannot be {left}", [can_assign]
                 )
-            return {**can_assign, self.typevar: self.bound}
-        # TODO think
+            return {**can_assign, self.typevar: left}
+        elif self.constraints:
+            can_assigns = [
+                left.can_assign(constraint, ctx) for constraint in self.constraints
+            ]
+            if all_of_type(can_assigns, CanAssignError):
+                return CanAssignError(f"Cannot assign to {self}", list(can_assigns))
+            possibilities = [
+                constraint
+                for constraint, can_assign in zip(self.constraints, can_assigns)
+                if not isinstance(can_assign, CanAssignError)
+            ]
+            if len(possibilities) == 1:
+                (solution,) = possibilities
+            else:
+                # Inferring something else produces too many issues for now.
+                solution = AnyValue(AnySource.inference)
+            return {self.typevar: solution}
         return {self.typevar: left}
 
     def get_fallback_value(self) -> Value:

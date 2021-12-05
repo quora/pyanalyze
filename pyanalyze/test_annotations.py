@@ -888,6 +888,43 @@ class TestTypeVar(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(re.escape("x"), TypedValue(str))
 
+    @assert_passes()
+    def test_callable_compatibility(self):
+        from typing import TypeVar, Callable, Union
+
+        AnyStr = TypeVar("AnyStr", bytes, str)
+        IntT = TypeVar("IntT", bound=int)
+
+        def want_anystr_func(
+            f: Callable[[AnyStr], AnyStr], s: Union[str, bytes]
+        ) -> str:
+            if isinstance(s, str):
+                assert_is_value(f(s), TypedValue(str))
+            else:
+                assert_is_value(f(s), TypedValue(bytes))
+            return ""
+
+        def want_bounded_func(f: Callable[[IntT], IntT], i: int) -> None:
+            assert_is_value(f(True), KnownValue(True))
+            assert_is_value(f(i), TypedValue(int))
+
+        def want_str_func(f: Callable[[str], str]):
+            assert_is_value(f("x"), TypedValue(str))
+
+        def anystr_func(s: AnyStr) -> AnyStr:
+            return s
+
+        def int_func(i: IntT) -> IntT:
+            return i
+
+        def capybara():
+            want_anystr_func(anystr_func, "x")
+            want_anystr_func(int_func, "x")  # E: incompatible_argument
+            want_bounded_func(int_func, 0)
+            want_bounded_func(anystr_func, 1)  # E: incompatible_argument
+            want_str_func(anystr_func)
+            want_str_func(int_func)  # E: incompatible_argument
+
 
 class TestParameterTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
