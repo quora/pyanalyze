@@ -329,6 +329,8 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
     elif typing_inspect.is_callable_type(val):
         args = typing_inspect.get_args(val)
         return _value_of_origin_args(Callable, args, val, ctx)
+    elif val is AsynqCallable:
+        return CallableValue(Signature.make([], is_ellipsis_args=True, is_asynq=True))
     elif isinstance(val, type):
         return _maybe_typed_value(val)
     elif val is None:
