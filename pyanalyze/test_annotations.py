@@ -879,7 +879,14 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(f(b), TypedValue(bytes))
             f(sb)  # E: incompatible_argument
             f(3)  # E: incompatible_argument
-            assert_is_value(f(unannotated), TypedValue(str) | TypedValue(bytes))
+            assert_is_value(f(unannotated), AnyValue(AnySource.inference))
+
+    @assert_passes()
+    def test_constraint_in_typeshed(self):
+        import re
+
+        def capybara():
+            assert_is_value(re.escape("x"), TypedValue(str))
 
 
 class TestParameterTypeGuard(TestNameCheckVisitorBase):

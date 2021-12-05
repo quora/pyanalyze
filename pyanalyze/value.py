@@ -1460,7 +1460,12 @@ class TypeVarValue(Value):
                 for constraint, can_assign in zip(self.constraints, can_assigns)
                 if not isinstance(can_assign, CanAssignError)
             ]
-            return {self.typevar: unite_values(*possibilities)}
+            if len(possibilities) == 1:
+                (solution,) = possibilities
+            else:
+                # Inferring something else produces too many issues for now.
+                solution = AnyValue(AnySource.inference)
+            return {self.typevar: solution}
         return {self.typevar: other}
 
     def get_fallback_value(self) -> Value:
