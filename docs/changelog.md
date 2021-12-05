@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improve error messages involving concrete dictionary and sequence values (#312)
+- More precise type inference for dict literals (#312)
 - Support `AsynqCallable` with no arguments as an annotation (#314)
 - Support iteration over old-style iterables providing only `__getitem__` (#313)
 - Add support for runtime Protocols (#311)
@@ -33,6 +35,8 @@
 - Changes affecting consumers of `Value` objects:
   - All `Value` objects are now expected to be hashable.
   - `DictIncompleteValue` and `AnnotatedValue` use tuples instead of lists internally.
+  - `DictIncompleteValue` now stores a sequence of `KVPair` object instead
+    of just key-value pairs, enabling more granular information.
 
 ## Version 0.4.0 (November 18, 2021)
 

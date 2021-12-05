@@ -8,6 +8,7 @@ from .value import (
     AnySource,
     AnyValue,
     DictIncompleteValue,
+    KVPair,
     KnownValue,
     SequenceIncompleteValue,
     TypedDictValue,
@@ -60,7 +61,17 @@ def test_get_boolability() -> None:
         SequenceIncompleteValue(list, [])
     )
     assert Boolability.value_always_true_mutable == get_boolability(
-        DictIncompleteValue(dict, [(KnownValue(1), KnownValue(1))])
+        DictIncompleteValue(dict, [KVPair(KnownValue(1), KnownValue(1))])
+    )
+    assert Boolability.boolable == get_boolability(
+        DictIncompleteValue(
+            dict, [KVPair(KnownValue(1), KnownValue(1), is_required=False)]
+        )
+    )
+    assert Boolability.boolable == get_boolability(
+        DictIncompleteValue(
+            dict, [KVPair(TypedValue(int), KnownValue(1), is_many=True)]
+        )
     )
     assert Boolability.value_always_false_mutable == get_boolability(
         DictIncompleteValue(dict, [])

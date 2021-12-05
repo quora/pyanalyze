@@ -6,6 +6,7 @@ from .error_code import ErrorCode
 from .value import (
     AnySource,
     AnyValue,
+    KVPair,
     assert_is_value,
     CallableValue,
     GenericValue,
@@ -201,7 +202,9 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
             )
 
             # fallback
-            assert_is_value(tuple(x), TypedValue(tuple))
+            assert_is_value(
+                tuple(x), GenericValue(tuple, [AnyValue(AnySource.generic_argument)])
+            )
 
             # argument that is iterable but does not have __iter__
             assert_is_value(tuple(str(x)), GenericValue(tuple, [TypedValue(str)]))
@@ -367,9 +370,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst = ["x"]
             assert_is_value(lst, KnownValue(["x"]))
             lst.append(3)
-            assert_is_value(
-                lst, SequenceIncompleteValue(list, [KnownValue("x"), KnownValue(3)])
-            )
+            assert_is_value(lst, KnownValue(["x", 3]))
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_list_append_pos_only(self):
@@ -681,7 +682,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             incomplete_value = {"a": str(TD)}
             assert_is_value(
                 incomplete_value,
-                DictIncompleteValue(dict, [(KnownValue("a"), TypedValue(str))]),
+                DictIncompleteValue(dict, [KVPair(KnownValue("a"), TypedValue(str))]),
             )
             assert_is_value(incomplete_value.setdefault("b"), KnownValue(None))
             assert_is_value(
@@ -689,8 +690,8 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 DictIncompleteValue(
                     dict,
                     [
-                        (KnownValue("a"), TypedValue(str)),
-                        (KnownValue("b"), KnownValue(None)),
+                        KVPair(KnownValue("a"), TypedValue(str)),
+                        KVPair(KnownValue("b"), KnownValue(None)),
                     ],
                 ),
             )
@@ -703,9 +704,9 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 DictIncompleteValue(
                     dict,
                     [
-                        (KnownValue("a"), TypedValue(str)),
-                        (KnownValue("b"), KnownValue(None)),
-                        (KnownValue("a"), KnownValue(None)),
+                        KVPair(KnownValue("a"), TypedValue(str)),
+                        KVPair(KnownValue("b"), KnownValue(None)),
+                        KVPair(KnownValue("a"), KnownValue(None), is_required=False),
                     ],
                 ),
             )
@@ -870,9 +871,9 @@ class TestDictGetItem(TestNameCheckVisitorBase):
                 DictIncompleteValue(
                     dict,
                     [
-                        (TypedValue(int), KnownValue(1)),
-                        (KnownValue("b"), KnownValue(2)),
-                        (KnownValue("c"), KnownValue("s")),
+                        KVPair(TypedValue(int), KnownValue(1)),
+                        KVPair(KnownValue("b"), KnownValue(2)),
+                        KVPair(KnownValue("c"), KnownValue("s")),
                     ],
                 ),
             )
@@ -884,11 +885,7 @@ class TestDictGetItem(TestNameCheckVisitorBase):
                 MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue("s")]),
             )
             # unknown key
-            assert_is_value(
-                # TODO why is this error?
-                incomplete_value["other string"],
-                AnyValue(AnySource.error),
-            )
+            assert_is_value(incomplete_value["other string"], AnyValue(AnySource.error))
 
             # MultiValuedValue
             key = "b" if unresolved else "c"
@@ -896,6 +893,43 @@ class TestDictGetItem(TestNameCheckVisitorBase):
                 incomplete_value[key],
                 MultiValuedValue([KnownValue(2), KnownValue("s")]),
             )
+
+    @assert_passes()
+    def test_complex_incomplete(self):
+        from typing import Sequence
+        from typing_extensions import NotRequired, TypedDict
+
+        class TD(TypedDict):
+            a: float
+            b: NotRequired[bool]
+
+        def capybara(i: int, seq: Sequence[int], td: TD, s: str):
+            d1 = {"a": i, "b": i + 1}
+            d2 = {i: 1 for i in seq}
+            d3 = {"a": 1, **d1, "b": 2, **d2}
+            assert_is_value(
+                d3,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(KnownValue("a"), KnownValue(1)),
+                        KVPair(KnownValue("a"), TypedValue(int)),
+                        KVPair(KnownValue("b"), TypedValue(int)),
+                        KVPair(KnownValue("b"), KnownValue(2)),
+                        KVPair(TypedValue(int), KnownValue(1), is_many=True),
+                    ],
+                ),
+            )
+            assert_is_value(d3[1], KnownValue(1))
+            assert_is_value(d3["a"], TypedValue(int))
+            assert_is_value(d3["b"], KnownValue(2))
+            assert_is_value(d3[s], TypedValue(int) | KnownValue(2))
+
+            d4 = {**d3, **td}
+            assert_is_value(d4[1], KnownValue(1))
+            assert_is_value(d4["a"], TypedValue(float))
+            assert_is_value(d4["b"], KnownValue(2) | TypedValue(bool))
+            assert_is_value(d4[s], TypedValue(float) | KnownValue(2) | TypedValue(bool))
 
     @assert_passes()
     def test(self):
@@ -977,7 +1011,8 @@ class TestDictSetItem(TestNameCheckVisitorBase):
             assert_is_value(dct, KnownValue({}))
             dct["x"] = x
             assert_is_value(
-                dct, DictIncompleteValue(dict, [(KnownValue("x"), TypedValue(int))])
+                dct,
+                DictIncompleteValue(dict, [KVPair(KnownValue("x"), TypedValue(int))]),
             )
             dct[y] = "x"
             assert_is_value(
@@ -985,8 +1020,8 @@ class TestDictSetItem(TestNameCheckVisitorBase):
                 DictIncompleteValue(
                     dict,
                     [
-                        (KnownValue("x"), TypedValue(int)),
-                        (TypedValue(str), KnownValue("x")),
+                        KVPair(KnownValue("x"), TypedValue(int)),
+                        KVPair(TypedValue(str), KnownValue("x")),
                     ],
                 ),
             )

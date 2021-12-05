@@ -100,23 +100,23 @@ class TypeObject:
                 if self.typ is object:
                     return {}
                 return CanAssignError(
-                    f"Cannot assign protocol {other} to non-protocol {self}"
+                    f"Cannot assign protocol {other_val} to non-protocol {self}"
                 )
             if isinstance(self.typ, str):
                 if safe_in(self.typ, other.base_classes):
                     return {}
-                return CanAssignError(f"Cannot assign {other} to {self}")
+                return CanAssignError(f"Cannot assign {other_val} to {self}")
             else:
                 for base in other.base_classes:
                     if base is self.typ:
                         return {}
                     if isinstance(base, type) and safe_issubclass(base, self.typ):
                         return {}
-                return CanAssignError(f"Cannot assign {other} to {self}")
+                return CanAssignError(f"Cannot assign {other_val} to {self}")
         else:
             if isinstance(other.typ, super):
                 return CanAssignError(
-                    f"Cannot assign super object {other} to protocol {self}"
+                    f"Cannot assign super object {other_val} to protocol {self}"
                 )
             # This is a guard against infinite recursion if the Protocol is recursive
             if ctx.can_assume_compatibility(self, other):

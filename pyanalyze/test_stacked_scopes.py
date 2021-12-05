@@ -888,13 +888,13 @@ class TestConstraints(TestNameCheckVisitorBase):
                 # Don't widen the type to A.
                 assert_is_value(x, TypedValue(B))
 
-        def kerodon(cond1, cond2, val):
+        def kerodon(cond1, cond2, val, lst: list):
             if cond1:
                 x = int(val)
             elif cond2:
                 x = str(val)
             else:
-                x = list(val)
+                x = lst
             assert_is_value(
                 x,
                 MultiValuedValue([TypedValue(int), TypedValue(str), TypedValue(list)]),
