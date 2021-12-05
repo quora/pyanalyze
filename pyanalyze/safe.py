@@ -108,7 +108,6 @@ if sys.version_info >= (3, 10):
     def is_newtype(obj: object) -> bool:
         return isinstance(obj, NewType)
 
-
 else:
 
     def is_newtype(obj: object) -> bool:
