@@ -7,6 +7,7 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
+    CallableValue,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
@@ -741,7 +742,7 @@ class TestCallable(TestNameCheckVisitorBase):
         def capybara() -> None:
             takes_callable(wrong_callable)
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_known_value_error(self):
         from typing_extensions import Literal
 
@@ -755,9 +756,9 @@ class TestCallable(TestNameCheckVisitorBase):
             return True
 
         def capybara() -> None:
-            g(h)
+            g(h)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_asynq_callable_incompatible(self):
         from typing import Callable
         from pyanalyze.extensions import AsynqCallable
@@ -766,9 +767,9 @@ class TestCallable(TestNameCheckVisitorBase):
             pass
 
         def capybara(func: Callable[[], int]) -> None:
-            f(func)
+            f(func)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_asynq_callable_incompatible_literal(self):
         from pyanalyze.extensions import AsynqCallable
 
@@ -779,17 +780,26 @@ class TestCallable(TestNameCheckVisitorBase):
             return 0
 
         def capybara() -> None:
-            f(func)
+            f(func)  # E: incompatible_argument
 
     @assert_passes()
     def test_asynq_callable(self):
         from asynq import asynq
         from pyanalyze.extensions import AsynqCallable
+        from pyanalyze.signature import Signature
         from typing import Optional
 
         @asynq()
         def func_example(x: int) -> str:
             return ""
+
+        sig = Signature.make([], is_asynq=True, is_ellipsis_args=True)
+
+        @asynq()
+        def bare_asynq_callable(fn: AsynqCallable) -> None:
+            assert_is_value(fn, CallableValue(sig))
+            yield fn.asynq()
+            yield fn.asynq("some", "arguments")
 
         @asynq()
         def caller(
@@ -802,6 +812,7 @@ class TestCallable(TestNameCheckVisitorBase):
             yield caller.asynq(func_example)
             if func2 is not None:
                 yield func2.asynq(1)
+            yield bare_asynq_callable.asynq(func_example)
 
     @assert_passes(settings={ErrorCode.impure_async_call: False})
     def test_amap(self):

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support `AsynqCallable` with no arguments as an annotation (#314)
 - Support iteration over old-style iterables providing only `__getitem__` (#313)
 - Add support for runtime Protocols (#311)
 - Stop inferring `Any` for non-runtime checkable Protocols on Python 3.6 and 3.7 (#310)
