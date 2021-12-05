@@ -93,7 +93,7 @@ class Value:
         elif isinstance(other, AnnotatedValue):
             return self.can_assign(other.value, ctx)
         elif isinstance(other, TypeVarValue):
-            return self.can_assign(other.get_fallback_value(), ctx)
+            return other.can_be_assigned(self, ctx)
         elif (
             isinstance(other, UnboundMethodValue)
             and other.secondary_attr_name is not None
@@ -1467,6 +1467,19 @@ class TypeVarValue(Value):
                 solution = AnyValue(AnySource.inference)
             return {self.typevar: solution}
         return {self.typevar: other}
+
+    def can_be_assigned(self, left: Value, ctx: CanAssignContext) -> CanAssign:
+        if left == self:
+            return {}
+        if self.bound is not None:
+            can_assign = left.can_assign(self.bound, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"Value of TypeVar {self} cannot be {left}", [can_assign]
+                )
+            return {**can_assign, self.typevar: self.bound}
+        # TODO think
+        return {self.typevar: left}
 
     def get_fallback_value(self) -> Value:
         if self.bound is not None:
