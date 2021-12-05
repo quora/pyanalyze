@@ -1431,16 +1431,31 @@ class TypeVarValue(Value):
     """
 
     typevar: TypeVar
+    bound: Optional[Value] = None
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return typevars.get(self.typevar, self)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if self.bound is not None:
+            can_assign = self.bound.can_assign(other, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"Value of TypeVar {self} cannot be {other}", [can_assign]
+                )
+            return {**can_assign, self.typevar: other}
         return {self.typevar: other}
 
     def get_fallback_value(self) -> Value:
+        if self.bound is not None:
+            return self.bound
         # TODO: support bounds and bases here to do something smarter
         return AnyValue(AnySource.inference)
+
+    def __str__(self) -> str:
+        if self.bound is not None:
+            return f"{self.typevar} <: {self.bound}"
+        return str(self.typevar)
 
 
 class Extension:

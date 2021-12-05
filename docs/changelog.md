@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support `TypeVar` bounds (#315)
 - Improve error messages involving concrete dictionary and sequence values (#312)
 - More precise type inference for dict literals (#312)
 - Support `AsynqCallable` with no arguments as an annotation (#314)

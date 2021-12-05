@@ -12,6 +12,7 @@ from .value import (
     MultiValuedValue,
     NewTypeValue,
     SequenceIncompleteValue,
+    TypeVarValue,
     TypedDictValue,
     TypedValue,
     SubclassValue,
@@ -837,6 +838,25 @@ class TestCallable(TestNameCheckVisitorBase):
             assert_is_value(
                 (yield amap.asynq(mapper, [1])), GenericValue(list, [TypedValue(str)])
             )
+
+
+class TestTypeVar(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_bound(self):
+        from typing import TypeVar
+
+        IntT = TypeVar("IntT", bound=int)
+
+        def f(x: IntT) -> IntT:
+            assert_is_value(x, TypeVarValue(IntT, bound=TypedValue(int)))
+            print(x + 1)
+            return x
+
+        def capybara():
+            assert_is_value(f(1), KnownValue(1))
+            assert_is_value(f(True), KnownValue(True))
+            x = f("")  # E: incompatible_argument
+            assert_is_value(x, AnyValue(AnySource.error))
 
 
 class TestParameterTypeGuard(TestNameCheckVisitorBase):
