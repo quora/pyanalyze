@@ -864,8 +864,12 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
         AnyStr = TypeVar("AnyStr", bytes, str)
 
+        def whatever(x: Union[str, bytes]):
+            pass
+
         def f(x: AnyStr) -> AnyStr:
             print(x.title())
+            whatever(x)
             return x
 
         def capybara(s: str, b: bytes, sb: Union[str, bytes], unannotated):

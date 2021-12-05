@@ -1283,6 +1283,8 @@ class MultiValuedValue(Value):
         )
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(other, TypeVarValue):
+            other = other.get_fallback_value()
         if isinstance(other, MultiValuedValue):
             tv_maps = []
             for val in other.vals:
