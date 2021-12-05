@@ -1452,7 +1452,7 @@ class TypeVarValue(Value):
                 constraint.can_assign(other, ctx) for constraint in self.constraints
             ]
             if all_of_type(can_assigns, CanAssignError):
-                return CanAssignError(f"Cannot assign to {self}", can_assigns)
+                return CanAssignError(f"Cannot assign to {self}", list(can_assigns))
             possibilities = [
                 constraint
                 for constraint, can_assign in zip(self.constraints, can_assigns)
