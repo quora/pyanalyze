@@ -1432,11 +1432,14 @@ class TypeVarValue(Value):
 
     typevar: TypeVar
     bound: Optional[Value] = None
+    constraints: Sequence[Value] = ()
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return typevars.get(self.typevar, self)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if self == other:
+            return {}
         if self.bound is not None:
             can_assign = self.bound.can_assign(other, ctx)
             if isinstance(can_assign, CanAssignError):
@@ -1444,17 +1447,33 @@ class TypeVarValue(Value):
                     f"Value of TypeVar {self} cannot be {other}", [can_assign]
                 )
             return {**can_assign, self.typevar: other}
+        elif self.constraints:
+            can_assigns = [
+                constraint.can_assign(other, ctx) for constraint in self.constraints
+            ]
+            if all_of_type(can_assigns, CanAssignError):
+                return CanAssignError(f"Cannot assign to {self}", can_assigns)
+            possibilities = [
+                constraint
+                for constraint, can_assign in zip(self.constraints, can_assigns)
+                if not isinstance(can_assign, CanAssignError)
+            ]
+            return {self.typevar: unite_values(*possibilities)}
         return {self.typevar: other}
 
     def get_fallback_value(self) -> Value:
         if self.bound is not None:
             return self.bound
-        # TODO: support bounds and bases here to do something smarter
+        elif self.constraints:
+            return unite_values(*self.constraints)
         return AnyValue(AnySource.inference)
 
     def __str__(self) -> str:
         if self.bound is not None:
             return f"{self.typevar} <: {self.bound}"
+        elif self.constraints:
+            constraints = ", ".join(map(str, self.constraints))
+            return f"{self.typevar} in ({constraints})"
         return str(self.typevar)
 
 

@@ -3769,9 +3769,15 @@ class NameCheckVisitor(
         Returns :data:`pyanalyze.value.UNINITIALIZED_VALUE` if the attribute cannot be found.
 
         """
+        if isinstance(root_composite.value, TypeVarValue):
+            root_composite = Composite(
+                value=root_composite.value.get_fallback_value(),
+                varname=root_composite.varname,
+                node=root_composite.node,
+            )
         if isinstance(root_composite.value, MultiValuedValue):
             values = [
-                self._get_attribute_no_mvv(
+                self.get_attribute(
                     Composite(subval, root_composite.varname, root_composite.node),
                     attr,
                     node,
@@ -3804,13 +3810,19 @@ class NameCheckVisitor(
         self, root_composite: Composite, attr: str, node: ast.AST
     ) -> Value:
         ignore_none = self.config.IGNORE_NONE_ATTRIBUTES
+        if isinstance(root_composite.value, TypeVarValue):
+            root_composite = Composite(
+                value=root_composite.value.get_fallback_value(),
+                varname=root_composite.varname,
+                node=root_composite.node,
+            )
         if isinstance(root_composite.value, MultiValuedValue):
             results = []
             for subval in root_composite.value.vals:
                 composite = Composite(
                     subval, root_composite.varname, root_composite.node
                 )
-                subresult = self._get_attribute_no_mvv(
+                subresult = self.get_attribute(
                     composite, attr, node, ignore_none=ignore_none
                 )
                 if subresult is UNINITIALIZED_VALUE:

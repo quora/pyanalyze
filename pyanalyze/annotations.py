@@ -355,7 +355,13 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             bound = _type_from_runtime(tv.__bound__, ctx)
         else:
             bound = None
-        return TypeVarValue(tv, bound=bound)
+        if tv.__constraints__:
+            constraints = tuple(
+                _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
+            )
+        else:
+            constraints = ()
+        return TypeVarValue(tv, bound=bound, constraints=constraints)
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
     elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):

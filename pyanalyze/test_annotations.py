@@ -858,6 +858,25 @@ class TestTypeVar(TestNameCheckVisitorBase):
             x = f("")  # E: incompatible_argument
             assert_is_value(x, AnyValue(AnySource.error))
 
+    @assert_passes()
+    def test_constraint(self):
+        from typing import TypeVar, Union
+
+        AnyStr = TypeVar("AnyStr", bytes, str)
+
+        def f(x: AnyStr) -> AnyStr:
+            print(x.title())
+            return x
+
+        def capybara(s: str, b: bytes, sb: Union[str, bytes], unannotated):
+            assert_is_value(f("x"), TypedValue(str))
+            assert_is_value(f(b"x"), TypedValue(bytes))
+            assert_is_value(f(s), TypedValue(str))
+            assert_is_value(f(b), TypedValue(bytes))
+            f(sb)  # E: incompatible_argument
+            f(3)  # E: incompatible_argument
+            assert_is_value(f(unannotated), TypedValue(str) | TypedValue(bytes))
+
 
 class TestParameterTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
