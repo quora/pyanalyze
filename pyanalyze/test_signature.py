@@ -1,5 +1,4 @@
 # static analysis: ignore
-from typing import Union
 from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
 

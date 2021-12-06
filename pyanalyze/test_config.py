@@ -3,7 +3,6 @@
 Configuration file specific to tests.
 
 """
-import inspect
 from typing import Dict, Optional
 
 from .arg_spec import ArgSpecCache
@@ -97,7 +96,7 @@ class TestConfig(Config):
                         [
                             SigParameter(
                                 "x",
-                                inspect.Parameter.POSITIONAL_ONLY,
+                                SigParameter.POSITIONAL_ONLY,
                                 annotation=value.TypedValue(str),
                             )
                         ],

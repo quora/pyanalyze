@@ -988,7 +988,7 @@ class Signature:
             return KnownValue(value)
 
     def can_assign(
-        self, other: Union["Signature", "OverloadedSignature"], ctx: CanAssignContext
+        self, other: "ConcreteSignature", ctx: CanAssignContext
     ) -> CanAssign:
         """Equivalent of :meth:`pyanalyze.value.Value.can_assign`. Checks
         whether another ``Signature`` is compatible with this ``Signature``.
@@ -1403,7 +1403,6 @@ class OverloadedSignature:
         # - Need to read up more about how exactly overload should work
         # - Do we really always match the first overload that works? What if one of the args is Any?
         # - What if one of the args is a Union? Do we always unpack it?
-        # - How can we make the errors better? Should check_call somehow return a CanAssignError?
         errors_per_overload = []
         rets = []
         for sig in self.signatures:
@@ -1478,7 +1477,7 @@ class OverloadedSignature:
         return all(sig.is_asynq for sig in self.signatures)
 
     def can_assign(
-        self, other: Union[Signature, "OverloadedSignature"], ctx: CanAssignContext
+        self, other: "ConcreteSignature", ctx: CanAssignContext
     ) -> CanAssign:
         # A signature can be assigned if it can be assigned to all the component signatures.
         tv_maps = []
@@ -1492,11 +1491,14 @@ class OverloadedSignature:
         return unify_typevar_maps(tv_maps)
 
 
+ConcreteSignature = Union[Signature, OverloadedSignature]
+
+
 @dataclass(frozen=True)
 class BoundMethodSignature:
     """Signature for a method bound to a particular value."""
 
-    signature: Union[Signature, OverloadedSignature]
+    signature: ConcreteSignature
     self_composite: Composite
     return_override: Optional[Value] = None
 
@@ -1514,7 +1516,7 @@ class BoundMethodSignature:
 
     def get_signature(
         self, *, preserve_impl: bool = False
-    ) -> Union[None, Signature, OverloadedSignature]:
+    ) -> Optional[ConcreteSignature]:
         return self.signature.bind_self(preserve_impl=preserve_impl)
 
     def has_return_value(self) -> bool:
@@ -1564,7 +1566,6 @@ class PropertyArgSpec:
 MaybeSignature = Union[
     None, Signature, BoundMethodSignature, PropertyArgSpec, OverloadedSignature
 ]
-ConcreteSignature = Union[Signature, OverloadedSignature]
 
 
 def make_bound_method(

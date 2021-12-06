@@ -96,6 +96,7 @@ from .stacked_scopes import (
 from .signature import (
     ANY_SIGNATURE,
     BoundMethodSignature,
+    ConcreteSignature,
     MaybeSignature,
     OverloadedSignature,
     Signature,
@@ -836,7 +837,7 @@ class NameCheckVisitor(
 
     def get_signature(
         self, obj: object, is_asynq: bool = False
-    ) -> Union[None, Signature, OverloadedSignature]:
+    ) -> Optional[ConcreteSignature]:
         sig = self.arg_spec_cache.get_argspec(obj, is_asynq=is_asynq)
         if isinstance(sig, Signature):
             return sig

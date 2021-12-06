@@ -57,9 +57,6 @@ KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 
 TypeVarMap = Mapping["TypeVar", "Value"]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
-Signature = Union[
-    "pyanalyze.signature.Signature", "pyanalyze.signature.OverloadedSignature"
-]
 
 
 class Value:
@@ -190,7 +187,9 @@ class CanAssignContext:
         """
         return {}
 
-    def get_signature(self, obj: object) -> Optional[Signature]:
+    def get_signature(
+        self, obj: object
+    ) -> Optional["pyanalyze.signature.ConcreteSignature"]:
         """Return a :class:`pyanalyze.signature.Signature` for this object.
 
         Return None if the object is not callable.
@@ -495,7 +494,9 @@ class UnboundMethodValue(Value):
             return {}
         return CallableValue(signature).can_assign(other, ctx)
 
-    def get_signature(self, ctx: CanAssignContext) -> Optional[Signature]:
+    def get_signature(
+        self, ctx: CanAssignContext
+    ) -> Optional[pyanalyze.signature.ConcreteSignature]:
         signature = ctx.signature_from_value(self)
         if signature is None:
             return None
@@ -1115,9 +1116,9 @@ class CallableValue(TypedValue):
 
     """
 
-    signature: Signature
+    signature: "pyanalyze.signature.ConcreteSignature"
 
-    def __init__(self, signature: Signature) -> None:
+    def __init__(self, signature: "pyanalyze.signature.ConcreteSignature") -> None:
         super().__init__(collections.abc.Callable)
         self.signature = signature
 
