@@ -986,10 +986,27 @@ class Signature:
         else:
             return KnownValue(value)
 
-    def can_assign(self, other: "Signature", ctx: CanAssignContext) -> CanAssign:
+    def can_assign(
+        self, other: Union["Signature", "OverloadedSignature"], ctx: CanAssignContext
+    ) -> CanAssign:
         """Equivalent of :meth:`pyanalyze.value.Value.can_assign`. Checks
         whether another ``Signature`` is compatible with this ``Signature``.
         """
+        if isinstance(other, OverloadedSignature):
+            # An overloaded signature can be assigned if any of the component signatures
+            # can be assigned. Strictly, an overloaded signature could satisfy a non-overloaded
+            # signature through a combination of overloads, but we make no attempt to support
+            # that.
+            errors = []
+            for sig in other.signatures:
+                can_assign = self.can_assign(sig, ctx)
+                if isinstance(can_assign, CanAssignError):
+                    errors.append(
+                        CanAssignError(f"overload {sig} is incompatible", [can_assign])
+                    )
+                else:
+                    return can_assign
+            return CanAssignError("overloaded function is incompatible", errors)
         if self.is_asynq and not other.is_asynq:
             return CanAssignError("callable is not asynq")
         their_return = other.signature.return_annotation
@@ -1401,7 +1418,7 @@ class OverloadedSignature:
         )
         for errors in errors_per_overload:
             visitor.show_caught_errors(errors)
-        return ImplReturn(unite_values(*rets))
+        return ImplReturn(unite_values(*[ret.return_value for ret in rets]))
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "OverloadedSignature":
         return OverloadedSignature(
@@ -1419,7 +1436,40 @@ class OverloadedSignature:
         return None
 
     def has_return_value(self) -> bool:
-        return True
+        return all(sig.has_return_value() for sig in self.signatures)
+
+    @property
+    def return_value(self) -> Value:
+        return unite_values(*[sig.return_value for sig in self.signatures])
+
+    def __str__(self) -> str:
+        sigs = ", ".join(map(str, self.signatures))
+        return f"overloaded ({sigs})"
+
+    def walk_values(self) -> Iterable[Value]:
+        for sig in self.signatures:
+            yield from sig.walk_values()
+
+    def get_asynq_value(self) -> "OverloadedSignature":
+        return OverloadedSignature([sig.get_asynq_value() for sig in self.signatures])
+
+    @property
+    def is_asynq(self) -> bool:
+        return all(sig.is_asynq for sig in self.signatures)
+
+    def can_assign(
+        self, other: Union[Signature, "OverloadedSignature"], ctx: CanAssignContext
+    ) -> CanAssign:
+        # A signature can be assigned if it can be assigned to all the component signatures.
+        tv_maps = []
+        for sig in self.signatures:
+            can_assign = sig.can_assign(other, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"{other} is incompatible with overload {sig}", [can_assign]
+                )
+            tv_maps.append(can_assign)
+        return unify_typevar_maps(tv_maps)
 
 
 @dataclass(frozen=True)
@@ -1454,7 +1504,7 @@ class BoundMethodSignature:
 
     @property
     def return_value(self) -> Value:
-        if self.signature.has_return_value():
+        if isinstance(self.signature, Signature) and self.signature.has_return_value():
             return self.signature.return_value
         if self.return_override is not None:
             return self.return_override
@@ -1491,29 +1541,24 @@ class PropertyArgSpec:
         )
 
 
-MaybeSignature = Union[None, Signature, BoundMethodSignature, PropertyArgSpec]
+MaybeSignature = Union[
+    None, Signature, BoundMethodSignature, PropertyArgSpec, OverloadedSignature
+]
 
 
 def make_bound_method(
     argspec: MaybeSignature,
     self_composite: Composite,
     return_override: Optional[Value] = None,
-) -> Union[None, BoundMethodSignature, OverloadedSignature]:
+) -> Optional[BoundMethodSignature]:
     if argspec is None:
         return None
-    if isinstance(argspec, Signature):
+    if isinstance(argspec, (Signature, OverloadedSignature)):
         return BoundMethodSignature(argspec, self_composite, return_override)
     elif isinstance(argspec, BoundMethodSignature):
         if return_override is None:
             return_override = argspec.return_override
         return BoundMethodSignature(argspec.signature, self_composite, return_override)
-    elif isinstance(argspec, OverloadedSignature):
-        return OverloadedSignature(
-            [
-                make_bound_method(sig, self_composite, return_override)
-                for sig in argspec.signatures
-            ]
-        )
     else:
         assert False, f"invalid argspec {argspec}"
 

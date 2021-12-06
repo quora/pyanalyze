@@ -17,7 +17,7 @@ from .value import (
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .error_code import ErrorCode
-from .signature import Signature, SigParameter as P
+from .signature import OverloadedSignature, Signature, SigParameter as P
 from .test_value import CTX
 
 TupleInt = GenericValue(tuple, [TypedValue(int)])
@@ -38,6 +38,13 @@ def test_stringify() -> None:
     assert "(x: int) -> int" == str(
         Signature.make([P("x", annotation=TypedValue(int))], TypedValue(int))
     )
+    overload = OverloadedSignature(
+        [
+            Signature.make([], TypedValue(str)),
+            Signature.make([P("x", annotation=TypedValue(int))], TypedValue(int)),
+        ]
+    )
+    assert str(overload) == "overloaded (() -> str, (x: int) -> int)"
 
 
 class TestCanAssign:
@@ -426,7 +433,7 @@ class TestCalls(TestNameCheckVisitorBase):
         def capybara(x):
             obj = WithCall()
             assert_is_value(obj, TypedValue(WithCall))
-            assert_is_value(obj(x), AnyValue(AnySource.from_another))
+            assert_is_value(obj(x), AnyValue(AnySource.unannotated))
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_unbound_method(self):

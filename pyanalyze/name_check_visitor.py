@@ -97,6 +97,7 @@ from .signature import (
     ANY_SIGNATURE,
     BoundMethodSignature,
     MaybeSignature,
+    OverloadedSignature,
     Signature,
     make_bound_method,
     ARGS,
@@ -833,12 +834,16 @@ class NameCheckVisitor(
     ) -> GenericBases:
         return self.arg_spec_cache.get_generic_bases(typ, generic_args)
 
-    def get_signature(self, obj: object, is_asynq: bool = False) -> Optional[Signature]:
+    def get_signature(
+        self, obj: object, is_asynq: bool = False
+    ) -> Union[None, Signature, OverloadedSignature]:
         sig = self.arg_spec_cache.get_argspec(obj, is_asynq=is_asynq)
         if isinstance(sig, Signature):
             return sig
         elif isinstance(sig, BoundMethodSignature):
             return sig.get_signature()
+        elif isinstance(sig, OverloadedSignature):
+            return sig
         return None
 
     def __reduce_ex__(self, proto: object) -> object:

@@ -57,6 +57,9 @@ KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 
 TypeVarMap = Mapping["TypeVar", "Value"]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
+Signature = Union[
+    "pyanalyze.signature.Signature", "pyanalyze.signature.OverloadedSignature"
+]
 
 
 class Value:
@@ -187,7 +190,7 @@ class CanAssignContext:
         """
         return {}
 
-    def get_signature(self, obj: object) -> Optional["pyanalyze.signature.Signature"]:
+    def get_signature(self, obj: object) -> Optional[Signature]:
         """Return a :class:`pyanalyze.signature.Signature` for this object.
 
         Return None if the object is not callable.
@@ -492,9 +495,7 @@ class UnboundMethodValue(Value):
             return {}
         return CallableValue(signature).can_assign(other, ctx)
 
-    def get_signature(
-        self, ctx: CanAssignContext
-    ) -> Optional["pyanalyze.signature.Signature"]:
+    def get_signature(self, ctx: CanAssignContext) -> Optional[Signature]:
         signature = ctx.signature_from_value(self)
         if signature is None:
             return None
@@ -1114,9 +1115,9 @@ class CallableValue(TypedValue):
 
     """
 
-    signature: "pyanalyze.signature.Signature"
+    signature: Signature
 
-    def __init__(self, signature: "pyanalyze.signature.Signature") -> None:
+    def __init__(self, signature: Signature) -> None:
         super().__init__(collections.abc.Callable)
         self.signature = signature
 
@@ -1139,43 +1140,19 @@ class CallableValue(TypedValue):
                 return CanAssignError(f"{other} is not a callable type")
             if isinstance(signature, pyanalyze.signature.BoundMethodSignature):
                 signature = signature.get_signature()
-            if isinstance(signature, pyanalyze.signature.Signature):
+            if isinstance(
+                signature,
+                (
+                    pyanalyze.signature.Signature,
+                    pyanalyze.signature.OverloadedSignature,
+                ),
+            ):
                 return self.signature.can_assign(signature, ctx)
 
         return super().can_assign(other, ctx)
 
     def __str__(self) -> str:
-        is_asynq = "Asynq" if self.signature.is_asynq else ""
-        return_value = self.signature.signature.return_annotation
-        if self.signature.is_ellipsis_args:
-            args = "..."
-        else:
-            parts = ["["]
-            added_star = False
-            for i, param in enumerate(self.signature.signature.parameters.values()):
-                if i > 0:
-                    parts.append(", ")
-                if param.kind is pyanalyze.signature.SigParameter.POSITIONAL_ONLY:
-                    parts.append(str(param.get_annotation()))
-                elif (
-                    param.kind is pyanalyze.signature.SigParameter.POSITIONAL_OR_KEYWORD
-                ):
-                    parts.append(f"{param.name}: {param.get_annotation()}")
-                elif param.kind is pyanalyze.signature.SigParameter.KEYWORD_ONLY:
-                    if not added_star:
-                        parts.append("*, ")
-                        added_star = True
-                    parts.append(f"{param.name}: {param.get_annotation()}")
-                elif param.kind is pyanalyze.signature.SigParameter.VAR_POSITIONAL:
-                    added_star = True
-                    parts.append(f"*{param.get_annotation()}")
-                elif param.kind is pyanalyze.signature.SigParameter.VAR_KEYWORD:
-                    parts.append(f"**{param.get_annotation()}")
-                if param.default is not pyanalyze.signature.EMPTY:
-                    parts.append(" = ...")
-            parts.append("]")
-            args = "".join(parts)
-        return f"{is_asynq}Callable[{args}, {return_value}]"
+        return str(self.signature)
 
 
 @dataclass(frozen=True)
