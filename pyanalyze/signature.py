@@ -1330,6 +1330,29 @@ class Signature:
         if render_pos_only_separator:
             yield "/"
 
+    def bind_self(self, *, preserve_impl: bool = False) -> Optional["Signature"]:
+        if self.is_ellipsis_args:
+            return ANY_SIGNATURE
+        params = list(self.signature.parameters.values())
+        if not params or params[0].kind not in (
+            SigParameter.POSITIONAL_ONLY,
+            SigParameter.POSITIONAL_OR_KEYWORD,
+        ):
+            return None
+        return Signature(
+            signature=inspect.Signature(
+                params[1:], return_annotation=self.return_value
+            ),
+            # We don't carry over the implementation function by default, because it
+            # may not work when passed different arguments.
+            impl=self.impl if preserve_impl else None,
+            callable=self.callable,
+            is_asynq=self.is_asynq,
+            has_return_annotation=self.has_return_value(),
+            is_ellipsis_args=self.is_ellipsis_args,
+            allow_call=self.allow_call,
+        )
+
     # TODO: do we need these?
     def has_return_value(self) -> bool:
         return self.has_return_annotation
@@ -1347,10 +1370,63 @@ ANY_SIGNATURE = Signature.make(
 
 
 @dataclass(frozen=True)
+class OverloadedSignature:
+    """Represent an overloaded function."""
+
+    signatures: Tuple[Signature, ...]
+
+    def __init__(self, sigs: Sequence[Signature]) -> None:
+        object.__setattr__(self, "signatures", tuple(sigs))
+
+    def check_call(
+        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+    ) -> ImplReturn:
+        # TODO this has a number of issues:
+        # - Need to read up more about how exactly overload should work
+        # - Do we really always match the first overload that works? What if one of the args is Any?
+        # - What if one of the args is a Union? Do we always unpack it?
+        # - How can we make the errors better? Should check_call somehow return a CanAssignError?
+        errors_per_overload = []
+        rets = []
+        for sig in self.signatures:
+            with visitor.catch_errors() as caught_errors:
+                ret = sig.check_call(args, visitor, node)
+            if not caught_errors:
+                return ret
+            rets.append(ret)
+            errors_per_overload.append(caught_errors)
+        # None of the signatures matched
+        visitor.show_error(
+            node, "Cannot call overloaded function", ErrorCode.incompatible_call
+        )
+        for errors in errors_per_overload:
+            visitor.show_caught_errors(errors)
+        return ImplReturn(unite_values(*rets))
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "OverloadedSignature":
+        return OverloadedSignature(
+            [sig.substitute_typevars(typevars) for sig in self.signatures]
+        )
+
+    def bind_self(
+        self, *, preserve_impl: bool = False
+    ) -> Optional["OverloadedSignature"]:
+        bound_sigs = [
+            sig.bind_self(preserve_impl=preserve_impl) for sig in self.signatures
+        ]
+        if all_of_type(bound_sigs, Signature):
+            return OverloadedSignature(bound_sigs)
+        return None
+
+    def has_return_value(self) -> bool:
+        return True
+
+
+@dataclass(frozen=True)
 class BoundMethodSignature:
     """Signature for a method bound to a particular value."""
 
-    signature: Signature
+    signature: Union[Signature, OverloadedSignature]
     self_composite: Composite
     return_override: Optional[Value] = None
 
@@ -1366,28 +1442,10 @@ class BoundMethodSignature:
             )
         return ret
 
-    def get_signature(self, *, preserve_impl: bool = False) -> Optional[Signature]:
-        if self.signature.is_ellipsis_args:
-            return ANY_SIGNATURE
-        params = list(self.signature.signature.parameters.values())
-        if not params or params[0].kind not in (
-            SigParameter.POSITIONAL_ONLY,
-            SigParameter.POSITIONAL_OR_KEYWORD,
-        ):
-            return None
-        return Signature(
-            signature=inspect.Signature(
-                params[1:], return_annotation=self.return_value
-            ),
-            # We don't carry over the implementation function by default, because it
-            # may not work when passed different arguments.
-            impl=self.signature.impl if preserve_impl else None,
-            callable=self.signature.callable,
-            is_asynq=self.signature.is_asynq,
-            has_return_annotation=self.has_return_value(),
-            is_ellipsis_args=self.signature.is_ellipsis_args,
-            allow_call=self.signature.allow_call,
-        )
+    def get_signature(
+        self, *, preserve_impl: bool = False
+    ) -> Union[None, Signature, OverloadedSignature]:
+        return self.signature.bind_self(preserve_impl=preserve_impl)
 
     def has_return_value(self) -> bool:
         if self.return_override is not None:
@@ -1440,7 +1498,7 @@ def make_bound_method(
     argspec: MaybeSignature,
     self_composite: Composite,
     return_override: Optional[Value] = None,
-) -> Optional[BoundMethodSignature]:
+) -> Union[None, BoundMethodSignature, OverloadedSignature]:
     if argspec is None:
         return None
     if isinstance(argspec, Signature):
@@ -1449,6 +1507,13 @@ def make_bound_method(
         if return_override is None:
             return_override = argspec.return_override
         return BoundMethodSignature(argspec.signature, self_composite, return_override)
+    elif isinstance(argspec, OverloadedSignature):
+        return OverloadedSignature(
+            [
+                make_bound_method(sig, self_composite, return_override)
+                for sig in argspec.signatures
+            ]
+        )
     else:
         assert False, f"invalid argspec {argspec}"
 
