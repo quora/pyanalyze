@@ -215,7 +215,7 @@ class TestGetGenericBases:
         TTuple = SequenceIncompleteValue(tuple, [TInt, TStr])
         self.check(
             {
-                "builtins._dict_items": [TInt, TStr],
+                "_collections_abc.dict_items": [TInt, TStr],
                 collections.abc.Iterable: [TTuple],
                 collections.abc.Sized: [],
                 collections.abc.Container: [TTuple],
@@ -224,7 +224,7 @@ class TestGetGenericBases:
                 collections.abc.MappingView: [],
                 collections.abc.ItemsView: [TInt, TStr],
             },
-            "builtins._dict_items",
+            "_collections_abc.dict_items",
             [TInt, TStr],
         )
 
