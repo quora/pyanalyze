@@ -925,6 +925,18 @@ class TestTypeVar(TestNameCheckVisitorBase):
             want_str_func(anystr_func)
             want_str_func(int_func)  # E: incompatible_argument
 
+    @assert_passes()
+    def test_getitem(self):
+        from typing import Any, Dict, TypeVar, Iterable
+
+        T = TypeVar("T", bound=Dict[str, Any])
+
+        def _fetch_credentials(api: T, credential_names: Iterable[str]) -> T:
+            api_with_credentials = api.copy()
+            for name in credential_names:
+                api_with_credentials[name] = str(api[name])
+            return api_with_credentials
+
 
 class TestParameterTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()

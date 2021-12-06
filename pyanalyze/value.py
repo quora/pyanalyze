@@ -1504,6 +1504,9 @@ class TypeVarValue(Value):
             return unite_values(*self.constraints)
         return AnyValue(AnySource.inference)
 
+    def get_type_value(self) -> Value:
+        return self.get_fallback_value().get_type_value()
+
     def __str__(self) -> str:
         if self.bound is not None:
             return f"{self.typevar} <: {self.bound}"
