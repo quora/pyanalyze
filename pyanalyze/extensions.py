@@ -368,7 +368,7 @@ else:
         """A version of `typing.overload` that is inspectable at runtime.
 
         If this decorator is used for a function `some_module.some_function`, calling
-        :func:`pyanalyze.extensiions.get_overloads("some_module.some_function") will
+        :func:`pyanalyze.extensiions.get_overloads("some_module.some_function")` will
         return all the runtime overloads.
 
         """
