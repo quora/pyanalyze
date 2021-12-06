@@ -500,14 +500,14 @@ class BaseNodeVisitor(ast.NodeVisitor):
             }
 
     @contextmanager
-    def catch_errors(self) -> Iterator[List[Tuple[Any, ...]]]:
+    def catch_errors(self) -> Iterator[List[Dict[str, Any]]]:
         caught_errors = []
         with qcore.override(self, "caught_errors", caught_errors):
             yield caught_errors
 
-    def show_caught_errors(self, errors: Iterable[Tuple[Any, ...]]) -> None:
+    def show_caught_errors(self, errors: Iterable[Dict[str, Any]]) -> None:
         for error in errors:
-            self.show_error(*error)
+            self.show_error(**error)
 
     def show_error(
         self,
@@ -538,7 +538,15 @@ class BaseNodeVisitor(ast.NodeVisitor):
         """
         if self.caught_errors is not None:
             self.caught_errors.append(
-                (node, e, error_code, replacement, obey_ignore, ignore_comment)
+                {
+                    "node": node,
+                    "e": e,
+                    "error_code": error_code,
+                    "replacement": replacement,
+                    "obey_ignore": obey_ignore,
+                    "ignore_comment": ignore_comment,
+                    "detail": detail,
+                }
             )
             return None
 

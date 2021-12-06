@@ -7,6 +7,7 @@ calls.
 """
 
 from collections import defaultdict
+import itertools
 
 from .error_code import ErrorCode
 from .safe import all_of_type
@@ -986,10 +987,27 @@ class Signature:
         else:
             return KnownValue(value)
 
-    def can_assign(self, other: "Signature", ctx: CanAssignContext) -> CanAssign:
+    def can_assign(
+        self, other: "ConcreteSignature", ctx: CanAssignContext
+    ) -> CanAssign:
         """Equivalent of :meth:`pyanalyze.value.Value.can_assign`. Checks
         whether another ``Signature`` is compatible with this ``Signature``.
         """
+        if isinstance(other, OverloadedSignature):
+            # An overloaded signature can be assigned if any of the component signatures
+            # can be assigned. Strictly, an overloaded signature could satisfy a non-overloaded
+            # signature through a combination of overloads, but we make no attempt to support
+            # that.
+            errors = []
+            for sig in other.signatures:
+                can_assign = self.can_assign(sig, ctx)
+                if isinstance(can_assign, CanAssignError):
+                    errors.append(
+                        CanAssignError(f"overload {sig} is incompatible", [can_assign])
+                    )
+                else:
+                    return can_assign
+            return CanAssignError("overloaded function is incompatible", errors)
         if self.is_asynq and not other.is_asynq:
             return CanAssignError("callable is not asynq")
         their_return = other.signature.return_annotation
@@ -1330,6 +1348,29 @@ class Signature:
         if render_pos_only_separator:
             yield "/"
 
+    def bind_self(self, *, preserve_impl: bool = False) -> Optional["Signature"]:
+        if self.is_ellipsis_args:
+            return ANY_SIGNATURE
+        params = list(self.signature.parameters.values())
+        if not params or params[0].kind not in (
+            SigParameter.POSITIONAL_ONLY,
+            SigParameter.POSITIONAL_OR_KEYWORD,
+        ):
+            return None
+        return Signature(
+            signature=inspect.Signature(
+                params[1:], return_annotation=self.return_value
+            ),
+            # We don't carry over the implementation function by default, because it
+            # may not work when passed different arguments.
+            impl=self.impl if preserve_impl else None,
+            callable=self.callable,
+            is_asynq=self.is_asynq,
+            has_return_annotation=self.has_return_value(),
+            is_ellipsis_args=self.is_ellipsis_args,
+            allow_call=self.allow_call,
+        )
+
     # TODO: do we need these?
     def has_return_value(self) -> bool:
         return self.has_return_annotation
@@ -1347,10 +1388,117 @@ ANY_SIGNATURE = Signature.make(
 
 
 @dataclass(frozen=True)
+class OverloadedSignature:
+    """Represent an overloaded function."""
+
+    signatures: Tuple[Signature, ...]
+
+    def __init__(self, sigs: Sequence[Signature]) -> None:
+        object.__setattr__(self, "signatures", tuple(sigs))
+
+    def check_call(
+        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+    ) -> ImplReturn:
+        # TODO this has a number of issues:
+        # - Need to read up more about how exactly overload should work
+        # - Do we really always match the first overload that works? What if one of the args is Any?
+        # - What if one of the args is a Union? Do we always unpack it?
+        errors_per_overload = []
+        rets = []
+        for sig in self.signatures:
+            with visitor.catch_errors() as caught_errors:
+                ret = sig.check_call(args, visitor, node)
+            if not caught_errors:
+                return ret
+            rets.append(ret)
+            errors_per_overload.append(caught_errors)
+        # None of the signatures matched
+
+        errors = list(itertools.chain.from_iterable(errors_per_overload))
+        codes = set(error["error_code"] for error in errors)
+        if len(codes) == 1:
+            (error_code,) = codes
+        else:
+            error_code = ErrorCode.incompatible_call
+        detail = self._make_detail(errors_per_overload)
+        visitor.show_error(
+            node, "Cannot call overloaded function", error_code, detail=str(detail)
+        )
+        return ImplReturn(unite_values(*[ret.return_value for ret in rets]))
+
+    def _make_detail(
+        self, errors_per_overload: Sequence[Sequence[Dict[str, Any]]]
+    ) -> CanAssignError:
+        details = []
+        for sig, errors in zip(self.signatures, errors_per_overload):
+            for error in errors:
+                inner = CanAssignError(
+                    error["e"],
+                    [CanAssignError(error["detail"])] if error["detail"] else [],
+                )
+                details.append(CanAssignError(f"In overload {sig}", [inner]))
+        return CanAssignError(children=details)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> "OverloadedSignature":
+        return OverloadedSignature(
+            [sig.substitute_typevars(typevars) for sig in self.signatures]
+        )
+
+    def bind_self(
+        self, *, preserve_impl: bool = False
+    ) -> Optional["OverloadedSignature"]:
+        bound_sigs = [
+            sig.bind_self(preserve_impl=preserve_impl) for sig in self.signatures
+        ]
+        if all_of_type(bound_sigs, Signature):
+            return OverloadedSignature(bound_sigs)
+        return None
+
+    def has_return_value(self) -> bool:
+        return all(sig.has_return_value() for sig in self.signatures)
+
+    @property
+    def return_value(self) -> Value:
+        return unite_values(*[sig.return_value for sig in self.signatures])
+
+    def __str__(self) -> str:
+        sigs = ", ".join(map(str, self.signatures))
+        return f"overloaded ({sigs})"
+
+    def walk_values(self) -> Iterable[Value]:
+        for sig in self.signatures:
+            yield from sig.walk_values()
+
+    def get_asynq_value(self) -> "OverloadedSignature":
+        return OverloadedSignature([sig.get_asynq_value() for sig in self.signatures])
+
+    @property
+    def is_asynq(self) -> bool:
+        return all(sig.is_asynq for sig in self.signatures)
+
+    def can_assign(
+        self, other: "ConcreteSignature", ctx: CanAssignContext
+    ) -> CanAssign:
+        # A signature can be assigned if it can be assigned to all the component signatures.
+        tv_maps = []
+        for sig in self.signatures:
+            can_assign = sig.can_assign(other, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"{other} is incompatible with overload {sig}", [can_assign]
+                )
+            tv_maps.append(can_assign)
+        return unify_typevar_maps(tv_maps)
+
+
+ConcreteSignature = Union[Signature, OverloadedSignature]
+
+
+@dataclass(frozen=True)
 class BoundMethodSignature:
     """Signature for a method bound to a particular value."""
 
-    signature: Signature
+    signature: ConcreteSignature
     self_composite: Composite
     return_override: Optional[Value] = None
 
@@ -1366,28 +1514,10 @@ class BoundMethodSignature:
             )
         return ret
 
-    def get_signature(self, *, preserve_impl: bool = False) -> Optional[Signature]:
-        if self.signature.is_ellipsis_args:
-            return ANY_SIGNATURE
-        params = list(self.signature.signature.parameters.values())
-        if not params or params[0].kind not in (
-            SigParameter.POSITIONAL_ONLY,
-            SigParameter.POSITIONAL_OR_KEYWORD,
-        ):
-            return None
-        return Signature(
-            signature=inspect.Signature(
-                params[1:], return_annotation=self.return_value
-            ),
-            # We don't carry over the implementation function by default, because it
-            # may not work when passed different arguments.
-            impl=self.signature.impl if preserve_impl else None,
-            callable=self.signature.callable,
-            is_asynq=self.signature.is_asynq,
-            has_return_annotation=self.has_return_value(),
-            is_ellipsis_args=self.signature.is_ellipsis_args,
-            allow_call=self.signature.allow_call,
-        )
+    def get_signature(
+        self, *, preserve_impl: bool = False
+    ) -> Optional[ConcreteSignature]:
+        return self.signature.bind_self(preserve_impl=preserve_impl)
 
     def has_return_value(self) -> bool:
         if self.return_override is not None:
@@ -1396,7 +1526,7 @@ class BoundMethodSignature:
 
     @property
     def return_value(self) -> Value:
-        if self.signature.has_return_value():
+        if isinstance(self.signature, Signature) and self.signature.has_return_value():
             return self.signature.return_value
         if self.return_override is not None:
             return self.return_override
@@ -1433,7 +1563,9 @@ class PropertyArgSpec:
         )
 
 
-MaybeSignature = Union[None, Signature, BoundMethodSignature, PropertyArgSpec]
+MaybeSignature = Union[
+    None, Signature, BoundMethodSignature, PropertyArgSpec, OverloadedSignature
+]
 
 
 def make_bound_method(
@@ -1443,7 +1575,7 @@ def make_bound_method(
 ) -> Optional[BoundMethodSignature]:
     if argspec is None:
         return None
-    if isinstance(argspec, Signature):
+    if isinstance(argspec, (Signature, OverloadedSignature)):
         return BoundMethodSignature(argspec, self_composite, return_override)
     elif isinstance(argspec, BoundMethodSignature):
         if return_override is None:

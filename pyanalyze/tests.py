@@ -5,7 +5,7 @@ Functions to be used in test_scope unit tests.
 
 """
 
-from typing import ClassVar
+from typing import ClassVar, Union, overload
 from asynq import asynq, async_proxy, AsyncTask, ConstFuture, get_async_fn, result
 from asynq.decorators import AsyncDecorator
 import qcore
@@ -203,3 +203,22 @@ WhatIsMyName.__init__.__name__ = "capybara"
 class FailingImpl:
     def __init__(self) -> None:
         pass
+
+
+@overload
+def overloaded() -> int:
+    ...
+
+
+@overload
+def overloaded(x: str) -> str:
+    ...
+
+
+def overloaded(*args: str) -> Union[int, str]:
+    if len(args) == 0:
+        return len(args)
+    elif len(args) == 1:
+        return args[0]
+    else:
+        raise TypeError("too many arguments")

@@ -5,13 +5,10 @@
 """
 import inspect
 import sys
-from typing import Any, Dict, Tuple, Union, Container, NewType, Type, TypeVar, Iterable
-from typing_extensions import Annotated
+from typing import Any, Dict, Sequence, Tuple, Union, Container, NewType, Type, TypeVar
 import typing
 import typing_extensions
 import mypy_extensions
-
-from .extensions import ParameterTypeGuard
 
 T = TypeVar("T")
 
@@ -97,8 +94,8 @@ def is_hashable(obj: object) -> bool:
 
 
 def all_of_type(
-    elts: Iterable[object], typ: Type[T]
-) -> Annotated[bool, ParameterTypeGuard["elts", Iterable[T]]]:
+    elts: Sequence[object], typ: Type[T]
+) -> typing_extensions.TypeGuard[Sequence[T]]:
     """Returns whether all elements of elts are instances of typ."""
     return all(isinstance(elt, typ) for elt in elts)
 
