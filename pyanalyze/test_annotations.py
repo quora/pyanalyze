@@ -12,6 +12,7 @@ from .value import (
     MultiValuedValue,
     NewTypeValue,
     SequenceIncompleteValue,
+    TypeVarValue,
     TypedDictValue,
     TypedValue,
     SubclassValue,
@@ -837,6 +838,104 @@ class TestCallable(TestNameCheckVisitorBase):
             assert_is_value(
                 (yield amap.asynq(mapper, [1])), GenericValue(list, [TypedValue(str)])
             )
+
+
+class TestTypeVar(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_bound(self):
+        from typing import TypeVar
+
+        IntT = TypeVar("IntT", bound=int)
+
+        def f(x: IntT) -> IntT:
+            assert_is_value(x, TypeVarValue(IntT, bound=TypedValue(int)))
+            print(x + 1)
+            return x
+
+        def capybara():
+            assert_is_value(f(1), KnownValue(1))
+            assert_is_value(f(True), KnownValue(True))
+            x = f("")  # E: incompatible_argument
+            assert_is_value(x, AnyValue(AnySource.error))
+
+    @assert_passes()
+    def test_constraint(self):
+        from typing import TypeVar, Union
+
+        AnyStr = TypeVar("AnyStr", bytes, str)
+
+        def whatever(x: Union[str, bytes]):
+            pass
+
+        def f(x: AnyStr) -> AnyStr:
+            print(x.title())
+            whatever(x)
+            return x
+
+        def capybara(s: str, b: bytes, sb: Union[str, bytes], unannotated):
+            assert_is_value(f("x"), TypedValue(str))
+            assert_is_value(f(b"x"), TypedValue(bytes))
+            assert_is_value(f(s), TypedValue(str))
+            assert_is_value(f(b), TypedValue(bytes))
+            f(sb)  # E: incompatible_argument
+            f(3)  # E: incompatible_argument
+            assert_is_value(f(unannotated), AnyValue(AnySource.inference))
+
+    @assert_passes()
+    def test_constraint_in_typeshed(self):
+        import re
+
+        def capybara():
+            assert_is_value(re.escape("x"), TypedValue(str))
+
+    @assert_passes()
+    def test_callable_compatibility(self):
+        from typing import TypeVar, Callable, Union
+
+        AnyStr = TypeVar("AnyStr", bytes, str)
+        IntT = TypeVar("IntT", bound=int)
+
+        def want_anystr_func(
+            f: Callable[[AnyStr], AnyStr], s: Union[str, bytes]
+        ) -> str:
+            if isinstance(s, str):
+                assert_is_value(f(s), TypedValue(str))
+            else:
+                assert_is_value(f(s), TypedValue(bytes))
+            return ""
+
+        def want_bounded_func(f: Callable[[IntT], IntT], i: int) -> None:
+            assert_is_value(f(True), KnownValue(True))
+            assert_is_value(f(i), TypedValue(int))
+
+        def want_str_func(f: Callable[[str], str]):
+            assert_is_value(f("x"), TypedValue(str))
+
+        def anystr_func(s: AnyStr) -> AnyStr:
+            return s
+
+        def int_func(i: IntT) -> IntT:
+            return i
+
+        def capybara():
+            want_anystr_func(anystr_func, "x")
+            want_anystr_func(int_func, "x")  # E: incompatible_argument
+            want_bounded_func(int_func, 0)
+            want_bounded_func(anystr_func, 1)  # E: incompatible_argument
+            want_str_func(anystr_func)
+            want_str_func(int_func)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_getitem(self):
+        from typing import Any, Dict, TypeVar, Iterable
+
+        T = TypeVar("T", bound=Dict[str, Any])
+
+        def _fetch_credentials(api: T, credential_names: Iterable[str]) -> T:
+            api_with_credentials = api.copy()
+            for name in credential_names:
+                api_with_credentials[name] = str(api[name])
+            return api_with_credentials
 
 
 class TestParameterTypeGuard(TestNameCheckVisitorBase):

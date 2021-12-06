@@ -350,7 +350,18 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             ctx.show_error(f"Invalid NewType {val}")
             return AnyValue(AnySource.error)
     elif typing_inspect.is_typevar(val):
-        return TypeVarValue(cast(TypeVar, val))
+        tv = cast(TypeVar, val)
+        if tv.__bound__ is not None:
+            bound = _type_from_runtime(tv.__bound__, ctx)
+        else:
+            bound = None
+        if tv.__constraints__:
+            constraints = tuple(
+                _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
+            )
+        else:
+            constraints = ()
+        return TypeVarValue(tv, bound=bound, constraints=constraints)
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
     elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):

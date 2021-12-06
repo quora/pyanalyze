@@ -876,7 +876,16 @@ class Signature:
                 if param.annotation is EMPTY:
                     continue
                 tv_map = param.annotation.can_assign(var_value, visitor)
-                if not isinstance(tv_map, CanAssignError):
+                if isinstance(tv_map, CanAssignError):
+                    visitor.show_error(
+                        node,
+                        f"Incompatible argument type for {param.name}: expected"
+                        f" {param.annotation} but got {var_value}",
+                        ErrorCode.incompatible_argument,
+                        detail=str(tv_map),
+                    )
+                    return self.get_default_return()
+                else:
                     # For now, the first assignment wins.
                     for typevar, value in tv_map.items():
                         tv_possible_values[typevar].append(value)
