@@ -496,7 +496,7 @@ class UnboundMethodValue(Value):
 
     def get_signature(
         self, ctx: CanAssignContext
-    ) -> Optional[pyanalyze.signature.ConcreteSignature]:
+    ) -> Optional["pyanalyze.signature.ConcreteSignature"]:
         signature = ctx.signature_from_value(self)
         if signature is None:
             return None
