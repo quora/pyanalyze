@@ -7,6 +7,7 @@ calls.
 """
 
 from collections import defaultdict
+import itertools
 
 from .error_code import ErrorCode
 from .safe import all_of_type
@@ -1413,12 +1414,31 @@ class OverloadedSignature:
             rets.append(ret)
             errors_per_overload.append(caught_errors)
         # None of the signatures matched
+
+        errors = list(itertools.chain.from_iterable(errors_per_overload))
+        codes = set(error["error_code"] for error in errors)
+        if len(codes) == 1:
+            (error_code,) = codes
+        else:
+            error_code = ErrorCode.incompatible_call
+        detail = self._make_detail(errors_per_overload)
         visitor.show_error(
-            node, "Cannot call overloaded function", ErrorCode.incompatible_call
+            node, "Cannot call overloaded function", error_code, detail=str(detail)
         )
-        for errors in errors_per_overload:
-            visitor.show_caught_errors(errors)
         return ImplReturn(unite_values(*[ret.return_value for ret in rets]))
+
+    def _make_detail(
+        self, errors_per_overload: Sequence[Sequence[Dict[str, Any]]]
+    ) -> CanAssignError:
+        details = []
+        for sig, errors in zip(self.signatures, errors_per_overload):
+            for error in errors:
+                inner = CanAssignError(
+                    error["e"],
+                    [CanAssignError(error["detail"])] if error["detail"] else [],
+                )
+                details.append(CanAssignError(f"In overload {sig}", [inner]))
+        return CanAssignError(children=details)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "OverloadedSignature":
         return OverloadedSignature(
@@ -1544,6 +1564,7 @@ class PropertyArgSpec:
 MaybeSignature = Union[
     None, Signature, BoundMethodSignature, PropertyArgSpec, OverloadedSignature
 ]
+ConcreteSignature = Union[Signature, OverloadedSignature]
 
 
 def make_bound_method(

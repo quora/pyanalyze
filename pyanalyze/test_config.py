@@ -3,10 +3,17 @@
 Configuration file specific to tests.
 
 """
+import inspect
 from typing import Dict, Optional
 
 from .arg_spec import ArgSpecCache
-from .signature import CallContext, Signature, SigParameter
+from .signature import (
+    CallContext,
+    ConcreteSignature,
+    OverloadedSignature,
+    Signature,
+    SigParameter,
+)
 from .config import Config
 from . import tests
 from . import value
@@ -63,7 +70,7 @@ class TestConfig(Config):
 
     def get_known_argspecs(
         self, arg_spec_cache: ArgSpecCache
-    ) -> Dict[object, Signature]:
+    ) -> Dict[object, ConcreteSignature]:
         failing_impl_sig = arg_spec_cache.get_argspec(
             tests.FailingImpl, impl=_failing_impl
         )
@@ -81,6 +88,24 @@ class TestConfig(Config):
                 callable=tests.takes_kwonly_argument,
             ),
             tests.FailingImpl: failing_impl_sig,
+            tests.overloaded: OverloadedSignature(
+                [
+                    Signature.make(
+                        [], value.TypedValue(int), callable=tests.overloaded
+                    ),
+                    Signature.make(
+                        [
+                            SigParameter(
+                                "x",
+                                inspect.Parameter.POSITIONAL_ONLY,
+                                annotation=value.TypedValue(str),
+                            )
+                        ],
+                        value.TypedValue(str),
+                        callable=tests.overloaded,
+                    ),
+                ]
+            ),
         }
 
     def unwrap_cls(self, cls: type) -> type:

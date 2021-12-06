@@ -1,4 +1,5 @@
 # static analysis: ignore
+from typing import Union
 from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
 
@@ -17,7 +18,12 @@ from .value import (
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .error_code import ErrorCode
-from .signature import OverloadedSignature, Signature, SigParameter as P
+from .signature import (
+    ConcreteSignature,
+    OverloadedSignature,
+    Signature,
+    SigParameter as P,
+)
 from .test_value import CTX
 
 TupleInt = GenericValue(tuple, [TypedValue(int)])
@@ -48,13 +54,13 @@ def test_stringify() -> None:
 
 
 class TestCanAssign:
-    def can(self, left: Signature, right: Signature) -> None:
+    def can(self, left: ConcreteSignature, right: ConcreteSignature) -> None:
         tv_map = left.can_assign(right, CTX)
         assert isinstance(
             tv_map, dict
         ), f"cannot assign {right} to {left} due to {tv_map}"
 
-    def cannot(self, left: Signature, right: Signature) -> None:
+    def cannot(self, left: ConcreteSignature, right: ConcreteSignature) -> None:
         tv_map = left.can_assign(right, CTX)
         assert isinstance(tv_map, CanAssignError), f"can assign {right} to {left}"
 
@@ -332,6 +338,23 @@ class TestCanAssign:
             three_ints_sig,
             Signature.make([P("a", annotation=bad_td, kind=P.VAR_KEYWORD)]),
         )
+
+    def test_overloads(self) -> None:
+        sig1 = Signature.make([], TypedValue(str))
+        sig2 = Signature.make([P("x", annotation=TypedValue(int))], TypedValue(int))
+        overload = OverloadedSignature([sig1, sig2])
+        self.can(overload, overload)
+        self.can(sig1, overload)
+        self.can(sig2, overload)
+        self.cannot(overload, sig1)
+        self.cannot(overload, sig2)
+
+        sig3 = Signature.make([P("y", annotation=TypedValue(float))], TypedValue(float))
+        overload2 = OverloadedSignature([sig1, sig2, sig3])
+        self.can(overload, overload2)
+        self.cannot(overload2, overload)
+        self.can(sig1, overload2)
+        self.cannot(sig3, overload)
 
 
 class TestProperty(TestNameCheckVisitorBase):
@@ -966,3 +989,15 @@ class TestAnnotated(TestNameCheckVisitorBase):
         def caller(x: Annotated[int, 42]):
             assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue(42)]))
             assert_is_value(f(x), AnnotatedValue(TypedValue(int), [KnownValue(42)]))
+
+
+class TestOverload(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from pyanalyze.tests import overloaded
+
+        def capybara():
+            assert_is_value(overloaded(), TypedValue(int))
+            assert_is_value(overloaded("x"), TypedValue(str))
+            overloaded(1)  # E: incompatible_call
+            overloaded("x", "y")  # E: incompatible_call

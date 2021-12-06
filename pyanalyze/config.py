@@ -18,7 +18,7 @@ from .extensions import CustomCheck
 
 if TYPE_CHECKING:
     from .arg_spec import ArgSpecCache
-    from .signature import Signature
+    from .signature import Signature, ConcreteSignature
     from .reexport import ImplicitReexportTracker
 
 
@@ -41,7 +41,7 @@ class Config(object):
 
     def get_constructor(
         self, cls: type
-    ) -> Union[None, "Signature", inspect.Signature, Callable[..., Any]]:
+    ) -> Union[None, "ConcreteSignature", inspect.Signature, Callable[..., Any]]:
         """Return a constructor signature for this class.
 
         May return either a function that pyanalyze will use the signature of, an inspect
@@ -281,7 +281,7 @@ class Config(object):
     #
     def get_known_argspecs(
         self, arg_spec_cache: "ArgSpecCache"
-    ) -> Dict[object, "Signature"]:
+    ) -> Dict[object, "ConcreteSignature"]:
         """Initialize any hardcoded argspecs."""
         return {}
 
