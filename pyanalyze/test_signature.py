@@ -1,4 +1,5 @@
 # static analysis: ignore
+from typed_ast.ast3 import Not
 from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
 
@@ -992,7 +993,7 @@ class TestAnnotated(TestNameCheckVisitorBase):
 
 class TestOverload(TestNameCheckVisitorBase):
     @assert_passes()
-    def test(self):
+    def test_overloaded_impl(self):
         from pyanalyze.tests import overloaded
 
         def capybara():
@@ -1000,3 +1001,30 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_is_value(overloaded("x"), TypedValue(str))
             overloaded(1)  # E: incompatible_call
             overloaded("x", "y")  # E: incompatible_call
+
+    @assert_passes()
+    def test_runtime(self):
+        from pyanalyze.extensions import overload
+        from typing import Union
+
+        @overload
+        def overloaded() -> int:
+            raise NotImplementedError
+
+        @overload
+        def overloaded(x: str) -> str:
+            raise NotImplementedError
+
+        def overloaded(*args: str) -> Union[int, str]:
+            if not args:
+                return 0
+            elif len(args) == 1:
+                return args[0]
+            else:
+                raise TypeError("too many arguments")
+
+        def capybara():
+            assert_is_value(overloaded(), TypedValue(int))
+            assert_is_value(overloaded("x"), TypedValue(str))
+            overloaded(1)  # E: incompatible_call
+            overloaded("a", "b")  # E: incompatible_call

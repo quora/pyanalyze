@@ -4,16 +4,25 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
+from .extensions import get_overloads
 from .annotations import Context, type_from_runtime
 from .config import Config
 from .find_unused import used
 from . import implementation
-from .safe import is_newtype, safe_hasattr, safe_in, safe_issubclass, is_typing_name
+from .safe import (
+    all_of_type,
+    is_newtype,
+    safe_hasattr,
+    safe_in,
+    safe_issubclass,
+    is_typing_name,
+)
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
     Impl,
     MaybeSignature,
+    OverloadedSignature,
     PropertyArgSpec,
     make_bound_method,
     SigParameter,
@@ -293,10 +302,16 @@ class ArgSpecCache:
         self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
     ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
-        return self._cached_get_argspec(obj, impl, is_asynq)
+        return self._cached_get_argspec(
+            obj, impl, is_asynq, in_overload_resolution=False
+        )
 
     def _cached_get_argspec(
-        self, obj: object, impl: Optional[Impl], is_asynq: bool
+        self,
+        obj: object,
+        impl: Optional[Impl],
+        is_asynq: bool,
+        in_overload_resolution: bool,
     ) -> MaybeSignature:
         try:
             if obj in self.known_argspecs:
@@ -306,7 +321,9 @@ class ArgSpecCache:
         else:
             hashable = True
 
-        extended = self._uncached_get_argspec(obj, impl, is_asynq)
+        extended = self._uncached_get_argspec(
+            obj, impl, is_asynq, in_overload_resolution
+        )
         if extended is None:
             return None
 
@@ -315,22 +332,44 @@ class ArgSpecCache:
         return extended
 
     def _uncached_get_argspec(
-        self, obj: Any, impl: Optional[Impl], is_asynq: bool
+        self,
+        obj: Any,
+        impl: Optional[Impl],
+        is_asynq: bool,
+        in_overload_resolution: bool,
     ) -> MaybeSignature:
+        if not in_overload_resolution:
+            fq_name = _get_fully_qualified_name(obj)
+            if fq_name is not None:
+                overloads = get_overloads(fq_name)
+                if overloads:
+                    sigs = [
+                        self._cached_get_argspec(
+                            overload, impl, is_asynq, in_overload_resolution=True
+                        )
+                        for overload in overloads
+                    ]
+                    if all_of_type(sigs, Signature):
+                        return OverloadedSignature(sigs)
+
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause
 
         # Cythonized methods, e.g. fn.asynq
         if is_dot_asynq_function(obj):
             try:
-                return self._cached_get_argspec(obj.__self__, impl, is_asynq)
+                return self._cached_get_argspec(
+                    obj.__self__, impl, is_asynq, in_overload_resolution
+                )
             except TypeError:
                 # some cythonized methods have __self__ but it is not a function
                 pass
 
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
-            argspec = self._cached_get_argspec(obj.__func__, impl, is_asynq)
+            argspec = self._cached_get_argspec(
+                obj.__func__, impl, is_asynq, in_overload_resolution
+            )
             return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
 
         if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
@@ -343,7 +382,9 @@ class ArgSpecCache:
                 # e.g. certain extension classes
                 pass
             else:
-                return self._cached_get_argspec(original_fn, impl, is_asynq)
+                return self._cached_get_argspec(
+                    original_fn, impl, is_asynq, in_overload_resolution
+                )
 
         argspec = self.ts_finder.get_argspec(obj)
         if argspec is not None:
@@ -367,7 +408,9 @@ class ArgSpecCache:
         if inspect.isfunction(obj):
             if hasattr(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
-                return self._cached_get_argspec(obj.inner, impl, is_asynq)
+                return self._cached_get_argspec(
+                    obj.inner, impl, is_asynq, in_overload_resolution
+                )
 
             inspect_sig = self._safe_get_signature(obj)
             if inspect_sig is None:
@@ -383,7 +426,9 @@ class ArgSpecCache:
 
         # decorator binders
         if _is_qcore_decorator(obj):
-            argspec = self._cached_get_argspec(obj.decorator, impl, is_asynq)
+            argspec = self._cached_get_argspec(
+                obj.decorator, impl, is_asynq, in_overload_resolution
+            )
             # wrap if it's a bound method
             if obj.instance is not None and argspec is not None:
                 return make_bound_method(argspec, Composite(KnownValue(obj.instance)))
@@ -452,7 +497,9 @@ class ArgSpecCache:
                     return self._make_any_sig(obj)
                 if method == obj:
                     return self._make_any_sig(obj)
-                argspec = self._cached_get_argspec(method, impl, is_asynq)
+                argspec = self._cached_get_argspec(
+                    method, impl, is_asynq, in_overload_resolution
+                )
                 return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
             inspect_sig = self._safe_get_signature(obj)
             if inspect_sig is not None:
@@ -468,7 +515,9 @@ class ArgSpecCache:
         if isinstance(obj, property):
             # If we know the getter, inherit its return value.
             if obj.fget:
-                fget_argspec = self._cached_get_argspec(obj.fget, impl, is_asynq)
+                fget_argspec = self._cached_get_argspec(
+                    obj.fget, impl, is_asynq, in_overload_resolution
+                )
                 if fget_argspec is not None and fget_argspec.has_return_value():
                     return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
             return PropertyArgSpec(obj)
@@ -603,3 +652,9 @@ def _is_qcore_decorator(obj: object) -> bool:
     except Exception:
         # black.Line has an is_decorator attribute but it is not a method
         return False
+
+
+def _get_fully_qualified_name(obj: object) -> Optional[str]:
+    if hasattr(obj, "__module__") and hasattr(obj, "__qualname__"):
+        return f"{obj.__module__}.{obj.__qualname__}"
+    return None

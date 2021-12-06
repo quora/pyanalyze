@@ -7,9 +7,22 @@ Several type system extensions are used with the ``Annotated`` type from
 be gracefully ignored by other type checkers.
 
 """
+from collections import defaultdict
 from dataclasses import dataclass, field
 import pyanalyze
-from typing import Any, Container, Iterable, Tuple, List, Union, TypeVar, TYPE_CHECKING
+from typing import (
+    Any,
+    Callable,
+    Container,
+    Dict,
+    Iterable,
+    Tuple,
+    List,
+    Union,
+    TypeVar,
+    TYPE_CHECKING,
+    overload as real_overload,
+)
 from typing_extensions import Literal, NoReturn
 
 if TYPE_CHECKING:
@@ -336,3 +349,29 @@ def reveal_type(value: object) -> None:
 
     """
     pass
+
+
+_overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
+
+
+def get_overloads(fully_qualified_name: str) -> List[Callable[..., Any]]:
+    """Return all defined runtime overloads for this fully qualified name."""
+    return _overloads[fully_qualified_name]
+
+
+if TYPE_CHECKING:
+    from typing import overload as overload
+
+else:
+
+    def overload(func: Callable[..., Any]) -> Callable[..., Any]:
+        """A version of `typing.overload` that is inspectable at runtime.
+
+        If this decorator is used for a function `some_module.some_function`, calling
+        :func:`pyanalyze.extensiions.get_overloads("some_module.some_function") will
+        return all the runtime overloads.
+
+        """
+        key = f"{func.__module__}.{func.__qualname__}"
+        _overloads[key].append(func)
+        return real_overload(func)
