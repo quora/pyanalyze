@@ -59,8 +59,8 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             def write(self, s: str) -> object:
                 return object()
 
-        class BadArgName:
-            def write(self, st: str) -> object:
+        class BadArgKind:
+            def write(self, *, s: str) -> object:
                 return object()
 
         def capybara(s: str):
@@ -71,7 +71,7 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             csv.writer(s)  # E: incompatible_argument
             csv.writer(BadWrite())  # E: incompatible_argument
             csv.writer(GoodWrite())
-            csv.writer(BadArgName())  # E: incompatible_argument
+            csv.writer(BadArgKind())  # E: incompatible_argument
 
     @assert_passes()
     def test_custom_subclasscheck(self):
