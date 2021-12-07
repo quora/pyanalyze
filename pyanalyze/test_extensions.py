@@ -1,8 +1,10 @@
 from qcore.asserts import AssertRaises
 import typing_inspect
 from typing import List, Optional, Union, TypeVar
+from types import FunctionType
 
 from .extensions import AsynqCallable, get_overloads, overload
+from .safe import all_of_type
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -55,9 +57,11 @@ class WithOverloadedMethods:
         raise NotImplementedError
 
 
-def test_overload():
+def test_overload() -> None:
     overloads = get_overloads("pyanalyze.test_extensions.f")
     assert len(overloads) == 2
+    assert all_of_type(overloads, FunctionType)
+    assert f not in overloads
     assert overloads[0].__code__.co_argcount == 0
     assert overloads[1].__code__.co_argcount == 1
 
@@ -65,5 +69,7 @@ def test_overload():
         "pyanalyze.test_extensions.WithOverloadedMethods.f"
     )
     assert len(method_overloads) == 2
+    assert all_of_type(method_overloads, FunctionType)
+    assert WithOverloadedMethods.f not in overloads
     assert method_overloads[0].__code__.co_argcount == 1
     assert method_overloads[1].__code__.co_argcount == 2
