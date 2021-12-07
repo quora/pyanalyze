@@ -31,6 +31,7 @@ import sys
 import tempfile
 import traceback
 import types
+import typing
 from typing import (
     ClassVar,
     ContextManager,
@@ -67,7 +68,7 @@ from .boolability import Boolability, get_boolability
 from .checker import Checker
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
-from .extensions import ParameterTypeGuard
+from .extensions import ParameterTypeGuard, overload
 from .find_unused import UnusedObjectFinder, used
 from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, all_of_type
@@ -290,7 +291,9 @@ class _AttrContext(attributes.AttrContext):
 
 
 # FunctionInfo for a vanilla function (e.g. a lambda)
-_DEFAULT_FUNCTION_INFO = FunctionInfo(AsyncFunctionKind.normal, False, False, False, [])
+_DEFAULT_FUNCTION_INFO = FunctionInfo(
+    AsyncFunctionKind.normal, False, False, False, False, []
+)
 
 
 class ClassAttributeChecker:
@@ -1307,10 +1310,11 @@ class NameCheckVisitor(
             )
             expected_return_value = None
 
-        if evaled_function is not None:
-            self._set_name_in_scope(node.name, node, evaled_function)
-        else:
-            self._set_name_in_scope(node.name, node, KnownValue(potential_function))
+        if not info.is_overload:
+            if evaled_function is not None:
+                self._set_name_in_scope(node.name, node, evaled_function)
+            else:
+                self._set_name_in_scope(node.name, node, KnownValue(potential_function))
 
         with self.asynq_checker.set_func_name(
             node.name, async_kind=info.async_kind, is_classmethod=info.is_classmethod
@@ -1333,6 +1337,7 @@ class NameCheckVisitor(
 
         if (
             not has_return
+            and not info.is_overload
             and expected_return_value is not None
             and expected_return_value != KnownNone
             and not any(
@@ -1474,6 +1479,7 @@ class NameCheckVisitor(
         is_classmethod = False
         is_decorated_coroutine = False
         is_staticmethod = False
+        is_overload = False
         decorators = []
         for decorator in decorator_list:
             # We have to descend into the Call node because the result of
@@ -1501,12 +1507,17 @@ class NameCheckVisitor(
                     is_staticmethod = True
                 elif decorator_value == KnownValue(asyncio.coroutine):
                     is_decorated_coroutine = True
+                elif decorator_value == KnownValue(
+                    typing.overload
+                ) or decorator_value == KnownValue(overload):
+                    is_overload = True
                 decorators.append((decorator_value, decorator_value))
         return FunctionInfo(
             async_kind=async_kind,
             is_decorated_coroutine=is_decorated_coroutine,
             is_classmethod=is_classmethod,
             is_staticmethod=is_staticmethod,
+            is_overload=is_overload,
             decorators=decorators,
         )
 
