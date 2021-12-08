@@ -21,17 +21,18 @@ these subclasses and some related utilities.
 
 import collections.abc
 from collections import OrderedDict, defaultdict, deque
-from contextlib import contextmanager
 from dataclasses import dataclass, field, InitVar
 import enum
 import inspect
 from itertools import chain
+import qcore
+import textwrap
 from typing import (
     Any,
     Callable,
+    ContextManager,
     Dict,
     Iterable,
-    Iterator,
     List,
     Mapping,
     Optional,
@@ -78,6 +79,7 @@ class Value:
 
         """
         if isinstance(other, AnyValue):
+            ctx.record_any_used()
             return {}
         elif isinstance(other, MultiValuedValue):
             tv_maps = []
@@ -217,13 +219,24 @@ class CanAssignContext:
     ) -> bool:
         return False
 
-    @contextmanager
     def assume_compatibility(
         self,
         left: "pyanalyze.type_object.TypeObject",
         right: "pyanalyze.type_object.TypeObject",
-    ) -> Iterator[None]:
-        yield
+    ) -> ContextManager[None]:
+        return qcore.empty_context
+
+    def has_used_any_match(self) -> bool:
+        """Whether Any was used to secure a match."""
+        return False
+
+    def record_any_used(self) -> None:
+        """Record that Any was used to secure a match."""
+
+    def reset_any_used(self) -> ContextManager[None]:
+        """Context that resets the value used by :meth:`has_used_any_match` and
+        :meth:`record_any_match`."""
+        return qcore.empty_context
 
 
 @dataclass(frozen=True)
@@ -244,7 +257,8 @@ class CanAssignError:
             child.display(depth=depth + 2) for child in self.children
         )
         if self.message:
-            return f"{' ' * depth}{self.message}\n{child_result}"
+            message = textwrap.indent(self.message, " " * depth)
+            return f"{message}\n{child_result}"
         else:
             return child_result
 
@@ -309,6 +323,8 @@ class AnySource(enum.Enum):
     """Marker object used internally."""
     incomplete_annotation = 11
     """A special form like ClassVar without a type argument."""
+    multiple_overload_matches = 12
+    """Multiple matching overloads."""
 
 
 @dataclass(frozen=True)
@@ -576,6 +592,7 @@ class TypedValue(Value):
 
     def can_assign_thrift_enum(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, AnyValue):
+            ctx.record_any_used()
             return {}
         elif isinstance(other, KnownValue):
             if not isinstance(other.val, int):
@@ -1135,7 +1152,7 @@ class CallableValue(TypedValue):
         return CallableValue(sig)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if not isinstance(other, MultiValuedValue):
+        if not isinstance(other, (MultiValuedValue, AnyValue)):
             signature = ctx.signature_from_value(other)
             if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
@@ -1274,6 +1291,9 @@ class MultiValuedValue(Value):
             if not tv_maps:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
+        elif isinstance(other, AnyValue):
+            ctx.record_any_used()
+            return {}
         else:
             my_vals = self.vals
             # Optimization for large unions of literals. We could perhaps cache this set,
@@ -1733,6 +1753,8 @@ class VariableNameValue(AnyValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if not isinstance(other, VariableNameValue):
+            if isinstance(other, AnyValue):
+                ctx.record_any_used()
             return {}
         if other == self:
             return {}

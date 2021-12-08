@@ -6,13 +6,12 @@ calls.
 
 """
 
-from collections import defaultdict
-import itertools
 
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
     AndConstraint,
+    OrConstraint,
     Composite,
     Constraint,
     ConstraintType,
@@ -31,6 +30,7 @@ from .value import (
     HasAttrGuardExtension,
     KVPair,
     KnownValue,
+    MultiValuedValue,
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
@@ -49,13 +49,16 @@ from .value import (
     stringify_object,
     unify_typevar_maps,
     unite_values,
+    NO_RETURN_VALUE,
 )
 
 import ast
 import asynq
+from collections import defaultdict, OrderedDict
 import collections.abc
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import reduce
+import itertools
 from types import MethodType, FunctionType
 import inspect
 import qcore
@@ -99,6 +102,39 @@ class PossibleKwarg:
 # ARGS for *args, KWARGS for **kwargs.
 Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
+# Arguments bound to a call. The first member of the tuple is a reference back
+# to the ActualArguments: the value is a str for a kwarg, int for a positional,
+# None for something we cannot infer.
+BoundArgs = Dict[str, Tuple[Union[None, str, int], Composite]]
+
+
+@dataclass
+class ActualArguments:
+    """Represents the actual arguments to a call.
+
+    Before creating this class, we decompose ``*args`` and ``**kwargs`` arguments
+    of known composition into additional positional and keyword arguments, and we
+    merge multiple ``*args`` or ``**kwargs``.
+
+    Creating the ``ActualArguments`` for a call is independent of the signature
+    of the callee.
+
+    """
+
+    positionals: List[Composite]
+    star_args: Optional[Value]  # represents the type of the elements of *args
+    keywords: Dict[str, Tuple[bool, Composite]]
+    star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
+    kwargs_required: bool
+
+
+def _maybe_or_constraint(
+    left: AbstractConstraint, right: AbstractConstraint
+) -> AbstractConstraint:
+    if left is NULL_CONSTRAINT or right is NULL_CONSTRAINT:
+        return NULL_CONSTRAINT
+    return OrConstraint(left, right)
+
 
 class ImplReturn(NamedTuple):
     """Return value of :term:`impl` functions.
@@ -116,6 +152,22 @@ class ImplReturn(NamedTuple):
     no_return_unless: AbstractConstraint = NULL_CONSTRAINT
     """A :class:`pyanalyze.stacked_scopes.Constraint` indicating things that are true
     unless the function does not return."""
+    is_error: bool = False
+    """Whether there was an error in this call. Used only for overload resolutioon."""
+    used_any_for_match: bool = False
+    """Whether Any was used for this match. Used only for overload resolution."""
+    remaining_arguments: Optional[ActualArguments] = None
+    """Arguments that still need to be processed. Used only for overlaod resolution."""
+
+    @classmethod
+    def unite_impl_rets(cls, rets: Sequence["ImplReturn"]) -> "ImplReturn":
+        if not rets:
+            return ImplReturn(NO_RETURN_VALUE)
+        return ImplReturn(
+            unite_values(*[r.return_value for r in rets]),
+            reduce(_maybe_or_constraint, [r.constraint for r in rets]),
+            reduce(_maybe_or_constraint, [r.no_return_unless for r in rets]),
+        )
 
 
 @dataclass
@@ -245,15 +297,6 @@ class SigParameter(inspect.Parameter):
         return formatted
 
 
-@dataclass
-class ActualArguments:
-    positionals: List[Composite]
-    star_args: Optional[Value]  # represents the type of the elements of *args
-    keywords: Dict[str, Tuple[bool, Composite]]
-    star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
-    kwargs_required: bool
-
-
 @dataclass(frozen=True)
 class Signature:
     """Represents the signature of a Python callable.
@@ -312,8 +355,17 @@ class Signature:
         var_value: Value,
         visitor: "NameCheckVisitor",
         node: ast.AST,
-        typevar_map: TypeVarMap,
-    ) -> bool:
+        typevar_map: Optional[TypeVarMap] = None,
+        is_overload: bool = False,
+    ) -> Tuple[Optional[TypeVarMap], bool, Optional[Value]]:
+        """Check type compatibility for a single parameter.
+
+        Returns a three-tuple:
+        - A TypeVarMap if the assignment succeeded, or None if there was an error.
+        - A bool indicating whether Any was used to succeed in the assignment.
+        - A Value or None, used for union decomposition with overloads.
+
+        """
         if param.annotation is not EMPTY and not (
             isinstance(param.default, Composite) and var_value is param.default.value
         ):
@@ -321,8 +373,31 @@ class Signature:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
             else:
                 param_typ = param.annotation
-            tv_map = param_typ.can_assign(var_value, visitor)
+            tv_map, used_any = self._can_assign_and_used_any(
+                param_typ, var_value, visitor
+            )
             if isinstance(tv_map, CanAssignError):
+                if is_overload and isinstance(var_value, MultiValuedValue):
+                    tv_maps = []
+                    remaining_values = []
+                    union_used_any = False
+                    for val in var_value.vals:
+                        can_assign, subval_used_any = self._can_assign_and_used_any(
+                            param_typ, val, visitor
+                        )
+                        if isinstance(can_assign, CanAssignError):
+                            remaining_values.append(val)
+                        else:
+                            if subval_used_any:
+                                union_used_any = True
+                            tv_maps.append(can_assign)
+                    if tv_maps:
+                        tv_map = unify_typevar_maps(tv_maps)
+                        assert remaining_values, (
+                            f"all union members matched between {param_typ} and"
+                            f" {var_value}"
+                        )
+                        return tv_map, union_used_any, unite_values(*remaining_values)
                 visitor.show_error(
                     node,
                     f"Incompatible argument type for {param.name}: expected {param_typ}"
@@ -330,8 +405,17 @@ class Signature:
                     ErrorCode.incompatible_argument,
                     detail=str(tv_map),
                 )
-                return False
-        return True
+                return None, False, None
+            return tv_map, used_any, None
+        return {}, False, None
+
+    def _can_assign_and_used_any(
+        self, param_typ: Value, var_value: Value, visitor: "NameCheckVisitor"
+    ) -> Tuple[CanAssign, bool]:
+        with visitor.reset_any_used():
+            tv_map = param_typ.can_assign(var_value, visitor)
+            used_any = visitor.has_used_any_match()
+        return tv_map, used_any
 
     def _apply_annotated_constraints(
         self, raw_return: Union[Value, ImplReturn], bound_args: inspect.BoundArguments
@@ -403,7 +487,7 @@ class Signature:
 
     def bind_arguments(
         self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Optional[inspect.BoundArguments]:
+    ) -> Optional[BoundArgs]:
         """Attempt to bind the parameters in the signature to the arguments actually passed in.
 
         Nomenclature:
@@ -414,17 +498,20 @@ class Signature:
         """
         positional_index = 0
         keywords_consumed: Set[str] = set()
-        bound_args: Dict[str, Composite] = {}
+        bound_args: BoundArgs = {}
         star_args_consumed = False
         star_kwargs_consumed = False
 
         for param in self.signature.parameters.values():
             if param.kind is SigParameter.POSITIONAL_ONLY:
                 if positional_index < len(actual_args.positionals):
-                    bound_args[param.name] = actual_args.positionals[positional_index]
+                    bound_args[param.name] = (
+                        positional_index,
+                        actual_args.positionals[positional_index],
+                    )
                     positional_index += 1
                 elif actual_args.star_args is not None:
-                    bound_args[param.name] = Composite(actual_args.star_args)
+                    bound_args[param.name] = None, Composite(actual_args.star_args)
                     star_args_consumed = True
                 elif param.default is EMPTY:
                     self.show_call_error(
@@ -434,10 +521,13 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = param.default
+                    bound_args[param.name] = None, param.default
             elif param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
                 if positional_index < len(actual_args.positionals):
-                    bound_args[param.name] = actual_args.positionals[positional_index]
+                    bound_args[param.name] = (
+                        positional_index,
+                        actual_args.positionals[positional_index],
+                    )
                     positional_index += 1
                     if param.name in actual_args.keywords:
                         self.show_call_error(
@@ -465,7 +555,7 @@ class Signature:
                         star_kwargs_consumed = True
                     else:
                         value = actual_args.star_args
-                    bound_args[param.name] = Composite(value)
+                    bound_args[param.name] = None, Composite(value)
                 elif param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
                     if not definitely_provided and param.default is EMPTY:
@@ -476,10 +566,10 @@ class Signature:
                             visitor,
                         )
                         return None
-                    bound_args[param.name] = composite
+                    bound_args[param.name] = param.name, composite
                     keywords_consumed.add(param.name)
                 elif actual_args.star_kwargs is not None:
-                    bound_args[param.name] = Composite(actual_args.star_kwargs)
+                    bound_args[param.name] = None, Composite(actual_args.star_kwargs)
                     star_kwargs_consumed = True
                 elif param.default is EMPTY:
                     self.show_call_error(
@@ -487,7 +577,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = param.default
+                    bound_args[param.name] = None, param.default
             elif param.kind is SigParameter.KEYWORD_ONLY:
                 if param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
@@ -499,10 +589,10 @@ class Signature:
                             visitor,
                         )
                         return None
-                    bound_args[param.name] = composite
+                    bound_args[param.name] = param.name, composite
                     keywords_consumed.add(param.name)
                 elif actual_args.star_kwargs is not None:
-                    bound_args[param.name] = Composite(actual_args.star_kwargs)
+                    bound_args[param.name] = None, Composite(actual_args.star_kwargs)
                     star_kwargs_consumed = True
                     keywords_consumed.add(param.name)
                 elif param.default is EMPTY:
@@ -511,7 +601,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = param.default
+                    bound_args[param.name] = None, param.default
             elif param.kind is SigParameter.VAR_POSITIONAL:
                 star_args_consumed = True
                 positionals = []
@@ -523,7 +613,7 @@ class Signature:
                     star_args_value = GenericValue(tuple, [element_value])
                 else:
                     star_args_value = SequenceIncompleteValue(tuple, positionals)
-                bound_args[param.name] = Composite(star_args_value)
+                bound_args[param.name] = None, Composite(star_args_value)
             elif param.kind is SigParameter.VAR_KEYWORD:
                 star_kwargs_consumed = True
                 items = {}
@@ -543,7 +633,7 @@ class Signature:
                     )
                 else:
                     star_kwargs_value = TypedDictValue(items)
-                bound_args[param.name] = Composite(star_kwargs_value)
+                bound_args[param.name] = None, Composite(star_kwargs_value)
             else:
                 assert False, f"unhandled param {param.kind}"
 
@@ -575,7 +665,7 @@ class Signature:
         ):
             self.show_call_error("**kwargs provided but not used", node, visitor)
             return None
-        return inspect.BoundArguments(self.signature, bound_args)
+        return bound_args
 
     def show_call_error(
         self,
@@ -591,11 +681,11 @@ class Signature:
     def get_default_return(self, source: AnySource = AnySource.error) -> ImplReturn:
         return_value = self.signature.return_annotation
         if return_value is EMPTY:
-            return ImplReturn(AnyValue(AnySource.unannotated))
+            return ImplReturn(AnyValue(AnySource.unannotated), is_error=True)
         if self._return_key in self.typevars_of_params:
             typevar_values = {tv: AnyValue(source) for tv in self.all_typevars}
             return_value = return_value.substitute_typevars(typevar_values)
-        return ImplReturn(return_value)
+        return ImplReturn(return_value, is_error=True)
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
@@ -613,7 +703,11 @@ class Signature:
         return self.check_call_preprocessed(preprocessed, visitor, node)
 
     def check_call_preprocessed(
-        self, preprocessed: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
+        self,
+        preprocessed: ActualArguments,
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+        is_overload: bool = False,
     ) -> ImplReturn:
         if self.is_ellipsis_args:
             if self.allow_call:
@@ -622,15 +716,13 @@ class Signature:
                     return ImplReturn(runtime_return)
             return_value = self.signature.return_annotation
             if return_value is EMPTY:
-                return ImplReturn(AnyValue(AnySource.unannotated))
-            return ImplReturn(return_value)
+                return_value = AnyValue(AnySource.unannotated)
+            return ImplReturn(return_value, used_any_for_match=True)
 
         bound_args = self.bind_arguments(preprocessed, visitor, node)
         if bound_args is None:
             return self.get_default_return()
-        variables = {
-            key: composite.value for key, composite in bound_args.arguments.items()
-        }
+        variables = {key: composite.value for key, (_, composite) in bound_args.items()}
         return_value = self.signature.return_annotation
         typevar_values: Dict[TypeVar, Value] = {}
         if self.all_typevars:
@@ -640,17 +732,10 @@ class Signature:
                     continue
                 var_value = variables[param_name]
                 param = self.signature.parameters[param_name]
-                if param.annotation is EMPTY:
-                    continue
-                tv_map = param.annotation.can_assign(var_value, visitor)
-                if isinstance(tv_map, CanAssignError):
-                    visitor.show_error(
-                        node,
-                        f"Incompatible argument type for {param.name}: expected"
-                        f" {param.annotation} but got {var_value}",
-                        ErrorCode.incompatible_argument,
-                        detail=str(tv_map),
-                    )
+                tv_map, _, _ = self._check_param_type_compatibility(
+                    param, var_value, visitor, node
+                )
+                if tv_map is None:
                     return self.get_default_return()
                 else:
                     # For now, the first assignment wins.
@@ -668,19 +753,57 @@ class Signature:
                 return_value = return_value.substitute_typevars(typevar_values)
 
         had_error = False
-        for name, var_value in variables.items():
+        used_any = False
+        new_args = None
+        for name, (position, composite) in bound_args.items():
             param = self.signature.parameters[name]
-            if not self._check_param_type_compatibility(
-                param, var_value, visitor, node, typevar_values
-            ):
+            (
+                tv_map,
+                param_used_any,
+                remaining_value,
+            ) = self._check_param_type_compatibility(
+                param,
+                composite.value,
+                visitor,
+                node,
+                typevar_values,
+                # If position is None we can't narrow so don't bother.
+                is_overload=is_overload and position is not None,
+            )
+            if tv_map is None:
                 had_error = True
+            if param_used_any:
+                used_any = True
+            if remaining_value is not None:
+                if isinstance(position, int):
+                    new_positionals = list(preprocessed.positionals)
+                    new_positionals[position] = Composite(remaining_value)
+                    new_args = replace(preprocessed, positionals=new_positionals)
+                elif isinstance(position, str):
+                    new_kwargs = dict(preprocessed.keywords)
+                    existing_required, _ = new_kwargs[position]
+                    new_kwargs[position] = existing_required, Composite(remaining_value)
+                    new_args = replace(preprocessed, keywords=new_kwargs)
+                else:
+                    assert False, "position should be set"
+                # You only get to do this once per call.
+                is_overload = False
 
+        inspect_bound_args = inspect.BoundArguments(
+            self.signature,
+            OrderedDict(
+                (param, composite) for param, (_, composite) in bound_args.items()
+            ),
+        )
         # don't call the implementation function if we had an error, so that
         # the implementation function doesn't have to worry about basic
         # type checking
         if not had_error and self.impl is not None:
             ctx = CallContext(
-                vars=variables, visitor=visitor, bound_args=bound_args, node=node
+                vars=variables,
+                visitor=visitor,
+                bound_args=inspect_bound_args,
+                node=node,
             )
             return_value = self.impl(ctx)
 
@@ -696,9 +819,14 @@ class Signature:
                 else:
                     return_value = runtime_return
         if return_value is EMPTY:
-            return ImplReturn(AnyValue(AnySource.unannotated))
+            ret = ImplReturn(AnyValue(AnySource.unannotated), is_error=had_error)
         else:
-            return self._apply_annotated_constraints(return_value, bound_args)
+            ret = self._apply_annotated_constraints(return_value, inspect_bound_args)
+        return ret._replace(
+            is_error=had_error,
+            used_any_for_match=used_any,
+            remaining_arguments=new_args,
+        )
 
     def _maybe_perform_call(
         self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
@@ -1409,21 +1537,70 @@ class OverloadedSignature:
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> ImplReturn:
-        # TODO this has a number of issues:
-        # - Need to read up more about how exactly overload should work
-        # - Do we really always match the first overload that works? What if one of the args is Any?
-        # - What if one of the args is a Union? Do we always unpack it?
+        """Check a call to an overloaded function.
+
+        The way overloads are handled is not well specified in any PEPs. Useful resources
+        include:
+
+        - Michael Lee's `specification <https://github.com/python/typing/issues/253#issuecomment-389262904>`_
+          of mypy's behavior.
+        - Eric Traut's `discussion <https://github.com/microsoft/pyright/issues/2521#issuecomment-956823577>`_
+          of pyright's behavior.
+
+        Our behavior is closer to mypy. The general rule is to pick the first overload that matches
+        and return an error otherwise, but there are two twists: ``Any`` and unions.
+
+        If an overload matched only due to ``Any``, we continue looking for more overloads. If there
+        are other matching overloads, we return ``Any`` (with ``AnySource.multiple_overload_matches``).
+        This is different from pyright's behavior: pyright picks the first overload regardless
+        of ``Any``, which is unsafe in general. Returning a ``Union`` would be more precise, but
+        may lead to false positives according to experience from other type checkers. A match
+        "due to ``Any``" is defined as a check that succeeded because ``Any`` was on the right-hand
+        side but not the left-hand side of a typecheck.
+
+        This is implemented by setting a flag on the :class:`pyanalyze.value.CanAssignContext` when
+        a type check succeeds due to ``Any``. This flag gets propagated to
+        :attr:`ImplReturn.used_any_for_match`.
+
+        If an overload does not match, but one of the arguments passed was a ``Union``, we try all
+        the components of the ``Union`` separately. If some of them match, we subtract them from the
+        ``Union`` and try the remaining overloads with a narrower ``Union``. In this case, we return
+        a ``Union`` of the return values of all the matching overloads on success.
+
+        The decomposition happens in the private ``_check_param_type_compatibility`` method of
+        :class:`Signature`. When we perform decomposition, this method returns a
+        :class:`pyanalyze.value.Value` representing the remaining union members. This value is
+        then used to construct a new :class:`ActualArguments` object, which ends up in
+        :attr:`ImplReturn.remaining_arguments`.
+
+        """
+        actual_args = preprocess_args(args, visitor, node)
+        if actual_args is None:
+            return ImplReturn(AnyValue(AnySource.error))
+
         errors_per_overload = []
-        rets = []
+        any_rets: List[ImplReturn] = []
+        union_rets: List[ImplReturn] = []
         for sig in self.signatures:
             with visitor.catch_errors() as caught_errors:
-                ret = sig.check_call(args, visitor, node)
-            if not caught_errors:
-                return ret
-            rets.append(ret)
-            errors_per_overload.append(caught_errors)
-        # None of the signatures matched
+                ret = sig.check_call_preprocessed(
+                    actual_args, visitor, node, is_overload=True
+                )
+            if ret.is_error:
+                errors_per_overload.append(caught_errors)
+            elif ret.used_any_for_match:
+                any_rets.append(ret)
+            elif ret.remaining_arguments is not None:
+                union_rets.append(ret)
+                actual_args = ret.remaining_arguments
+            else:
+                # We got a clean match!
+                return self._unite_rets(any_rets, union_rets, ret)
 
+        if any_rets or union_rets:
+            return self._unite_rets(any_rets, union_rets)
+
+        # None of the signatures matched
         errors = list(itertools.chain.from_iterable(errors_per_overload))
         codes = set(error["error_code"] for error in errors)
         if len(codes) == 1:
@@ -1434,7 +1611,24 @@ class OverloadedSignature:
         visitor.show_error(
             node, "Cannot call overloaded function", error_code, detail=str(detail)
         )
-        return ImplReturn(unite_values(*[ret.return_value for ret in rets]))
+        return ImplReturn(AnyValue(AnySource.error))
+
+    def _unite_rets(
+        self,
+        any_rets: Sequence[ImplReturn],
+        union_rets: Sequence[ImplReturn],
+        clean_ret: Optional[ImplReturn] = None,
+    ) -> ImplReturn:
+        if any_rets:
+            if len(any_rets) == 1 and not union_rets and clean_ret is None:
+                return any_rets[0]
+            return ImplReturn(AnyValue(AnySource.multiple_overload_matches))
+        elif union_rets:
+            if clean_ret is not None:
+                return ImplReturn.unite_impl_rets([*union_rets, clean_ret])
+            return ImplReturn.unite_impl_rets(union_rets)
+        assert clean_ret is not None
+        return clean_ret
 
     def _make_detail(
         self, errors_per_overload: Sequence[Sequence[Dict[str, Any]]]

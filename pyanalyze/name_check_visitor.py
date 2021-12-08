@@ -98,6 +98,7 @@ from .signature import (
     ANY_SIGNATURE,
     BoundMethodSignature,
     ConcreteSignature,
+    ImplReturn,
     MaybeSignature,
     OverloadedSignature,
     Signature,
@@ -818,6 +819,7 @@ class NameCheckVisitor(
         self._argspec_to_retval = {}
         self._method_cache = {}
         self._statement_types = set()
+        self._has_used_any_match = False
         self._fill_method_cache()
 
     def make_type_object(self, typ: Union[type, super]) -> TypeObject:
@@ -830,6 +832,19 @@ class NameCheckVisitor(
         self, left: TypeObject, right: TypeObject
     ) -> ContextManager[None]:
         return self.checker.assume_compatibility(left, right)
+
+    def has_used_any_match(self) -> bool:
+        """Whether Any was used to secure a match."""
+        return self._has_used_any_match
+
+    def record_any_used(self) -> None:
+        """Record that Any was used to secure a match."""
+        self._has_used_any_match = True
+
+    def reset_any_used(self) -> ContextManager[None]:
+        """Context that resets the value used by :meth:`has_used_any_match` and
+        :meth:`record_any_match`."""
+        return qcore.override(self, "_has_used_any_match", False)
 
     # The type for typ should be type, but that leads Cython to reject calls that pass
     # an instance of ABCMeta.
@@ -4122,9 +4137,7 @@ class NameCheckVisitor(
         if extended_argspec is ANY_SIGNATURE:
             # don't bother calling it
             extended_argspec = None
-            return_value = AnyValue(AnySource.from_another)
-            constraint = NULL_CONSTRAINT
-            no_return_unless = NULL_CONSTRAINT
+            impl_ret = ImplReturn(AnyValue(AnySource.from_another))
 
         elif extended_argspec is None:
             self._show_error_if_checking(
@@ -4132,9 +4145,7 @@ class NameCheckVisitor(
                 f"{callee_wrapped} is not callable",
                 error_code=ErrorCode.not_callable,
             )
-            return_value = AnyValue(AnySource.error)
-            constraint = NULL_CONSTRAINT
-            no_return_unless = NULL_CONSTRAINT
+            impl_ret = ImplReturn(AnyValue(AnySource.error))
 
         else:
             arguments = [
@@ -4147,21 +4158,16 @@ class NameCheckVisitor(
                 for keyword, value in keywords
             ]
             if self._is_checking():
-                (
-                    return_value,
-                    constraint,
-                    no_return_unless,
-                ) = extended_argspec.check_call(arguments, self, node)
+                impl_ret = extended_argspec.check_call(arguments, self, node)
             else:
                 with self.catch_errors():
-                    (
-                        return_value,
-                        constraint,
-                        no_return_unless,
-                    ) = extended_argspec.check_call(arguments, self, node)
+                    impl_ret = extended_argspec.check_call(arguments, self, node)
 
-        if no_return_unless is not NULL_CONSTRAINT:
-            self.add_constraint(node, no_return_unless)
+        return_value = impl_ret.return_value
+        constraint = impl_ret.constraint
+
+        if impl_ret.no_return_unless is not NULL_CONSTRAINT:
+            self.add_constraint(node, impl_ret.no_return_unless)
 
         if (
             extended_argspec is not None

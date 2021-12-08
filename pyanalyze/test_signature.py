@@ -1,5 +1,4 @@
 # static analysis: ignore
-from typed_ast.ast3 import Not
 from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
 
@@ -1028,3 +1027,42 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_is_value(overloaded("x"), TypedValue(str))
             overloaded(1)  # E: incompatible_call
             overloaded("a", "b")  # E: incompatible_call
+
+    @assert_passes()
+    def test_list_any(self):
+        from pyanalyze.extensions import overload
+        from typing import List, Any, Union
+        from typing_extensions import Literal
+
+        @overload
+        def overloaded(lst: List[str]) -> Literal[2]:
+            pass
+
+        @overload
+        def overloaded(lst: List[int]) -> Literal[3]:
+            pass
+
+        def overloaded(lst: List[Any]) -> int:
+            raise NotImplementedError
+
+        def capybara(
+            unannotated,
+            list_union: List[Union[int, str]],
+            union_list: Union[List[int], List[str]],
+            explicit: Any,
+        ):
+            assert_is_value(overloaded(["x"]), KnownValue(2))
+            assert_is_value(overloaded([1]), KnownValue(3))
+            val = overloaded([])  # pyright and mypy: Literal[2]
+            assert_is_value(val, AnyValue(AnySource.multiple_overload_matches))
+            val2 = overloaded([unannotated])  # pyright: Literal[2], mypy: Any
+            assert_is_value(val2, AnyValue(AnySource.multiple_overload_matches))
+            val3 = overloaded(unannotated)  # pyright: Literal[2], mypy: Any
+            assert_is_value(val3, AnyValue(AnySource.multiple_overload_matches))
+            # pyright: Unknown, mypy: Literal[2]
+            val4 = overloaded(list_union)  # E: incompatible_argument
+            assert_is_value(val4, AnyValue(AnySource.error))
+            val5 = overloaded(union_list)  # pyright and mypy: Literal[2, 3]
+            assert_is_value(val5, KnownValue(3) | KnownValue(2))
+            val6 = overloaded(explicit)  # pyright: Literal[2], mypy: Any
+            assert_is_value(val6, AnyValue(AnySource.multiple_overload_matches))
