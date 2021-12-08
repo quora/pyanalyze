@@ -10,3 +10,5 @@ typing_extensions
 mypy_extensions
 aenum>=2.2.3
 codemod
+myst-parser==0.15.1
+Sphinx==4.2.0
