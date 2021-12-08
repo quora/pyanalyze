@@ -401,247 +401,8 @@ class Signature:
             constraint = NULL_CONSTRAINT
         return ImplReturn(ret.return_value, constraint, ret.no_return_unless)
 
-    def preprocess_args(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Optional[ActualArguments]:
-        """Preprocess the argument list. Produces an ActualArguments object."""
-
-        # Step 1: Split up args and kwargs if possible.
-        processed_args = []
-        kwargs_requireds = []
-        for arg, label in args:
-            if label is None or isinstance(label, str):
-                processed_args.append((arg, label))
-            elif label is ARGS:
-                concrete_values = concrete_values_from_iterable(arg.value, visitor)
-                if isinstance(concrete_values, CanAssignError):
-                    self.show_call_error(
-                        f"{arg.value} is not iterable",
-                        node,
-                        visitor,
-                        detail=str(concrete_values),
-                    )
-                    return None
-                elif isinstance(concrete_values, Value):
-                    # We don't know the precise types. Repack it in a tuple because
-                    # at this point it doesn't matter what the precise runtime type is.
-                    new_value = GenericValue(tuple, [concrete_values])
-                    new_composite = Composite(new_value, arg.varname, arg.node)
-                    processed_args.append((new_composite, ARGS))
-                else:
-                    # We figured out the exact types. Treat them as separate positional
-                    # args.
-                    for subval in concrete_values:
-                        processed_args.append((Composite(subval), None))
-            elif label is KWARGS:
-                items = {}
-                extra_values = []
-                # We union all the kwargs that may be provided by any union member, so that
-                # we give an error if
-                for subval in flatten_values(arg.value, unwrap_annotated=True):
-                    result = self._preprocess_kwargs_no_mvv(subval, visitor, node)
-                    if result is None:
-                        return None
-                    new_items, new_value = result
-                    if new_value is not None:
-                        extra_values.append(new_value)
-                    for key, (required, value) in new_items.items():
-                        if key in items:
-                            old_required, old_value = items[key]
-                            # If the item is not required in any of the dicts, we treat it as not
-                            # required at the end.
-                            items[key] = old_required and required, unite_values(
-                                old_value, value
-                            )
-                        else:
-                            items[key] = required, value
-                for key, (required, value) in items.items():
-                    if required:
-                        processed_args.append((Composite(value), key))
-                    else:
-                        processed_args.append((Composite(value), PossibleKwarg(key)))
-                if extra_values:
-                    kwargs_requireds.append(not items)
-                    new_value = GenericValue(
-                        dict, [TypedValue(str), unite_values(*extra_values)]
-                    )
-                    # don't preserve the varname because we may have mutilated the dict
-                    new_composite = Composite(new_value)
-                    processed_args.append((new_composite, KWARGS))
-            else:
-                assert False, f"unhandled label {label}"
-
-        # Step 2: enforce invariants about ARGS and KWARGS placement. We dump
-        # any single argument that come after *args into *args, and we merge all *args.
-        # But for keywords, we first get all the arguments with known keys, and after that unite
-        # all the **kwargs into a single argument.
-        more_processed_args: List[Composite] = []
-        more_processed_kwargs: Dict[str, Tuple[bool, Composite]] = {}
-        star_args: Optional[Value] = None
-        star_kwargs: Optional[Value] = None
-
-        for arg, label in processed_args:
-            if label is None:
-                # Should never happen because the parser doesn't let you
-                if more_processed_kwargs or star_kwargs is not None:
-                    self.show_call_error(
-                        "Positional argument follow keyword arguments", node, visitor
-                    )
-                    return None
-                if star_args is not None:
-                    star_args = unite_values(arg.value, star_args)
-                else:
-                    more_processed_args.append(arg)
-            elif label is ARGS:
-                # This is legal: f(x=3, *args)
-                # But this is not: f(**kwargs, **args)
-                if star_kwargs is not None:
-                    self.show_call_error("*args follows **kwargs", node, visitor)
-                    return None
-                if star_args is not None:
-                    assert isinstance(arg.value, GenericValue), repr(processed_args)
-                    star_args = unite_values(arg.value.args[0], star_args)
-                else:
-                    assert isinstance(arg.value, GenericValue), repr(processed_args)
-                    star_args = arg.value.args[0]
-            elif isinstance(label, str):
-                if label in more_processed_kwargs:
-                    self.show_call_error(
-                        f"Multiple values provided for argument '{label}'",
-                        node,
-                        visitor,
-                    )
-                    return None
-                more_processed_kwargs[label] = (True, arg)
-            elif isinstance(label, PossibleKwarg):
-                if label.name in more_processed_kwargs:
-                    self.show_call_error(
-                        f"Multiple values provided for argument '{label.name}'",
-                        node,
-                        visitor,
-                    )
-                    return None
-                more_processed_kwargs[label.name] = (False, arg)
-            elif label is KWARGS:
-                assert isinstance(arg.value, GenericValue), repr(processed_args)
-                new_kwargs = arg.value.args[1]
-                if star_kwargs is None:
-                    star_kwargs = new_kwargs
-                else:
-                    star_kwargs = unite_values(star_kwargs, new_kwargs)
-            else:
-                assert False, repr(label)
-
-        return ActualArguments(
-            more_processed_args,
-            star_args,
-            more_processed_kwargs,
-            star_kwargs,
-            kwargs_required=any(kwargs_requireds),
-        )
-
-    def _preprocess_kwargs_no_mvv(
-        self, value: Value, visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
-        """Preprocess a Value passed as **kwargs.
-
-        Three possible return types:
-
-        - None if there was a blocking error (the passed in type is not a mapping).
-        - A pair of two values:
-            - An {argument: (required, Value)} dict if we know the precise arguments (e.g.,
-              for a TypedDict).
-            - A single Value if the argument is a mapping, but we don't know all the precise keys.
-              This is None if all the keys are known.
-
-        """
-        value = replace_known_sequence_value(value)
-        if isinstance(value, TypedDictValue):
-            return value.items, None
-        elif isinstance(value, DictIncompleteValue):
-            return self.preprocess_kwargs_kv_pairs(value.kv_pairs, visitor, node)
-        else:
-            mapping_tv_map = MappingValue.can_assign(value, visitor)
-            if isinstance(mapping_tv_map, CanAssignError):
-                self.show_call_error(
-                    f"{value} is not a mapping",
-                    node,
-                    visitor,
-                    detail=str(mapping_tv_map),
-                )
-                return None
-            key_type = mapping_tv_map.get(K, AnyValue(AnySource.generic_argument))
-            value_type = mapping_tv_map.get(V, AnyValue(AnySource.generic_argument))
-            return self.preprocess_kwargs_kv_pairs(
-                [KVPair(key_type, value_type, is_many=True)], visitor, node
-            )
-
-    def preprocess_kwargs_kv_pairs(
-        self, items: Sequence[KVPair], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
-        out_items = {}
-        possible_values = []
-        covered_keys: Set[Value] = set()
-        for pair in reversed(items):
-            if not pair.is_many:
-                if isinstance(pair.key, AnnotatedValue):
-                    key = pair.key.value
-                else:
-                    key = pair.key
-                if isinstance(key, KnownValue):
-                    if isinstance(key.val, str):
-                        if key in covered_keys:
-                            continue
-                        out_items[key.val] = (pair.is_required, pair.value)
-                        continue
-                    else:
-                        self.show_call_error(
-                            "Dict passed as **kwargs contains non-string key"
-                            f" {key.val!r}",
-                            node,
-                            visitor,
-                        )
-                        return None
-
-            possible_keys = []
-            has_non_literal = False
-            for subkey in flatten_values(pair.key, unwrap_annotated=True):
-                if isinstance(subkey, KnownValue):
-                    if isinstance(subkey.val, str):
-                        possible_keys.append(subkey.val)
-                    else:
-                        self.show_call_error(
-                            "Dict passed as **kwargs contains non-string key"
-                            f" {subkey.val!r}",
-                            node,
-                            visitor,
-                        )
-                        return None
-                else:
-                    can_assign = TypedValue(str).can_assign(subkey, visitor)
-                    if isinstance(can_assign, CanAssignError):
-                        self.show_call_error(
-                            "Dict passed as **kwargs contains non-string key"
-                            f" {subkey!r}",
-                            node,
-                            visitor,
-                            detail=str(can_assign),
-                        )
-                        return None
-                    has_non_literal = True
-            if possible_keys and not has_non_literal:
-                for key in possible_keys:
-                    out_items[key] = (False, pair.value)
-            else:
-                possible_values.append(pair.value)
-        if possible_values:
-            extra_value = unite_values(*possible_values)
-        else:
-            extra_value = None
-        return out_items, extra_value
-
     def bind_arguments(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+        self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
     ) -> Optional[inspect.BoundArguments]:
         """Attempt to bind the parameters in the signature to the arguments actually passed in.
 
@@ -651,9 +412,6 @@ class Signature:
         - bound arguments: the mapping of parameter names to values produced by this call
 
         """
-        actual_args = self.preprocess_args(args, visitor, node)
-        if actual_args is None:
-            return None
         positional_index = 0
         keywords_consumed: Set[str] = set()
         bound_args: Dict[str, Composite] = {}
@@ -849,9 +607,17 @@ class Signature:
 
         """
         args = list(args)
+        preprocessed = preprocess_args(args, visitor, node)
+        if preprocessed is None:
+            return self.get_default_return()
+        return self.check_call_preprocessed(preprocessed, visitor, node)
+
+    def check_call_preprocessed(
+        self, preprocessed: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
+    ) -> ImplReturn:
         if self.is_ellipsis_args:
             if self.allow_call:
-                runtime_return = self._maybe_perform_call(args, visitor, node)
+                runtime_return = self._maybe_perform_call(preprocessed, visitor, node)
                 if runtime_return is not None:
                     return ImplReturn(runtime_return)
             return_value = self.signature.return_annotation
@@ -859,7 +625,7 @@ class Signature:
                 return ImplReturn(AnyValue(AnySource.unannotated))
             return ImplReturn(return_value)
 
-        bound_args = self.bind_arguments(args, visitor, node)
+        bound_args = self.bind_arguments(preprocessed, visitor, node)
         if bound_args is None:
             return self.get_default_return()
         variables = {
@@ -919,7 +685,7 @@ class Signature:
             return_value = self.impl(ctx)
 
         if self.allow_call:
-            runtime_return = self._maybe_perform_call(args, visitor, node)
+            runtime_return = self._maybe_perform_call(preprocessed, visitor, node)
             if runtime_return is not None:
                 if isinstance(return_value, ImplReturn):
                     return_value = ImplReturn(
@@ -935,48 +701,48 @@ class Signature:
             return self._apply_annotated_constraints(return_value, bound_args)
 
     def _maybe_perform_call(
-        self, arguments: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+        self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
     ) -> Optional[Value]:
         if self.callable is None:
             return None
         args = []
         kwargs = {}
-        for composite, label in arguments:
-            if label is None:
-                if isinstance(composite.value, KnownValue):
-                    args.append(composite.value.val)
-                else:
-                    return None
-            elif isinstance(label, str):
-                if isinstance(composite.value, KnownValue):
-                    kwargs[label] = composite.value.val
-                else:
-                    return None
-            elif label is ARGS:
-                values = concrete_values_from_iterable(composite.value, visitor)
-                if isinstance(values, collections.abc.Sequence) and all_of_type(
-                    values, KnownValue
-                ):
-                    args += [val.val for val in values]
-                else:
-                    return None
+        for composite in actual_args.positionals:
+            if isinstance(composite.value, KnownValue):
+                args.append(composite.value.val)
             else:
-                assert label is KWARGS, label
-                value = replace_known_sequence_value(composite.value)
-                if isinstance(value, DictIncompleteValue):
-                    for pair in value.kv_pairs:
-                        if (
-                            pair.is_required
-                            and not pair.is_many
-                            and isinstance(pair.key, KnownValue)
-                            and isinstance(pair.key.val, str)
-                            and isinstance(pair.value, KnownValue)
-                        ):
-                            kwargs[pair.key.val] = pair.value.val
-                        else:
-                            return None
-                else:
-                    return None
+                return None
+        if actual_args.star_args is not None:
+            values = concrete_values_from_iterable(actual_args.star_args, visitor)
+            if isinstance(values, collections.abc.Sequence) and all_of_type(
+                values, KnownValue
+            ):
+                args += [val.val for val in values]
+            else:
+                return None
+        for kwarg, (required, composite) in actual_args.keywords.items():
+            if not required:
+                return None
+            if isinstance(composite.value, KnownValue):
+                kwargs[kwarg] = composite.value.val
+            else:
+                return None
+        if actual_args.star_kwargs is not None:
+            value = replace_known_sequence_value(actual_args.star_kwargs)
+            if isinstance(value, DictIncompleteValue):
+                for pair in value.kv_pairs:
+                    if (
+                        pair.is_required
+                        and not pair.is_many
+                        and isinstance(pair.key, KnownValue)
+                        and isinstance(pair.key.val, str)
+                        and isinstance(pair.value, KnownValue)
+                    ):
+                        kwargs[pair.key.val] = pair.value.val
+                    else:
+                        return None
+            else:
+                return None
 
         try:
             value = self.callable(*args, **kwargs)
@@ -1385,6 +1151,250 @@ ANY_SIGNATURE = Signature.make(
 )
 """:class:`Signature` that should be compatible with any other
 :class:`Signature`."""
+
+
+def preprocess_args(
+    args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+) -> Optional[ActualArguments]:
+    """Preprocess the argument list. Produces an ActualArguments object."""
+
+    # Step 1: Split up args and kwargs if possible.
+    processed_args = []
+    kwargs_requireds = []
+    for arg, label in args:
+        if label is None or isinstance(label, str):
+            processed_args.append((arg, label))
+        elif label is ARGS:
+            concrete_values = concrete_values_from_iterable(arg.value, visitor)
+            if isinstance(concrete_values, CanAssignError):
+                visitor.show_error(
+                    node,
+                    f"{arg.value} is not iterable",
+                    ErrorCode.incompatible_call,
+                    detail=str(concrete_values),
+                )
+                return None
+            elif isinstance(concrete_values, Value):
+                # We don't know the precise types. Repack it in a tuple because
+                # at this point it doesn't matter what the precise runtime type is.
+                new_value = GenericValue(tuple, [concrete_values])
+                new_composite = Composite(new_value, arg.varname, arg.node)
+                processed_args.append((new_composite, ARGS))
+            else:
+                # We figured out the exact types. Treat them as separate positional
+                # args.
+                for subval in concrete_values:
+                    processed_args.append((Composite(subval), None))
+        elif label is KWARGS:
+            items = {}
+            extra_values = []
+            # We union all the kwargs that may be provided by any union member, so that
+            # we give an error if
+            for subval in flatten_values(arg.value, unwrap_annotated=True):
+                result = _preprocess_kwargs_no_mvv(subval, visitor, node)
+                if result is None:
+                    return None
+                new_items, new_value = result
+                if new_value is not None:
+                    extra_values.append(new_value)
+                for key, (required, value) in new_items.items():
+                    if key in items:
+                        old_required, old_value = items[key]
+                        # If the item is not required in any of the dicts, we treat it as not
+                        # required at the end.
+                        items[key] = old_required and required, unite_values(
+                            old_value, value
+                        )
+                    else:
+                        items[key] = required, value
+            for key, (required, value) in items.items():
+                if required:
+                    processed_args.append((Composite(value), key))
+                else:
+                    processed_args.append((Composite(value), PossibleKwarg(key)))
+            if extra_values:
+                kwargs_requireds.append(not items)
+                new_value = GenericValue(
+                    dict, [TypedValue(str), unite_values(*extra_values)]
+                )
+                # don't preserve the varname because we may have mutilated the dict
+                new_composite = Composite(new_value)
+                processed_args.append((new_composite, KWARGS))
+        else:
+            assert False, f"unhandled label {label}"
+
+    # Step 2: enforce invariants about ARGS and KWARGS placement. We dump
+    # any single argument that come after *args into *args, and we merge all *args.
+    # But for keywords, we first get all the arguments with known keys, and after that unite
+    # all the **kwargs into a single argument.
+    more_processed_args: List[Composite] = []
+    more_processed_kwargs: Dict[str, Tuple[bool, Composite]] = {}
+    star_args: Optional[Value] = None
+    star_kwargs: Optional[Value] = None
+
+    for arg, label in processed_args:
+        if label is None:
+            # Should never happen because the parser doesn't let you
+            if more_processed_kwargs or star_kwargs is not None:
+                visitor.show_error(
+                    node,
+                    "Positional argument follow keyword arguments",
+                    ErrorCode.incompatible_call,
+                )
+                return None
+            if star_args is not None:
+                star_args = unite_values(arg.value, star_args)
+            else:
+                more_processed_args.append(arg)
+        elif label is ARGS:
+            # This is legal: f(x=3, *args)
+            # But this is not: f(**kwargs, **args)
+            if star_kwargs is not None:
+                visitor.show_error(
+                    node, "*args follows **kwargs", ErrorCode.incompatible_call
+                )
+                return None
+            if star_args is not None:
+                assert isinstance(arg.value, GenericValue), repr(processed_args)
+                star_args = unite_values(arg.value.args[0], star_args)
+            else:
+                assert isinstance(arg.value, GenericValue), repr(processed_args)
+                star_args = arg.value.args[0]
+        elif isinstance(label, str):
+            if label in more_processed_kwargs:
+                visitor.show_error(
+                    node,
+                    f"Multiple values provided for argument '{label}'",
+                    ErrorCode.incompatible_call,
+                )
+                return None
+            more_processed_kwargs[label] = (True, arg)
+        elif isinstance(label, PossibleKwarg):
+            if label.name in more_processed_kwargs:
+                visitor.show_error(
+                    node,
+                    f"Multiple values provided for argument '{label.name}'",
+                    ErrorCode.incompatible_call,
+                )
+                return None
+            more_processed_kwargs[label.name] = (False, arg)
+        elif label is KWARGS:
+            assert isinstance(arg.value, GenericValue), repr(processed_args)
+            new_kwargs = arg.value.args[1]
+            if star_kwargs is None:
+                star_kwargs = new_kwargs
+            else:
+                star_kwargs = unite_values(star_kwargs, new_kwargs)
+        else:
+            assert False, repr(label)
+
+    return ActualArguments(
+        more_processed_args,
+        star_args,
+        more_processed_kwargs,
+        star_kwargs,
+        kwargs_required=any(kwargs_requireds),
+    )
+
+
+def _preprocess_kwargs_no_mvv(
+    value: Value, visitor: "NameCheckVisitor", node: ast.AST
+) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
+    """Preprocess a Value passed as **kwargs.
+
+    Three possible return types:
+
+    - None if there was a blocking error (the passed in type is not a mapping).
+    - A pair of two values:
+        - An {argument: (required, Value)} dict if we know the precise arguments (e.g.,
+            for a TypedDict).
+        - A single Value if the argument is a mapping, but we don't know all the precise keys.
+            This is None if all the keys are known.
+
+    """
+    value = replace_known_sequence_value(value)
+    if isinstance(value, TypedDictValue):
+        return value.items, None
+    elif isinstance(value, DictIncompleteValue):
+        return _preprocess_kwargs_kv_pairs(value.kv_pairs, visitor, node)
+    else:
+        mapping_tv_map = MappingValue.can_assign(value, visitor)
+        if isinstance(mapping_tv_map, CanAssignError):
+            visitor.show_error(
+                node,
+                f"{value} is not a mapping",
+                ErrorCode.incompatible_call,
+                detail=str(mapping_tv_map),
+            )
+            return None
+        key_type = mapping_tv_map.get(K, AnyValue(AnySource.generic_argument))
+        value_type = mapping_tv_map.get(V, AnyValue(AnySource.generic_argument))
+        return _preprocess_kwargs_kv_pairs(
+            [KVPair(key_type, value_type, is_many=True)], visitor, node
+        )
+
+
+def _preprocess_kwargs_kv_pairs(
+    items: Sequence[KVPair], visitor: "NameCheckVisitor", node: ast.AST
+) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
+    out_items = {}
+    possible_values = []
+    covered_keys: Set[Value] = set()
+    for pair in reversed(items):
+        if not pair.is_many:
+            if isinstance(pair.key, AnnotatedValue):
+                key = pair.key.value
+            else:
+                key = pair.key
+            if isinstance(key, KnownValue):
+                if isinstance(key.val, str):
+                    if key in covered_keys:
+                        continue
+                    out_items[key.val] = (pair.is_required, pair.value)
+                    continue
+                else:
+                    visitor.show_error(
+                        node,
+                        f"Dict passed as **kwargs contains non-string key {key.val!r}",
+                        ErrorCode.incompatible_call,
+                    )
+                    return None
+
+        possible_keys = []
+        has_non_literal = False
+        for subkey in flatten_values(pair.key, unwrap_annotated=True):
+            if isinstance(subkey, KnownValue):
+                if isinstance(subkey.val, str):
+                    possible_keys.append(subkey.val)
+                else:
+                    visitor.show_error(
+                        node,
+                        "Dict passed as **kwargs contains non-string key"
+                        f" {subkey.val!r}",
+                        ErrorCode.incompatible_call,
+                    )
+                    return None
+            else:
+                can_assign = TypedValue(str).can_assign(subkey, visitor)
+                if isinstance(can_assign, CanAssignError):
+                    visitor.show_error(
+                        node,
+                        f"Dict passed as **kwargs contains non-string key {subkey!r}",
+                        ErrorCode.incompatible_call,
+                        detail=str(can_assign),
+                    )
+                    return None
+                has_non_literal = True
+        if possible_keys and not has_non_literal:
+            for key in possible_keys:
+                out_items[key] = (False, pair.value)
+        else:
+            possible_values.append(pair.value)
+    if possible_values:
+        extra_value = unite_values(*possible_values)
+    else:
+        extra_value = None
+    return out_items, extra_value
 
 
 @dataclass(frozen=True)
