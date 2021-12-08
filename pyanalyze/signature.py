@@ -1573,6 +1573,9 @@ class OverloadedSignature:
         then used to construct a new :class:`ActualArguments` object, which ends up in
         :attr:`ImplReturn.remaining_arguments`.
 
+        An overload that matches without requiring use of ``Any`` or
+        union decomposition is called a "clean match".
+
         """
         actual_args = preprocess_args(args, visitor, node)
         if actual_args is None:
@@ -1581,24 +1584,45 @@ class OverloadedSignature:
         errors_per_overload = []
         any_rets: List[ImplReturn] = []
         union_rets: List[ImplReturn] = []
-        for sig in self.signatures:
+        union_and_any_rets: List[ImplReturn] = []
+        last = len(self.signatures) - 1
+        for i, sig in enumerate(self.signatures):
             with visitor.catch_errors() as caught_errors:
                 ret = sig.check_call_preprocessed(
-                    actual_args, visitor, node, is_overload=True
+                    actual_args,
+                    visitor,
+                    node,
+                    # We set is_overload to False for the last overload
+                    # because we can't do union decomposition on the last one:
+                    # there's no other overload that could handle the remaining
+                    # union members.
+                    is_overload=i != last,
                 )
+            errors_per_overload.append(caught_errors)
             if ret.is_error:
-                errors_per_overload.append(caught_errors)
+                continue
+            elif ret.remaining_arguments is not None:
+                if ret.used_any_for_match:
+                    # If an overload used both Any and union decomposition,
+                    # we treat it differently from either: unlike Any matches
+                    # it's not enough to prevent an error later (because it's
+                    # not a full match), but unlike union matches it's enough
+                    # to trigger an Any return type.
+                    union_and_any_rets.append(ret)
+                else:
+                    union_rets.append(ret)
+                actual_args = ret.remaining_arguments
             elif ret.used_any_for_match:
                 any_rets.append(ret)
-            elif ret.remaining_arguments is not None:
-                union_rets.append(ret)
-                actual_args = ret.remaining_arguments
             else:
                 # We got a clean match!
-                return self._unite_rets(any_rets, union_rets, ret)
+                return self._unite_rets(any_rets, union_and_any_rets, union_rets, ret)
 
-        if any_rets or union_rets:
-            return self._unite_rets(any_rets, union_rets)
+        if any_rets:
+            # We don't do this if we have union_rets, because if we got here, we
+            # didn't get any clean matches. Therefore, we must have some remaining
+            # union members we haven't handled.
+            return self._unite_rets(any_rets, union_and_any_rets, union_rets)
 
         # None of the signatures matched
         errors = list(itertools.chain.from_iterable(errors_per_overload))
@@ -1616,11 +1640,17 @@ class OverloadedSignature:
     def _unite_rets(
         self,
         any_rets: Sequence[ImplReturn],
+        union_and_any_rets: Sequence[ImplReturn],
         union_rets: Sequence[ImplReturn],
         clean_ret: Optional[ImplReturn] = None,
     ) -> ImplReturn:
-        if any_rets:
-            if len(any_rets) == 1 and not union_rets and clean_ret is None:
+        if any_rets or union_and_any_rets:
+            if (
+                len(any_rets) == 1
+                and not union_rets
+                and not union_and_any_rets
+                and clean_ret is None
+            ):
                 return any_rets[0]
             return ImplReturn(AnyValue(AnySource.multiple_overload_matches))
         elif union_rets:

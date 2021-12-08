@@ -1066,3 +1066,43 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_is_value(val5, KnownValue(3) | KnownValue(2))
             val6 = overloaded(explicit)  # pyright: Literal[2], mypy: Any
             assert_is_value(val6, AnyValue(AnySource.multiple_overload_matches))
+
+    @assert_passes()
+    def test_any_and_union(self):
+        from pyanalyze.extensions import overload
+        from typing import List, Any, Union
+        from typing_extensions import Literal
+
+        @overload
+        def overloaded1(x: Any, y: str) -> Literal[2]:
+            pass
+
+        @overload
+        def overloaded1(x: str, y: int) -> Literal[3]:
+            pass
+
+        def overloaded1(x: object, y: object) -> Literal[2, 3]:
+            raise NotImplementedError
+
+        @overload
+        def overloaded2(x: object, y: str) -> Literal[2]:
+            pass
+
+        @overload
+        def overloaded2(x: str, y: int) -> Literal[3]:
+            pass
+
+        def overloaded2(x: object, y: object) -> Literal[2, 3]:
+            raise NotImplementedError
+
+        def capybara(
+            unannotated,
+            int_or_str: Union[int, str],
+            int_or_str_or_float: Union[int, str, float],
+        ):
+            val1 = overloaded1(unannotated, int_or_str)
+            assert_is_value(val1, AnyValue(AnySource.multiple_overload_matches))
+            val2 = overloaded2(unannotated, int_or_str)
+            assert_is_value(val2, AnyValue(AnySource.multiple_overload_matches))
+            val3 = overloaded2("x", int_or_str_or_float)  # E: incompatible_argument
+            assert_is_value(val3, AnyValue(AnySource.error))
