@@ -110,6 +110,17 @@ BoundArgs = Dict[str, Tuple[Union[None, str, int], Composite]]
 
 @dataclass
 class ActualArguments:
+    """Represents the actual arguments to a call.
+
+    Before creating this class, we decompose ``*args`` and ``**kwargs`` arguments
+    of known composition into additional positional and keyword arguments, and we
+    merge multiple ``*args`` or ``**kwargs``.
+
+    Creating the ``ActualArguments`` for a call is independent of the signature
+    of the callee.
+
+    """
+
     positionals: List[Composite]
     star_args: Optional[Value]  # represents the type of the elements of *args
     keywords: Dict[str, Tuple[bool, Composite]]
@@ -1547,10 +1558,20 @@ class OverloadedSignature:
         "due to ``Any``" is defined as a check that succeeded because ``Any`` was on the right-hand
         side but not the left-hand side of a typecheck.
 
+        This is implemented by setting a flag on the :class:`pyanalyze.value.CanAssignContext` when
+        a type check succeeds due to ``Any``. This flag gets propagated to
+        :attr:`ImplReturn.used_any_for_match`.
+
         If an overload does not match, but one of the arguments passed was a ``Union``, we try all
         the components of the ``Union`` separately. If some of them match, we subtract them from the
         ``Union`` and try the remaining overloads with a narrower ``Union``. In this case, we return
         a ``Union`` of the return values of all the matching overloads on success.
+
+        The decomposition happens in the private ``_check_param_type_compatibility`` method of
+        :class:`Signature`. When we perform decomposition, this method returns a
+        :class:`pyanalyze.value.Value` representing the remaining union members. This value is
+        then used to construct a new :class:`ActualArguments` object, which ends up in
+        :attr:`ImplReturn.remaining_arguments`.
 
         """
         actual_args = preprocess_args(args, visitor, node)
