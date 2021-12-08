@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Support literals over negative numbers in stubs
+  and stringified annotations (#326)
 - Improved overload matching algorithm (#321) (#324)
 - Support runtime overloaded functions with `pyanalyze.extensions.overload` (#318)
 - Internal support for overloaded functions (#316)
