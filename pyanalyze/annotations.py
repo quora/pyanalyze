@@ -746,7 +746,7 @@ class _Visitor(ast.NodeVisitor):
         return self.visit(node.value)
 
     def visit_BinOp(self, node: ast.BinOp) -> Optional[Value]:
-        if isinstance(node.op, ast.BitOr):
+        if isinstance(node.op, (ast.BitOr, ast3.BitOr)):
             return _SubscriptedValue(
                 KnownValue(Union), (self.visit(node.left), self.visit(node.right))
             )
