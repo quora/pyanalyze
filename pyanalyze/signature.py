@@ -1526,6 +1526,33 @@ class OverloadedSignature:
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> ImplReturn:
+        """Check a call to an overloaded function.
+
+        The way overloads are handled is not well specified in any PEPs. Useful resources
+        include:
+
+        - Michael Lee's `specification <https://github.com/python/typing/issues/253#issuecomment-389262904>`_
+          of mypy's behavior.
+        - Eric Traut's `discussion <https://github.com/microsoft/pyright/issues/2521#issuecomment-956823577>`_
+          of pyright's behavior.
+
+        Our behavior is closer to mypy. The general rule is to pick the first overload that matches
+        and return an error otherwise, but there are two twists: ``Any`` and unions.
+
+        If an overload matched only due to ``Any``, we continue looking for more overloads. If there
+        are other matching overloads, we return ``Any`` (with ``AnySource.multiple_overload_matches``).
+        This is different from pyright's behavior: pyright picks the first overload regardless
+        of ``Any``, which is unsafe in general. Returning a ``Union`` would be more precise, but
+        may lead to false positives according to experience from other type checkers. A match
+        "due to ``Any``" is defined as a check that succeeded because ``Any`` was on the right-hand
+        side but not the left-hand side of a typecheck.
+
+        If an overload does not match, but one of the arguments passed was a ``Union``, we try all
+        the components of the ``Union`` separately. If some of them match, we subtract them from the
+        ``Union`` and try the remaining overloads with a narrower ``Union``. In this case, we return
+        a ``Union`` of the return values of all the matching overloads on success.
+
+        """
         actual_args = preprocess_args(args, visitor, node)
         if actual_args is None:
             return ImplReturn(AnyValue(AnySource.error))
