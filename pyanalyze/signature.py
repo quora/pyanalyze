@@ -6,8 +6,6 @@ calls.
 
 """
 
-from collections import defaultdict
-import itertools
 
 from .error_code import ErrorCode
 from .safe import all_of_type
@@ -56,9 +54,11 @@ from .value import (
 
 import ast
 import asynq
+from collections import defaultdict, OrderedDict
 import collections.abc
 from dataclasses import dataclass, field, replace
 from functools import reduce
+import itertools
 from types import MethodType, FunctionType
 import inspect
 import qcore
@@ -69,7 +69,6 @@ from typing import (
     NamedTuple,
     Optional,
     ClassVar,
-    OrderedDict,
     Sequence,
     Union,
     Callable,
