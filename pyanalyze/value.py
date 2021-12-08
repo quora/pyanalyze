@@ -26,6 +26,7 @@ import enum
 import inspect
 from itertools import chain
 import qcore
+import textwrap
 from typing import (
     Any,
     Callable,
@@ -256,7 +257,8 @@ class CanAssignError:
             child.display(depth=depth + 2) for child in self.children
         )
         if self.message:
-            return f"{' ' * depth}{self.message}\n{child_result}"
+            message = textwrap.indent(self.message, " " * depth)
+            return f"{message}\n{child_result}"
         else:
             return child_result
 
@@ -321,6 +323,8 @@ class AnySource(enum.Enum):
     """Marker object used internally."""
     incomplete_annotation = 11
     """A special form like ClassVar without a type argument."""
+    multiple_overload_matches = 12
+    """Multiple matching overloads."""
 
 
 @dataclass(frozen=True)

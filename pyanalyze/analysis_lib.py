@@ -5,6 +5,7 @@ Commonly useful components for static analysis tools.
 """
 import ast
 import os
+import secrets
 import sys
 import types
 from typing import List, Callable, Mapping, Optional, Set
@@ -88,7 +89,7 @@ def make_module(
     code_str: str, extra_scope: Mapping[str, object] = {}
 ) -> types.ModuleType:
     """Creates a Python module with the given code."""
-    module_name = "<test input>"
+    module_name = f"<test input {secrets.token_hex()}>"
     mod = types.ModuleType(module_name)
     scope = mod.__dict__
     scope["__name__"] = module_name

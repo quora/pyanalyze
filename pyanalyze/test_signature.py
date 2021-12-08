@@ -1054,15 +1054,15 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_is_value(overloaded(["x"]), KnownValue(1))
             assert_is_value(overloaded([1]), KnownValue(2))
             val = overloaded([])  # pyright and mypy: Literal[1]
-            assert_is_value(val, AnyValue(AnySource.inference))
+            assert_is_value(val, AnyValue(AnySource.multiple_overload_matches))
             val2 = overloaded([unannotated])  # pyright: Literal[1], mypy: Any
-            assert_is_value(val2, AnyValue(AnySource.inference))
+            assert_is_value(val2, AnyValue(AnySource.multiple_overload_matches))
             val3 = overloaded(unannotated)  # pyright: Literal[1], mypy: Any
-            assert_is_value(val3, AnyValue(AnySource.inference))
+            assert_is_value(val3, AnyValue(AnySource.multiple_overload_matches))
             # pyright: Unknown, mypy: Literal[1]
             val4 = overloaded(list_union)  # E: incompatible_argument
             assert_is_value(val4, AnyValue(AnySource.error))
             val5 = overloaded(union_list)  # pyright and mypy: Literal[2, 1]
             assert_is_value(val5, KnownValue(1) | KnownValue(2))
             val6 = overloaded(explicit)  # pyright: Literal[1], mypy: Any
-            assert_is_value(val6, KnownValue(1) | KnownValue(2))
+            assert_is_value(val6, AnyValue(AnySource.multiple_overload_matches))

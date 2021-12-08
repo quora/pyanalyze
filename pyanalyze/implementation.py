@@ -33,7 +33,6 @@ from .value import (
     TypedDictValue,
     KnownValue,
     MultiValuedValue,
-    NO_RETURN_VALUE,
     KNOWN_MUTABLE_TYPES,
     UnboundMethodValue,
     Value,
@@ -59,14 +58,6 @@ from typing import cast, Dict, NewType, Callable, Optional, Union
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
 
 
-def _maybe_or_constraint(
-    left: AbstractConstraint, right: AbstractConstraint
-) -> AbstractConstraint:
-    if left is NULL_CONSTRAINT or right is NULL_CONSTRAINT:
-        return NULL_CONSTRAINT
-    return OrConstraint(left, right)
-
-
 def clean_up_implementation_fn_return(
     return_value: Union[Value, ImplReturn]
 ) -> ImplReturn:
@@ -87,13 +78,7 @@ def flatten_unions(
         clean_up_implementation_fn_return(callable(*vals))
         for vals in product(*value_lists)
     ]
-    if not results:
-        return ImplReturn(NO_RETURN_VALUE)
-    return ImplReturn(
-        unite_values(*[r.return_value for r in results]),
-        reduce(_maybe_or_constraint, [r.constraint for r in results]),
-        reduce(_maybe_or_constraint, [r.no_return_unless for r in results]),
-    )
+    return ImplReturn.unite_impl_rets(results)
 
 
 # Implementations of some important functions for use in their ExtendedArgSpecs (see above). These
