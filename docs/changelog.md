@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improved overload matching algorithm (#321)
+- Support runtime overloaded functions with `pyanalyze.extensions.overload` (#318)
 - Internal support for overloaded functions (#316)
 - Support `TypeVar` bounds and constraints (#315)
 - Improve error messages involving concrete dictionary and sequence values (#312)
