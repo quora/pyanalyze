@@ -818,6 +818,7 @@ class NameCheckVisitor(
         self._argspec_to_retval = {}
         self._method_cache = {}
         self._statement_types = set()
+        self._has_used_any_match = False
         self._fill_method_cache()
 
     def make_type_object(self, typ: Union[type, super]) -> TypeObject:
@@ -830,6 +831,19 @@ class NameCheckVisitor(
         self, left: TypeObject, right: TypeObject
     ) -> ContextManager[None]:
         return self.checker.assume_compatibility(left, right)
+
+    def has_used_any_match(self) -> bool:
+        """Whether Any was used to secure a match."""
+        return self._has_used_any_match
+
+    def record_any_used(self) -> None:
+        """Record that Any was used to secure a match."""
+        self._has_used_any_match = True
+
+    def reset_any_used(self) -> ContextManager[None]:
+        """Context that resets the value used by :meth:`has_used_any_match` and
+        :meth:`record_any_match`."""
+        return qcore.override(self, "_has_used_any_match", False)
 
     # The type for typ should be type, but that leads Cython to reject calls that pass
     # an instance of ABCMeta.

@@ -100,6 +100,15 @@ class PossibleKwarg:
 Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 
+@dataclass
+class ActualArguments:
+    positionals: List[Composite]
+    star_args: Optional[Value]  # represents the type of the elements of *args
+    keywords: Dict[str, Tuple[bool, Composite]]
+    star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
+    kwargs_required: bool
+
+
 class ImplReturn(NamedTuple):
     """Return value of :term:`impl` functions.
 
@@ -116,6 +125,12 @@ class ImplReturn(NamedTuple):
     no_return_unless: AbstractConstraint = NULL_CONSTRAINT
     """A :class:`pyanalyze.stacked_scopes.Constraint` indicating things that are true
     unless the function does not return."""
+    is_error: bool = False
+    """Whether there was an error in this call. Used only for overload resolutioon."""
+    used_any_for_match: bool = False
+    """Whether Any was used for this match. Used only for overload resolution."""
+    remaining_arguments: Optional[ActualArguments] = None
+    """Arguments that still need to be processed. Used only for overlaod resolution."""
 
 
 @dataclass
@@ -245,15 +260,6 @@ class SigParameter(inspect.Parameter):
         return formatted
 
 
-@dataclass
-class ActualArguments:
-    positionals: List[Composite]
-    star_args: Optional[Value]  # represents the type of the elements of *args
-    keywords: Dict[str, Tuple[bool, Composite]]
-    star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
-    kwargs_required: bool
-
-
 @dataclass(frozen=True)
 class Signature:
     """Represents the signature of a Python callable.
@@ -312,8 +318,8 @@ class Signature:
         var_value: Value,
         visitor: "NameCheckVisitor",
         node: ast.AST,
-        typevar_map: TypeVarMap,
-    ) -> bool:
+        typevar_map: Optional[TypeVarMap] = None,
+    ) -> Optional[TypeVarMap]:
         if param.annotation is not EMPTY and not (
             isinstance(param.default, Composite) and var_value is param.default.value
         ):
@@ -330,8 +336,9 @@ class Signature:
                     ErrorCode.incompatible_argument,
                     detail=str(tv_map),
                 )
-                return False
-        return True
+                return None
+            return tv_map
+        return {}
 
     def _apply_annotated_constraints(
         self, raw_return: Union[Value, ImplReturn], bound_args: inspect.BoundArguments
@@ -591,11 +598,11 @@ class Signature:
     def get_default_return(self, source: AnySource = AnySource.error) -> ImplReturn:
         return_value = self.signature.return_annotation
         if return_value is EMPTY:
-            return ImplReturn(AnyValue(AnySource.unannotated))
+            return ImplReturn(AnyValue(AnySource.unannotated), is_error=True)
         if self._return_key in self.typevars_of_params:
             typevar_values = {tv: AnyValue(source) for tv in self.all_typevars}
             return_value = return_value.substitute_typevars(typevar_values)
-        return ImplReturn(return_value)
+        return ImplReturn(return_value, is_error=True)
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
@@ -613,7 +620,11 @@ class Signature:
         return self.check_call_preprocessed(preprocessed, visitor, node)
 
     def check_call_preprocessed(
-        self, preprocessed: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
+        self,
+        preprocessed: ActualArguments,
+        visitor: "NameCheckVisitor",
+        node: ast.AST,
+        is_overload: bool = False,
     ) -> ImplReturn:
         if self.is_ellipsis_args:
             if self.allow_call:
@@ -622,8 +633,8 @@ class Signature:
                     return ImplReturn(runtime_return)
             return_value = self.signature.return_annotation
             if return_value is EMPTY:
-                return ImplReturn(AnyValue(AnySource.unannotated))
-            return ImplReturn(return_value)
+                return_value = AnyValue(AnySource.unannotated)
+            return ImplReturn(return_value, used_any_for_match=True)
 
         bound_args = self.bind_arguments(preprocessed, visitor, node)
         if bound_args is None:
@@ -640,17 +651,10 @@ class Signature:
                     continue
                 var_value = variables[param_name]
                 param = self.signature.parameters[param_name]
-                if param.annotation is EMPTY:
-                    continue
-                tv_map = param.annotation.can_assign(var_value, visitor)
-                if isinstance(tv_map, CanAssignError):
-                    visitor.show_error(
-                        node,
-                        f"Incompatible argument type for {param.name}: expected"
-                        f" {param.annotation} but got {var_value}",
-                        ErrorCode.incompatible_argument,
-                        detail=str(tv_map),
-                    )
+                tv_map = self._check_param_type_compatibility(
+                    param, var_value, visitor, node
+                )
+                if tv_map is None:
                     return self.get_default_return()
                 else:
                     # For now, the first assignment wins.
@@ -670,9 +674,10 @@ class Signature:
         had_error = False
         for name, var_value in variables.items():
             param = self.signature.parameters[name]
-            if not self._check_param_type_compatibility(
+            tv_map = self._check_param_type_compatibility(
                 param, var_value, visitor, node, typevar_values
-            ):
+            )
+            if tv_map is None:
                 had_error = True
 
         # don't call the implementation function if we had an error, so that
@@ -696,7 +701,7 @@ class Signature:
                 else:
                     return_value = runtime_return
         if return_value is EMPTY:
-            return ImplReturn(AnyValue(AnySource.unannotated))
+            return ImplReturn(AnyValue(AnySource.unannotated), is_error=had_error)
         else:
             return self._apply_annotated_constraints(return_value, bound_args)
 
@@ -1409,6 +1414,10 @@ class OverloadedSignature:
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
     ) -> ImplReturn:
+        actual_args = preprocess_args(args, visitor, node)
+        if actual_args is None:
+            return ImplReturn(AnyValue(AnySource.error))
+
         # TODO this has a number of issues:
         # - Need to read up more about how exactly overload should work
         # - Do we really always match the first overload that works? What if one of the args is Any?
