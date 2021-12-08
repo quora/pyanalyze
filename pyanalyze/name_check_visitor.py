@@ -98,6 +98,7 @@ from .signature import (
     ANY_SIGNATURE,
     BoundMethodSignature,
     ConcreteSignature,
+    ImplReturn,
     MaybeSignature,
     OverloadedSignature,
     Signature,
@@ -4136,9 +4137,7 @@ class NameCheckVisitor(
         if extended_argspec is ANY_SIGNATURE:
             # don't bother calling it
             extended_argspec = None
-            return_value = AnyValue(AnySource.from_another)
-            constraint = NULL_CONSTRAINT
-            no_return_unless = NULL_CONSTRAINT
+            impl_ret = ImplReturn(AnyValue(AnySource.from_another))
 
         elif extended_argspec is None:
             self._show_error_if_checking(
@@ -4146,9 +4145,7 @@ class NameCheckVisitor(
                 f"{callee_wrapped} is not callable",
                 error_code=ErrorCode.not_callable,
             )
-            return_value = AnyValue(AnySource.error)
-            constraint = NULL_CONSTRAINT
-            no_return_unless = NULL_CONSTRAINT
+            impl_ret = ImplReturn(AnyValue(AnySource.error))
 
         else:
             arguments = [
@@ -4161,21 +4158,16 @@ class NameCheckVisitor(
                 for keyword, value in keywords
             ]
             if self._is_checking():
-                (
-                    return_value,
-                    constraint,
-                    no_return_unless,
-                ) = extended_argspec.check_call(arguments, self, node)
+                impl_ret = extended_argspec.check_call(arguments, self, node)
             else:
                 with self.catch_errors():
-                    (
-                        return_value,
-                        constraint,
-                        no_return_unless,
-                    ) = extended_argspec.check_call(arguments, self, node)
+                    impl_ret = extended_argspec.check_call(arguments, self, node)
 
-        if no_return_unless is not NULL_CONSTRAINT:
-            self.add_constraint(node, no_return_unless)
+        return_value = impl_ret.return_value
+        constraint = impl_ret.constraint
+
+        if impl_ret.no_return_unless is not NULL_CONSTRAINT:
+            self.add_constraint(node, impl_ret.no_return_unless)
 
         if (
             extended_argspec is not None

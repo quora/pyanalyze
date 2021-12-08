@@ -66,6 +66,7 @@ from typing import (
     NamedTuple,
     Optional,
     ClassVar,
+    OrderedDict,
     Sequence,
     Union,
     Callable,
@@ -98,6 +99,11 @@ class PossibleKwarg:
 # None for positional args, str for keyword args,
 # ARGS for *args, KWARGS for **kwargs.
 Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
+
+# Arguments bound to a call. The first member of the tuple is a reference back
+# to the ActualArguments: the value is a str for a kwarg, int for a positional,
+# None for something we cannot infer.
+BoundArgs = Dict[str, Tuple[Union[None, str, int], Composite]]
 
 
 @dataclass
@@ -410,7 +416,7 @@ class Signature:
 
     def bind_arguments(
         self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Optional[inspect.BoundArguments]:
+    ) -> Optional[BoundArgs]:
         """Attempt to bind the parameters in the signature to the arguments actually passed in.
 
         Nomenclature:
@@ -421,17 +427,20 @@ class Signature:
         """
         positional_index = 0
         keywords_consumed: Set[str] = set()
-        bound_args: Dict[str, Composite] = {}
+        bound_args: BoundArgs = {}
         star_args_consumed = False
         star_kwargs_consumed = False
 
         for param in self.signature.parameters.values():
             if param.kind is SigParameter.POSITIONAL_ONLY:
                 if positional_index < len(actual_args.positionals):
-                    bound_args[param.name] = actual_args.positionals[positional_index]
+                    bound_args[param.name] = (
+                        positional_index,
+                        actual_args.positionals[positional_index],
+                    )
                     positional_index += 1
                 elif actual_args.star_args is not None:
-                    bound_args[param.name] = Composite(actual_args.star_args)
+                    bound_args[param.name] = None, Composite(actual_args.star_args)
                     star_args_consumed = True
                 elif param.default is EMPTY:
                     self.show_call_error(
@@ -441,10 +450,13 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = param.default
+                    bound_args[param.name] = None, param.default
             elif param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
                 if positional_index < len(actual_args.positionals):
-                    bound_args[param.name] = actual_args.positionals[positional_index]
+                    bound_args[param.name] = (
+                        positional_index,
+                        actual_args.positionals[positional_index],
+                    )
                     positional_index += 1
                     if param.name in actual_args.keywords:
                         self.show_call_error(
@@ -472,7 +484,7 @@ class Signature:
                         star_kwargs_consumed = True
                     else:
                         value = actual_args.star_args
-                    bound_args[param.name] = Composite(value)
+                    bound_args[param.name] = None, Composite(value)
                 elif param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
                     if not definitely_provided and param.default is EMPTY:
@@ -483,10 +495,10 @@ class Signature:
                             visitor,
                         )
                         return None
-                    bound_args[param.name] = composite
+                    bound_args[param.name] = param.name, composite
                     keywords_consumed.add(param.name)
                 elif actual_args.star_kwargs is not None:
-                    bound_args[param.name] = Composite(actual_args.star_kwargs)
+                    bound_args[param.name] = None, Composite(actual_args.star_kwargs)
                     star_kwargs_consumed = True
                 elif param.default is EMPTY:
                     self.show_call_error(
@@ -494,7 +506,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = param.default
+                    bound_args[param.name] = None, param.default
             elif param.kind is SigParameter.KEYWORD_ONLY:
                 if param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
@@ -506,10 +518,10 @@ class Signature:
                             visitor,
                         )
                         return None
-                    bound_args[param.name] = composite
+                    bound_args[param.name] = param.name, composite
                     keywords_consumed.add(param.name)
                 elif actual_args.star_kwargs is not None:
-                    bound_args[param.name] = Composite(actual_args.star_kwargs)
+                    bound_args[param.name] = None, Composite(actual_args.star_kwargs)
                     star_kwargs_consumed = True
                     keywords_consumed.add(param.name)
                 elif param.default is EMPTY:
@@ -518,7 +530,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = param.default
+                    bound_args[param.name] = None, param.default
             elif param.kind is SigParameter.VAR_POSITIONAL:
                 star_args_consumed = True
                 positionals = []
@@ -530,7 +542,7 @@ class Signature:
                     star_args_value = GenericValue(tuple, [element_value])
                 else:
                     star_args_value = SequenceIncompleteValue(tuple, positionals)
-                bound_args[param.name] = Composite(star_args_value)
+                bound_args[param.name] = None, Composite(star_args_value)
             elif param.kind is SigParameter.VAR_KEYWORD:
                 star_kwargs_consumed = True
                 items = {}
@@ -550,7 +562,7 @@ class Signature:
                     )
                 else:
                     star_kwargs_value = TypedDictValue(items)
-                bound_args[param.name] = Composite(star_kwargs_value)
+                bound_args[param.name] = None, Composite(star_kwargs_value)
             else:
                 assert False, f"unhandled param {param.kind}"
 
@@ -582,7 +594,7 @@ class Signature:
         ):
             self.show_call_error("**kwargs provided but not used", node, visitor)
             return None
-        return inspect.BoundArguments(self.signature, bound_args)
+        return bound_args
 
     def show_call_error(
         self,
@@ -639,9 +651,7 @@ class Signature:
         bound_args = self.bind_arguments(preprocessed, visitor, node)
         if bound_args is None:
             return self.get_default_return()
-        variables = {
-            key: composite.value for key, composite in bound_args.arguments.items()
-        }
+        variables = {key: composite.value for key, (_, composite) in bound_args.items()}
         return_value = self.signature.return_annotation
         typevar_values: Dict[TypeVar, Value] = {}
         if self.all_typevars:
@@ -680,12 +690,21 @@ class Signature:
             if tv_map is None:
                 had_error = True
 
+        inspect_bound_args = inspect.BoundArguments(
+            self.signature,
+            OrderedDict(
+                (param, composite) for param, (_, composite) in bound_args.items()
+            ),
+        )
         # don't call the implementation function if we had an error, so that
         # the implementation function doesn't have to worry about basic
         # type checking
         if not had_error and self.impl is not None:
             ctx = CallContext(
-                vars=variables, visitor=visitor, bound_args=bound_args, node=node
+                vars=variables,
+                visitor=visitor,
+                bound_args=inspect_bound_args,
+                node=node,
             )
             return_value = self.impl(ctx)
 
@@ -703,7 +722,7 @@ class Signature:
         if return_value is EMPTY:
             return ImplReturn(AnyValue(AnySource.unannotated), is_error=had_error)
         else:
-            return self._apply_annotated_constraints(return_value, bound_args)
+            return self._apply_annotated_constraints(return_value, inspect_bound_args)
 
     def _maybe_perform_call(
         self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST

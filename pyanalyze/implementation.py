@@ -89,11 +89,10 @@ def flatten_unions(
     ]
     if not results:
         return ImplReturn(NO_RETURN_VALUE)
-    return_values, constraints, no_return_unless = zip(*results)
     return ImplReturn(
-        unite_values(*return_values),
-        reduce(_maybe_or_constraint, constraints),
-        reduce(_maybe_or_constraint, no_return_unless),
+        unite_values(*[r.return_value for r in results]),
+        reduce(_maybe_or_constraint, [r.constraint for r in results]),
+        reduce(_maybe_or_constraint, [r.no_return_unless for r in results]),
     )
 
 
