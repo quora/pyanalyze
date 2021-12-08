@@ -1589,13 +1589,25 @@ class OverloadedSignature:
         for i, sig in enumerate(self.signatures):
             with visitor.catch_errors() as caught_errors:
                 ret = sig.check_call_preprocessed(
-                    actual_args, visitor, node, is_overload=i != last
+                    actual_args,
+                    visitor,
+                    node,
+                    # We set is_overload to False for the last overload
+                    # because we can't do union decomposition on the last one:
+                    # there's no other overload that could handle the remaining
+                    # union members.
+                    is_overload=i != last,
                 )
             errors_per_overload.append(caught_errors)
             if ret.is_error:
                 continue
             elif ret.remaining_arguments is not None:
                 if ret.used_any_for_match:
+                    # If an overload used both Any and union decomposition,
+                    # we treat it differently from either: unlike Any matches
+                    # it's not enough to prevent an error later (because it's
+                    # not a full match), but unlike union matches it's enough
+                    # to trigger an Any return type.
                     union_and_any_rets.append(ret)
                 else:
                     union_rets.append(ret)
@@ -1608,7 +1620,8 @@ class OverloadedSignature:
 
         if any_rets:
             # We don't do this if we have union_rets, because if we got here, we
-            # didn't get any clean matches.
+            # didn't get any clean matches. Therefore, we must have some remaining
+            # union members we haven't handled.
             return self._unite_rets(any_rets, union_and_any_rets, union_rets)
 
         # None of the signatures matched
