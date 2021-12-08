@@ -157,7 +157,7 @@ class ImplReturn(NamedTuple):
     used_any_for_match: bool = False
     """Whether Any was used for this match. Used only for overload resolution."""
     remaining_arguments: Optional[ActualArguments] = None
-    """Arguments that still need to be processed. Used only for overlaod resolution."""
+    """Arguments that still need to be processed. Used only for overload resolution."""
 
     @classmethod
     def unite_impl_rets(cls, rets: Sequence["ImplReturn"]) -> "ImplReturn":
