@@ -521,6 +521,10 @@ def _type_from_value(value: Value, ctx: Context, is_typeddict: bool = False) -> 
         if root is typing.Union:
             return unite_values(*[_type_from_value(elt, ctx) for elt in value.members])
         elif is_typing_name(root, "Literal"):
+            # Note that in Python 3.8, the way typing's internal cache works means that
+            # Literal[1] and Literal[True] are cached to the same value, so if you use
+            # both, you'll get whichever one was used first in later calls. There's nothing
+            # we can do about that.
             if all(isinstance(elt, KnownValue) for elt in value.members):
                 return unite_values(*value.members)
             else:

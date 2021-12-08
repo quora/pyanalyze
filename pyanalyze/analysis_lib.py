@@ -89,6 +89,8 @@ def make_module(
     code_str: str, extra_scope: Mapping[str, object] = {}
 ) -> types.ModuleType:
     """Creates a Python module with the given code."""
+    # Make the name unique to avoid clobbering the overloads dict
+    # from pyanalyze.extensions.overload.
     module_name = f"<test input {secrets.token_hex()}>"
     mod = types.ModuleType(module_name)
     scope = mod.__dict__
