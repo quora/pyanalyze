@@ -784,6 +784,30 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 ),
             )
 
+    @assert_passes()
+    def test_copy_and_update(self):
+        from typing import Dict
+        from pyanalyze.value import WeakExtension
+
+        def capybara():
+            d1: Dict[str, int] = {"x": 1}
+            d1_val = GenericValue(dict, [TypedValue(str), TypedValue(int)])
+            assert_is_value(d1, d1_val)
+            d1[1] = 3  # E: incompatible_argument
+            d2 = d1.copy()
+            assert_is_value(d2, AnnotatedValue(d1_val, [WeakExtension()]))
+            d2[1] = 3
+            assert_is_value(
+                d2,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(TypedValue(str), TypedValue(int), is_many=True),
+                        KVPair(KnownValue(1), KnownValue(3)),
+                    ],
+                ),
+            )
+
 
 class TestSequenceGetItem(TestNameCheckVisitorBase):
     @assert_passes()

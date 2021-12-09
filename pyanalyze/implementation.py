@@ -26,6 +26,7 @@ from .value import (
     HasAttrGuardExtension,
     KVPair,
     ParameterTypeGuardExtension,
+    TypeVarValue,
     TypedValue,
     SubclassValue,
     GenericValue,
@@ -57,7 +58,7 @@ import qcore
 import inspect
 import warnings
 from types import FunctionType
-from typing import Sequence, cast, Dict, NewType, Callable, Optional, Union
+from typing import Sequence, TypeVar, cast, Dict, NewType, Callable, Optional, Union
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
 
@@ -588,7 +589,7 @@ def _unpack_iterable_of_pairs(
         if isinstance(vals, CanAssignError):
             child = CanAssignError(f"{concrete} is not a key-value pair", [vals])
             return CanAssignError(f"In member {i} of iterable {val}", [child])
-        kv_pairs.append(KVPair(vals[0], vals[1], is_many=True))
+        kv_pairs.append(KVPair(vals[0], vals[1]))
     return kv_pairs
 
 
@@ -1053,6 +1054,9 @@ _ENCODING_PARAMETER = SigParameter(
     "encoding", annotation=TypedValue(str), default=KnownValue("")
 )
 
+K = TypeVar("K")
+V = TypeVar("V")
+
 
 def get_default_argspecs() -> Dict[object, Signature]:
     signatures = [
@@ -1267,8 +1271,23 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 SigParameter("m", _POS_ONLY, default=_NO_ARG_SENTINEL),
                 SigParameter("kwargs", SigParameter.VAR_KEYWORD),
             ],
+            KnownValue(None),
             callable=dict.update,
             impl=_dict_update_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter(
+                    "self",
+                    _POS_ONLY,
+                    annotation=GenericValue(dict, [TypeVarValue(K), TypeVarValue(V)]),
+                )
+            ],
+            AnnotatedValue(
+                GenericValue(dict, [TypeVarValue(K), TypeVarValue(V)]),
+                [WeakExtension()],
+            ),
+            callable=dict.copy,
         ),
         # Implementations of keys/items/values to compensate for incomplete
         # typeshed support. In the stubs these return instances of a private class
