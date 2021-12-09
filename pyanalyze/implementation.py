@@ -415,13 +415,9 @@ def _typeddict_setitem(
 
 
 def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
-    self_value = replace_known_sequence_value(ctx.vars["self"])
-    key = ctx.vars["k"]
-    value = ctx.vars["v"]
-    # apparently for a[b] = c we get passed the AST node for a
     varname = ctx.varname_for_arg("self")
-    pair = KVPair(key, value)
-    return _add_pairs_to_dict(self_value, [pair], ctx, varname)
+    pair = KVPair(ctx.vars["k"], ctx.vars["v"])
+    return _add_pairs_to_dict(ctx.vars["self"], [pair], ctx, varname)
 
 
 def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
