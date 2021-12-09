@@ -1,3 +1,4 @@
+import enum
 from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import reveal_type
@@ -20,6 +21,7 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    CanAssignContext,
     CanAssignError,
     HasAttrGuardExtension,
     KVPair,
@@ -38,12 +40,14 @@ from .value import (
     Value,
     WeakExtension,
     concrete_values_from_iterable,
+    kv_pairs_from_mapping,
     make_weak,
     unite_values,
     flatten_values,
     replace_known_sequence_value,
     dump_value,
     assert_is_value,
+    unpack_values,
 )
 
 from functools import reduce
@@ -53,7 +57,7 @@ import qcore
 import inspect
 import warnings
 from types import FunctionType
-from typing import cast, Dict, NewType, Callable, Optional, Union
+from typing import Sequence, cast, Dict, NewType, Callable, Optional, Union
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
 
@@ -383,79 +387,41 @@ def _tuple_getitem_impl(ctx: CallContext) -> ImplReturn:
     return _sequence_getitem_impl(ctx, tuple)
 
 
+def _typeddict_setitem(
+    self_value: TypedDictValue, key: Value, value: Value, ctx: CallContext
+) -> None:
+    if not isinstance(key, KnownValue) or not isinstance(key.val, str):
+        ctx.show_error(
+            f"TypedDict key must be a string literal (got {key})",
+            ErrorCode.invalid_typeddict_key,
+            arg="k",
+        )
+    elif key.val not in self_value.items:
+        ctx.show_error(
+            f"Key {key.val!r} does not exist in {self_value}",
+            ErrorCode.invalid_typeddict_key,
+            arg="k",
+        )
+    else:
+        _, expected_type = self_value.items[key.val]
+        tv_map = expected_type.can_assign(value, ctx.visitor)
+        if isinstance(tv_map, CanAssignError):
+            ctx.show_error(
+                f"Value for key {key.val!r} must be {expected_type}, not {value}",
+                ErrorCode.incompatible_argument,
+                arg="v",
+                detail=str(tv_map),
+            )
+
+
 def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
     self_value = replace_known_sequence_value(ctx.vars["self"])
     key = ctx.vars["k"]
     value = ctx.vars["v"]
     # apparently for a[b] = c we get passed the AST node for a
     varname = ctx.varname_for_arg("self")
-    if isinstance(self_value, TypedDictValue):
-        if not isinstance(key, KnownValue) or not isinstance(key.val, str):
-            ctx.show_error(
-                f"TypedDict key must be a string literal (got {key})",
-                ErrorCode.invalid_typeddict_key,
-                arg="k",
-            )
-        elif key.val not in self_value.items:
-            ctx.show_error(
-                f"Key {key.val!r} does not exist in {self_value}",
-                ErrorCode.invalid_typeddict_key,
-                arg="k",
-            )
-        else:
-            _, expected_type = self_value.items[key.val]
-            tv_map = expected_type.can_assign(value, ctx.visitor)
-            if isinstance(tv_map, CanAssignError):
-                ctx.show_error(
-                    f"Value for key {key.val!r} must be {expected_type}, not {value}",
-                    ErrorCode.incompatible_argument,
-                    arg="v",
-                    detail=str(tv_map),
-                )
-        return ImplReturn(KnownValue(None))
-    elif isinstance(self_value, DictIncompleteValue):
-        if varname is None:
-            return ImplReturn(KnownValue(None))
-        no_return_unless = Constraint(
-            varname,
-            ConstraintType.is_value_object,
-            True,
-            DictIncompleteValue(
-                self_value.typ, [*self_value.kv_pairs, KVPair(key, value)]
-            ),
-        )
-        return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-    elif isinstance(self_value, TypedValue):
-        key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
-        value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
-        if _is_weak(ctx.vars["self"]):
-            key_type = unite_values(key_type, key)
-            value_type = unite_values(value_type, value)
-            constrained_value = make_weak(GenericValue(dict, [key_type, value_type]))
-            if varname is None:
-                return ImplReturn(KnownValue(None))
-            no_return_unless = Constraint(
-                varname, ConstraintType.is_value_object, True, constrained_value
-            )
-            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        else:
-            tv_map = key_type.can_assign(key, ctx.visitor)
-            if isinstance(tv_map, CanAssignError):
-                ctx.show_error(
-                    f"Cannot set key of type {key} (expecting {key_type})",
-                    ErrorCode.incompatible_argument,
-                    arg="k",
-                    detail=str(tv_map),
-                )
-            tv_map = value_type.can_assign(value, ctx.visitor)
-            if isinstance(tv_map, CanAssignError):
-                ctx.show_error(
-                    f"Cannot set value of type {value} (expecting {value_type})",
-                    ErrorCode.incompatible_argument,
-                    arg="v",
-                    detail=str(tv_map),
-                )
-    return ImplReturn(KnownValue(None))
+    pair = KVPair(key, value)
+    return _add_pairs_to_dict(self_value, [pair], ctx, varname)
 
 
 def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
@@ -607,6 +573,130 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
             return ImplReturn(new_value_type)
     else:
         return ImplReturn(AnyValue(AnySource.inference))
+
+
+def _unpack_iterable_of_pairs(
+    val: Value, ctx: CanAssignContext
+) -> Union[Sequence[KVPair], CanAssignError]:
+    concrete = concrete_values_from_iterable(val, ctx)
+    if isinstance(concrete, CanAssignError):
+        return concrete
+    if isinstance(concrete, Value):
+        vals = unpack_values(concrete, ctx, 2)
+        if isinstance(vals, CanAssignError):
+            return CanAssignError(f"{concrete} is not a key-value pair", [vals])
+        return [KVPair(vals[0], vals[1], is_many=True)]
+    kv_pairs = []
+    for i, subval in enumerate(concrete):
+        vals = unpack_values(subval, ctx, 2)
+        if isinstance(vals, CanAssignError):
+            child = CanAssignError(f"{concrete} is not a key-value pair", [vals])
+            return CanAssignError(f"In member {i} of iterable {val}", [child])
+        kv_pairs.append(KVPair(vals[0], vals[1], is_many=True))
+    return kv_pairs
+
+
+def _weak_dict_update(
+    self_val: Value,
+    pairs: Sequence[KVPair],
+    ctx: CallContext,
+    varname: Optional[Varname],
+) -> ImplReturn:
+    self_pairs = kv_pairs_from_mapping(self_val, ctx.visitor)
+    if isinstance(self_pairs, CanAssignError):
+        ctx.show_error("self is not a mapping", arg="self", detail=str(self_pairs))
+        return ImplReturn(KnownValue(None))
+    pairs = [*self_pairs, *pairs]
+
+    if varname is not None:
+        no_return_unless = Constraint(
+            varname,
+            ConstraintType.is_value_object,
+            True,
+            DictIncompleteValue(
+                self_val.typ if isinstance(self_val, TypedValue) else dict, pairs
+            ),
+        )
+        return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
+
+    return ImplReturn(KnownValue(None))
+
+
+def _add_pairs_to_dict(
+    self_val: Value,
+    pairs: Sequence[KVPair],
+    ctx: CallContext,
+    varname: Optional[Varname],
+) -> ImplReturn:
+    if _is_weak(self_val):
+        return _weak_dict_update(self_val, pairs, ctx, varname)
+
+    # Now we don't care about Annotated
+    self_val = replace_known_sequence_value(self_val)
+    if isinstance(self_val, TypedDictValue):
+        for pair in pairs:
+            _typeddict_setitem(self_val, pair.key, pair.value, ctx)
+        return ImplReturn(KnownValue(None))
+    elif isinstance(self_val, DictIncompleteValue):
+        return _weak_dict_update(self_val, pairs, ctx, varname)
+    elif isinstance(self_val, TypedValue):
+        key_type = self_val.get_generic_arg_for_type(dict, ctx.visitor, 0)
+        value_type = self_val.get_generic_arg_for_type(dict, ctx.visitor, 1)
+        for pair in pairs:
+            tv_map = key_type.can_assign(pair.key, ctx.visitor)
+            if isinstance(tv_map, CanAssignError):
+                ctx.show_error(
+                    f"Cannot set key of type {pair.key} (expecting {key_type})",
+                    ErrorCode.incompatible_argument,
+                    arg="k",
+                    detail=str(tv_map),
+                )
+            tv_map = value_type.can_assign(pair.value, ctx.visitor)
+            if isinstance(tv_map, CanAssignError):
+                ctx.show_error(
+                    f"Cannot set value of type {pair.value} (expecting {value_type})",
+                    ErrorCode.incompatible_argument,
+                    arg="v",
+                    detail=str(tv_map),
+                )
+        return ImplReturn(KnownValue(None))
+    else:
+        return _weak_dict_update(self_val, pairs, ctx, varname)
+
+
+def _dict_update_impl(ctx: CallContext) -> ImplReturn:
+    def inner(self_val: Value, m_val: Value, kwargs_val: Value) -> ImplReturn:
+        pairs = []
+        # The second argument must be either a mapping or an iterable of key-value pairs.
+        if m_val is not _NO_ARG_SENTINEL:
+            m_pairs = kv_pairs_from_mapping(m_val, ctx.visitor)
+            if isinstance(m_pairs, CanAssignError):
+                # Try an iterable of pairs instead
+                iterable_pairs = _unpack_iterable_of_pairs(m_val, ctx.visitor)
+                if isinstance(iterable_pairs, CanAssignError):
+                    error = CanAssignError(children=[m_pairs, iterable_pairs])
+                    ctx.show_error(
+                        "m is not a mapping or iterable", arg="self", detail=str(error)
+                    )
+                else:
+                    pairs += iterable_pairs
+            else:
+                pairs += m_pairs
+
+        # Separate **kwargs
+        kwargs_pairs = kv_pairs_from_mapping(kwargs_val, ctx.visitor)
+        if isinstance(kwargs_pairs, CanAssignError):
+            # should never happen
+            ctx.show_error(
+                "kwargs is not a mapping", arg="kwargs", detail=str(kwargs_pairs)
+            )
+            return ImplReturn(KnownValue(None))
+        pairs += kwargs_pairs
+
+        varname = ctx.visitor.varname_for_self_constraint(ctx.node)
+        return _add_pairs_to_dict(self_val, pairs, ctx, varname)
+
+    return flatten_unions(inner, ctx.vars["self"], ctx.vars["m"], ctx.vars["kwargs"])
 
 
 def _dict_keys_impl(ctx: CallContext) -> Value:
@@ -1174,6 +1264,15 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=dict.setdefault,
             impl=_dict_setdefault_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter("m", _POS_ONLY, default=_NO_ARG_SENTINEL),
+                SigParameter("kwargs", SigParameter.VAR_KEYWORD),
+            ],
+            callable=dict.update,
+            impl=_dict_update_impl,
         ),
         # Implementations of keys/items/values to compensate for incomplete
         # typeshed support. In the stubs these return instances of a private class

@@ -751,6 +751,24 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             )
             assert_is_value(strong_dict, expected)
 
+    @assert_passes()
+    def test_dict_update(self):
+        def capybara():
+            d1 = {}
+            d1.update({})
+            d2 = {}
+            d2.update(a=3, b=4)
+            assert_is_value(
+                d2,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(KnownValue("a"), KnownValue(3)),
+                        KVPair(KnownValue("b"), KnownValue(4)),
+                    ],
+                ),
+            )
+
 
 class TestSequenceGetItem(TestNameCheckVisitorBase):
     @assert_passes()

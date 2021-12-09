@@ -1962,6 +1962,33 @@ def concrete_values_from_iterable(
     return iter_tv_map
 
 
+K = TypeVar("K")
+V = TypeVar("V")
+MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
+
+
+def kv_pairs_from_mapping(
+    value_val: Value, ctx: CanAssignContext
+) -> Union[Sequence[KVPair], CanAssignError]:
+    """Return the :class:`KVPair` objects that can be extracted from this value,
+    or a :class:`CanAssignError` on error."""
+    value_val = replace_known_sequence_value(value_val)
+    if isinstance(value_val, DictIncompleteValue):
+        return value_val.kv_pairs
+    elif isinstance(value_val, TypedDictValue):
+        return [
+            KVPair(KnownValue(key), value, is_required=required)
+            for key, (required, value) in value_val.items.items()
+        ]
+    else:
+        can_assign = MappingValue.can_assign(value_val, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return can_assign
+        key_type = can_assign.get(K, AnyValue(AnySource.generic_argument))
+        value_type = can_assign.get(V, AnyValue(AnySource.generic_argument))
+        return [KVPair(key_type, value_type, is_many=True)]
+
+
 def unpack_values(
     value: Value,
     ctx: CanAssignContext,
