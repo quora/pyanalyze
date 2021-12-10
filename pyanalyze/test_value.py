@@ -3,7 +3,7 @@ import collections.abc
 import enum
 import io
 import pickle
-from typing import NewType, Sequence, Union
+from typing import NewType
 from typing_extensions import Protocol, runtime_checkable
 import typing
 import types
@@ -14,17 +14,15 @@ from . import tests
 from . import value
 from .checker import Checker
 from .name_check_visitor import NameCheckVisitor
-from .signature import Signature, MaybeSignature
+from .signature import Signature
 from .stacked_scopes import Composite
 from .test_config import TestConfig
-from .type_object import TypeObject
 from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
     CallableValue,
     CanAssignError,
-    GenericBases,
     KVPair,
     Value,
     GenericValue,
@@ -32,34 +30,13 @@ from .value import (
     TypedValue,
     MultiValuedValue,
     SubclassValue,
-    CanAssignContext,
     SequenceIncompleteValue,
     TypeVarMap,
     concrete_values_from_iterable,
 )
 
-
-class Context(CanAssignContext):
-    def __init__(self) -> None:
-        self.checker = Checker(TestConfig())
-        self.visitor = NameCheckVisitor("", "", ast.parse(""), checker=self.checker)
-
-    def make_type_object(self, typ: Union[type, super]) -> TypeObject:
-        return self.checker.make_type_object(typ)
-
-    def get_generic_bases(
-        self, typ: Union[type, str], generic_args: Sequence[Value] = ()
-    ) -> GenericBases:
-        return self.checker.arg_spec_cache.get_generic_bases(typ, generic_args)
-
-    def signature_from_value(self, value: Value) -> MaybeSignature:
-        return self.visitor.signature_from_value(value)
-
-    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
-        return self.visitor.get_attribute(Composite(root_value), attribute)
-
-
-CTX = Context()
+_checker = Checker(TestConfig())
+CTX = NameCheckVisitor("", "", ast.parse(""), checker=_checker)
 
 
 def assert_cannot_assign(left: Value, right: Value) -> None:
