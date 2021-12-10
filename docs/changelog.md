@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Limit special case for `Literal` callables to
+  functions, not any callable (#329)
 - Fix detection of PEP 604 union types in stubs (#327)
 - Support literals over negative numbers in stubs
   and stringified annotations (#326)
