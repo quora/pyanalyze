@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, InitVar
 import enum
 import inspect
 from itertools import chain
+from types import FunctionType
 import qcore
 import textwrap
 from typing import (
@@ -399,9 +400,10 @@ class KnownValue(Value):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         # Make Literal[function] equivalent to a Callable type
-        signature = ctx.get_signature(self.val)
-        if signature is not None:
-            return CallableValue(signature).can_assign(other, ctx)
+        if isinstance(self.val, FunctionType):
+            signature = ctx.get_signature(self.val)
+            if signature is not None:
+                return CallableValue(signature).can_assign(other, ctx)
         if isinstance(other, KnownValue):
             if self.val is other.val:
                 return {}
