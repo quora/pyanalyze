@@ -473,10 +473,11 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _apply_changes_to_lines(
-        cls, changes: List[Replacement], lines: Sequence[str]
+        cls, changes: List[Replacement], input_lines: Sequence[str]
     ) -> Sequence[str]:
         # only apply the first change because that change might affect other fixes
         # that test_scope came up for that file. So we break after finding first applicable fix.
+        lines = list(input_lines)
         if changes:
             change = changes[0]
             additions = change.lines_to_add
@@ -484,7 +485,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 lines_to_remove = change.linenos_to_delete
                 max_line = max(lines_to_remove)
                 # add the additions after the max_line
-                lines = lines[:max_line] + additions + lines[max_line:]
+                lines = [*lines[:max_line], *additions, *lines[max_line:]]
                 lines_to_remove = sorted(lines_to_remove, reverse=True)
                 for lineno in lines_to_remove:
                     del lines[lineno - 1]

@@ -1106,3 +1106,27 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_is_value(val2, AnyValue(AnySource.multiple_overload_matches))
             val3 = overloaded2("x", int_or_str_or_float)  # E: incompatible_argument
             assert_is_value(val3, AnyValue(AnySource.error))
+
+    @assert_passes()
+    def test_typeshed_overload(self):
+        class SupportsWrite:
+            def write(self, s: str) -> None:
+                pass
+
+        class SupportsWriteAndFlush(SupportsWrite):
+            def flush(self) -> None:
+                pass
+
+        def capybara():
+            print()  # ok
+            print("x", file=SupportsWrite())
+            print("x", file=SupportsWrite(), flush=True)  # E: incompatible_argument
+            print("x", file=SupportsWriteAndFlush(), flush=True)
+            print("x", file=SupportsWriteAndFlush())
+            print("x", file="not a file")  # E: incompatible_call
+
+        def pacarana(f: float):
+            assert_is_value(f.__round__(), TypedValue(int))
+            assert_is_value(f.__round__(None), TypedValue(int))
+            f.__round__(ndigits=None)  # E: incompatible_call
+            assert_is_value(f.__round__(1), TypedValue(float))

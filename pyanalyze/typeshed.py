@@ -8,7 +8,7 @@ from .annotations import Context, type_from_value, value_from_ast
 from .error_code import ErrorCode
 from .safe import is_typing_name
 from .stacked_scopes import uniq_chain
-from .signature import SigParameter, Signature
+from .signature import ConcreteSignature, OverloadedSignature, SigParameter, Signature
 from .value import (
     AnySource,
     AnyValue,
@@ -52,6 +52,7 @@ from typing import (
     Callable,
     List,
     TypeVar,
+    overload,
 )
 from typing_extensions import Protocol, TypedDict
 import typeshed_client
@@ -110,7 +111,7 @@ class TypeshedFinder:
             return
         print("%s: %r" % (message, obj))
 
-    def get_argspec(self, obj: object) -> Optional[Signature]:
+    def get_argspec(self, obj: object) -> Optional[ConcreteSignature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
@@ -150,7 +151,7 @@ class TypeshedFinder:
 
     def get_argspec_for_fully_qualified_name(
         self, fq_name: str, obj: object
-    ) -> Optional[Signature]:
+    ) -> Optional[ConcreteSignature]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         sig = self._get_signature_from_info(info, obj, fq_name, mod)
@@ -498,7 +499,7 @@ class TypeshedFinder:
         fq_name: str,
         mod: str,
         objclass: type,
-    ) -> Optional[Signature]:
+    ) -> Optional[ConcreteSignature]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
@@ -550,10 +551,24 @@ class TypeshedFinder:
         fq_name: str,
         mod: str,
         objclass: Optional[type] = None,
-    ) -> Optional[Signature]:
+    ) -> Optional[ConcreteSignature]:
         if isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
                 return self._get_signature_from_func_def(info.ast, obj, mod, objclass)
+            elif isinstance(info.ast, typeshed_client.OverloadedName):
+                sigs = []
+                for defn in info.ast.definitions:
+                    if not isinstance(defn, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
+                        self.log(
+                            "Ignoring unrecognized AST in overload", (fq_name, info)
+                        )
+                        return None
+                    sig = self._get_signature_from_func_def(defn, obj, mod, objclass)
+                    if sig is None:
+                        self.log("Could not get sig for overload member", (defn,))
+                        return None
+                    sigs.append(sig)
+                return OverloadedSignature(sigs)
             else:
                 self.log("Ignoring unrecognized AST", (fq_name, info))
                 return None
@@ -583,7 +598,9 @@ class TypeshedFinder:
         is_classmethod = is_staticmethod = False
         for decorator_ast in node.decorator_list:
             decorator = self._parse_expr(decorator_ast, mod)
-            if decorator == KnownValue(abstractmethod):
+            if decorator == KnownValue(abstractmethod) or decorator == KnownValue(
+                overload
+            ):
                 continue
             elif decorator == KnownValue(classmethod):
                 is_classmethod = True
