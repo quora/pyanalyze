@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improve support for complex type aliases in stubs
+  (#331)
 - Limit special case for `Literal` callables to
   functions, not any callable (#329)
 - Support for constants in stubs that do not exist
