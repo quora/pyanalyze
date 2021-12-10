@@ -1915,7 +1915,7 @@ class NameCheckVisitor(
 
         is_star_import = len(node.names) == 1 and node.names[0].name == "*"
         force_public = self.filename.endswith("/__init__.py") and node.level == 1
-        if force_public:
+        if force_public and node.module is not None:
             # from .a import b implicitly sets a in the parent module's namespace.
             # We allow relying on this behavior.
             self._set_name_in_scope(node.module, node)

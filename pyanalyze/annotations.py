@@ -28,6 +28,7 @@ import typing
 import typing_inspect
 import qcore
 import ast
+from typed_ast import ast3
 import builtins
 from collections.abc import Callable, Iterable
 from typed_ast import ast3
@@ -752,6 +753,16 @@ class _Visitor(ast.NodeVisitor):
             )
         else:
             return None
+
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> Optional[Value]:
+        # Only int and float negation on literals are supported.
+        if isinstance(node.op, (ast.USub, ast3.USub)):
+            operand = self.visit(node.operand)
+            if isinstance(operand, KnownValue) and isinstance(
+                operand.val, (int, float)
+            ):
+                return KnownValue(-operand.val)
+        return None
 
     def visit_Call(self, node: ast.Call) -> Optional[Value]:
         func = self.visit(node.func)

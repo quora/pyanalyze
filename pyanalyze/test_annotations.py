@@ -510,13 +510,21 @@ def f(x: int, y: List[str]):
     def test_pep604(self):
         self.assert_passes(
             """
-from __future__ import annotations
+            from __future__ import annotations
 
-def capybara(x: int | None, y: int | str) -> None:
-    assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
-    assert_is_value(y, MultiValuedValue([TypedValue(int), TypedValue(str)]))
-"""
+            def capybara(x: int | None, y: int | str) -> None:
+                assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
+                assert_is_value(y, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+            """
         )
+
+    @assert_passes()
+    def test_stringified_ops(self):
+        from typing_extensions import Literal
+
+        def capybara(x: "int | str", y: "Literal[-1]"):
+            assert_is_value(x, TypedValue(int) | TypedValue(str))
+            assert_is_value(y, KnownValue(-1))
 
     @skip_before((3, 8))
     @assert_fails(ErrorCode.incompatible_argument)
