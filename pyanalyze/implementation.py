@@ -1,4 +1,3 @@
-import enum
 from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import reveal_type
