@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Improve type checking of `dict.update` and `dict.copy` (#328)
+- Fix detection of PEP 604 union types in stubs (#327)
 - Support literals over negative numbers in stubs
   and stringified annotations (#326)
 - Improved overload matching algorithm (#321) (#324)
