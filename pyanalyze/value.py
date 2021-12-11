@@ -1968,6 +1968,8 @@ K = TypeVar("K")
 V = TypeVar("V")
 MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
 
+EMPTY_DICTS = (KnownValue({}), DictIncompleteValue(dict, []))
+
 
 def kv_pairs_from_mapping(
     value_val: Value, ctx: CanAssignContext
@@ -1975,6 +1977,21 @@ def kv_pairs_from_mapping(
     """Return the :class:`KVPair` objects that can be extracted from this value,
     or a :class:`CanAssignError` on error."""
     value_val = replace_known_sequence_value(value_val)
+    # Special case: if we have a Union including an empty dict, just get the
+    # pairs from the rest of the union and make them all non-required.
+    if isinstance(value_val, MultiValuedValue) and any(
+        subval in EMPTY_DICTS for subval in value_val.vals
+    ):
+        other_val = unite_values(
+            *[subval for subval in value_val.vals if subval not in EMPTY_DICTS]
+        )
+        pairs = kv_pairs_from_mapping(other_val, ctx)
+        if isinstance(pairs, CanAssignError):
+            return pairs
+        return [
+            KVPair(pair.key, pair.value, pair.is_many, is_required=False)
+            for pair in pairs
+        ]
     if isinstance(value_val, DictIncompleteValue):
         return value_val.kv_pairs
     elif isinstance(value_val, TypedDictValue):
