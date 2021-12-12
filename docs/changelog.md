@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix type compatibility with generic functions (#335)
 - Support function calls in annotations (#334)
 - Better support for `TypeVar` bounds and constraints in stubs (#333)
 - Improve type checking of `dict.update` and `dict.copy` (#328)
