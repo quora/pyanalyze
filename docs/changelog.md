@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix handling of classes in stubs that have an incorrect `__qualname__`
+  at runtime (#336)
 - Fix type compatibility with generic functions (#335)
 - Support function calls in annotations (#334)
 - Better support for `TypeVar` bounds and constraints in stubs (#333)

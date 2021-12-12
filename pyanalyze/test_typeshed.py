@@ -10,8 +10,9 @@ import tempfile
 import time
 from typeshed_client import Resolver, get_search_context
 import typing
-from typing import Dict, Generic, List, TypeVar, NewType, Union
+from typing import Container, Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
+import urllib.parse
 
 from .test_config import TestConfig
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -375,6 +376,26 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [TypedValue(bytes)],
             },
             io.BytesIO,
+        )
+
+    def test_parse_result(self):
+        self.check(
+            {
+                collections.abc.Iterable: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Reversible: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Container: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Collection: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
+                urllib.parse.ParseResult: [],
+                urllib.parse._ParseResultBase: [],
+                "urllib.parse._ResultMixinBase": [TypedValue(str)],
+                tuple: [AnyValue(AnySource.generic_argument)],
+                urllib.parse._ResultMixinStr: [],
+                urllib.parse._NetlocResultMixinBase: [TypedValue(str)],
+                urllib.parse._NetlocResultMixinStr: [],
+                urllib.parse._ResultMixinStr: [],
+            },
+            urllib.parse.ParseResult,
         )
 
 
