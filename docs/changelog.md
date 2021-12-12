@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Better support for `TypeVar` bounds and constraints in stubs (#333)
 - Support for constants in stubs that do not exist
   at runtime (#330)
 - Fix detection of PEP 604 union types in stubs (#327)
