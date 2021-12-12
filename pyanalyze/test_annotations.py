@@ -913,10 +913,26 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_callable_compatibility(self):
-        from typing import TypeVar, Callable, Union
+        from typing import TypeVar, Callable, Union, Iterable, Any
+        from typing_extensions import Protocol
 
         AnyStr = TypeVar("AnyStr", bytes, str)
         IntT = TypeVar("IntT", bound=int)
+
+        class SupportsIsInteger(Protocol):
+            def is_integer(self) -> bool:
+                raise NotImplementedError
+
+        SupportsIsIntegerT = TypeVar("SupportsIsIntegerT", bound=SupportsIsInteger)
+
+        def find_int(objs: Iterable[SupportsIsIntegerT]) -> SupportsIsIntegerT:
+            for obj in objs:
+                if obj.is_integer():
+                    return obj
+            raise ValueError
+
+        def wants_float_func(f: Callable[[Iterable[float]], float]) -> float:
+            return f([1.0, 2.0])
 
         def want_anystr_func(
             f: Callable[[AnyStr], AnyStr], s: Union[str, bytes]
@@ -947,6 +963,8 @@ class TestTypeVar(TestNameCheckVisitorBase):
             want_bounded_func(anystr_func, 1)  # E: incompatible_argument
             want_str_func(anystr_func)
             want_str_func(int_func)  # E: incompatible_argument
+            wants_float_func(find_int)
+            wants_float_func(int_func)  # E: incompatible_argument
 
     @assert_passes()
     def test_getitem(self):
