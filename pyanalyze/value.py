@@ -1472,7 +1472,9 @@ class TypeVarValue(Value):
         if left == self:
             return {}
         if self.bound is not None:
-            can_assign = left.can_assign(self.bound, ctx)
+            # TODO not sure this is right, but it helps test cases in
+            # test_annotations.py behave as expected.
+            can_assign = self.bound.can_assign(left, ctx)
             if isinstance(can_assign, CanAssignError):
                 return CanAssignError(
                     f"Value of TypeVar {self} cannot be {left}", [can_assign]
