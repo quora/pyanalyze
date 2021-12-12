@@ -326,7 +326,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(empty, SequenceIncompleteValue(tuple, []))
 
     @assert_passes()
-    def test_strinigified_tuples(self):
+    def test_stringified_tuples(self):
         from typing import Tuple, Union
 
         def capybara(
@@ -525,6 +525,21 @@ def f(x: int, y: List[str]):
         def capybara(x: "int | str", y: "Literal[-1]"):
             assert_is_value(x, TypedValue(int) | TypedValue(str))
             assert_is_value(y, KnownValue(-1))
+
+    @assert_passes()
+    def test_double_subscript(self):
+        from typing import Union, List, Set, TypeVar
+
+        T = TypeVar("T")
+
+        # A bit weird but we hit this kind of case with generic
+        # aliases in typeshed.
+        def capybara(x: "Union[List[T], Set[T]][int]"):
+            assert_is_value(
+                x,
+                GenericValue(list, [TypedValue(int)])
+                | GenericValue(set, [TypedValue(int)]),
+            )
 
     @skip_before((3, 8))
     @assert_fails(ErrorCode.incompatible_argument)

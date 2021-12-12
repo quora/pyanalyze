@@ -121,8 +121,6 @@ class TypeshedFinder:
             sig = self._get_method_signature_from_info(
                 info, obj, fq_name, objclass.__module__, objclass
             )
-            if sig is not None:
-                self.log("Found signature", (obj, sig))
             return sig
 
         if inspect.ismethod(obj):
@@ -157,8 +155,6 @@ class TypeshedFinder:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         sig = self._get_signature_from_info(info, obj, fq_name, mod)
-        if sig is not None:
-            self.log("Found signature", (fq_name, sig))
         return sig
 
     def get_bases(self, typ: type) -> Optional[List[Value]]:
@@ -787,6 +783,8 @@ class TypeshedFinder:
             except Exception:
                 if isinstance(info.ast, ast3.ClassDef):
                     return TypedValue(f"{module}.{info.name}")
+                elif isinstance(info.ast, ast3.AnnAssign):
+                    return self._parse_type(info.ast.annotation, module)
                 self.log("Unable to import", (module, info))
                 return AnyValue(AnySource.inference)
         elif isinstance(info, tuple):

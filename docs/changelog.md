@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Improve type checking of `dict.update` and `dict.copy` (#328)
+- Improve support for complex type aliases in stubs
+  (#331)
+- Limit special case for `Literal` callables to
+  functions, not any callable (#329)
+- Support for constants in stubs that do not exist
+  at runtime (#330)
 - Fix detection of PEP 604 union types in stubs (#327)
 - Support literals over negative numbers in stubs
   and stringified annotations (#326)

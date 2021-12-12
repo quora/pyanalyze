@@ -2171,7 +2171,7 @@ class TestAugAssign(TestNameCheckVisitorBase):
 class TestUnpacking(TestNameCheckVisitorBase):
     @assert_passes()
     def test_dict_unpacking(self):
-        from typing import Dict
+        from typing import Dict, Optional
         from typing_extensions import TypedDict, NotRequired
 
         class FullTD(TypedDict):
@@ -2182,7 +2182,12 @@ class TestUnpacking(TestNameCheckVisitorBase):
             a: int
             b: NotRequired[str]
 
-        def capybara(d: Dict[str, int], ftd: FullTD, ptd: PartialTD):
+        def capybara(
+            d: Dict[str, int],
+            ftd: FullTD,
+            ptd: PartialTD,
+            maybe_ftd: Optional[FullTD] = None,
+        ):
             d1 = {1: 2}
             d2 = {3: 4, **d1}
             assert_is_value(
@@ -2223,6 +2228,16 @@ class TestUnpacking(TestNameCheckVisitorBase):
                     [
                         KVPair(KnownValue(1), KnownValue(2)),
                         KVPair(KnownValue("a"), TypedValue(int)),
+                        KVPair(KnownValue("b"), TypedValue(str), is_required=False),
+                    ],
+                ),
+            )
+            assert_is_value(
+                {**(maybe_ftd or {})},
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(KnownValue("a"), TypedValue(int), is_required=False),
                         KVPair(KnownValue("b"), TypedValue(str), is_required=False),
                     ],
                 ),
