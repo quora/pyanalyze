@@ -4014,7 +4014,9 @@ class NameCheckVisitor(
         else:
             keywords = []
 
-        return_value, constraint = self.check_call(node, callee_wrapped, args, keywords)
+        return_value, constraint = self.check_call(
+            node, callee_wrapped, args, keywords, allow_call=self.in_annotation
+        )
 
         if self._is_checking():
             self.yield_checker.record_call(callee_wrapped, node)

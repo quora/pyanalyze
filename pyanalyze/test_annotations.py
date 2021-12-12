@@ -1349,6 +1349,49 @@ class TestRequired(TestNameCheckVisitorBase):
                 ),
             )
 
+    @assert_passes()
+    def test_typeddict_from_call(self):
+        from typing import Optional, Any
+        from typing_extensions import NotRequired, Required, TypedDict
+
+        class Stringify(TypedDict):
+            a: "int"
+            b: "Required[str]"
+            c: "NotRequired[float]"
+
+        def make_td() -> Any:
+            return Stringify
+
+        def return_optional() -> Optional[Stringify]:
+            return None
+
+        def return_call() -> Optional[make_td()]:
+            return None
+
+        def capybara() -> None:
+            assert_is_value(
+                return_optional(),
+                KnownValue(None)
+                | TypedDictValue(
+                    {
+                        "a": (True, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+            assert_is_value(
+                return_call(),
+                KnownValue(None)
+                | TypedDictValue(
+                    {
+                        "a": (True, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+
     @skip_before((3, 8))
     @assert_passes()
     def test_typing(self):
