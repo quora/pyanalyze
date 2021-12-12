@@ -120,9 +120,8 @@ from .value import (
     KnownValueWithTypeVars,
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
-    TypedDictValue,
+    kv_pairs_from_mapping,
     make_weak,
-    replace_known_sequence_value,
     unite_and_simplify,
     unite_values,
     KnownValue,
@@ -148,9 +147,6 @@ AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
 ExceptionValue = TypedValue(BaseException) | SubclassValue(TypedValue(BaseException))
 ExceptionOrNone = ExceptionValue | KnownNone
-K = TypeVar("K")
-V = TypeVar("V")
-MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
 
 
@@ -2298,27 +2294,16 @@ class NameCheckVisitor(
             # ** unpacking
             if key_node is None:
                 has_non_literal = True
-                value_val = replace_known_sequence_value(value_val)
-                if isinstance(value_val, DictIncompleteValue):
-                    all_pairs += value_val.kv_pairs
-                elif isinstance(value_val, TypedDictValue):
-                    all_pairs += [
-                        KVPair(KnownValue(key), value, is_required=required)
-                        for key, (required, value) in value_val.items.items()
-                    ]
-                else:
-                    can_assign = MappingValue.can_assign(value_val, self)
-                    if isinstance(can_assign, CanAssignError):
-                        self._show_error_if_checking(
-                            value_node,
-                            f"{value_val} is not a mapping",
-                            ErrorCode.unsupported_operation,
-                            detail=str(can_assign),
-                        )
-                        return TypedValue(dict)
-                    key_type = can_assign.get(K, AnyValue(AnySource.generic_argument))
-                    value_type = can_assign.get(V, AnyValue(AnySource.generic_argument))
-                    all_pairs.append(KVPair(key_type, value_type, is_many=True))
+                new_pairs = kv_pairs_from_mapping(value_val, self)
+                if isinstance(new_pairs, CanAssignError):
+                    self._show_error_if_checking(
+                        value_node,
+                        f"{value_val} is not a mapping",
+                        ErrorCode.unsupported_operation,
+                        detail=str(new_pairs),
+                    )
+                    return TypedValue(dict)
+                all_pairs += new_pairs
                 continue
             key_val = self.visit(key_node)
             all_pairs.append(KVPair(key_val, value_val))

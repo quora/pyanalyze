@@ -1964,6 +1964,50 @@ def concrete_values_from_iterable(
     return iter_tv_map
 
 
+K = TypeVar("K")
+V = TypeVar("V")
+MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
+
+EMPTY_DICTS = (KnownValue({}), DictIncompleteValue(dict, []))
+
+
+def kv_pairs_from_mapping(
+    value_val: Value, ctx: CanAssignContext
+) -> Union[Sequence[KVPair], CanAssignError]:
+    """Return the :class:`KVPair` objects that can be extracted from this value,
+    or a :class:`CanAssignError` on error."""
+    value_val = replace_known_sequence_value(value_val)
+    # Special case: if we have a Union including an empty dict, just get the
+    # pairs from the rest of the union and make them all non-required.
+    if isinstance(value_val, MultiValuedValue) and any(
+        subval in EMPTY_DICTS for subval in value_val.vals
+    ):
+        other_val = unite_values(
+            *[subval for subval in value_val.vals if subval not in EMPTY_DICTS]
+        )
+        pairs = kv_pairs_from_mapping(other_val, ctx)
+        if isinstance(pairs, CanAssignError):
+            return pairs
+        return [
+            KVPair(pair.key, pair.value, pair.is_many, is_required=False)
+            for pair in pairs
+        ]
+    if isinstance(value_val, DictIncompleteValue):
+        return value_val.kv_pairs
+    elif isinstance(value_val, TypedDictValue):
+        return [
+            KVPair(KnownValue(key), value, is_required=required)
+            for key, (required, value) in value_val.items.items()
+        ]
+    else:
+        can_assign = MappingValue.can_assign(value_val, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return can_assign
+        key_type = can_assign.get(K, AnyValue(AnySource.generic_argument))
+        value_type = can_assign.get(V, AnyValue(AnySource.generic_argument))
+        return [KVPair(key_type, value_type, is_many=True)]
+
+
 def unpack_values(
     value: Value,
     ctx: CanAssignContext,

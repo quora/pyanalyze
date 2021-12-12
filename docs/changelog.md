@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Improve type checking of `dict.update` and `dict.copy` (#328)
 - Improve support for complex type aliases in stubs
   (#331)
 - Limit special case for `Literal` callables to
