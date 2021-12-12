@@ -765,7 +765,7 @@ class _Visitor(ast.NodeVisitor):
         func = self.visit(node.func)
         if not isinstance(func, KnownValue):
             return None
-        if func.val in (NewType, TypeVar):
+        if func.val == NewType:
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             args = []
@@ -787,8 +787,33 @@ class _Visitor(ast.NodeVisitor):
                     if isinstance(kwarg_value, KnownValue):
                         kwargs[name] = kwarg_value.val
                     else:
+                        print(kwarg_value)
                         return None
             return KnownValue(func.val(*args, **kwargs))
+        elif func.val == TypeVar:
+            arg_values = [self.visit(arg) for arg in node.args]
+            kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
+            if not arg_values:
+                self.ctx.show_error("TypeVar() requires at least one argument")
+                return None
+            name_val = arg_values[0]
+            if not isinstance(name_val, KnownValue):
+                self.ctx.show_error("TypeVar name must be a literal")
+                return None
+            constraints = []
+            for arg_value in arg_values[1:]:
+                constraints.append(_type_from_value(arg_value, self.ctx))
+            bound = None
+            for name, kwarg_value in kwarg_values:
+                if name in ("covariant", "contravariant"):
+                    continue
+                elif name == "bound":
+                    bound = _type_from_value(kwarg_value, self.ctx)
+                else:
+                    self.ctx.show_error(f"Unrecognized TypeVar kwarg {name}")
+                    return None
+            tv = TypeVar(name_val.val)
+            return TypeVarValue(tv, bound, tuple(constraints))
         elif isinstance(func.val, type):
             if func.val is object:
                 return AnyValue(AnySource.inference)
