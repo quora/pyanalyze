@@ -793,8 +793,6 @@ class _Visitor(ast.NodeVisitor):
         elif func.val == TypeVar:
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
-            args = []
-            kwargs = {}
             if not arg_values:
                 self.ctx.show_error("TypeVar() requires at least one argument")
                 return None
