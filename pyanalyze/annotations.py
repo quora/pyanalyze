@@ -495,130 +495,9 @@ def _type_from_value(value: Value, ctx: Context, is_typeddict: bool = False) -> 
     elif isinstance(value, AnnotatedValue):
         return _type_from_value(value.value, ctx)
     elif isinstance(value, _SubscriptedValue):
-        if isinstance(value.root, GenericValue):
-            if len(value.root.args) == len(value.members):
-                return GenericValue(
-                    value.root.typ,
-                    [_type_from_value(member, ctx) for member in value.members],
-                )
-        if isinstance(value.root, _SubscriptedValue):
-            root_type = _type_from_value(value.root, ctx)
-            if isinstance(root_type, GenericValue) and len(root_type.args) == len(
-                value.members
-            ):
-                return GenericValue(
-                    root_type.typ,
-                    [_type_from_value(member, ctx) for member in value.members],
-                )
-        if isinstance(value.root, TypedValue) and isinstance(value.root.typ, str):
-            return GenericValue(
-                value.root.typ, [_type_from_value(elt, ctx) for elt in value.members]
-            )
-
-        if not isinstance(value.root, KnownValue):
-            ctx.show_error(f"Cannot resolve subscripted annotation: {value.root}")
-            return AnyValue(AnySource.error)
-        root = value.root.val
-        if root is typing.Union:
-            return unite_values(*[_type_from_value(elt, ctx) for elt in value.members])
-        elif is_typing_name(root, "Literal"):
-            # Note that in Python 3.8, the way typing's internal cache works means that
-            # Literal[1] and Literal[True] are cached to the same value, so if you use
-            # both, you'll get whichever one was used first in later calls. There's nothing
-            # we can do about that.
-            if all(isinstance(elt, KnownValue) for elt in value.members):
-                return unite_values(*value.members)
-            else:
-                ctx.show_error(
-                    f"Arguments to Literal[] must be literals, not {value.members}"
-                )
-                return AnyValue(AnySource.error)
-        elif root is typing.Tuple or root is tuple:
-            if len(value.members) == 2 and value.members[1] == KnownValue(Ellipsis):
-                return GenericValue(tuple, [_type_from_value(value.members[0], ctx)])
-            elif len(value.members) == 1 and value.members[0] == KnownValue(()):
-                return SequenceIncompleteValue(tuple, [])
-            else:
-                return SequenceIncompleteValue(
-                    tuple, [_type_from_value(arg, ctx) for arg in value.members]
-                )
-        elif root is typing.Optional:
-            if len(value.members) != 1:
-                ctx.show_error("Optional[] takes only one argument")
-                return AnyValue(AnySource.error)
-            return unite_values(
-                KnownValue(None), _type_from_value(value.members[0], ctx)
-            )
-        elif root is typing.Type or root is type:
-            if len(value.members) != 1:
-                ctx.show_error("Type[] takes only one argument")
-                return AnyValue(AnySource.error)
-            argument = _type_from_value(value.members[0], ctx)
-            return SubclassValue.make(argument)
-        elif is_typing_name(root, "Annotated"):
-            origin, *metadata = value.members
-            return _make_annotated(_type_from_value(origin, ctx), metadata, ctx)
-        elif is_typing_name(root, "TypeGuard"):
-            if len(value.members) != 1:
-                ctx.show_error("TypeGuard requires a single argument")
-                return AnyValue(AnySource.error)
-            return AnnotatedValue(
-                TypedValue(bool),
-                [TypeGuardExtension(_type_from_value(value.members[0], ctx))],
-            )
-        elif is_typing_name(root, "Required"):
-            if not is_typeddict:
-                ctx.show_error("Required[] used in unsupported context")
-                return AnyValue(AnySource.error)
-            if len(value.members) != 1:
-                ctx.show_error("Required[] requires a single argument")
-                return AnyValue(AnySource.error)
-            return _Pep655Value(True, _type_from_value(value.members[0], ctx))
-        elif is_typing_name(root, "NotRequired"):
-            if not is_typeddict:
-                ctx.show_error("NotRequired[] used in unsupported context")
-                return AnyValue(AnySource.error)
-            if len(value.members) != 1:
-                ctx.show_error("NotRequired[] requires a single argument")
-                return AnyValue(AnySource.error)
-            return _Pep655Value(False, _type_from_value(value.members[0], ctx))
-        elif root is Callable or root is typing.Callable:
-            if len(value.members) == 2:
-                args, return_value = value.members
-                return _make_callable_from_value(args, return_value, ctx)
-            ctx.show_error("Callable requires exactly two arguments")
-            return AnyValue(AnySource.error)
-        elif root is AsynqCallable:
-            if len(value.members) == 2:
-                args, return_value = value.members
-                return _make_callable_from_value(args, return_value, ctx, is_asynq=True)
-            ctx.show_error("AsynqCallable requires exactly two arguments")
-            return AnyValue(AnySource.error)
-        elif typing_inspect.is_generic_type(root):
-            origin = typing_inspect.get_origin(root)
-            if origin is None:
-                # On Python 3.9 at least, get_origin() of a class that inherits
-                # from Generic[T] is None.
-                origin = root
-            if getattr(origin, "__extra__", None) is not None:
-                origin = origin.__extra__
-            return GenericValue(
-                origin, [_type_from_value(elt, ctx) for elt in value.members]
-            )
-        elif isinstance(root, type):
-            return GenericValue(
-                root, [_type_from_value(elt, ctx) for elt in value.members]
-            )
-        else:
-            # In Python 3.9, generics are implemented differently and typing.get_origin
-            # can help.
-            origin = get_origin(root)
-            if isinstance(origin, type):
-                return GenericValue(
-                    origin, [_type_from_value(elt, ctx) for elt in value.members]
-                )
-            ctx.show_error(f"Unrecognized subscripted annotation: {root}")
-            return AnyValue(AnySource.error)
+        return _type_from_subscripted_value(
+            value.root, value.members, ctx, is_typeddict=is_typeddict
+        )
     elif isinstance(value, AnyValue):
         return value
     elif isinstance(value, TypedValue) and isinstance(value.typ, str):
@@ -626,6 +505,125 @@ def _type_from_value(value: Value, ctx: Context, is_typeddict: bool = False) -> 
         return value
     else:
         ctx.show_error(f"Unrecognized annotation {value}")
+        return AnyValue(AnySource.error)
+
+
+def _type_from_subscripted_value(
+    root: Optional[Value],
+    members: Sequence[Value],
+    ctx: Context,
+    is_typeddict: bool = False,
+) -> Value:
+    if isinstance(root, GenericValue):
+        if len(root.args) == len(members):
+            return GenericValue(
+                root.typ, [_type_from_value(member, ctx) for member in members]
+            )
+    if isinstance(root, _SubscriptedValue):
+        root_type = _type_from_value(root, ctx)
+        return _type_from_subscripted_value(root_type, members, ctx)
+    elif isinstance(root, MultiValuedValue):
+        return unite_values(
+            *[
+                _type_from_subscripted_value(subval, members, ctx, is_typeddict)
+                for subval in root.vals
+            ]
+        )
+    if isinstance(root, TypedValue) and isinstance(root.typ, str):
+        return GenericValue(root.typ, [_type_from_value(elt, ctx) for elt in members])
+
+    if not isinstance(root, KnownValue):
+        ctx.show_error(f"Cannot resolve subscripted annotation: {root}")
+        return AnyValue(AnySource.error)
+    root = root.val
+    if root is typing.Union:
+        return unite_values(*[_type_from_value(elt, ctx) for elt in members])
+    elif is_typing_name(root, "Literal"):
+        # Note that in Python 3.8, the way typing's internal cache works means that
+        # Literal[1] and Literal[True] are cached to the same value, so if you use
+        # both, you'll get whichever one was used first in later calls. There's nothing
+        # we can do about that.
+        if all(isinstance(elt, KnownValue) for elt in members):
+            return unite_values(*members)
+        else:
+            ctx.show_error(f"Arguments to Literal[] must be literals, not {members}")
+            return AnyValue(AnySource.error)
+    elif root is typing.Tuple or root is tuple:
+        if len(members) == 2 and members[1] == KnownValue(Ellipsis):
+            return GenericValue(tuple, [_type_from_value(members[0], ctx)])
+        elif len(members) == 1 and members[0] == KnownValue(()):
+            return SequenceIncompleteValue(tuple, [])
+        else:
+            return SequenceIncompleteValue(
+                tuple, [_type_from_value(arg, ctx) for arg in members]
+            )
+    elif root is typing.Optional:
+        if len(members) != 1:
+            ctx.show_error("Optional[] takes only one argument")
+            return AnyValue(AnySource.error)
+        return unite_values(KnownValue(None), _type_from_value(members[0], ctx))
+    elif root is typing.Type or root is type:
+        if len(members) != 1:
+            ctx.show_error("Type[] takes only one argument")
+            return AnyValue(AnySource.error)
+        argument = _type_from_value(members[0], ctx)
+        return SubclassValue.make(argument)
+    elif is_typing_name(root, "Annotated"):
+        origin, *metadata = members
+        return _make_annotated(_type_from_value(origin, ctx), metadata, ctx)
+    elif is_typing_name(root, "TypeGuard"):
+        if len(members) != 1:
+            ctx.show_error("TypeGuard requires a single argument")
+            return AnyValue(AnySource.error)
+        return AnnotatedValue(
+            TypedValue(bool), [TypeGuardExtension(_type_from_value(members[0], ctx))]
+        )
+    elif is_typing_name(root, "Required"):
+        if not is_typeddict:
+            ctx.show_error("Required[] used in unsupported context")
+            return AnyValue(AnySource.error)
+        if len(members) != 1:
+            ctx.show_error("Required[] requires a single argument")
+            return AnyValue(AnySource.error)
+        return _Pep655Value(True, _type_from_value(members[0], ctx))
+    elif is_typing_name(root, "NotRequired"):
+        if not is_typeddict:
+            ctx.show_error("NotRequired[] used in unsupported context")
+            return AnyValue(AnySource.error)
+        if len(members) != 1:
+            ctx.show_error("NotRequired[] requires a single argument")
+            return AnyValue(AnySource.error)
+        return _Pep655Value(False, _type_from_value(members[0], ctx))
+    elif root is Callable or root is typing.Callable:
+        if len(members) == 2:
+            args, return_value = members
+            return _make_callable_from_value(args, return_value, ctx)
+        ctx.show_error("Callable requires exactly two arguments")
+        return AnyValue(AnySource.error)
+    elif root is AsynqCallable:
+        if len(members) == 2:
+            args, return_value = members
+            return _make_callable_from_value(args, return_value, ctx, is_asynq=True)
+        ctx.show_error("AsynqCallable requires exactly two arguments")
+        return AnyValue(AnySource.error)
+    elif typing_inspect.is_generic_type(root):
+        origin = typing_inspect.get_origin(root)
+        if origin is None:
+            # On Python 3.9 at least, get_origin() of a class that inherits
+            # from Generic[T] is None.
+            origin = root
+        if getattr(origin, "__extra__", None) is not None:
+            origin = origin.__extra__
+        return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
+    elif isinstance(root, type):
+        return GenericValue(root, [_type_from_value(elt, ctx) for elt in members])
+    else:
+        # In Python 3.9, generics are implemented differently and typing.get_origin
+        # can help.
+        origin = get_origin(root)
+        if isinstance(origin, type):
+            return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
+        ctx.show_error(f"Unrecognized subscripted annotation: {root}")
         return AnyValue(AnySource.error)
 
 
