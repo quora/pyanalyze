@@ -111,7 +111,9 @@ class TypeshedFinder:
             return
         print("%s: %r" % (message, obj))
 
-    def get_argspec(self, obj: object) -> Optional[ConcreteSignature]:
+    def get_argspec(
+        self, obj: object, *, allow_call: bool = False
+    ) -> Optional[ConcreteSignature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
@@ -119,7 +121,7 @@ class TypeshedFinder:
                 return None
             info = self._get_info_for_name(fq_name)
             sig = self._get_method_signature_from_info(
-                info, obj, fq_name, objclass.__module__, objclass
+                info, obj, fq_name, objclass.__module__, objclass, allow_call=allow_call
             )
             return sig
 
@@ -141,20 +143,26 @@ class TypeshedFinder:
                 if maybe_info is not None:
                     info, mod = maybe_info
                     fq_name = f"{parent_fqn}.{own_name}"
-                    sig = self._get_signature_from_info(info, obj, fq_name, mod)
+                    sig = self._get_signature_from_info(
+                        info, obj, fq_name, mod, allow_call=allow_call
+                    )
                     return sig
 
         fq_name = self._get_fq_name(obj)
         if fq_name is None:
             return None
-        return self.get_argspec_for_fully_qualified_name(fq_name, obj)
+        return self.get_argspec_for_fully_qualified_name(
+            fq_name, obj, allow_call=allow_call
+        )
 
     def get_argspec_for_fully_qualified_name(
-        self, fq_name: str, obj: object
+        self, fq_name: str, obj: object, *, allow_call: bool = False
     ) -> Optional[ConcreteSignature]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
-        sig = self._get_signature_from_info(info, obj, fq_name, mod)
+        sig = self._get_signature_from_info(
+            info, obj, fq_name, mod, allow_call=allow_call
+        )
         return sig
 
     def get_bases(self, typ: type) -> Optional[List[Value]]:
@@ -499,19 +507,26 @@ class TypeshedFinder:
         fq_name: str,
         mod: str,
         objclass: type,
+        *,
+        allow_call: bool = False,
     ) -> Optional[ConcreteSignature]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_method_signature_from_info(
-                info.info, obj, fq_name, ".".join(info.source_module), objclass
+                info.info,
+                obj,
+                fq_name,
+                ".".join(info.source_module),
+                objclass,
+                allow_call=allow_call,
             )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
             if info.child_nodes and obj.__name__ in info.child_nodes:
                 child_info = info.child_nodes[obj.__name__]
                 return self._get_signature_from_info(
-                    child_info, obj, fq_name, mod, objclass
+                    child_info, obj, fq_name, mod, objclass, allow_call=allow_call
                 )
             else:
                 return None
@@ -551,10 +566,14 @@ class TypeshedFinder:
         fq_name: str,
         mod: str,
         objclass: Optional[type] = None,
+        *,
+        allow_call: bool = False,
     ) -> Optional[ConcreteSignature]:
         if isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
-                return self._get_signature_from_func_def(info.ast, obj, mod, objclass)
+                return self._get_signature_from_func_def(
+                    info.ast, obj, mod, objclass, allow_call=allow_call
+                )
             elif isinstance(info.ast, typeshed_client.OverloadedName):
                 sigs = []
                 for defn in info.ast.definitions:
@@ -563,7 +582,9 @@ class TypeshedFinder:
                             "Ignoring unrecognized AST in overload", (fq_name, info)
                         )
                         return None
-                    sig = self._get_signature_from_func_def(defn, obj, mod, objclass)
+                    sig = self._get_signature_from_func_def(
+                        defn, obj, mod, objclass, allow_call=allow_call
+                    )
                     if sig is None:
                         self.log("Could not get sig for overload member", (defn,))
                         return None
@@ -574,7 +595,12 @@ class TypeshedFinder:
                 return None
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_signature_from_info(
-                info.info, obj, fq_name, ".".join(info.source_module), objclass
+                info.info,
+                obj,
+                fq_name,
+                ".".join(info.source_module),
+                objclass,
+                allow_call=allow_call,
             )
         elif info is None:
             return None
@@ -594,6 +620,7 @@ class TypeshedFinder:
         objclass: Optional[type] = None,
         *,
         autobind: bool = False,
+        allow_call: bool = False,
     ) -> Optional[Signature]:
         is_classmethod = is_staticmethod = False
         for decorator_ast in node.decorator_list:
@@ -667,6 +694,7 @@ class TypeshedFinder:
             return_annotation=GenericValue(Awaitable, [return_value])
             if isinstance(node, ast3.AsyncFunctionDef)
             else return_value,
+            allow_call=allow_call,
         )
 
     def _parse_param_list(
@@ -716,10 +744,10 @@ class TypeshedFinder:
         if default is None:
             return SigParameter(name, kind, annotation=typ)
         else:
-            default = self._parse_expr(default, module)
-            if default == KnownValue(...):
-                default = AnyValue(AnySource.unannotated)
-            return SigParameter(name, kind, annotation=typ, default=default)
+            default_value = self._parse_expr(default, module)
+            if default_value == KnownValue(...):
+                default_value = AnyValue(AnySource.unannotated)
+            return SigParameter(name, kind, annotation=typ, default=default_value)
 
     def _parse_expr(self, node: ast3.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)

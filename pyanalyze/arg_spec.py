@@ -386,7 +386,8 @@ class ArgSpecCache:
                     original_fn, impl, is_asynq, in_overload_resolution
                 )
 
-        argspec = self.ts_finder.get_argspec(obj)
+        allow_call = safe_in(obj, self.config.FUNCTIONS_SAFE_TO_CALL)
+        argspec = self.ts_finder.get_argspec(obj, allow_call=allow_call)
         if argspec is not None:
             return argspec
 
