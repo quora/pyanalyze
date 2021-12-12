@@ -1106,17 +1106,17 @@ class Signature:
             elif param.kind is SigParameter.POSITIONAL_ONLY:
                 if param.name not in consumed_positional:
                     return CanAssignError(
-                        f"takes extra positional-only paramter {param.name!r}"
+                        f"takes extra positional-only parameter {param.name!r}"
                     )
             elif param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
                 if (
                     param.name not in consumed_positional
                     and param.name not in consumed_keyword
                 ):
-                    return CanAssignError(f"takes extra paramter {param.name!r}")
+                    return CanAssignError(f"takes extra parameter {param.name!r}")
             elif param.kind is SigParameter.KEYWORD_ONLY:
                 if param.name not in consumed_keyword:
-                    return CanAssignError(f"takes extra paramter {param.name!r}")
+                    return CanAssignError(f"takes extra parameter {param.name!r}")
 
         return unify_typevar_maps(tv_maps)
 
