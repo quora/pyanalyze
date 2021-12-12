@@ -525,18 +525,18 @@ class TypeshedFinder:
             if obj is Sized:
                 return "typing.Sized"
         try:
-            module = obj.__module__
-            if module is None:
-                module = "builtins"
+            module_name = obj.__module__
+            if module_name is None:
+                module_name = "builtins"
             # Objects like io.BytesIO are technically in the _io module,
             # but typeshed puts them in io, which at runtime just re-exports
             # them.
-            if module == "_io":
-                module = "io"
-            fq_name = ".".join([module, obj.__qualname__])
+            if module_name == "_io":
+                module_name = "io"
+            fq_name = ".".join([module_name, obj.__qualname__])
             # Avoid looking for stubs we won't find anyway.
-            if any(not part.isidentifier() for part in fq_name.split(".")):
-                self.log("Ignoring non-identifier name", fq_name)
+            if not _obj_from_qualname_is(module_name, obj.__qualname__, obj):
+                self.log("Ignoring invalid name", fq_name)
                 return None
             return _TYPING_ALIASES.get(fq_name, fq_name)
         except (AttributeError, TypeError):
@@ -781,3 +781,15 @@ class TypeshedFinder:
         else:
             self.log("Ignoring info", info)
             return AnyValue(AnySource.inference)
+
+
+def _obj_from_qualname_is(module_name: str, qualname: str, obj: object) -> bool:
+    try:
+        __import__(module_name)
+        mod = sys.modules[module_name]
+        actual = mod
+        for piece in qualname.split("."):
+            actual = getattr(actual, piece)
+        return obj is actual
+    except Exception:
+        return False
