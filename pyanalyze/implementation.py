@@ -1443,9 +1443,13 @@ def get_default_argspecs() -> Dict[object, Signature]:
                             return_annotation=TypedValue("_typeshed.SupportsLessThan"),
                         )
                     ),
+                    default=KnownValue(None),
                 ),
                 SigParameter(
-                    "reverse", SigParameter.KEYWORD_ONLY, annotation=TypedValue(bool)
+                    "reverse",
+                    SigParameter.KEYWORD_ONLY,
+                    annotation=TypedValue(bool),
+                    default=KnownValue(False),
                 ),
             ],
             return_annotation=TypedValue(list),
