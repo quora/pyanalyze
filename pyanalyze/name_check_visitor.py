@@ -2264,10 +2264,12 @@ class NameCheckVisitor(
                     keywords = {kw.arg for kw in parent.keywords if kw.arg is not None}
                     if names <= keywords:
                         return
+            stmt = f_str_ast.body[0]
+            assert isinstance(stmt, ast.Expr), f"unexpected ast {ast.dump(f_str_ast)}"
             self._show_error_if_checking(
                 node,
                 error_code=ErrorCode.missing_f,
-                replacement=self.replace_node(node, f_str_ast.body[0].value),
+                replacement=self.replace_node(node, stmt.value),
             )
 
     def _name_exists(self, name: str) -> bool:

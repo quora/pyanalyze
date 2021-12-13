@@ -1050,8 +1050,8 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
     @assert_passes()
     def test_setattr(self):
         class Capybara(object):
-            def __init__(self):
-                for k, v in iter([("grass", "tasty")]):
+            def __init__(self, unannotated):
+                for k, v in unannotated:
                     assert_is_value(k, AnyValue(AnySource.generic_argument))
                     setattr(self, k, v)
                 assert_is_value(self.grass, AnyValue(AnySource.inference))
@@ -1059,8 +1059,8 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
     @assert_passes()
     def test_setattr_on_base(self):
         class Capybara(object):
-            def __init__(self):
-                for k, v in iter([("grass", "tasty")]):
+            def __init__(self, unannotated):
+                for k, v in unannotated:
                     # Make sure we're not smart enough to infer the attribute
                     assert_is_value(k, AnyValue(AnySource.generic_argument))
                     setattr(self, k, v)
@@ -1782,10 +1782,15 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(ha + x, AnyValue(AnySource.from_another))
             assert_is_value(HasBoth() + HasBoth(), TypedValue(HasBoth))
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_unsupported_unary_op(self):
         def capybara():
-            ~"capybara"
+            ~"capybara"  # E: unsupported_operation
+
+    @assert_passes()
+    def test_int_float_product(self):
+        def capybara(f: float, i: int):
+            assert_is_value(i * f, TypedValue(float))
 
 
 class TestTaskNeedsYield(TestNameCheckVisitorBase):

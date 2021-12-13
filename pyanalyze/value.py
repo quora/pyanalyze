@@ -579,8 +579,10 @@ class TypedValue(Value):
         elif isinstance(other, TypedValue):
             return self_tobj.can_assign(self, other, ctx)
         elif isinstance(other, SubclassValue):
-            if isinstance(other.typ, TypedValue) and isinstance(
-                other.typ.typ, self.typ
+            if (
+                isinstance(other.typ, TypedValue)
+                and isinstance(self.typ, type)
+                and isinstance(other.typ.typ, self.typ)
             ):
                 return {}
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):

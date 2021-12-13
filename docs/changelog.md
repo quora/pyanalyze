@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Recognize overloaded functions in stubs (#325)
 - Fix handling of classes in stubs that have an incorrect `__qualname__`
   at runtime (#336)
 - Fix type compatibility with generic functions (#335)
