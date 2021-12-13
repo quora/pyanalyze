@@ -1450,6 +1450,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             return_annotation=TypedValue(list),
             allow_call=True,
+            callable=sorted,
         ),
         # TypeGuards, which aren't in typeshed yet
         Signature.make(
