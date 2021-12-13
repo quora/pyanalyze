@@ -2550,6 +2550,19 @@ class TestAnnAssign(TestNameCheckVisitorBase):
             print(z)  # E: undefined_name
 
 
+class TestWhile(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_while_true_reachability(self):
+        def capybara() -> int:  # E: missing_return
+            while True:
+                break
+
+        def pacarana(i: int) -> int:
+            while True:
+                if i == 1:
+                    return 1
+
+
 class HasGetattr(object):
     def __getattr__(self, attr):
         return 42

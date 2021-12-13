@@ -3109,7 +3109,7 @@ class NameCheckVisitor(
             Boolability.type_always_true,
         )
         with self.scopes.subscope() as body_scope:
-            with self.scopes.loop_scope():
+            with self.scopes.loop_scope() as loop_scope:
                 # The "node" argument need not be an AST node but must be unique.
                 self.add_constraint((node, 1), constraint)
                 self._generic_visit_list(node.body)
@@ -3120,6 +3120,10 @@ class NameCheckVisitor(
             with self.scopes.subscope():
                 self.add_constraint((node, 2), constraint)
                 self._generic_visit_list(node.body)
+
+        if always_entered and LEAVES_LOOP not in loop_scope:
+            # This means the code following the loop is unreachable.
+            self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
 
     def _handle_loop_else(
         self, orelse: List[ast.stmt], body_scope: SubScope, always_entered: bool
