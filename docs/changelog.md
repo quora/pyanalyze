@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Version 0.5.0 (December 12, 2021)
 
 - Recognize code following an infinite while loop as unreachable (#337)
 - Recognize overloaded functions in stubs (#325)
