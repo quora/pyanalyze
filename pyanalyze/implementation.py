@@ -1420,6 +1420,37 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=len,
             impl=_len_impl,
         ),
+        # The overloaded annotation in typeshed causes a couple of problems:
+        # - sorted(Sequence[A] | Sequence[B]) turns into List[A | B] instead of List[A] | List[B]
+        #   pyright agrees with pyanalyze here but mypy somehow infers the second type.
+        # - The bounded TypeVar on the key argument makes pyanalyze infer the
+        #   return type as list[Sized] if we use key=len. Fixing this may require changing the
+        #   TypeVar resolution algorithm.
+        # To avoid these problems, we use a more permissive hardcoded signature for now.
+        Signature.make(
+            [
+                SigParameter(
+                    "iterable",
+                    SigParameter.POSITIONAL_ONLY,
+                    annotation=TypedValue(collections.abc.Iterable),
+                ),
+                SigParameter(
+                    "key",
+                    SigParameter.KEYWORD_ONLY,
+                    annotation=CallableValue(
+                        Signature.make(
+                            [SigParameter("arg", SigParameter.POSITIONAL_ONLY)],
+                            return_annotation=TypedValue("_typeshed.SupportsLessThan"),
+                        )
+                    ),
+                ),
+                SigParameter(
+                    "reverse", SigParameter.KEYWORD_ONLY, annotation=TypedValue(bool)
+                ),
+            ],
+            return_annotation=TypedValue(list),
+            allow_call=True,
+        ),
         # TypeGuards, which aren't in typeshed yet
         Signature.make(
             [
