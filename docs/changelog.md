@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Recognize code following an infinite while loop as unreachable (#337)
 - Recognize overloaded functions in stubs (#325)
 - Fix handling of classes in stubs that have an incorrect `__qualname__`
   at runtime (#336)

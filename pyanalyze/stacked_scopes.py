@@ -924,12 +924,12 @@ class FunctionScope(Scope):
             yield new_name_to_nodes
 
     @contextlib.contextmanager
-    def loop_scope(self) -> Iterable[None]:
+    def loop_scope(self) -> Iterable[SubScope]:
         loop_scopes = []
         with self.subscope() as main_scope:
             loop_scopes.append(main_scope)
             with qcore.override(self, "current_loop_scopes", loop_scopes):
-                yield
+                yield main_scope
         self.combine_subscopes(
             [
                 {name: values for name, values in scope.items() if name != LEAVES_LOOP}
