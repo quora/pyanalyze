@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Correct location of error for incompatible parameter (#339)
+
 ## Version 0.5.0 (December 12, 2021)
 
 - Recognize code following an infinite while loop as unreachable (#337)
@@ -58,6 +62,7 @@
   - `DictIncompleteValue` and `AnnotatedValue` use tuples instead of lists internally.
   - `DictIncompleteValue` now stores a sequence of `KVPair` object instead
     of just key-value pairs, enabling more granular information.
+  - The type of a `TypedValue` may now be a string
 
 ## Version 0.4.0 (November 18, 2021)
 
