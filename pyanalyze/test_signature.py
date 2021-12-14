@@ -378,6 +378,18 @@ class TestShadowing(TestNameCheckVisitorBase):
 
 class TestCalls(TestNameCheckVisitorBase):
     @assert_passes()
+    def test_error_location(self):
+        def two_args(x: str, y: int) -> None:
+            pass
+
+        def capybara():
+            two_args(
+                "one very long string so long that it goes on its own line is this"
+                " enough",
+                "not an int",  # E: incompatible_argument
+            )
+
+    @assert_passes()
     def test_too_few_args(self):
         def fn(x, y):
             return x + y

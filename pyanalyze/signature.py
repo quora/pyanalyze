@@ -352,7 +352,7 @@ class Signature:
     def _check_param_type_compatibility(
         self,
         param: SigParameter,
-        var_value: Value,
+        composite: Composite,
         visitor: "NameCheckVisitor",
         node: ast.AST,
         typevar_map: Optional[TypeVarMap] = None,
@@ -367,21 +367,22 @@ class Signature:
 
         """
         if param.annotation is not EMPTY and not (
-            isinstance(param.default, Composite) and var_value is param.default.value
+            isinstance(param.default, Composite)
+            and composite.value is param.default.value
         ):
             if typevar_map:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
             else:
                 param_typ = param.annotation
             tv_map, used_any = self._can_assign_and_used_any(
-                param_typ, var_value, visitor
+                param_typ, composite.value, visitor
             )
             if isinstance(tv_map, CanAssignError):
-                if is_overload and isinstance(var_value, MultiValuedValue):
+                if is_overload and isinstance(composite.value, MultiValuedValue):
                     tv_maps = []
                     remaining_values = []
                     union_used_any = False
-                    for val in var_value.vals:
+                    for val in composite.value.vals:
                         can_assign, subval_used_any = self._can_assign_and_used_any(
                             param_typ, val, visitor
                         )
@@ -395,13 +396,13 @@ class Signature:
                         tv_map = unify_typevar_maps(tv_maps)
                         assert remaining_values, (
                             f"all union members matched between {param_typ} and"
-                            f" {var_value}"
+                            f" {composite.value}"
                         )
                         return tv_map, union_used_any, unite_values(*remaining_values)
                 visitor.show_error(
-                    node,
+                    composite.node if composite.node is not None else node,
                     f"Incompatible argument type for {param.name}: expected {param_typ}"
-                    f" but got {var_value}",
+                    f" but got {composite.value}",
                     ErrorCode.incompatible_argument,
                     detail=str(tv_map),
                 )
@@ -730,10 +731,9 @@ class Signature:
             for param_name in self.typevars_of_params:
                 if param_name == self._return_key:
                     continue
-                var_value = variables[param_name]
                 param = self.signature.parameters[param_name]
                 tv_map, _, _ = self._check_param_type_compatibility(
-                    param, var_value, visitor, node
+                    param, bound_args[param_name][1], visitor, node
                 )
                 if tv_map is None:
                     return self.get_default_return()
@@ -763,7 +763,7 @@ class Signature:
                 remaining_value,
             ) = self._check_param_type_compatibility(
                 param,
-                composite.value,
+                composite,
                 visitor,
                 node,
                 typevar_values,
