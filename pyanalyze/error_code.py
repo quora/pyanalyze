@@ -84,6 +84,7 @@ class ErrorCode(enum.Enum):
     missing_return = 67
     no_return_may_return = 68
     implicit_reexport = 69
+    mismatched_parameter_name = 70
 
 
 # Allow testing unannotated functions without too much fuss
@@ -191,6 +192,9 @@ ERROR_DESCRIPTION = {
     ErrorCode.missing_return: "Function may exit without returning a value",
     ErrorCode.no_return_may_return: "Function is annotated as NoReturn but may return",
     ErrorCode.implicit_reexport: "Use of implicitly re-exported name",
+    ErrorCode.mismatched_parameter_name: (
+        "Passing a parameter that may be passed to the wrong name"
+    ),
 }
 
 

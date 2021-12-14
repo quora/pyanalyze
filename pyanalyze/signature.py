@@ -329,9 +329,17 @@ class Signature:
     all_typevars: Set["TypeVar"] = field(
         init=False, default_factory=set, repr=False, compare=False, hash=False
     )
+    all_param_names: Set[str] = field(
+        init=False, default_factory=set, repr=False, compare=False, hash=False
+    )
 
     def __post_init__(self) -> None:
         for param_name, param in self.signature.parameters.items():
+            if param.kind not in (
+                SigParameter.VAR_KEYWORD,
+                SigParameter.VAR_POSITIONAL,
+            ):
+                self.all_param_names.add(param.name)
             if param.annotation is EMPTY:
                 continue
             typevars = list(extract_typevars(param.annotation))
@@ -355,6 +363,7 @@ class Signature:
         composite: Composite,
         visitor: "NameCheckVisitor",
         node: ast.AST,
+        position: Union[int, str, None],
         typevar_map: Optional[TypeVarMap] = None,
         is_overload: bool = False,
     ) -> Tuple[Optional[TypeVarMap], bool, Optional[Value]]:
@@ -366,6 +375,23 @@ class Signature:
         - A Value or None, used for union decomposition with overloads.
 
         """
+        if composite.node is not None and isinstance(
+            position, int
+        ):  # passed as a positional
+            callee_name = _name_from_node(composite.node)
+            if (
+                callee_name is not None
+                and callee_name != param.name
+                and callee_name in self.all_param_names
+            ):
+                visitor.show_error(
+                    composite.node if composite.node is not None else node,
+                    f"Parameter {param.name} received value named {callee_name} at the"
+                    f" callsite. Did you mean to pass it to the {callee_name} parameter"
+                    " instead?",
+                    ErrorCode.mismatched_parameter_name,
+                )
+
         if param.annotation is not EMPTY and not (
             isinstance(param.default, Composite)
             and composite.value is param.default.value
@@ -732,8 +758,9 @@ class Signature:
                 if param_name == self._return_key:
                     continue
                 param = self.signature.parameters[param_name]
+                position, composite = bound_args[param_name]
                 tv_map, _, _ = self._check_param_type_compatibility(
-                    param, bound_args[param_name][1], visitor, node
+                    param, composite, visitor, node, position
                 )
                 if tv_map is None:
                     return self.get_default_return()
@@ -766,6 +793,7 @@ class Signature:
                 composite,
                 visitor,
                 node,
+                position,
                 typevar_values,
                 # If position is None we can't narrow so don't bother.
                 is_overload=is_overload and position is not None,
@@ -1908,3 +1936,14 @@ def can_assign_var_keyword(
             )
         tv_maps.append(tv_map)
     return tv_maps
+
+
+def _name_from_node(node: ast.AST) -> Optional[str]:
+    if isinstance(node, ast.Name):
+        return node.id
+    elif isinstance(node, ast.Attribute):
+        return node.attr
+    elif isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Str):
+        return node.slice.s
+    else:
+        return None

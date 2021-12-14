@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show an error when a parameter may be passed a value with the wrong name (#340)
 - Correct location of error for incompatible parameter (#339)
 
 ## Version 0.5.0 (December 12, 2021)
