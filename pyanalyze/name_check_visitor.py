@@ -149,6 +149,7 @@ ExceptionValue = TypedValue(BaseException) | SubclassValue(TypedValue(BaseExcept
 ExceptionOrNone = ExceptionValue | KnownNone
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
 
+IMPLICIT_CLASSMETHODS = ("__init_subclass__", "__new__")
 
 BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.Add: ("addition", "__add__", "__iadd__", "__radd__"),
@@ -1750,9 +1751,9 @@ class NameCheckVisitor(
                             )
                 elif is_self:
                     assert self.current_class is not None
-                    if function_info.is_classmethod or getattr(node, "name", None) in (
-                        "__init_subclass__",
-                        "__new__",
+                    if (
+                        function_info.is_classmethod
+                        or getattr(node, "name", None) in IMPLICIT_CLASSMETHODS
                     ):
                         value = SubclassValue(TypedValue(self.current_class))
                     else:
@@ -1830,6 +1831,8 @@ class NameCheckVisitor(
             return
         # try to confirm that it's actually a method
         if not hasattr(node, "name") or not hasattr(self.current_class, node.name):
+            return
+        if node.name in IMPLICIT_CLASSMETHODS:
             return
         first_must_be = "cls" if function_info.is_classmethod else "self"
 
