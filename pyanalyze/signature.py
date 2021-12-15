@@ -1546,6 +1546,8 @@ class OverloadedSignature:
           of mypy's behavior.
         - Eric Traut's `discussion <https://github.com/microsoft/pyright/issues/2521#issuecomment-956823577>`_
           of pyright's behavior.
+        - The `documentation <https://github.com/microsoft/pyright/blob/main/docs/type-concepts.md#overloads>`_
+          for pyright's behavior.
 
         Our behavior is closer to mypy. The general rule is to pick the first overload that matches
         and return an error otherwise, but there are two twists: ``Any`` and unions.

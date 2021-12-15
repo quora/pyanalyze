@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The first argument to `__new__` and `__init_subclass`
+  does not need to be `self` (#342)
+- Drop dependencies on `attrs` and `mypy_extensions` (#341)
 - Correct location of error for incompatible parameter (#339)
 
 ## Version 0.5.0 (December 12, 2021)

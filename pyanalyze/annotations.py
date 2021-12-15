@@ -31,7 +31,6 @@ import ast
 from typed_ast import ast3
 import builtins
 from collections.abc import Callable, Iterable
-from typed_ast import ast3
 from typing import (
     Any,
     Container,

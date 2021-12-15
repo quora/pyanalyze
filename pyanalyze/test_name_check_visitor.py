@@ -504,12 +504,9 @@ def run():
             def __new__(cls):
                 assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
-    @assert_passes()
-    def test_cls_type_inference(self):
-        class OldStyle:
             @classmethod
             def capybara(cls):
-                pass
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
     @assert_passes()
     def test_display_type_inference(self):

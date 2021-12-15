@@ -48,7 +48,6 @@ if __name__ == "__main__":
         keywords="quora static analysis",
         packages=["pyanalyze"],
         install_requires=[
-            "attrs",
             "asynq",
             "dataclasses; python_version < '3.7'",
             "qcore>=0.5.1",

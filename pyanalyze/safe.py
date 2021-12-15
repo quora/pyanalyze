@@ -8,7 +8,11 @@ import sys
 from typing import Any, Dict, Sequence, Tuple, Union, Container, NewType, Type, TypeVar
 import typing
 import typing_extensions
-import mypy_extensions
+
+try:
+    import mypy_extensions
+except ImportError:
+    mypy_extensions = None
 
 T = TypeVar("T")
 
@@ -138,6 +142,8 @@ def _fill_typing_name_cache(name: str) -> Tuple[Tuple[Any, ...], Tuple[str, ...]
         objs = []
         names = []
         for mod in (typing, typing_extensions, mypy_extensions):
+            if mod is None:
+                continue
             try:
                 objs.append(getattr(mod, name))
                 names.append(f"{mod}.{name}")

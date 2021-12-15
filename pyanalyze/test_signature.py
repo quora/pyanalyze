@@ -1082,7 +1082,7 @@ class TestOverload(TestNameCheckVisitorBase):
     @assert_passes()
     def test_any_and_union(self):
         from pyanalyze.extensions import overload
-        from typing import List, Any, Union
+        from typing import Any, Union
         from typing_extensions import Literal
 
         @overload
