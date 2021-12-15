@@ -913,7 +913,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_callable_compatibility(self):
-        from typing import TypeVar, Callable, Union, Iterable, Any
+        from typing import TypeVar, Callable, Union, Iterable
         from typing_extensions import Protocol
 
         AnyStr = TypeVar("AnyStr", bytes, str)
