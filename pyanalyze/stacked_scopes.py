@@ -52,7 +52,9 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
+    ConstraintExtension,
     KnownValue,
+    MultiValuedValue,
     ReferencingValue,
     SubclassValue,
     TypeVarMap,
@@ -440,41 +442,55 @@ class PredicateProvider(AbstractConstraint):
 class AndConstraint(AbstractConstraint):
     """Represents the AND of two constraints."""
 
-    left: AbstractConstraint
-    right: AbstractConstraint
+    constraints: Tuple[AbstractConstraint, ...]
 
     def apply(self) -> Iterable["Constraint"]:
-        for constraint in self.left.apply():
-            yield constraint
-        for constraint in self.right.apply():
-            yield constraint
+        for cons in self.constraints:
+            yield from cons.apply()
 
     def invert(self) -> "OrConstraint":
         # ~(A and B) -> ~A or ~B
-        return OrConstraint(self.left.invert(), self.right.invert())
+        return OrConstraint(tuple([cons.invert() for cons in self.constraints]))
+
+    @classmethod
+    def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
+        processed = set()
+        for cons in constraints:
+            if isinstance(cons, AndConstraint):
+                processed.update(cons.constraints)
+            else:
+                processed.add(cons)
+        if not processed:
+            return NULL_CONSTRAINT
+        if len(processed) == 1:
+            (cons,) = processed
+            return cons
+        return cls(tuple(processed))
 
 
 @dataclass(frozen=True)
 class OrConstraint(AbstractConstraint):
     """Represents the OR of two constraints."""
 
-    left: AbstractConstraint
-    right: AbstractConstraint
+    constraints: Tuple[AbstractConstraint, ...]
 
     def apply(self) -> Iterable[Constraint]:
-        left = self._group_constraints(self.left)
-        right = self._group_constraints(self.right)
+        grouped = [self._group_constraints(cons) for cons in self.constraints]
+        left, *rest = grouped
         for varname, constraints in left.items():
             # Produce one_of constraints if the same variable name
             # applies on both the left and the right side.
-            if varname in right:
+            if all(varname in group for group in rest):
                 yield Constraint(
                     varname,
                     ConstraintType.one_of,
                     True,
                     [
                         self._constraint_from_list(varname, constraints),
-                        self._constraint_from_list(varname, right[varname]),
+                        *[
+                            self._constraint_from_list(varname, group[varname])
+                            for group in rest
+                        ],
                     ],
                 )
 
@@ -496,7 +512,22 @@ class OrConstraint(AbstractConstraint):
 
     def invert(self) -> AndConstraint:
         # ~(A or B) -> ~A and ~B
-        return AndConstraint(self.left.invert(), self.right.invert())
+        return AndConstraint(tuple([cons.invert() for cons in self.constraints]))
+
+    @classmethod
+    def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
+        processed = set()
+        for cons in constraints:
+            if isinstance(cons, OrConstraint):
+                processed.update(cons.constraints)
+            else:
+                processed.add(cons)
+        if not processed:
+            return NULL_CONSTRAINT
+        if len(processed) == 1:
+            (cons,) = processed
+            return cons
+        return cls(tuple(processed))
 
 
 class _ConstrainedValue(Value):
@@ -1239,3 +1270,26 @@ def _constrain_value(
     if simplification_limit is not None:
         return unite_and_simplify(*values, limit=simplification_limit)
     return unite_values(*values)
+
+
+def annotate_with_constraint(value: Value, constraint: AbstractConstraint) -> Value:
+    if constraint is NULL_CONSTRAINT:
+        return value
+    return annotate_value(value, [ConstraintExtension(constraint)])
+
+
+def extract_constraints(value: Value) -> AbstractConstraint:
+    if isinstance(value, AnnotatedValue):
+        extensions = list(value.get_metadata_of_type(ConstraintExtension))
+        constraints = [ext.constraint for ext in extensions]
+        base = extract_constraints(value.value)
+        constraints = [
+            cons for cons in [*constraints, base] if cons is not NULL_CONSTRAINT
+        ]
+        return AndConstraint.make(constraints)
+    elif isinstance(value, MultiValuedValue):
+        constraints = [extract_constraints(subval) for subval in value.vals]
+        if not constraints:
+            return NULL_CONSTRAINT
+        return OrConstraint.make(constraints)
+    return NULL_CONSTRAINT

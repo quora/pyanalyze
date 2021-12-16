@@ -271,7 +271,7 @@ class CanAssignError:
 CanAssign = Union[TypeVarMap, CanAssignError]
 
 
-def assert_is_value(obj: object, value: Value) -> None:
+def assert_is_value(obj: object, value: Value, *, skip_annotated: bool = False) -> None:
     """Used to test pyanalyze's value inference.
 
     Takes two arguments: a Python object and a :class:`Value` object. At runtime
@@ -282,6 +282,8 @@ def assert_is_value(obj: object, value: Value) -> None:
 
         assert_is_value(1, KnownValue(1))  # passes
         assert_is_value(1, TypedValue(int))  # shows an error
+
+    If skip_annotated is True, unwraps any :class:`AnnotatedValue` in the input.
 
     """
     pass
@@ -1645,6 +1647,22 @@ class HasAttrExtension(Extension):
 
 
 @dataclass(frozen=True)
+class ConstraintExtension(Extension):
+    """Encapsulates a Constraint. If the value is evaluated and is truthy, the
+    constraint must be True."""
+
+    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+
+@dataclass(frozen=True)
+class NoReturnUnlessConstraintExtension(Extension):
+    """Encapsulates a no-return-unless Constraint. If execution continues, the
+    constraint must be True."""
+
+    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+
+@dataclass(frozen=True)
 class WeakExtension(Extension):
     """Used to indicate that a generic argument to a container may be widened.
 
@@ -1983,19 +2001,19 @@ def kv_pairs_from_mapping(
     value_val = replace_known_sequence_value(value_val)
     # Special case: if we have a Union including an empty dict, just get the
     # pairs from the rest of the union and make them all non-required.
-    if isinstance(value_val, MultiValuedValue) and any(
-        subval in EMPTY_DICTS for subval in value_val.vals
-    ):
-        other_val = unite_values(
-            *[subval for subval in value_val.vals if subval not in EMPTY_DICTS]
-        )
-        pairs = kv_pairs_from_mapping(other_val, ctx)
-        if isinstance(pairs, CanAssignError):
-            return pairs
-        return [
-            KVPair(pair.key, pair.value, pair.is_many, is_required=False)
-            for pair in pairs
-        ]
+    if isinstance(value_val, MultiValuedValue):
+        subvals = [replace_known_sequence_value(subval) for subval in value_val.vals]
+        if any(subval in EMPTY_DICTS for subval in subvals):
+            other_val = unite_values(
+                *[subval for subval in subvals if subval not in EMPTY_DICTS]
+            )
+            pairs = kv_pairs_from_mapping(other_val, ctx)
+            if isinstance(pairs, CanAssignError):
+                return pairs
+            return [
+                KVPair(pair.key, pair.value, pair.is_many, is_required=False)
+                for pair in pairs
+            ]
     if isinstance(value_val, DictIncompleteValue):
         return value_val.kv_pairs
     elif isinstance(value_val, TypedDictValue):

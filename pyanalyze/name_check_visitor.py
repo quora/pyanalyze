@@ -17,7 +17,6 @@ import builtins
 import collections.abc
 import contextlib
 from dataclasses import dataclass
-from functools import reduce
 import inspect
 from itertools import chain
 import logging
@@ -91,8 +90,10 @@ from .stacked_scopes import (
     PredicateProvider,
     LEAVES_LOOP,
     LEAVES_SCOPE,
+    annotate_with_constraint,
     constrain_value,
     SubScope,
+    extract_constraints,
 )
 from .signature import (
     ANY_SIGNATURE,
@@ -2461,12 +2462,6 @@ class NameCheckVisitor(
     # Operations
 
     def visit_BoolOp(self, node: ast.BoolOp) -> Value:
-        val, _ = self.constraint_from_bool_op(node)
-        return val
-
-    def constraint_from_bool_op(
-        self, node: ast.BoolOp
-    ) -> Tuple[Value, AbstractConstraint]:
         # Visit an AND or OR expression.
 
         # We want to show an error if the left operand in a BoolOp is always true,
@@ -2495,31 +2490,29 @@ class NameCheckVisitor(
             values.append(right_value)
             out_constraints.append(constraint)
         constraint_cls = AndConstraint if is_and else OrConstraint
-        constraint = reduce(constraint_cls, reversed(out_constraints))
-        return unite_values(*values), constraint
+        constraint = constraint_cls.make(reversed(out_constraints))
+        return annotate_with_constraint(unite_values(*values), constraint)
 
     def visit_Compare(self, node: ast.Compare) -> Value:
-        val, _ = self.constraint_from_compare(node)
-        return val
-
-    def constraint_from_compare(
-        self, node: ast.Compare
-    ) -> Tuple[Value, AbstractConstraint]:
         if len(node.ops) != 1:
             # TODO handle multi-comparison properly
             self.generic_visit(node)
-            return AnyValue(AnySource.inference), NULL_CONSTRAINT
+            return AnyValue(AnySource.inference)
         op = node.ops[0]
         lhs, lhs_constraint = self._visit_possible_constraint(node.left)
         rhs, rhs_constraint = self._visit_possible_constraint(node.comparators[0])
+        if isinstance(lhs, AnnotatedValue):
+            lhs = lhs.value
+        if isinstance(rhs, AnnotatedValue):
+            rhs = rhs.value
         if isinstance(lhs_constraint, PredicateProvider) and isinstance(
             rhs, KnownValue
         ):
-            return self._constraint_from_predicate_provider(lhs_constraint, rhs.val, op)
+            return self._value_from_predicate_provider(lhs_constraint, rhs.val, op)
         elif isinstance(rhs_constraint, PredicateProvider) and isinstance(
             lhs, KnownValue
         ):
-            return self._constraint_from_predicate_provider(rhs_constraint, lhs.val, op)
+            return self._value_from_predicate_provider(rhs_constraint, lhs.val, op)
         elif isinstance(rhs, KnownValue):
             constraint = self._constraint_from_compare_op(
                 node.left, rhs.val, op, is_right=True
@@ -2534,7 +2527,7 @@ class NameCheckVisitor(
             val = TypedValue(bool)
         else:
             val = AnyValue(AnySource.inference)
-        return val, constraint
+        return annotate_with_constraint(val, constraint)
 
     def _constraint_from_compare_op(
         self, constrained_node: ast.AST, other_val: Any, op: ast.AST, *, is_right: bool
@@ -2623,9 +2616,9 @@ class NameCheckVisitor(
 
             return Constraint(varname, ConstraintType.predicate, True, predicate_func)
 
-    def _constraint_from_predicate_provider(
+    def _value_from_predicate_provider(
         self, pred: PredicateProvider, other_val: Any, op: ast.AST
-    ) -> Tuple[Value, AbstractConstraint]:
+    ) -> Value:
         positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
 
         def predicate_func(value: Value, positive: bool) -> Optional[Value]:
@@ -2644,15 +2637,9 @@ class NameCheckVisitor(
         constraint = Constraint(
             pred.varname, ConstraintType.predicate, True, predicate_func
         )
-        return AnyValue(AnySource.inference), constraint
+        return annotate_with_constraint(AnyValue(AnySource.inference), constraint)
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Value:
-        val, _ = self.constraint_from_unary_op(node)
-        return val
-
-    def constraint_from_unary_op(
-        self, node: ast.UnaryOp
-    ) -> Tuple[Value, AbstractConstraint]:
         if isinstance(node.op, ast.Not):
             # not doesn't have its own special method
             val, constraint = self.constraint_from_condition(node.operand)
@@ -2663,12 +2650,12 @@ class NameCheckVisitor(
                 val = KnownValue(True)
             else:
                 val = TypedValue(bool)
-            return val, constraint.invert()
+            return annotate_with_constraint(val, constraint.invert())
         else:
             operand = self.composite_from_node(node.operand)
             _, method = UNARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(node.op)]
             val = self._check_dunder_call(node, operand, method, [], allow_call=True)
-            return val, NULL_CONSTRAINT
+            return val
 
     def visit_BinOp(self, node: ast.BinOp) -> Value:
         left = self.composite_from_node(node.left)
@@ -3034,33 +3021,25 @@ class NameCheckVisitor(
         self._check_boolability(test, node, disabled={ErrorCode.value_always_true})
 
     def add_constraint(self, node: object, constraint: AbstractConstraint) -> None:
+        if constraint is NULL_CONSTRAINT:
+            return  # save some work
         self.scopes.current_scope().add_constraint(constraint, node, self.state)
 
     def _visit_possible_constraint(
         self, node: ast.AST
     ) -> Tuple[Value, AbstractConstraint]:
-        if isinstance(node, ast.Compare):
-            pair = self.constraint_from_compare(node)
-        elif isinstance(node, (ast.Name, ast.Attribute, ast.Subscript)):
+        if isinstance(node, (ast.Name, ast.Attribute, ast.Subscript)):
             composite = self.composite_from_node(node)
             if composite.varname is not None:
                 constraint = Constraint(
                     composite.varname, ConstraintType.is_truthy, True, None
                 )
-                pair = composite.value, constraint
+                val = annotate_with_constraint(composite.value, constraint)
             else:
-                pair = composite.value, NULL_CONSTRAINT
-        elif isinstance(node, ast.Call):
-            pair = self.constraint_from_call(node)
-        elif isinstance(node, ast.UnaryOp):
-            pair = self.constraint_from_unary_op(node)
-        elif isinstance(node, ast.BoolOp):
-            pair = self.constraint_from_bool_op(node)
+                val = composite.value
         else:
-            pair = self.visit(node), NULL_CONSTRAINT
-        if self.annotate:
-            node.inferred_value = pair[0]
-        return pair
+            val = self.visit(node)
+        return val, extract_constraints(val)
 
     def visit_Break(self, node: ast.Break) -> None:
         self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
@@ -3591,7 +3570,7 @@ class NameCheckVisitor(
                 with self.catch_errors():
                     getitem = self._get_dunder(node.value, value, "__getitem__")
                 if getitem is not UNINITIALIZED_VALUE:
-                    return_value, _ = self.check_call(
+                    return_value = self.check_call(
                         node.value,
                         getitem,
                         [root_composite, index_composite],
@@ -3610,7 +3589,7 @@ class NameCheckVisitor(
                         )
                         return_value = AnyValue(AnySource.error)
                     else:
-                        return_value, _ = self.check_call(
+                        return_value = self.check_call(
                             node.value, cgi, [index_composite], allow_call=True
                         )
                 else:
@@ -3706,7 +3685,7 @@ class NameCheckVisitor(
         method_object = self._get_dunder(node, callee_composite.value, method_name)
         if method_object is UNINITIALIZED_VALUE:
             return AnyValue(AnySource.error)
-        return_value, _ = self.check_call(
+        return_value = self.check_call(
             node, method_object, [callee_composite, *args], allow_call=allow_call
         )
         return return_value
@@ -4012,10 +3991,6 @@ class NameCheckVisitor(
         return (node.arg, self.composite_from_node(node.value))
 
     def visit_Call(self, node: ast.Call) -> Value:
-        val, _ = self.constraint_from_call(node)
-        return val
-
-    def constraint_from_call(self, node: ast.Call) -> Tuple[Value, AbstractConstraint]:
         callee_wrapped = self.visit(node.func)
         args = [self.composite_from_node(arg) for arg in node.args]
         if node.keywords:
@@ -4023,7 +3998,7 @@ class NameCheckVisitor(
         else:
             keywords = []
 
-        return_value, constraint = self.check_call(
+        return_value = self.check_call(
             node, callee_wrapped, args, keywords, allow_call=self.in_annotation
         )
 
@@ -4051,7 +4026,7 @@ class NameCheckVisitor(
                 if caller is not None:
                     self.collector.record_call(caller, callee_val)
 
-        return return_value, constraint
+        return return_value
 
     def _can_perform_call(
         self, args: Iterable[Value], keywords: Iterable[Tuple[Optional[str], Value]]
@@ -4098,18 +4073,17 @@ class NameCheckVisitor(
         keywords: Iterable[Tuple[Optional[str], Composite]] = (),
         *,
         allow_call: bool = False,
-    ) -> Tuple[Value, AbstractConstraint]:
+    ) -> Value:
         if isinstance(callee, MultiValuedValue):
             with qcore.override(self, "in_union_decomposition", True):
-                values, constraints = zip(
-                    *[
-                        self._check_call_no_mvv(
-                            node, val, args, keywords, allow_call=allow_call
-                        )
-                        for val in callee.vals
-                    ]
-                )
-            return unite_values(*values), reduce(OrConstraint, constraints)
+                values = [
+                    self._check_call_no_mvv(
+                        node, val, args, keywords, allow_call=allow_call
+                    )
+                    for val in callee.vals
+                ]
+
+            return unite_values(*values)
         return self._check_call_no_mvv(
             node, callee, args, keywords, allow_call=allow_call
         )
@@ -4122,12 +4096,12 @@ class NameCheckVisitor(
         keywords: Iterable[Tuple[Optional[str], Composite]] = (),
         *,
         allow_call: bool = False,
-    ) -> Tuple[Value, AbstractConstraint]:
+    ) -> Value:
         if isinstance(callee_wrapped, KnownValue) and any(
             callee_wrapped.val is ignored for ignored in self.config.IGNORED_CALLEES
         ):
             self.log(logging.INFO, "Ignoring callee", callee_wrapped)
-            return AnyValue(AnySource.error), NULL_CONSTRAINT
+            return AnyValue(AnySource.error)
 
         extended_argspec = self.signature_from_value(callee_wrapped, node)
         if extended_argspec is ANY_SIGNATURE:
@@ -4201,22 +4175,22 @@ class NameCheckVisitor(
             callee_wrapped.val
         ):
             async_fn = callee_wrapped.val.__self__
-            return (
-                AsyncTaskIncompleteValue(_get_task_cls(async_fn), return_value),
-                constraint,
+            return AsyncTaskIncompleteValue(
+                _get_task_cls(async_fn),
+                annotate_with_constraint(return_value, constraint),
             )
         elif isinstance(
             callee_wrapped, UnboundMethodValue
         ) and callee_wrapped.secondary_attr_name in ("async", "asynq"):
             async_fn = callee_wrapped.get_method()
-            return (
-                AsyncTaskIncompleteValue(_get_task_cls(async_fn), return_value),
-                constraint,
+            return AsyncTaskIncompleteValue(
+                _get_task_cls(async_fn),
+                annotate_with_constraint(return_value, constraint),
             )
         elif isinstance(callee_wrapped, UnboundMethodValue) and asynq.is_pure_async_fn(
             callee_wrapped.get_method()
         ):
-            return return_value, constraint
+            return annotate_with_constraint(return_value, constraint)
         else:
             if (
                 isinstance(return_value, AnyValue)
@@ -4225,8 +4199,8 @@ class NameCheckVisitor(
             ):
                 task_cls = _get_task_cls(callee_wrapped.val)
                 if isinstance(task_cls, type):
-                    return TypedValue(task_cls), constraint
-            return return_value, constraint
+                    return TypedValue(task_cls)
+            return annotate_with_constraint(return_value, constraint)
 
     def signature_from_value(
         self, value: Value, node: Optional[ast.AST] = None

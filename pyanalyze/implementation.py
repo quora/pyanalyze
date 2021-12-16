@@ -50,7 +50,6 @@ from .value import (
     unpack_values,
 )
 
-from functools import reduce
 import collections.abc
 from itertools import product
 import qcore
@@ -132,7 +131,7 @@ def _constraint_from_isinstance(
             Constraint(varname, ConstraintType.is_instance, True, elt)
             for elt in class_or_tuple.val
         ]
-        return reduce(OrConstraint, constraints)
+        return OrConstraint.make(constraints)
     else:
         return NULL_CONSTRAINT
 
@@ -857,6 +856,14 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
     return ImplReturn(KnownValue(None))
 
 
+def _remove_annotated(val: Value) -> Value:
+    if isinstance(val, AnnotatedValue):
+        return val.value
+    elif isinstance(val, MultiValuedValue):
+        return unite_values(*[_remove_annotated(subval) for subval in val.vals])
+    return val
+
+
 def _assert_is_value_impl(ctx: CallContext) -> Value:
     if not ctx.visitor._is_checking():
         return KnownValue(None)
@@ -870,6 +877,8 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
             arg="value",
         )
     else:
+        if _remove_annotated(ctx.vars["skip_annotated"]) == KnownValue(True):
+            obj = _remove_annotated(obj)
         if obj != expected_value.val:
             ctx.show_error(
                 f"Bad value inference: expected {expected_value.val}, got {obj}",
@@ -1061,7 +1070,16 @@ def get_default_argspecs() -> Dict[object, Signature]:
     signatures = [
         # pyanalyze helpers
         Signature.make(
-            [SigParameter("obj"), SigParameter("value", annotation=TypedValue(Value))],
+            [
+                SigParameter("obj"),
+                SigParameter("value", annotation=TypedValue(Value)),
+                SigParameter(
+                    "skip_annotated",
+                    SigParameter.KEYWORD_ONLY,
+                    default=Composite(KnownValue(False)),
+                    annotation=TypedValue(bool),
+                ),
+            ],
             KnownValue(None),
             impl=_assert_is_value_impl,
             callable=assert_is_value,

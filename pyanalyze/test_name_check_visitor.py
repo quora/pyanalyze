@@ -763,22 +763,35 @@ class TestBoolOp(TestNameCheckVisitorBase):
             assert_is_value(
                 cond and 1,
                 MultiValuedValue([TypedValue(str), KnownValue(None), KnownValue(1)]),
+                skip_annotated=True,
             )
             assert_is_value(
-                cond2 and 1, MultiValuedValue([KnownValue(None), KnownValue(1)])
+                cond2 and 1,
+                MultiValuedValue([KnownValue(None), KnownValue(1)]),
+                skip_annotated=True,
             )
             assert_is_value(
-                cond or 1, MultiValuedValue([TypedValue(str), KnownValue(1)])
+                cond or 1,
+                MultiValuedValue([TypedValue(str), KnownValue(1)]),
+                skip_annotated=True,
             )
             assert_is_value(
-                cond2 or 1, MultiValuedValue([KnownValue(True), KnownValue(1)])
+                cond2 or 1,
+                MultiValuedValue([KnownValue(True), KnownValue(1)]),
+                skip_annotated=True,
             )
 
         def hutia(x=None):
             assert_is_value(x, AnyValue(AnySource.unannotated) | KnownValue(None))
-            assert_is_value(x or 1, AnyValue(AnySource.unannotated) | KnownValue(1))
+            assert_is_value(
+                x or 1,
+                AnyValue(AnySource.unannotated) | KnownValue(1),
+                skip_annotated=True,
+            )
             y = x or 1
-            assert_is_value(y, AnyValue(AnySource.unannotated) | KnownValue(1))
+            assert_is_value(
+                y, AnyValue(AnySource.unannotated) | KnownValue(1), skip_annotated=True
+            )
             assert_is_value(
                 (True if x else False) or None, KnownValue(True) | KnownValue(None)
             )
@@ -1727,7 +1740,7 @@ class TestOperators(TestNameCheckVisitorBase):
     @assert_passes(settings={ErrorCode.value_always_true: False})
     def test_not(self):
         def capybara(x):
-            assert_is_value(not x, TypedValue(bool))
+            assert_is_value(not x, TypedValue(bool), skip_annotated=True)
             assert_is_value(not True, KnownValue(False))
 
     @assert_passes()

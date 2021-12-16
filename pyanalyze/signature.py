@@ -6,7 +6,7 @@ calls.
 
 """
 
-
+from .extensions import reveal_type
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -57,7 +57,6 @@ import asynq
 from collections import defaultdict, OrderedDict
 import collections.abc
 from dataclasses import dataclass, field, replace
-from functools import reduce
 import itertools
 from types import MethodType, FunctionType
 import inspect
@@ -128,14 +127,6 @@ class ActualArguments:
     kwargs_required: bool
 
 
-def _maybe_or_constraint(
-    left: AbstractConstraint, right: AbstractConstraint
-) -> AbstractConstraint:
-    if left is NULL_CONSTRAINT or right is NULL_CONSTRAINT:
-        return NULL_CONSTRAINT
-    return OrConstraint(left, right)
-
-
 class ImplReturn(NamedTuple):
     """Return value of :term:`impl` functions.
 
@@ -165,8 +156,8 @@ class ImplReturn(NamedTuple):
             return ImplReturn(NO_RETURN_VALUE)
         return ImplReturn(
             unite_values(*[r.return_value for r in rets]),
-            reduce(_maybe_or_constraint, [r.constraint for r in rets]),
-            reduce(_maybe_or_constraint, [r.no_return_unless for r in rets]),
+            OrConstraint.make([r.constraint for r in rets]),
+            OrConstraint.make([r.no_return_unless for r in rets]),
         )
 
 
@@ -425,9 +416,7 @@ class Signature:
             ret = ImplReturn(raw_return)
         else:
             ret = raw_return
-        constraints = []
-        if ret.constraint is not NULL_CONSTRAINT:
-            constraints.append(ret.constraint)
+        constraints = [ret.constraint]
         if isinstance(ret.return_value, AnnotatedValue):
             for guard in ret.return_value.get_metadata_of_type(
                 ParameterTypeGuardExtension
@@ -480,10 +469,7 @@ class Signature:
                             ),
                         )
                         constraints.append(constraint)
-        if constraints:
-            constraint = reduce(AndConstraint, constraints)
-        else:
-            constraint = NULL_CONSTRAINT
+        constraint = AndConstraint.make(constraints)
         return ImplReturn(ret.return_value, constraint, ret.no_return_unless)
 
     def bind_arguments(
