@@ -86,6 +86,8 @@ from .stacked_scopes import (
     ConstraintType,
     ScopeType,
     StackedScopes,
+    VarnameOrigin,
+    VarnameWithOrigin,
     VisitorState,
     PredicateProvider,
     LEAVES_LOOP,
@@ -1038,7 +1040,8 @@ class NameCheckVisitor(
                     self.module.__name__, varname
                 )
             if varname in current_scope:
-                return current_scope.get_local(varname, node, self.state)
+                value, _ = current_scope.get_local(varname, node, self.state)
+                return value
         if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
             self._check_for_class_variable_redefinition(varname, node)
         current_scope.set(varname, value, node, self.state)
@@ -1072,7 +1075,7 @@ class NameCheckVisitor(
         node: ast.Name,
         error_node: Optional[ast.AST] = None,
         suppress_errors: bool = False,
-    ) -> Value:
+    ) -> Tuple[Value, VarnameOrigin]:
         """Resolves a Name node to a value.
 
         :param node: Node to resolve the name from
@@ -1089,7 +1092,9 @@ class NameCheckVisitor(
         """
         if error_node is None:
             error_node = node
-        value, defining_scope = self.scopes.get_with_scope(node.id, node, self.state)
+        value, defining_scope, origin = self.scopes.get_with_scope(
+            node.id, node, self.state
+        )
         if defining_scope is not None:
             if defining_scope.scope_type in (
                 ScopeType.module_scope,
@@ -1107,7 +1112,7 @@ class NameCheckVisitor(
                 self._show_error_if_checking(
                     error_node, f"Undefined name: {node.id}", ErrorCode.undefined_name
                 )
-            return AnyValue(AnySource.error)
+            return AnyValue(AnySource.error), origin
         if isinstance(value, MultiValuedValue):
             subvals = value.vals
         elif isinstance(value, AnnotatedValue) and isinstance(
@@ -1133,10 +1138,10 @@ class NameCheckVisitor(
                     ]
                 )
                 if isinstance(value, AnnotatedValue):
-                    return AnnotatedValue(new_mvv, value.metadata)
+                    return AnnotatedValue(new_mvv, value.metadata), origin
                 else:
-                    return new_mvv
-        return value
+                    return new_mvv, origin
+        return value, origin
 
     def _maybe_show_missing_import_error(self, node: ast.Name) -> None:
         """Shows errors that suggest adding an import statement in the semi-right place.
@@ -1595,7 +1600,7 @@ class NameCheckVisitor(
             ), qcore.override(self, "return_values", []):
                 self._generic_visit_list(body)
                 return_values = self.return_values
-                return_set = scope.get_local(LEAVES_SCOPE, node, self.state)
+                return_set, _ = scope.get_local(LEAVES_SCOPE, node, self.state)
 
             self._check_function_unused_vars(scope)
             return self._compute_return_type(
@@ -3428,14 +3433,14 @@ class NameCheckVisitor(
     ) -> Composite:
         if force_read or self._is_read_ctx(node.ctx):
             self.yield_checker.record_usage(node.id, node)
-            value = self.resolve_name(node)
+            value, origin = self.resolve_name(node)
             varname_value = VariableNameValue.from_varname(
                 node.id, self.config.varname_value_map()
             )
             if varname_value is not None and self._should_use_varname_value(value):
                 value = varname_value
             value = self._maybe_use_hardcoded_type(value, node.id)
-            return Composite(value, node.id, node)
+            return Composite(value, (node.id, origin), node)
         elif self._is_write_ctx(node.ctx):
             if self._name_node_to_statement is not None:
                 statement = self.node_context.nearest_enclosing(
@@ -3503,9 +3508,13 @@ class NameCheckVisitor(
             and isinstance(index, KnownValue)
             and is_hashable(index.val)
         ):
-            composite_var = root_composite.get_extended_varname(index)
+            varname = root_composite.get_extended_varname(index)
         else:
+            varname = None
+        if varname is None:
             composite_var = None
+        else:
+            composite_var, _ = varname
         if isinstance(root_composite.value, MultiValuedValue):
             values = [
                 self._composite_from_subscript_no_mvv(
@@ -3521,14 +3530,14 @@ class NameCheckVisitor(
             return_value = self._composite_from_subscript_no_mvv(
                 node, root_composite, index_composite, composite_var
             )
-        return Composite(return_value, composite_var, node)
+        return Composite(return_value, varname, node)
 
     def _composite_from_subscript_no_mvv(
         self,
         node: ast.Subscript,
         root_composite: Composite,
         index_composite: Composite,
-        composite_var: Optional[CompositeVariable],
+        composite_var: Optional[Varname],
     ) -> Value:
         value = root_composite.value
         index = index_composite.value
@@ -3691,7 +3700,7 @@ class NameCheckVisitor(
         return return_value
 
     def _get_composite(self, composite: Varname, node: ast.AST, value: Value) -> Value:
-        local_value = self.scopes.current_scope().get_local(
+        local_value, _ = self.scopes.current_scope().get_local(
             composite, node, self.state, fallback_value=value
         )
         if isinstance(local_value, MultiValuedValue):
@@ -3720,7 +3729,7 @@ class NameCheckVisitor(
                 composite is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
-                self.scopes.set(composite, self.being_assigned, node, self.state)
+                self.scopes.set(composite[0], self.being_assigned, node, self.state)
 
             if isinstance(root_composite.value, TypedValue):
                 typ = root_composite.value.typ
@@ -3753,7 +3762,7 @@ class NameCheckVisitor(
                 composite is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
-                local_value = self._get_composite(composite, node, value)
+                local_value = self._get_composite(composite[0], node, value)
                 if local_value is not UNINITIALIZED_VALUE:
                     value = local_value
             value = self._maybe_use_hardcoded_type(value, node.attr)
@@ -3939,23 +3948,12 @@ class NameCheckVisitor(
             node.inferred_value = composite.value
         return composite
 
-    def varname_for_constraint(self, node: ast.AST) -> Optional[Varname]:
+    def varname_for_constraint(self, node: ast.AST) -> Optional[VarnameWithOrigin]:
         """Given a node, returns a variable name that could be used in a local scope."""
-        # TODO replace with composite_from_node(). This is currently used only by
-        # implementation functions.
-        if isinstance(node, ast.Attribute):
-            attribute_path = self._get_attribute_path(node)
-            if attribute_path:
-                attributes = tuple(attribute_path[1:])
-                return CompositeVariable(attribute_path[0], attributes)
-            else:
-                return None
-        elif isinstance(node, ast.Name):
-            return node.id
-        else:
-            return None
+        composite = self.composite_from_node(node)
+        return composite.varname
 
-    def varname_for_self_constraint(self, node: ast.AST) -> Optional[Varname]:
+    def varname_for_self_constraint(self, node: ast.AST) -> Optional[VarnameWithOrigin]:
         """Helper for constraints on self from method calls.
 
         Given an ``ast.Call`` node representing a method call, return the variable name

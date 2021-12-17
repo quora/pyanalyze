@@ -112,6 +112,9 @@ class CompositeVariable:
 
 
 Varname = Union[str, CompositeVariable]
+# Tag for a Varname that changes when the variable is assigned to.
+VarnameOrigin = object
+VarnameWithOrigin = Tuple[Varname, VarnameOrigin]
 # Nodes as used in scopes can be any object, as long as they are hashable.
 Node = object
 SubScope = Dict[Varname, List[Node]]
@@ -125,18 +128,19 @@ class Composite(NamedTuple):
     origin. This is useful for setting constraints."""
 
     value: Value
-    varname: Optional[Varname] = None
+    varname: Optional[VarnameWithOrigin] = None
     node: Optional[AST] = None
 
     def get_extended_varname(
         self, index: Union[str, KnownValue]
-    ) -> Optional[CompositeVariable]:
+    ) -> Optional[VarnameWithOrigin]:
         if self.varname is None:
             return None
-        if isinstance(self.varname, str):
-            return CompositeVariable(self.varname, (index,))
+        varname, origin = self.varname
+        if isinstance(varname, str):
+            return CompositeVariable(varname, (index,)), origin
         else:
-            return self.varname.extend_with(index)
+            return varname.extend_with(index), origin
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Composite":
         return Composite(
@@ -232,7 +236,7 @@ class Constraint(AbstractConstraint):
 
     """
 
-    varname: Varname
+    varname: VarnameWithOrigin
     """The :term:`varname` that the constraint applies to."""
     constraint_type: ConstraintType
     """Type of constraint. Determines the meaning of :attr:`value`."""
@@ -244,6 +248,9 @@ class Constraint(AbstractConstraint):
     """Type for an ``is_instance`` constraint; value identical to the variable
     for ``is_value``; unused for is_truthy; :class:`pyanalyze.value.Value` object for
     `is_value_object`."""
+
+    def __post_init__(self) -> None:
+        assert isinstance(self.varname, tuple), self.varname
 
     def apply(self) -> Iterable["Constraint"]:
         yield self
@@ -380,8 +387,8 @@ class Constraint(AbstractConstraint):
             assert False, f"unknown constraint type {self.constraint_type}"
 
 
-TRUTHY_CONSTRAINT = Constraint("%unused", ConstraintType.is_truthy, True, None)
-FALSY_CONSTRAINT = Constraint("%unused", ConstraintType.is_truthy, False, None)
+TRUTHY_CONSTRAINT = Constraint(("%unused", None), ConstraintType.is_truthy, True, None)
+FALSY_CONSTRAINT = Constraint(("%unused", None), ConstraintType.is_truthy, False, None)
 
 
 @dataclass(frozen=True)
@@ -427,7 +434,7 @@ class PredicateProvider(AbstractConstraint):
 
     """
 
-    varname: Varname
+    varname: VarnameWithOrigin
     provider: Callable[[Value], Value]
 
     def apply(self) -> Iterable[Constraint]:
@@ -495,7 +502,7 @@ class OrConstraint(AbstractConstraint):
                 )
 
     def _constraint_from_list(
-        self, varname: Varname, constraints: Sequence[Constraint]
+        self, varname: VarnameWithOrigin, constraints: Sequence[Constraint]
     ) -> Constraint:
         if len(constraints) == 1:
             return constraints[0]
@@ -504,7 +511,7 @@ class OrConstraint(AbstractConstraint):
 
     def _group_constraints(
         self, abstract_constraint: AbstractConstraint
-    ) -> Dict[str, List[Constraint]]:
+    ) -> Dict[VarnameWithOrigin, List[Constraint]]:
         by_varname = defaultdict(list)
         for constraint in abstract_constraint.apply():
             by_varname[constraint.varname].append(constraint)
@@ -575,22 +582,25 @@ class Scope:
         node: object,
         state: VisitorState,
         from_parent_scope: bool = False,
-    ) -> Tuple[Value, Optional["Scope"]]:
-        local_value = self.get_local(
+    ) -> Tuple[Value, Optional["Scope"], VarnameOrigin]:
+        local_value, origin = self.get_local(
             varname, node, state, from_parent_scope=from_parent_scope
         )
         if local_value is not UNINITIALIZED_VALUE:
-            return self.resolve_reference(local_value, state), self
+            return self.resolve_reference(local_value, state), self, origin
         elif self.parent_scope is not None:
             # Parent scopes don't get the node to help local lookup.
             parent_node = (
                 (varname, self.scope_node) if self.scope_node is not None else None
             )
-            return self.parent_scope.get(
+            val, scope, origin = self.parent_scope.get(
                 varname, parent_node, state, from_parent_scope=True
             )
+            # Tag lookups in the parent scope with this scope node, so we
+            # don't carry over constraints across scopes.
+            return val, scope, (self.scope_node, origin)
         else:
-            return UNINITIALIZED_VALUE, None
+            return UNINITIALIZED_VALUE, None, None
 
     def get_local(
         self,
@@ -599,11 +609,11 @@ class Scope:
         state: VisitorState,
         from_parent_scope: bool = False,
         fallback_value: Optional[Value] = None,
-    ) -> Value:
+    ) -> Tuple[Value, VarnameOrigin]:
         if varname in self.variables:
-            return self.variables[varname]
+            return self.variables[varname], None
         else:
-            return UNINITIALIZED_VALUE
+            return UNINITIALIZED_VALUE, None
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
@@ -651,7 +661,7 @@ class Scope:
 
     def resolve_reference(self, value: Value, state: VisitorState) -> Value:
         if isinstance(value, ReferencingValue):
-            referenced, _ = value.scope.get(value.name, None, state)
+            referenced, _, _ = value.scope.get(value.name, None, state)
             # globals that are None are probably set to something else later
             if safe_equals(referenced, KnownValue(None)):
                 return AnyValue(AnySource.inference)
@@ -863,7 +873,16 @@ class FunctionScope(Scope):
 
         """
         for constraint in abstract_constraint.apply():
-            def_nodes = set(self.name_to_current_definition_nodes[constraint.varname])
+            varname, constraint_origin = constraint.varname
+            if isinstance(varname, CompositeVariable):
+                base_varname = varname.varname
+            else:
+                base_varname = varname
+            _, _, current_origin = self.get(base_varname, node, state)
+            if constraint_origin != current_origin:
+                # print(constraint_origin, "VS", current_origin, varname)
+                continue
+            def_nodes = set(self.name_to_current_definition_nodes[varname])
             # We set both a constraint and its inverse using the same node as the definition
             # node, so cheat and include the constraint itself in the key. If you write constraints
             # to the same key in definition_node_to_value multiple times, you're likely to get
@@ -875,8 +894,8 @@ class FunctionScope(Scope):
             self.definition_node_to_value[node] = _ConstrainedValue(
                 def_nodes, [constraint]
             )
-            self.name_to_current_definition_nodes[constraint.varname] = [node]
-            self._add_composite(constraint.varname)
+            self.name_to_current_definition_nodes[varname] = [node]
+            self._add_composite(varname)
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
@@ -903,12 +922,12 @@ class FunctionScope(Scope):
 
     def get_local(
         self,
-        varname: str,
+        varname: Varname,
         node: Node,
         state: VisitorState,
         from_parent_scope: bool = False,
         fallback_value: Optional[Value] = None,
-    ) -> Value:
+    ) -> Tuple[Value, VarnameOrigin]:
         self._add_composite(varname)
         ctx = _LookupContext(varname, fallback_value, node, state)
         if from_parent_scope:
@@ -918,14 +937,13 @@ class FunctionScope(Scope):
             # this indicates that we're not looking at a normal local variable reference, but
             # something special like a nested function
             if varname in self.name_to_all_definition_nodes:
-                return self._get_value_from_nodes(
-                    self.name_to_all_definition_nodes[varname], ctx
-                )
+                definers = self.name_to_all_definition_nodes[varname]
+                return self._get_value_from_nodes(definers, ctx), tuple(definers)
             else:
-                return self.referencing_value_vars[varname]
+                return self.referencing_value_vars[varname], None
         if state is VisitorState.check_names:
             if node not in self.usage_to_definition_nodes:
-                return self.referencing_value_vars[varname]
+                return self.referencing_value_vars[varname], None
             else:
                 definers = self.usage_to_definition_nodes[node]
         else:
@@ -933,8 +951,8 @@ class FunctionScope(Scope):
                 definers = self.name_to_current_definition_nodes[varname]
                 self.usage_to_definition_nodes[node] += definers
             else:
-                return self.referencing_value_vars[varname]
-        return self._get_value_from_nodes(definers, ctx)
+                return self.referencing_value_vars[varname], None
+        return self._get_value_from_nodes(definers, ctx), tuple(definers)
 
     @contextlib.contextmanager
     def subscope(self) -> Iterable[SubScope]:
@@ -1010,7 +1028,7 @@ class FunctionScope(Scope):
                 assert (
                     self.parent_scope
                 ), "constrained value must have definition nodes or parent scope"
-                parent_val, _ = self.parent_scope.get(ctx.varname, None, ctx.state)
+                parent_val, _, _ = self.parent_scope.get(ctx.varname, None, ctx.state)
                 resolved = _constrain_value(
                     [parent_val],
                     val.constraints,
@@ -1155,15 +1173,16 @@ class StackedScopes:
         Returns :data:`pyanalyze.value.UNINITIALIZED_VALUE` if the name is not defined in any known scope.
 
         """
-        value, _ = self.get_with_scope(varname, node, state)
+        value, _, _ = self.get_with_scope(varname, node, state)
         return value
 
     def get_with_scope(
         self, varname: Varname, node: Node, state: VisitorState
-    ) -> Tuple[Value, Optional[Scope]]:
+    ) -> Tuple[Value, Optional[Scope], VarnameOrigin]:
         """Like :meth:`get`, but also returns the scope object the name was found in.
 
-        Returns a (:class:`pyanalyze.value.Value`, :class:`Scope`) tuple. The :class:`Scope` is ``None`` if the name was not found.
+        Returns a (:class:`pyanalyze.value.Value`, :class:`Scope`, origin) tuple. The :class:`Scope`
+        is ``None`` if the name was not found.
 
         """
         return self.scopes[-1].get(varname, node, state)

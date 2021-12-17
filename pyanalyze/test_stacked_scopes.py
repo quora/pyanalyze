@@ -1609,7 +1609,7 @@ class TestComposite(TestNameCheckVisitorBase):
     def test_subscript(self):
         from typing import Any, Dict
 
-        def capybara(x: Dict[str, Any]) -> None:
+        def capybara(x: Dict[str, Any], y) -> None:
             assert_is_value(x["a"], AnyValue(AnySource.explicit))
             x["a"] = 1
             assert_is_value(x["a"], KnownValue(1))

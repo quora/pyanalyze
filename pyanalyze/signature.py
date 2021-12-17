@@ -6,7 +6,6 @@ calls.
 
 """
 
-from .extensions import reveal_type
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -17,7 +16,7 @@ from .stacked_scopes import (
     ConstraintType,
     NULL_CONSTRAINT,
     AbstractConstraint,
-    Varname,
+    VarnameWithOrigin,
 )
 from .value import (
     AnnotatedValue,
@@ -181,7 +180,7 @@ class CallContext:
             return composite.node
         return None
 
-    def varname_for_arg(self, arg: str) -> Optional[Varname]:
+    def varname_for_arg(self, arg: str) -> Optional[VarnameWithOrigin]:
         """Return a :term:`varname` corresponding to the given function argument.
 
         This is useful for creating a :class:`pyanalyze.stacked_scopes.Constraint`

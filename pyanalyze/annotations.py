@@ -647,11 +647,12 @@ class _DefaultContext(Context):
 
     def get_name(self, node: ast.Name) -> Value:
         if self.visitor is not None:
-            return self.visitor.resolve_name(
+            val, _ = self.visitor.resolve_name(
                 node,
                 error_node=self.node,
                 suppress_errors=self.should_suppress_undefined_names,
             )
+            return val
         elif self.globals is not None:
             if node.id in self.globals:
                 return KnownValue(self.globals[node.id])

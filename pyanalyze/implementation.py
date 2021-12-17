@@ -12,6 +12,7 @@ from .stacked_scopes import (
     PredicateProvider,
     OrConstraint,
     Varname,
+    VarnameWithOrigin,
 )
 from .signature import ANY_SIGNATURE, SigParameter, Signature, ImplReturn, CallContext
 from .value import (
@@ -115,7 +116,7 @@ def _isinstance_impl(ctx: CallContext) -> ImplReturn:
 
 
 def _constraint_from_isinstance(
-    varname: Optional[Varname], class_or_tuple: Value
+    varname: Optional[VarnameWithOrigin], class_or_tuple: Value
 ) -> AbstractConstraint:
     if varname is None:
         return NULL_CONSTRAINT
