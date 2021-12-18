@@ -1716,3 +1716,31 @@ class TestInvalidation(TestNameCheckVisitorBase):
             while x:
                 assert_is_value(x, TypedValue(str))
                 x = make_optional()
+
+    @assert_passes()
+    def test_len_condition(self) -> None:
+        def capybara(file_list, key, ids):
+            has_bias = len(key) > 0
+            data = []
+            for _ in file_list:
+                assert_is_value(key, AnyValue(AnySource.unannotated))
+                if has_bias:
+                    assert_is_value(key, AnyValue(AnySource.unannotated))
+                    data = [ids, data[key]]
+                else:
+                    data = [ids]
+
+    @assert_passes()
+    def test_len_condition_with_type(self) -> None:
+        from typing import Optional
+
+        def capybara(file_list, key: Optional[int], ids):
+            has_bias = key is not None
+            data = []
+            for _ in file_list:
+                assert_is_value(key, TypedValue(int) | KnownValue(None))
+                if has_bias:
+                    assert_is_value(key, TypedValue(int))
+                    data = [ids, data[key]]
+                else:
+                    data = [ids]

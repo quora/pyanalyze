@@ -50,6 +50,7 @@ from .boolability import get_boolability
 from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -1168,6 +1169,9 @@ class FunctionScope(Scope):
             key = replace(ctx, fallback_value=None)
             if key in val.resolution_cache:
                 return val.resolution_cache[key]
+            # Guard against recursion. This happens in the test_len_condition test.
+            # Perhaps we should do something smarter to prevent recursion.
+            val.resolution_cache[key] = NO_RETURN_VALUE
             if val.definition_nodes or ctx.fallback_value:
                 resolved = self._get_value_from_nodes(
                     val.definition_nodes, ctx, val.constraints
