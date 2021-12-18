@@ -544,9 +544,12 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
             self_value.typ,
             [*self_value.kv_pairs, KVPair(key, default, is_required=not is_present)],
         )
-        no_return_unless = Constraint(
-            varname, ConstraintType.is_value_object, True, new_value
-        )
+        if varname is not None:
+            no_return_unless = Constraint(
+                varname, ConstraintType.is_value_object, True, new_value
+            )
+        else:
+            no_return_unless = NULL_CONSTRAINT
         if not is_present:
             return ImplReturn(default, no_return_unless=no_return_unless)
         return ImplReturn(
@@ -561,9 +564,12 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
             new_type = make_weak(
                 GenericValue(self_value.typ, [new_key_type, new_value_type])
             )
-            no_return_unless = Constraint(
-                varname, ConstraintType.is_value_object, True, new_type
-            )
+            if varname is not None:
+                no_return_unless = Constraint(
+                    varname, ConstraintType.is_value_object, True, new_type
+                )
+            else:
+                no_return_unless = NULL_CONSTRAINT
             return ImplReturn(new_value_type, no_return_unless=no_return_unless)
         else:
             tv_map = key_type.can_assign(key, ctx.visitor)
