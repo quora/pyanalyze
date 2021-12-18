@@ -33,6 +33,7 @@ from typing import (
     Callable,
     ContextManager,
     Dict,
+    FrozenSet,
     Iterable,
     Iterator,
     List,
@@ -138,9 +139,9 @@ class Composite(NamedTuple):
             return None
         varname, origin = self.varname
         if isinstance(varname, str):
-            return CompositeVariable(varname, (index,)), origin
+            return CompositeVariable(varname, (index,)), (None,)
         else:
-            return varname.extend_with(index), origin
+            return varname.extend_with(index), (None,)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Composite":
         return Composite(
@@ -906,25 +907,10 @@ class FunctionScope(Scope):
         else:
             base_varname = varname
         _, _, current_origin = self.get(base_varname, node, state)
-        current_set = set(current_origin)
-        constraint_set = set(constraint_origin)
-        current_set -= constraint_set
-        while current_set:
-            origin = current_set.pop()
-            val = self.definition_node_to_value[origin]
-            if isinstance(val, _ConstrainedValue):
-                current_set |= val.definition_nodes
-                current_set -= constraint_set
-            else:
-                print("-----")
-                print("state", state)
-                print("CURRENT", current_origin)
-                print("CONSTRAINT", constraint_origin)
-                print("CURRSET", current_set)
-                print("BAD ORIGIN", origin, val)
-                print("REJECT CONSTRAINT", constraint)
-                print("-----")
-                return
+        current_set = set(self._resolve_origin(current_origin))
+        constraint_set = set(self._resolve_origin(constraint_origin))
+        if current_set - constraint_set:
+            return
 
         def_nodes = set(self.name_to_current_definition_nodes[varname])
         # We set both a constraint and its inverse using the same node as the definition
@@ -938,6 +924,25 @@ class FunctionScope(Scope):
         self.definition_node_to_value[node] = _ConstrainedValue(def_nodes, [constraint])
         self.name_to_current_definition_nodes[varname] = [node]
         self._add_composite(varname)
+
+    def _resolve_origin(self, definers: Iterable[Node]) -> FrozenSet[Node]:
+        seen = set()
+        pending = set(definers)
+        out = set()
+        while pending:
+            definer = pending.pop()
+            if definer in seen:
+                continue
+            seen.add(definer)
+            if definer is None:
+                out.add(None)
+            else:
+                val = self.definition_node_to_value[definer]
+                if isinstance(val, _ConstrainedValue):
+                    pending |= val.definition_nodes
+                else:
+                    out.add(definer)
+        return frozenset(out)
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
@@ -980,7 +985,9 @@ class FunctionScope(Scope):
             # something special like a nested function
             if varname in self.name_to_all_definition_nodes:
                 definers = self.name_to_all_definition_nodes[varname]
-                return self._get_value_from_nodes(definers, ctx), tuple(definers)
+                return self._get_value_from_nodes(definers, ctx), tuple(
+                    self._resolve_origin(definers)
+                )
             else:
                 return self.referencing_value_vars[varname], (None,)
         if state is VisitorState.check_names:
@@ -994,7 +1001,9 @@ class FunctionScope(Scope):
                 self.usage_to_definition_nodes[node] += definers
             else:
                 return self.referencing_value_vars[varname], (None,)
-        return self._get_value_from_nodes(definers, ctx), tuple(definers)
+        return self._get_value_from_nodes(definers, ctx), tuple(
+            self._resolve_origin(definers)
+        )
 
     @contextlib.contextmanager
     def subscope(self) -> Iterable[SubScope]:
