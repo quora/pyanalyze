@@ -977,6 +977,9 @@ class FunctionScope(Scope):
             seen.add(definer)
             if definer is None:
                 out.add(None)
+            elif definer not in self.definition_node_to_value:
+                # maybe from a different scope
+                return EMPTY_ORIGIN
             else:
                 val = self.definition_node_to_value[definer]
                 if isinstance(val, _ConstrainedValue):

@@ -1669,3 +1669,37 @@ def test_uniq_chain():
     assert [] == uniq_chain([])
     assert list(range(3)) == uniq_chain(range(3) for _ in range(3))
     assert [1] == uniq_chain([1, 1, 1] for _ in range(3))
+
+
+class TestInvalidation(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_still_valid(self) -> None:
+        def capybara(x, y):
+            condition = isinstance(x, int)
+            assert_is_value(x, AnyValue(AnySource.unannotated))
+            if condition:
+                assert_is_value(x, TypedValue(int))
+
+            condition = isinstance(y, int) if x else isinstance(y, str)
+            assert_is_value(y, AnyValue(AnySource.unannotated))
+            if condition:
+                assert_is_value(y, TypedValue(int) | TypedValue(str))
+
+    @assert_passes()
+    def test_invalidated(self) -> None:
+        def capybara(x, y):
+            condition = isinstance(x, int)
+            assert_is_value(x, AnyValue(AnySource.unannotated))
+            x = y
+            if condition:
+                assert_is_value(x, AnyValue(AnySource.unannotated))
+
+    @assert_passes()
+    def test_other_scope(self) -> None:
+        def callee(x):
+            return isinstance(x, int)
+
+        def capybara(x, y):
+            if callee(y):
+                assert_is_value(x, AnyValue(AnySource.unannotated))
+                assert_is_value(y, AnyValue(AnySource.unannotated))
