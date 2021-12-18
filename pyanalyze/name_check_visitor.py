@@ -2451,16 +2451,10 @@ class NameCheckVisitor(
                 else:
                     values.append(elt)
             if has_unknown_value:
-                return make_weak(
-                    GenericValue(
-                        typ,
-                        [
-                            unite_and_simplify(
-                                *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
-                            )
-                        ],
-                    )
+                arg = unite_and_simplify(
+                    *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
                 )
+                return make_weak(GenericValue(typ, [arg]))
             else:
                 return SequenceIncompleteValue(typ, values)
 
@@ -3063,7 +3057,9 @@ class NameCheckVisitor(
         else:
             always_entered = len(iterated_value) > 0
         if not isinstance(iterated_value, Value):
-            iterated_value = unite_values(*iterated_value)
+            iterated_value = unite_values(
+                *iterated_value, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            )
         with self.scopes.subscope() as body_scope:
             with self.scopes.loop_scope():
                 with qcore.override(self, "being_assigned", iterated_value):
