@@ -1866,12 +1866,14 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
     return AnnotatedValue(origin, metadata)
 
 
-def unite_and_simplify(*values: Value, limit: int) -> Value:
-    united = unite_values(*values)
+def unite_and_simplify(
+    *values: Value, limit: int, default: Value = NO_RETURN_VALUE
+) -> Value:
+    united = unite_values(*values, default=default)
     if not isinstance(united, MultiValuedValue) or len(united.vals) < limit:
         return united
     simplified = [val.simplify() for val in united.vals]
-    return unite_values(*simplified)
+    return unite_values(*simplified, default=default)
 
 
 def unite_values(*values: Value, default: Value = NO_RETURN_VALUE) -> Value:

@@ -117,7 +117,7 @@ Varname = Union[str, CompositeVariable]
 # Tag for a Varname that changes when the variable is assigned to.
 VarnameOrigin = Tuple[Optional[Node], ...]
 VarnameWithOrigin = Tuple[Varname, VarnameOrigin]
-SubScope = Dict[Union[Varname, Optional[Node]], List[Union[Node, "AbstractConstraint"]]]
+SubScope = Dict[Varname, List[Node]]
 
 # Type for Constraint.value if constraint type is predicate
 # PredicateFunc = Callable[[Value, bool], Optional[Value]]
@@ -877,18 +877,40 @@ class FunctionScope(Scope):
 
         """
         for constraint in abstract_constraint.apply():
-            varname, constraint_origin = constraint.varname
-            for node in constraint_origin:
-                key = (varname, node)
-                if key in self.name_to_current_definition_nodes:
-                    existing = self.name_to_current_definition_nodes[key]
-                    new = AndConstraint.make(
-                        [_constraint_from_scope_values(existing), constraint]
-                    )
-                else:
-                    new = constraint
-                self.name_to_current_definition_nodes[key] = [new]
-            self._add_composite(varname)
+            self._add_single_constraint(constraint, node, state)
+
+    def _add_single_constraint(
+        self, constraint: Constraint, node: Node, state: VisitorState
+    ) -> None:
+        varname, constraint_origin = constraint.varname
+        if isinstance(varname, CompositeVariable):
+            base_varname = varname.varname
+        else:
+            base_varname = varname
+        _, _, current_origin = self.get(base_varname, node, state)
+        current_set = set(current_origin)
+        constraint_set = set(constraint_origin)
+        current_set -= constraint_set
+        while current_set:
+            origin = current_set.pop()
+            val = self.usage_to_definition_nodes[origin]
+            if isinstance(val, _ConstrainedValue):
+                current_set |= val.definition_nodes
+            else:
+                return
+
+        def_nodes = set(self.name_to_current_definition_nodes[varname])
+        # We set both a constraint and its inverse using the same node as the definition
+        # node, so cheat and include the constraint itself in the key. If you write constraints
+        # to the same key in definition_node_to_value multiple times, you're likely to get
+        # infinite recursion.
+        node = (node, constraint)
+        assert (
+            node not in self.definition_node_to_value
+        ), "duplicate constraint for {}".format(node)
+        self.definition_node_to_value[node] = _ConstrainedValue(def_nodes, [constraint])
+        self.name_to_current_definition_nodes[varname] = [node]
+        self._add_composite(varname)
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
@@ -931,7 +953,7 @@ class FunctionScope(Scope):
             # something special like a nested function
             if varname in self.name_to_all_definition_nodes:
                 definers = self.name_to_all_definition_nodes[varname]
-                return self._get_value_from_definers(definers, ctx), tuple(definers)
+                return self._get_value_from_nodes(definers, ctx), tuple(definers)
             else:
                 return self.referencing_value_vars[varname], (None,)
         if state is VisitorState.check_names:
@@ -945,7 +967,7 @@ class FunctionScope(Scope):
                 self.usage_to_definition_nodes[node] += definers
             else:
                 return self.referencing_value_vars[varname], (None,)
-        return self._get_value_from_definers(definers, ctx), tuple(definers)
+        return self._get_value_from_nodes(definers, ctx), tuple(definers)
 
     @contextlib.contextmanager
     def subscope(self) -> Iterable[SubScope]:
@@ -1320,8 +1342,10 @@ def _constrain_value(
     for constraint in constraints:
         values = list(constraint.apply_to_values(values))
     if simplification_limit is not None:
-        return unite_and_simplify(*values, limit=simplification_limit)
-    return unite_values(*values)
+        return unite_and_simplify(
+            *values, limit=simplification_limit, default=AnyValue(AnySource.unreachable)
+        )
+    return unite_values(*values, default=AnyValue(AnySource.unreachable))
 
 
 def annotate_with_constraint(value: Value, constraint: AbstractConstraint) -> Value:
