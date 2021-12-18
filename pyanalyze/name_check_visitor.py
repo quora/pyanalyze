@@ -3105,7 +3105,9 @@ class NameCheckVisitor(
         self._handle_loop_else(node.orelse, body_scope, always_entered)
 
         if self.state == VisitorState.collect_names:
-            self.visit(node.test)
+            test, constraint = self.constraint_from_condition(
+                node.test, check_boolability=False
+            )
             with self.scopes.subscope():
                 self.add_constraint((node, 2), constraint)
                 self._generic_visit_list(node.body)
