@@ -1879,7 +1879,7 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
 
 
 def unite_and_simplify(
-    *values: Value, limit: int, default: Value = NO_RETURN_VALUE
+    *values: Value, limit: int, default: Value = AnyValue(AnySource.unreachable)
 ) -> Value:
     united = unite_values(*values, default=default)
     if not isinstance(united, MultiValuedValue) or len(united.vals) < limit:
