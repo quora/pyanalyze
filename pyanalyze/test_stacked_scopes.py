@@ -930,8 +930,27 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(False))
 
     @assert_passes()
+    def test_double_index(self):
+        from typing import Union, Optional
+
+        class A:
+            attr: Union[int, str]
+
+        class B:
+            attr: Optional[A]
+
+        def capybara(b: B):
+            assert_is_value(b, TypedValue(B))
+            assert_is_value(b.attr, TypedValue(A) | KnownValue(None))
+            if b.attr is not None:
+                assert_is_value(b.attr, TypedValue(A))
+                assert_is_value(b.attr.attr, TypedValue(int) | TypedValue(str))
+                if isinstance(b.attr.attr, int):
+                    assert_is_value(b.attr.attr, TypedValue(int))
+
+    @assert_passes()
     def test_qcore_asserts(self):
-        from qcore.asserts import assert_is, assert_is_not, assert_is_instance
+        from qcore.asserts import assert_is_instance
 
         def capybara(cond):
             if cond:
