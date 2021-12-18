@@ -93,8 +93,10 @@ class ScopeType(enum.Enum):
 # Nodes as used in scopes can be any object, as long as they are hashable.
 Node = object
 # Tag for a Varname that changes when the variable is assigned to.
-VarnameOrigin = Tuple[Optional[Node], ...]
+VarnameOrigin = FrozenSet[Optional[Node]]
 CompositeIndex = Union[str, KnownValue]
+
+EMPTY_ORIGIN = frozenset((None,))
 
 
 @dataclass(frozen=True)
@@ -125,7 +127,7 @@ Varname = Union[str, CompositeVariable]
 @dataclass(frozen=True)
 class VarnameWithOrigin:
     varname: str
-    origin: VarnameOrigin = (None,)
+    origin: VarnameOrigin = EMPTY_ORIGIN
     indices: Sequence[Tuple[CompositeIndex, VarnameOrigin]] = ()
 
     def extend_with(
@@ -655,9 +657,9 @@ class Scope:
             )
             # Tag lookups in the parent scope with this scope node, so we
             # don't carry over constraints across scopes.
-            return val, scope, (None,)
+            return val, scope, EMPTY_ORIGIN
         else:
-            return UNINITIALIZED_VALUE, None, (None,)
+            return UNINITIALIZED_VALUE, None, EMPTY_ORIGIN
 
     def get_local(
         self,
@@ -668,14 +670,14 @@ class Scope:
         fallback_value: Optional[Value] = None,
     ) -> Tuple[Value, VarnameOrigin]:
         if varname in self.variables:
-            return self.variables[varname], (None,)
+            return self.variables[varname], EMPTY_ORIGIN
         else:
-            return UNINITIALIZED_VALUE, (None,)
+            return UNINITIALIZED_VALUE, EMPTY_ORIGIN
 
     def get_origin(
         self, varname: Varname, node: Node, state: VisitorState
     ) -> VarnameOrigin:
-        return (None,)
+        return EMPTY_ORIGIN
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
@@ -1020,14 +1022,14 @@ class FunctionScope(Scope):
             # something special like a nested function
             if varname in self.name_to_all_definition_nodes:
                 definers = self.name_to_all_definition_nodes[varname]
-                return self._get_value_from_nodes(definers, ctx), tuple(
-                    self._resolve_origin(definers)
+                return self._get_value_from_nodes(definers, ctx), self._resolve_origin(
+                    definers
                 )
             else:
-                return self.referencing_value_vars[varname], (None,)
+                return self.referencing_value_vars[varname], EMPTY_ORIGIN
         if state is VisitorState.check_names:
             if node not in self.usage_to_definition_nodes:
-                return self.referencing_value_vars[varname], (None,)
+                return self.referencing_value_vars[varname], EMPTY_ORIGIN
             else:
                 definers = self.usage_to_definition_nodes[node]
         else:
@@ -1035,10 +1037,8 @@ class FunctionScope(Scope):
                 definers = self.name_to_current_definition_nodes[varname]
                 self.usage_to_definition_nodes[node] += definers
             else:
-                return self.referencing_value_vars[varname], (None,)
-        return self._get_value_from_nodes(definers, ctx), tuple(
-            self._resolve_origin(definers)
-        )
+                return self.referencing_value_vars[varname], EMPTY_ORIGIN
+        return self._get_value_from_nodes(definers, ctx), self._resolve_origin(definers)
 
     def get_origin(
         self, varname: Varname, node: Node, state: VisitorState
@@ -1049,18 +1049,18 @@ class FunctionScope(Scope):
             if varname in self.name_to_all_definition_nodes:
                 definers = self.name_to_all_definition_nodes[varname]
             else:
-                return (None,)
+                return EMPTY_ORIGIN
         elif state is VisitorState.check_names:
             if node not in self.usage_to_definition_nodes:
-                return (None,)
+                return EMPTY_ORIGIN
             else:
                 definers = self.usage_to_definition_nodes[node]
         else:
             if varname in self.name_to_current_definition_nodes:
                 definers = self.name_to_current_definition_nodes[varname]
             else:
-                return (None,)
-        return tuple(self._resolve_origin(definers))
+                return EMPTY_ORIGIN
+        return self._resolve_origin(definers)
 
     @contextlib.contextmanager
     def subscope(self) -> Iterable[SubScope]:
