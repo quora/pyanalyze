@@ -288,6 +288,9 @@ class Constraint(AbstractConstraint):
     """Type for an ``is_instance`` constraint; value identical to the variable
     for ``is_value``; unused for is_truthy; :class:`pyanalyze.value.Value` object for
     `is_value_object`."""
+    inverted: Optional["Constraint"] = field(
+        compare=False, repr=False, hash=False, default=None
+    )
 
     def __post_init__(self) -> None:
         assert isinstance(self.varname, VarnameWithOrigin), self.varname
@@ -296,9 +299,13 @@ class Constraint(AbstractConstraint):
         yield self
 
     def invert(self) -> "Constraint":
-        return Constraint(
+        if self.inverted is not None:
+            return self.inverted
+        inverted = Constraint(
             self.varname, self.constraint_type, not self.positive, self.value
         )
+        object.__setattr__(self, "inverted", inverted)
+        return inverted
 
     def apply_to_values(self, values: Iterable[Value]) -> Iterable[Value]:
         for value in values:
@@ -513,18 +520,28 @@ class AndConstraint(AbstractConstraint):
 
     @classmethod
     def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
-        processed = set()
+        processed = {}
         for cons in constraints:
             if isinstance(cons, AndConstraint):
-                processed.update(cons.constraints)
-            else:
-                processed.add(cons)
-        if not processed:
+                for subcons in cons.constraints:
+                    processed[id(subcons)] = subcons
+                continue
+            processed[id(cons)] = cons
+
+        final = []
+        for constraint in processed.values():
+            if isinstance(constraint, OrConstraint):
+                # A AND (A OR B) reduces to a
+                if any(id(subcons) in processed for subcons in constraint.constraints):
+                    continue
+            final.append(constraint)
+
+        if not final:
             return NULL_CONSTRAINT
-        if len(processed) == 1:
-            (cons,) = processed
+        if len(final) == 1:
+            (cons,) = final
             return cons
-        return cls(tuple(processed))
+        return cls(tuple(final))
 
     def __str__(self) -> str:
         children = " AND ".join(map(str, self.constraints))
@@ -577,18 +594,32 @@ class OrConstraint(AbstractConstraint):
 
     @classmethod
     def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
-        processed = set()
+        processed = {}
         for cons in constraints:
             if isinstance(cons, OrConstraint):
-                processed.update(cons.constraints)
-            else:
-                processed.add(cons)
-        if not processed:
+                for subcons in cons.constraints:
+                    processed[id(subcons)] = subcons
+                continue
+            processed[id(cons)] = cons
+
+        final = []
+        for constraint in processed.values():
+            if isinstance(constraint, AndConstraint):
+                # A OR (A AND B) reduces to a
+                if any(id(subcons) in processed for subcons in constraint.constraints):
+                    continue
+            elif isinstance(constraint, Constraint):
+                inverted = id(constraint.invert())
+                if inverted in processed:
+                    continue
+            final.append(constraint)
+
+        if not final:
             return NULL_CONSTRAINT
-        if len(processed) == 1:
-            (cons,) = processed
+        if len(final) == 1:
+            (cons,) = final
             return cons
-        return cls(tuple(processed))
+        return cls(tuple(final))
 
     def __str__(self) -> str:
         children = " OR ".join(map(str, self.constraints))

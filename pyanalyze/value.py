@@ -822,7 +822,7 @@ class GenericValue(TypedValue):
             self.typ, [arg.substitute_typevars(typevars) for arg in self.args]
         )
 
-    def simplify(self, default) -> Value:
+    def simplify(self, default: Value) -> Value:
         return GenericValue(self.typ, [arg.simplify(default) for arg in self.args])
 
 
