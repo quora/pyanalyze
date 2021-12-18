@@ -11,7 +11,6 @@ from .stacked_scopes import (
     ConstraintType,
     PredicateProvider,
     OrConstraint,
-    Varname,
     VarnameWithOrigin,
 )
 from .signature import ANY_SIGNATURE, SigParameter, Signature, ImplReturn, CallContext
@@ -313,18 +312,26 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
     lst = replace_known_sequence_value(ctx.vars["self"])
     element = ctx.vars["object"]
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
-    if isinstance(lst, SequenceIncompleteValue):
-        no_return_unless = Constraint(
-            varname,
-            ConstraintType.is_value_object,
-            True,
-            SequenceIncompleteValue.make_or_known(list, (*lst.members, element)),
-        )
-        return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-    elif isinstance(lst, GenericValue):
-        return _maybe_broaden_weak_type(
-            "list.append", "object", ctx.vars["self"], lst, element, ctx, list, varname
-        )
+    if varname is not None:
+        if isinstance(lst, SequenceIncompleteValue):
+            no_return_unless = Constraint(
+                varname,
+                ConstraintType.is_value_object,
+                True,
+                SequenceIncompleteValue.make_or_known(list, (*lst.members, element)),
+            )
+            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
+        elif isinstance(lst, GenericValue):
+            return _maybe_broaden_weak_type(
+                "list.append",
+                "object",
+                ctx.vars["self"],
+                lst,
+                element,
+                ctx,
+                list,
+                varname,
+            )
     return ImplReturn(KnownValue(None))
 
 
@@ -596,7 +603,7 @@ def _weak_dict_update(
     self_val: Value,
     pairs: Sequence[KVPair],
     ctx: CallContext,
-    varname: Optional[Varname],
+    varname: Optional[VarnameWithOrigin],
 ) -> ImplReturn:
     self_pairs = kv_pairs_from_mapping(self_val, ctx.visitor)
     if isinstance(self_pairs, CanAssignError):
@@ -622,7 +629,7 @@ def _add_pairs_to_dict(
     self_val: Value,
     pairs: Sequence[KVPair],
     ctx: CallContext,
-    varname: Optional[Varname],
+    varname: Optional[VarnameWithOrigin],
 ) -> ImplReturn:
     if _is_weak(self_val):
         return _weak_dict_update(self_val, pairs, ctx, varname)
@@ -766,11 +773,16 @@ def _list_extend_or_iadd_impl(
                 constrained_value = make_weak(GenericValue(list, [generic_arg]))
             if return_container:
                 return ImplReturn(constrained_value)
-            no_return_unless = Constraint(
-                varname, ConstraintType.is_value_object, True, constrained_value
-            )
-            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        elif isinstance(cleaned_lst, GenericValue) and isinstance(iterable, TypedValue):
+            if varname is not None:
+                no_return_unless = Constraint(
+                    varname, ConstraintType.is_value_object, True, constrained_value
+                )
+                return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
+        elif (
+            varname is not None
+            and isinstance(cleaned_lst, GenericValue)
+            and isinstance(iterable, TypedValue)
+        ):
             actual_type = iterable.get_generic_arg_for_type(
                 collections.abc.Iterable, ctx.visitor, 0
             )
@@ -810,7 +822,7 @@ def _maybe_broaden_weak_type(
     actual_type: Value,
     ctx: CallContext,
     typ: type,
-    varname: Varname,
+    varname: VarnameWithOrigin,
     *,
     return_container: bool = False,
 ) -> ImplReturn:
@@ -842,18 +854,28 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
     set_value = replace_known_sequence_value(ctx.vars["self"])
     element = ctx.vars["object"]
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
-    if isinstance(set_value, SequenceIncompleteValue):
-        no_return_unless = Constraint(
-            varname,
-            ConstraintType.is_value_object,
-            True,
-            SequenceIncompleteValue.make_or_known(set, (*set_value.members, element)),
-        )
-        return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-    elif isinstance(set_value, GenericValue):
-        return _maybe_broaden_weak_type(
-            "set.add", "object", ctx.vars["self"], set_value, element, ctx, set, varname
-        )
+    if varname is not None:
+        if isinstance(set_value, SequenceIncompleteValue):
+            no_return_unless = Constraint(
+                varname,
+                ConstraintType.is_value_object,
+                True,
+                SequenceIncompleteValue.make_or_known(
+                    set, (*set_value.members, element)
+                ),
+            )
+            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
+        elif isinstance(set_value, GenericValue):
+            return _maybe_broaden_weak_type(
+                "set.add",
+                "object",
+                ctx.vars["self"],
+                set_value,
+                element,
+                ctx,
+                set,
+                varname,
+            )
     return ImplReturn(KnownValue(None))
 
 
@@ -1077,7 +1099,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 SigParameter(
                     "skip_annotated",
                     SigParameter.KEYWORD_ONLY,
-                    default=Composite(KnownValue(False)),
+                    default=KnownValue(False),
                     annotation=TypedValue(bool),
                 ),
             ],

@@ -594,18 +594,18 @@ class OrConstraint(AbstractConstraint):
         return f"({children})"
 
 
+@dataclass(frozen=True)
 class _ConstrainedValue(Value):
     """Helper class, only used within a FunctionScope."""
 
-    def __init__(
-        self, definition_nodes: Set[Node], constraints: Sequence[Constraint]
-    ) -> None:
-        self.definition_nodes = definition_nodes
-        self.constraints = constraints
-        self.resolution_cache = {}
+    definition_nodes: FrozenSet[Node]
+    constraints: Sequence[Constraint]
+    resolution_cache: Dict[_LookupContext, Value] = field(
+        default_factory=dict, init=False, compare=False, hash=False, repr=False
+    )
 
 
-_empty_constrained = _ConstrainedValue(set(), [])
+_empty_constrained = _ConstrainedValue(frozenset(), [])
 
 
 @dataclass
@@ -951,16 +951,12 @@ class FunctionScope(Scope):
                 return
 
         varname = constraint.varname.get_varname()
-        def_nodes = set(self.name_to_current_definition_nodes[varname])
+        def_nodes = frozenset(self.name_to_current_definition_nodes[varname])
         # We set both a constraint and its inverse using the same node as the definition
-        # node, so cheat and include the constraint itself in the key. If you write constraints
-        # to the same key in definition_node_to_value multiple times, you're likely to get
-        # infinite recursion.
+        # node, so cheat and include the constraint itself in the key.
         node = (node, constraint)
-        assert (
-            node not in self.definition_node_to_value
-        ), "duplicate constraint for {}".format(node)
-        self.definition_node_to_value[node] = _ConstrainedValue(def_nodes, [constraint])
+        val = _ConstrainedValue(def_nodes, [constraint])
+        self.definition_node_to_value[node] = val
         self.name_to_current_definition_nodes[varname] = [node]
         self._add_composite(varname)
 
