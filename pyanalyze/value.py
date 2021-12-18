@@ -1874,7 +1874,7 @@ def unite_and_simplify(*values: Value, limit: int) -> Value:
     return unite_values(*simplified)
 
 
-def unite_values(*values: Value) -> Value:
+def unite_values(*values: Value, default: Value = NO_RETURN_VALUE) -> Value:
     """Unite multiple values into a single :class:`Value`.
 
     This collapses equal values and returns a :class:`MultiValuedValue`
@@ -1882,7 +1882,7 @@ def unite_values(*values: Value) -> Value:
 
     """
     if not values:
-        return NO_RETURN_VALUE
+        return default
     # Make sure order is consistent; conceptually this is a set but
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
@@ -1908,7 +1908,7 @@ def unite_values(*values: Value) -> Value:
     existing = list(hashable_vals) + unhashable_vals
     num = len(existing)
     if num == 0:
-        return NO_RETURN_VALUE
+        return default
     if num == 1:
         return existing[0]
     else:

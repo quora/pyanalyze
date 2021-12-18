@@ -111,13 +111,13 @@ class CompositeVariable:
         return CompositeVariable(self.varname, (*self.attributes, index))
 
 
-Varname = Union[str, CompositeVariable]
-# Tag for a Varname that changes when the variable is assigned to.
-VarnameOrigin = object
-VarnameWithOrigin = Tuple[Varname, VarnameOrigin]
 # Nodes as used in scopes can be any object, as long as they are hashable.
 Node = object
-SubScope = Dict[Varname, List[Node]]
+Varname = Union[str, CompositeVariable]
+# Tag for a Varname that changes when the variable is assigned to.
+VarnameOrigin = Tuple[Optional[Node], ...]
+VarnameWithOrigin = Tuple[Varname, VarnameOrigin]
+SubScope = Dict[Union[Varname, Optional[Node]], List[Union[Node, "AbstractConstraint"]]]
 
 # Type for Constraint.value if constraint type is predicate
 # PredicateFunc = Callable[[Value, bool], Optional[Value]]
@@ -387,8 +387,12 @@ class Constraint(AbstractConstraint):
             assert False, f"unknown constraint type {self.constraint_type}"
 
 
-TRUTHY_CONSTRAINT = Constraint(("%unused", None), ConstraintType.is_truthy, True, None)
-FALSY_CONSTRAINT = Constraint(("%unused", None), ConstraintType.is_truthy, False, None)
+TRUTHY_CONSTRAINT = Constraint(
+    ("%unused", (None,)), ConstraintType.is_truthy, True, None
+)
+FALSY_CONSTRAINT = Constraint(
+    ("%unused", (None,)), ConstraintType.is_truthy, False, None
+)
 
 
 @dataclass(frozen=True)
@@ -593,14 +597,14 @@ class Scope:
             parent_node = (
                 (varname, self.scope_node) if self.scope_node is not None else None
             )
-            val, scope, origin = self.parent_scope.get(
+            val, scope, _ = self.parent_scope.get(
                 varname, parent_node, state, from_parent_scope=True
             )
             # Tag lookups in the parent scope with this scope node, so we
             # don't carry over constraints across scopes.
-            return val, scope, (self.scope_node, origin)
+            return val, scope, (None,)
         else:
-            return UNINITIALIZED_VALUE, None, None
+            return UNINITIALIZED_VALUE, None, (None,)
 
     def get_local(
         self,
@@ -611,9 +615,9 @@ class Scope:
         fallback_value: Optional[Value] = None,
     ) -> Tuple[Value, VarnameOrigin]:
         if varname in self.variables:
-            return self.variables[varname], None
+            return self.variables[varname], (None,)
         else:
-            return UNINITIALIZED_VALUE, None
+            return UNINITIALIZED_VALUE, (None,)
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
@@ -874,27 +878,16 @@ class FunctionScope(Scope):
         """
         for constraint in abstract_constraint.apply():
             varname, constraint_origin = constraint.varname
-            if isinstance(varname, CompositeVariable):
-                base_varname = varname.varname
-            else:
-                base_varname = varname
-            _, _, current_origin = self.get(base_varname, node, state)
-            if constraint_origin != current_origin:
-                # print(constraint_origin, "VS", current_origin, varname)
-                continue
-            def_nodes = set(self.name_to_current_definition_nodes[varname])
-            # We set both a constraint and its inverse using the same node as the definition
-            # node, so cheat and include the constraint itself in the key. If you write constraints
-            # to the same key in definition_node_to_value multiple times, you're likely to get
-            # infinite recursion.
-            node = (node, constraint)
-            assert (
-                node not in self.definition_node_to_value
-            ), "duplicate constraint for {}".format(node)
-            self.definition_node_to_value[node] = _ConstrainedValue(
-                def_nodes, [constraint]
-            )
-            self.name_to_current_definition_nodes[varname] = [node]
+            for node in constraint_origin:
+                key = (varname, node)
+                if key in self.name_to_current_definition_nodes:
+                    existing = self.name_to_current_definition_nodes[key]
+                    new = AndConstraint.make(
+                        [_constraint_from_scope_values(existing), constraint]
+                    )
+                else:
+                    new = constraint
+                self.name_to_current_definition_nodes[key] = [new]
             self._add_composite(varname)
 
     def set(
@@ -938,12 +931,12 @@ class FunctionScope(Scope):
             # something special like a nested function
             if varname in self.name_to_all_definition_nodes:
                 definers = self.name_to_all_definition_nodes[varname]
-                return self._get_value_from_nodes(definers, ctx), tuple(definers)
+                return self._get_value_from_definers(definers, ctx), tuple(definers)
             else:
-                return self.referencing_value_vars[varname], None
+                return self.referencing_value_vars[varname], (None,)
         if state is VisitorState.check_names:
             if node not in self.usage_to_definition_nodes:
-                return self.referencing_value_vars[varname], None
+                return self.referencing_value_vars[varname], (None,)
             else:
                 definers = self.usage_to_definition_nodes[node]
         else:
@@ -951,8 +944,8 @@ class FunctionScope(Scope):
                 definers = self.name_to_current_definition_nodes[varname]
                 self.usage_to_definition_nodes[node] += definers
             else:
-                return self.referencing_value_vars[varname], None
-        return self._get_value_from_nodes(definers, ctx), tuple(definers)
+                return self.referencing_value_vars[varname], (None,)
+        return self._get_value_from_definers(definers, ctx), tuple(definers)
 
     @contextlib.contextmanager
     def subscope(self) -> Iterable[SubScope]:
@@ -1039,6 +1032,42 @@ class FunctionScope(Scope):
         else:
             return val
 
+    def _get_value_from_definers(
+        self, definers: Iterable[Node], ctx: _LookupContext
+    ) -> Value:
+        # If the variable is a nonlocal or composite, "uninitialized" doesn't make sense;
+        # instead use an empty constraint to point to the parent scope.
+        should_use_unconstrained = (
+            isinstance(ctx.varname, CompositeVariable)
+            or (ctx.varname not in self.name_to_all_definition_nodes)
+            or isinstance(self.referencing_value_vars[ctx.varname], ReferencingValue)
+        )
+        values = [
+            UNINITIALIZED_VALUE
+            if node is _UNINITIALIZED and not should_use_unconstrained
+            else self.definition_node_to_value[node]
+            for node in definers
+        ]
+        constrained = [
+            self._constrain_value_from_node(node, value, ctx)
+            for node, value in zip(definers, values)
+        ]
+        return unite_values(*constrained, default=AnyValue(AnySource.unreachable))
+
+    def _constrain_value_from_node(
+        self, definer: Node, value: Value, ctx: _LookupContext
+    ) -> Value:
+        constraint = _constraint_from_scope_values(
+            self.name_to_current_definition_nodes[(ctx.varname, definer)]
+        )
+        print("VC", value, constraint, ctx)
+        return _constrain_value(
+            [value],
+            list(constraint.apply()),
+            fallback_value=ctx.fallback_value,
+            simplification_limit=self.simplification_limit,
+        )
+
     def _get_value_from_nodes(
         self,
         nodes: Iterable[Node],
@@ -1080,6 +1109,14 @@ class FunctionScope(Scope):
 
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.name_to_all_definition_nodes
+
+
+def _constraint_from_scope_values(
+    vals: List[Union[Node, "AbstractConstraint"]]
+) -> AbstractConstraint:
+    return OrConstraint.make(
+        [cons for cons in vals if isinstance(cons, AbstractConstraint)]
+    )
 
 
 class StackedScopes:
@@ -1282,10 +1319,6 @@ def _constrain_value(
         values = list(flatten_values(fallback_value))
     for constraint in constraints:
         values = list(constraint.apply_to_values(values))
-    if not values:
-        # TODO: maybe show an error here? This branch should mean the code is
-        # unreachable.
-        return AnyValue(AnySource.unreachable)
     if simplification_limit is not None:
         return unite_and_simplify(*values, limit=simplification_limit)
     return unite_values(*values)
