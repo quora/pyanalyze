@@ -949,6 +949,19 @@ class TestConstraints(TestNameCheckVisitorBase):
                     assert_is_value(b.attr.attr, TypedValue(int))
 
     @assert_passes()
+    def test_nested_scope(self):
+        class A:
+            pass
+
+        class B(A):
+            pass
+
+        def capybara(a: A, iterable):
+            if isinstance(a, B):
+                lst = [a for _ in iterable]
+                assert_is_value(lst, GenericValue(list, [TypedValue(B)]))
+
+    @assert_passes()
     def test_qcore_asserts(self):
         from qcore.asserts import assert_is_instance
 
