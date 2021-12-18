@@ -146,7 +146,7 @@ class Value:
         """Return the type of this object as used for dunder lookups."""
         return self
 
-    def simplify(self) -> "Value":
+    def simplify(self, default: "Value") -> "Value":
         """Simplify this Value to reduce excessive detail."""
         return self
 
@@ -444,11 +444,11 @@ class KnownValue(Value):
             return self
         return KnownValueWithTypeVars(self.val, typevars)
 
-    def simplify(self) -> Value:
+    def simplify(self, default: Value) -> Value:
         val = replace_known_sequence_value(self)
         if isinstance(val, KnownValue):
             return TypedValue(type(val.val))
-        return val.simplify()
+        return val.simplify(default)
 
 
 @dataclass(frozen=True)
@@ -822,8 +822,8 @@ class GenericValue(TypedValue):
             self.typ, [arg.substitute_typevars(typevars) for arg in self.args]
         )
 
-    def simplify(self) -> Value:
-        return GenericValue(self.typ, [arg.simplify() for arg in self.args])
+    def simplify(self, default) -> Value:
+        return GenericValue(self.typ, [arg.simplify(default) for arg in self.args])
 
 
 @dataclass(unsafe_hash=True, init=False)
@@ -904,13 +904,13 @@ class SequenceIncompleteValue(GenericValue):
         for member in self.members:
             yield from member.walk_values()
 
-    def simplify(self) -> GenericValue:
+    def simplify(self, default: Value) -> GenericValue:
         if self.typ is tuple:
             return SequenceIncompleteValue(
-                tuple, [member.simplify() for member in self.members]
+                tuple, [member.simplify(default) for member in self.members]
             )
-        members = [member.simplify() for member in self.members]
-        return GenericValue(self.typ, [unite_values(*members)])
+        members = [member.simplify(default) for member in self.members]
+        return GenericValue(self.typ, [unite_values(*members, default=default)])
 
 
 @dataclass(frozen=True)
@@ -979,10 +979,16 @@ class DictIncompleteValue(GenericValue):
             self.typ, [pair.substitute_typevars(typevars) for pair in self.kv_pairs]
         )
 
-    def simplify(self) -> GenericValue:
-        keys = [pair.key.simplify() for pair in self.kv_pairs]
-        values = [pair.value.simplify() for pair in self.kv_pairs]
-        return GenericValue(self.typ, [unite_values(*keys), unite_values(*values)])
+    def simplify(self, default: Value) -> GenericValue:
+        keys = [pair.key.simplify(default) for pair in self.kv_pairs]
+        values = [pair.value.simplify(default) for pair in self.kv_pairs]
+        return GenericValue(
+            self.typ,
+            [
+                unite_values(*keys, default=default),
+                unite_values(*values, default=default),
+            ],
+        )
 
     @property
     def items(self) -> Sequence[Tuple[Value, Value]]:
@@ -1409,8 +1415,10 @@ class MultiValuedValue(Value):
         for val in self.vals:
             yield from val.walk_values()
 
-    def simplify(self) -> Value:
-        return unite_values(*[val.simplify() for val in self.vals])
+    def simplify(self, default: Value) -> Value:
+        return unite_values(
+            *[val.simplify(default) for val in self.vals], default=default
+        )
 
 
 NO_RETURN_VALUE = MultiValuedValue([])
@@ -1748,8 +1756,8 @@ class AnnotatedValue(Value):
     def __str__(self) -> str:
         return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
 
-    def simplify(self) -> Value:
-        return AnnotatedValue(self.value.simplify(), self.metadata)
+    def simplify(self, default: Value) -> Value:
+        return AnnotatedValue(self.value.simplify(default), self.metadata)
 
 
 @dataclass(frozen=True)
@@ -1872,7 +1880,7 @@ def unite_and_simplify(
     united = unite_values(*values, default=default)
     if not isinstance(united, MultiValuedValue) or len(united.vals) < limit:
         return united
-    simplified = [val.simplify() for val in united.vals]
+    simplified = [val.simplify(default) for val in united.vals]
     return unite_values(*simplified, default=default)
 
 
