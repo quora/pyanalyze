@@ -950,6 +950,8 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_nested_scope(self):
+        from pyanalyze.value import WeakExtension
+
         class A:
             pass
 
@@ -958,8 +960,14 @@ class TestConstraints(TestNameCheckVisitorBase):
 
         def capybara(a: A, iterable):
             if isinstance(a, B):
+                assert_is_value(a, TypedValue(B))
                 lst = [a for _ in iterable]
-                assert_is_value(lst, GenericValue(list, [TypedValue(B)]))
+                assert_is_value(
+                    lst,
+                    AnnotatedValue(
+                        GenericValue(list, [TypedValue(B)]), [WeakExtension()]
+                    ),
+                )
 
     @assert_passes()
     def test_qcore_asserts(self):

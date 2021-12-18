@@ -569,7 +569,6 @@ class OrConstraint(AbstractConstraint):
         by_varname = defaultdict(list)
         for constraint in abstract_constraint.apply():
             by_varname[constraint.varname].append(constraint)
-        print("GROUPED", list(by_varname))
         return by_varname
 
     def invert(self) -> AndConstraint:
@@ -890,7 +889,7 @@ class FunctionScope(Scope):
     """
 
     name_to_current_definition_nodes: SubScope
-    usage_to_definition_nodes: Dict[Node, List[Node]]
+    usage_to_definition_nodes: Dict[Tuple[Node, Varname], List[Node]]
     definition_node_to_value: Dict[Node, Value]
     name_to_all_definition_nodes: Dict[str, Set[Node]]
     name_to_composites: Dict[str, Set[CompositeVariable]]
@@ -936,9 +935,6 @@ class FunctionScope(Scope):
         The node argument may be any unique key, although it will usually be an AST node.
 
         """
-        print(
-            "ABSTRACT", abstract_constraint, list(map(str, abstract_constraint.apply()))
-        )
         for constraint in abstract_constraint.apply():
             self._add_single_constraint(constraint, node, state)
 
@@ -950,6 +946,14 @@ class FunctionScope(Scope):
             current_set = self._resolve_origin(current_origin)
             constraint_set = self._resolve_origin(constraint_origin)
             if current_set - constraint_set:
+                print(
+                    "REJECT CONSTRAINT",
+                    parent_varname,
+                    current_set,
+                    constraint_set,
+                    node,
+                    state,
+                )
                 return
 
         varname = constraint.varname.get_varname()
@@ -979,6 +983,8 @@ class FunctionScope(Scope):
                     pending |= val.definition_nodes
                 else:
                     out.add(definer)
+        if not out:
+            return EMPTY_ORIGIN
         return frozenset(out)
 
     def set(
@@ -1016,26 +1022,24 @@ class FunctionScope(Scope):
         ctx = _LookupContext(varname, fallback_value, node, state)
         if from_parent_scope:
             self.accessed_from_special_nodes.add(varname)
+        key = (node, varname)
         if node is None:
             self.accessed_from_special_nodes.add(varname)
             # this indicates that we're not looking at a normal local variable reference, but
             # something special like a nested function
             if varname in self.name_to_all_definition_nodes:
                 definers = self.name_to_all_definition_nodes[varname]
-                return self._get_value_from_nodes(definers, ctx), self._resolve_origin(
-                    definers
-                )
             else:
                 return self.referencing_value_vars[varname], EMPTY_ORIGIN
-        if state is VisitorState.check_names:
-            if node not in self.usage_to_definition_nodes:
+        elif state is VisitorState.check_names:
+            if key not in self.usage_to_definition_nodes:
                 return self.referencing_value_vars[varname], EMPTY_ORIGIN
             else:
-                definers = self.usage_to_definition_nodes[node]
+                definers = self.usage_to_definition_nodes[key]
         else:
             if varname in self.name_to_current_definition_nodes:
                 definers = self.name_to_current_definition_nodes[varname]
-                self.usage_to_definition_nodes[node] += definers
+                self.usage_to_definition_nodes[key] += definers
             else:
                 return self.referencing_value_vars[varname], EMPTY_ORIGIN
         return self._get_value_from_nodes(definers, ctx), self._resolve_origin(definers)
@@ -1043,6 +1047,7 @@ class FunctionScope(Scope):
     def get_origin(
         self, varname: Varname, node: Node, state: VisitorState
     ) -> VarnameOrigin:
+        key = (node, varname)
         if node is None:
             # this indicates that we're not looking at a normal local variable reference, but
             # something special like a nested function
@@ -1051,13 +1056,14 @@ class FunctionScope(Scope):
             else:
                 return EMPTY_ORIGIN
         elif state is VisitorState.check_names:
-            if node not in self.usage_to_definition_nodes:
+            if key not in self.usage_to_definition_nodes:
                 return EMPTY_ORIGIN
             else:
-                definers = self.usage_to_definition_nodes[node]
+                definers = self.usage_to_definition_nodes[key]
         else:
             if varname in self.name_to_current_definition_nodes:
                 definers = self.name_to_current_definition_nodes[varname]
+                self.usage_to_definition_nodes[key] += definers
             else:
                 return EMPTY_ORIGIN
         return self._resolve_origin(definers)

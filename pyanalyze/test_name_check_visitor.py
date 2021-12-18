@@ -15,7 +15,7 @@ from .name_check_visitor import (
 )
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
-from .stacked_scopes import Composite
+from .stacked_scopes import Composite, Varname
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
@@ -140,7 +140,6 @@ def _make_module(code_str: str) -> types.ModuleType:
         make_weak=make_weak,
         UNINITIALIZED_VALUE=UNINITIALIZED_VALUE,
         NO_RETURN_VALUE=NO_RETURN_VALUE,
-        Composite=Composite,
     )
     return make_module(code_str, extra_scope)
 
@@ -1609,6 +1608,7 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
     @assert_passes()
     def test_inference(self):
         from pyanalyze.tests import PropertyObject, ClassWithAsync
+        from pyanalyze.stacked_scopes import Composite
 
         def capybara(oid):
             assert_is_value(
@@ -1643,6 +1643,12 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_metaclass_super(self):
+        from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
+        from qcore.testing import Anything
+        from typing import Any, cast
+
+        varname = VarnameWithOrigin("self", cast(Any, Anything))
+
         class Metaclass(type):
             def __init__(self, name, bases, attrs):
                 super(Metaclass, self).__init__(name, bases, attrs)
@@ -1653,7 +1659,7 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
                 assert_is_value(
                     self.__init__,
                     UnboundMethodValue(
-                        "__init__", Composite(TypedValue(Metaclass), "self")
+                        "__init__", Composite(TypedValue(Metaclass), varname)
                     ),
                 )
 
