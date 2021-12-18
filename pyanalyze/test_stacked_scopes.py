@@ -1703,3 +1703,16 @@ class TestInvalidation(TestNameCheckVisitorBase):
             if callee(y):
                 assert_is_value(x, AnyValue(AnySource.unannotated))
                 assert_is_value(y, AnyValue(AnySource.unannotated))
+
+    @assert_passes()
+    def test_while(self) -> None:
+        from typing import Optional
+
+        def make_optional() -> Optional[str]:
+            return "x"
+
+        def capybara():
+            x = make_optional()
+            while x:
+                assert_is_value(x, TypedValue(str))
+                x = make_optional()

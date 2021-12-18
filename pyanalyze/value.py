@@ -1654,12 +1654,16 @@ class HasAttrExtension(Extension):
         yield from self.attribute_type.walk_values()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ConstraintExtension(Extension):
     """Encapsulates a Constraint. If the value is evaluated and is truthy, the
     constraint must be True."""
 
     constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+    # Comparing them can get too expensive
+    def __hash__(self) -> int:
+        return id(self)
 
 
 @dataclass(frozen=True)
