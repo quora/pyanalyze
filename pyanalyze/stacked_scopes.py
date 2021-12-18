@@ -386,6 +386,14 @@ class Constraint(AbstractConstraint):
         else:
             assert False, f"unknown constraint type {self.constraint_type}"
 
+    def __str__(self) -> str:
+        sign = "+" if self.positive else "-"
+        if isinstance(self.value, list):
+            value = str(list(map(str, self.value)))
+        else:
+            value = str(self.value)
+        return f"<{sign}{self.varname[0]} {self.constraint_type.name} {value}>"
+
 
 TRUTHY_CONSTRAINT = Constraint(
     ("%unused", (None,)), ConstraintType.is_truthy, True, None
@@ -478,6 +486,10 @@ class AndConstraint(AbstractConstraint):
             return cons
         return cls(tuple(processed))
 
+    def __str__(self) -> str:
+        children = " AND ".join(map(str, self.constraints))
+        return f"({children})"
+
 
 @dataclass(frozen=True)
 class OrConstraint(AbstractConstraint):
@@ -492,17 +504,15 @@ class OrConstraint(AbstractConstraint):
             # Produce one_of constraints if the same variable name
             # applies on both the left and the right side.
             if all(varname in group for group in rest):
-                yield Constraint(
-                    varname,
-                    ConstraintType.one_of,
-                    True,
-                    [
-                        self._constraint_from_list(varname, constraints),
-                        *[
-                            self._constraint_from_list(varname, group[varname])
-                            for group in rest
-                        ],
+                constraints = [
+                    self._constraint_from_list(varname, constraints),
+                    *[
+                        self._constraint_from_list(varname, group[varname])
+                        for group in rest
                     ],
+                ]
+                yield Constraint(
+                    varname, ConstraintType.one_of, True, list(set(constraints))
                 )
 
     def _constraint_from_list(
@@ -519,6 +529,7 @@ class OrConstraint(AbstractConstraint):
         by_varname = defaultdict(list)
         for constraint in abstract_constraint.apply():
             by_varname[constraint.varname].append(constraint)
+        print("GROUPED", list(by_varname))
         return by_varname
 
     def invert(self) -> AndConstraint:
@@ -539,6 +550,10 @@ class OrConstraint(AbstractConstraint):
             (cons,) = processed
             return cons
         return cls(tuple(processed))
+
+    def __str__(self) -> str:
+        children = " OR ".join(map(str, self.constraints))
+        return f"({children})"
 
 
 class _ConstrainedValue(Value):
@@ -876,6 +891,9 @@ class FunctionScope(Scope):
         The node argument may be any unique key, although it will usually be an AST node.
 
         """
+        print(
+            "ABSTRACT", abstract_constraint, list(map(str, abstract_constraint.apply()))
+        )
         for constraint in abstract_constraint.apply():
             self._add_single_constraint(constraint, node, state)
 
@@ -893,10 +911,19 @@ class FunctionScope(Scope):
         current_set -= constraint_set
         while current_set:
             origin = current_set.pop()
-            val = self.usage_to_definition_nodes[origin]
+            val = self.definition_node_to_value[origin]
             if isinstance(val, _ConstrainedValue):
                 current_set |= val.definition_nodes
+                current_set -= constraint_set
             else:
+                print("-----")
+                print("state", state)
+                print("CURRENT", current_origin)
+                print("CONSTRAINT", constraint_origin)
+                print("CURRSET", current_set)
+                print("BAD ORIGIN", origin, val)
+                print("REJECT CONSTRAINT", constraint)
+                print("-----")
                 return
 
         def_nodes = set(self.name_to_current_definition_nodes[varname])
