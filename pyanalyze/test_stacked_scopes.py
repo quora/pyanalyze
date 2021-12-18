@@ -1,5 +1,4 @@
 # static analysis: ignore
-from pyanalyze.extensions import reveal_type
 from .error_code import ErrorCode
 from .name_check_visitor import build_stacked_scopes
 from .stacked_scopes import ScopeType, uniq_chain

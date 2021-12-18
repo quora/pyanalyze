@@ -73,8 +73,8 @@ from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
-    CompositeVariable,
     Composite,
+    CompositeIndex,
     FunctionScope,
     Varname,
     Constraint,
@@ -3442,7 +3442,7 @@ class NameCheckVisitor(
             if varname_value is not None and self._should_use_varname_value(value):
                 value = varname_value
             value = self._maybe_use_hardcoded_type(value, node.id)
-            return Composite(value, (node.id, origin), node)
+            return Composite(value, VarnameWithOrigin(node.id, origin), node)
         elif self._is_write_ctx(node.ctx):
             if self._name_node_to_statement is not None:
                 statement = self.node_context.nearest_enclosing(
@@ -3460,7 +3460,7 @@ class NameCheckVisitor(
             if not is_ann_assign:
                 self.yield_checker.record_assignment(node.id)
                 value = self._set_name_in_scope(node.id, node, value=value)
-            return Composite(value, node.id, node)
+            return Composite(value, VarnameWithOrigin(node.id), node)
         else:
             # not sure when (if ever) the other contexts can happen
             self.show_error(node, f"Bad context: {node.ctx}", ErrorCode.unexpected_node)
@@ -3510,27 +3510,23 @@ class NameCheckVisitor(
             and isinstance(index, KnownValue)
             and is_hashable(index.val)
         ):
-            varname = root_composite.get_extended_varname(index)
+            varname = self._extend_composite(root_composite, index, node)
         else:
             varname = None
-        if varname is None:
-            composite_var = None
-        else:
-            composite_var, _ = varname
         if isinstance(root_composite.value, MultiValuedValue):
             values = [
                 self._composite_from_subscript_no_mvv(
                     node,
                     Composite(val, root_composite.varname, root_composite.node),
                     index_composite,
-                    composite_var,
+                    varname,
                 )
                 for val in root_composite.value.vals
             ]
             return_value = unite_values(*values)
         else:
             return_value = self._composite_from_subscript_no_mvv(
-                node, root_composite, index_composite, composite_var
+                node, root_composite, index_composite, varname
             )
         return Composite(return_value, varname, node)
 
@@ -3539,7 +3535,7 @@ class NameCheckVisitor(
         node: ast.Subscript,
         root_composite: Composite,
         index_composite: Composite,
-        composite_var: Optional[Varname],
+        composite_var: Optional[VarnameWithOrigin],
     ) -> Value:
         value = root_composite.value
         index = index_composite.value
@@ -3549,7 +3545,9 @@ class NameCheckVisitor(
                 composite_var is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
-                self.scopes.set(composite_var, self.being_assigned, node, self.state)
+                self.scopes.set(
+                    composite_var.get_varname(), self.being_assigned, node, self.state
+                )
             self._check_dunder_call(
                 node.value,
                 root_composite,
@@ -3626,7 +3624,9 @@ class NameCheckVisitor(
                 composite_var is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
-                local_value = self._get_composite(composite_var, node, return_value)
+                local_value = self._get_composite(
+                    composite_var.get_varname(), node, return_value
+                )
                 if local_value is not UNINITIALIZED_VALUE:
                     return_value = local_value
             return return_value
@@ -3716,6 +3716,15 @@ class NameCheckVisitor(
     def visit_Attribute(self, node: ast.Attribute) -> Value:
         return self.composite_from_attribute(node).value
 
+    def _extend_composite(
+        self, root_composite: Composite, index: CompositeIndex, node: ast.AST
+    ) -> Optional[VarnameWithOrigin]:
+        varname = root_composite.get_extended_varname(index)
+        if varname is None:
+            return None
+        origin = self.scopes.current_scope().get_origin(varname, node, self.state)
+        return root_composite.get_extended_varname_with_origin(index, origin)
+
     def composite_from_attribute(self, node: ast.Attribute) -> Composite:
         if isinstance(node.value, ast.Name):
             attr_str = f"{node.value.id}.{node.attr}"
@@ -3725,13 +3734,15 @@ class NameCheckVisitor(
                 self.yield_checker.record_usage(attr_str, node)
 
         root_composite = self.composite_from_node(node.value)
-        composite = root_composite.get_extended_varname(node.attr)
+        composite = self._extend_composite(root_composite, node.attr, node)
         if self._is_write_ctx(node.ctx):
             if (
                 composite is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
-                self.scopes.set(composite[0], self.being_assigned, node, self.state)
+                self.scopes.set(
+                    composite.get_varname(), self.being_assigned, node, self.state
+                )
 
             if isinstance(root_composite.value, TypedValue):
                 typ = root_composite.value.typ
@@ -3764,7 +3775,7 @@ class NameCheckVisitor(
                 composite is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
             ):
-                local_value = self._get_composite(composite[0], node, value)
+                local_value = self._get_composite(composite.get_varname(), node, value)
                 if local_value is not UNINITIALIZED_VALUE:
                     value = local_value
             value = self._maybe_use_hardcoded_type(value, node.attr)

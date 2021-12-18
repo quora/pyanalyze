@@ -90,6 +90,13 @@ class ScopeType(enum.Enum):
     function_scope = 4
 
 
+# Nodes as used in scopes can be any object, as long as they are hashable.
+Node = object
+# Tag for a Varname that changes when the variable is assigned to.
+VarnameOrigin = Tuple[Optional[Node], ...]
+CompositeIndex = Union[str, KnownValue]
+
+
 @dataclass(frozen=True)
 class CompositeVariable:
     """:term:`varname` used to implement constraints on instance variables.
@@ -106,18 +113,44 @@ class CompositeVariable:
     """
 
     varname: str
-    attributes: Sequence[Union[str, KnownValue]]
+    attributes: Sequence[CompositeIndex]
 
-    def extend_with(self, index: Union[str, KnownValue]) -> "CompositeVariable":
+    def extend_with(self, index: CompositeIndex) -> "CompositeVariable":
         return CompositeVariable(self.varname, (*self.attributes, index))
 
 
-# Nodes as used in scopes can be any object, as long as they are hashable.
-Node = object
 Varname = Union[str, CompositeVariable]
-# Tag for a Varname that changes when the variable is assigned to.
-VarnameOrigin = Tuple[Optional[Node], ...]
-VarnameWithOrigin = Tuple[Varname, VarnameOrigin]
+
+
+@dataclass(frozen=True)
+class VarnameWithOrigin:
+    varname: str
+    origin: VarnameOrigin = (None,)
+    indices: Sequence[Tuple[CompositeIndex, VarnameOrigin]] = ()
+
+    def extend_with(
+        self, index: CompositeIndex, origin: VarnameOrigin
+    ) -> "VarnameWithOrigin":
+        return VarnameWithOrigin(
+            self.varname, self.origin, (*self.indices, (index, origin))
+        )
+
+    def get_all_varnames(self) -> Iterable[Tuple[Varname, VarnameOrigin]]:
+        yield self.varname, self.origin
+        for i, (_, origin) in enumerate(self.indices):
+            varname = CompositeVariable(
+                self.varname, tuple(index for index, _ in self.indices[: i + 1])
+            )
+            yield varname, origin
+
+    def get_varname(self) -> Varname:
+        if self.indices:
+            return CompositeVariable(
+                self.varname, tuple(index for index, _ in self.indices)
+            )
+        return self.varname
+
+
 SubScope = Dict[Varname, List[Node]]
 
 # Type for Constraint.value if constraint type is predicate
@@ -132,16 +165,20 @@ class Composite(NamedTuple):
     varname: Optional[VarnameWithOrigin] = None
     node: Optional[AST] = None
 
-    def get_extended_varname(
-        self, index: Union[str, KnownValue]
+    def get_extended_varname(self, index: CompositeIndex) -> Optional[Varname]:
+        if self.varname is None:
+            return None
+        base = self.varname.get_varname()
+        if isinstance(base, CompositeVariable):
+            return CompositeVariable(base.varname, (*base.attributes, index))
+        return CompositeVariable(base, (index,))
+
+    def get_extended_varname_with_origin(
+        self, index: CompositeIndex, origin: VarnameOrigin
     ) -> Optional[VarnameWithOrigin]:
         if self.varname is None:
             return None
-        varname, origin = self.varname
-        if isinstance(varname, str):
-            return CompositeVariable(varname, (index,)), (None,)
-        else:
-            return varname.extend_with(index), (None,)
+        return self.varname.extend_with(index, origin)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Composite":
         return Composite(
@@ -251,7 +288,7 @@ class Constraint(AbstractConstraint):
     `is_value_object`."""
 
     def __post_init__(self) -> None:
-        assert isinstance(self.varname, tuple), self.varname
+        assert isinstance(self.varname, VarnameWithOrigin), self.varname
 
     def apply(self) -> Iterable["Constraint"]:
         yield self
@@ -393,14 +430,14 @@ class Constraint(AbstractConstraint):
             value = str(list(map(str, self.value)))
         else:
             value = str(self.value)
-        return f"<{sign}{self.varname[0]} {self.constraint_type.name} {value}>"
+        return f"<{sign}{self.varname} {self.constraint_type.name} {value}>"
 
 
 TRUTHY_CONSTRAINT = Constraint(
-    ("%unused", (None,)), ConstraintType.is_truthy, True, None
+    VarnameWithOrigin("%unused"), ConstraintType.is_truthy, True, None
 )
 FALSY_CONSTRAINT = Constraint(
-    ("%unused", (None,)), ConstraintType.is_truthy, False, None
+    VarnameWithOrigin("%unused"), ConstraintType.is_truthy, False, None
 )
 
 
@@ -634,6 +671,11 @@ class Scope:
             return self.variables[varname], (None,)
         else:
             return UNINITIALIZED_VALUE, (None,)
+
+    def get_origin(
+        self, varname: Varname, node: Node, state: VisitorState
+    ) -> VarnameOrigin:
+        return (None,)
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
@@ -901,17 +943,14 @@ class FunctionScope(Scope):
     def _add_single_constraint(
         self, constraint: Constraint, node: Node, state: VisitorState
     ) -> None:
-        varname, constraint_origin = constraint.varname
-        if isinstance(varname, CompositeVariable):
-            base_varname = varname.varname
-        else:
-            base_varname = varname
-        _, _, current_origin = self.get(base_varname, node, state)
-        current_set = set(self._resolve_origin(current_origin))
-        constraint_set = set(self._resolve_origin(constraint_origin))
-        if current_set - constraint_set:
-            return
+        for parent_varname, constraint_origin in constraint.varname.get_all_varnames():
+            current_origin = self.get_origin(parent_varname, node, state)
+            current_set = self._resolve_origin(current_origin)
+            constraint_set = self._resolve_origin(constraint_origin)
+            if current_set - constraint_set:
+                return
 
+        varname = constraint.varname.get_varname()
         def_nodes = set(self.name_to_current_definition_nodes[varname])
         # We set both a constraint and its inverse using the same node as the definition
         # node, so cheat and include the constraint itself in the key. If you write constraints
@@ -1005,6 +1044,28 @@ class FunctionScope(Scope):
             self._resolve_origin(definers)
         )
 
+    def get_origin(
+        self, varname: Varname, node: Node, state: VisitorState
+    ) -> VarnameOrigin:
+        if node is None:
+            # this indicates that we're not looking at a normal local variable reference, but
+            # something special like a nested function
+            if varname in self.name_to_all_definition_nodes:
+                definers = self.name_to_all_definition_nodes[varname]
+            else:
+                return (None,)
+        elif state is VisitorState.check_names:
+            if node not in self.usage_to_definition_nodes:
+                return (None,)
+            else:
+                definers = self.usage_to_definition_nodes[node]
+        else:
+            if varname in self.name_to_current_definition_nodes:
+                definers = self.name_to_current_definition_nodes[varname]
+            else:
+                return (None,)
+        return tuple(self._resolve_origin(definers))
+
     @contextlib.contextmanager
     def subscope(self) -> Iterable[SubScope]:
         """Create a new subscope, to be used for conditional branches."""
@@ -1090,42 +1151,6 @@ class FunctionScope(Scope):
         else:
             return val
 
-    def _get_value_from_definers(
-        self, definers: Iterable[Node], ctx: _LookupContext
-    ) -> Value:
-        # If the variable is a nonlocal or composite, "uninitialized" doesn't make sense;
-        # instead use an empty constraint to point to the parent scope.
-        should_use_unconstrained = (
-            isinstance(ctx.varname, CompositeVariable)
-            or (ctx.varname not in self.name_to_all_definition_nodes)
-            or isinstance(self.referencing_value_vars[ctx.varname], ReferencingValue)
-        )
-        values = [
-            UNINITIALIZED_VALUE
-            if node is _UNINITIALIZED and not should_use_unconstrained
-            else self.definition_node_to_value[node]
-            for node in definers
-        ]
-        constrained = [
-            self._constrain_value_from_node(node, value, ctx)
-            for node, value in zip(definers, values)
-        ]
-        return unite_values(*constrained, default=AnyValue(AnySource.unreachable))
-
-    def _constrain_value_from_node(
-        self, definer: Node, value: Value, ctx: _LookupContext
-    ) -> Value:
-        constraint = _constraint_from_scope_values(
-            self.name_to_current_definition_nodes[(ctx.varname, definer)]
-        )
-        print("VC", value, constraint, ctx)
-        return _constrain_value(
-            [value],
-            list(constraint.apply()),
-            fallback_value=ctx.fallback_value,
-            simplification_limit=self.simplification_limit,
-        )
-
     def _get_value_from_nodes(
         self,
         nodes: Iterable[Node],
@@ -1167,14 +1192,6 @@ class FunctionScope(Scope):
 
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.name_to_all_definition_nodes
-
-
-def _constraint_from_scope_values(
-    vals: List[Union[Node, "AbstractConstraint"]]
-) -> AbstractConstraint:
-    return OrConstraint.make(
-        [cons for cons in vals if isinstance(cons, AbstractConstraint)]
-    )
 
 
 class StackedScopes:
