@@ -140,7 +140,19 @@ class TestAnnotations(TestNameCheckVisitorBase):
             # Ideally should be ContextManager[int], but at least
             # it should not be Iterator[int], which is what pyanalyze
             # used to infer.
-            assert_is_value(capybara(), AnyValue(AnySource.inference))
+            assert_is_value(capybara(), AnyValue(AnySource.unannotated))
+
+            with capybara() as e:
+                assert_is_value(e, AnyValue(AnySource.generic_argument))
+
+            assert_is_value(post_capybara(), AnyValue(AnySource.unannotated))
+
+            with post_capybara() as e:
+                assert_is_value(e, AnyValue(AnySource.generic_argument))
+
+        @contextmanager
+        def post_capybara() -> Iterator[int]:
+            yield 3
 
     @assert_passes()
     def test_none_annotations(self):

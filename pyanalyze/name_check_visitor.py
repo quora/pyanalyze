@@ -1412,11 +1412,15 @@ class NameCheckVisitor(
         except TypeError:
             return KnownValue(potential_function)
         if argspec is not None:
-            if info.async_kind != AsyncFunctionKind.async_proxy:
-                # don't attempt to infer the return value of async_proxy functions, since it will be
-                # set within the Future returned
-                # without this, we'll incorrectly infer the return value to be the Future instead of
-                # the Future's value
+            if (
+                info.async_kind != AsyncFunctionKind.async_proxy
+                and node.returns is None
+            ):
+                # Don't attempt to infer the return value of async_proxy functions, since it will be
+                # set within the Future returned. Without this, we'll incorrectly infer the return
+                # value to be the Future instead of the Future's value.
+                # Similarly, we don't infer the return value if there is an annotation, because
+                # we should be able to get it from __annotations__ instead.
                 self._argspec_to_retval[id(argspec)] = return_value
         else:
             self.log(logging.DEBUG, "No argspec", (potential_function, node))
@@ -3156,6 +3160,38 @@ class NameCheckVisitor(
             )
             return AnyValue(AnySource.error)
         return result
+
+    def visit_With(self, node: ast.With) -> None:
+        for item in node.items:
+            self.visit_withitem(item)
+        self._generic_visit_list(node.body)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        for item in node.items:
+            self.visit_withitem(item, is_async=True)
+        self._generic_visit_list(node.body)
+
+    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> None:
+        context = self.visit(node.context_expr)
+        if is_async:
+            protocol = "typing.AsyncContextManager"
+        else:
+            protocol = "typing.ContextManager"
+        val = GenericValue(protocol, [TypeVarValue(T)])
+        can_assign = val.can_assign(context, self)
+        if isinstance(can_assign, CanAssignError):
+            self._show_error_if_checking(
+                node.context_expr,
+                f"{context} is not a context manager",
+                detail=str(can_assign),
+                error_code=ErrorCode.invalid_context_manager,
+            )
+            assigned = AnyValue(AnySource.error)
+        else:
+            assigned = can_assign.get(T, AnyValue(AnySource.generic_argument))
+        if node.optional_vars is not None:
+            with qcore.override(self, "being_assigned", assigned):
+                self.visit(node.optional_vars)
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
