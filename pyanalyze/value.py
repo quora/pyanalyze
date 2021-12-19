@@ -56,6 +56,7 @@ T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
+ITERATION_LIMIT = 1000
 
 TypeVarMap = Mapping["TypeVar", "Value"]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
@@ -271,7 +272,7 @@ class CanAssignError:
 CanAssign = Union[TypeVarMap, CanAssignError]
 
 
-def assert_is_value(obj: object, value: Value) -> None:
+def assert_is_value(obj: object, value: Value, *, skip_annotated: bool = False) -> None:
     """Used to test pyanalyze's value inference.
 
     Takes two arguments: a Python object and a :class:`Value` object. At runtime
@@ -282,6 +283,8 @@ def assert_is_value(obj: object, value: Value) -> None:
 
         assert_is_value(1, KnownValue(1))  # passes
         assert_is_value(1, TypedValue(int))  # shows an error
+
+    If skip_annotated is True, unwraps any :class:`AnnotatedValue` in the input.
 
     """
     pass
@@ -908,7 +911,10 @@ class SequenceIncompleteValue(GenericValue):
                 tuple, [member.simplify() for member in self.members]
             )
         members = [member.simplify() for member in self.members]
-        return GenericValue(self.typ, [unite_values(*members)])
+        arg = unite_values(*members)
+        if arg is NO_RETURN_VALUE:
+            arg = AnyValue(AnySource.unreachable)
+        return GenericValue(self.typ, [arg])
 
 
 @dataclass(frozen=True)
@@ -980,7 +986,13 @@ class DictIncompleteValue(GenericValue):
     def simplify(self) -> GenericValue:
         keys = [pair.key.simplify() for pair in self.kv_pairs]
         values = [pair.value.simplify() for pair in self.kv_pairs]
-        return GenericValue(self.typ, [unite_values(*keys), unite_values(*values)])
+        key = unite_values(*keys)
+        value = unite_values(*values)
+        if key is NO_RETURN_VALUE:
+            key = AnyValue(AnySource.unreachable)
+        if value is NO_RETURN_VALUE:
+            value = AnyValue(AnySource.unreachable)
+        return GenericValue(self.typ, [key, value])
 
     @property
     def items(self) -> Sequence[Tuple[Value, Value]]:
@@ -1644,6 +1656,18 @@ class HasAttrExtension(Extension):
         yield from self.attribute_type.walk_values()
 
 
+@dataclass(frozen=True, eq=False)
+class ConstraintExtension(Extension):
+    """Encapsulates a Constraint. If the value is evaluated and is truthy, the
+    constraint must be True."""
+
+    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+    # Comparing them can get too expensive
+    def __hash__(self) -> int:
+        return id(self)
+
+
 @dataclass(frozen=True)
 class WeakExtension(Extension):
     """Used to indicate that a generic argument to a container may be widened.
@@ -1955,7 +1979,10 @@ def concrete_values_from_iterable(
         if all(pair.is_required and not pair.is_many for pair in value.kv_pairs):
             return [pair.key for pair in value.kv_pairs]
     elif isinstance(value, KnownValue):
-        if isinstance(value.val, (str, bytes, range)):
+        if (
+            isinstance(value.val, (str, bytes, range))
+            and len(value.val) < ITERATION_LIMIT
+        ):
             return [KnownValue(c) for c in value.val]
     elif value is NO_RETURN_VALUE:
         return NO_RETURN_VALUE
@@ -1983,19 +2010,19 @@ def kv_pairs_from_mapping(
     value_val = replace_known_sequence_value(value_val)
     # Special case: if we have a Union including an empty dict, just get the
     # pairs from the rest of the union and make them all non-required.
-    if isinstance(value_val, MultiValuedValue) and any(
-        subval in EMPTY_DICTS for subval in value_val.vals
-    ):
-        other_val = unite_values(
-            *[subval for subval in value_val.vals if subval not in EMPTY_DICTS]
-        )
-        pairs = kv_pairs_from_mapping(other_val, ctx)
-        if isinstance(pairs, CanAssignError):
-            return pairs
-        return [
-            KVPair(pair.key, pair.value, pair.is_many, is_required=False)
-            for pair in pairs
-        ]
+    if isinstance(value_val, MultiValuedValue):
+        subvals = [replace_known_sequence_value(subval) for subval in value_val.vals]
+        if any(subval in EMPTY_DICTS for subval in subvals):
+            other_val = unite_values(
+                *[subval for subval in subvals if subval not in EMPTY_DICTS]
+            )
+            pairs = kv_pairs_from_mapping(other_val, ctx)
+            if isinstance(pairs, CanAssignError):
+                return pairs
+            return [
+                KVPair(pair.key, pair.value, pair.is_many, is_required=False)
+                for pair in pairs
+            ]
     if isinstance(value_val, DictIncompleteValue):
         return value_val.kv_pairs
     elif isinstance(value_val, TypedDictValue):

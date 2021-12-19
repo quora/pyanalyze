@@ -930,8 +930,48 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(False))
 
     @assert_passes()
+    def test_double_index(self):
+        from typing import Union, Optional
+
+        class A:
+            attr: Union[int, str]
+
+        class B:
+            attr: Optional[A]
+
+        def capybara(b: B):
+            assert_is_value(b, TypedValue(B))
+            assert_is_value(b.attr, TypedValue(A) | KnownValue(None))
+            if b.attr is not None:
+                assert_is_value(b.attr, TypedValue(A))
+                assert_is_value(b.attr.attr, TypedValue(int) | TypedValue(str))
+                if isinstance(b.attr.attr, int):
+                    assert_is_value(b.attr.attr, TypedValue(int))
+
+    @assert_passes()
+    def test_nested_scope(self):
+        from pyanalyze.value import WeakExtension
+
+        class A:
+            pass
+
+        class B(A):
+            pass
+
+        def capybara(a: A, iterable):
+            if isinstance(a, B):
+                assert_is_value(a, TypedValue(B))
+                lst = [a for _ in iterable]
+                assert_is_value(
+                    lst,
+                    AnnotatedValue(
+                        GenericValue(list, [TypedValue(B)]), [WeakExtension()]
+                    ),
+                )
+
+    @assert_passes()
     def test_qcore_asserts(self):
-        from qcore.asserts import assert_is, assert_is_not, assert_is_instance
+        from qcore.asserts import assert_is_instance
 
         def capybara(cond):
             if cond:
@@ -1608,7 +1648,7 @@ class TestComposite(TestNameCheckVisitorBase):
     def test_subscript(self):
         from typing import Any, Dict
 
-        def capybara(x: Dict[str, Any]) -> None:
+        def capybara(x: Dict[str, Any], y) -> None:
             assert_is_value(x["a"], AnyValue(AnySource.explicit))
             x["a"] = 1
             assert_is_value(x["a"], KnownValue(1))
@@ -1629,3 +1669,78 @@ def test_uniq_chain():
     assert [] == uniq_chain([])
     assert list(range(3)) == uniq_chain(range(3) for _ in range(3))
     assert [1] == uniq_chain([1, 1, 1] for _ in range(3))
+
+
+class TestInvalidation(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_still_valid(self) -> None:
+        def capybara(x, y):
+            condition = isinstance(x, int)
+            assert_is_value(x, AnyValue(AnySource.unannotated))
+            if condition:
+                assert_is_value(x, TypedValue(int))
+
+            condition = isinstance(y, int) if x else isinstance(y, str)
+            assert_is_value(y, AnyValue(AnySource.unannotated))
+            if condition:
+                assert_is_value(y, TypedValue(int) | TypedValue(str))
+
+    @assert_passes()
+    def test_invalidated(self) -> None:
+        def capybara(x, y):
+            condition = isinstance(x, int)
+            assert_is_value(x, AnyValue(AnySource.unannotated))
+            x = y
+            if condition:
+                assert_is_value(x, AnyValue(AnySource.unannotated))
+
+    @assert_passes()
+    def test_other_scope(self) -> None:
+        def callee(x):
+            return isinstance(x, int)
+
+        def capybara(x, y):
+            if callee(y):
+                assert_is_value(x, AnyValue(AnySource.unannotated))
+                assert_is_value(y, AnyValue(AnySource.unannotated))
+
+    @assert_passes()
+    def test_while(self) -> None:
+        from typing import Optional
+
+        def make_optional() -> Optional[str]:
+            return "x"
+
+        def capybara():
+            x = make_optional()
+            while x:
+                assert_is_value(x, TypedValue(str))
+                x = make_optional()
+
+    @assert_passes()
+    def test_len_condition(self) -> None:
+        def capybara(file_list, key, ids):
+            has_bias = len(key) > 0
+            data = []
+            for _ in file_list:
+                assert_is_value(key, AnyValue(AnySource.unannotated))
+                if has_bias:
+                    assert_is_value(key, AnyValue(AnySource.unannotated))
+                    data = [ids, data[key]]
+                else:
+                    data = [ids]
+
+    @assert_passes()
+    def test_len_condition_with_type(self) -> None:
+        from typing import Optional
+
+        def capybara(file_list, key: Optional[int], ids):
+            has_bias = key is not None
+            data = []
+            for _ in file_list:
+                assert_is_value(key, TypedValue(int) | KnownValue(None))
+                if has_bias:
+                    assert_is_value(key, TypedValue(int))
+                    data = [ids, data[key]]
+                else:
+                    data = [ids]

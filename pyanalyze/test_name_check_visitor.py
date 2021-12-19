@@ -15,7 +15,7 @@ from .name_check_visitor import (
 )
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
-from .stacked_scopes import Composite
+from .stacked_scopes import Composite, Varname
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
@@ -140,7 +140,6 @@ def _make_module(code_str: str) -> types.ModuleType:
         make_weak=make_weak,
         UNINITIALIZED_VALUE=UNINITIALIZED_VALUE,
         NO_RETURN_VALUE=NO_RETURN_VALUE,
-        Composite=Composite,
     )
     return make_module(code_str, extra_scope)
 
@@ -763,22 +762,35 @@ class TestBoolOp(TestNameCheckVisitorBase):
             assert_is_value(
                 cond and 1,
                 MultiValuedValue([TypedValue(str), KnownValue(None), KnownValue(1)]),
+                skip_annotated=True,
             )
             assert_is_value(
-                cond2 and 1, MultiValuedValue([KnownValue(None), KnownValue(1)])
+                cond2 and 1,
+                MultiValuedValue([KnownValue(None), KnownValue(1)]),
+                skip_annotated=True,
             )
             assert_is_value(
-                cond or 1, MultiValuedValue([TypedValue(str), KnownValue(1)])
+                cond or 1,
+                MultiValuedValue([TypedValue(str), KnownValue(1)]),
+                skip_annotated=True,
             )
             assert_is_value(
-                cond2 or 1, MultiValuedValue([KnownValue(True), KnownValue(1)])
+                cond2 or 1,
+                MultiValuedValue([KnownValue(True), KnownValue(1)]),
+                skip_annotated=True,
             )
 
         def hutia(x=None):
             assert_is_value(x, AnyValue(AnySource.unannotated) | KnownValue(None))
-            assert_is_value(x or 1, AnyValue(AnySource.unannotated) | KnownValue(1))
+            assert_is_value(
+                x or 1,
+                AnyValue(AnySource.unannotated) | KnownValue(1),
+                skip_annotated=True,
+            )
             y = x or 1
-            assert_is_value(y, AnyValue(AnySource.unannotated) | KnownValue(1))
+            assert_is_value(
+                y, AnyValue(AnySource.unannotated) | KnownValue(1), skip_annotated=True
+            )
             assert_is_value(
                 (True if x else False) or None, KnownValue(True) | KnownValue(None)
             )
@@ -1596,6 +1608,7 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
     @assert_passes()
     def test_inference(self):
         from pyanalyze.tests import PropertyObject, ClassWithAsync
+        from pyanalyze.stacked_scopes import Composite
 
         def capybara(oid):
             assert_is_value(
@@ -1630,6 +1643,12 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_metaclass_super(self):
+        from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
+        from qcore.testing import Anything
+        from typing import Any, cast
+
+        varname = VarnameWithOrigin("self", cast(Any, Anything))
+
         class Metaclass(type):
             def __init__(self, name, bases, attrs):
                 super(Metaclass, self).__init__(name, bases, attrs)
@@ -1640,7 +1659,7 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
                 assert_is_value(
                     self.__init__,
                     UnboundMethodValue(
-                        "__init__", Composite(TypedValue(Metaclass), "self")
+                        "__init__", Composite(TypedValue(Metaclass), varname)
                     ),
                 )
 
@@ -1727,7 +1746,7 @@ class TestOperators(TestNameCheckVisitorBase):
     @assert_passes(settings={ErrorCode.value_always_true: False})
     def test_not(self):
         def capybara(x):
-            assert_is_value(not x, TypedValue(bool))
+            assert_is_value(not x, TypedValue(bool), skip_annotated=True)
             assert_is_value(not True, KnownValue(False))
 
     @assert_passes()

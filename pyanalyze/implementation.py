@@ -11,7 +11,7 @@ from .stacked_scopes import (
     ConstraintType,
     PredicateProvider,
     OrConstraint,
-    Varname,
+    VarnameWithOrigin,
 )
 from .signature import ANY_SIGNATURE, SigParameter, Signature, ImplReturn, CallContext
 from .value import (
@@ -50,7 +50,6 @@ from .value import (
     unpack_values,
 )
 
-from functools import reduce
 import collections.abc
 from itertools import product
 import qcore
@@ -116,7 +115,7 @@ def _isinstance_impl(ctx: CallContext) -> ImplReturn:
 
 
 def _constraint_from_isinstance(
-    varname: Optional[Varname], class_or_tuple: Value
+    varname: Optional[VarnameWithOrigin], class_or_tuple: Value
 ) -> AbstractConstraint:
     if varname is None:
         return NULL_CONSTRAINT
@@ -132,7 +131,7 @@ def _constraint_from_isinstance(
             Constraint(varname, ConstraintType.is_instance, True, elt)
             for elt in class_or_tuple.val
         ]
-        return reduce(OrConstraint, constraints)
+        return OrConstraint.make(constraints)
     else:
         return NULL_CONSTRAINT
 
@@ -313,18 +312,26 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
     lst = replace_known_sequence_value(ctx.vars["self"])
     element = ctx.vars["object"]
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
-    if isinstance(lst, SequenceIncompleteValue):
-        no_return_unless = Constraint(
-            varname,
-            ConstraintType.is_value_object,
-            True,
-            SequenceIncompleteValue.make_or_known(list, (*lst.members, element)),
-        )
-        return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-    elif isinstance(lst, GenericValue):
-        return _maybe_broaden_weak_type(
-            "list.append", "object", ctx.vars["self"], lst, element, ctx, list, varname
-        )
+    if varname is not None:
+        if isinstance(lst, SequenceIncompleteValue):
+            no_return_unless = Constraint(
+                varname,
+                ConstraintType.is_value_object,
+                True,
+                SequenceIncompleteValue.make_or_known(list, (*lst.members, element)),
+            )
+            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
+        elif isinstance(lst, GenericValue):
+            return _maybe_broaden_weak_type(
+                "list.append",
+                "object",
+                ctx.vars["self"],
+                lst,
+                element,
+                ctx,
+                list,
+                varname,
+            )
     return ImplReturn(KnownValue(None))
 
 
@@ -537,9 +544,12 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
             self_value.typ,
             [*self_value.kv_pairs, KVPair(key, default, is_required=not is_present)],
         )
-        no_return_unless = Constraint(
-            varname, ConstraintType.is_value_object, True, new_value
-        )
+        if varname is not None:
+            no_return_unless = Constraint(
+                varname, ConstraintType.is_value_object, True, new_value
+            )
+        else:
+            no_return_unless = NULL_CONSTRAINT
         if not is_present:
             return ImplReturn(default, no_return_unless=no_return_unless)
         return ImplReturn(
@@ -554,9 +564,12 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
             new_type = make_weak(
                 GenericValue(self_value.typ, [new_key_type, new_value_type])
             )
-            no_return_unless = Constraint(
-                varname, ConstraintType.is_value_object, True, new_type
-            )
+            if varname is not None:
+                no_return_unless = Constraint(
+                    varname, ConstraintType.is_value_object, True, new_type
+                )
+            else:
+                no_return_unless = NULL_CONSTRAINT
             return ImplReturn(new_value_type, no_return_unless=no_return_unless)
         else:
             tv_map = key_type.can_assign(key, ctx.visitor)
@@ -596,7 +609,7 @@ def _weak_dict_update(
     self_val: Value,
     pairs: Sequence[KVPair],
     ctx: CallContext,
-    varname: Optional[Varname],
+    varname: Optional[VarnameWithOrigin],
 ) -> ImplReturn:
     self_pairs = kv_pairs_from_mapping(self_val, ctx.visitor)
     if isinstance(self_pairs, CanAssignError):
@@ -622,7 +635,7 @@ def _add_pairs_to_dict(
     self_val: Value,
     pairs: Sequence[KVPair],
     ctx: CallContext,
-    varname: Optional[Varname],
+    varname: Optional[VarnameWithOrigin],
 ) -> ImplReturn:
     if _is_weak(self_val):
         return _weak_dict_update(self_val, pairs, ctx, varname)
@@ -766,11 +779,16 @@ def _list_extend_or_iadd_impl(
                 constrained_value = make_weak(GenericValue(list, [generic_arg]))
             if return_container:
                 return ImplReturn(constrained_value)
-            no_return_unless = Constraint(
-                varname, ConstraintType.is_value_object, True, constrained_value
-            )
-            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        elif isinstance(cleaned_lst, GenericValue) and isinstance(iterable, TypedValue):
+            if varname is not None:
+                no_return_unless = Constraint(
+                    varname, ConstraintType.is_value_object, True, constrained_value
+                )
+                return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
+        elif (
+            varname is not None
+            and isinstance(cleaned_lst, GenericValue)
+            and isinstance(iterable, TypedValue)
+        ):
             actual_type = iterable.get_generic_arg_for_type(
                 collections.abc.Iterable, ctx.visitor, 0
             )
@@ -810,7 +828,7 @@ def _maybe_broaden_weak_type(
     actual_type: Value,
     ctx: CallContext,
     typ: type,
-    varname: Varname,
+    varname: VarnameWithOrigin,
     *,
     return_container: bool = False,
 ) -> ImplReturn:
@@ -842,19 +860,37 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
     set_value = replace_known_sequence_value(ctx.vars["self"])
     element = ctx.vars["object"]
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
-    if isinstance(set_value, SequenceIncompleteValue):
-        no_return_unless = Constraint(
-            varname,
-            ConstraintType.is_value_object,
-            True,
-            SequenceIncompleteValue.make_or_known(set, (*set_value.members, element)),
-        )
-        return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-    elif isinstance(set_value, GenericValue):
-        return _maybe_broaden_weak_type(
-            "set.add", "object", ctx.vars["self"], set_value, element, ctx, set, varname
-        )
+    if varname is not None:
+        if isinstance(set_value, SequenceIncompleteValue):
+            no_return_unless = Constraint(
+                varname,
+                ConstraintType.is_value_object,
+                True,
+                SequenceIncompleteValue.make_or_known(
+                    set, (*set_value.members, element)
+                ),
+            )
+            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
+        elif isinstance(set_value, GenericValue):
+            return _maybe_broaden_weak_type(
+                "set.add",
+                "object",
+                ctx.vars["self"],
+                set_value,
+                element,
+                ctx,
+                set,
+                varname,
+            )
     return ImplReturn(KnownValue(None))
+
+
+def _remove_annotated(val: Value) -> Value:
+    if isinstance(val, AnnotatedValue):
+        return val.value
+    elif isinstance(val, MultiValuedValue):
+        return unite_values(*[_remove_annotated(subval) for subval in val.vals])
+    return val
 
 
 def _assert_is_value_impl(ctx: CallContext) -> Value:
@@ -870,6 +906,8 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
             arg="value",
         )
     else:
+        if _remove_annotated(ctx.vars["skip_annotated"]) == KnownValue(True):
+            obj = _remove_annotated(obj)
         if obj != expected_value.val:
             ctx.show_error(
                 f"Bad value inference: expected {expected_value.val}, got {obj}",
@@ -1061,7 +1099,16 @@ def get_default_argspecs() -> Dict[object, Signature]:
     signatures = [
         # pyanalyze helpers
         Signature.make(
-            [SigParameter("obj"), SigParameter("value", annotation=TypedValue(Value))],
+            [
+                SigParameter("obj"),
+                SigParameter("value", annotation=TypedValue(Value)),
+                SigParameter(
+                    "skip_annotated",
+                    SigParameter.KEYWORD_ONLY,
+                    default=KnownValue(False),
+                    annotation=TypedValue(bool),
+                ),
+            ],
             KnownValue(None),
             impl=_assert_is_value_impl,
             callable=assert_is_value,

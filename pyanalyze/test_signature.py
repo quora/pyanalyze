@@ -7,6 +7,7 @@ from .value import (
     AnySource,
     AnyValue,
     CanAssignError,
+    ConstraintExtension,
     GenericValue,
     KnownValue,
     MultiValuedValue,
@@ -499,20 +500,22 @@ class TestCalls(TestNameCheckVisitorBase):
     @assert_passes()
     def test_return_value(self):
         from pyanalyze.value import HasAttrGuardExtension
+        from qcore.testing import Anything
+        from typing import Any, cast
+
+        val = AnnotatedValue(
+            TypedValue(bool),
+            [
+                HasAttrGuardExtension(
+                    "object", KnownValue("foo"), AnyValue(AnySource.inference)
+                ),
+                cast(Any, Anything),
+            ],
+        )
 
         def capybara(x):
             l = hasattr(x, "foo")
-            assert_is_value(
-                l,
-                AnnotatedValue(
-                    TypedValue(bool),
-                    [
-                        HasAttrGuardExtension(
-                            "object", KnownValue("foo"), AnyValue(AnySource.inference)
-                        )
-                    ],
-                ),
-            )
+            assert_is_value(l, val)
 
     @assert_passes()
     def test_required_kwonly_args(self):
@@ -601,6 +604,8 @@ class TestCalls(TestNameCheckVisitorBase):
     @assert_passes()
     def test_hasattr(self):
         from pyanalyze.value import HasAttrGuardExtension
+        from typing import Any, cast
+        from qcore.testing import Anything
 
         class Quemisia(object):
             def gravis(self):
@@ -613,21 +618,19 @@ class TestCalls(TestNameCheckVisitorBase):
         def mistyped_args():
             hasattr(True, False)  # E: incompatible_argument
 
+        inferred = AnnotatedValue(
+            TypedValue(bool),
+            [
+                HasAttrGuardExtension(
+                    "object", KnownValue("__qualname__"), AnyValue(AnySource.inference)
+                ),
+                cast(Any, Anything),
+            ],
+        )
+
         def only_on_class(o: object):
             val = hasattr(o, "__qualname__")
-            assert_is_value(
-                val,
-                AnnotatedValue(
-                    TypedValue(bool),
-                    [
-                        HasAttrGuardExtension(
-                            "object",
-                            KnownValue("__qualname__"),
-                            AnyValue(AnySource.inference),
-                        )
-                    ],
-                ),
-            )
+            assert_is_value(val, inferred)
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_keyword_only_args(self):

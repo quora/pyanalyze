@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Allow storing type narrowing constraints in variables (#343)
 - The first argument to `__new__` and `__init_subclass`
   does not need to be `self` (#342)
 - Drop dependencies on `attrs` and `mypy_extensions` (#341)
