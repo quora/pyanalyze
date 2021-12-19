@@ -23,6 +23,7 @@ from .value import (
     AnySource,
     AnyValue,
     AsyncTaskIncompleteValue,
+    CallableValue,
     CanAssignContext,
     GenericValue,
     HasAttrExtension,
@@ -234,6 +235,7 @@ class ParameterKind(enum.Enum):
     VAR_POSITIONAL = 2
     KEYWORD_ONLY = 3
     VAR_KEYWORD = 4
+    PARAM_SPEC = 5
 
 
 @dataclass
@@ -919,6 +921,7 @@ class Signature:
             kwargs_annotation = None
         consumed_positional = set()
         consumed_keyword = set()
+        consumed_paramspec = False
         for i, my_param in enumerate(self.parameters.values()):
             my_annotation = my_param.get_annotation()
             if my_param.kind is ParameterKind.POSITIONAL_ONLY:
@@ -1078,6 +1081,18 @@ class Signature:
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
+            elif my_param.kind is ParameterKind.PARAM_SPEC:
+                remaining = [
+                    param
+                    for param in other.parameters.values()
+                    if param.name not in consumed_positional
+                    and param.name not in consumed_keyword
+                ]
+                new_sig = Signature.make(remaining)
+                assert isinstance(my_annotation, TypeVarValue)
+                tv_maps.append({my_annotation.typevar: CallableValue(new_sig)})
+            else:
+                assert False, f"unhandled param {my_param}"
 
         for param in their_params:
             if (
@@ -1101,6 +1116,11 @@ class Signature:
             elif param.kind is ParameterKind.KEYWORD_ONLY:
                 if param.name not in consumed_keyword:
                     return CanAssignError(f"takes extra parameter {param.name!r}")
+            elif param.kind is ParameterKind.PARAM_SPEC:
+                if not consumed_paramspec:
+                    return CanAssignError(f"takes extra ParamSpec {param!r}")
+            else:
+                assert False, f"unhandled param {param}"
 
         return unify_typevar_maps(tv_maps)
 
@@ -1111,11 +1131,22 @@ class Signature:
         return None
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Signature":
+        params = []
+        for name, param in self.parameters.items():
+            if param.kind is ParameterKind.PARAM_SPEC:
+                assert isinstance(param.annotation, TypeVarValue)
+                tv = param.annotation.typevar
+                if tv in typevars:
+                    new_val = typevars[tv].substitute_typevars(typevars)
+                    assert isinstance(new_val, CallableValue)
+                    assert isinstance(new_val.signature, Signature)
+                    params += list(new_val.signature.parameters.items())
+                else:
+                    params.append((name, param))
+            else:
+                params.append((name, param.substitute_typevars(typevars)))
         return Signature(
-            {
-                name: param.substitute_typevars(typevars)
-                for name, param in self.parameters.items()
-            },
+            dict(params),
             self.return_value.substitute_typevars(typevars),
             impl=self.impl,
             callable=self.callable,
