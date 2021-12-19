@@ -2490,9 +2490,7 @@ class NameCheckVisitor(
             out_constraints.append(constraint)
         constraint_cls = AndConstraint if is_and else OrConstraint
         constraint = constraint_cls.make(reversed(out_constraints))
-        return annotate_with_constraint(
-            unite_values(*values, default=AnyValue(AnySource.unreachable)), constraint
-        )
+        return annotate_with_constraint(unite_values(*values), constraint)
 
     def visit_Compare(self, node: ast.Compare) -> Value:
         if len(node.ops) != 1:

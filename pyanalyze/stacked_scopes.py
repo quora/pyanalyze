@@ -1434,11 +1434,11 @@ def _constrain_value(
         values = list(flatten_values(fallback_value))
     for constraint in constraints:
         values = list(constraint.apply_to_values(values))
+    if not values:
+        return AnyValue(AnySource.unreachable)
     if simplification_limit is not None:
-        return unite_and_simplify(
-            *values, limit=simplification_limit, default=AnyValue(AnySource.unreachable)
-        )
-    return unite_values(*values, default=AnyValue(AnySource.unreachable))
+        return unite_and_simplify(*values, limit=simplification_limit)
+    return unite_values(*values)
 
 
 def annotate_with_constraint(value: Value, constraint: AbstractConstraint) -> Value:

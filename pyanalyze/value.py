@@ -147,7 +147,7 @@ class Value:
         """Return the type of this object as used for dunder lookups."""
         return self
 
-    def simplify(self, default: "Value") -> "Value":
+    def simplify(self) -> "Value":
         """Simplify this Value to reduce excessive detail."""
         return self
 
@@ -445,11 +445,11 @@ class KnownValue(Value):
             return self
         return KnownValueWithTypeVars(self.val, typevars)
 
-    def simplify(self, default: Value) -> Value:
+    def simplify(self) -> Value:
         val = replace_known_sequence_value(self)
         if isinstance(val, KnownValue):
             return TypedValue(type(val.val))
-        return val.simplify(default)
+        return val.simplify()
 
 
 @dataclass(frozen=True)
@@ -823,8 +823,8 @@ class GenericValue(TypedValue):
             self.typ, [arg.substitute_typevars(typevars) for arg in self.args]
         )
 
-    def simplify(self, default: Value) -> Value:
-        return GenericValue(self.typ, [arg.simplify(default) for arg in self.args])
+    def simplify(self) -> Value:
+        return GenericValue(self.typ, [arg.simplify() for arg in self.args])
 
 
 @dataclass(unsafe_hash=True, init=False)
@@ -905,13 +905,16 @@ class SequenceIncompleteValue(GenericValue):
         for member in self.members:
             yield from member.walk_values()
 
-    def simplify(self, default: Value) -> GenericValue:
+    def simplify(self) -> GenericValue:
         if self.typ is tuple:
             return SequenceIncompleteValue(
-                tuple, [member.simplify(default) for member in self.members]
+                tuple, [member.simplify() for member in self.members]
             )
-        members = [member.simplify(default) for member in self.members]
-        return GenericValue(self.typ, [unite_values(*members, default=default)])
+        members = [member.simplify() for member in self.members]
+        arg = unite_values(*members)
+        if arg is NO_RETURN_VALUE:
+            arg = AnyValue(AnySource.unreachable)
+        return GenericValue(self.typ, [arg])
 
 
 @dataclass(frozen=True)
@@ -980,16 +983,16 @@ class DictIncompleteValue(GenericValue):
             self.typ, [pair.substitute_typevars(typevars) for pair in self.kv_pairs]
         )
 
-    def simplify(self, default: Value) -> GenericValue:
-        keys = [pair.key.simplify(default) for pair in self.kv_pairs]
-        values = [pair.value.simplify(default) for pair in self.kv_pairs]
-        return GenericValue(
-            self.typ,
-            [
-                unite_values(*keys, default=default),
-                unite_values(*values, default=default),
-            ],
-        )
+    def simplify(self) -> GenericValue:
+        keys = [pair.key.simplify() for pair in self.kv_pairs]
+        values = [pair.value.simplify() for pair in self.kv_pairs]
+        key = unite_values(*keys)
+        value = unite_values(*values)
+        if key is NO_RETURN_VALUE:
+            key = AnyValue(AnySource.unreachable)
+        if value is NO_RETURN_VALUE:
+            value = AnyValue(AnySource.unreachable)
+        return GenericValue(self.typ, [key, value])
 
     @property
     def items(self) -> Sequence[Tuple[Value, Value]]:
@@ -1416,10 +1419,8 @@ class MultiValuedValue(Value):
         for val in self.vals:
             yield from val.walk_values()
 
-    def simplify(self, default: Value) -> Value:
-        return unite_values(
-            *[val.simplify(default) for val in self.vals], default=default
-        )
+    def simplify(self) -> Value:
+        return unite_values(*[val.simplify() for val in self.vals])
 
 
 NO_RETURN_VALUE = MultiValuedValue([])
@@ -1668,14 +1669,6 @@ class ConstraintExtension(Extension):
 
 
 @dataclass(frozen=True)
-class NoReturnUnlessConstraintExtension(Extension):
-    """Encapsulates a no-return-unless Constraint. If execution continues, the
-    constraint must be True."""
-
-    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
-
-
-@dataclass(frozen=True)
 class WeakExtension(Extension):
     """Used to indicate that a generic argument to a container may be widened.
 
@@ -1761,8 +1754,8 @@ class AnnotatedValue(Value):
     def __str__(self) -> str:
         return f"Annotated[{self.value}, {', '.join(map(str, self.metadata))}]"
 
-    def simplify(self, default: Value) -> Value:
-        return AnnotatedValue(self.value.simplify(default), self.metadata)
+    def simplify(self) -> Value:
+        return AnnotatedValue(self.value.simplify(), self.metadata)
 
 
 @dataclass(frozen=True)
@@ -1879,17 +1872,15 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
     return AnnotatedValue(origin, metadata)
 
 
-def unite_and_simplify(
-    *values: Value, limit: int, default: Value = AnyValue(AnySource.unreachable)
-) -> Value:
-    united = unite_values(*values, default=default)
+def unite_and_simplify(*values: Value, limit: int) -> Value:
+    united = unite_values(*values)
     if not isinstance(united, MultiValuedValue) or len(united.vals) < limit:
         return united
-    simplified = [val.simplify(default) for val in united.vals]
-    return unite_values(*simplified, default=default)
+    simplified = [val.simplify() for val in united.vals]
+    return unite_values(*simplified)
 
 
-def unite_values(*values: Value, default: Value = NO_RETURN_VALUE) -> Value:
+def unite_values(*values: Value) -> Value:
     """Unite multiple values into a single :class:`Value`.
 
     This collapses equal values and returns a :class:`MultiValuedValue`
@@ -1897,7 +1888,7 @@ def unite_values(*values: Value, default: Value = NO_RETURN_VALUE) -> Value:
 
     """
     if not values:
-        return default
+        return NO_RETURN_VALUE
     # Make sure order is consistent; conceptually this is a set but
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
@@ -1923,7 +1914,7 @@ def unite_values(*values: Value, default: Value = NO_RETURN_VALUE) -> Value:
     existing = list(hashable_vals) + unhashable_vals
     num = len(existing)
     if num == 0:
-        return default
+        return NO_RETURN_VALUE
     if num == 1:
         return existing[0]
     else:
