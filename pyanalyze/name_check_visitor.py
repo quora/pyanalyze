@@ -1412,11 +1412,15 @@ class NameCheckVisitor(
         except TypeError:
             return KnownValue(potential_function)
         if argspec is not None:
-            if info.async_kind != AsyncFunctionKind.async_proxy:
-                # don't attempt to infer the return value of async_proxy functions, since it will be
-                # set within the Future returned
-                # without this, we'll incorrectly infer the return value to be the Future instead of
-                # the Future's value
+            if (
+                info.async_kind != AsyncFunctionKind.async_proxy
+                and node.returns is None
+            ):
+                # Don't attempt to infer the return value of async_proxy functions, since it will be
+                # set within the Future returned. Without this, we'll incorrectly infer the return
+                # value to be the Future instead of the Future's value.
+                # Similarly, we don't infer the return value if there is an annotation, because
+                # we should be able to get it from __annotations__ instead.
                 self._argspec_to_retval[id(argspec)] = return_value
         else:
             self.log(logging.DEBUG, "No argspec", (potential_function, node))
