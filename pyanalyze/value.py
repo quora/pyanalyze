@@ -1892,7 +1892,9 @@ def unannotate_value(
     matches = [
         metadata for metadata in origin.metadata if isinstance(metadata, extension)
     ]
-    if matches:
+    # the all_of_type call is redundant but necessary for pyanalyze's narrower for now
+    # TODO remove it
+    if matches and all_of_type(matches, Extension):
         remaining = [
             metadata
             for metadata in origin.metadata
