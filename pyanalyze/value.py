@@ -48,6 +48,7 @@ from typing import (
 from typing_extensions import Literal, Protocol
 
 import pyanalyze
+from pyanalyze import extensions
 from pyanalyze.extensions import CustomCheck
 
 from .safe import all_of_type, safe_issubclass, safe_isinstance
@@ -1687,6 +1688,15 @@ class WeakExtension(Extension):
 
 
 @dataclass(frozen=True)
+class AlwaysPresentExtension(Extension):
+    """Extension that indicates that an iterable value is nonempty.
+
+    Currently cannot be used from user code.
+
+    """
+
+
+@dataclass(frozen=True)
 class AnnotatedValue(Value):
     """Value representing a `PEP 593 <https://www.python.org/dev/peps/pep-0593/>`_ Annotated object.
 
@@ -1874,6 +1884,26 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
     return AnnotatedValue(origin, metadata)
 
 
+def unannotate_value(
+    origin: Value, extension: Type[Extension]
+) -> Tuple[Value, Sequence[Extension]]:
+    if not isinstance(origin, AnnotatedValue):
+        return origin, []
+    matches = [
+        metadata for metadata in origin.metadata if isinstance(metadata, extension)
+    ]
+    # the all_of_type call is redundant but necessary for pyanalyze's narrower for now
+    # TODO remove it
+    if matches and all_of_type(matches, Extension):
+        remaining = [
+            metadata
+            for metadata in origin.metadata
+            if not isinstance(metadata, extension)
+        ]
+        return annotate_value(origin.value, remaining), matches
+    return origin, []
+
+
 def unite_and_simplify(*values: Value, limit: int) -> Value:
     united = unite_values(*values)
     if not isinstance(united, MultiValuedValue) or len(united.vals) < limit:
@@ -1955,6 +1985,7 @@ def concrete_values_from_iterable(
 
     """
     value = replace_known_sequence_value(value)
+    is_nonempty = False
     if isinstance(value, MultiValuedValue):
         subvals = [concrete_values_from_iterable(val, ctx) for val in value.vals]
         errors = [subval for subval in subvals if isinstance(subval, CanAssignError)]
@@ -1981,20 +2012,26 @@ def concrete_values_from_iterable(
         if all(pair.is_required and not pair.is_many for pair in value.kv_pairs):
             return [pair.key for pair in value.kv_pairs]
     elif isinstance(value, KnownValue):
-        if (
-            isinstance(value.val, (str, bytes, range))
-            and len(value.val) < ITERATION_LIMIT
-        ):
-            return [KnownValue(c) for c in value.val]
+        if isinstance(value.val, (str, bytes, range)):
+            if len(value.val) < ITERATION_LIMIT:
+                return [KnownValue(c) for c in value.val]
+            is_nonempty = True
     elif value is NO_RETURN_VALUE:
         return NO_RETURN_VALUE
     iter_tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(iter_tv_map, CanAssignError):
-        return iter_tv_map.get(T, AnyValue(AnySource.generic_argument))
-    getitem_tv_map = GetItemProtoValue.can_assign(value, ctx)
-    if not isinstance(getitem_tv_map, CanAssignError):
-        return getitem_tv_map.get(T, AnyValue(AnySource.generic_argument))
-    return iter_tv_map
+        val = iter_tv_map.get(T, AnyValue(AnySource.generic_argument))
+    else:
+        getitem_tv_map = GetItemProtoValue.can_assign(value, ctx)
+        if not isinstance(getitem_tv_map, CanAssignError):
+            val = getitem_tv_map.get(T, AnyValue(AnySource.generic_argument))
+        else:
+            # We return the error from the __iter__ check because the __getitem__
+            # check is more arcane.
+            return iter_tv_map
+    if is_nonempty:
+        return annotate_value(val, [AlwaysPresentExtension()])
+    return val
 
 
 K = TypeVar("K")

@@ -427,6 +427,13 @@ class TestLoops(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(4))
             assert_is_value(x, KnownValue(4))
 
+        def huge_range():
+            for i in range(1000000000):
+                # We don't create the whole Union
+                assert_is_value(i, TypedValue(int))
+            # But we do recognize that the iterable is nonempty
+            assert_is_value(i, TypedValue(int))
+
     @assert_passes()
     def test_range_always_entered(self):
         def capybara():
