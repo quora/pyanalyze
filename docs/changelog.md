@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix error on use of `AbstractAsyncContextManager` (#350)
 - Check `with` and `async with` statements (#344)
 - Improve type compatibility between generics and literals (#346)
 - Infer signatures for method wrapper objects (bound methods

@@ -267,6 +267,11 @@ class TestGetGenericBases:
             contextlib.AbstractContextManager,
             [int_tv],
         )
+        self.check(
+            {contextlib.AbstractAsyncContextManager: [int_tv]},
+            contextlib.AbstractAsyncContextManager,
+            [int_tv],
+        )
 
     def test_collections(self):
         int_tv = TypedValue(int)
