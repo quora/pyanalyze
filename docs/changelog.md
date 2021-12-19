@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Check `with` and `async with` statements (#344)
 - Allow storing type narrowing constraints in variables (#343)
 - The first argument to `__new__` and `__init_subclass`
   does not need to be `self` (#342)

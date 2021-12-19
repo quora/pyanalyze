@@ -2579,6 +2579,66 @@ class TestWhile(TestNameCheckVisitorBase):
                     return 1
 
 
+class TestWith(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_with(self) -> None:
+        class BadCM1:
+            pass
+
+        class BadCM2:
+            def __enter__(self, extra_arg) -> int:
+                return 0
+
+            def __exit__(self, typ, value, tb):
+                pass
+
+        class GoodCM:
+            def __enter__(self) -> int:
+                return 0
+
+            def __exit__(self, typ, value, tb):
+                pass
+
+        def capybara():
+            with BadCM1() as e:  # E: invalid_context_manager
+                assert_is_value(e, AnyValue(AnySource.error))
+
+            with BadCM2() as e:  # E: invalid_context_manager
+                assert_is_value(e, AnyValue(AnySource.error))
+
+            with GoodCM() as e:
+                assert_is_value(e, TypedValue(int))
+
+    @assert_passes()
+    def test_async_with(self) -> None:
+        class BadCM1:
+            pass
+
+        class BadCM2:
+            async def __aenter__(self, extra_arg) -> int:
+                return 0
+
+            async def __aexit__(self, typ, value, tb):
+                pass
+
+        class GoodCM:
+            async def __aenter__(self) -> int:
+                return 0
+
+            async def __aexit__(self, typ, value, tb):
+                pass
+
+        async def capybara():
+            async with BadCM1() as e:  # E: invalid_context_manager
+                assert_is_value(e, AnyValue(AnySource.error))
+
+            async with BadCM2() as e:  # E: invalid_context_manager
+                assert_is_value(e, AnyValue(AnySource.error))
+
+            async with GoodCM() as e:
+                assert_is_value(e, TypedValue(int))
+
+
 class HasGetattr(object):
     def __getattr__(self, attr):
         return 42
