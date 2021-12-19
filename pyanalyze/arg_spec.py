@@ -304,7 +304,7 @@ class ArgSpecCache:
             vnv = VariableNameValue.from_varname(
                 parameter.name, self.config.varname_value_map()
             )
-            if vnv is None:
+            if vnv is not None:
                 return vnv
         return AnyValue(AnySource.unannotated)
 
