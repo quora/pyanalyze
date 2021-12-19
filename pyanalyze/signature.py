@@ -53,7 +53,7 @@ from .value import (
 
 import ast
 import asynq
-from collections import defaultdict, OrderedDict
+from collections import defaultdict
 import collections.abc
 from dataclasses import dataclass, field, replace
 import itertools
