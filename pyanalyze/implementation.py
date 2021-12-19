@@ -13,7 +13,14 @@ from .stacked_scopes import (
     OrConstraint,
     VarnameWithOrigin,
 )
-from .signature import ANY_SIGNATURE, SigParameter, Signature, ImplReturn, CallContext
+from .signature import (
+    ANY_SIGNATURE,
+    SigParameter,
+    Signature,
+    ImplReturn,
+    CallContext,
+    ParameterKind,
+)
 from .value import (
     UNINITIALIZED_VALUE,
     AnnotatedValue,
@@ -1086,7 +1093,7 @@ def _len_impl(ctx: CallContext) -> ImplReturn:
     return ImplReturn(len_of_value(ctx.vars["obj"]), constraint)
 
 
-_POS_ONLY = SigParameter.POSITIONAL_ONLY
+_POS_ONLY = ParameterKind.POSITIONAL_ONLY
 _ENCODING_PARAMETER = SigParameter(
     "encoding", annotation=TypedValue(str), default=KnownValue("")
 )
@@ -1104,7 +1111,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 SigParameter("value", annotation=TypedValue(Value)),
                 SigParameter(
                     "skip_annotated",
-                    SigParameter.KEYWORD_ONLY,
+                    ParameterKind.KEYWORD_ONLY,
                     default=KnownValue(False),
                     annotation=TypedValue(bool),
                 ),
@@ -1315,7 +1322,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             [
                 SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
                 SigParameter("m", _POS_ONLY, default=_NO_ARG_SENTINEL),
-                SigParameter("kwargs", SigParameter.VAR_KEYWORD),
+                SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
             ],
             KnownValue(None),
             callable=dict.update,
@@ -1395,8 +1402,8 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [
                 SigParameter("self", _POS_ONLY, annotation=TypedValue(str)),
-                SigParameter("args", SigParameter.VAR_POSITIONAL),
-                SigParameter("kwargs", SigParameter.VAR_KEYWORD),
+                SigParameter("args", ParameterKind.VAR_POSITIONAL),
+                SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
             ],
             impl=_str_format_impl,
             callable=str.format,
@@ -1460,7 +1467,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             [
                 SigParameter(
                     "obj",
-                    SigParameter.POSITIONAL_ONLY,
+                    ParameterKind.POSITIONAL_ONLY,
                     annotation=TypedValue(collections.abc.Sized),
                 )
             ],
@@ -1478,15 +1485,15 @@ def get_default_argspecs() -> Dict[object, Signature]:
             [
                 SigParameter(
                     "iterable",
-                    SigParameter.POSITIONAL_ONLY,
+                    ParameterKind.POSITIONAL_ONLY,
                     annotation=TypedValue(collections.abc.Iterable),
                 ),
                 SigParameter(
                     "key",
-                    SigParameter.KEYWORD_ONLY,
+                    ParameterKind.KEYWORD_ONLY,
                     annotation=CallableValue(
                         Signature.make(
-                            [SigParameter("arg", SigParameter.POSITIONAL_ONLY)],
+                            [SigParameter("arg", ParameterKind.POSITIONAL_ONLY)],
                             return_annotation=TypedValue("_typeshed.SupportsLessThan"),
                         )
                     ),
@@ -1494,7 +1501,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 ),
                 SigParameter(
                     "reverse",
-                    SigParameter.KEYWORD_ONLY,
+                    ParameterKind.KEYWORD_ONLY,
                     annotation=TypedValue(bool),
                     default=KnownValue(False),
                 ),
@@ -1507,7 +1514,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [
                 SigParameter(
-                    "obj", SigParameter.POSITIONAL_ONLY, annotation=TypedValue(object)
+                    "obj", ParameterKind.POSITIONAL_ONLY, annotation=TypedValue(object)
                 )
             ],
             callable=callable,
@@ -1520,7 +1527,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             [
                 SigParameter(
                     "object",
-                    SigParameter.POSITIONAL_OR_KEYWORD,
+                    ParameterKind.POSITIONAL_OR_KEYWORD,
                     annotation=TypedValue(object),
                 )
             ],
