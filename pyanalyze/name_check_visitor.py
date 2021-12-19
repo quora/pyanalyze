@@ -3057,7 +3057,7 @@ class NameCheckVisitor(
         else:
             always_entered = len(iterated_value) > 0
         if not isinstance(iterated_value, Value):
-            iterated_value = unite_values(
+            iterated_value = unite_and_simplify(
                 *iterated_value, limit=self.config.UNION_SIMPLIFICATION_LIMIT
             )
         with self.scopes.subscope() as body_scope:
