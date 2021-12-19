@@ -113,6 +113,7 @@ from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
 from .value import (
+    AlwaysPresentExtension,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -125,6 +126,7 @@ from .value import (
     NO_RETURN_VALUE,
     kv_pairs_from_mapping,
     make_weak,
+    unannotate_value,
     unite_and_simplify,
     unite_values,
     KnownValue,
@@ -3051,7 +3053,10 @@ class NameCheckVisitor(
         if self.config.FOR_LOOP_ALWAYS_ENTERED:
             always_entered = True
         elif isinstance(iterated_value, Value):
-            always_entered = False
+            iterated_value, present = unannotate_value(
+                iterated_value, AlwaysPresentExtension
+            )
+            always_entered = bool(present)
         else:
             always_entered = len(iterated_value) > 0
         if not isinstance(iterated_value, Value):
