@@ -1924,7 +1924,6 @@ def unite_values(*values: Value) -> Value:
 
 
 T = TypeVar("T")
-# Using the string version forces us into using the typeshed Protocol
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
