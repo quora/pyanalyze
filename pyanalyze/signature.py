@@ -244,7 +244,7 @@ class SigParameter:
     """Name of the parameter."""
     kind: ParameterKind = ParameterKind.POSITIONAL_OR_KEYWORD
     """How the parameter can be passed."""
-    default: Union[Value, Literal[EMPTY]] = EMPTY
+    default: Optional[Value] = None
     """The default for the parameter, or EMPTY if there is no default."""
     annotation: Value = AnyValue(AnySource.unannotated)
     """Type annotation for the parameter."""
@@ -267,6 +267,11 @@ class SigParameter:
         Literal[ParameterKind.VAR_KEYWORD]
     ] = ParameterKind.VAR_KEYWORD
 
+    def __post_init__(self) -> None:
+        # backward compatibility
+        if self.default is EMPTY:
+            self.default = None
+
     def substitute_typevars(self, typevars: TypeVarMap) -> "SigParameter":
         return SigParameter(
             name=self.name,
@@ -286,7 +291,7 @@ class SigParameter:
         if self.annotation != UNANNOTATED:
             formatted = f"{formatted}: {self.annotation}"
 
-        if self.default is not EMPTY:
+        if self.default is not None:
             if self.annotation != UNANNOTATED:
                 formatted = f"{formatted} = {self.default}"
             else:
@@ -336,8 +341,6 @@ class Signature:
 
     def __post_init__(self) -> None:
         for param_name, param in self.parameters.items():
-            if param.annotation is EMPTY:
-                continue
             typevars = list(extract_typevars(param.annotation))
             if typevars:
                 self.typevars_of_params[param_name] = typevars
@@ -369,10 +372,7 @@ class Signature:
         - A Value or None, used for union decomposition with overloads.
 
         """
-        if param.annotation is not EMPTY and not (
-            isinstance(param.default, Composite)
-            and composite.value is param.default.value
-        ):
+        if param.annotation != UNANNOTATED and composite.value is not param.default:
             if typevar_map:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
             else:
@@ -520,7 +520,7 @@ class Signature:
                 elif actual_args.star_args is not None:
                     bound_args[param.name] = None, Composite(actual_args.star_args)
                     star_args_consumed = True
-                elif param.default is EMPTY:
+                elif param.default is None:
                     self.show_call_error(
                         f"Missing required positional argument: '{param.name}'",
                         node,
@@ -565,7 +565,7 @@ class Signature:
                     bound_args[param.name] = None, Composite(value)
                 elif param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
-                    if not definitely_provided and param.default is EMPTY:
+                    if not definitely_provided and param.default is None:
                         self.show_call_error(
                             f"Parameter '{param.name}' may not be provided by this"
                             " call",
@@ -578,7 +578,7 @@ class Signature:
                 elif actual_args.star_kwargs is not None:
                     bound_args[param.name] = None, Composite(actual_args.star_kwargs)
                     star_kwargs_consumed = True
-                elif param.default is EMPTY:
+                elif param.default is None:
                     self.show_call_error(
                         f"Missing required argument: '{param.name}'", node, visitor
                     )
@@ -588,7 +588,7 @@ class Signature:
             elif param.kind is ParameterKind.KEYWORD_ONLY:
                 if param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
-                    if not definitely_provided and param.default is EMPTY:
+                    if not definitely_provided and param.default is None:
                         self.show_call_error(
                             f"Parameter '{param.name}' may not be provided by this"
                             " call",
@@ -602,7 +602,7 @@ class Signature:
                     bound_args[param.name] = None, Composite(actual_args.star_kwargs)
                     star_kwargs_consumed = True
                     keywords_consumed.add(param.name)
-                elif param.default is EMPTY:
+                elif param.default is None:
                     self.show_call_error(
                         f"Missing required argument: '{param.name}'", node, visitor
                     )
@@ -811,10 +811,7 @@ class Signature:
                     )
                 else:
                     return_value = runtime_return
-        if return_value is EMPTY:
-            ret = ImplReturn(AnyValue(AnySource.unannotated), is_error=had_error)
-        else:
-            ret = self._apply_annotated_constraints(return_value, composites)
+        ret = self._apply_annotated_constraints(return_value, composites)
         return ret._replace(
             is_error=had_error,
             used_any_for_match=used_any,
@@ -929,10 +926,7 @@ class Signature:
                     ParameterKind.POSITIONAL_ONLY,
                     ParameterKind.POSITIONAL_OR_KEYWORD,
                 ):
-                    if (
-                        my_param.default is not EMPTY
-                        and their_params[i].default is EMPTY
-                    ):
+                    if my_param.default is not None and their_params[i].default is None:
                         return CanAssignError(
                             f"positional-only param {my_param.name!r} has no default"
                         )
@@ -968,10 +962,7 @@ class Signature:
                             f"param name {their_params[i].name!r} does not match"
                             f" {my_param.name!r}"
                         )
-                    if (
-                        my_param.default is not EMPTY
-                        and their_params[i].default is EMPTY
-                    ):
+                    if my_param.default is not None and their_params[i].default is None:
                         return CanAssignError(f"param {my_param.name!r} has no default")
                     their_annotation = their_params[i].get_annotation()
                     tv_map = their_annotation.can_assign(my_annotation, ctx)
@@ -1014,7 +1005,7 @@ class Signature:
                     ParameterKind.POSITIONAL_OR_KEYWORD,
                     ParameterKind.KEYWORD_ONLY,
                 ):
-                    if my_param.default is not EMPTY and their_param.default is EMPTY:
+                    if my_param.default is not None and their_param.default is None:
                         return CanAssignError(
                             f"keyword-only param {my_param.name!r} has no default"
                         )
@@ -1094,7 +1085,7 @@ class Signature:
                 or param.kind is ParameterKind.VAR_KEYWORD
             ):
                 continue  # ok if they have extra *args or **kwargs
-            elif param.default is not EMPTY:
+            elif param.default is not None:
                 continue
             elif param.kind is ParameterKind.POSITIONAL_ONLY:
                 if param.name not in consumed_positional:
@@ -1137,8 +1128,7 @@ class Signature:
     def walk_values(self) -> Iterable[Value]:
         yield from self.return_value.walk_values()
         for param in self.parameters.values():
-            if param.annotation is not EMPTY:
-                yield from param.annotation.walk_values()
+            yield from param.annotation.walk_values()
 
     def get_asynq_value(self) -> "Signature":
         """Return the :class:`Signature` for the `.asynq` attribute of an
