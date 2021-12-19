@@ -39,7 +39,7 @@ from collections.abc import (
     Sized,
 )
 from contextlib import AbstractContextManager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import collections.abc
 import qcore
 import inspect
@@ -676,7 +676,7 @@ class TypeshedFinder:
                 args.vararg, None, mod, ParameterKind.VAR_POSITIONAL
             )
             annotation = GenericValue(tuple, [vararg_param.annotation])
-            arguments.append(vararg_param.replace(annotation=annotation))
+            arguments.append(replace(vararg_param, annotation=annotation))
         arguments += self._parse_param_list(
             args.kwonlyargs, args.kw_defaults, mod, ParameterKind.KEYWORD_ONLY
         )
@@ -685,7 +685,7 @@ class TypeshedFinder:
                 args.kwarg, None, mod, ParameterKind.VAR_KEYWORD
             )
             annotation = GenericValue(dict, [TypedValue(str), kwarg_param.annotation])
-            arguments.append(kwarg_param.replace(annotation=annotation))
+            arguments.append(replace(kwarg_param, annotation=annotation))
         # some typeshed types have a positional-only after a normal argument,
         # and Signature doesn't like that
         seen_non_positional = False
@@ -693,7 +693,7 @@ class TypeshedFinder:
         for arg in arguments:
             if arg.kind is ParameterKind.POSITIONAL_ONLY and seen_non_positional:
                 cleaned_arguments = [
-                    arg.replace(kind=ParameterKind.POSITIONAL_ONLY)
+                    replace(arg, kind=ParameterKind.POSITIONAL_ONLY)
                     for arg in cleaned_arguments
                 ]
                 seen_non_positional = False
@@ -714,7 +714,7 @@ class TypeshedFinder:
         args: Iterable[ast3.arg],
         defaults: Iterable[Optional[ast3.AST]],
         module: str,
-        kind: inspect._ParameterKind,
+        kind: ParameterKind,
         objclass: Optional[type] = None,
     ) -> Iterable[SigParameter]:
         for i, (arg, default) in enumerate(zip(args, defaults)):
@@ -727,7 +727,7 @@ class TypeshedFinder:
         arg: ast3.arg,
         default: Optional[ast3.arg],
         module: str,
-        kind: inspect._ParameterKind,
+        kind: ParameterKind,
         objclass: Optional[type] = None,
     ) -> SigParameter:
         typ = AnyValue(AnySource.unannotated)

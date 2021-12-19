@@ -7,7 +7,6 @@ from .value import (
     AnySource,
     AnyValue,
     CanAssignError,
-    ConstraintExtension,
     GenericValue,
     KnownValue,
     MultiValuedValue,

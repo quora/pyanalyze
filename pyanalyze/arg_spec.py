@@ -21,6 +21,7 @@ from .safe import (
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
+    EMPTY,
     Impl,
     MaybeSignature,
     OverloadedSignature,
@@ -239,7 +240,7 @@ class ArgSpecCache:
                 parameter, func_globals, function_object, index
             )
         if parameter.default is inspect.Parameter.empty:
-            default = None
+            default = EMPTY
         else:
             default = KnownValue(parameter.default)
         return SigParameter(
