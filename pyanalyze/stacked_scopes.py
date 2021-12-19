@@ -978,14 +978,6 @@ class FunctionScope(Scope):
             current_set = self._resolve_origin(current_origin)
             constraint_set = self._resolve_origin(constraint_origin)
             if current_set - constraint_set:
-                print(
-                    "REJECT CONSTRAINT",
-                    parent_varname,
-                    current_set,
-                    constraint_set,
-                    node,
-                    state,
-                )
                 return
 
         varname = constraint.varname.get_varname()
