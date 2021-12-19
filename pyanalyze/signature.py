@@ -240,8 +240,6 @@ class ParameterKind(enum.Enum):
 class SigParameter:
     """Represents a single parameter to a callable."""
 
-    __slots__ = ("name", "kind", "default", "annotation")
-
     name: str
     """Name of the parameter."""
     kind: ParameterKind = ParameterKind.POSITIONAL_OR_KEYWORD
