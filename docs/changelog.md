@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Better inference for value types on iterables (#346)
 - Infer signatures for method wrapper objects (bound methods
   of builtin types) (#345)
 - Allow storing type narrowing constraints in variables (#343)
