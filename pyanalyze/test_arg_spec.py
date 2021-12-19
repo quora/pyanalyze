@@ -9,7 +9,7 @@ from .test_name_check_visitor import (
     ConfiguredNameCheckVisitor,
 )
 from .test_node_visitor import assert_passes
-from .signature import SigParameter, BoundMethodSignature, Signature
+from .signature import SigParameter, BoundMethodSignature, Signature, ParameterKind
 from .stacked_scopes import Composite
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .tests import l0cached_async_fn
@@ -122,8 +122,8 @@ def test_get_argspec():
             [
                 SigParameter("capybara"),
                 SigParameter("hutia", default=KnownValue(3)),
-                SigParameter("tucotucos", SigParameter.VAR_POSITIONAL),
-                SigParameter("proechimys", SigParameter.VAR_KEYWORD),
+                SigParameter("tucotucos", ParameterKind.VAR_POSITIONAL),
+                SigParameter("proechimys", ParameterKind.VAR_KEYWORD),
             ],
             callable=function,
         ) == ArgSpecCache(config).get_argspec(function)
@@ -227,12 +227,12 @@ def test_get_argspec():
             [
                 SigParameter(
                     "args",
-                    SigParameter.VAR_POSITIONAL,
+                    ParameterKind.VAR_POSITIONAL,
                     annotation=AnyValue(AnySource.inference),
                 ),
                 SigParameter(
                     "kwargs",
-                    SigParameter.VAR_KEYWORD,
+                    ParameterKind.VAR_KEYWORD,
                     annotation=AnyValue(AnySource.inference),
                 ),
             ],
@@ -241,7 +241,7 @@ def test_get_argspec():
         assert Signature.make(
             [
                 SigParameter(
-                    "x", SigParameter.POSITIONAL_ONLY, annotation=TypedValue(int)
+                    "x", ParameterKind.POSITIONAL_ONLY, annotation=TypedValue(int)
                 )
             ],
             NewTypeValue(NT),

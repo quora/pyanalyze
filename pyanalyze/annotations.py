@@ -57,7 +57,7 @@ from .extensions import (
     TypeGuard,
 )
 from .find_unused import used
-from .signature import SigParameter, Signature
+from .signature import SigParameter, Signature, ParameterKind
 from .safe import is_typing_name, is_instance_of_typing_name
 from .value import (
     AnnotatedValue,
@@ -422,7 +422,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         params = [
             SigParameter(
                 f"__arg{i}",
-                kind=SigParameter.POSITIONAL_ONLY,
+                kind=ParameterKind.POSITIONAL_ONLY,
                 annotation=_type_from_runtime(arg, ctx),
             )
             for i, arg in enumerate(arg_types)
@@ -861,7 +861,7 @@ def _value_of_origin_args(
         params = [
             SigParameter(
                 f"__arg{i}",
-                kind=SigParameter.POSITIONAL_ONLY,
+                kind=ParameterKind.POSITIONAL_ONLY,
                 annotation=_type_from_runtime(arg, ctx, is_typeddict=True),
             )
             for i, arg in enumerate(arg_types)
@@ -959,7 +959,7 @@ def _make_callable_from_value(
         params = [
             SigParameter(
                 f"__arg{i}",
-                kind=SigParameter.POSITIONAL_ONLY,
+                kind=ParameterKind.POSITIONAL_ONLY,
                 annotation=_type_from_value(arg, ctx),
             )
             for i, arg in enumerate(args.members)

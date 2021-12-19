@@ -28,6 +28,7 @@ from .signature import (
     make_bound_method,
     SigParameter,
     Signature,
+    ParameterKind,
 )
 from .typeshed import TypeshedFinder
 from .value import (
@@ -91,8 +92,8 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterable[None]:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
                 [
-                    SigParameter("args", SigParameter.VAR_POSITIONAL),
-                    SigParameter("kwargs", SigParameter.VAR_KEYWORD),
+                    SigParameter("args", ParameterKind.VAR_POSITIONAL),
+                    SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
                 ],
                 callable=fn,
                 impl=implementation_fn,
@@ -237,12 +238,15 @@ class ArgSpecCache:
             typ = self._get_type_for_parameter(
                 parameter, func_globals, function_object, index
             )
-        if parameter.default is SigParameter.empty:
+        if parameter.default is inspect.Parameter.empty:
             default = None
         else:
             default = KnownValue(parameter.default)
         return SigParameter(
-            parameter.name, parameter.kind, default=default, annotation=typ
+            parameter.name,
+            ParameterKind(parameter.kind),
+            default=default,
+            annotation=typ,
         )
 
     def _get_type_for_parameter(
@@ -251,20 +255,20 @@ class ArgSpecCache:
         func_globals: Optional[Mapping[str, object]],
         function_object: Optional[object],
         index: int,
-    ) -> Optional[Value]:
-        if parameter.annotation is not SigParameter.empty:
+    ) -> Value:
+        if parameter.annotation is not inspect.Parameter.empty:
             typ = type_from_runtime(
                 parameter.annotation, ctx=AnnotationsContext(self, func_globals)
             )
-            if parameter.kind is SigParameter.VAR_POSITIONAL:
+            if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
                 return GenericValue(tuple, [typ])
-            elif parameter.kind is SigParameter.VAR_KEYWORD:
+            elif parameter.kind is inspect.Parameter.VAR_KEYWORD:
                 return GenericValue(dict, [TypedValue(str), typ])
             return typ
         # If this is the self argument of a method, try to infer the self type.
         elif index == 0 and parameter.kind in (
-            SigParameter.POSITIONAL_ONLY,
-            SigParameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
         ):
             module_name = getattr(function_object, "__module__", None)
             qualname = getattr(function_object, "__qualname__", None)
@@ -293,14 +297,16 @@ class ArgSpecCache:
                         )
                     return TypedValue(class_obj)
         if parameter.kind in (
-            SigParameter.POSITIONAL_ONLY,
-            SigParameter.POSITIONAL_OR_KEYWORD,
-            SigParameter.KEYWORD_ONLY,
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
         ):
-            return VariableNameValue.from_varname(
+            vnv = VariableNameValue.from_varname(
                 parameter.name, self.config.varname_value_map()
             )
-        return None
+            if vnv is None:
+                return vnv
+        return AnyValue(AnySource.unannotated)
 
     def get_argspec(
         self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
@@ -412,7 +418,7 @@ class ArgSpecCache:
                 [
                     SigParameter(
                         "x",
-                        SigParameter.POSITIONAL_ONLY,
+                        ParameterKind.POSITIONAL_ONLY,
                         annotation=type_from_runtime(
                             obj.__supertype__, ctx=self.default_context
                         ),

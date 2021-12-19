@@ -56,6 +56,7 @@ import asynq
 from collections import defaultdict
 import collections.abc
 from dataclasses import dataclass, field, replace
+import enum
 import itertools
 from types import MethodType, FunctionType
 import inspect
@@ -83,7 +84,7 @@ if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
 
 EMPTY = inspect.Parameter.empty
-
+UNANNOTATED = AnyValue(AnySource.unannotated)
 ARGS = qcore.MarkerObject("*args")
 KWARGS = qcore.MarkerObject("**kwargs")
 
@@ -224,64 +225,78 @@ class CallContext:
 Impl = Callable[[CallContext], Union[Value, ImplReturn]]
 
 
-class SigParameter(inspect.Parameter):
-    """Wrapper around :class:`inspect.Parameter` that stores annotations
-    as :class:`pyanalyze.value.Value` objects."""
+class ParameterKind(enum.Enum):
+    """Kinds of parameters."""
 
-    __slots__ = ()
+    # Values must match inspect._ParameterKind
+    POSITIONAL_ONLY = 0
+    POSITIONAL_OR_KEYWORD = 1
+    VAR_POSITIONAL = 2
+    KEYWORD_ONLY = 3
+    VAR_KEYWORD = 4
 
-    def __init__(
-        self,
-        name: str,
-        kind: inspect._ParameterKind = inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        *,
-        default: Union[None, Value, Literal[EMPTY]] = None,
-        annotation: Union[None, Value, Literal[EMPTY]] = None,
-    ) -> None:
-        if default is None:
-            default_composite = EMPTY
-        elif isinstance(default, Value):
-            default_composite = Composite(default, None, None)
-        else:
-            default_composite = default
-        if annotation is None:
-            annotation = EMPTY
-        super().__init__(name, kind, default=default_composite, annotation=annotation)
+
+@dataclass
+class SigParameter:
+    """Represents a single parameter to a callable."""
+
+    __slots__ = ("name", "kind", "default", "annotation")
+
+    name: str
+    """Name of the parameter."""
+    kind: ParameterKind = ParameterKind.POSITIONAL_OR_KEYWORD
+    """How the parameter can be passed."""
+    default: Union[Value, Literal[EMPTY]] = EMPTY
+    """The default for the parameter, or EMPTY if there is no default."""
+    annotation: Value = AnyValue(AnySource.unannotated)
+    """Type annotation for the parameter."""
+
+    # For compatibility
+    empty: ClassVar[Literal[EMPTY]] = EMPTY
+    POSITIONAL_ONLY: ClassVar[
+        Literal[ParameterKind.POSITIONAL_ONLY]
+    ] = ParameterKind.POSITIONAL_ONLY
+    POSITIONAL_OR_KEYWORD: ClassVar[
+        Literal[ParameterKind.POSITIONAL_OR_KEYWORD]
+    ] = ParameterKind.POSITIONAL_OR_KEYWORD
+    VAR_POSITIONAL: ClassVar[
+        Literal[ParameterKind.VAR_POSITIONAL]
+    ] = ParameterKind.VAR_POSITIONAL
+    KEYWORD_ONLY: ClassVar[
+        Literal[ParameterKind.KEYWORD_ONLY]
+    ] = ParameterKind.KEYWORD_ONLY
+    VAR_KEYWORD: ClassVar[
+        Literal[ParameterKind.VAR_KEYWORD]
+    ] = ParameterKind.VAR_KEYWORD
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "SigParameter":
-        if self._annotation is EMPTY:
-            annotation = self._annotation
-        else:
-            annotation = self._annotation.substitute_typevars(typevars)
         return SigParameter(
-            name=self._name,
-            kind=self._kind,
-            default=self._default,
-            annotation=annotation,
+            name=self.name,
+            kind=self.kind,
+            default=self.default,
+            annotation=self.annotation.substitute_typevars(typevars),
         )
 
     def get_annotation(self) -> Value:
-        if self.annotation is EMPTY:
-            return AnyValue(AnySource.unannotated)
         return self.annotation
 
     def __str__(self) -> str:
         # Adapted from Parameter.__str__
         kind = self.kind
-        formatted = self._name
+        formatted = self.name
 
-        if self._annotation is not EMPTY:
-            formatted = f"{formatted}: {self._annotation}"
+        if self.annotation != UNANNOTATED:
+            formatted = f"{formatted}: {self.annotation}"
 
-        if self._default is not EMPTY:
-            if self._annotation is not EMPTY:
-                formatted = f"{formatted} = {self._default.value}"
+        if self.default is not EMPTY:
+            if self.annotation != UNANNOTATED:
+                formatted = f"{formatted} = {self.default}"
             else:
-                formatted = f"{formatted}={self._default.value}"
+                formatted = f"{formatted}={self.default}"
 
-        if kind is SigParameter.VAR_POSITIONAL:
+        if kind is ParameterKind.VAR_POSITIONAL:
             formatted = "*" + formatted
-        elif kind is SigParameter.VAR_KEYWORD:
+        elif kind is ParameterKind.VAR_KEYWORD:
             formatted = "**" + formatted
 
         return formatted
@@ -411,9 +426,9 @@ class Signature:
     def _get_positional_parameter(self, index: int) -> Optional[SigParameter]:
         for i, param in enumerate(self.parameters.values()):
             if param.kind in (
-                SigParameter.VAR_KEYWORD,
-                SigParameter.VAR_POSITIONAL,
-                SigParameter.KEYWORD_ONLY,
+                ParameterKind.VAR_KEYWORD,
+                ParameterKind.VAR_POSITIONAL,
+                ParameterKind.KEYWORD_ONLY,
             ):
                 return None
             if i == index:
@@ -497,7 +512,7 @@ class Signature:
         star_kwargs_consumed = False
 
         for param in self.parameters.values():
-            if param.kind is SigParameter.POSITIONAL_ONLY:
+            if param.kind is ParameterKind.POSITIONAL_ONLY:
                 if positional_index < len(actual_args.positionals):
                     bound_args[param.name] = (
                         positional_index,
@@ -515,8 +530,8 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = None, param.default
-            elif param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
+                    bound_args[param.name] = None, Composite(param.default)
+            elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
                 if positional_index < len(actual_args.positionals):
                     bound_args[param.name] = (
                         positional_index,
@@ -571,8 +586,8 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = None, param.default
-            elif param.kind is SigParameter.KEYWORD_ONLY:
+                    bound_args[param.name] = None, Composite(param.default)
+            elif param.kind is ParameterKind.KEYWORD_ONLY:
                 if param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
                     if not definitely_provided and param.default is EMPTY:
@@ -595,8 +610,8 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = None, param.default
-            elif param.kind is SigParameter.VAR_POSITIONAL:
+                    bound_args[param.name] = None, Composite(param.default)
+            elif param.kind is ParameterKind.VAR_POSITIONAL:
                 star_args_consumed = True
                 positionals = []
                 while positional_index < len(actual_args.positionals):
@@ -608,7 +623,7 @@ class Signature:
                 else:
                     star_args_value = SequenceIncompleteValue(tuple, positionals)
                 bound_args[param.name] = None, Composite(star_args_value)
-            elif param.kind is SigParameter.VAR_KEYWORD:
+            elif param.kind is ParameterKind.VAR_KEYWORD:
                 star_kwargs_consumed = True
                 items = {}
                 for key, (
@@ -895,14 +910,14 @@ class Signature:
             return return_tv_map
         tv_maps = [return_tv_map]
         their_params = list(other.parameters.values())
-        their_args = other.get_param_of_kind(SigParameter.VAR_POSITIONAL)
+        their_args = other.get_param_of_kind(ParameterKind.VAR_POSITIONAL)
         if their_args is not None:
             their_args_index = their_params.index(their_args)
             args_annotation = their_args.get_annotation()
         else:
             their_args_index = -1
             args_annotation = None
-        their_kwargs = other.get_param_of_kind(SigParameter.VAR_KEYWORD)
+        their_kwargs = other.get_param_of_kind(ParameterKind.VAR_KEYWORD)
         if their_kwargs is not None:
             kwargs_annotation = their_kwargs.get_annotation()
         else:
@@ -911,10 +926,10 @@ class Signature:
         consumed_keyword = set()
         for i, my_param in enumerate(self.parameters.values()):
             my_annotation = my_param.get_annotation()
-            if my_param.kind is SigParameter.POSITIONAL_ONLY:
+            if my_param.kind is ParameterKind.POSITIONAL_ONLY:
                 if i < len(their_params) and their_params[i].kind in (
-                    SigParameter.POSITIONAL_ONLY,
-                    SigParameter.POSITIONAL_OR_KEYWORD,
+                    ParameterKind.POSITIONAL_ONLY,
+                    ParameterKind.POSITIONAL_OR_KEYWORD,
                 ):
                     if (
                         my_param.default is not EMPTY
@@ -945,10 +960,10 @@ class Signature:
                     return CanAssignError(
                         f"positional-only parameter {i} is not accepted"
                     )
-            elif my_param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
+            elif my_param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
                 if (
                     i < len(their_params)
-                    and their_params[i].kind is SigParameter.POSITIONAL_OR_KEYWORD
+                    and their_params[i].kind is ParameterKind.POSITIONAL_OR_KEYWORD
                 ):
                     if my_param.name != their_params[i].name:
                         return CanAssignError(
@@ -972,7 +987,7 @@ class Signature:
                     consumed_keyword.add(their_params[i].name)
                 elif (
                     i < len(their_params)
-                    and their_params[i].kind is SigParameter.POSITIONAL_ONLY
+                    and their_params[i].kind is ParameterKind.POSITIONAL_ONLY
                 ):
                     return CanAssignError(
                         f"parameter {my_param.name!r} is not accepted as a keyword"
@@ -995,11 +1010,11 @@ class Signature:
                     return CanAssignError(
                         f"parameter {my_param.name!r} is not accepted"
                     )
-            elif my_param.kind is SigParameter.KEYWORD_ONLY:
+            elif my_param.kind is ParameterKind.KEYWORD_ONLY:
                 their_param = other.parameters.get(my_param.name)
                 if their_param is not None and their_param.kind in (
-                    SigParameter.POSITIONAL_OR_KEYWORD,
-                    SigParameter.KEYWORD_ONLY,
+                    ParameterKind.POSITIONAL_OR_KEYWORD,
+                    ParameterKind.KEYWORD_ONLY,
                 ):
                     if my_param.default is not EMPTY and their_param.default is EMPTY:
                         return CanAssignError(
@@ -1025,7 +1040,7 @@ class Signature:
                     return CanAssignError(
                         f"parameter {my_param.name!r} is not accepted"
                     )
-            elif my_param.kind is SigParameter.VAR_POSITIONAL:
+            elif my_param.kind is ParameterKind.VAR_POSITIONAL:
                 if args_annotation is None:
                     return CanAssignError("*args are not accepted")
                 tv_map = args_annotation.can_assign(my_annotation, ctx)
@@ -1038,8 +1053,8 @@ class Signature:
                     if param.name not in consumed_positional
                     and param.kind
                     in (
-                        SigParameter.POSITIONAL_ONLY,
-                        SigParameter.POSITIONAL_OR_KEYWORD,
+                        ParameterKind.POSITIONAL_ONLY,
+                        ParameterKind.POSITIONAL_OR_KEYWORD,
                     )
                 ]
                 for extra_param in extra_positional:
@@ -1051,7 +1066,7 @@ class Signature:
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
-            elif my_param.kind is SigParameter.VAR_KEYWORD:
+            elif my_param.kind is ParameterKind.VAR_KEYWORD:
                 if kwargs_annotation is None:
                     return CanAssignError("**kwargs are not accepted")
                 tv_map = kwargs_annotation.can_assign(my_annotation, ctx)
@@ -1063,7 +1078,7 @@ class Signature:
                     for param in their_params
                     if param.name not in consumed_keyword
                     and param.kind
-                    in (SigParameter.KEYWORD_ONLY, SigParameter.POSITIONAL_OR_KEYWORD)
+                    in (ParameterKind.KEYWORD_ONLY, ParameterKind.POSITIONAL_OR_KEYWORD)
                 ]
                 for extra_param in extra_keyword:
                     tv_map = extra_param.get_annotation().can_assign(my_annotation, ctx)
@@ -1077,30 +1092,30 @@ class Signature:
 
         for param in their_params:
             if (
-                param.kind is SigParameter.VAR_POSITIONAL
-                or param.kind is SigParameter.VAR_KEYWORD
+                param.kind is ParameterKind.VAR_POSITIONAL
+                or param.kind is ParameterKind.VAR_KEYWORD
             ):
                 continue  # ok if they have extra *args or **kwargs
             elif param.default is not EMPTY:
                 continue
-            elif param.kind is SigParameter.POSITIONAL_ONLY:
+            elif param.kind is ParameterKind.POSITIONAL_ONLY:
                 if param.name not in consumed_positional:
                     return CanAssignError(
                         f"takes extra positional-only parameter {param.name!r}"
                     )
-            elif param.kind is SigParameter.POSITIONAL_OR_KEYWORD:
+            elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
                 if (
                     param.name not in consumed_positional
                     and param.name not in consumed_keyword
                 ):
                     return CanAssignError(f"takes extra parameter {param.name!r}")
-            elif param.kind is SigParameter.KEYWORD_ONLY:
+            elif param.kind is ParameterKind.KEYWORD_ONLY:
                 if param.name not in consumed_keyword:
                     return CanAssignError(f"takes extra parameter {param.name!r}")
 
         return unify_typevar_maps(tv_maps)
 
-    def get_param_of_kind(self, kind: inspect._ParameterKind) -> Optional[SigParameter]:
+    def get_param_of_kind(self, kind: ParameterKind) -> Optional[SigParameter]:
         for param in self.parameters.values():
             if param.kind is kind:
                 return param
@@ -1196,15 +1211,15 @@ class Signature:
 
             kind = param.kind
 
-            if kind == SigParameter.POSITIONAL_ONLY:
+            if kind == ParameterKind.POSITIONAL_ONLY:
                 render_pos_only_separator = True
             elif render_pos_only_separator:
                 yield "/"
                 render_pos_only_separator = False
 
-            if kind == SigParameter.VAR_POSITIONAL:
+            if kind == ParameterKind.VAR_POSITIONAL:
                 render_kw_only_separator = False
-            elif kind == SigParameter.KEYWORD_ONLY and render_kw_only_separator:
+            elif kind == ParameterKind.KEYWORD_ONLY and render_kw_only_separator:
                 yield "*"
                 render_kw_only_separator = False
 
@@ -1218,8 +1233,8 @@ class Signature:
             return ANY_SIGNATURE
         params = list(self.parameters.values())
         if not params or params[0].kind not in (
-            SigParameter.POSITIONAL_ONLY,
-            SigParameter.POSITIONAL_OR_KEYWORD,
+            ParameterKind.POSITIONAL_ONLY,
+            ParameterKind.POSITIONAL_OR_KEYWORD,
         ):
             return None
         return Signature(

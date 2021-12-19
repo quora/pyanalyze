@@ -8,7 +8,13 @@ from .annotations import Context, type_from_value, value_from_ast
 from .error_code import ErrorCode
 from .safe import is_typing_name
 from .stacked_scopes import uniq_chain
-from .signature import ConcreteSignature, OverloadedSignature, SigParameter, Signature
+from .signature import (
+    ConcreteSignature,
+    OverloadedSignature,
+    SigParameter,
+    Signature,
+    ParameterKind,
+)
 from .value import (
     AnySource,
     AnyValue,
@@ -658,7 +664,7 @@ class TypeshedFinder:
         defaults = [None] * num_without_defaults + args.defaults
         arguments = list(
             self._parse_param_list(
-                args.args, defaults, mod, SigParameter.POSITIONAL_OR_KEYWORD, objclass
+                args.args, defaults, mod, ParameterKind.POSITIONAL_OR_KEYWORD, objclass
             )
         )
         if autobind:
@@ -667,16 +673,16 @@ class TypeshedFinder:
 
         if args.vararg is not None:
             vararg_param = self._parse_param(
-                args.vararg, None, mod, SigParameter.VAR_POSITIONAL
+                args.vararg, None, mod, ParameterKind.VAR_POSITIONAL
             )
             annotation = GenericValue(tuple, [vararg_param.annotation])
             arguments.append(vararg_param.replace(annotation=annotation))
         arguments += self._parse_param_list(
-            args.kwonlyargs, args.kw_defaults, mod, SigParameter.KEYWORD_ONLY
+            args.kwonlyargs, args.kw_defaults, mod, ParameterKind.KEYWORD_ONLY
         )
         if args.kwarg is not None:
             kwarg_param = self._parse_param(
-                args.kwarg, None, mod, SigParameter.VAR_KEYWORD
+                args.kwarg, None, mod, ParameterKind.VAR_KEYWORD
             )
             annotation = GenericValue(dict, [TypedValue(str), kwarg_param.annotation])
             arguments.append(kwarg_param.replace(annotation=annotation))
@@ -685,9 +691,9 @@ class TypeshedFinder:
         seen_non_positional = False
         cleaned_arguments = []
         for arg in arguments:
-            if arg.kind is SigParameter.POSITIONAL_ONLY and seen_non_positional:
+            if arg.kind is ParameterKind.POSITIONAL_ONLY and seen_non_positional:
                 cleaned_arguments = [
-                    arg.replace(kind=SigParameter.POSITIONAL_ONLY)
+                    arg.replace(kind=ParameterKind.POSITIONAL_ONLY)
                     for arg in cleaned_arguments
                 ]
                 seen_non_positional = False
@@ -740,13 +746,13 @@ class TypeshedFinder:
 
         name = arg.arg
         # Arguments that start with __ are positional-only in typeshed
-        if kind is SigParameter.POSITIONAL_OR_KEYWORD and name.startswith("__"):
-            kind = SigParameter.POSITIONAL_ONLY
+        if kind is ParameterKind.POSITIONAL_OR_KEYWORD and name.startswith("__"):
+            kind = ParameterKind.POSITIONAL_ONLY
             name = name[2:]
         # Mark self as positional-only. objclass should be given only if we believe
         # it's the "self" parameter.
         if objclass is not None:
-            kind = SigParameter.POSITIONAL_ONLY
+            kind = ParameterKind.POSITIONAL_ONLY
         if default is None:
             return SigParameter(name, kind, annotation=typ)
         else:
