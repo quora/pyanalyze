@@ -58,6 +58,12 @@ from typing_extensions import Protocol, TypedDict
 import typeshed_client
 from typed_ast import ast3
 
+try:
+    # 3.7+
+    from contextlib import AbstractAsyncContextManager
+except ImportError:
+    AbstractAsyncContextManager = None
+
 
 T_co = TypeVar("T_co", covariant=True)
 
@@ -177,7 +183,7 @@ class TypeshedFinder:
                 # too confusing, just hardcode it. Same for (Abstract)ContextManager.
                 if typ is AbstractSet:
                     return [GenericValue(Collection, (TypeVarValue(T_co),))]
-                if typ is AbstractContextManager:
+                if typ is AbstractContextManager or typ is AbstractAsyncContextManager:
                     return [GenericValue(Generic, (TypeVarValue(T_co),))]
                 if typ is Callable or typ is collections.abc.Callable:
                     return None
