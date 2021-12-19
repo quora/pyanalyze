@@ -418,6 +418,9 @@ class TestAttribute:
 class TestRange(TestNameCheckVisitorBase):
     @assert_passes()
     def test_iteration(self):
-        def capybara():
+        def capybara(r: range):
+            for j in r:
+                assert_is_value(j, TypedValue(int))
+
             for i in range(10000000):
                 assert_is_value(i, TypedValue(int))

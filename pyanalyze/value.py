@@ -734,6 +734,8 @@ class GenericValue(TypedValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         other = replace_known_sequence_value(other)
+        if isinstance(other, KnownValue):
+            other = TypedValue(type(other.val))
         if isinstance(other, TypedValue) and not isinstance(other.typ, super):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
             # If we don't think it's a generic base, try super;
@@ -1923,7 +1925,7 @@ def unite_values(*values: Value) -> Value:
 
 T = TypeVar("T")
 # Using the string version forces us into using the typeshed Protocol
-IterableValue = GenericValue("typing.Iterable", [TypeVarValue(T)])
+IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
 class GetItemProto(Protocol[T]):
