@@ -16,6 +16,7 @@ from .safe import (
     safe_in,
     safe_issubclass,
     is_typing_name,
+    safe_isinstance,
 )
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
@@ -55,6 +56,9 @@ import sys
 from types import FunctionType, ModuleType
 from typing import Any, Sequence, Generic, Iterable, Mapping, Optional, Union
 import typing_inspect
+
+# types.MethodWrapperType in 3.7+
+MethodWrapperType = type(object().__str__)
 
 
 @used  # exposed as an API
@@ -364,6 +368,18 @@ class ArgSpecCache:
             except TypeError:
                 # some cythonized methods have __self__ but it is not a function
                 pass
+
+        if safe_isinstance(obj, MethodWrapperType):
+            try:
+                unbound = getattr(obj.__objclass__, obj.__name__)
+            except Exception:
+                pass
+            else:
+                sig = self._cached_get_argspec(
+                    unbound, impl, is_asynq, in_overload_resolution
+                )
+                if sig is not None:
+                    return make_bound_method(sig, Composite(KnownValue(obj.__self__)))
 
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:

@@ -10,7 +10,7 @@ import tempfile
 import time
 from typeshed_client import Resolver, get_search_context
 import typing
-from typing import Container, Dict, Generic, List, TypeVar, NewType, Union
+from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
 import urllib.parse
 
@@ -413,3 +413,14 @@ class TestAttribute:
     def test_http_error(self) -> None:
         tsf = TypeshedFinder(verbose=True)
         assert True is tsf.has_attribute(HTTPError, "read")
+
+
+class TestRange(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_iteration(self):
+        def capybara(r: range):
+            for j in r:
+                assert_is_value(j, TypedValue(int))
+
+            for i in range(10000000):
+                assert_is_value(i, TypedValue(int))

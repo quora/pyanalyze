@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Check `with` and `async with` statements (#344)
+- Improve type compatibility between generics and literals (#346)
+- Infer signatures for method wrapper objects (bound methods
+  of builtin types) (#345)
 - Allow storing type narrowing constraints in variables (#343)
 - The first argument to `__new__` and `__init_subclass`
   does not need to be `self` (#342)
