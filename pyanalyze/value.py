@@ -50,7 +50,7 @@ from typing_extensions import Literal, Protocol
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
-from .safe import all_of_type, safe_issubclass
+from .safe import all_of_type, safe_issubclass, safe_isinstance
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
@@ -585,7 +585,7 @@ class TypedValue(Value):
             if (
                 isinstance(other.typ, TypedValue)
                 and isinstance(self.typ, type)
-                and isinstance(other.typ.typ, self.typ)
+                and safe_isinstance(other.typ.typ, self.typ)
             ):
                 return {}
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):
@@ -734,6 +734,8 @@ class GenericValue(TypedValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         other = replace_known_sequence_value(other)
+        if isinstance(other, KnownValue):
+            other = TypedValue(type(other.val))
         if isinstance(other, TypedValue) and not isinstance(other.typ, super):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
             # If we don't think it's a generic base, try super;
