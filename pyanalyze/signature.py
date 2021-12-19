@@ -169,7 +169,7 @@ class CallContext:
     visitor: "NameCheckVisitor"
     """Using the visitor can allow various kinds of advanced logic
     in impl functions."""
-    bound_args: inspect.BoundArguments
+    composites: Dict[str, Composite]
     node: ast.AST
     """AST node corresponding to the function call. Useful for
     showing errors."""
@@ -193,7 +193,7 @@ class CallContext:
         return None
 
     def composite_for_arg(self, arg: str) -> Optional[Composite]:
-        composite = self.bound_args.arguments.get(arg)
+        composite = self.composites.get(arg)
         if isinstance(composite, Composite):
             return composite
         return None
@@ -408,8 +408,20 @@ class Signature:
             used_any = visitor.has_used_any_match()
         return tv_map, used_any
 
+    def _get_positional_parameter(self, index: int) -> Optional[SigParameter]:
+        for i, param in enumerate(self.signature.parameters.values()):
+            if param.kind in (
+                SigParameter.VAR_KEYWORD,
+                SigParameter.VAR_POSITIONAL,
+                SigParameter.KEYWORD_ONLY,
+            ):
+                return None
+            if i == index:
+                return param
+        return None
+
     def _apply_annotated_constraints(
-        self, raw_return: Union[Value, ImplReturn], bound_args: inspect.BoundArguments
+        self, raw_return: Union[Value, ImplReturn], composites: Dict[str, Composite]
     ) -> ImplReturn:
         if isinstance(raw_return, Value):
             ret = ImplReturn(raw_return)
@@ -420,12 +432,9 @@ class Signature:
             for guard in ret.return_value.get_metadata_of_type(
                 ParameterTypeGuardExtension
             ):
-                if guard.varname in bound_args.arguments:
-                    composite = bound_args.arguments[guard.varname]
-                    if (
-                        isinstance(composite, Composite)
-                        and composite.varname is not None
-                    ):
+                if guard.varname in composites:
+                    composite = composites[guard.varname]
+                    if composite.varname is not None:
                         constraint = Constraint(
                             composite.varname,
                             ConstraintType.is_value_object,
@@ -443,22 +452,21 @@ class Signature:
                     index = 1
                 else:
                     index = 0
-                composite = bound_args.args[index]
-                if isinstance(composite, Composite) and composite.varname is not None:
-                    constraint = Constraint(
-                        composite.varname,
-                        ConstraintType.is_value_object,
-                        True,
-                        guard.guarded_type,
-                    )
-                    constraints.append(constraint)
+                param = self._get_positional_parameter(index)
+                if param is not None:
+                    composite = composites[param.name]
+                    if composite.varname is not None:
+                        constraint = Constraint(
+                            composite.varname,
+                            ConstraintType.is_value_object,
+                            True,
+                            guard.guarded_type,
+                        )
+                        constraints.append(constraint)
             for guard in ret.return_value.get_metadata_of_type(HasAttrGuardExtension):
-                if guard.varname in bound_args.arguments:
-                    composite = bound_args.arguments[guard.varname]
-                    if (
-                        isinstance(composite, Composite)
-                        and composite.varname is not None
-                    ):
+                if guard.varname in composites:
+                    composite = composites[guard.varname]
+                    if composite.varname is not None:
                         constraint = Constraint(
                             composite.varname,
                             ConstraintType.add_annotation,
@@ -774,21 +782,13 @@ class Signature:
                 # You only get to do this once per call.
                 is_overload = False
 
-        inspect_bound_args = inspect.BoundArguments(
-            self.signature,
-            OrderedDict(
-                (param, composite) for param, (_, composite) in bound_args.items()
-            ),
-        )
+        composites = {param: composite for param, (_, composite) in bound_args.items()}
         # don't call the implementation function if we had an error, so that
         # the implementation function doesn't have to worry about basic
         # type checking
         if not had_error and self.impl is not None:
             ctx = CallContext(
-                vars=variables,
-                visitor=visitor,
-                bound_args=inspect_bound_args,
-                node=node,
+                vars=variables, visitor=visitor, composites=composites, node=node
             )
             return_value = self.impl(ctx)
 
@@ -806,7 +806,7 @@ class Signature:
         if return_value is EMPTY:
             ret = ImplReturn(AnyValue(AnySource.unannotated), is_error=had_error)
         else:
-            ret = self._apply_annotated_constraints(return_value, inspect_bound_args)
+            ret = self._apply_annotated_constraints(return_value, composites)
         return ret._replace(
             is_error=had_error,
             used_any_for_match=used_any,
