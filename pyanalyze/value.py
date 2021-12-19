@@ -56,6 +56,7 @@ T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
+ITERATION_LIMIT = 1000
 
 TypeVarMap = Mapping["TypeVar", "Value"]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
@@ -1987,7 +1988,10 @@ def concrete_values_from_iterable(
         if all(pair.is_required and not pair.is_many for pair in value.kv_pairs):
             return [pair.key for pair in value.kv_pairs]
     elif isinstance(value, KnownValue):
-        if isinstance(value.val, (str, bytes, range)):
+        if (
+            isinstance(value.val, (str, bytes, range))
+            and len(value.val) < ITERATION_LIMIT
+        ):
             return [KnownValue(c) for c in value.val]
     elif value is NO_RETURN_VALUE:
         return NO_RETURN_VALUE
