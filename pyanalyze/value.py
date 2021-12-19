@@ -50,7 +50,7 @@ from typing_extensions import Literal, Protocol
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
-from .safe import all_of_type, safe_issubclass
+from .safe import all_of_type, safe_issubclass, safe_isinstance
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
@@ -585,7 +585,7 @@ class TypedValue(Value):
             if (
                 isinstance(other.typ, TypedValue)
                 and isinstance(self.typ, type)
-                and isinstance(other.typ.typ, self.typ)
+                and safe_isinstance(other.typ.typ, self.typ)
             ):
                 return {}
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):
