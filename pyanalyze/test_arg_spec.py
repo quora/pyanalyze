@@ -380,3 +380,16 @@ class TestNamedTuple(TestNameCheckVisitorBase):
             CustomNew("x")  # E: incompatible_argument
             cn = CustomNew(a=3)
             assert_is_value(cn, TypedValue(CustomNew))
+
+
+class TestBuiltinMethods(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_method_wrapper(self):
+        import collections.abc
+
+        def capybara():
+            r = range(10)
+            assert_is_value(r, KnownValue(range(10)))
+            assert_is_value(
+                r.__iter__(), GenericValue(collections.abc.Iterator, [TypedValue(int)])
+            )
