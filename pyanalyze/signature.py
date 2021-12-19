@@ -298,9 +298,10 @@ class Signature:
 
     _return_key: ClassVar[str] = "%return"
 
-    signature: inspect.Signature
-    """The underlying :class:`inspect.Signature`, storing the parameters
-    and the return annotation."""
+    parameters: Dict[str, SigParameter]
+    """An ordered mapping of the signature's parameters."""
+    return_value: Value
+    """What the callable returns."""
     impl: Optional[Impl] = field(default=None, compare=False)
     """:term:`impl` function for this signature."""
     callable: Optional[Callable[..., Any]] = field(default=None, compare=False)
@@ -321,16 +322,15 @@ class Signature:
     )
 
     def __post_init__(self) -> None:
-        for param_name, param in self.signature.parameters.items():
+        for param_name, param in self.parameters.items():
             if param.annotation is EMPTY:
                 continue
             typevars = list(extract_typevars(param.annotation))
             if typevars:
                 self.typevars_of_params[param_name] = typevars
-        if self.signature.return_annotation is not EMPTY:
-            return_typevars = list(extract_typevars(self.signature.return_annotation))
-            if return_typevars:
-                self.typevars_of_params[self._return_key] = return_typevars
+        return_typevars = list(extract_typevars(self.return_value))
+        if return_typevars:
+            self.typevars_of_params[self._return_key] = return_typevars
         self.all_typevars.update(
             {
                 typevar
@@ -409,7 +409,7 @@ class Signature:
         return tv_map, used_any
 
     def _get_positional_parameter(self, index: int) -> Optional[SigParameter]:
-        for i, param in enumerate(self.signature.parameters.values()):
+        for i, param in enumerate(self.parameters.values()):
             if param.kind in (
                 SigParameter.VAR_KEYWORD,
                 SigParameter.VAR_POSITIONAL,
@@ -496,7 +496,7 @@ class Signature:
         star_args_consumed = False
         star_kwargs_consumed = False
 
-        for param in self.signature.parameters.values():
+        for param in self.parameters.values():
             if param.kind is SigParameter.POSITIONAL_ONLY:
                 if positional_index < len(actual_args.positionals):
                     bound_args[param.name] = (
@@ -673,9 +673,7 @@ class Signature:
         visitor.show_error(node, message, ErrorCode.incompatible_call, detail=detail)
 
     def get_default_return(self, source: AnySource = AnySource.error) -> ImplReturn:
-        return_value = self.signature.return_annotation
-        if return_value is EMPTY:
-            return ImplReturn(AnyValue(AnySource.unannotated), is_error=True)
+        return_value = self.return_value
         if self._return_key in self.typevars_of_params:
             typevar_values = {tv: AnyValue(source) for tv in self.all_typevars}
             return_value = return_value.substitute_typevars(typevar_values)
@@ -708,23 +706,20 @@ class Signature:
                 runtime_return = self._maybe_perform_call(preprocessed, visitor, node)
                 if runtime_return is not None:
                     return ImplReturn(runtime_return)
-            return_value = self.signature.return_annotation
-            if return_value is EMPTY:
-                return_value = AnyValue(AnySource.unannotated)
-            return ImplReturn(return_value, used_any_for_match=True)
+            return ImplReturn(self.return_value, used_any_for_match=True)
 
         bound_args = self.bind_arguments(preprocessed, visitor, node)
         if bound_args is None:
             return self.get_default_return()
         variables = {key: composite.value for key, (_, composite) in bound_args.items()}
-        return_value = self.signature.return_annotation
+        return_value = self.return_value
         typevar_values: Dict[TypeVar, Value] = {}
         if self.all_typevars:
             tv_possible_values: Dict[TypeVar, List[Value]] = defaultdict(list)
             for param_name in self.typevars_of_params:
                 if param_name == self._return_key:
                     continue
-                param = self.signature.parameters[param_name]
+                param = self.parameters[param_name]
                 tv_map, _, _ = self._check_param_type_compatibility(
                     param, bound_args[param_name][1], visitor, node
                 )
@@ -749,7 +744,7 @@ class Signature:
         used_any = False
         new_args = None
         for name, (position, composite) in bound_args.items():
-            param = self.signature.parameters[name]
+            param = self.parameters[name]
             (
                 tv_map,
                 param_used_any,
@@ -889,8 +884,8 @@ class Signature:
             return CanAssignError("overloaded function is incompatible", errors)
         if self.is_asynq and not other.is_asynq:
             return CanAssignError("callable is not asynq")
-        their_return = other.signature.return_annotation
-        my_return = self.signature.return_annotation
+        their_return = other.return_value
+        my_return = self.return_value
         return_tv_map = my_return.can_assign(their_return, ctx)
         if isinstance(return_tv_map, CanAssignError):
             return CanAssignError(
@@ -899,7 +894,7 @@ class Signature:
         if self.is_ellipsis_args or other.is_ellipsis_args:
             return return_tv_map
         tv_maps = [return_tv_map]
-        their_params = list(other.signature.parameters.values())
+        their_params = list(other.parameters.values())
         their_args = other.get_param_of_kind(SigParameter.VAR_POSITIONAL)
         if their_args is not None:
             their_args_index = their_params.index(their_args)
@@ -914,7 +909,7 @@ class Signature:
             kwargs_annotation = None
         consumed_positional = set()
         consumed_keyword = set()
-        for i, my_param in enumerate(self.signature.parameters.values()):
+        for i, my_param in enumerate(self.parameters.values()):
             my_annotation = my_param.get_annotation()
             if my_param.kind is SigParameter.POSITIONAL_ONLY:
                 if i < len(their_params) and their_params[i].kind in (
@@ -1001,7 +996,7 @@ class Signature:
                         f"parameter {my_param.name!r} is not accepted"
                     )
             elif my_param.kind is SigParameter.KEYWORD_ONLY:
-                their_param = other.signature.parameters.get(my_param.name)
+                their_param = other.parameters.get(my_param.name)
                 if their_param is not None and their_param.kind in (
                     SigParameter.POSITIONAL_OR_KEYWORD,
                     SigParameter.KEYWORD_ONLY,
@@ -1106,22 +1101,18 @@ class Signature:
         return unify_typevar_maps(tv_maps)
 
     def get_param_of_kind(self, kind: inspect._ParameterKind) -> Optional[SigParameter]:
-        for param in self.signature.parameters.values():
+        for param in self.parameters.values():
             if param.kind is kind:
                 return param
         return None
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Signature":
         return Signature(
-            signature=inspect.Signature(
-                [
-                    param.substitute_typevars(typevars)
-                    for param in self.signature.parameters.values()
-                ],
-                return_annotation=self.signature.return_annotation.substitute_typevars(
-                    typevars
-                ),
-            ),
+            {
+                name: param.substitute_typevars(typevars)
+                for name, param in self.parameters.items()
+            },
+            self.return_value.substitute_typevars(typevars),
             impl=self.impl,
             callable=self.callable,
             is_asynq=self.is_asynq,
@@ -1131,8 +1122,8 @@ class Signature:
         )
 
     def walk_values(self) -> Iterable[Value]:
-        yield from self.signature.return_annotation.walk_values()
-        for param in self.signature.parameters.values():
+        yield from self.return_value.walk_values()
+        for param in self.parameters.values():
             if param.annotation is not EMPTY:
                 yield from param.annotation.walk_values()
 
@@ -1141,12 +1132,10 @@ class Signature:
         :class:`pyanalyze.extensions.AsynqCallable`."""
         if not self.is_asynq:
             raise TypeError("get_asynq_value() is only supported for AsynqCallable")
-        return_annotation = AsyncTaskIncompleteValue(
-            asynq.AsyncTask, self.signature.return_annotation
-        )
+        return_value = AsyncTaskIncompleteValue(asynq.AsyncTask, self.return_value)
         return Signature.make(
-            self.signature.parameters.values(),
-            return_annotation,
+            self.parameters.values(),
+            return_value,
             impl=self.impl,
             callable=self.callable,
             has_return_annotation=self.has_return_annotation,
@@ -1179,9 +1168,8 @@ class Signature:
             return_annotation = AnyValue(AnySource.unannotated)
             has_return_annotation = False
         return cls(
-            signature=inspect.Signature(
-                parameters, return_annotation=return_annotation
-            ),
+            {param.name: param for param in parameters},
+            return_value=return_annotation,
             impl=impl,
             callable=callable,
             has_return_annotation=has_return_annotation,
@@ -1193,9 +1181,7 @@ class Signature:
     def __str__(self) -> str:
         param_str = ", ".join(self._render_parameters())
         asynq_str = "@asynq " if self.is_asynq else ""
-        rendered = f"{asynq_str}({param_str})"
-        if self.signature.return_annotation is not EMPTY:
-            rendered += f" -> {self.signature.return_annotation}"
+        rendered = f"{asynq_str}({param_str}) -> {self.return_value}"
         return rendered
 
     def _render_parameters(self) -> Iterable[str]:
@@ -1205,7 +1191,7 @@ class Signature:
             return
         render_pos_only_separator = False
         render_kw_only_separator = True
-        for param in self.signature.parameters.values():
+        for param in self.parameters.values():
             formatted = str(param)
 
             kind = param.kind
@@ -1230,16 +1216,15 @@ class Signature:
     def bind_self(self, *, preserve_impl: bool = False) -> Optional["Signature"]:
         if self.is_ellipsis_args:
             return ANY_SIGNATURE
-        params = list(self.signature.parameters.values())
+        params = list(self.parameters.values())
         if not params or params[0].kind not in (
             SigParameter.POSITIONAL_ONLY,
             SigParameter.POSITIONAL_OR_KEYWORD,
         ):
             return None
         return Signature(
-            signature=inspect.Signature(
-                params[1:], return_annotation=self.return_value
-            ),
+            {param.name: param for param in params[1:]},
+            self.return_value,
             # We don't carry over the implementation function by default, because it
             # may not work when passed different arguments.
             impl=self.impl if preserve_impl else None,
@@ -1253,10 +1238,6 @@ class Signature:
     # TODO: do we need these?
     def has_return_value(self) -> bool:
         return self.has_return_annotation
-
-    @property
-    def return_value(self) -> Value:
-        return self.signature.return_annotation
 
 
 ANY_SIGNATURE = Signature.make(
