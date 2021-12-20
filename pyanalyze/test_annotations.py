@@ -1559,3 +1559,20 @@ class TestParamSpec(TestNameCheckVisitorBase):
                 quoted_refined(1)  # E: incompatible_call
             """
         )
+
+    @assert_passes()
+    def test_match_any(self):
+        from typing_extensions import ParamSpec
+        from typing import Callable, TypeVar, List
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def wrapper(c: Callable[P, T]) -> Callable[P, List[T]]:
+            raise NotImplementedError
+
+        def capybara(unannotated):
+            refined = wrapper(unannotated)
+            assert_is_value(
+                refined(), GenericValue(list, [AnyValue(AnySource.generic_argument)])
+            )

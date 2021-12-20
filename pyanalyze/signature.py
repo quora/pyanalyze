@@ -1133,6 +1133,7 @@ class Signature:
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Signature":
         params = []
+        is_ellipsis_args = self.is_ellipsis_args
         for name, param in self.parameters.items():
             if param.kind is ParameterKind.PARAM_SPEC:
                 assert isinstance(param.annotation, TypeVarValue)
@@ -1145,6 +1146,10 @@ class Signature:
                             param.name, param.kind, annotation=new_val
                         )
                         params.append((name, new_param))
+                    elif isinstance(new_val, AnyValue):
+                        is_ellipsis_args = True
+                        params = []
+                        break
                     else:
                         assert isinstance(new_val, CallableValue), new_val
                         assert isinstance(new_val.signature, Signature), new_val
@@ -1160,7 +1165,7 @@ class Signature:
             callable=self.callable,
             is_asynq=self.is_asynq,
             has_return_annotation=self.has_return_annotation,
-            is_ellipsis_args=self.is_ellipsis_args,
+            is_ellipsis_args=is_ellipsis_args,
             allow_call=self.allow_call,
         )
 
