@@ -1522,3 +1522,22 @@ class TestParamSpec(TestNameCheckVisitorBase):
             quoted_refined = quoted_wrapper(wrapped)
             assert_is_value(quoted_refined(1), GenericValue(list, [TypedValue(str)]))
             quoted_refined("too", "many", "arguments")  # E: incompatible_call
+
+    @assert_passes()
+    def test_concatenate(self):
+        from typing_extensions import ParamSpec, Concatenate
+        from typing import Callable, TypeVar, List
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def wrapped(a: int) -> str:
+            return str(a)
+
+        def wrapper(c: Callable[P, T]) -> Callable[Concatenate[str, P], List[T]]:
+            raise NotImplementedError
+
+        def quoted_wrapper(
+            c: "Callable[P, T]",
+        ) -> "Callable[Concatenate[str, P], List[T]]":
+            raise NotImplementedError
