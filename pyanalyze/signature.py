@@ -1091,36 +1091,37 @@ class Signature:
                 new_sig = Signature.make(remaining)
                 assert isinstance(my_annotation, TypeVarValue)
                 tv_maps.append({my_annotation.typevar: CallableValue(new_sig)})
+                consumed_paramspec = True
             else:
                 assert False, f"unhandled param {my_param}"
 
-        for param in their_params:
-            if (
-                param.kind is ParameterKind.VAR_POSITIONAL
-                or param.kind is ParameterKind.VAR_KEYWORD
-            ):
-                continue  # ok if they have extra *args or **kwargs
-            elif param.default is not None:
-                continue
-            elif param.kind is ParameterKind.POSITIONAL_ONLY:
-                if param.name not in consumed_positional:
-                    return CanAssignError(
-                        f"takes extra positional-only parameter {param.name!r}"
-                    )
-            elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
+        if not consumed_paramspec:
+            for param in their_params:
                 if (
-                    param.name not in consumed_positional
-                    and param.name not in consumed_keyword
+                    param.kind is ParameterKind.VAR_POSITIONAL
+                    or param.kind is ParameterKind.VAR_KEYWORD
                 ):
-                    return CanAssignError(f"takes extra parameter {param.name!r}")
-            elif param.kind is ParameterKind.KEYWORD_ONLY:
-                if param.name not in consumed_keyword:
-                    return CanAssignError(f"takes extra parameter {param.name!r}")
-            elif param.kind is ParameterKind.PARAM_SPEC:
-                if not consumed_paramspec:
+                    continue  # ok if they have extra *args or **kwargs
+                elif param.default is not None:
+                    continue
+                elif param.kind is ParameterKind.POSITIONAL_ONLY:
+                    if param.name not in consumed_positional:
+                        return CanAssignError(
+                            f"takes extra positional-only parameter {param.name!r}"
+                        )
+                elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
+                    if (
+                        param.name not in consumed_positional
+                        and param.name not in consumed_keyword
+                    ):
+                        return CanAssignError(f"takes extra parameter {param.name!r}")
+                elif param.kind is ParameterKind.KEYWORD_ONLY:
+                    if param.name not in consumed_keyword:
+                        return CanAssignError(f"takes extra parameter {param.name!r}")
+                elif param.kind is ParameterKind.PARAM_SPEC:
                     return CanAssignError(f"takes extra ParamSpec {param!r}")
-            else:
-                assert False, f"unhandled param {param}"
+                else:
+                    assert False, f"unhandled param {param}"
 
         return unify_typevar_maps(tv_maps)
 
@@ -1138,9 +1139,16 @@ class Signature:
                 tv = param.annotation.typevar
                 if tv in typevars:
                     new_val = typevars[tv].substitute_typevars(typevars)
-                    assert isinstance(new_val, CallableValue)
-                    assert isinstance(new_val.signature, Signature)
-                    params += list(new_val.signature.parameters.items())
+                    if isinstance(new_val, TypeVarValue):
+                        assert new_val.is_paramspec, new_val
+                        new_param = SigParameter(
+                            param.name, param.kind, annotation=new_val
+                        )
+                        params.append((name, new_param))
+                    else:
+                        assert isinstance(new_val, CallableValue), new_val
+                        assert isinstance(new_val.signature, Signature), new_val
+                        params += list(new_val.signature.parameters.items())
                 else:
                     params.append((name, param))
             else:

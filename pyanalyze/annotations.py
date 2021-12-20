@@ -1002,6 +1002,15 @@ def _make_callable_from_value(
         ]
         sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
         return CallableValue(sig)
+    elif isinstance(args, KnownValue) and is_instance_of_typing_name(
+        args.val, "ParamSpec"
+    ):
+        annotation = TypeVarValue(args.val, is_paramspec=True)
+        params = [
+            SigParameter("__P", kind=ParameterKind.PARAM_SPEC, annotation=annotation)
+        ]
+        sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+        return CallableValue(sig)
     elif isinstance(args, TypeVarValue) and args.is_paramspec:
         params = [SigParameter("__P", kind=ParameterKind.PARAM_SPEC, annotation=args)]
         sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
@@ -1023,7 +1032,8 @@ def _make_callable_from_value(
         sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
         return CallableValue(sig)
     else:
-        return AnyValue(AnySource.inference)
+        ctx.show_error(f"Unrecognized Callable type argument {args}")
+        return AnyValue(AnySource.error)
 
 
 def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:
