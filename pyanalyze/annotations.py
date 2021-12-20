@@ -1015,8 +1015,10 @@ def _make_callable_from_value(
         params = [SigParameter("__P", kind=ParameterKind.PARAM_SPEC, annotation=args)]
         sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
         return CallableValue(sig)
-    elif isinstance(args, _SubscriptedValue) and is_typing_name(
-        args.root, "Concatenate"
+    elif (
+        isinstance(args, _SubscriptedValue)
+        and isinstance(args.root, KnownValue)
+        and is_typing_name(args.root.val, "Concatenate")
     ):
         annotations = [_type_from_value(arg, ctx) for arg in args.members]
         params = [
