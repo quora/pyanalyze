@@ -1549,7 +1549,7 @@ class TestParamSpec(TestNameCheckVisitorBase):
             assert_is_value(refined("x", 1), GenericValue(list, [TypedValue(str)]))
             refined(1)  # E: incompatible_call
 
-            quoted_refined = wrapper(wrapped)
+            quoted_refined = quoted_wrapper(wrapped)
             assert_is_value(
                 quoted_refined("x", 1), GenericValue(list, [TypedValue(str)])
             )

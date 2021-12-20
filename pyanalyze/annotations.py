@@ -452,6 +452,18 @@ def _callable_args_from_runtime(
     if arg_types is Ellipsis or arg_types == [Ellipsis]:
         return [], True
     elif type(arg_types) in (tuple, list):
+        if len(arg_types) == 1:
+            (arg,) = arg_types
+            if arg is Ellipsis:
+                return [], True
+            elif is_typing_name(getattr(arg, "__origin__", None), "Concatenate"):
+                return _args_from_concatenate(arg, ctx)
+            elif is_instance_of_typing_name(arg, "ParamSpec"):
+                param_spec = TypeVarValue(arg, is_paramspec=True)
+                param = SigParameter(
+                    "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
+                )
+                return [param], False
         params = [
             SigParameter(
                 f"__arg{i}",
@@ -467,23 +479,28 @@ def _callable_args_from_runtime(
             "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
         )
         return [param], False
-    elif is_typing_name(getattr(arg_types, "__origin", None), "Concatenate"):
-        types = [_type_from_runtime(arg, ctx) for arg in arg_types.__args__]
-        params = [
-            SigParameter(
-                f"__arg{i}",
-                kind=ParameterKind.PARAM_SPEC
-                if i == len(types) - 1
-                else ParameterKind.POSITIONAL_ONLY,
-                annotation=annotation,
-            )
-            for i, annotation in enumerate(types)
-        ]
-        return params, False
-
+    elif is_typing_name(getattr(arg_types, "__origin__", None), "Concatenate"):
+        return _args_from_concatenate(arg_types, ctx)
     else:
         ctx.show_error(f"Invalid arguments to {label}: {arg_types!r}")
         return [], True
+
+
+def _args_from_concatenate(
+    concatenate: Any, ctx: Context
+) -> Tuple[Sequence[SigParameter], bool]:
+    types = [_type_from_runtime(arg, ctx) for arg in concatenate.__args__]
+    params = [
+        SigParameter(
+            f"__arg{i}",
+            kind=ParameterKind.PARAM_SPEC
+            if i == len(types) - 1
+            else ParameterKind.POSITIONAL_ONLY,
+            annotation=annotation,
+        )
+        for i, annotation in enumerate(types)
+    ]
+    return params, False
 
 
 def _get_typeddict_value(
