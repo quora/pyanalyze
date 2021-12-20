@@ -1541,3 +1541,16 @@ class TestParamSpec(TestNameCheckVisitorBase):
             c: "Callable[P, T]",
         ) -> "Callable[Concatenate[str, P], List[T]]":
             raise NotImplementedError
+
+        def capybara() -> None:
+            assert_is_value(wrapped(1), TypedValue(str))
+
+            refined = wrapper(wrapped)
+            assert_is_value(refined("x", 1), GenericValue(list, [TypedValue(str)]))
+            refined(1)  # E: incompatible_call
+
+            quoted_refined = quoted_wrapper(wrapped)
+            assert_is_value(
+                quoted_refined("x", 1), GenericValue(list, [TypedValue(str)])
+            )
+            quoted_refined(1)  # E: incompatible_call
