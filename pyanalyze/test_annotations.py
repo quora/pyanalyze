@@ -1545,5 +1545,4 @@ class TestParamSpec(TestNameCheckVisitorBase):
         def capybara() -> None:
             assert_is_value(wrapped(1), TypedValue(str))
 
-            refined = wrapper(wrapped)
-            assert_is_value(refined("x", 1), GenericValue(list, [TypedValue(str)]))
+            wrapper(wrapped)
