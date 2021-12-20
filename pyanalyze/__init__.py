@@ -3,6 +3,9 @@
 pyanalyze is a package for Python static analysis.
 
 """
+# ignore unused import errors
+# flake8: noqa
+
 from . import ast_annotator
 from . import name_check_visitor
 from . import analysis_lib

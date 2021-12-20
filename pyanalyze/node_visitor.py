@@ -721,7 +721,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
         try:
             return cls.check_file_in_worker(filename, **kwargs)
         finally:
-            # Some modules cause __main__ to get reassigned for unclear reasons. So let's put it back.
+            # Some modules cause __main__ to get reassigned for unclear reasons. So let's put it
+            # back.
             sys.modules["__main__"] = main_module
 
     @classmethod
