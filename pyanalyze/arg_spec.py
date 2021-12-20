@@ -18,6 +18,7 @@ from .safe import (
     safe_issubclass,
     is_typing_name,
     safe_isinstance,
+    get_fully_qualified_name,
 )
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
@@ -354,7 +355,7 @@ class ArgSpecCache:
         in_overload_resolution: bool,
     ) -> MaybeSignature:
         if not in_overload_resolution:
-            fq_name = _get_fully_qualified_name(obj)
+            fq_name = get_fully_qualified_name(obj)
             if fq_name is not None:
                 overloads = get_overloads(fq_name)
                 if overloads:
@@ -680,12 +681,6 @@ def _is_qcore_decorator(obj: object) -> bool:
     except Exception:
         # black.Line has an is_decorator attribute but it is not a method
         return False
-
-
-def _get_fully_qualified_name(obj: object) -> Optional[str]:
-    if hasattr(obj, "__module__") and hasattr(obj, "__qualname__"):
-        return f"{obj.__module__}.{obj.__qualname__}"
-    return None
 
 
 def _get_class_name(obj: object) -> Optional[str]:

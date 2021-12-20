@@ -67,7 +67,7 @@ from .boolability import Boolability, get_boolability
 from .checker import Checker
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
-from .extensions import ParameterTypeGuard, overload
+from .extensions import ParameterTypeGuard, overload, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
 from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, all_of_type
@@ -4436,6 +4436,7 @@ class NameCheckVisitor(
     def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
         kwargs = dict(kwargs)
         kwargs.setdefault("checker", Checker(cls.config))
+        patch_typing_overload()
         return kwargs
 
     @classmethod

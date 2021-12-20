@@ -5,7 +5,18 @@
 """
 import inspect
 import sys
-from typing import Any, Dict, Sequence, Tuple, Union, Container, NewType, Type, TypeVar
+from typing import (
+    Any,
+    Dict,
+    Sequence,
+    Tuple,
+    Union,
+    Container,
+    NewType,
+    Type,
+    TypeVar,
+    Optional,
+)
 import typing
 import typing_extensions
 
@@ -109,6 +120,7 @@ if sys.version_info >= (3, 10):
     def is_newtype(obj: object) -> bool:
         return isinstance(obj, NewType)
 
+
 else:
 
     def is_newtype(obj: object) -> bool:
@@ -152,3 +164,9 @@ def _fill_typing_name_cache(name: str) -> Tuple[Tuple[Any, ...], Tuple[str, ...]
         result = tuple(objs), tuple(names)
         _typing_name_cache[name] = result
         return result
+
+
+def get_fully_qualified_name(obj: object) -> Optional[str]:
+    if hasattr(obj, "__module__") and hasattr(obj, "__qualname__"):
+        return f"{obj.__module__}.{obj.__qualname__}"
+    return None

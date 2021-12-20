@@ -9,6 +9,7 @@ be gracefully ignored by other type checkers.
 """
 from collections import defaultdict
 from dataclasses import dataclass, field
+import typing_extensions
 import pyanalyze
 from typing import (
     Any,
@@ -24,6 +25,9 @@ from typing import (
     overload as real_overload,
 )
 from typing_extensions import Literal, NoReturn
+import typing
+
+from .safe import get_fully_qualified_name
 
 if TYPE_CHECKING:
     from .value import Value, CanAssign, CanAssignContext, TypeVarMap, AnySource
@@ -372,6 +376,18 @@ else:
         return all the runtime overloads.
 
         """
-        key = f"{func.__module__}.{func.__qualname__}"
-        _overloads[key].append(func)
+        key = get_fully_qualified_name(func)
+        if key is not None:
+            _overloads[key].append(func)
         return real_overload(func)
+
+
+def patch_typing_overload() -> None:
+    """Monkey-patch ``typing.overload`` with our custom ``@overload`` decorator.
+
+    This allows files imported after this file to use the ``@overload`` decorator
+    and have it be recognized by pyanalyze.
+
+    """
+    typing.overload = overload
+    typing_extensions.overload = overload
