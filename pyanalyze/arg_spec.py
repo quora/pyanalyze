@@ -4,6 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
+from .analysis_lib import is_positional_only_arg_name
 from .extensions import get_overloads
 from .annotations import Context, type_from_runtime
 from .config import Config
@@ -242,12 +243,16 @@ class ArgSpecCache:
             default = None
         else:
             default = KnownValue(parameter.default)
-        return SigParameter(
-            parameter.name,
-            ParameterKind(parameter.kind),
-            default=default,
-            annotation=typ,
-        )
+        if (
+            parameter.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+            and is_positional_only_arg_name(
+                parameter.name, _get_class_name(function_object)
+            )
+        ):
+            kind = ParameterKind.POSITIONAL_ONLY
+        else:
+            kind = ParameterKind(parameter.kind)
+        return SigParameter(parameter.name, kind, default=default, annotation=typ)
 
     def _get_type_for_parameter(
         self,
@@ -680,4 +685,12 @@ def _is_qcore_decorator(obj: object) -> bool:
 def _get_fully_qualified_name(obj: object) -> Optional[str]:
     if hasattr(obj, "__module__") and hasattr(obj, "__qualname__"):
         return f"{obj.__module__}.{obj.__qualname__}"
+    return None
+
+
+def _get_class_name(obj: object) -> Optional[str]:
+    if hasattr(obj, "__qualname__"):
+        pieces = obj.__qualname__.split(".")
+        if len(pieces) >= 2:
+            return pieces[-2]
     return None

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Support positional-only arguments with the `__` prefix
+  outside of stubs (#353)
 - Add basic support for `ParamSpec` (#352)
 - Fix error on use of `AbstractAsyncContextManager` (#350)
 - Check `with` and `async with` statements (#344)

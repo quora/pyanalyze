@@ -1959,7 +1959,7 @@ IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
 class GetItemProto(Protocol[T]):
-    def __getitem__(self, i: int) -> T:
+    def __getitem__(self, __i: int) -> T:
         raise NotImplementedError
 
 
