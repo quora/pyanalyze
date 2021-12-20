@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Extract constraints from multi-comparisons (`a < b < c`) (#354)
 - Support positional-only arguments with the `__` prefix
   outside of stubs (#353)
 - Add basic support for `ParamSpec` (#352)
