@@ -1,4 +1,5 @@
 # static analysis: ignore
+from pyanalyze.extensions import reveal_type
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import skip_before, assert_passes, assert_fails
 from .implementation import assert_is_value
@@ -1545,4 +1546,5 @@ class TestParamSpec(TestNameCheckVisitorBase):
         def capybara() -> None:
             assert_is_value(wrapped(1), TypedValue(str))
 
+            reveal_type(wrapper)
             wrapper(wrapped)
