@@ -4,6 +4,7 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
+from .analysis_lib import is_positional_only_arg_name
 from .annotations import Context, type_from_value, value_from_ast
 from .error_code import ErrorCode
 from .safe import is_typing_name
@@ -745,8 +746,9 @@ class TypeshedFinder:
                     typ = TypedValue(objclass)
 
         name = arg.arg
-        # Arguments that start with __ are positional-only in typeshed
-        if kind is ParameterKind.POSITIONAL_OR_KEYWORD and name.startswith("__"):
+        if kind is ParameterKind.POSITIONAL_OR_KEYWORD and is_positional_only_arg_name(
+            name
+        ):
             kind = ParameterKind.POSITIONAL_ONLY
             name = name[2:]
         # Mark self as positional-only. objclass should be given only if we believe

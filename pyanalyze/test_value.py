@@ -541,8 +541,8 @@ def test_concrete_values_from_iterable() -> None:
     )
 
     class HasGetItem:
-        def __getitem__(self, i: int) -> str:
-            return str(i)
+        def __getitem__(self, some_random_name: int) -> str:
+            return str(some_random_name)
 
     assert concrete_values_from_iterable(TypedValue(HasGetItem), CTX) == TypedValue(str)
 

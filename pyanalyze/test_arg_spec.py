@@ -249,6 +249,43 @@ def test_get_argspec():
         ) == ArgSpecCache(config).get_argspec(NT)
 
 
+def test_positional_only():
+    def f(__x, _f__x):
+        pass
+
+    class Y:
+        def f(self, __x):
+            pass
+
+        class X:
+            def f(self, __x, _Y__x):
+                pass
+
+    asc = ArgSpecCache(ConfiguredNameCheckVisitor.config)
+    assert asc.get_argspec(f) == Signature.make(
+        [
+            SigParameter("__x", ParameterKind.POSITIONAL_ONLY),
+            SigParameter("_f__x", ParameterKind.POSITIONAL_OR_KEYWORD),
+        ],
+        callable=f,
+    )
+    assert asc.get_argspec(Y.f) == Signature.make(
+        [
+            SigParameter("self", ParameterKind.POSITIONAL_OR_KEYWORD),
+            SigParameter("_Y__x", ParameterKind.POSITIONAL_ONLY),
+        ],
+        callable=Y.f,
+    )
+    assert asc.get_argspec(Y.X.f) == Signature.make(
+        [
+            SigParameter("self", ParameterKind.POSITIONAL_OR_KEYWORD),
+            SigParameter("_X__x", ParameterKind.POSITIONAL_ONLY),
+            SigParameter("_Y__x", ParameterKind.POSITIONAL_OR_KEYWORD),
+        ],
+        callable=Y.X.f,
+    )
+
+
 def test_is_dot_asynq_function():
     assert not is_dot_asynq_function(async_function)
     assert is_dot_asynq_function(async_function.asynq)

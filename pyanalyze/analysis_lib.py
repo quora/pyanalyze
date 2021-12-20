@@ -99,3 +99,13 @@ def make_module(
     exec(code_str, scope)
     sys.modules[module_name] = mod
     return mod
+
+
+def is_positional_only_arg_name(name: str, class_name: Optional[str] = None) -> bool:
+    # https://www.python.org/dev/peps/pep-0484/#positional-only-arguments
+    # Work around Python's name mangling
+    if class_name is not None:
+        prefix = f"_{class_name}"
+        if name.startswith(prefix):
+            name = name[len(prefix) :]
+    return name.startswith("__") and not name.endswith("__")
