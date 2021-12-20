@@ -301,7 +301,7 @@ class SigParameter:
 
         if kind is ParameterKind.VAR_POSITIONAL:
             formatted = "*" + formatted
-        elif kind is ParameterKind.VAR_KEYWORD:
+        elif kind is ParameterKind.VAR_KEYWORD or kind is ParameterKind.PARAM_SPEC:
             formatted = "**" + formatted
 
         return formatted

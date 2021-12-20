@@ -464,13 +464,16 @@ def _callable_args_from_runtime(
                     "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
                 )
                 return [param], False
+        types = [_type_from_runtime(arg, ctx) for arg in arg_types]
         params = [
             SigParameter(
                 f"__arg{i}",
-                kind=ParameterKind.POSITIONAL_ONLY,
-                annotation=_type_from_runtime(arg, ctx),
+                kind=ParameterKind.PARAM_SPEC
+                if isinstance(typ, TypeVarValue) and typ.is_paramspec
+                else ParameterKind.POSITIONAL_ONLY,
+                annotation=typ,
             )
-            for i, arg in enumerate(arg_types)
+            for i, typ in enumerate(types)
         ]
         return params, False
     elif is_instance_of_typing_name(arg_types, "ParamSpec"):
