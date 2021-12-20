@@ -119,6 +119,7 @@ from .value import (
     AnyValue,
     CallableValue,
     CanAssignError,
+    ConstraintExtension,
     GenericBases,
     KVPair,
     KnownValueWithTypeVars,
@@ -2491,21 +2492,37 @@ class NameCheckVisitor(
                 else:
                     self.add_constraint(condition, constraint.invert())
                     values.append(constrain_value(new_value, TRUTHY_CONSTRAINT))
-            right_value, constraint = self._visit_possible_constraint(node.values[-1])
+            right_value = self._visit_possible_constraint(node.values[-1])
             values.append(right_value)
-            out_constraints.append(constraint)
+            out_constraints.append(extract_constraints(right_value))
         constraint_cls = AndConstraint if is_and else OrConstraint
         constraint = constraint_cls.make(reversed(out_constraints))
         return annotate_with_constraint(unite_values(*values), constraint)
 
     def visit_Compare(self, node: ast.Compare) -> Value:
-        if len(node.ops) != 1:
-            # TODO handle multi-comparison properly
-            self.generic_visit(node)
-            return AnyValue(AnySource.inference)
-        op = node.ops[0]
-        lhs, lhs_constraint = self._visit_possible_constraint(node.left)
-        rhs, rhs_constraint = self._visit_possible_constraint(node.comparators[0])
+        nodes = [node.left, *node.comparators]
+        vals = [self._visit_possible_constraint(node) for node in nodes]
+        results = []
+        constraints = []
+        for i, (rhs_node, rhs) in enumerate(zip(nodes, vals)):
+            if i == 0:
+                continue
+            op = node.ops[i - 1]
+            lhs_node = nodes[i - 1]
+            lhs = vals[i - 1]
+            result = self._visit_single_compare(lhs_node, lhs, op, rhs_node, rhs)
+            constraints.append(extract_constraints(result))
+            result, _ = unannotate_value(result, ConstraintExtension)
+            results.append(result)
+        return annotate_with_constraint(
+            unite_values(*results), AndConstraint.make(constraints)
+        )
+
+    def _visit_single_compare(
+        self, lhs_node: ast.AST, lhs: Value, op: ast.AST, rhs_node: ast.AST, rhs: Value
+    ) -> Value:
+        lhs_constraint = extract_constraints(lhs)
+        rhs_constraint = extract_constraints(rhs)
         if isinstance(lhs, AnnotatedValue):
             lhs = lhs.value
         if isinstance(rhs, AnnotatedValue):
@@ -2520,11 +2537,11 @@ class NameCheckVisitor(
             return self._value_from_predicate_provider(rhs_constraint, lhs.val, op)
         elif isinstance(rhs, KnownValue):
             constraint = self._constraint_from_compare_op(
-                node.left, rhs.val, op, is_right=True
+                lhs_node, rhs.val, op, is_right=True
             )
         elif isinstance(lhs, KnownValue):
             constraint = self._constraint_from_compare_op(
-                node.comparators[0], lhs.val, op, is_right=False
+                rhs_node, lhs.val, op, is_right=False
             )
         else:
             constraint = NULL_CONSTRAINT
@@ -3011,7 +3028,8 @@ class NameCheckVisitor(
                 )
 
     def visit_Assert(self, node: ast.Assert) -> None:
-        test, constraint = self._visit_possible_constraint(node.test)
+        test = self._visit_possible_constraint(node.test)
+        constraint = extract_constraints(test)
         if node.msg is not None:
             with self.scopes.subscope():
                 self.add_constraint(node, constraint.invert())
@@ -3030,21 +3048,18 @@ class NameCheckVisitor(
             return  # save some work
         self.scopes.current_scope().add_constraint(constraint, node, self.state)
 
-    def _visit_possible_constraint(
-        self, node: ast.AST
-    ) -> Tuple[Value, AbstractConstraint]:
+    def _visit_possible_constraint(self, node: ast.AST) -> Value:
         if isinstance(node, (ast.Name, ast.Attribute, ast.Subscript)):
             composite = self.composite_from_node(node)
             if composite.varname is not None:
                 constraint = Constraint(
                     composite.varname, ConstraintType.is_truthy, True, None
                 )
-                val = annotate_with_constraint(composite.value, constraint)
+                return annotate_with_constraint(composite.value, constraint)
             else:
-                val = composite.value
+                return composite.value
         else:
-            val = self.visit(node)
-        return val, extract_constraints(val)
+            return self.visit(node)
 
     def visit_Break(self, node: ast.Break) -> None:
         self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
@@ -3301,7 +3316,8 @@ class NameCheckVisitor(
     def constraint_from_condition(
         self, node: ast.AST, check_boolability: bool = True
     ) -> Tuple[Value, AbstractConstraint]:
-        condition, constraint = self._visit_possible_constraint(node)
+        condition = self._visit_possible_constraint(node)
+        constraint = extract_constraints(condition)
         if self._is_collecting():
             return condition, constraint
         if check_boolability:

@@ -2665,3 +2665,16 @@ def test_static_hasattr():
     assert _static_hasattr(hgat, "real_method")
     assert _static_hasattr(hgat, "__getattribute__")
     assert not _static_hasattr(hgat, "random_attribute")
+
+
+class TestCompare(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_multi(self):
+        from typing_extensions import Literal
+
+        def capybara(i: Literal[1, 2, 3], x: Literal[3, 4]) -> None:
+            assert_is_value(i, KnownValue(1) | KnownValue(2) | KnownValue(3))
+            assert_is_value(x, KnownValue(3) | KnownValue(4))
+            if 1 < i < 3 != x:
+                assert_is_value(i, KnownValue(2))
+                assert_is_value(x, KnownValue(4))
