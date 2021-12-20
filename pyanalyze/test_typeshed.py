@@ -430,3 +430,21 @@ class TestRange(TestNameCheckVisitorBase):
 
             for i in range(10000000):
                 assert_is_value(i, TypedValue(int))
+
+
+class TestParamSpec(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_contextmanager(self):
+        import contextlib
+        from typing import Iterator
+
+        def cm(a: int) -> Iterator[str]:
+            yield "hello"
+
+        def capybara():
+            wrapped = contextlib.contextmanager(cm)
+            assert_is_value(
+                wrapped(1),
+                GenericValue(contextlib._GeneratorContextManager, [TypedValue(str)]),
+            )
+            wrapped("x")  # E: incompatible_argument

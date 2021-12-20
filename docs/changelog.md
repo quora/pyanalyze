@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add basic support for `ParamSpec` (#352)
 - Fix error on use of `AbstractAsyncContextManager` (#350)
 - Check `with` and `async with` statements (#344)
 - Improve type compatibility between generics and literals (#346)

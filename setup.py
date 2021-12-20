@@ -54,7 +54,7 @@ if __name__ == "__main__":
             "ast_decompiler>=0.4.0",
             "typeshed_client>=1.0.0,<2",
             "typing_inspect>=0.7.0",
-            "typing_extensions",
+            "typing_extensions>=3.10.0.0",
             "mypy_extensions",
             "aenum>=2.2.3",
             "codemod",

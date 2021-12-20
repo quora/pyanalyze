@@ -23,6 +23,7 @@ from .value import (
     AnySource,
     AnyValue,
     AsyncTaskIncompleteValue,
+    CallableValue,
     CanAssignContext,
     GenericValue,
     HasAttrExtension,
@@ -234,6 +235,7 @@ class ParameterKind(enum.Enum):
     VAR_POSITIONAL = 2
     KEYWORD_ONLY = 3
     VAR_KEYWORD = 4
+    PARAM_SPEC = 5
 
 
 @dataclass
@@ -299,7 +301,7 @@ class SigParameter:
 
         if kind is ParameterKind.VAR_POSITIONAL:
             formatted = "*" + formatted
-        elif kind is ParameterKind.VAR_KEYWORD:
+        elif kind is ParameterKind.VAR_KEYWORD or kind is ParameterKind.PARAM_SPEC:
             formatted = "**" + formatted
 
         return formatted
@@ -919,6 +921,7 @@ class Signature:
             kwargs_annotation = None
         consumed_positional = set()
         consumed_keyword = set()
+        consumed_paramspec = False
         for i, my_param in enumerate(self.parameters.values()):
             my_annotation = my_param.get_annotation()
             if my_param.kind is ParameterKind.POSITIONAL_ONLY:
@@ -1078,29 +1081,47 @@ class Signature:
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
-
-        for param in their_params:
-            if (
-                param.kind is ParameterKind.VAR_POSITIONAL
-                or param.kind is ParameterKind.VAR_KEYWORD
-            ):
-                continue  # ok if they have extra *args or **kwargs
-            elif param.default is not None:
-                continue
-            elif param.kind is ParameterKind.POSITIONAL_ONLY:
-                if param.name not in consumed_positional:
-                    return CanAssignError(
-                        f"takes extra positional-only parameter {param.name!r}"
-                    )
-            elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
-                if (
-                    param.name not in consumed_positional
+            elif my_param.kind is ParameterKind.PARAM_SPEC:
+                remaining = [
+                    param
+                    for param in other.parameters.values()
+                    if param.name not in consumed_positional
                     and param.name not in consumed_keyword
+                ]
+                new_sig = Signature.make(remaining)
+                assert isinstance(my_annotation, TypeVarValue)
+                tv_maps.append({my_annotation.typevar: CallableValue(new_sig)})
+                consumed_paramspec = True
+            else:
+                assert False, f"unhandled param {my_param}"
+
+        if not consumed_paramspec:
+            for param in their_params:
+                if (
+                    param.kind is ParameterKind.VAR_POSITIONAL
+                    or param.kind is ParameterKind.VAR_KEYWORD
                 ):
-                    return CanAssignError(f"takes extra parameter {param.name!r}")
-            elif param.kind is ParameterKind.KEYWORD_ONLY:
-                if param.name not in consumed_keyword:
-                    return CanAssignError(f"takes extra parameter {param.name!r}")
+                    continue  # ok if they have extra *args or **kwargs
+                elif param.default is not None:
+                    continue
+                elif param.kind is ParameterKind.POSITIONAL_ONLY:
+                    if param.name not in consumed_positional:
+                        return CanAssignError(
+                            f"takes extra positional-only parameter {param.name!r}"
+                        )
+                elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
+                    if (
+                        param.name not in consumed_positional
+                        and param.name not in consumed_keyword
+                    ):
+                        return CanAssignError(f"takes extra parameter {param.name!r}")
+                elif param.kind is ParameterKind.KEYWORD_ONLY:
+                    if param.name not in consumed_keyword:
+                        return CanAssignError(f"takes extra parameter {param.name!r}")
+                elif param.kind is ParameterKind.PARAM_SPEC:
+                    return CanAssignError(f"takes extra ParamSpec {param!r}")
+                else:
+                    assert False, f"unhandled param {param}"
 
         return unify_typevar_maps(tv_maps)
 
@@ -1111,17 +1132,40 @@ class Signature:
         return None
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Signature":
+        params = []
+        is_ellipsis_args = self.is_ellipsis_args
+        for name, param in self.parameters.items():
+            if param.kind is ParameterKind.PARAM_SPEC:
+                assert isinstance(param.annotation, TypeVarValue)
+                tv = param.annotation.typevar
+                if tv in typevars:
+                    new_val = typevars[tv].substitute_typevars(typevars)
+                    if isinstance(new_val, TypeVarValue):
+                        assert new_val.is_paramspec, new_val
+                        new_param = SigParameter(
+                            param.name, param.kind, annotation=new_val
+                        )
+                        params.append((name, new_param))
+                    elif isinstance(new_val, AnyValue):
+                        is_ellipsis_args = True
+                        params = []
+                        break
+                    else:
+                        assert isinstance(new_val, CallableValue), new_val
+                        assert isinstance(new_val.signature, Signature), new_val
+                        params += list(new_val.signature.parameters.items())
+                else:
+                    params.append((name, param))
+            else:
+                params.append((name, param.substitute_typevars(typevars)))
         return Signature(
-            {
-                name: param.substitute_typevars(typevars)
-                for name, param in self.parameters.items()
-            },
+            dict(params),
             self.return_value.substitute_typevars(typevars),
             impl=self.impl,
             callable=self.callable,
             is_asynq=self.is_asynq,
             has_return_annotation=self.has_return_annotation,
-            is_ellipsis_args=self.is_ellipsis_args,
+            is_ellipsis_args=is_ellipsis_args,
             allow_call=self.allow_call,
         )
 

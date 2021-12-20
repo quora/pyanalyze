@@ -45,10 +45,9 @@ from typing import (
     TypeVar,
     cast,
 )
-from typing_extensions import Literal, Protocol
+from typing_extensions import Literal, Protocol, ParamSpec
 
 import pyanalyze
-from pyanalyze import extensions
 from pyanalyze.extensions import CustomCheck
 
 from .safe import all_of_type, safe_issubclass, safe_isinstance
@@ -59,7 +58,8 @@ BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 ITERATION_LIMIT = 1000
 
-TypeVarMap = Mapping["TypeVar", "Value"]
+TypeVarLike = Union["TypeVar", "ParamSpec"]
+TypeVarMap = Mapping[TypeVarLike, "Value"]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
 
 
@@ -1443,15 +1443,16 @@ class ReferencingValue(Value):
 
 @dataclass(frozen=True)
 class TypeVarValue(Value):
-    """Value representing a ``typing.TypeVar``.
+    """Value representing a ``typing.TypeVar`` or ``typing.ParamSpec``.
 
-    Currently, bounds, value restrictions, and variance are ignored.
+    Currently, variance is ignored.
 
     """
 
-    typevar: TypeVar
+    typevar: TypeVarLike
     bound: Optional[Value] = None
     constraints: Sequence[Value] = ()
+    is_paramspec: bool = False
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return typevars.get(self.typevar, self)

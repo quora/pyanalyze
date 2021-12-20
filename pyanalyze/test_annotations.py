@@ -1492,3 +1492,87 @@ class TestRequired(TestNameCheckVisitorBase):
         class Capybara:
             x: Required[int]  # E: invalid_annotation
             y: NotRequired[int]  # E: invalid_annotation
+
+
+class TestParamSpec(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        from typing_extensions import ParamSpec
+        from typing import Callable, TypeVar, List
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def wrapped(a: int) -> str:
+            return str(a)
+
+        def wrapper(c: Callable[P, T]) -> Callable[P, List[T]]:
+            raise NotImplementedError
+
+        def quoted_wrapper(c: "Callable[P, T]") -> "Callable[P, List[T]]":
+            raise NotImplementedError
+
+        def capybara() -> None:
+            assert_is_value(wrapped(1), TypedValue(str))
+
+            refined = wrapper(wrapped)
+            assert_is_value(refined(1), GenericValue(list, [TypedValue(str)]))
+            refined("too", "many", "arguments")  # E: incompatible_call
+
+            quoted_refined = quoted_wrapper(wrapped)
+            assert_is_value(quoted_refined(1), GenericValue(list, [TypedValue(str)]))
+            quoted_refined("too", "many", "arguments")  # E: incompatible_call
+
+    def test_concatenate(self):
+        # putting this in an @assert_passes() function crashes GitHub Actions on 3.6
+        # for unclear reasons
+        self.assert_passes(
+            """
+            from typing_extensions import ParamSpec, Concatenate
+            from typing import Callable, TypeVar, List
+
+            P = ParamSpec("P")
+            T = TypeVar("T")
+
+            def wrapped(a: int) -> str:
+                return str(a)
+
+            def wrapper(c: Callable[P, T]) -> Callable[Concatenate[str, P], List[T]]:
+                raise NotImplementedError
+
+            def quoted_wrapper(
+                c: "Callable[P, T]",
+            ) -> "Callable[Concatenate[str, P], List[T]]":
+                raise NotImplementedError
+
+            def capybara() -> None:
+                assert_is_value(wrapped(1), TypedValue(str))
+
+                refined = wrapper(wrapped)
+                assert_is_value(refined("x", 1), GenericValue(list, [TypedValue(str)]))
+                refined(1)  # E: incompatible_call
+
+                quoted_refined = quoted_wrapper(wrapped)
+                assert_is_value(
+                    quoted_refined("x", 1), GenericValue(list, [TypedValue(str)])
+                )
+                quoted_refined(1)  # E: incompatible_call
+            """
+        )
+
+    @assert_passes()
+    def test_match_any(self):
+        from typing_extensions import ParamSpec
+        from typing import Callable, TypeVar, List
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def wrapper(c: Callable[P, T]) -> Callable[P, List[T]]:
+            raise NotImplementedError
+
+        def capybara(unannotated):
+            refined = wrapper(unannotated)
+            assert_is_value(
+                refined(), GenericValue(list, [AnyValue(AnySource.generic_argument)])
+            )
