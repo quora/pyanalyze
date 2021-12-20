@@ -8,7 +8,6 @@ from .value import (
     AnySource,
     AnyValue,
     KVPair,
-    WeakExtension,
     assert_is_value,
     CallableValue,
     GenericValue,

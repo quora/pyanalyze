@@ -1555,18 +1555,22 @@ class OverloadedSignature:
         The way overloads are handled is not well specified in any PEPs. Useful resources
         include:
 
-        - Michael Lee's `specification <https://github.com/python/typing/issues/253#issuecomment-389262904>`_
+        - Michael Lee's `specification
+          <https://github.com/python/typing/issues/253#issuecomment-389262904>`_
           of mypy's behavior.
-        - Eric Traut's `discussion <https://github.com/microsoft/pyright/issues/2521#issuecomment-956823577>`_
+        - Eric Traut's `discussion
+          <https://github.com/microsoft/pyright/issues/2521#issuecomment-956823577>`_
           of pyright's behavior.
-        - The `documentation <https://github.com/microsoft/pyright/blob/main/docs/type-concepts.md#overloads>`_
+        - The `documentation
+          <https://github.com/microsoft/pyright/blob/main/docs/type-concepts.md#overloads>`_
           for pyright's behavior.
 
         Our behavior is closer to mypy. The general rule is to pick the first overload that matches
         and return an error otherwise, but there are two twists: ``Any`` and unions.
 
         If an overload matched only due to ``Any``, we continue looking for more overloads. If there
-        are other matching overloads, we return ``Any`` (with ``AnySource.multiple_overload_matches``).
+        are other matching overloads, we return ``Any`` (with
+        ``AnySource.multiple_overload_matches``).
         This is different from pyright's behavior: pyright picks the first overload regardless
         of ``Any``, which is unsafe in general. Returning a ``Union`` would be more precise, but
         may lead to false positives according to experience from other type checkers. A match

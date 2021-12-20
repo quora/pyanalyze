@@ -173,7 +173,8 @@ class TestAnnotations(TestNameCheckVisitorBase):
     def test_annotations_function(self):
         def caviidae() -> None:
             x = int
-            # tests that annotations in a nested functions are not evaluated in a context where they don't exist
+            # tests that annotations in a nested functions are not evaluated in a context where
+            # they don't exist
             def capybara(a: x, *b: x, c: x, d: x = 3, **kwargs: x):
                 pass
 

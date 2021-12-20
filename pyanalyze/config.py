@@ -18,7 +18,7 @@ from .extensions import CustomCheck
 
 if TYPE_CHECKING:
     from .arg_spec import ArgSpecCache
-    from .signature import Signature, ConcreteSignature
+    from .signature import ConcreteSignature
     from .reexport import ImplicitReexportTracker
 
 

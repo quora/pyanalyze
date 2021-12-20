@@ -1684,12 +1684,12 @@ class NameCheckVisitor(
                         isinstance(statement.value, ast.Yield)
                         and isinstance(statement.value.value, ast.Tuple)
                     ):
-                        # but not an assignment originating from yielding a tuple (which is probably an
-                        # async yield)
+                        # but not an assignment originating from yielding a tuple (which is
+                        # probably an async yield)
 
-                        # We need to loop over the targets to handle code like "a, b = c = func()". If
-                        # the target containing our unused variable is a tuple and some of its members
-                        # are not unused, ignore it.
+                        # We need to loop over the targets to handle code like "a, b = c = func()".
+                        # If the target containing our unused variable is a tuple and some of its
+                        # members are not unused, ignore it.
                         partly_used_target = False
                         for target in statement.targets:
                             if (
@@ -1773,8 +1773,9 @@ class NameCheckVisitor(
                         # normal method
                         value = TypedValue(self.current_class)
                 else:
-                    # This is meant to exclude methods in nested classes. It's a bit too conservative
-                    # for cases such as a function nested in a method nested in a class nested in a function.
+                    # This is meant to exclude methods in nested classes. It's a bit too
+                    # conservative for cases such as a function nested in a method nested in a
+                    # class nested in a function.
                     if not isinstance(node, ast.Lambda) and not (
                         idx == 0
                         and not function_info.is_staticmethod
@@ -4469,16 +4470,17 @@ class NameCheckVisitor(
                 enabled=find_unused or cls.config.ENFORCE_NO_UNUSED_OBJECTS,
                 print_output=False,
             )
-        with inner_attribute_checker_obj as inner_attribute_checker, unused_finder as inner_unused_finder:
-            all_failures = super()._run_on_files(
-                files,
-                attribute_checker=attribute_checker
-                if attribute_checker is not None
-                else inner_attribute_checker,
-                unused_finder=inner_unused_finder,
-                settings=settings,
-                **kwargs,
-            )
+        with inner_attribute_checker_obj as inner_attribute_checker:
+            with unused_finder as inner_unused_finder:
+                all_failures = super()._run_on_files(
+                    files,
+                    attribute_checker=attribute_checker
+                    if attribute_checker is not None
+                    else inner_attribute_checker,
+                    unused_finder=inner_unused_finder,
+                    settings=settings,
+                    **kwargs,
+                )
         if unused_finder is not None:
             for unused_object in unused_finder.get_unused_objects():
                 # Maybe we should switch to a shared structured format for errors

@@ -15,7 +15,6 @@ from .name_check_visitor import (
 )
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
-from .stacked_scopes import Composite, Varname
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
@@ -612,8 +611,6 @@ def run():
 
     @assert_fails(ErrorCode.class_variable_redefinition)
     def test_duplicate_attribute(self):
-        import enum
-
         class Hutia:
             capromys = 1
             capromys = 2
@@ -1652,7 +1649,7 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
         class Metaclass(type):
             def __init__(self, name, bases, attrs):
                 super(Metaclass, self).__init__(name, bases, attrs)
-                # TODO(jelle): the value is inferred correctly but this test fails because identical super
+                # TODO: the value is inferred correctly but this test fails because identical super
                 # objects don't compare equal
                 # assert_is_value(super(Metaclass, self).__init__,
                 #                 UnboundMethodValue('__init__', super(Metaclass, Metaclass)))
@@ -1820,7 +1817,7 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
 
     @assert_fails(ErrorCode.task_needs_yield)
     def test_async(self):
-        from asynq import asynq, ConstFuture
+        from asynq import asynq
 
         @asynq()
         def async_fn():
@@ -2058,8 +2055,6 @@ async def f():
 class TestNonlocal(TestNameCheckVisitorBase):
     @assert_passes()
     def test_nonlocal(self):
-        from qcore.testing import Anything
-
         def capybara():
             x = 3
 
