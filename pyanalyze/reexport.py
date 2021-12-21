@@ -18,7 +18,7 @@ class ErrorContext:
     all_failures: List[Failure]
 
     def show_error(
-        self, node: AST, message: str, error_code: Enum
+        self, node: AST, message: str, error_code: Enum, *, detail: Optional[str] = None
     ) -> Optional[Failure]:
         raise NotImplementedError
 

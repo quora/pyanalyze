@@ -87,7 +87,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         with ClassAttributeChecker(
             self.visitor_cls.config, enabled=check_attributes
         ) as attribute_checker:
-            return self.visitor_cls(
+            visitor = self.visitor_cls(
                 mod.__name__,
                 code_str,
                 tree,
@@ -96,7 +96,10 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 settings=default_settings,
                 verbosity=verbosity,
                 **kwargs,
-            ).check_for_test(apply_changes=apply_changes)
+            )
+            visitor.check_for_test(apply_changes=apply_changes)
+            visitor.perform_final_checks(kwargs)
+        return visitor.all_failures
 
 
 class TestAnnotatingNodeVisitor(test_node_visitor.BaseNodeVisitorTester):
@@ -2673,3 +2676,16 @@ class TestCompare(TestNameCheckVisitorBase):
             if 1 < i < 3 != x:
                 assert_is_value(i, KnownValue(2))
                 assert_is_value(x, KnownValue(4))
+
+
+class TestSuggestedType(TestNameCheckVisitorBase):
+    @assert_passes(settings={ErrorCode.suggested_return_type: True})
+    def test_return(self):
+        def capybara():  # E: suggested_return_type
+            return 1
+
+        def kerodon(cond):  # E: suggested_return_type
+            if cond:
+                return 1
+            else:
+                return 2

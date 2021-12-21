@@ -331,6 +331,10 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return kwargs
 
     @classmethod
+    def perform_final_checks(cls, kwargs: Mapping[str, Any]) -> List[Failure]:
+        return []
+
+    @classmethod
     def main(cls) -> int:
         """Can be used as a main function. Calls the checker on files given on the command line."""
         args = cls._get_argument_parser().parse_args()
@@ -710,6 +714,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             for failures, _ in map(cls._check_file_single_arg, args):
                 all_failures += failures
+        all_failures += cls.perform_final_checks(kwargs)
         return all_failures
 
     @classmethod
