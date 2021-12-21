@@ -331,6 +331,10 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return kwargs
 
     @classmethod
+    def perform_final_checks(cls, kwargs: Mapping[str, Any]) -> List[Failure]:
+        return []
+
+    @classmethod
     def main(cls) -> int:
         """Can be used as a main function. Calls the checker on files given on the command line."""
         args = cls._get_argument_parser().parse_args()
@@ -520,6 +524,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         obey_ignore: bool = True,
         ignore_comment: str = IGNORE_COMMENT,
         detail: Optional[str] = None,
+        save: bool = True,
     ) -> Optional[Failure]:
         """Shows an error associated with this node.
 
@@ -647,7 +652,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
             self._changes_for_fixer[self.filename].append(replacement)
 
         error["message"] = message
-        self.all_failures.append(error)
+        if save:
+            self.all_failures.append(error)
         sys.stderr.write(message)
         sys.stderr.flush()
         if self.fail_after_first:
@@ -710,6 +716,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             for failures, _ in map(cls._check_file_single_arg, args):
                 all_failures += failures
+        all_failures += cls.perform_final_checks(kwargs)
         return all_failures
 
     @classmethod

@@ -727,6 +727,10 @@ class Signature:
         if bound_args is None:
             return self.get_default_return()
         variables = {key: composite.value for key, (_, composite) in bound_args.items()}
+
+        if self.callable is not None:
+            visitor.record_call(self.callable, variables)
+
         return_value = self.return_value
         typevar_values: Dict[TypeVar, Value] = {}
         if self.all_typevars:

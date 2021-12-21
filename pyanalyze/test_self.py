@@ -19,6 +19,8 @@ class PyanalyzeConfig(pyanalyze.config.Config):
         ErrorCode.missing_parameter_annotation,
         ErrorCode.unused_variable,
         ErrorCode.value_always_true,
+        ErrorCode.suggested_parameter_type,
+        ErrorCode.suggested_return_type,
     }
 
 

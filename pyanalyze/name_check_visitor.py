@@ -109,6 +109,7 @@ from .signature import (
     ARGS,
     KWARGS,
 )
+from .suggested_type import CallArgs, display_suggested_type
 from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
@@ -1306,6 +1307,17 @@ class NameCheckVisitor(
         else:
             potential_function = None
 
+        if (
+            potential_function is not None
+            and self.settings
+            and self.settings[ErrorCode.suggested_parameter_type]
+        ):
+            sig = self.signature_from_value(KnownValue(potential_function))
+            if isinstance(sig, Signature):
+                self.checker.callable_tracker.record_callable(
+                    node, potential_function, sig, self
+                )
+
         self.yield_checker.reset_yield_checks()
 
         # This code handles nested functions
@@ -1373,6 +1385,21 @@ class NameCheckVisitor(
             else:
                 self._show_error_if_checking(node, error_code=ErrorCode.missing_return)
 
+        if (
+            has_return
+            and expected_return_value is None
+            and not info.is_overload
+            and not any(
+                decorator == KnownValue(abstractmethod)
+                for _, decorator in info.decorators
+            )
+        ):
+            self._show_error_if_checking(
+                node,
+                error_code=ErrorCode.suggested_return_type,
+                detail=display_suggested_type(return_value),
+            )
+
         if evaled_function:
             return evaled_function
 
@@ -1426,6 +1453,10 @@ class NameCheckVisitor(
         else:
             self.log(logging.DEBUG, "No argspec", (potential_function, node))
         return KnownValue(potential_function)
+
+    def record_call(self, callable: object, arguments: CallArgs) -> None:
+        if self.settings and self.settings[ErrorCode.suggested_parameter_type]:
+            self.checker.callable_tracker.record_call(callable, arguments)
 
     def _visit_defaults(
         self, node: FunctionNode
@@ -4438,6 +4469,12 @@ class NameCheckVisitor(
         kwargs = dict(kwargs)
         kwargs.setdefault("checker", Checker(cls.config))
         return kwargs
+
+    @classmethod
+    def perform_final_checks(
+        cls, kwargs: Mapping[str, Any]
+    ) -> List[node_visitor.Failure]:
+        return kwargs["checker"].perform_final_checks()
 
     @classmethod
     def _run_on_files(

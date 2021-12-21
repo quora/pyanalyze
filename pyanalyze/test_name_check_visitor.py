@@ -84,10 +84,11 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
         mod = _make_module(code_str)
         kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
+        new_code = ""
         with ClassAttributeChecker(
             self.visitor_cls.config, enabled=check_attributes
         ) as attribute_checker:
-            return self.visitor_cls(
+            visitor = self.visitor_cls(
                 mod.__name__,
                 code_str,
                 tree,
@@ -96,7 +97,14 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 settings=default_settings,
                 verbosity=verbosity,
                 **kwargs,
-            ).check_for_test(apply_changes=apply_changes)
+            )
+            result = visitor.check_for_test(apply_changes=apply_changes)
+            if apply_changes:
+                result, new_code = result
+            result += visitor.perform_final_checks(kwargs)
+        if apply_changes:
+            return result, new_code
+        return result
 
 
 class TestAnnotatingNodeVisitor(test_node_visitor.BaseNodeVisitorTester):

@@ -9,12 +9,14 @@ from dataclasses import dataclass, field
 import sys
 from typing import Iterable, Iterator, List, Set, Tuple, Union, Dict
 
+from .node_visitor import Failure
 from .value import TypedValue
 from .arg_spec import ArgSpecCache
 from .config import Config
 from .reexport import ImplicitReexportTracker
 from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
 from .type_object import TypeObject, get_mro
+from .suggested_type import CallableTracker
 
 
 @dataclass
@@ -22,6 +24,7 @@ class Checker:
     config: Config
     arg_spec_cache: ArgSpecCache = field(init=False)
     reexport_tracker: ImplicitReexportTracker = field(init=False)
+    callable_tracker: CallableTracker = field(init=False)
     type_object_cache: Dict[Union[type, super, str], TypeObject] = field(
         default_factory=dict, init=False, repr=False
     )
@@ -32,6 +35,10 @@ class Checker:
     def __post_init__(self) -> None:
         self.arg_spec_cache = ArgSpecCache(self.config)
         self.reexport_tracker = ImplicitReexportTracker(self.config)
+        self.callable_tracker = CallableTracker()
+
+    def perform_final_checks(self) -> List[Failure]:
+        return self.callable_tracker.check()
 
     def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
         return self.config.get_additional_bases(typ)
