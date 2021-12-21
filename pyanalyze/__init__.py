@@ -26,6 +26,7 @@ from . import reexport
 from . import safe
 from . import signature
 from . import stacked_scopes
+from . import suggested_type
 from . import test_config
 from . import type_object
 from . import typeshed
@@ -44,3 +45,4 @@ used(extensions.overload)
 used(value.UNRESOLVED_VALUE)  # keeping it around for now just in case
 used(reexport)
 used(checker)
+used(suggested_type)

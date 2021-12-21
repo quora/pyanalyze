@@ -35,6 +35,9 @@ class CallableData:
             if sig_param is None or not isinstance(sig_param.annotation, AnyValue):
                 continue  # e.g. inferred type for self
             all_values = [call[param.arg] for call in self.calls]
+            all_values = [v for v in all_values if not isinstance(v, AnyValue)]
+            if not all_values:
+                continue
             suggested = display_suggested_type(unite_values(*all_values))
             failure = self.ctx.show_error(
                 param,
