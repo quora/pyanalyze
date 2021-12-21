@@ -450,7 +450,7 @@ class KnownValue(Value):
         val = replace_known_sequence_value(self)
         if isinstance(val, KnownValue):
             # don't simplify None
-            if val.val is None or safe_isinstance(val.val, type):
+            if val.val is None:
                 return self
             return TypedValue(type(val.val))
         return val.simplify()

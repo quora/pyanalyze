@@ -1,4 +1,6 @@
 # static analysis: ignore
+from .suggested_type import prepare_type
+from .value import KnownValue, SubclassValue, TypedValue
 from .error_code import ErrorCode
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -36,3 +38,23 @@ class TestSuggestedType(TestNameCheckVisitorBase):
             m = Mammalia()
             m.method()
             Mammalia.method(unannotated)
+
+
+class A:
+    pass
+
+
+class B(A):
+
+    pass
+
+
+class C(A):
+    pass
+
+
+def test_prepare_type() -> None:
+    assert prepare_type(KnownValue(int) | KnownValue(str)) == SubclassValue(
+        TypedValue(object)
+    )
+    assert prepare_type(KnownValue(C) | KnownValue(B)) == SubclassValue(TypedValue(A))

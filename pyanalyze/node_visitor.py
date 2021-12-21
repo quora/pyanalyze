@@ -524,6 +524,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         obey_ignore: bool = True,
         ignore_comment: str = IGNORE_COMMENT,
         detail: Optional[str] = None,
+        save: bool = True,
     ) -> Optional[Failure]:
         """Shows an error associated with this node.
 
@@ -651,7 +652,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
             self._changes_for_fixer[self.filename].append(replacement)
 
         error["message"] = message
-        self.all_failures.append(error)
+        if save:
+            self.all_failures.append(error)
         sys.stderr.write(message)
         sys.stderr.flush()
         if self.fail_after_first:

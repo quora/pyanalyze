@@ -1473,7 +1473,7 @@ class NameCheckVisitor(
         self,
         node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
         decorators: Sequence[Tuple[Value, Value]],
-    ):
+    ) -> Value:
         to_apply = []
         for decorator, applied_decorator in decorators:
             if (
