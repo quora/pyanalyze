@@ -84,6 +84,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
         mod = _make_module(code_str)
         kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
+        new_code = ""
         with ClassAttributeChecker(
             self.visitor_cls.config, enabled=check_attributes
         ) as attribute_checker:
@@ -97,9 +98,13 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 verbosity=verbosity,
                 **kwargs,
             )
-            visitor.check_for_test(apply_changes=apply_changes)
-            visitor.perform_final_checks(kwargs)
-        return visitor.all_failures
+            result = visitor.check_for_test(apply_changes=apply_changes)
+            if apply_changes:
+                result, new_code = result
+            result += visitor.perform_final_checks(kwargs)
+        if apply_changes:
+            return result, new_code
+        return result
 
 
 class TestAnnotatingNodeVisitor(test_node_visitor.BaseNodeVisitorTester):
@@ -2676,16 +2681,3 @@ class TestCompare(TestNameCheckVisitorBase):
             if 1 < i < 3 != x:
                 assert_is_value(i, KnownValue(2))
                 assert_is_value(x, KnownValue(4))
-
-
-class TestSuggestedType(TestNameCheckVisitorBase):
-    @assert_passes(settings={ErrorCode.suggested_return_type: True})
-    def test_return(self):
-        def capybara():  # E: suggested_return_type
-            return 1
-
-        def kerodon(cond):  # E: suggested_return_type
-            if cond:
-                return 1
-            else:
-                return 2
