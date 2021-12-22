@@ -165,7 +165,10 @@ def prepare_type(value: Value) -> Value:
                 rest.append(subval)
         if len(type_literals) > 1:
             shared_type = get_shared_type([typ for _, typ in type_literals])
-            type_val = SubclassValue(TypedValue(shared_type))
+            if shared_type is object:
+                type_val = TypedValue(type)
+            else:
+                type_val = SubclassValue(TypedValue(shared_type))
             return unite_values(type_val, *rest)
         return unite_values(*[v for v, _ in type_literals], *rest)
     else:
