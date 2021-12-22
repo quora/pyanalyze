@@ -4542,6 +4542,7 @@ class NameCheckVisitor(
                 all_failures.append(
                     {
                         "filename": node_visitor.UNUSED_OBJECT_FILENAME,
+                        "absolute_filename": node_visitor.UNUSED_OBJECT_FILENAME,
                         "message": failure + "\n",
                         "description": failure,
                     }
