@@ -6,6 +6,7 @@ Suggest types for untyped code.
 import ast
 from collections import defaultdict
 from dataclasses import dataclass, field
+from types import FunctionType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 
 from pyanalyze.safe import safe_getattr, safe_isinstance
@@ -114,14 +115,19 @@ def display_suggested_type(value: Value) -> Tuple[str, Optional[Dict[str, Any]]]
     # If the type is simple enough, add extra_metadata for autotyping to apply.
     if isinstance(value, TypedValue) and type(value) is TypedValue:
         # For now, only for exactly TypedValue
-        suggested_type = stringify_object(value.typ)
-        imports = []
-        if isinstance(value.typ, str):
-            if "." in value.typ:
-                imports.append(value.typ)
-        elif safe_getattr(value.typ, "__module__", None) != "builtins":
-            imports.append(suggested_type.split(".")[0])
-        metadata = {"suggested_type": suggested_type, "imports": imports}
+        if value.typ is FunctionType:
+            # It will end up suggesting builtins.function, which doesn't
+            # exist, and we should be using a Callable type instead anyway.
+            metadata = None
+        else:
+            suggested_type = stringify_object(value.typ)
+            imports = []
+            if isinstance(value.typ, str):
+                if "." in value.typ:
+                    imports.append(value.typ)
+            elif safe_getattr(value.typ, "__module__", None) != "builtins":
+                imports.append(suggested_type.split(".")[0])
+            metadata = {"suggested_type": suggested_type, "imports": imports}
     else:
         metadata = None
     return str(cae), metadata
