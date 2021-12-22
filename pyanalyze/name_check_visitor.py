@@ -109,7 +109,7 @@ from .signature import (
     ARGS,
     KWARGS,
 )
-from .suggested_type import CallArgs, display_suggested_type
+from .suggested_type import CallArgs, display_suggested_type, should_suggest_type
 from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
@@ -1393,6 +1393,7 @@ class NameCheckVisitor(
                 decorator == KnownValue(abstractmethod)
                 for _, decorator in info.decorators
             )
+            and should_suggest_type(return_value)
         ):
             self._show_error_if_checking(
                 node,
