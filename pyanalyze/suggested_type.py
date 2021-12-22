@@ -6,11 +6,7 @@ Suggest types for untyped code.
 import ast
 from collections import defaultdict
 from dataclasses import dataclass, field
-<<<<<<< HEAD
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
-=======
-from typing import Dict, Iterator, List, Mapping, Sequence, Tuple, Union
->>>>>>> origin/master
 
 from pyanalyze.safe import safe_getattr, safe_isinstance
 
@@ -24,7 +20,6 @@ from .value import (
     CanAssignError,
     GenericValue,
     KnownValue,
-    NewTypeValue,
     SequenceIncompleteValue,
     SubclassValue,
     TypedDictValue,
