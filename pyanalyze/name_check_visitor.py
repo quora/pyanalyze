@@ -1021,11 +1021,17 @@ class NameCheckVisitor(
         *,
         replacement: Optional[node_visitor.Replacement] = None,
         detail: Optional[str] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """We usually should show errors only in the check_names state to avoid duplicate errors."""
         if self._is_checking():
             self.show_error(
-                node, msg, error_code=error_code, replacement=replacement, detail=detail
+                node,
+                msg,
+                error_code=error_code,
+                replacement=replacement,
+                detail=detail,
+                extra_metadata=extra_metadata,
             )
 
     def _set_name_in_scope(
@@ -1394,10 +1400,12 @@ class NameCheckVisitor(
                 for _, decorator in info.decorators
             )
         ):
+            detail, metadata = display_suggested_type(return_value)
             self._show_error_if_checking(
                 node,
                 error_code=ErrorCode.suggested_return_type,
-                detail=display_suggested_type(return_value),
+                detail=detail,
+                extra_metadata=metadata,
             )
 
         if evaled_function:

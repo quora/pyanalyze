@@ -7,7 +7,7 @@ from ast import AST
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .node_visitor import Failure
 from .config import Config
@@ -25,6 +25,7 @@ class ErrorContext:
         *,
         detail: Optional[str] = None,
         save: bool = True,
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Failure]:
         raise NotImplementedError
 

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 import qcore
 import cProfile
+import json
 import logging
 import os
 import os.path
@@ -38,7 +39,6 @@ from typing import (
     Tuple,
     Type,
     Union,
-    cast,
 )
 
 from . import analysis_lib
@@ -128,14 +128,16 @@ class FileNotFoundError(Exception):
     pass
 
 
-class Failure(TypedDict, total=False):
+class Failure(TypedDict):
     description: str
     filename: str
+    absolute_filename: str
     code: NotRequired[Enum]
     lineno: NotRequired[int]
     col_offset: NotRequired[int]
     context: NotRequired[str]
     message: NotRequired[str]
+    extra_metadata: NotRequired[Dict[str, Any]]
 
 
 class BaseNodeVisitor(ast.NodeVisitor):
@@ -361,6 +363,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             kwargs = dict(args.__dict__)
         markdown_output = kwargs.pop("markdown_output", None)
+        json_output = kwargs.pop("json_output", None)
 
         verbose = kwargs.pop("verbose", 0)
         if verbose == 0 or verbose is None:
@@ -396,7 +399,15 @@ class BaseNodeVisitor(ast.NodeVisitor):
             failures = cls._run(**kwargs)
             if markdown_output is not None and failures:
                 cls._write_markdown_report(markdown_output, failures)
+            if json_output is not None and failures:
+                cls._write_json_report(json_output, failures)
         return 1 if failures else 0
+
+    @classmethod
+    def _write_json_report(cls, output_file: str, failures: List[Failure]) -> None:
+        failures = [_make_serializable(failure) for failure in failures]
+        with open(output_file, "w") as f:
+            json.dump(failures, f)
 
     @classmethod
     def _write_markdown_report(cls, output_file: str, failures: List[Failure]) -> None:
@@ -410,7 +421,6 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
         with open(output_file, "w") as f:
             f.write("%d total failures in %d files\n\n" % (len(failures), len(by_file)))
-
             for filename, file_failures in sorted(by_file.items()):
                 if filename != UNUSED_OBJECT_FILENAME:
                     filename = filename[len(prefix) :]
@@ -526,6 +536,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         ignore_comment: str = IGNORE_COMMENT,
         detail: Optional[str] = None,
         save: bool = True,
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Failure]:
         """Shows an error associated with this node.
 
@@ -543,6 +554,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
           is "# static analysis: ignore".)
         - detail: extra detail to append to the error on a separate line
         - save: if False, do not add the failure to the all_failures list
+        - extra_metadata: if given, is added to JSON failures output
 
         """
         if self.caught_errors is not None:
@@ -555,6 +567,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
                     "obey_ignore": obey_ignore,
                     "ignore_comment": ignore_comment,
                     "detail": detail,
+                    "save": save,
+                    "extra_metadata": extra_metadata,
                 }
             )
             return None
@@ -585,7 +599,13 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             lineno = col_offset = None
 
-        error: Failure = {"description": str(e), "filename": self.filename}
+        error: Failure = {
+            "description": str(e),
+            "filename": self.filename,
+            "absolute_filename": os.path.abspath(self.filename),
+        }
+        if extra_metadata is not None:
+            error["extra_metadata"] = extra_metadata
         message = f"\n{e}"
         if error_code is not None:
             error["code"] = error_code
@@ -850,6 +870,13 @@ class BaseNodeVisitor(ast.NodeVisitor):
             ),
         )
         parser.add_argument(
+            "--json-output",
+            help=(
+                "Write errors to this file in JSON format. "
+                "Suitable for integrating with other tools."
+            ),
+        )
+        parser.add_argument(
             "--add-ignores",
             help=(
                 "Add ignore comments for all errors detected. "
@@ -1101,3 +1128,10 @@ class _Profile(object):
         self.filename = tempfile.mktemp()
         self.prof.dump_stats(self.filename)
         print("profiler output saved as {}".format(self.filename))
+
+
+def _make_serializable(failure: Failure) -> Dict[str, Any]:
+    result = dict(failure)
+    if "code" in failure:
+        result["code"] = failure["code"].name
+    return result

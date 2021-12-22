@@ -6,9 +6,9 @@ Suggest types for untyped code.
 import ast
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Mapping, Sequence, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 
-from pyanalyze.safe import safe_isinstance
+from pyanalyze.safe import safe_getattr, safe_isinstance
 
 from .error_code import ErrorCode
 from .node_visitor import Failure
@@ -20,6 +20,7 @@ from .value import (
     CanAssignError,
     GenericValue,
     KnownValue,
+    NewTypeValue,
     SequenceIncompleteValue,
     SubclassValue,
     TypedDictValue,
@@ -28,6 +29,7 @@ from .value import (
     MultiValuedValue,
     VariableNameValue,
     replace_known_sequence_value,
+    stringify_object,
     unite_values,
 )
 from .reexport import ErrorContext
@@ -58,7 +60,7 @@ class CallableData:
             all_values = [v for v in all_values if not isinstance(v, AnyValue)]
             if not all_values:
                 continue
-            suggested = display_suggested_type(unite_values(*all_values))
+            suggested, metadata = display_suggested_type(unite_values(*all_values))
             failure = self.ctx.show_error(
                 param,
                 f"Suggested type for parameter {param.arg}",
@@ -68,6 +70,7 @@ class CallableData:
                 # refactor error tracking to make it less hacky for things that
                 # show errors outside of files.
                 save=False,
+                extra_metadata=suggested,
             )
             if failure is not None:
                 yield failure
@@ -100,13 +103,26 @@ class CallableTracker:
         return failures
 
 
-def display_suggested_type(value: Value) -> str:
+def display_suggested_type(value: Value) -> Tuple[str, Optional[Dict[str, Any]]]:
     value = prepare_type(value)
     if isinstance(value, MultiValuedValue) and value.vals:
         cae = CanAssignError("Union", [CanAssignError(str(val)) for val in value.vals])
     else:
         cae = CanAssignError(str(value))
-    return str(cae)
+    # If the type is simple enough, add extra_metadata for autotyping to apply.
+    if isinstance(value, TypedValue) and type(value) is TypedValue:
+        # For now, only for exactly TypedValue
+        suggested_type = stringify_object(value.typ)
+        imports = []
+        if isinstance(value.typ, str):
+            if "." in value.typ:
+                imports.append(value.typ)
+        elif safe_getattr(value.typ, "__module__", None) != "builtins":
+            imports.append(suggested_type.split(".")[0])
+        metadata = {"suggested_type": suggested_type, "imports": imports}
+    else:
+        metadata = None
+    return str(cae), metadata
 
 
 def prepare_type(value: Value) -> Value:
