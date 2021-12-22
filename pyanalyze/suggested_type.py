@@ -6,7 +6,11 @@ Suggest types for untyped code.
 import ast
 from collections import defaultdict
 from dataclasses import dataclass, field
+<<<<<<< HEAD
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
+=======
+from typing import Dict, Iterator, List, Mapping, Sequence, Tuple, Union
+>>>>>>> origin/master
 
 from pyanalyze.safe import safe_getattr, safe_isinstance
 
@@ -60,17 +64,20 @@ class CallableData:
             all_values = [v for v in all_values if not isinstance(v, AnyValue)]
             if not all_values:
                 continue
-            suggested, metadata = display_suggested_type(unite_values(*all_values))
+            suggested = unite_values(*all_values)
+            if not should_suggest_type(suggested):
+                continue
+            detail, metadata = display_suggested_type(suggested)
             failure = self.ctx.show_error(
                 param,
                 f"Suggested type for parameter {param.arg}",
                 ErrorCode.suggested_parameter_type,
-                detail=suggested,
+                detail=detail,
                 # Otherwise we record it twice in tests. We should ultimately
                 # refactor error tracking to make it less hacky for things that
                 # show errors outside of files.
                 save=False,
-                extra_metadata=suggested,
+                extra_metadata=metadata,
             )
             if failure is not None:
                 yield failure
@@ -125,6 +132,15 @@ def display_suggested_type(value: Value) -> Tuple[str, Optional[Dict[str, Any]]]
     return str(cae), metadata
 
 
+def should_suggest_type(value: Value) -> bool:
+    if isinstance(value, AnyValue):
+        return False
+    if isinstance(value, MultiValuedValue) and len(value.vals) > 5:
+        # Big unions probably aren't useful
+        return False
+    return True
+
+
 def prepare_type(value: Value) -> Value:
     """Simplify a type to turn it into a suggestion."""
     if isinstance(value, AnnotatedValue):
@@ -144,8 +160,10 @@ def prepare_type(value: Value) -> Value:
     elif isinstance(value, VariableNameValue):
         return AnyValue(AnySource.unannotated)
     elif isinstance(value, KnownValue):
-        if value.val is None or safe_isinstance(value.val, type):
+        if value.val is None:
             return value
+        elif safe_isinstance(value.val, type):
+            return SubclassValue(TypedValue(value.val))
         elif callable(value.val):
             return value  # TODO get the signature instead and return a CallableValue?
         value = replace_known_sequence_value(value)
@@ -155,22 +173,25 @@ def prepare_type(value: Value) -> Value:
             return prepare_type(value)
     elif isinstance(value, MultiValuedValue):
         vals = [prepare_type(subval) for subval in value.vals]
-        type_literals = [
-            v
-            for v in vals
-            if isinstance(v, KnownValue) and safe_isinstance(v.val, type)
-        ]
-        if len(type_literals) > 1:
-            types = [v.val for v in type_literals if isinstance(v.val, type)]
-            shared_type = get_shared_type(types)
-            type_val = SubclassValue(TypedValue(shared_type))
-            others = [
-                v
-                for v in vals
-                if not isinstance(v, KnownValue) or not safe_isinstance(v.val, type)
-            ]
-            return unite_values(type_val, *others)
-        return unite_values(*vals)
+        type_literals: List[Tuple[Value, type]] = []
+        rest: List[Value] = []
+        for subval in vals:
+            if (
+                isinstance(subval, SubclassValue)
+                and isinstance(subval.typ, TypedValue)
+                and safe_isinstance(subval.typ.typ, type)
+            ):
+                type_literals.append((subval, subval.typ.typ))
+            else:
+                rest.append(subval)
+        if type_literals:
+            shared_type = get_shared_type([typ for _, typ in type_literals])
+            if shared_type is object:
+                type_val = TypedValue(type)
+            else:
+                type_val = SubclassValue(TypedValue(shared_type))
+            return unite_values(type_val, *rest)
+        return unite_values(*[v for v, _ in type_literals], *rest)
     else:
         return value
 
