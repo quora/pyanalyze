@@ -14,6 +14,7 @@ from pyanalyze.safe import safe_getattr, safe_isinstance
 from .error_code import ErrorCode
 from .node_visitor import Failure
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -134,10 +135,20 @@ def display_suggested_type(value: Value) -> Tuple[str, Optional[Dict[str, Any]]]
 
 
 def should_suggest_type(value: Value) -> bool:
+    # Literal[<some function>] isn't useful. In the future we should suggest a
+    # Callable type.
+    if isinstance(value, KnownValue) and isinstance(value.val, FunctionType):
+        return False
+    # These generally aren't useful.
+    if isinstance(value, TypedValue) and value.typ in (FunctionType, type):
+        return False
     if isinstance(value, AnyValue):
         return False
     if isinstance(value, MultiValuedValue) and len(value.vals) > 5:
         # Big unions probably aren't useful
+        return False
+    # We emptied out a Union
+    if value is NO_RETURN_VALUE:
         return False
     return True
 
@@ -174,6 +185,8 @@ def prepare_type(value: Value) -> Value:
             return prepare_type(value)
     elif isinstance(value, MultiValuedValue):
         vals = [prepare_type(subval) for subval in value.vals]
+        # Throw out Anys
+        vals = [val for val in vals if not isinstance(val, AnyValue)]
         type_literals: List[Tuple[Value, type]] = []
         rest: List[Value] = []
         for subval in vals:
@@ -207,10 +220,14 @@ def get_shared_type(types: Sequence[type]) -> type:
     assert False, "should at least have found object"
 
 
-def _extract_params(node: FunctionNode) -> Iterator[ast.arg]:
+# We exclude *args and **kwargs by default because it's not currently possible
+# to give useful types for them.
+def _extract_params(
+    node: FunctionNode, *, include_var: bool = False
+) -> Iterator[ast.arg]:
     yield from node.args.args
-    if node.args.vararg is not None:
+    if include_var and node.args.vararg is not None:
         yield node.args.vararg
     yield from node.args.kwonlyargs
-    if node.args.kwarg is not None:
+    if include_var and node.args.kwarg is not None:
         yield node.args.kwarg
