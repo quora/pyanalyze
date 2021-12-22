@@ -139,8 +139,10 @@ def prepare_type(value: Value) -> Value:
     elif isinstance(value, VariableNameValue):
         return AnyValue(AnySource.unannotated)
     elif isinstance(value, KnownValue):
-        if value.val is None or safe_isinstance(value.val, type):
+        if value.val is None:
             return value
+        elif safe_isinstance(value.val, type):
+            return SubclassValue(TypedValue(value.val))
         elif callable(value.val):
             return value  # TODO get the signature instead and return a CallableValue?
         value = replace_known_sequence_value(value)
@@ -153,9 +155,7 @@ def prepare_type(value: Value) -> Value:
         type_literals: List[Tuple[Value, type]] = []
         rest: List[Value] = []
         for subval in vals:
-            if isinstance(subval, KnownValue) and safe_isinstance(subval.val, type):
-                type_literals.append((subval, subval.val))
-            elif (
+            if (
                 isinstance(subval, SubclassValue)
                 and isinstance(subval.typ, TypedValue)
                 and safe_isinstance(subval.typ.typ, type)
@@ -163,7 +163,7 @@ def prepare_type(value: Value) -> Value:
                 type_literals.append((subval, subval.typ.typ))
             else:
                 rest.append(subval)
-        if len(type_literals) > 1:
+        if type_literals:
             shared_type = get_shared_type([typ for _, typ in type_literals])
             if shared_type is object:
                 type_val = TypedValue(type)

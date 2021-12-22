@@ -55,6 +55,7 @@ class C(A):
 def test_prepare_type() -> None:
     assert prepare_type(KnownValue(int) | KnownValue(str)) == TypedValue(type)
     assert prepare_type(KnownValue(C) | KnownValue(B)) == SubclassValue(TypedValue(A))
+    assert prepare_type(KnownValue(int)) == SubclassValue(TypedValue(int))
 
     assert prepare_type(SubclassValue(TypedValue(B)) | KnownValue(C)) == SubclassValue(
         TypedValue(A)
