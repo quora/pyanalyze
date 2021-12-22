@@ -4543,6 +4543,7 @@ class NameCheckVisitor(
                     {
                         "filename": node_visitor.UNUSED_OBJECT_FILENAME,
                         "message": failure + "\n",
+                        "description": failure,
                     }
                 )
         if attribute_checker is not None:
