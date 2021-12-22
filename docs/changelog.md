@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+- Add JSON output for integrating pyanalyze's output with other
+  tools (#360)
 - Add check that suggests parameter and return types for untyped
   functions, using the new `suggested_parameter_type` and
-  `suggested_return_type` codes (#358)
+  `suggested_return_type` codes (#358, #359, #364)
 - Extract constraints from multi-comparisons (`a < b < c`) (#354)
 - Support positional-only arguments with the `__` prefix
   outside of stubs (#353)

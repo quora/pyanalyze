@@ -45,7 +45,6 @@ class A:
 
 
 class B(A):
-
     pass
 
 
@@ -54,7 +53,17 @@ class C(A):
 
 
 def test_prepare_type() -> None:
-    assert prepare_type(KnownValue(int) | KnownValue(str)) == SubclassValue(
-        TypedValue(object)
-    )
+    assert prepare_type(KnownValue(int) | KnownValue(str)) == TypedValue(type)
     assert prepare_type(KnownValue(C) | KnownValue(B)) == SubclassValue(TypedValue(A))
+    assert prepare_type(KnownValue(int)) == SubclassValue(TypedValue(int))
+
+    assert prepare_type(SubclassValue(TypedValue(B)) | KnownValue(C)) == SubclassValue(
+        TypedValue(A)
+    )
+    assert prepare_type(SubclassValue(TypedValue(B)) | KnownValue(B)) == SubclassValue(
+        TypedValue(B)
+    )
+    assert prepare_type(KnownValue(None) | TypedValue(str)) == KnownValue(
+        None
+    ) | TypedValue(str)
+    assert prepare_type(KnownValue(True) | KnownValue(False)) == TypedValue(bool)

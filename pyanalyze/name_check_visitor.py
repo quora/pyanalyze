@@ -109,7 +109,12 @@ from .signature import (
     ARGS,
     KWARGS,
 )
-from .suggested_type import CallArgs, display_suggested_type
+from .suggested_type import (
+    CallArgs,
+    display_suggested_type,
+    prepare_type,
+    should_suggest_type,
+)
 from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
@@ -875,6 +880,8 @@ class NameCheckVisitor(
 
     def _load_module(self) -> Tuple[Optional[types.ModuleType], bool]:
         """Sets the module_path and module for this file."""
+        if not self.filename:
+            return None, False
         self.log(logging.INFO, "Checking file", (self.filename, os.getpid()))
 
         try:
@@ -1021,11 +1028,17 @@ class NameCheckVisitor(
         *,
         replacement: Optional[node_visitor.Replacement] = None,
         detail: Optional[str] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """We usually should show errors only in the check_names state to avoid duplicate errors."""
         if self._is_checking():
             self.show_error(
-                node, msg, error_code=error_code, replacement=replacement, detail=detail
+                node,
+                msg,
+                error_code=error_code,
+                replacement=replacement,
+                detail=detail,
+                extra_metadata=extra_metadata,
             )
 
     def _set_name_in_scope(
@@ -1394,11 +1407,15 @@ class NameCheckVisitor(
                 for _, decorator in info.decorators
             )
         ):
-            self._show_error_if_checking(
-                node,
-                error_code=ErrorCode.suggested_return_type,
-                detail=display_suggested_type(return_value),
-            )
+            prepared = prepare_type(return_value)
+            if should_suggest_type(prepared):
+                detail, metadata = display_suggested_type(prepared)
+                self._show_error_if_checking(
+                    node,
+                    error_code=ErrorCode.suggested_return_type,
+                    detail=detail,
+                    extra_metadata=metadata,
+                )
 
         if evaled_function:
             return evaled_function
@@ -4527,7 +4544,9 @@ class NameCheckVisitor(
                 all_failures.append(
                     {
                         "filename": node_visitor.UNUSED_OBJECT_FILENAME,
+                        "absolute_filename": node_visitor.UNUSED_OBJECT_FILENAME,
                         "message": failure + "\n",
+                        "description": failure,
                     }
                 )
         if attribute_checker is not None:
