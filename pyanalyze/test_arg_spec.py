@@ -9,7 +9,7 @@ from .test_name_check_visitor import (
     ConfiguredNameCheckVisitor,
 )
 from .test_node_visitor import assert_passes
-from .signature import SigParameter, BoundMethodSignature, Signature
+from .signature import SigParameter, BoundMethodSignature, Signature, ParameterKind
 from .stacked_scopes import Composite
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .tests import l0cached_async_fn
@@ -122,8 +122,8 @@ def test_get_argspec():
             [
                 SigParameter("capybara"),
                 SigParameter("hutia", default=KnownValue(3)),
-                SigParameter("tucotucos", SigParameter.VAR_POSITIONAL),
-                SigParameter("proechimys", SigParameter.VAR_KEYWORD),
+                SigParameter("tucotucos", ParameterKind.VAR_POSITIONAL),
+                SigParameter("proechimys", ParameterKind.VAR_KEYWORD),
             ],
             callable=function,
         ) == ArgSpecCache(config).get_argspec(function)
@@ -227,12 +227,12 @@ def test_get_argspec():
             [
                 SigParameter(
                     "args",
-                    SigParameter.VAR_POSITIONAL,
+                    ParameterKind.VAR_POSITIONAL,
                     annotation=AnyValue(AnySource.inference),
                 ),
                 SigParameter(
                     "kwargs",
-                    SigParameter.VAR_KEYWORD,
+                    ParameterKind.VAR_KEYWORD,
                     annotation=AnyValue(AnySource.inference),
                 ),
             ],
@@ -241,12 +241,49 @@ def test_get_argspec():
         assert Signature.make(
             [
                 SigParameter(
-                    "x", SigParameter.POSITIONAL_ONLY, annotation=TypedValue(int)
+                    "x", ParameterKind.POSITIONAL_ONLY, annotation=TypedValue(int)
                 )
             ],
             NewTypeValue(NT),
             callable=NT,
         ) == ArgSpecCache(config).get_argspec(NT)
+
+
+def test_positional_only():
+    def f(__x, _f__x):
+        pass
+
+    class Y:
+        def f(self, __x):
+            pass
+
+        class X:
+            def f(self, __x, _Y__x):
+                pass
+
+    asc = ArgSpecCache(ConfiguredNameCheckVisitor.config)
+    assert asc.get_argspec(f) == Signature.make(
+        [
+            SigParameter("__x", ParameterKind.POSITIONAL_ONLY),
+            SigParameter("_f__x", ParameterKind.POSITIONAL_OR_KEYWORD),
+        ],
+        callable=f,
+    )
+    assert asc.get_argspec(Y.f) == Signature.make(
+        [
+            SigParameter("self", ParameterKind.POSITIONAL_OR_KEYWORD),
+            SigParameter("_Y__x", ParameterKind.POSITIONAL_ONLY),
+        ],
+        callable=Y.f,
+    )
+    assert asc.get_argspec(Y.X.f) == Signature.make(
+        [
+            SigParameter("self", ParameterKind.POSITIONAL_OR_KEYWORD),
+            SigParameter("_X__x", ParameterKind.POSITIONAL_ONLY),
+            SigParameter("_Y__x", ParameterKind.POSITIONAL_OR_KEYWORD),
+        ],
+        callable=Y.X.f,
+    )
 
 
 def test_is_dot_asynq_function():
@@ -380,3 +417,16 @@ class TestNamedTuple(TestNameCheckVisitorBase):
             CustomNew("x")  # E: incompatible_argument
             cn = CustomNew(a=3)
             assert_is_value(cn, TypedValue(CustomNew))
+
+
+class TestBuiltinMethods(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_method_wrapper(self):
+        import collections.abc
+
+        def capybara():
+            r = range(10)
+            assert_is_value(r, KnownValue(range(10)))
+            assert_is_value(
+                r.__iter__(), GenericValue(collections.abc.Iterator, [TypedValue(int)])
+            )

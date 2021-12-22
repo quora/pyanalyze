@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- Add check that suggests parameter and return types for untyped
+  functions, using the new `suggested_parameter_type` and
+  `suggested_return_type` codes (#358)
+- Extract constraints from multi-comparisons (`a < b < c`) (#354)
+- Support positional-only arguments with the `__` prefix
+  outside of stubs (#353)
+- Add basic support for `ParamSpec` (#352)
+- Fix error on use of `AbstractAsyncContextManager` (#350)
+- Check `with` and `async with` statements (#344)
+- Improve type compatibility between generics and literals (#346)
+- Infer signatures for method wrapper objects (bound methods
+  of builtin types) (#345)
+- Allow storing type narrowing constraints in variables (#343)
+- The first argument to `__new__` and `__init_subclass__`
+  does not need to be `self` (#342)
+- Drop dependencies on `attrs` and `mypy_extensions` (#341)
+- Correct location of error for incompatible parameter (#339)
+
+## Version 0.5.0 (December 12, 2021)
+
+- Recognize code following an infinite while loop as unreachable (#337)
+- Recognize overloaded functions in stubs (#325)
+- Fix handling of classes in stubs that have an incorrect `__qualname__`
+  at runtime (#336)
+- Fix type compatibility with generic functions (#335)
+- Support function calls in annotations (#334)
+- Better support for `TypeVar` bounds and constraints in stubs (#333)
+- Improve type checking of `dict.update` and `dict.copy` (#328)
+- Improve support for complex type aliases in stubs
+  (#331)
 - Limit special case for `Literal` callables to
   functions, not any callable (#329)
 - Support for constants in stubs that do not exist
@@ -48,6 +78,7 @@
   - `DictIncompleteValue` and `AnnotatedValue` use tuples instead of lists internally.
   - `DictIncompleteValue` now stores a sequence of `KVPair` object instead
     of just key-value pairs, enabling more granular information.
+  - The type of a `TypedValue` may now be a string
 
 ## Version 0.4.0 (November 18, 2021)
 

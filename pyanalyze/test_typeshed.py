@@ -15,6 +15,7 @@ from typed_ast import ast3
 import typing
 from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
+import urllib.parse
 
 from .test_config import TestConfig
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -269,6 +270,12 @@ class TestGetGenericBases:
             contextlib.AbstractContextManager,
             [int_tv],
         )
+        if sys.version_info >= (3, 7):
+            self.check(
+                {contextlib.AbstractAsyncContextManager: [int_tv]},
+                contextlib.AbstractAsyncContextManager,
+                [int_tv],
+            )
 
     def test_collections(self):
         int_tv = TypedValue(int)
@@ -380,6 +387,26 @@ class TestGetGenericBases:
             io.BytesIO,
         )
 
+    def test_parse_result(self):
+        self.check(
+            {
+                collections.abc.Iterable: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Reversible: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Container: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Collection: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
+                urllib.parse.ParseResult: [],
+                urllib.parse._ParseResultBase: [],
+                "urllib.parse._ResultMixinBase": [TypedValue(str)],
+                tuple: [AnyValue(AnySource.generic_argument)],
+                urllib.parse._ResultMixinStr: [],
+                urllib.parse._NetlocResultMixinBase: [TypedValue(str)],
+                urllib.parse._NetlocResultMixinStr: [],
+                urllib.parse._ResultMixinStr: [],
+            },
+            urllib.parse.ParseResult,
+        )
+
 
 class TestAttribute:
     def test_basic(self) -> None:
@@ -437,3 +464,32 @@ class TestIntegration:
                         continue
                     print(module_name, name, info)
         assert False
+
+
+class TestRange(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_iteration(self):
+        def capybara(r: range):
+            for j in r:
+                assert_is_value(j, TypedValue(int))
+
+            for i in range(10000000):
+                assert_is_value(i, TypedValue(int))
+
+
+class TestParamSpec(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_contextmanager(self):
+        import contextlib
+        from typing import Iterator
+
+        def cm(a: int) -> Iterator[str]:
+            yield "hello"
+
+        def capybara():
+            wrapped = contextlib.contextmanager(cm)
+            assert_is_value(
+                wrapped(1),
+                GenericValue(contextlib._GeneratorContextManager, [TypedValue(str)]),
+            )
+            wrapped("x")  # E: incompatible_argument

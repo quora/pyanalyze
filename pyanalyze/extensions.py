@@ -1,6 +1,7 @@
 """
 
-Extensions to the type system supported by pyanalyze. These can be imported at runtime and used in user code.
+Extensions to the type system supported by pyanalyze. These can be imported at runtime and used in
+user code.
 
 Several type system extensions are used with the ``Annotated`` type from
 `PEP 593 <https://www.python.org/dev/peps/pep-0593/>`_. This allows them to
@@ -142,7 +143,8 @@ class _AsynqCallableMeta(type):
 
 @dataclass(frozen=True)
 class AsynqCallable(metaclass=_AsynqCallableMeta):
-    """Represents an `asynq <https://github.com/quora/asynq>`_ function (a function decorated with ``@asynq()``).
+    """Represents an `asynq <https://github.com/quora/asynq>`_ function (a function decorated with
+    ``@asynq()``).
 
     Similar to ``Callable``, but ``AsynqCallable`` also supports calls
     through ``.asynq()``. Because asynq functions can also be called synchronously,

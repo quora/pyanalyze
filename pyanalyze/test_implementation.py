@@ -4,6 +4,7 @@ from .test_node_visitor import assert_fails, assert_passes
 from .error_code import ErrorCode
 
 from .value import (
+    AnnotatedValue,
     AnySource,
     AnyValue,
     KVPair,
@@ -751,6 +752,61 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             )
             assert_is_value(strong_dict, expected)
 
+    @assert_passes()
+    def test_dict_update(self):
+        def capybara():
+            d1 = {}
+            d1.update({})
+            d2 = {}
+            d2.update(a=3, b=4)
+            assert_is_value(
+                d2,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(KnownValue("a"), KnownValue(3)),
+                        KVPair(KnownValue("b"), KnownValue(4)),
+                    ],
+                ),
+            )
+            d2.update([("a", 4), ("b", 5)])
+            assert_is_value(
+                d2,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(KnownValue("a"), KnownValue(3)),
+                        KVPair(KnownValue("b"), KnownValue(4)),
+                        KVPair(KnownValue("a"), KnownValue(4)),
+                        KVPair(KnownValue("b"), KnownValue(5)),
+                    ],
+                ),
+            )
+
+    @assert_passes()
+    def test_copy_and_update(self):
+        from typing import Dict
+        from pyanalyze.value import WeakExtension
+
+        def capybara():
+            d1: Dict[str, int] = {"x": 1}
+            d1_val = GenericValue(dict, [TypedValue(str), TypedValue(int)])
+            assert_is_value(d1, d1_val)
+            d1[1] = 3  # E: incompatible_argument
+            d2 = d1.copy()
+            assert_is_value(d2, AnnotatedValue(d1_val, [WeakExtension()]))
+            d2[1] = 3
+            assert_is_value(
+                d2,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(TypedValue(str), TypedValue(int), is_many=True),
+                        KVPair(KnownValue(1), KnownValue(3)),
+                    ],
+                ),
+            )
+
 
 class TestSequenceGetItem(TestNameCheckVisitorBase):
     @assert_passes()
@@ -974,7 +1030,7 @@ class TestDictSetItem(TestNameCheckVisitorBase):
         def capybara(td: TD) -> None:
             td["x"] = 42
 
-    @assert_fails(ErrorCode.invalid_typeddict_key)
+    @assert_passes()
     def test_typeddict_non_literal_key(self):
         from typing_extensions import TypedDict
 
@@ -982,9 +1038,9 @@ class TestDictSetItem(TestNameCheckVisitorBase):
             x: int
 
         def capybara(td: TD) -> None:
-            td[41] = 42
+            td[41] = 42  # E: invalid_typeddict_key
 
-    @assert_fails(ErrorCode.invalid_typeddict_key)
+    @assert_passes()
     def test_typeddict_unrecognized_key(self):
         from typing_extensions import TypedDict
 
@@ -992,9 +1048,9 @@ class TestDictSetItem(TestNameCheckVisitorBase):
             x: int
 
         def capybara(td: TD) -> None:
-            td["y"] = 42
+            td["y"] = 42  # E: invalid_typeddict_key
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_typeddict_bad_value(self):
         from typing_extensions import TypedDict
 
@@ -1002,7 +1058,7 @@ class TestDictSetItem(TestNameCheckVisitorBase):
             x: int
 
         def capybara(td: TD) -> None:
-            td["x"] = "y"
+            td["x"] = "y"  # E: incompatible_argument
 
     @assert_passes()
     def test_incomplete_value(self):
@@ -1026,21 +1082,46 @@ class TestDictSetItem(TestNameCheckVisitorBase):
                 ),
             )
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_bad_key_type(self):
         from typing import Dict
 
         def capybara() -> None:
             dct: Dict[str, int] = {}
-            dct[1] = 1
+            dct[1] = 1  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_bad_value_type(self):
         from typing import Dict
 
         def capybara() -> None:
             dct: Dict[str, int] = {}
-            dct["1"] = "1"
+            dct["1"] = "1"  # E: incompatible_argument
+
+    @assert_passes()
+    def test_weak(self):
+        from pyanalyze.value import WeakExtension
+
+        def capybara(arg):
+            dct = {int(k): 1 for k in arg}
+            assert_is_value(
+                dct,
+                AnnotatedValue(
+                    GenericValue(dict, [TypedValue(int), KnownValue(1)]),
+                    [WeakExtension()],
+                ),
+            )
+            dct["x"] = "y"
+            assert_is_value(
+                dct,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(TypedValue(int), KnownValue(1), is_many=True),
+                        KVPair(KnownValue("x"), KnownValue("y")),
+                    ],
+                ),
+            )
 
 
 class TestIssubclass(TestNameCheckVisitorBase):

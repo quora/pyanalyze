@@ -33,6 +33,7 @@ from .value import (
     SequenceIncompleteValue,
     TypeVarMap,
     concrete_values_from_iterable,
+    unite_and_simplify,
 )
 
 _checker = Checker(TestConfig())
@@ -540,8 +541,8 @@ def test_concrete_values_from_iterable() -> None:
     )
 
     class HasGetItem:
-        def __getitem__(self, i: int) -> str:
-            return str(i)
+        def __getitem__(self, some_random_name: int) -> str:
+            return str(some_random_name)
 
     assert concrete_values_from_iterable(TypedValue(HasGetItem), CTX) == TypedValue(str)
 
@@ -562,3 +563,10 @@ def test_pickling() -> None:
     _assert_pickling_roundtrip(KnownValue(1))
     _assert_pickling_roundtrip(TypedValue(int))
     _assert_pickling_roundtrip(KnownValue(None) | TypedValue(str))
+
+
+def test_unite_and_simplify() -> None:
+    vals = [GenericValue(list, [TypedValue(int)]), KnownValue([])]
+    assert unite_and_simplify(*vals, limit=2) == GenericValue(
+        list, [TypedValue(int)]
+    ) | GenericValue(list, [AnyValue(AnySource.unreachable)])

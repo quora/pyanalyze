@@ -235,7 +235,6 @@ class TestAttributes(TestNameCheckVisitorBase):
     @assert_passes()
     def test_module_annotations(self):
         from pyanalyze import test_attributes
-        from pyanalyze.type_object import TypeObject
         from typing import Optional
 
         annotated_global: Optional[str] = None

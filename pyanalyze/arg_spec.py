@@ -4,6 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
+from .analysis_lib import is_positional_only_arg_name
 from .extensions import get_overloads
 from .annotations import Context, type_from_runtime
 from .config import Config
@@ -16,6 +17,7 @@ from .safe import (
     safe_in,
     safe_issubclass,
     is_typing_name,
+    safe_isinstance,
 )
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
@@ -27,6 +29,7 @@ from .signature import (
     make_bound_method,
     SigParameter,
     Signature,
+    ParameterKind,
 )
 from .typeshed import TypeshedFinder
 from .value import (
@@ -55,6 +58,9 @@ import sys
 from types import FunctionType, ModuleType
 from typing import Any, Sequence, Generic, Iterable, Mapping, Optional, Union
 import typing_inspect
+
+# types.MethodWrapperType in 3.7+
+MethodWrapperType = type(object().__str__)
 
 
 @used  # exposed as an API
@@ -87,8 +93,8 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterable[None]:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
                 [
-                    SigParameter("args", SigParameter.VAR_POSITIONAL),
-                    SigParameter("kwargs", SigParameter.VAR_KEYWORD),
+                    SigParameter("args", ParameterKind.VAR_POSITIONAL),
+                    SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
                 ],
                 callable=fn,
                 impl=implementation_fn,
@@ -233,13 +239,20 @@ class ArgSpecCache:
             typ = self._get_type_for_parameter(
                 parameter, func_globals, function_object, index
             )
-        if parameter.default is SigParameter.empty:
+        if parameter.default is inspect.Parameter.empty:
             default = None
         else:
             default = KnownValue(parameter.default)
-        return SigParameter(
-            parameter.name, parameter.kind, default=default, annotation=typ
-        )
+        if (
+            parameter.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+            and is_positional_only_arg_name(
+                parameter.name, _get_class_name(function_object)
+            )
+        ):
+            kind = ParameterKind.POSITIONAL_ONLY
+        else:
+            kind = ParameterKind(parameter.kind)
+        return SigParameter(parameter.name, kind, default=default, annotation=typ)
 
     def _get_type_for_parameter(
         self,
@@ -247,20 +260,20 @@ class ArgSpecCache:
         func_globals: Optional[Mapping[str, object]],
         function_object: Optional[object],
         index: int,
-    ) -> Optional[Value]:
-        if parameter.annotation is not SigParameter.empty:
+    ) -> Value:
+        if parameter.annotation is not inspect.Parameter.empty:
             typ = type_from_runtime(
                 parameter.annotation, ctx=AnnotationsContext(self, func_globals)
             )
-            if parameter.kind is SigParameter.VAR_POSITIONAL:
+            if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
                 return GenericValue(tuple, [typ])
-            elif parameter.kind is SigParameter.VAR_KEYWORD:
+            elif parameter.kind is inspect.Parameter.VAR_KEYWORD:
                 return GenericValue(dict, [TypedValue(str), typ])
             return typ
         # If this is the self argument of a method, try to infer the self type.
         elif index == 0 and parameter.kind in (
-            SigParameter.POSITIONAL_ONLY,
-            SigParameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
         ):
             module_name = getattr(function_object, "__module__", None)
             qualname = getattr(function_object, "__qualname__", None)
@@ -289,14 +302,16 @@ class ArgSpecCache:
                         )
                     return TypedValue(class_obj)
         if parameter.kind in (
-            SigParameter.POSITIONAL_ONLY,
-            SigParameter.POSITIONAL_OR_KEYWORD,
-            SigParameter.KEYWORD_ONLY,
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
         ):
-            return VariableNameValue.from_varname(
+            vnv = VariableNameValue.from_varname(
                 parameter.name, self.config.varname_value_map()
             )
-        return None
+            if vnv is not None:
+                return vnv
+        return AnyValue(AnySource.unannotated)
 
     def get_argspec(
         self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
@@ -365,6 +380,18 @@ class ArgSpecCache:
                 # some cythonized methods have __self__ but it is not a function
                 pass
 
+        if safe_isinstance(obj, MethodWrapperType):
+            try:
+                unbound = getattr(obj.__objclass__, obj.__name__)
+            except Exception:
+                pass
+            else:
+                sig = self._cached_get_argspec(
+                    unbound, impl, is_asynq, in_overload_resolution
+                )
+                if sig is not None:
+                    return make_bound_method(sig, Composite(KnownValue(obj.__self__)))
+
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
             argspec = self._cached_get_argspec(
@@ -386,7 +413,8 @@ class ArgSpecCache:
                     original_fn, impl, is_asynq, in_overload_resolution
                 )
 
-        argspec = self.ts_finder.get_argspec(obj)
+        allow_call = safe_in(obj, self.config.FUNCTIONS_SAFE_TO_CALL)
+        argspec = self.ts_finder.get_argspec(obj, allow_call=allow_call)
         if argspec is not None:
             return argspec
 
@@ -395,7 +423,7 @@ class ArgSpecCache:
                 [
                     SigParameter(
                         "x",
-                        SigParameter.POSITIONAL_ONLY,
+                        ParameterKind.POSITIONAL_ONLY,
                         annotation=type_from_runtime(
                             obj.__supertype__, ctx=self.default_context
                         ),
@@ -657,4 +685,12 @@ def _is_qcore_decorator(obj: object) -> bool:
 def _get_fully_qualified_name(obj: object) -> Optional[str]:
     if hasattr(obj, "__module__") and hasattr(obj, "__qualname__"):
         return f"{obj.__module__}.{obj.__qualname__}"
+    return None
+
+
+def _get_class_name(obj: object) -> Optional[str]:
+    if hasattr(obj, "__qualname__"):
+        pieces = obj.__qualname__.split(".")
+        if len(pieces) >= 2:
+            return pieces[-2]
     return None

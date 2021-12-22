@@ -45,19 +45,21 @@ from typing import (
     TypeVar,
     cast,
 )
-from typing_extensions import Literal, Protocol
+from typing_extensions import Literal, Protocol, ParamSpec
 
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
-from .safe import all_of_type, safe_issubclass
+from .safe import all_of_type, safe_issubclass, safe_isinstance
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
+ITERATION_LIMIT = 1000
 
-TypeVarMap = Mapping["TypeVar", "Value"]
+TypeVarLike = Union["TypeVar", "ParamSpec"]
+TypeVarMap = Mapping[TypeVarLike, "Value"]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
 
 
@@ -271,7 +273,7 @@ class CanAssignError:
 CanAssign = Union[TypeVarMap, CanAssignError]
 
 
-def assert_is_value(obj: object, value: Value) -> None:
+def assert_is_value(obj: object, value: Value, *, skip_annotated: bool = False) -> None:
     """Used to test pyanalyze's value inference.
 
     Takes two arguments: a Python object and a :class:`Value` object. At runtime
@@ -282,6 +284,8 @@ def assert_is_value(obj: object, value: Value) -> None:
 
         assert_is_value(1, KnownValue(1))  # passes
         assert_is_value(1, TypedValue(int))  # shows an error
+
+    If skip_annotated is True, unwraps any :class:`AnnotatedValue` in the input.
 
     """
     pass
@@ -445,6 +449,9 @@ class KnownValue(Value):
     def simplify(self) -> Value:
         val = replace_known_sequence_value(self)
         if isinstance(val, KnownValue):
+            # don't simplify None
+            if val.val is None:
+                return self
             return TypedValue(type(val.val))
         return val.simplify()
 
@@ -579,8 +586,10 @@ class TypedValue(Value):
         elif isinstance(other, TypedValue):
             return self_tobj.can_assign(self, other, ctx)
         elif isinstance(other, SubclassValue):
-            if isinstance(other.typ, TypedValue) and isinstance(
-                other.typ.typ, self.typ
+            if (
+                isinstance(other.typ, TypedValue)
+                and isinstance(self.typ, type)
+                and safe_isinstance(other.typ.typ, self.typ)
             ):
                 return {}
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):
@@ -729,6 +738,8 @@ class GenericValue(TypedValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         other = replace_known_sequence_value(other)
+        if isinstance(other, KnownValue):
+            other = TypedValue(type(other.val))
         if isinstance(other, TypedValue) and not isinstance(other.typ, super):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
             # If we don't think it's a generic base, try super;
@@ -906,7 +917,10 @@ class SequenceIncompleteValue(GenericValue):
                 tuple, [member.simplify() for member in self.members]
             )
         members = [member.simplify() for member in self.members]
-        return GenericValue(self.typ, [unite_values(*members)])
+        arg = unite_values(*members)
+        if arg is NO_RETURN_VALUE:
+            arg = AnyValue(AnySource.unreachable)
+        return GenericValue(self.typ, [arg])
 
 
 @dataclass(frozen=True)
@@ -978,7 +992,13 @@ class DictIncompleteValue(GenericValue):
     def simplify(self) -> GenericValue:
         keys = [pair.key.simplify() for pair in self.kv_pairs]
         values = [pair.value.simplify() for pair in self.kv_pairs]
-        return GenericValue(self.typ, [unite_values(*keys), unite_values(*values)])
+        key = unite_values(*keys)
+        value = unite_values(*values)
+        if key is NO_RETURN_VALUE:
+            key = AnyValue(AnySource.unreachable)
+        if value is NO_RETURN_VALUE:
+            value = AnyValue(AnySource.unreachable)
+        return GenericValue(self.typ, [key, value])
 
     @property
     def items(self) -> Sequence[Tuple[Value, Value]]:
@@ -1426,15 +1446,16 @@ class ReferencingValue(Value):
 
 @dataclass(frozen=True)
 class TypeVarValue(Value):
-    """Value representing a ``typing.TypeVar``.
+    """Value representing a ``typing.TypeVar`` or ``typing.ParamSpec``.
 
-    Currently, bounds, value restrictions, and variance are ignored.
+    Currently, variance is ignored.
 
     """
 
-    typevar: TypeVar
+    typevar: TypeVarLike
     bound: Optional[Value] = None
     constraints: Sequence[Value] = ()
+    is_paramspec: bool = False
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return typevars.get(self.typevar, self)
@@ -1472,7 +1493,9 @@ class TypeVarValue(Value):
         if left == self:
             return {}
         if self.bound is not None:
-            can_assign = left.can_assign(self.bound, ctx)
+            # TODO not sure this is right, but it helps test cases in
+            # test_annotations.py behave as expected.
+            can_assign = self.bound.can_assign(left, ctx)
             if isinstance(can_assign, CanAssignError):
                 return CanAssignError(
                     f"Value of TypeVar {self} cannot be {left}", [can_assign]
@@ -1640,6 +1663,18 @@ class HasAttrExtension(Extension):
         yield from self.attribute_type.walk_values()
 
 
+@dataclass(frozen=True, eq=False)
+class ConstraintExtension(Extension):
+    """Encapsulates a Constraint. If the value is evaluated and is truthy, the
+    constraint must be True."""
+
+    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+    # Comparing them can get too expensive
+    def __hash__(self) -> int:
+        return id(self)
+
+
 @dataclass(frozen=True)
 class WeakExtension(Extension):
     """Used to indicate that a generic argument to a container may be widened.
@@ -1652,6 +1687,15 @@ class WeakExtension(Extension):
     widen the type to accommodate later appends.
 
     The ``TestGenericMutators.test_weak_value`` test case is an example.
+
+    """
+
+
+@dataclass(frozen=True)
+class AlwaysPresentExtension(Extension):
+    """Extension that indicates that an iterable value is nonempty.
+
+    Currently cannot be used from user code.
 
     """
 
@@ -1844,6 +1888,26 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
     return AnnotatedValue(origin, metadata)
 
 
+def unannotate_value(
+    origin: Value, extension: Type[Extension]
+) -> Tuple[Value, Sequence[Extension]]:
+    if not isinstance(origin, AnnotatedValue):
+        return origin, []
+    matches = [
+        metadata for metadata in origin.metadata if isinstance(metadata, extension)
+    ]
+    # the all_of_type call is redundant but necessary for pyanalyze's narrower for now
+    # TODO remove it
+    if matches and all_of_type(matches, Extension):
+        remaining = [
+            metadata
+            for metadata in origin.metadata
+            if not isinstance(metadata, extension)
+        ]
+        return annotate_value(origin.value, remaining), matches
+    return origin, []
+
+
 def unite_and_simplify(*values: Value, limit: int) -> Value:
     united = unite_values(*values)
     if not isinstance(united, MultiValuedValue) or len(united.vals) < limit:
@@ -1898,7 +1962,7 @@ IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
 class GetItemProto(Protocol[T]):
-    def __getitem__(self, i: int) -> T:
+    def __getitem__(self, __i: int) -> T:
         raise NotImplementedError
 
 
@@ -1925,6 +1989,7 @@ def concrete_values_from_iterable(
 
     """
     value = replace_known_sequence_value(value)
+    is_nonempty = False
     if isinstance(value, MultiValuedValue):
         subvals = [concrete_values_from_iterable(val, ctx) for val in value.vals]
         errors = [subval for subval in subvals if isinstance(subval, CanAssignError)]
@@ -1952,16 +2017,69 @@ def concrete_values_from_iterable(
             return [pair.key for pair in value.kv_pairs]
     elif isinstance(value, KnownValue):
         if isinstance(value.val, (str, bytes, range)):
-            return [KnownValue(c) for c in value.val]
+            if len(value.val) < ITERATION_LIMIT:
+                return [KnownValue(c) for c in value.val]
+            is_nonempty = True
     elif value is NO_RETURN_VALUE:
         return NO_RETURN_VALUE
     iter_tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(iter_tv_map, CanAssignError):
-        return iter_tv_map.get(T, AnyValue(AnySource.generic_argument))
-    getitem_tv_map = GetItemProtoValue.can_assign(value, ctx)
-    if not isinstance(getitem_tv_map, CanAssignError):
-        return getitem_tv_map.get(T, AnyValue(AnySource.generic_argument))
-    return iter_tv_map
+        val = iter_tv_map.get(T, AnyValue(AnySource.generic_argument))
+    else:
+        getitem_tv_map = GetItemProtoValue.can_assign(value, ctx)
+        if not isinstance(getitem_tv_map, CanAssignError):
+            val = getitem_tv_map.get(T, AnyValue(AnySource.generic_argument))
+        else:
+            # We return the error from the __iter__ check because the __getitem__
+            # check is more arcane.
+            return iter_tv_map
+    if is_nonempty:
+        return annotate_value(val, [AlwaysPresentExtension()])
+    return val
+
+
+K = TypeVar("K")
+V = TypeVar("V")
+MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
+
+EMPTY_DICTS = (KnownValue({}), DictIncompleteValue(dict, []))
+
+
+def kv_pairs_from_mapping(
+    value_val: Value, ctx: CanAssignContext
+) -> Union[Sequence[KVPair], CanAssignError]:
+    """Return the :class:`KVPair` objects that can be extracted from this value,
+    or a :class:`CanAssignError` on error."""
+    value_val = replace_known_sequence_value(value_val)
+    # Special case: if we have a Union including an empty dict, just get the
+    # pairs from the rest of the union and make them all non-required.
+    if isinstance(value_val, MultiValuedValue):
+        subvals = [replace_known_sequence_value(subval) for subval in value_val.vals]
+        if any(subval in EMPTY_DICTS for subval in subvals):
+            other_val = unite_values(
+                *[subval for subval in subvals if subval not in EMPTY_DICTS]
+            )
+            pairs = kv_pairs_from_mapping(other_val, ctx)
+            if isinstance(pairs, CanAssignError):
+                return pairs
+            return [
+                KVPair(pair.key, pair.value, pair.is_many, is_required=False)
+                for pair in pairs
+            ]
+    if isinstance(value_val, DictIncompleteValue):
+        return value_val.kv_pairs
+    elif isinstance(value_val, TypedDictValue):
+        return [
+            KVPair(KnownValue(key), value, is_required=required)
+            for key, (required, value) in value_val.items.items()
+        ]
+    else:
+        can_assign = MappingValue.can_assign(value_val, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return can_assign
+        key_type = can_assign.get(K, AnyValue(AnySource.generic_argument))
+        value_type = can_assign.get(V, AnyValue(AnySource.generic_argument))
+        return [KVPair(key_type, value_type, is_many=True)]
 
 
 def unpack_values(

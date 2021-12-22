@@ -4,11 +4,18 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
+from .analysis_lib import is_positional_only_arg_name
 from .annotations import Context, type_from_value, value_from_ast
 from .error_code import ErrorCode
 from .safe import is_typing_name
 from .stacked_scopes import uniq_chain
-from .signature import ConcreteSignature, OverloadedSignature, SigParameter, Signature
+from .signature import (
+    ConcreteSignature,
+    OverloadedSignature,
+    SigParameter,
+    Signature,
+    ParameterKind,
+)
 from .value import (
     AnySource,
     AnyValue,
@@ -33,7 +40,7 @@ from collections.abc import (
     Sized,
 )
 from contextlib import AbstractContextManager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import collections.abc
 import qcore
 import inspect
@@ -57,6 +64,12 @@ from typing import (
 from typing_extensions import Protocol, TypedDict
 import typeshed_client
 from typed_ast import ast3
+
+try:
+    # 3.7+
+    from contextlib import AbstractAsyncContextManager
+except ImportError:
+    AbstractAsyncContextManager = None
 
 
 T_co = TypeVar("T_co", covariant=True)
@@ -111,7 +124,9 @@ class TypeshedFinder:
             return
         print("%s: %r" % (message, obj))
 
-    def get_argspec(self, obj: object) -> Optional[ConcreteSignature]:
+    def get_argspec(
+        self, obj: object, *, allow_call: bool = False
+    ) -> Optional[ConcreteSignature]:
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
@@ -119,7 +134,7 @@ class TypeshedFinder:
                 return None
             info = self._get_info_for_name(fq_name)
             sig = self._get_method_signature_from_info(
-                info, obj, fq_name, objclass.__module__, objclass
+                info, obj, fq_name, objclass.__module__, objclass, allow_call=allow_call
             )
             return sig
 
@@ -141,20 +156,26 @@ class TypeshedFinder:
                 if maybe_info is not None:
                     info, mod = maybe_info
                     fq_name = f"{parent_fqn}.{own_name}"
-                    sig = self._get_signature_from_info(info, obj, fq_name, mod)
+                    sig = self._get_signature_from_info(
+                        info, obj, fq_name, mod, allow_call=allow_call
+                    )
                     return sig
 
         fq_name = self._get_fq_name(obj)
         if fq_name is None:
             return None
-        return self.get_argspec_for_fully_qualified_name(fq_name, obj)
+        return self.get_argspec_for_fully_qualified_name(
+            fq_name, obj, allow_call=allow_call
+        )
 
     def get_argspec_for_fully_qualified_name(
-        self, fq_name: str, obj: object
+        self, fq_name: str, obj: object, *, allow_call: bool = False
     ) -> Optional[ConcreteSignature]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
-        sig = self._get_signature_from_info(info, obj, fq_name, mod)
+        sig = self._get_signature_from_info(
+            info, obj, fq_name, mod, allow_call=allow_call
+        )
         return sig
 
     def get_bases(self, typ: type) -> Optional[List[Value]]:
@@ -169,7 +190,7 @@ class TypeshedFinder:
                 # too confusing, just hardcode it. Same for (Abstract)ContextManager.
                 if typ is AbstractSet:
                     return [GenericValue(Collection, (TypeVarValue(T_co),))]
-                if typ is AbstractContextManager:
+                if typ is AbstractContextManager or typ is AbstractAsyncContextManager:
                     return [GenericValue(Generic, (TypeVarValue(T_co),))]
                 if typ is Callable or typ is collections.abc.Callable:
                     return None
@@ -499,19 +520,26 @@ class TypeshedFinder:
         fq_name: str,
         mod: str,
         objclass: type,
+        *,
+        allow_call: bool = False,
     ) -> Optional[ConcreteSignature]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_method_signature_from_info(
-                info.info, obj, fq_name, ".".join(info.source_module), objclass
+                info.info,
+                obj,
+                fq_name,
+                ".".join(info.source_module),
+                objclass,
+                allow_call=allow_call,
             )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
             if info.child_nodes and obj.__name__ in info.child_nodes:
                 child_info = info.child_nodes[obj.__name__]
                 return self._get_signature_from_info(
-                    child_info, obj, fq_name, mod, objclass
+                    child_info, obj, fq_name, mod, objclass, allow_call=allow_call
                 )
             else:
                 return None
@@ -526,18 +554,18 @@ class TypeshedFinder:
             if obj is Sized:
                 return "typing.Sized"
         try:
-            module = obj.__module__
-            if module is None:
-                module = "builtins"
+            module_name = obj.__module__
+            if module_name is None:
+                module_name = "builtins"
             # Objects like io.BytesIO are technically in the _io module,
             # but typeshed puts them in io, which at runtime just re-exports
             # them.
-            if module == "_io":
-                module = "io"
-            fq_name = ".".join([module, obj.__qualname__])
+            if module_name == "_io":
+                module_name = "io"
+            fq_name = ".".join([module_name, obj.__qualname__])
             # Avoid looking for stubs we won't find anyway.
-            if any(not part.isidentifier() for part in fq_name.split(".")):
-                self.log("Ignoring non-identifier name", fq_name)
+            if not _obj_from_qualname_is(module_name, obj.__qualname__, obj):
+                self.log("Ignoring invalid name", fq_name)
                 return None
             return _TYPING_ALIASES.get(fq_name, fq_name)
         except (AttributeError, TypeError):
@@ -551,10 +579,14 @@ class TypeshedFinder:
         fq_name: str,
         mod: str,
         objclass: Optional[type] = None,
+        *,
+        allow_call: bool = False,
     ) -> Optional[ConcreteSignature]:
         if isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
-                return self._get_signature_from_func_def(info.ast, obj, mod, objclass)
+                return self._get_signature_from_func_def(
+                    info.ast, obj, mod, objclass, allow_call=allow_call
+                )
             elif isinstance(info.ast, typeshed_client.OverloadedName):
                 sigs = []
                 for defn in info.ast.definitions:
@@ -563,7 +595,9 @@ class TypeshedFinder:
                             "Ignoring unrecognized AST in overload", (fq_name, info)
                         )
                         return None
-                    sig = self._get_signature_from_func_def(defn, obj, mod, objclass)
+                    sig = self._get_signature_from_func_def(
+                        defn, obj, mod, objclass, allow_call=allow_call
+                    )
                     if sig is None:
                         self.log("Could not get sig for overload member", (defn,))
                         return None
@@ -574,7 +608,12 @@ class TypeshedFinder:
                 return None
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_signature_from_info(
-                info.info, obj, fq_name, ".".join(info.source_module), objclass
+                info.info,
+                obj,
+                fq_name,
+                ".".join(info.source_module),
+                objclass,
+                allow_call=allow_call,
             )
         elif info is None:
             return None
@@ -594,6 +633,7 @@ class TypeshedFinder:
         objclass: Optional[type] = None,
         *,
         autobind: bool = False,
+        allow_call: bool = False,
     ) -> Optional[Signature]:
         is_classmethod = is_staticmethod = False
         for decorator_ast in node.decorator_list:
@@ -625,7 +665,7 @@ class TypeshedFinder:
         defaults = [None] * num_without_defaults + args.defaults
         arguments = list(
             self._parse_param_list(
-                args.args, defaults, mod, SigParameter.POSITIONAL_OR_KEYWORD, objclass
+                args.args, defaults, mod, ParameterKind.POSITIONAL_OR_KEYWORD, objclass
             )
         )
         if autobind:
@@ -634,27 +674,27 @@ class TypeshedFinder:
 
         if args.vararg is not None:
             vararg_param = self._parse_param(
-                args.vararg, None, mod, SigParameter.VAR_POSITIONAL
+                args.vararg, None, mod, ParameterKind.VAR_POSITIONAL
             )
             annotation = GenericValue(tuple, [vararg_param.annotation])
-            arguments.append(vararg_param.replace(annotation=annotation))
+            arguments.append(replace(vararg_param, annotation=annotation))
         arguments += self._parse_param_list(
-            args.kwonlyargs, args.kw_defaults, mod, SigParameter.KEYWORD_ONLY
+            args.kwonlyargs, args.kw_defaults, mod, ParameterKind.KEYWORD_ONLY
         )
         if args.kwarg is not None:
             kwarg_param = self._parse_param(
-                args.kwarg, None, mod, SigParameter.VAR_KEYWORD
+                args.kwarg, None, mod, ParameterKind.VAR_KEYWORD
             )
             annotation = GenericValue(dict, [TypedValue(str), kwarg_param.annotation])
-            arguments.append(kwarg_param.replace(annotation=annotation))
+            arguments.append(replace(kwarg_param, annotation=annotation))
         # some typeshed types have a positional-only after a normal argument,
         # and Signature doesn't like that
         seen_non_positional = False
         cleaned_arguments = []
         for arg in arguments:
-            if arg.kind is SigParameter.POSITIONAL_ONLY and seen_non_positional:
+            if arg.kind is ParameterKind.POSITIONAL_ONLY and seen_non_positional:
                 cleaned_arguments = [
-                    arg.replace(kind=SigParameter.POSITIONAL_ONLY)
+                    replace(arg, kind=ParameterKind.POSITIONAL_ONLY)
                     for arg in cleaned_arguments
                 ]
                 seen_non_positional = False
@@ -667,6 +707,7 @@ class TypeshedFinder:
             return_annotation=GenericValue(Awaitable, [return_value])
             if isinstance(node, ast3.AsyncFunctionDef)
             else return_value,
+            allow_call=allow_call,
         )
 
     def _parse_param_list(
@@ -674,7 +715,7 @@ class TypeshedFinder:
         args: Iterable[ast3.arg],
         defaults: Iterable[Optional[ast3.AST]],
         module: str,
-        kind: inspect._ParameterKind,
+        kind: ParameterKind,
         objclass: Optional[type] = None,
     ) -> Iterable[SigParameter]:
         for i, (arg, default) in enumerate(zip(args, defaults)):
@@ -687,7 +728,7 @@ class TypeshedFinder:
         arg: ast3.arg,
         default: Optional[ast3.arg],
         module: str,
-        kind: inspect._ParameterKind,
+        kind: ParameterKind,
         objclass: Optional[type] = None,
     ) -> SigParameter:
         typ = AnyValue(AnySource.unannotated)
@@ -705,21 +746,22 @@ class TypeshedFinder:
                     typ = TypedValue(objclass)
 
         name = arg.arg
-        # Arguments that start with __ are positional-only in typeshed
-        if kind is SigParameter.POSITIONAL_OR_KEYWORD and name.startswith("__"):
-            kind = SigParameter.POSITIONAL_ONLY
+        if kind is ParameterKind.POSITIONAL_OR_KEYWORD and is_positional_only_arg_name(
+            name
+        ):
+            kind = ParameterKind.POSITIONAL_ONLY
             name = name[2:]
         # Mark self as positional-only. objclass should be given only if we believe
         # it's the "self" parameter.
         if objclass is not None:
-            kind = SigParameter.POSITIONAL_ONLY
+            kind = ParameterKind.POSITIONAL_ONLY
         if default is None:
             return SigParameter(name, kind, annotation=typ)
         else:
-            default = self._parse_expr(default, module)
-            if default == KnownValue(...):
-                default = AnyValue(AnySource.unannotated)
-            return SigParameter(name, kind, annotation=typ, default=default)
+            default_value = self._parse_expr(default, module)
+            if default_value == KnownValue(...):
+                default_value = AnyValue(AnySource.unannotated)
+            return SigParameter(name, kind, annotation=typ, default=default_value)
 
     def _parse_expr(self, node: ast3.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
@@ -798,3 +840,15 @@ class TypeshedFinder:
         else:
             self.log("Ignoring info", info)
             return AnyValue(AnySource.inference)
+
+
+def _obj_from_qualname_is(module_name: str, qualname: str, obj: object) -> bool:
+    try:
+        __import__(module_name)
+        mod = sys.modules[module_name]
+        actual = mod
+        for piece in qualname.split("."):
+            actual = getattr(actual, piece)
+        return obj is actual
+    except Exception:
+        return False

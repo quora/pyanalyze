@@ -4,7 +4,7 @@ from setuptools import setup
 from setuptools.extension import Extension
 
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 # Used in internal packaging system.
 if "SANTA_PACKAGE_VERSION" in os.environ:
     VERSION = "%s.%s" % (VERSION, os.environ["SANTA_PACKAGE_VERSION"])
@@ -48,14 +48,13 @@ if __name__ == "__main__":
         keywords="quora static analysis",
         packages=["pyanalyze"],
         install_requires=[
-            "attrs",
             "asynq",
             "dataclasses; python_version < '3.7'",
             "qcore>=0.5.1",
             "ast_decompiler>=0.4.0",
             "typeshed_client>=1.0.0,<2",
             "typing_inspect>=0.7.0",
-            "typing_extensions",
+            "typing_extensions>=3.10.0.0",
             "mypy_extensions",
             "aenum>=2.2.3",
             "codemod",

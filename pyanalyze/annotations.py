@@ -25,6 +25,7 @@ show errors.
 """
 from dataclasses import dataclass, InitVar, field
 import typing
+
 import typing_inspect
 import qcore
 import ast
@@ -47,6 +48,7 @@ from typing import (
     Union,
     TYPE_CHECKING,
 )
+from typing_extensions import ParamSpec
 
 from .error_code import ErrorCode
 from .extensions import (
@@ -58,7 +60,7 @@ from .extensions import (
     TypeGuard,
 )
 from .find_unused import used
-from .signature import SigParameter, Signature
+from .signature import SigParameter, Signature, ParameterKind
 from .safe import is_typing_name, is_instance_of_typing_name
 from .value import (
     AnnotatedValue,
@@ -364,6 +366,8 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         else:
             constraints = ()
         return TypeVarValue(tv, bound=bound, constraints=constraints)
+    elif is_instance_of_typing_name(val, "ParamSpec"):
+        return TypeVarValue(val, is_paramspec=True)
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
     elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):
@@ -406,30 +410,14 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             [TypeGuardExtension(_type_from_runtime(val.__type__, ctx))],
         )
     elif isinstance(val, AsynqCallable):
-        arg_types = val.args
-        return_type = val.return_type
-        if arg_types is Ellipsis:
-            return CallableValue(
-                Signature.make(
-                    [],
-                    _type_from_runtime(return_type, ctx),
-                    is_ellipsis_args=True,
-                    is_asynq=True,
-                )
-            )
-        if not isinstance(arg_types, tuple):
-            ctx.show_error("Invalid arguments to AsynqCallable")
-            return AnyValue(AnySource.error)
-        params = [
-            SigParameter(
-                f"__arg{i}",
-                kind=SigParameter.POSITIONAL_ONLY,
-                annotation=_type_from_runtime(arg, ctx),
-            )
-            for i, arg in enumerate(arg_types)
-        ]
+        params, is_ellipsis_args = _callable_args_from_runtime(
+            val.args, "AsynqCallable", ctx
+        )
         sig = Signature.make(
-            params, _type_from_runtime(return_type, ctx), is_asynq=True
+            params,
+            _type_from_runtime(val.return_type, ctx),
+            is_asynq=True,
+            is_ellipsis_args=is_ellipsis_args,
         )
         return CallableValue(sig)
     elif isinstance(val, ExternalType):
@@ -457,6 +445,66 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             return TypedValue(tuple)
         ctx.show_error(f"Invalid type annotation {val}")
         return AnyValue(AnySource.error)
+
+
+def _callable_args_from_runtime(
+    arg_types: Any, label: str, ctx: Context
+) -> Tuple[Sequence[SigParameter], bool]:
+    if arg_types is Ellipsis or arg_types == [Ellipsis]:
+        return [], True
+    elif type(arg_types) in (tuple, list):
+        if len(arg_types) == 1:
+            (arg,) = arg_types
+            if arg is Ellipsis:
+                return [], True
+            elif is_typing_name(getattr(arg, "__origin__", None), "Concatenate"):
+                return _args_from_concatenate(arg, ctx)
+            elif is_instance_of_typing_name(arg, "ParamSpec"):
+                param_spec = TypeVarValue(arg, is_paramspec=True)
+                param = SigParameter(
+                    "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
+                )
+                return [param], False
+        types = [_type_from_runtime(arg, ctx) for arg in arg_types]
+        params = [
+            SigParameter(
+                f"__arg{i}",
+                kind=ParameterKind.PARAM_SPEC
+                if isinstance(typ, TypeVarValue) and typ.is_paramspec
+                else ParameterKind.POSITIONAL_ONLY,
+                annotation=typ,
+            )
+            for i, typ in enumerate(types)
+        ]
+        return params, False
+    elif is_instance_of_typing_name(arg_types, "ParamSpec"):
+        param_spec = TypeVarValue(arg_types, is_paramspec=True)
+        param = SigParameter(
+            "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
+        )
+        return [param], False
+    elif is_typing_name(getattr(arg_types, "__origin__", None), "Concatenate"):
+        return _args_from_concatenate(arg_types, ctx)
+    else:
+        ctx.show_error(f"Invalid arguments to {label}: {arg_types!r}")
+        return [], True
+
+
+def _args_from_concatenate(
+    concatenate: Any, ctx: Context
+) -> Tuple[Sequence[SigParameter], bool]:
+    types = [_type_from_runtime(arg, ctx) for arg in concatenate.__args__]
+    params = [
+        SigParameter(
+            f"__arg{i}",
+            kind=ParameterKind.PARAM_SPEC
+            if i == len(types) - 1
+            else ParameterKind.POSITIONAL_ONLY,
+            annotation=annotation,
+        )
+        for i, annotation in enumerate(types)
+    ]
+    return params, False
 
 
 def _get_typeddict_value(
@@ -648,11 +696,12 @@ class _DefaultContext(Context):
 
     def get_name(self, node: ast.Name) -> Value:
         if self.visitor is not None:
-            return self.visitor.resolve_name(
+            val, _ = self.visitor.resolve_name(
                 node,
                 error_node=self.node,
                 suppress_errors=self.should_suppress_undefined_names,
             )
+            return val
         elif self.globals is not None:
             if node.id in self.globals:
                 return KnownValue(self.globals[node.id])
@@ -766,7 +815,7 @@ class _Visitor(ast.NodeVisitor):
         func = self.visit(node.func)
         if not isinstance(func, KnownValue):
             return None
-        if func.val in (NewType, TypeVar):
+        if func.val == NewType:
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             args = []
@@ -788,8 +837,48 @@ class _Visitor(ast.NodeVisitor):
                     if isinstance(kwarg_value, KnownValue):
                         kwargs[name] = kwarg_value.val
                     else:
+                        print(kwarg_value)
                         return None
             return KnownValue(func.val(*args, **kwargs))
+        elif func.val == TypeVar:
+            arg_values = [self.visit(arg) for arg in node.args]
+            kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
+            if not arg_values:
+                self.ctx.show_error("TypeVar() requires at least one argument")
+                return None
+            name_val = arg_values[0]
+            if not isinstance(name_val, KnownValue):
+                self.ctx.show_error("TypeVar name must be a literal")
+                return None
+            constraints = []
+            for arg_value in arg_values[1:]:
+                constraints.append(_type_from_value(arg_value, self.ctx))
+            bound = None
+            for name, kwarg_value in kwarg_values:
+                if name in ("covariant", "contravariant"):
+                    continue
+                elif name == "bound":
+                    bound = _type_from_value(kwarg_value, self.ctx)
+                else:
+                    self.ctx.show_error(f"Unrecognized TypeVar kwarg {name}")
+                    return None
+            tv = TypeVar(name_val.val)
+            return TypeVarValue(tv, bound, tuple(constraints))
+        elif is_typing_name(func.val, "ParamSpec"):
+            arg_values = [self.visit(arg) for arg in node.args]
+            kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
+            if not arg_values:
+                self.ctx.show_error("ParamSpec() requires at least one argument")
+                return None
+            name_val = arg_values[0]
+            if not isinstance(name_val, KnownValue):
+                self.ctx.show_error("ParamSpec name must be a literal")
+                return None
+            for name, _ in kwarg_values:
+                self.ctx.show_error(f"Unrecognized ParamSpec kwarg {name}")
+                return None
+            tv = ParamSpec(name_val.val)
+            return TypeVarValue(tv, is_paramspec=True)
         elif isinstance(func.val, type):
             if func.val is object:
                 return AnyValue(AnySource.inference)
@@ -822,26 +911,19 @@ def _value_of_origin_args(
     elif origin is typing.Union:
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
     elif origin is Callable or origin is typing.Callable:
-        if len(args) == 2 and args[0] is Ellipsis:
-            return CallableValue(
-                Signature.make(
-                    [], _type_from_runtime(args[1], ctx), is_ellipsis_args=True
-                )
-            )
-        elif len(args) == 0:
+        if len(args) == 0:
             return TypedValue(Callable)
         *arg_types, return_type = args
         if len(arg_types) == 1 and isinstance(arg_types[0], list):
             arg_types = arg_types[0]
-        params = [
-            SigParameter(
-                f"__arg{i}",
-                kind=SigParameter.POSITIONAL_ONLY,
-                annotation=_type_from_runtime(arg, ctx, is_typeddict=True),
-            )
-            for i, arg in enumerate(arg_types)
-        ]
-        sig = Signature.make(params, _type_from_runtime(return_type, ctx))
+        params, is_ellipsis_args = _callable_args_from_runtime(
+            arg_types, "Callable", ctx
+        )
+        sig = Signature.make(
+            params,
+            _type_from_runtime(return_type, ctx),
+            is_ellipsis_args=is_ellipsis_args,
+        )
         return CallableValue(sig)
     elif is_typing_name(origin, "Annotated"):
         origin, metadata = args
@@ -934,15 +1016,47 @@ def _make_callable_from_value(
         params = [
             SigParameter(
                 f"__arg{i}",
-                kind=SigParameter.POSITIONAL_ONLY,
+                kind=ParameterKind.POSITIONAL_ONLY,
                 annotation=_type_from_value(arg, ctx),
             )
             for i, arg in enumerate(args.members)
         ]
         sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
         return CallableValue(sig)
+    elif isinstance(args, KnownValue) and is_instance_of_typing_name(
+        args.val, "ParamSpec"
+    ):
+        annotation = TypeVarValue(args.val, is_paramspec=True)
+        params = [
+            SigParameter("__P", kind=ParameterKind.PARAM_SPEC, annotation=annotation)
+        ]
+        sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+        return CallableValue(sig)
+    elif isinstance(args, TypeVarValue) and args.is_paramspec:
+        params = [SigParameter("__P", kind=ParameterKind.PARAM_SPEC, annotation=args)]
+        sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+        return CallableValue(sig)
+    elif (
+        isinstance(args, _SubscriptedValue)
+        and isinstance(args.root, KnownValue)
+        and is_typing_name(args.root.val, "Concatenate")
+    ):
+        annotations = [_type_from_value(arg, ctx) for arg in args.members]
+        params = [
+            SigParameter(
+                f"__arg{i}",
+                kind=ParameterKind.PARAM_SPEC
+                if i == len(annotations) - 1
+                else ParameterKind.POSITIONAL_ONLY,
+                annotation=annotation,
+            )
+            for i, annotation in enumerate(annotations)
+        ]
+        sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+        return CallableValue(sig)
     else:
-        return AnyValue(AnySource.inference)
+        ctx.show_error(f"Unrecognized Callable type argument {args}")
+        return AnyValue(AnySource.error)
 
 
 def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:

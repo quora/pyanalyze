@@ -15,7 +15,6 @@ from .name_check_visitor import (
 )
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
-from .stacked_scopes import Composite
 from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
@@ -85,10 +84,11 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
         mod = _make_module(code_str)
         kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
+        new_code = ""
         with ClassAttributeChecker(
             self.visitor_cls.config, enabled=check_attributes
         ) as attribute_checker:
-            return self.visitor_cls(
+            visitor = self.visitor_cls(
                 mod.__name__,
                 code_str,
                 tree,
@@ -97,7 +97,14 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 settings=default_settings,
                 verbosity=verbosity,
                 **kwargs,
-            ).check_for_test(apply_changes=apply_changes)
+            )
+            result = visitor.check_for_test(apply_changes=apply_changes)
+            if apply_changes:
+                result, new_code = result
+            result += visitor.perform_final_checks(kwargs)
+        if apply_changes:
+            return result, new_code
+        return result
 
 
 class TestAnnotatingNodeVisitor(test_node_visitor.BaseNodeVisitorTester):
@@ -140,7 +147,6 @@ def _make_module(code_str: str) -> types.ModuleType:
         make_weak=make_weak,
         UNINITIALIZED_VALUE=UNINITIALIZED_VALUE,
         NO_RETURN_VALUE=NO_RETURN_VALUE,
-        Composite=Composite,
     )
     return make_module(code_str, extra_scope)
 
@@ -504,12 +510,9 @@ def run():
             def __new__(cls):
                 assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
-    @assert_passes()
-    def test_cls_type_inference(self):
-        class OldStyle:
             @classmethod
             def capybara(cls):
-                pass
+                assert_is_value(cls, SubclassValue(TypedValue(OldStyle)))
 
     @assert_passes()
     def test_display_type_inference(self):
@@ -616,8 +619,6 @@ def run():
 
     @assert_fails(ErrorCode.class_variable_redefinition)
     def test_duplicate_attribute(self):
-        import enum
-
         class Hutia:
             capromys = 1
             capromys = 2
@@ -766,22 +767,35 @@ class TestBoolOp(TestNameCheckVisitorBase):
             assert_is_value(
                 cond and 1,
                 MultiValuedValue([TypedValue(str), KnownValue(None), KnownValue(1)]),
+                skip_annotated=True,
             )
             assert_is_value(
-                cond2 and 1, MultiValuedValue([KnownValue(None), KnownValue(1)])
+                cond2 and 1,
+                MultiValuedValue([KnownValue(None), KnownValue(1)]),
+                skip_annotated=True,
             )
             assert_is_value(
-                cond or 1, MultiValuedValue([TypedValue(str), KnownValue(1)])
+                cond or 1,
+                MultiValuedValue([TypedValue(str), KnownValue(1)]),
+                skip_annotated=True,
             )
             assert_is_value(
-                cond2 or 1, MultiValuedValue([KnownValue(True), KnownValue(1)])
+                cond2 or 1,
+                MultiValuedValue([KnownValue(True), KnownValue(1)]),
+                skip_annotated=True,
             )
 
         def hutia(x=None):
             assert_is_value(x, AnyValue(AnySource.unannotated) | KnownValue(None))
-            assert_is_value(x or 1, AnyValue(AnySource.unannotated) | KnownValue(1))
+            assert_is_value(
+                x or 1,
+                AnyValue(AnySource.unannotated) | KnownValue(1),
+                skip_annotated=True,
+            )
             y = x or 1
-            assert_is_value(y, AnyValue(AnySource.unannotated) | KnownValue(1))
+            assert_is_value(
+                y, AnyValue(AnySource.unannotated) | KnownValue(1), skip_annotated=True
+            )
             assert_is_value(
                 (True if x else False) or None, KnownValue(True) | KnownValue(None)
             )
@@ -1050,8 +1064,8 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
     @assert_passes()
     def test_setattr(self):
         class Capybara(object):
-            def __init__(self):
-                for k, v in iter([("grass", "tasty")]):
+            def __init__(self, unannotated):
+                for k, v in unannotated:
                     assert_is_value(k, AnyValue(AnySource.generic_argument))
                     setattr(self, k, v)
                 assert_is_value(self.grass, AnyValue(AnySource.inference))
@@ -1059,8 +1073,8 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
     @assert_passes()
     def test_setattr_on_base(self):
         class Capybara(object):
-            def __init__(self):
-                for k, v in iter([("grass", "tasty")]):
+            def __init__(self, unannotated):
+                for k, v in unannotated:
                     # Make sure we're not smart enough to infer the attribute
                     assert_is_value(k, AnyValue(AnySource.generic_argument))
                     setattr(self, k, v)
@@ -1599,6 +1613,7 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
     @assert_passes()
     def test_inference(self):
         from pyanalyze.tests import PropertyObject, ClassWithAsync
+        from pyanalyze.stacked_scopes import Composite
 
         def capybara(oid):
             assert_is_value(
@@ -1633,17 +1648,23 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_metaclass_super(self):
+        from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
+        from qcore.testing import Anything
+        from typing import Any, cast
+
+        varname = VarnameWithOrigin("self", cast(Any, Anything))
+
         class Metaclass(type):
             def __init__(self, name, bases, attrs):
                 super(Metaclass, self).__init__(name, bases, attrs)
-                # TODO(jelle): the value is inferred correctly but this test fails because identical super
+                # TODO: the value is inferred correctly but this test fails because identical super
                 # objects don't compare equal
                 # assert_is_value(super(Metaclass, self).__init__,
                 #                 UnboundMethodValue('__init__', super(Metaclass, Metaclass)))
                 assert_is_value(
                     self.__init__,
                     UnboundMethodValue(
-                        "__init__", Composite(TypedValue(Metaclass), "self")
+                        "__init__", Composite(TypedValue(Metaclass), varname)
                     ),
                 )
 
@@ -1730,7 +1751,7 @@ class TestOperators(TestNameCheckVisitorBase):
     @assert_passes(settings={ErrorCode.value_always_true: False})
     def test_not(self):
         def capybara(x):
-            assert_is_value(not x, TypedValue(bool))
+            assert_is_value(not x, TypedValue(bool), skip_annotated=True)
             assert_is_value(not True, KnownValue(False))
 
     @assert_passes()
@@ -1782,10 +1803,15 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(ha + x, AnyValue(AnySource.from_another))
             assert_is_value(HasBoth() + HasBoth(), TypedValue(HasBoth))
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_unsupported_unary_op(self):
         def capybara():
-            ~"capybara"
+            ~"capybara"  # E: unsupported_operation
+
+    @assert_passes()
+    def test_int_float_product(self):
+        def capybara(f: float, i: int):
+            assert_is_value(i * f, TypedValue(float))
 
 
 class TestTaskNeedsYield(TestNameCheckVisitorBase):
@@ -1799,7 +1825,7 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
 
     @assert_fails(ErrorCode.task_needs_yield)
     def test_async(self):
-        from asynq import asynq, ConstFuture
+        from asynq import asynq
 
         @asynq()
         def async_fn():
@@ -2037,8 +2063,6 @@ async def f():
 class TestNonlocal(TestNameCheckVisitorBase):
     @assert_passes()
     def test_nonlocal(self):
-        from qcore.testing import Anything
-
         def capybara():
             x = 3
 
@@ -2171,7 +2195,7 @@ class TestAugAssign(TestNameCheckVisitorBase):
 class TestUnpacking(TestNameCheckVisitorBase):
     @assert_passes()
     def test_dict_unpacking(self):
-        from typing import Dict
+        from typing import Dict, Optional
         from typing_extensions import TypedDict, NotRequired
 
         class FullTD(TypedDict):
@@ -2182,7 +2206,12 @@ class TestUnpacking(TestNameCheckVisitorBase):
             a: int
             b: NotRequired[str]
 
-        def capybara(d: Dict[str, int], ftd: FullTD, ptd: PartialTD):
+        def capybara(
+            d: Dict[str, int],
+            ftd: FullTD,
+            ptd: PartialTD,
+            maybe_ftd: Optional[FullTD] = None,
+        ):
             d1 = {1: 2}
             d2 = {3: 4, **d1}
             assert_is_value(
@@ -2223,6 +2252,16 @@ class TestUnpacking(TestNameCheckVisitorBase):
                     [
                         KVPair(KnownValue(1), KnownValue(2)),
                         KVPair(KnownValue("a"), TypedValue(int)),
+                        KVPair(KnownValue("b"), TypedValue(str), is_required=False),
+                    ],
+                ),
+            )
+            assert_is_value(
+                {**(maybe_ftd or {})},
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(KnownValue("a"), TypedValue(int), is_required=False),
                         KVPair(KnownValue("b"), TypedValue(str), is_required=False),
                     ],
                 ),
@@ -2530,6 +2569,79 @@ class TestAnnAssign(TestNameCheckVisitorBase):
             print(z)  # E: undefined_name
 
 
+class TestWhile(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_while_true_reachability(self):
+        def capybara() -> int:  # E: missing_return
+            while True:
+                break
+
+        def pacarana(i: int) -> int:
+            while True:
+                if i == 1:
+                    return 1
+
+
+class TestWith(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_with(self) -> None:
+        class BadCM1:
+            pass
+
+        class BadCM2:
+            def __enter__(self, extra_arg) -> int:
+                return 0
+
+            def __exit__(self, typ, value, tb):
+                pass
+
+        class GoodCM:
+            def __enter__(self) -> int:
+                return 0
+
+            def __exit__(self, typ, value, tb):
+                pass
+
+        def capybara():
+            with BadCM1() as e:  # E: invalid_context_manager
+                assert_is_value(e, AnyValue(AnySource.error))
+
+            with BadCM2() as e:  # E: invalid_context_manager
+                assert_is_value(e, AnyValue(AnySource.error))
+
+            with GoodCM() as e:
+                assert_is_value(e, TypedValue(int))
+
+    @assert_passes()
+    def test_async_with(self) -> None:
+        class BadCM1:
+            pass
+
+        class BadCM2:
+            async def __aenter__(self, extra_arg) -> int:
+                return 0
+
+            async def __aexit__(self, typ, value, tb):
+                pass
+
+        class GoodCM:
+            async def __aenter__(self) -> int:
+                return 0
+
+            async def __aexit__(self, typ, value, tb):
+                pass
+
+        async def capybara():
+            async with BadCM1() as e:  # E: invalid_context_manager
+                assert_is_value(e, AnyValue(AnySource.error))
+
+            async with BadCM2() as e:  # E: invalid_context_manager
+                assert_is_value(e, AnyValue(AnySource.error))
+
+            async with GoodCM() as e:
+                assert_is_value(e, TypedValue(int))
+
+
 class HasGetattr(object):
     def __getattr__(self, attr):
         return 42
@@ -2556,3 +2668,16 @@ def test_static_hasattr():
     assert _static_hasattr(hgat, "real_method")
     assert _static_hasattr(hgat, "__getattribute__")
     assert not _static_hasattr(hgat, "random_attribute")
+
+
+class TestCompare(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_multi(self):
+        from typing_extensions import Literal
+
+        def capybara(i: Literal[1, 2, 3], x: Literal[3, 4]) -> None:
+            assert_is_value(i, KnownValue(1) | KnownValue(2) | KnownValue(3))
+            assert_is_value(x, KnownValue(3) | KnownValue(4))
+            if 1 < i < 3 != x:
+                assert_is_value(i, KnownValue(2))
+                assert_is_value(x, KnownValue(4))

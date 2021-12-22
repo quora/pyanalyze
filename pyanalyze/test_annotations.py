@@ -140,7 +140,19 @@ class TestAnnotations(TestNameCheckVisitorBase):
             # Ideally should be ContextManager[int], but at least
             # it should not be Iterator[int], which is what pyanalyze
             # used to infer.
-            assert_is_value(capybara(), AnyValue(AnySource.inference))
+            assert_is_value(capybara(), AnyValue(AnySource.unannotated))
+
+            with capybara() as e:
+                assert_is_value(e, AnyValue(AnySource.generic_argument))
+
+            assert_is_value(post_capybara(), AnyValue(AnySource.unannotated))
+
+            with post_capybara() as e:
+                assert_is_value(e, AnyValue(AnySource.generic_argument))
+
+        @contextmanager
+        def post_capybara() -> Iterator[int]:
+            yield 3
 
     @assert_passes()
     def test_none_annotations(self):
@@ -161,7 +173,8 @@ class TestAnnotations(TestNameCheckVisitorBase):
     def test_annotations_function(self):
         def caviidae() -> None:
             x = int
-            # tests that annotations in a nested functions are not evaluated in a context where they don't exist
+            # tests that annotations in a nested functions are not evaluated in a context where
+            # they don't exist
             def capybara(a: x, *b: x, c: x, d: x = 3, **kwargs: x):
                 pass
 
@@ -326,7 +339,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(empty, SequenceIncompleteValue(tuple, []))
 
     @assert_passes()
-    def test_strinigified_tuples(self):
+    def test_stringified_tuples(self):
         from typing import Tuple, Union
 
         def capybara(
@@ -525,6 +538,21 @@ def f(x: int, y: List[str]):
         def capybara(x: "int | str", y: "Literal[-1]"):
             assert_is_value(x, TypedValue(int) | TypedValue(str))
             assert_is_value(y, KnownValue(-1))
+
+    @assert_passes()
+    def test_double_subscript(self):
+        from typing import Union, List, Set, TypeVar
+
+        T = TypeVar("T")
+
+        # A bit weird but we hit this kind of case with generic
+        # aliases in typeshed.
+        def capybara(x: "Union[List[T], Set[T]][int]"):
+            assert_is_value(
+                x,
+                GenericValue(list, [TypedValue(int)])
+                | GenericValue(set, [TypedValue(int)]),
+            )
 
     @skip_before((3, 8))
     @assert_fails(ErrorCode.incompatible_argument)
@@ -898,10 +926,26 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_callable_compatibility(self):
-        from typing import TypeVar, Callable, Union
+        from typing import TypeVar, Callable, Union, Iterable
+        from typing_extensions import Protocol
 
         AnyStr = TypeVar("AnyStr", bytes, str)
         IntT = TypeVar("IntT", bound=int)
+
+        class SupportsIsInteger(Protocol):
+            def is_integer(self) -> bool:
+                raise NotImplementedError
+
+        SupportsIsIntegerT = TypeVar("SupportsIsIntegerT", bound=SupportsIsInteger)
+
+        def find_int(objs: Iterable[SupportsIsIntegerT]) -> SupportsIsIntegerT:
+            for obj in objs:
+                if obj.is_integer():
+                    return obj
+            raise ValueError
+
+        def wants_float_func(f: Callable[[Iterable[float]], float]) -> float:
+            return f([1.0, 2.0])
 
         def want_anystr_func(
             f: Callable[[AnyStr], AnyStr], s: Union[str, bytes]
@@ -932,6 +976,8 @@ class TestTypeVar(TestNameCheckVisitorBase):
             want_bounded_func(anystr_func, 1)  # E: incompatible_argument
             want_str_func(anystr_func)
             want_str_func(int_func)  # E: incompatible_argument
+            wants_float_func(find_int)
+            wants_float_func(int_func)  # E: incompatible_argument
 
     @assert_passes()
     def test_getitem(self):
@@ -1334,6 +1380,49 @@ class TestRequired(TestNameCheckVisitorBase):
                 ),
             )
 
+    @assert_passes()
+    def test_typeddict_from_call(self):
+        from typing import Optional, Any
+        from typing_extensions import NotRequired, Required, TypedDict
+
+        class Stringify(TypedDict):
+            a: "int"
+            b: "Required[str]"
+            c: "NotRequired[float]"
+
+        def make_td() -> Any:
+            return Stringify
+
+        def return_optional() -> Optional[Stringify]:
+            return None
+
+        def return_call() -> Optional[make_td()]:
+            return None
+
+        def capybara() -> None:
+            assert_is_value(
+                return_optional(),
+                KnownValue(None)
+                | TypedDictValue(
+                    {
+                        "a": (True, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+            assert_is_value(
+                return_call(),
+                KnownValue(None)
+                | TypedDictValue(
+                    {
+                        "a": (True, TypedValue(int)),
+                        "b": (True, TypedValue(str)),
+                        "c": (False, TypedValue(float)),
+                    }
+                ),
+            )
+
     @skip_before((3, 8))
     @assert_passes()
     def test_typing(self):
@@ -1404,3 +1493,87 @@ class TestRequired(TestNameCheckVisitorBase):
         class Capybara:
             x: Required[int]  # E: invalid_annotation
             y: NotRequired[int]  # E: invalid_annotation
+
+
+class TestParamSpec(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        from typing_extensions import ParamSpec
+        from typing import Callable, TypeVar, List
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def wrapped(a: int) -> str:
+            return str(a)
+
+        def wrapper(c: Callable[P, T]) -> Callable[P, List[T]]:
+            raise NotImplementedError
+
+        def quoted_wrapper(c: "Callable[P, T]") -> "Callable[P, List[T]]":
+            raise NotImplementedError
+
+        def capybara() -> None:
+            assert_is_value(wrapped(1), TypedValue(str))
+
+            refined = wrapper(wrapped)
+            assert_is_value(refined(1), GenericValue(list, [TypedValue(str)]))
+            refined("too", "many", "arguments")  # E: incompatible_call
+
+            quoted_refined = quoted_wrapper(wrapped)
+            assert_is_value(quoted_refined(1), GenericValue(list, [TypedValue(str)]))
+            quoted_refined("too", "many", "arguments")  # E: incompatible_call
+
+    def test_concatenate(self):
+        # putting this in an @assert_passes() function crashes GitHub Actions on 3.6
+        # for unclear reasons
+        self.assert_passes(
+            """
+            from typing_extensions import ParamSpec, Concatenate
+            from typing import Callable, TypeVar, List
+
+            P = ParamSpec("P")
+            T = TypeVar("T")
+
+            def wrapped(a: int) -> str:
+                return str(a)
+
+            def wrapper(c: Callable[P, T]) -> Callable[Concatenate[str, P], List[T]]:
+                raise NotImplementedError
+
+            def quoted_wrapper(
+                c: "Callable[P, T]",
+            ) -> "Callable[Concatenate[str, P], List[T]]":
+                raise NotImplementedError
+
+            def capybara() -> None:
+                assert_is_value(wrapped(1), TypedValue(str))
+
+                refined = wrapper(wrapped)
+                assert_is_value(refined("x", 1), GenericValue(list, [TypedValue(str)]))
+                refined(1)  # E: incompatible_call
+
+                quoted_refined = quoted_wrapper(wrapped)
+                assert_is_value(
+                    quoted_refined("x", 1), GenericValue(list, [TypedValue(str)])
+                )
+                quoted_refined(1)  # E: incompatible_call
+            """
+        )
+
+    @assert_passes()
+    def test_match_any(self):
+        from typing_extensions import ParamSpec
+        from typing import Callable, TypeVar, List
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def wrapper(c: Callable[P, T]) -> Callable[P, List[T]]:
+            raise NotImplementedError
+
+        def capybara(unannotated):
+            refined = wrapper(unannotated)
+            assert_is_value(
+                refined(), GenericValue(list, [AnyValue(AnySource.generic_argument)])
+            )

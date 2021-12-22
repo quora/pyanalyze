@@ -378,6 +378,18 @@ class TestShadowing(TestNameCheckVisitorBase):
 
 class TestCalls(TestNameCheckVisitorBase):
     @assert_passes()
+    def test_error_location(self):
+        def two_args(x: str, y: int) -> None:
+            pass
+
+        def capybara():
+            two_args(
+                "one very long string so long that it goes on its own line is this"
+                " enough",
+                "not an int",  # E: incompatible_argument
+            )
+
+    @assert_passes()
     def test_too_few_args(self):
         def fn(x, y):
             return x + y
@@ -487,20 +499,22 @@ class TestCalls(TestNameCheckVisitorBase):
     @assert_passes()
     def test_return_value(self):
         from pyanalyze.value import HasAttrGuardExtension
+        from qcore.testing import Anything
+        from typing import Any, cast
+
+        val = AnnotatedValue(
+            TypedValue(bool),
+            [
+                HasAttrGuardExtension(
+                    "object", KnownValue("foo"), AnyValue(AnySource.inference)
+                ),
+                cast(Any, Anything),
+            ],
+        )
 
         def capybara(x):
             l = hasattr(x, "foo")
-            assert_is_value(
-                l,
-                AnnotatedValue(
-                    TypedValue(bool),
-                    [
-                        HasAttrGuardExtension(
-                            "object", KnownValue("foo"), AnyValue(AnySource.inference)
-                        )
-                    ],
-                ),
-            )
+            assert_is_value(l, val)
 
     @assert_passes()
     def test_required_kwonly_args(self):
@@ -589,6 +603,8 @@ class TestCalls(TestNameCheckVisitorBase):
     @assert_passes()
     def test_hasattr(self):
         from pyanalyze.value import HasAttrGuardExtension
+        from typing import Any, cast
+        from qcore.testing import Anything
 
         class Quemisia(object):
             def gravis(self):
@@ -601,21 +617,19 @@ class TestCalls(TestNameCheckVisitorBase):
         def mistyped_args():
             hasattr(True, False)  # E: incompatible_argument
 
+        inferred = AnnotatedValue(
+            TypedValue(bool),
+            [
+                HasAttrGuardExtension(
+                    "object", KnownValue("__qualname__"), AnyValue(AnySource.inference)
+                ),
+                cast(Any, Anything),
+            ],
+        )
+
         def only_on_class(o: object):
             val = hasattr(o, "__qualname__")
-            assert_is_value(
-                val,
-                AnnotatedValue(
-                    TypedValue(bool),
-                    [
-                        HasAttrGuardExtension(
-                            "object",
-                            KnownValue("__qualname__"),
-                            AnyValue(AnySource.inference),
-                        )
-                    ],
-                ),
-            )
+            assert_is_value(val, inferred)
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_keyword_only_args(self):
@@ -1070,7 +1084,7 @@ class TestOverload(TestNameCheckVisitorBase):
     @assert_passes()
     def test_any_and_union(self):
         from pyanalyze.extensions import overload
-        from typing import List, Any, Union
+        from typing import Any, Union
         from typing_extensions import Literal
 
         @overload

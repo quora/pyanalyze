@@ -12,6 +12,7 @@ from .signature import (
     OverloadedSignature,
     Signature,
     SigParameter,
+    ParameterKind,
 )
 from .config import Config
 from . import tests
@@ -55,11 +56,11 @@ class TestConfig(Config):
         if issubclass(cls, tests.KeywordOnlyArguments):
             return Signature.make(
                 [
-                    SigParameter("self", kind=SigParameter.POSITIONAL_ONLY),
-                    SigParameter("args", kind=SigParameter.VAR_POSITIONAL),
+                    SigParameter("self", kind=ParameterKind.POSITIONAL_ONLY),
+                    SigParameter("args", kind=ParameterKind.VAR_POSITIONAL),
                     SigParameter(
                         "kwonly_arg",
-                        kind=SigParameter.KEYWORD_ONLY,
+                        kind=ParameterKind.KEYWORD_ONLY,
                         default=value.KnownValue(None),
                     ),
                 ],
@@ -80,7 +81,7 @@ class TestConfig(Config):
                     SigParameter("a"),
                     SigParameter(
                         "kwonly_arg",
-                        SigParameter.KEYWORD_ONLY,
+                        ParameterKind.KEYWORD_ONLY,
                         annotation=value.TypedValue(bool),
                     ),
                 ],
@@ -96,7 +97,7 @@ class TestConfig(Config):
                         [
                             SigParameter(
                                 "x",
-                                SigParameter.POSITIONAL_ONLY,
+                                ParameterKind.POSITIONAL_ONLY,
                                 annotation=value.TypedValue(str),
                             )
                         ],
