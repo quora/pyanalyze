@@ -11,7 +11,7 @@ import time
 from pyanalyze.test_value import CTX
 import typeshed_client
 from typeshed_client import Resolver, get_search_context
-from typed_ast import ast3
+import ast
 import typing
 from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
@@ -444,8 +444,8 @@ class TestIntegration:
                 is_function = isinstance(
                     info.ast,
                     (
-                        ast3.FunctionDef,
-                        ast3.AsyncFunctionDef,
+                        ast.FunctionDef,
+                        ast.AsyncFunctionDef,
                         typeshed_client.OverloadedName,
                     ),
                 )

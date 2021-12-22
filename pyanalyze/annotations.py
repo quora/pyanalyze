@@ -29,10 +29,8 @@ import typing
 import typing_inspect
 import qcore
 import ast
-from typed_ast import ast3
 import builtins
 from collections.abc import Callable, Iterable
-from typed_ast import ast3
 from typing import (
     Any,
     Container,
@@ -794,7 +792,7 @@ class _Visitor(ast.NodeVisitor):
         return self.visit(node.value)
 
     def visit_BinOp(self, node: ast.BinOp) -> Optional[Value]:
-        if isinstance(node.op, (ast.BitOr, ast3.BitOr)):
+        if isinstance(node.op, ast.BitOr):
             return _SubscriptedValue(
                 KnownValue(Union), (self.visit(node.left), self.visit(node.right))
             )
@@ -803,7 +801,7 @@ class _Visitor(ast.NodeVisitor):
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Optional[Value]:
         # Only int and float negation on literals are supported.
-        if isinstance(node.op, (ast.USub, ast3.USub)):
+        if isinstance(node.op, ast.USub):
             operand = self.visit(node.operand)
             if isinstance(operand, KnownValue) and isinstance(
                 operand.val, (int, float)

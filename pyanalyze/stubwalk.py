@@ -12,7 +12,6 @@ from pathlib import Path
 import textwrap
 from pyanalyze.signature import ConcreteSignature
 import typeshed_client
-from typed_ast import ast3
 from typing import Collection, Container, Iterable, Optional, Sequence, Union
 
 from .config import Config
@@ -42,11 +41,11 @@ DISABLED_BY_DEFAULT = {
 }
 
 
-def _try_decompile(node: ast3.AST) -> str:
+def _try_decompile(node: ast.AST) -> str:
     try:
         return decompile(node)
     except Exception as e:
-        return f"could not decompile {ast3.dump(node)} due to {e}\n"
+        return f"could not decompile {ast.dump(node)} due to {e}\n"
 
 
 @dataclass
@@ -54,11 +53,11 @@ class Error:
     code: ErrorCode
     message: str
     fully_qualified_name: str
-    ast: Union[ast3.AST, typeshed_client.OverloadedName, None] = None
+    ast: Union[ast.AST, typeshed_client.OverloadedName, None] = None
 
     def display(self) -> str:
         heading = f"{self.fully_qualified_name}: {self.message} ({self.code.name})\n"
-        if isinstance(self.ast, ast3.AST):
+        if isinstance(self.ast, ast.AST):
             decompiled = _try_decompile(self.ast)
             heading += textwrap.indent(decompiled, "  ")
         elif isinstance(self.ast, typeshed_client.OverloadedName):
@@ -114,11 +113,7 @@ def _stubwalk(search_context: typeshed_client.SearchContext) -> Iterable[Error]:
         for name, info in names.items():
             is_function = isinstance(
                 info.ast,
-                (
-                    ast3.FunctionDef,
-                    ast3.AsyncFunctionDef,
-                    typeshed_client.OverloadedName,
-                ),
+                (ast.FunctionDef, ast.AsyncFunctionDef, typeshed_client.OverloadedName),
             )
             fq_name = f"{module_name}.{name}"
             if is_function:
@@ -132,7 +127,7 @@ def _stubwalk(search_context: typeshed_client.SearchContext) -> Iterable[Error]:
                     )
                 else:
                     yield from _error_on_nested_any(sig, "Signature", fq_name, info)
-            if isinstance(info.ast, ast3.ClassDef):
+            if isinstance(info.ast, ast.ClassDef):
                 bases = finder.get_bases_for_fq_name(fq_name)
                 if bases is None:
                     yield Error(
