@@ -6,9 +6,9 @@ Suggest types for untyped code.
 import ast
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Mapping, Sequence, Tuple, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 
-from pyanalyze.safe import safe_isinstance
+from pyanalyze.safe import safe_getattr, safe_isinstance
 
 from .error_code import ErrorCode
 from .node_visitor import Failure
@@ -28,6 +28,7 @@ from .value import (
     MultiValuedValue,
     VariableNameValue,
     replace_known_sequence_value,
+    stringify_object,
     unite_values,
 )
 from .reexport import ErrorContext
@@ -61,15 +62,17 @@ class CallableData:
             suggested = unite_values(*all_values)
             if not should_suggest_type(suggested):
                 continue
+            detail, metadata = display_suggested_type(suggested)
             failure = self.ctx.show_error(
                 param,
                 f"Suggested type for parameter {param.arg}",
                 ErrorCode.suggested_parameter_type,
-                detail=display_suggested_type(suggested),
+                detail=detail,
                 # Otherwise we record it twice in tests. We should ultimately
                 # refactor error tracking to make it less hacky for things that
                 # show errors outside of files.
                 save=False,
+                extra_metadata=metadata,
             )
             if failure is not None:
                 yield failure
@@ -102,13 +105,26 @@ class CallableTracker:
         return failures
 
 
-def display_suggested_type(value: Value) -> str:
+def display_suggested_type(value: Value) -> Tuple[str, Optional[Dict[str, Any]]]:
     value = prepare_type(value)
     if isinstance(value, MultiValuedValue) and value.vals:
         cae = CanAssignError("Union", [CanAssignError(str(val)) for val in value.vals])
     else:
         cae = CanAssignError(str(value))
-    return str(cae)
+    # If the type is simple enough, add extra_metadata for autotyping to apply.
+    if isinstance(value, TypedValue) and type(value) is TypedValue:
+        # For now, only for exactly TypedValue
+        suggested_type = stringify_object(value.typ)
+        imports = []
+        if isinstance(value.typ, str):
+            if "." in value.typ:
+                imports.append(value.typ)
+        elif safe_getattr(value.typ, "__module__", None) != "builtins":
+            imports.append(suggested_type.split(".")[0])
+        metadata = {"suggested_type": suggested_type, "imports": imports}
+    else:
+        metadata = None
+    return str(cae), metadata
 
 
 def should_suggest_type(value: Value) -> bool:
