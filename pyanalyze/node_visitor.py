@@ -25,7 +25,7 @@ import tempfile
 import builtins
 from builtins import print as real_print
 from types import ModuleType
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 from typing import (
     Any,
     Dict,
@@ -131,10 +131,11 @@ class FileNotFoundError(Exception):
 class Failure(TypedDict, total=False):
     description: str
     filename: str
-    code: Enum
-    lineno: int
-    context: str
-    message: str
+    code: NotRequired[Enum]
+    lineno: NotRequired[int]
+    col_offset: NotRequired[int]
+    context: NotRequired[str]
+    message: NotRequired[str]
 
 
 class BaseNodeVisitor(ast.NodeVisitor):
@@ -540,6 +541,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
           file-level ignore comments.)
         - ignore_comment: Comment that can be used to ignore this error. (By default, this
           is "# static analysis: ignore".)
+        - detail: extra detail to append to the error on a separate line
+        - save: if False, do not add the failure to the all_failures list
 
         """
         if self.caught_errors is not None:
@@ -582,8 +585,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             lineno = col_offset = None
 
-        # https://github.com/quora/pyanalyze/issues/112
-        error = cast(Failure, {"description": str(e), "filename": self.filename})
+        error: Failure = {"description": str(e), "filename": self.filename}
         message = f"\n{e}"
         if error_code is not None:
             error["code"] = error_code
@@ -595,6 +597,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
             message += f"\nIn {self.filename} at line {lineno}\n"
         else:
             message += f"\n In {self.filename}"
+        if col_offset is not None:
+            error["col_offset"] = col_offset
         lines = self._lines()
 
         if obey_ignore and lineno is not None:
