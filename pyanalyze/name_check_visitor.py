@@ -880,6 +880,8 @@ class NameCheckVisitor(
 
     def _load_module(self) -> Tuple[Optional[types.ModuleType], bool]:
         """Sets the module_path and module for this file."""
+        if not self.filename:
+            return None, False
         self.log(logging.INFO, "Checking file", (self.filename, os.getpid()))
 
         try:
