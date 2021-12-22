@@ -109,7 +109,12 @@ from .signature import (
     ARGS,
     KWARGS,
 )
-from .suggested_type import CallArgs, display_suggested_type, should_suggest_type
+from .suggested_type import (
+    CallArgs,
+    display_suggested_type,
+    prepare_type,
+    should_suggest_type,
+)
 from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
@@ -1393,13 +1398,14 @@ class NameCheckVisitor(
                 decorator == KnownValue(abstractmethod)
                 for _, decorator in info.decorators
             )
-            and should_suggest_type(return_value)
         ):
-            self._show_error_if_checking(
-                node,
-                error_code=ErrorCode.suggested_return_type,
-                detail=display_suggested_type(return_value),
-            )
+            prepared = prepare_type(return_value)
+            if should_suggest_type(prepared):
+                self._show_error_if_checking(
+                    node,
+                    error_code=ErrorCode.suggested_return_type,
+                    detail=display_suggested_type(prepared),
+                )
 
         if evaled_function:
             return evaled_function
