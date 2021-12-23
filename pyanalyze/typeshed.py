@@ -825,6 +825,10 @@ class TypeshedFinder:
                     return TypedValue(f"{module}.{info.name}")
                 elif isinstance(info.ast, ast.AnnAssign):
                     return self._parse_type(info.ast.annotation, module)
+                elif isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    sig = self._get_signature_from_func_def(info.ast, None, module)
+                    if sig is not None:
+                        return CallableValue(sig)
                 self.log("Unable to import", (module, info))
                 return AnyValue(AnySource.inference)
         elif isinstance(info, tuple):
