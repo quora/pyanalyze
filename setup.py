@@ -52,7 +52,7 @@ if __name__ == "__main__":
             "dataclasses; python_version < '3.7'",
             "qcore>=0.5.1",
             "ast_decompiler>=0.4.0",
-            "typeshed_client>=1.0.0,<2",
+            "typeshed_client>=2.0.0",
             "typing_inspect>=0.7.0",
             "typing_extensions>=3.10.0.0",
             "mypy_extensions",
