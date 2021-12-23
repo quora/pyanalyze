@@ -8,10 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
-from pyanalyze.test_value import CTX
-import typeshed_client
 from typeshed_client import Resolver, get_search_context
-import ast
 import typing
 from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
