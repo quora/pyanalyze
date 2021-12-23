@@ -424,48 +424,6 @@ class TestAttribute:
         assert True is tsf.has_attribute(HTTPError, "read")
 
 
-class TestIntegration:
-    """Tests that all files in typeshed are parsed without error."""
-
-    def test(self):
-        finder = CTX.arg_spec_cache.ts_finder
-        # finder.verbose = True
-        resolver = finder.resolver
-        print(resolver.ctx)
-        for module_name, module_path in sorted(
-            typeshed_client.get_all_stub_files(resolver.ctx)
-        ):
-            if module_name in ("this", "antigravity"):
-                continue  # please stop opening my browser
-            names = typeshed_client.get_stub_names(
-                module_name, search_context=resolver.ctx
-            )
-            for name, info in names.items():
-                is_function = isinstance(
-                    info.ast,
-                    (
-                        ast.FunctionDef,
-                        ast.AsyncFunctionDef,
-                        typeshed_client.OverloadedName,
-                    ),
-                )
-                fq_name = f"{module_name}.{name}"
-                if is_function:
-                    sig = finder.get_argspec_for_fully_qualified_name(fq_name, None)
-                    if sig is None:
-                        print(fq_name)
-                val = finder.resolve_name(module_name, name)
-                if val == AnyValue(AnySource.inference):
-                    if is_function:
-                        # Probably a function that only exists on another OS.
-                        continue
-                    if isinstance(info.ast, typeshed_client.ImportedName):
-                        # Some legitimate triggers on installed stubs
-                        continue
-                    print(module_name, name, info)
-        assert False
-
-
 class TestRange(TestNameCheckVisitorBase):
     @assert_passes()
     def test_iteration(self):

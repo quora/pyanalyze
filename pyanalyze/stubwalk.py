@@ -53,17 +53,17 @@ class Error:
     code: ErrorCode
     message: str
     fully_qualified_name: str
-    ast: Union[ast.AST, typeshed_client.OverloadedName, None] = None
+    node: Union[ast.AST, typeshed_client.OverloadedName, None] = None
 
     def display(self) -> str:
         heading = f"{self.fully_qualified_name}: {self.message} ({self.code.name})\n"
-        if isinstance(self.ast, ast.AST):
-            decompiled = _try_decompile(self.ast)
+        if isinstance(self.node, ast.AST):
+            decompiled = _try_decompile(self.node)
             heading += textwrap.indent(decompiled, "  ")
-        elif isinstance(self.ast, typeshed_client.OverloadedName):
+        elif isinstance(self.node, typeshed_client.OverloadedName):
             lines = [
                 textwrap.indent(_try_decompile(node), "  ")
-                for node in self.ast.definitions
+                for node in self.node.definitions
             ]
             heading += "".join(lines)
         return heading
