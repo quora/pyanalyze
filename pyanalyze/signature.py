@@ -133,6 +133,23 @@ class ActualArguments:
     kwargs_required: bool
 
 
+class CallReturn(NamedTuple):
+    """Return value of a preprocessed call.
+
+    This returns data that is useful for overload resolution.
+
+    """
+
+    return_value: Value
+    """The return value of the function."""
+    is_error: bool = False
+    """Whether there was an error in this call. Used only for overload resolutioon."""
+    used_any_for_match: bool = False
+    """Whether Any was used for this match. Used only for overload resolution."""
+    remaining_arguments: Optional[ActualArguments] = None
+    """Arguments that still need to be processed. Used only for overload resolution."""
+
+
 class ImplReturn(NamedTuple):
     """Return value of :term:`impl` functions.
 
@@ -149,12 +166,6 @@ class ImplReturn(NamedTuple):
     no_return_unless: AbstractConstraint = NULL_CONSTRAINT
     """A :class:`pyanalyze.stacked_scopes.Constraint` indicating things that are true
     unless the function does not return."""
-    is_error: bool = False
-    """Whether there was an error in this call. Used only for overload resolutioon."""
-    used_any_for_match: bool = False
-    """Whether Any was used for this match. Used only for overload resolution."""
-    remaining_arguments: Optional[ActualArguments] = None
-    """Arguments that still need to be processed. Used only for overload resolution."""
 
     @classmethod
     def unite_impl_rets(cls, rets: Sequence["ImplReturn"]) -> "ImplReturn":
@@ -442,7 +453,7 @@ class Signature:
 
     def _apply_annotated_constraints(
         self, raw_return: Union[Value, ImplReturn], composites: Dict[str, Composite]
-    ) -> ImplReturn:
+    ) -> Value:
         if isinstance(raw_return, Value):
             ret = ImplReturn(raw_return)
         else:
@@ -524,8 +535,7 @@ class Signature:
             extensions.append(ConstraintExtension(constraint))
         if no_return_unless is not NULL_CONSTRAINT:
             extensions.append(NoReturnConstraintExtension(no_return_unless))
-        return_value = annotate_value(return_value, extensions)
-        return ImplReturn(return_value)
+        return annotate_value(return_value, extensions)
 
     def bind_arguments(
         self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
@@ -720,16 +730,16 @@ class Signature:
             message = f"In call to {stringify_object(self.callable)}: {message}"
         visitor.show_error(node, message, ErrorCode.incompatible_call, detail=detail)
 
-    def get_default_return(self, source: AnySource = AnySource.error) -> ImplReturn:
+    def get_default_return(self, source: AnySource = AnySource.error) -> CallReturn:
         return_value = self.return_value
         if self._return_key in self.typevars_of_params:
             typevar_values = {tv: AnyValue(source) for tv in self.all_typevars}
             return_value = return_value.substitute_typevars(typevar_values)
-        return ImplReturn(return_value, is_error=True)
+        return CallReturn(return_value, is_error=True)
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> ImplReturn:
+    ) -> Value:
         """Type check a call to this Signature with the given arguments.
 
         This may call the :term:`impl` function or the underlying callable,
@@ -739,8 +749,8 @@ class Signature:
         args = list(args)
         preprocessed = preprocess_args(args, visitor, node)
         if preprocessed is None:
-            return self.get_default_return()
-        return self.check_call_preprocessed(preprocessed, visitor, node)
+            return self.get_default_return().return_value
+        return self.check_call_preprocessed(preprocessed, visitor, node).return_value
 
     def check_call_preprocessed(
         self,
@@ -748,13 +758,13 @@ class Signature:
         visitor: "NameCheckVisitor",
         node: ast.AST,
         is_overload: bool = False,
-    ) -> ImplReturn:
+    ) -> CallReturn:
         if self.is_ellipsis_args:
             if self.allow_call:
                 runtime_return = self._maybe_perform_call(preprocessed, visitor, node)
                 if runtime_return is not None:
-                    return ImplReturn(runtime_return)
-            return ImplReturn(self.return_value, used_any_for_match=True)
+                    return CallReturn(runtime_return)
+            return CallReturn(self.return_value, used_any_for_match=True)
 
         bound_args = self.bind_arguments(preprocessed, visitor, node)
         if bound_args is None:
@@ -851,7 +861,8 @@ class Signature:
                 else:
                     return_value = runtime_return
         ret = self._apply_annotated_constraints(return_value, composites)
-        return ret._replace(
+        return CallReturn(
+            ret,
             is_error=had_error,
             used_any_for_match=used_any,
             remaining_arguments=new_args,
@@ -1586,7 +1597,7 @@ class OverloadedSignature:
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> ImplReturn:
+    ) -> Value:
         """Check a call to an overloaded function.
 
         The way overloads are handled is not well specified in any PEPs. Useful resources
@@ -1635,12 +1646,12 @@ class OverloadedSignature:
         """
         actual_args = preprocess_args(args, visitor, node)
         if actual_args is None:
-            return ImplReturn(AnyValue(AnySource.error))
+            return AnyValue(AnySource.error)
 
         errors_per_overload = []
-        any_rets: List[ImplReturn] = []
-        union_rets: List[ImplReturn] = []
-        union_and_any_rets: List[ImplReturn] = []
+        any_rets: List[CallReturn] = []
+        union_rets: List[CallReturn] = []
+        union_and_any_rets: List[CallReturn] = []
         last = len(self.signatures) - 1
         for i, sig in enumerate(self.signatures):
             with visitor.catch_errors() as caught_errors:
@@ -1691,15 +1702,15 @@ class OverloadedSignature:
         visitor.show_error(
             node, "Cannot call overloaded function", error_code, detail=str(detail)
         )
-        return ImplReturn(AnyValue(AnySource.error))
+        return AnyValue(AnySource.error)
 
     def _unite_rets(
         self,
-        any_rets: Sequence[ImplReturn],
-        union_and_any_rets: Sequence[ImplReturn],
-        union_rets: Sequence[ImplReturn],
-        clean_ret: Optional[ImplReturn] = None,
-    ) -> ImplReturn:
+        any_rets: Sequence[CallReturn],
+        union_and_any_rets: Sequence[CallReturn],
+        union_rets: Sequence[CallReturn],
+        clean_ret: Optional[CallReturn] = None,
+    ) -> Value:
         if any_rets or union_and_any_rets:
             if (
                 len(any_rets) == 1
@@ -1707,14 +1718,16 @@ class OverloadedSignature:
                 and not union_and_any_rets
                 and clean_ret is None
             ):
-                return any_rets[0]
-            return ImplReturn(AnyValue(AnySource.multiple_overload_matches))
+                return any_rets[0].return_value
+            return AnyValue(AnySource.multiple_overload_matches)
         elif union_rets:
             if clean_ret is not None:
-                return ImplReturn.unite_impl_rets([*union_rets, clean_ret])
-            return ImplReturn.unite_impl_rets(union_rets)
+                rets = [*union_rets, clean_ret]
+            else:
+                rets = union_rets
+            return unite_values(*[r.return_value for r in rets])
         assert clean_ret is not None
-        return clean_ret
+        return clean_ret.return_value
 
     def _make_detail(
         self, errors_per_overload: Sequence[Sequence[Dict[str, Any]]]
@@ -1794,14 +1807,14 @@ class BoundMethodSignature:
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> ImplReturn:
+    ) -> Value:
         ret = self.signature.check_call(
             [(self.self_composite, None), *args], visitor, node
         )
         if self.return_override is not None and not self.signature.has_return_value():
-            return ImplReturn(
-                self.return_override, ret.constraint, ret.no_return_unless
-            )
+            if isinstance(ret, AnnotatedValue):
+                return annotate_value(self.return_override, ret.metadata)
+            return self.return_override
         return ret
 
     def get_signature(
@@ -1841,7 +1854,7 @@ class PropertyArgSpec:
 
     def check_call(
         self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> ImplReturn:
+    ) -> Value:
         raise TypeError("property object is not callable")
 
     def has_return_value(self) -> bool:
