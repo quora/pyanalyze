@@ -31,6 +31,7 @@ from .value import (
     KVPair,
     KnownValue,
     MultiValuedValue,
+    NoReturnGuardExtension,
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
@@ -47,6 +48,7 @@ from .value import (
     flatten_values,
     replace_known_sequence_value,
     stringify_object,
+    unannotate_value,
     unify_typevar_maps,
     unite_values,
     NO_RETURN_VALUE,
@@ -443,10 +445,13 @@ class Signature:
         else:
             ret = raw_return
         constraints = [ret.constraint]
-        if isinstance(ret.return_value, AnnotatedValue):
-            for guard in ret.return_value.get_metadata_of_type(
-                ParameterTypeGuardExtension
-            ):
+        return_value = ret.return_value
+        no_return_unless = ret.no_return_unless
+        if isinstance(return_value, AnnotatedValue):
+            return_value, ptg = unannotate_value(
+                return_value, ParameterTypeGuardExtension
+            )
+            for guard in ptg:
                 if guard.varname in composites:
                     composite = composites[guard.varname]
                     if composite.varname is not None:
@@ -457,7 +462,8 @@ class Signature:
                             guard.guarded_type,
                         )
                         constraints.append(constraint)
-            for guard in ret.return_value.get_metadata_of_type(TypeGuardExtension):
+            return_value, tg = unannotate_value(return_value, TypeGuardExtension)
+            for guard in tg:
                 # This might miss some cases where we should use the second argument instead. We'll
                 # have to come up with additional heuristics if that comes up.
                 if isinstance(self.callable, MethodType) or (
@@ -478,7 +484,8 @@ class Signature:
                             guard.guarded_type,
                         )
                         constraints.append(constraint)
-            for guard in ret.return_value.get_metadata_of_type(HasAttrGuardExtension):
+            return_value, hag = unannotate_value(return_value, HasAttrGuardExtension)
+            for guard in hag:
                 if guard.varname in composites:
                     composite = composites[guard.varname]
                     if composite.varname is not None:
@@ -491,8 +498,25 @@ class Signature:
                             ),
                         )
                         constraints.append(constraint)
+
+            return_value, nrg = unannotate_value(return_value, NoReturnGuardExtension)
+            extra_nru = []
+            for guard in nrg:
+                if guard.varname in composites:
+                    composite = composites[guard.varname]
+                    if composite.varname is not None:
+                        constraint = Constraint(
+                            composite.varname,
+                            ConstraintType.is_value_object,
+                            True,
+                            guard.guarded_type,
+                        )
+                        extra_nru.append(constraint)
+            if extra_nru:
+                no_return_unless = AndConstraint.make([no_return_unless, *extra_nru])
+
         constraint = AndConstraint.make(constraints)
-        return ImplReturn(ret.return_value, constraint, ret.no_return_unless)
+        return ImplReturn(return_value, constraint, no_return_unless)
 
     def bind_arguments(
         self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST

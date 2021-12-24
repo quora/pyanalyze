@@ -205,26 +205,43 @@ class AsynqCallable(metaclass=_AsynqCallableMeta):
         raise TypeError(f"{self} is not callable")
 
 
-class _ParameterTypeGuardMeta(type):
-    def __getitem__(self, params: Tuple[str, object]) -> "ParameterTypeGuard":
+class _ParameterGuardMeta(type):
+    def __getitem__(self, params: Tuple[str, object]) -> Any:
         if not isinstance(params, tuple) or len(params) != 2:
             raise TypeError(
-                "ParameterTypeGuard[...] should be instantiated "
+                f"{self.__name__}[...] should be instantiated "
                 "with two arguments (a variable name and a type)."
             )
         if not isinstance(params[0], str):
-            raise TypeError("The first argument to ParameterTypeGuard must be a string")
-        return ParameterTypeGuard(params[0], params[1])
+            raise TypeError(f"The first argument to {self.__name__} must be a string")
+        return self(params[0], params[1])
 
 
 @dataclass(frozen=True)
-class ParameterTypeGuard(metaclass=_ParameterTypeGuardMeta):
+class ParameterTypeGuard(metaclass=_ParameterGuardMeta):
     """A guard on an arbitrary parameter. Used with ``Annotated``.
 
     Example usage::
 
         def is_int(arg: object) -> Annotated[bool, ParameterTypeGuard["arg", int]]:
             return isinstance(arg, int)
+
+    """
+
+    varname: str
+    guarded_type: object
+
+
+@dataclass(frozen=True)
+class NoReturnGuard(metaclass=_ParameterGuardMeta):
+    """A no-return guard on an arbitrary parameter. Used with ``Annotated``.
+
+    If the function returns, then the condition is true.
+
+    Example usage::
+
+        def assert_is_int(arg: object) -> Annotated[bool, NoReturnGuard["arg", int]]:
+            assert isinstance(arg, int)
 
     """
 

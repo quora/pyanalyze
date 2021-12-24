@@ -1386,6 +1386,10 @@ class NameCheckVisitor(
             and not info.is_overload
             and expected_return_value is not None
             and expected_return_value != KnownNone
+            and not (
+                isinstance(expected_return_value, AnnotatedValue)
+                and expected_return_value.value == KnownNone
+            )
             and not any(
                 decorator == KnownValue(abstractmethod)
                 for _, decorator in info.decorators

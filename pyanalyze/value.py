@@ -1588,6 +1588,27 @@ class ParameterTypeGuardExtension(Extension):
 
 
 @dataclass(frozen=True)
+class NoReturnGuardExtension(Extension):
+    """An :class:`Extension` used in a function return type. Used to
+    indicate that unless the parameter named `varname` is of type `guarded_type`,
+    the function does not return.
+
+    Corresponds to :class:`pyanalyze.extensions.NoReturnGuard`.
+
+    """
+
+    varname: str
+    guarded_type: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
+        guarded_type = self.guarded_type.substitute_typevars(typevars)
+        return NoReturnGuardExtension(self.varname, guarded_type)
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.guarded_type.walk_values()
+
+
+@dataclass(frozen=True)
 class TypeGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the first function argument is of type `guarded_type`.
@@ -1666,6 +1687,18 @@ class HasAttrExtension(Extension):
 @dataclass(frozen=True, eq=False)
 class ConstraintExtension(Extension):
     """Encapsulates a Constraint. If the value is evaluated and is truthy, the
+    constraint must be True."""
+
+    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+    # Comparing them can get too expensive
+    def __hash__(self) -> int:
+        return id(self)
+
+
+@dataclass(frozen=True, eq=False)
+class NoReturnConstraintExtension(Extension):
+    """Encapsulates a Constraint. If the value is evaluated and completes, the
     constraint must be True."""
 
     constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
@@ -1888,9 +1921,12 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
     return AnnotatedValue(origin, metadata)
 
 
+ExtensionT = TypeVar("ExtensionT", bound=Extension)
+
+
 def unannotate_value(
-    origin: Value, extension: Type[Extension]
-) -> Tuple[Value, Sequence[Extension]]:
+    origin: Value, extension: Type[ExtensionT]
+) -> Tuple[Value, Sequence[ExtensionT]]:
     if not isinstance(origin, AnnotatedValue):
         return origin, []
     matches = [
