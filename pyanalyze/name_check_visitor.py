@@ -4384,10 +4384,18 @@ class NameCheckVisitor(
                 return None
             return bound_method.get_signature()
         elif isinstance(value, SubclassValue):
-            # SubclassValues are callable, but we can't assume the signature
-            # is consistent with the base class.
-            # TODO: make the return annotation be of the type of the value.
-            return ANY_SIGNATURE
+            if isinstance(value.typ, TypedValue):
+                if isinstance(value.typ.typ, type):
+                    argspec = self.arg_spec_cache.get_argspec(value.typ.typ)
+                    if argspec is None:
+                        return ANY_SIGNATURE
+                    return argspec
+                else:
+                    # TODO synthetic types
+                    return ANY_SIGNATURE
+            else:
+                # TODO generic SubclassValue
+                return ANY_SIGNATURE
         elif isinstance(value, AnyValue):
             return ANY_SIGNATURE
         else:

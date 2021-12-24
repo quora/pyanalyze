@@ -385,6 +385,18 @@ class TestClassInstantiation(TestNameCheckVisitorBase):
         def capybara():
             FailingImpl()  # E: incompatible_call
 
+    @assert_passes()
+    def test_subclass_value(self):
+        from typing import Type
+
+        class A:
+            def __init__(self, x: int) -> None:
+                pass
+
+        def capybara(t: Type[A]) -> None:
+            assert_is_value(t(1), TypedValue(A))
+            t("x")  # E: incompatible_argument
+
 
 class TestFunctionsSafeToCall(TestNameCheckVisitorBase):
     @assert_passes()
