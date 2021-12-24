@@ -101,7 +101,6 @@ from .signature import (
     ANY_SIGNATURE,
     BoundMethodSignature,
     ConcreteSignature,
-    ImplReturn,
     MaybeSignature,
     OverloadedSignature,
     Signature,
