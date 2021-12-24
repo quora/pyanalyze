@@ -131,6 +131,7 @@ from .value import (
     KnownValueWithTypeVars,
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
+    NoReturnConstraintExtension,
     kv_pairs_from_mapping,
     make_weak,
     unannotate_value,
@@ -4255,6 +4256,12 @@ class NameCheckVisitor(
 
         if impl_ret.no_return_unless is not NULL_CONSTRAINT:
             self.add_constraint(node, impl_ret.no_return_unless)
+
+        return_value, nru_extensions = unannotate_value(
+            return_value, NoReturnConstraintExtension
+        )
+        for extension in nru_extensions:
+            self.add_constraint(node, extension.constraint)
 
         if (
             extended_argspec is not None

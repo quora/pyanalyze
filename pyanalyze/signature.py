@@ -25,12 +25,14 @@ from .value import (
     AsyncTaskIncompleteValue,
     CallableValue,
     CanAssignContext,
+    ConstraintExtension,
     GenericValue,
     HasAttrExtension,
     HasAttrGuardExtension,
     KVPair,
     KnownValue,
     MultiValuedValue,
+    NoReturnConstraintExtension,
     NoReturnGuardExtension,
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
@@ -43,6 +45,7 @@ from .value import (
     TypeVarMap,
     CanAssign,
     CanAssignError,
+    annotate_value,
     concrete_values_from_iterable,
     extract_typevars,
     flatten_values,
@@ -516,7 +519,13 @@ class Signature:
                 no_return_unless = AndConstraint.make([no_return_unless, *extra_nru])
 
         constraint = AndConstraint.make(constraints)
-        return ImplReturn(return_value, constraint, no_return_unless)
+        extensions = []
+        if constraint is not NULL_CONSTRAINT:
+            extensions.append(ConstraintExtension(constraint))
+        if no_return_unless is not NULL_CONSTRAINT:
+            extensions.append(NoReturnConstraintExtension(no_return_unless))
+        return_value = annotate_value(return_value, extensions)
+        return ImplReturn(return_value)
 
     def bind_arguments(
         self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
