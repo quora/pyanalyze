@@ -4386,6 +4386,9 @@ class NameCheckVisitor(
         elif isinstance(value, SubclassValue):
             if isinstance(value.typ, TypedValue):
                 if isinstance(value.typ.typ, type):
+                    if value.typ.typ is tuple:
+                        # Probably an unknown namedtuple
+                        return ANY_SIGNATURE
                     argspec = self.arg_spec_cache.get_argspec(value.typ.typ)
                     if argspec is None:
                         return ANY_SIGNATURE
