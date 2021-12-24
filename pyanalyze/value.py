@@ -1876,7 +1876,13 @@ def flatten_values(val: Value, *, unwrap_annotated: bool = False) -> Iterable[Va
     if isinstance(val, MultiValuedValue):
         yield from val.vals
     elif isinstance(val, AnnotatedValue) and isinstance(val.value, MultiValuedValue):
-        yield from val.value.vals
+        if unwrap_annotated:
+            yield from val.value.vals
+        else:
+            subvals = [
+                annotate_value(subval, val.metadata) for subval in val.value.vals
+            ]
+            yield from subvals
     elif unwrap_annotated and isinstance(val, AnnotatedValue):
         yield val.value
     else:
@@ -1898,10 +1904,6 @@ def make_weak(val: Value) -> Value:
 def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:
     if not metadata:
         return origin
-    if isinstance(origin, MultiValuedValue):
-        return MultiValuedValue(
-            [annotate_value(subval, metadata) for subval in origin.vals]
-        )
     if isinstance(origin, AnnotatedValue):
         # Flatten it
         metadata = (*origin.metadata, *metadata)
