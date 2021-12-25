@@ -70,7 +70,7 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard, overload
 from .find_unused import UnusedObjectFinder, used
-from .options import ConfigOption, Options
+from .options import ConfigOption, EnforceNoUnused, Options
 from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, all_of_type
 from .stacked_scopes import (
@@ -4549,7 +4549,7 @@ class NameCheckVisitor(
         if unused_finder is None:
             unused_finder = UnusedObjectFinder(
                 cls.config,
-                enabled=find_unused or cls.config.ENFORCE_NO_UNUSED_OBJECTS,
+                enabled=find_unused or checker.options.get_value_for(EnforceNoUnused),
                 print_output=False,
             )
         with inner_attribute_checker_obj as inner_attribute_checker:
