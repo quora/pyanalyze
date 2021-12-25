@@ -69,6 +69,7 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard, overload
 from .find_unused import UnusedObjectFinder, used
+from .options import ConfigOption, Options
 from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, all_of_type
 from .stacked_scopes import (
@@ -750,6 +751,7 @@ class NameCheckVisitor(
         annotate: bool = False,
         add_ignores: bool = False,
         checker: Checker,
+        global_options: Optional[Options] = None,
     ) -> None:
         super().__init__(
             filename,
@@ -761,6 +763,9 @@ class NameCheckVisitor(
             add_ignores=add_ignores,
         )
         self.checker = checker
+        if global_options is None:
+            global_options = Options.from_option_list([], self.config)
+        self.global_options = global_options
 
         # State (to use in with qcore.override)
         self.state = VisitorState.collect_names
@@ -783,6 +788,12 @@ class NameCheckVisitor(
             self.is_compiled = False
         else:
             self.module, self.is_compiled = self._load_module()
+
+        if self.module is not None and hasattr(self.module, "__name__"):
+            module_path = tuple(self.module.__name__.split("."))
+            self.options = global_options.for_module(module_path)
+        else:
+            self.options = global_options
 
         # Data storage objects
         self.unused_finder = unused_finder
@@ -4485,7 +4496,17 @@ class NameCheckVisitor(
     def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
         kwargs = dict(kwargs)
         kwargs.setdefault("checker", Checker(cls.config))
+        instances = []
+        if "settings" in kwargs:
+            for error_code, value in kwargs["settings"].items():
+                option_cls = ConfigOption.registry[error_code.name]
+                instances.append(option_cls(value, from_command_line=True))
+        options = Options.from_option_list(instances, cls.config)
+        kwargs["global_options"] = options
         return kwargs
+
+    def is_enabled(self, error_code: ErrorCode) -> bool:
+        return self.options.is_error_code_enabled(error_code)
 
     @classmethod
     def perform_final_checks(

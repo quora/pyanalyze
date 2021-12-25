@@ -83,6 +83,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
             default_settings.update(settings)
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
         mod = _make_module(code_str)
+        kwargs["settings"] = default_settings
         kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
         new_code = ""
         with ClassAttributeChecker(
@@ -94,7 +95,6 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 tree,
                 module=mod,
                 attribute_checker=attribute_checker,
-                settings=default_settings,
                 verbosity=verbosity,
                 **kwargs,
             )

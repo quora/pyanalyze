@@ -525,6 +525,11 @@ class BaseNodeVisitor(ast.NodeVisitor):
         for error in errors:
             self.show_error(**error)
 
+    def is_enabled(self, error_code: Enum) -> bool:
+        if self.settings is not None:
+            return self.settings.get(error_code, True)
+        return True
+
     def show_error(
         self,
         node: Union[ast.AST, _FakeNode, None],
@@ -574,9 +579,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
             return None
 
         # check if error was disabled
-        if self.settings is not None and error_code is not None:
-            if not self.settings.get(error_code, True):
-                return None
+        if error_code is not None and not self.is_enabled(error_code):
+            return None
 
         if self.has_file_level_ignore(error_code, ignore_comment):
             return None
