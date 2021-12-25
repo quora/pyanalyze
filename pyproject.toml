@@ -27,6 +27,9 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [tool.pyanalyze]
+paths = ["pyanalyze"]
+import_paths = ["."]
+
 [[tool.pyanalyze.overrides]]
 module = "pyanalyze.options"
 missing_f = true

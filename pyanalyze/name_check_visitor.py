@@ -70,7 +70,7 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard, overload
 from .find_unused import UnusedObjectFinder, used
-from .options import ConfigOption, EnforceNoUnused, Options, Paths
+from .options import ConfigOption, EnforceNoUnused, ImportPaths, Options, Paths
 from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, all_of_type
 from .stacked_scopes import (
@@ -890,9 +890,12 @@ class NameCheckVisitor(
         if not self.filename:
             return None, False
         self.log(logging.INFO, "Checking file", (self.filename, os.getpid()))
+        import_paths = self.options.get_value_for(ImportPaths)
 
         try:
-            return self.load_module(self.filename)
+            return importer.load_module_from_file(
+                self.filename, import_paths=[str(p) for p in import_paths]
+            )
         except KeyboardInterrupt:
             raise
         except BaseException as e:
@@ -912,9 +915,6 @@ class NameCheckVisitor(
                     # Don't print a traceback if the error was suppressed.
                     traceback.print_exc()
             return None, False
-
-    def load_module(self, filename: str) -> Tuple[Optional[types.ModuleType], bool]:
-        return importer.load_module_from_file(filename)
 
     def check(self, ignore_missing_module: bool = False) -> List[node_visitor.Failure]:
         """Run the visitor on this module."""

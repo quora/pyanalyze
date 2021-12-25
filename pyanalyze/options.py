@@ -109,7 +109,7 @@ class PathSequenceOption(ConfigOption[Sequence[Path]]):
         if isinstance(data, (list, tuple)) and all(
             isinstance(elt, str) for elt in data
         ):
-            return [source_path.parent / elt for elt in data]
+            return [(source_path.parent / elt).resolve() for elt in data]
         raise InvalidConfigOption.from_parser(cls, "sequence of strings", data)
 
 
