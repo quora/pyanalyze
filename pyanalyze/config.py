@@ -29,9 +29,11 @@ class Config(object):
     # Used in several parts of test_scope
     #
 
+    # Deprecated
     # default module to run on, if any
     DEFAULT_BASE_MODULE = None
 
+    # Replaced with options.Paths
     # file paths to run on by default
     DEFAULT_DIRS = ()
 
@@ -55,11 +57,13 @@ class Config(object):
     # Used by name_check_visitor.py
     #
 
+    # Replaced with Options for each error code.
     # Sets of errors that are enabled or disabled. By default,
     # all errors are enabled except those in error_code.DISABLED_BY_DEFAULT.
     ENABLED_ERRORS = set()
     DISABLED_ERRORS = set()
 
+    # Replaced with options.EnforceNoUnused
     # If true, an error is raised when pyanalyze finds any unused objects.
     ENFORCE_NO_UNUSED_OBJECTS = False
 

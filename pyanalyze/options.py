@@ -88,6 +88,10 @@ class ConfigOption(Generic[T]):
             -len(self.applicable_to),  # longest options first
         )
 
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> T:
+        raise NotFound
+
 
 class BooleanOption(ConfigOption[bool]):
     default_value = False
@@ -119,6 +123,10 @@ class Paths(PathSequenceOption):
     name = "paths"
     is_global = True
 
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[Path]:
+        return [Path(s) for s in fallback.DEFAULT_DIRS]
+
 
 class ImportPaths(PathSequenceOption):
     """Directories that pyanalyze may import from."""
@@ -132,6 +140,10 @@ class EnforceNoUnused(BooleanOption):
 
     name = "enforce_no_unused"
     is_global = True
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> bool:
+        return fallback.ENFORCE_NO_UNUSED_OBJECTS
 
 
 for _code in ErrorCode:
@@ -178,7 +190,12 @@ class Options:
         try:
             return option.get_value_from_instances(instances, self.module_path)
         except NotFound:
-            return option.default_value
+            pass
+        try:
+            return option.get_value_from_fallback(self.fallback)
+        except NotFound:
+            pass
+        return option.default_value
 
     def _get_value_for_no_default(self, option: Type[ConfigOption[T]]) -> T:
         instances = self.options.get(option.name, ())
