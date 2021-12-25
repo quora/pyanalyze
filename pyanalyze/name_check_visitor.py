@@ -70,7 +70,17 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard, overload
 from .find_unused import UnusedObjectFinder, used
-from .options import ConfigOption, EnforceNoUnused, ImportPaths, Options, Paths
+from .options import (
+    ConfigOption,
+    EnforceNoUnused,
+    ExtraBuiltins,
+    ForLoopAlwaysEntered,
+    IgnoredEndOfReference,
+    IgnoredPaths,
+    ImportPaths,
+    Options,
+    Paths,
+)
 from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, all_of_type
 from .stacked_scopes import (
@@ -1131,7 +1141,7 @@ class NameCheckVisitor(
                         defining_scope.scope_object, node.id, value
                     )
         if value is UNINITIALIZED_VALUE:
-            if suppress_errors or node.id in self.config.IGNORED_VARIABLES:
+            if suppress_errors or node.id in self.options.get_value_for(ExtraBuiltins):
                 self.log(logging.INFO, "ignoring undefined name", node.id)
             else:
                 self._maybe_show_missing_import_error(node)
@@ -3130,7 +3140,7 @@ class NameCheckVisitor(
 
     def visit_For(self, node: ast.For) -> None:
         iterated_value = self._member_value_of_iterator(node.iter)
-        if self.config.FOR_LOOP_ALWAYS_ENTERED:
+        if self.options.get_value_for(ForLoopAlwaysEntered):
             always_entered = True
         elif isinstance(iterated_value, Value):
             iterated_value, present = unannotate_value(
@@ -4098,10 +4108,11 @@ class NameCheckVisitor(
         if node is not None:
             path = self._get_attribute_path(node)
             if path is not None:
-                for ignored_path in self.config.IGNORED_PATHS:
+                ignored_paths = self.options.get_value_for(IgnoredPaths)
+                for ignored_path in ignored_paths:
                     if path[: len(ignored_path)] == ignored_path:
                         return True
-                if path[-1] in self.config.IGNORED_END_OF_REFERENCE:
+                if path[-1] in self.options.get_value_for(IgnoredEndOfReference):
                     self.log(logging.INFO, "Ignoring end of reference", path)
                     return True
         return False

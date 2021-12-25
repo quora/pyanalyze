@@ -69,21 +69,26 @@ class Config(object):
     # If true, an error is raised when pyanalyze finds any unused objects.
     ENFORCE_NO_UNUSED_OBJECTS = False
 
+    # Replaced with options.ForLoopAlwaysEntered
     # If True, we assume that for loops are always entered at least once,
     # which affects the potentially_undefined_name check. This will miss
     # some bugs but also remove some annoying false positives.
     FOR_LOOP_ALWAYS_ENTERED = False
 
+    # Replaced with options.IgnoreNoneAttributes
     # If True, we ignore None when type checking attribute access on a Union
     # type.
     IGNORE_NONE_ATTRIBUTES = False
 
+    # Replaced with options.IgnoredPaths
     # Attribute accesses on these do not result in errors
     IGNORED_PATHS = []
 
+    # options.ExtraBuiltins
     # Even if these variables are undefined, no errors are shown
     IGNORED_VARIABLES = {"__IPYTHON__"}  # special global defined in IPython
 
+    # Replaced with options.IgnoredEndOfReference
     # When these attributes are accessed but they don't exist, the error is ignored
     IGNORED_END_OF_REFERENCE = {
         # these are created by the mock module

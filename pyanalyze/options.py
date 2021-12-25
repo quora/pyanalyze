@@ -103,6 +103,34 @@ class BooleanOption(ConfigOption[bool]):
         raise InvalidConfigOption.from_parser(cls, "bool", data)
 
 
+class ConcatenatedOption(ConfigOption[Sequence[T]]):
+    """Option for which the value is the concatenation of all the overrides."""
+
+    @classmethod
+    def get_value_from_instances(
+        cls: "Type[ConcatenatedOption[T]]",
+        instances: Sequence["ConcatenatedOption[T]"],
+        module_path: ModulePath,
+    ) -> Sequence[T]:
+        values = []
+        for instance in instances:
+            if instance.is_applicable_to(module_path):
+                values += instance.value
+        return values
+
+
+class StringSequenceOption(ConcatenatedOption[str]):
+    @classmethod
+    def parse(
+        cls: "Type[StringSequenceOption]", data: object, source_path: Path
+    ) -> Sequence[str]:
+        if isinstance(data, (list, tuple)) and all(
+            isinstance(elt, str) for elt in data
+        ):
+            return data
+        raise InvalidConfigOption.from_parser(cls, "sequence of strings", data)
+
+
 class PathSequenceOption(ConfigOption[Sequence[Path]]):
     default_value = ()
 
@@ -135,8 +163,65 @@ class ImportPaths(PathSequenceOption):
     is_global = True
 
 
+class IgnoredPaths(ConcatenatedOption[Sequence[str]]):
+    """Attribute accesses on these do not result in errors."""
+
+    name = "ignored_paths"
+    default_value = ()
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[Sequence[str]]:
+        return fallback.IGNORED_PATHS
+
+    @classmethod
+    def parse(cls, data: object, source_path: Path) -> Sequence[Sequence[str]]:
+        if not isinstance(data, (list, tuple)):
+            raise InvalidConfigOption.from_parser(cls, "sequence", data)
+        for sublist in data:
+            if not isinstance(sublist, (list, tuple)):
+                raise InvalidConfigOption.from_parser(cls, "sequence", sublist)
+            for elt in sublist:
+                if not isinstance(elt, str):
+                    raise InvalidConfigOption.from_parser(cls, "string", elt)
+        return data
+
+
+class IgnoredEndOfReference(StringSequenceOption):
+    """When these attributes are accessed but they don't exist, the error is ignored."""
+
+    name = "ignored_end_of_reference"
+    default_value = [
+        # these are created by the mock module
+        "call_count",
+        "assert_has_calls",
+        "reset_mock",
+        "called",
+        "assert_called_once",
+        "assert_called_once_with",
+        "assert_called_with",
+        "count",
+        "assert_any_call",
+        "assert_not_called",
+    ]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.IGNORED_END_OF_REFERENCE)
+
+
+class ExtraBuiltins(StringSequenceOption):
+    """Even if these variables are undefined, no errors are shown."""
+
+    name = "extra_builtins"
+    default_value = ["__IPYTHON__"]  # special global defined in IPython
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.IGNORED_VARIABLES)
+
+
 class EnforceNoUnused(BooleanOption):
-    """If true, an error is raised when pyanalyze finds any unused objects."""
+    """If True, an error is raised when pyanalyze finds any unused objects."""
 
     name = "enforce_no_unused"
     is_global = True
@@ -144,6 +229,29 @@ class EnforceNoUnused(BooleanOption):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> bool:
         return fallback.ENFORCE_NO_UNUSED_OBJECTS
+
+
+class IgnoreNoneAttributes(BooleanOption):
+    """If True, we ignore None when type checking attribute access on a Union
+    type."""
+
+    name = "ignore_none_attributes"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> bool:
+        return fallback.IGNORE_NONE_ATTRIBUTES
+
+
+class ForLoopAlwaysEntered(BooleanOption):
+    """If True, we assume that for loops are always entered at least once,
+    which affects the potentially_undefined_name check. This will miss
+    some bugs but also remove some annoying false positives."""
+
+    name = "for_loop_always_entered"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> bool:
+        return fallback.FOR_LOOP_ALWAYS_ENTERED
 
 
 for _code in ErrorCode:
@@ -187,6 +295,12 @@ class Options:
 
     def get_value_for(self, option: Type[ConfigOption[T]]) -> T:
         instances = self.options.get(option.name, ())
+        if issubclass(option, ConcatenatedOption):
+            return [
+                option.default_value,
+                *option.get_value_from_fallback(self.fallback),
+                *option.get_value_from_instances(instances, self.module_path),
+            ]
         try:
             return option.get_value_from_instances(instances, self.module_path)
         except NotFound:
