@@ -5,7 +5,21 @@ Structured configuration options.
 """
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import ClassVar, Dict, Mapping, Sequence, Generic, Tuple, Type, TypeVar
+from pathlib import Path
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    Iterable,
+    Mapping,
+    Optional,
+    Sequence,
+    Generic,
+    Tuple,
+    Type,
+    TypeVar,
+)
+import tomli
 
 
 from .config import Config
@@ -138,8 +152,13 @@ class Options:
 
     @classmethod
     def from_option_list(
-        cls, instances: Sequence[ConfigOption], fallback: Config
+        cls,
+        instances: Sequence[ConfigOption],
+        fallback: Config,
+        config_file_path: Optional[Path] = None,
     ) -> "Options":
+        if config_file_path:
+            instances = [*instances, *parse_config_file(config_file_path)]
         by_name = defaultdict(list)
         for instance in instances:
             by_name[instance.name].append(instance)
@@ -173,3 +192,55 @@ class Options:
             if code in self.fallback.DISABLED_ERRORS:
                 return False
             return option.default_value
+
+    def is_error_code_enabled_anywhere(self, code: ErrorCode) -> bool:
+        option = ConfigOption.registry[code.name]
+        instances = self.options.get(option.name, ())
+        if any(instance.value for instance in instances):
+            return True
+        if code in self.fallback.ENABLED_ERRORS:
+            return True
+        if code in self.fallback.DISABLED_ERRORS:
+            return False
+        return option.default_value
+
+
+def parse_config_file(path: Path) -> Iterable[ConfigOption]:
+    with path.open("rb") as f:
+        data = tomli.load(f)
+    data = data.get("tool", {}).get("pyanalyze", {})
+    yield from _parse_config_section(data)
+
+
+def _parse_config_section(
+    section: Mapping[str, Any], module_path: ModulePath = ()
+) -> Iterable[ConfigOption]:
+    if "module" in section:
+        if module_path == ():
+            raise InvalidConfigOption(
+                "Top-level configuration should not set module option"
+            )
+    for key, value in section.items():
+        if key == "module":
+            if module_path == ():
+                raise InvalidConfigOption(
+                    "Top-level configuration should not set module option"
+                )
+        elif key == "overrides":
+            if not isinstance(value, (list, tuple)):
+                raise InvalidConfigOption("overrides section must be a list")
+            for override in value:
+                if not isinstance(override, dict):
+                    raise InvalidConfigOption("override value must be a dict")
+                if "module" not in override or not isinstance(override["module"], str):
+                    raise InvalidConfigOption(
+                        "override section must set 'module' to a string"
+                    )
+                override_path = tuple(override["module"].split("."))
+                yield from _parse_config_section(override, override_path)
+        else:
+            try:
+                option_cls = ConfigOption.registry[key]
+            except KeyError:
+                raise InvalidConfigOption(f"Invalid configuration option {key!r}")
+            yield option_cls(option_cls.parse(value), module_path)

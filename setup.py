@@ -58,6 +58,7 @@ if __name__ == "__main__":
             "mypy_extensions",
             "aenum>=2.2.3",
             "codemod",
+            "tomli>=1.1.0",
         ],
         **setup_kwargs,
     )

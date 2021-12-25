@@ -22,6 +22,7 @@ from itertools import chain
 import logging
 import operator
 import os.path
+from pathlib import Path
 import pickle
 import random
 import re
@@ -778,6 +779,7 @@ class NameCheckVisitor(
         self.annotate = annotate
         # true if we're in the body of a comprehension's loop
         self.in_comprehension_body = False
+        self.options = checker.options
 
         if module is not None:
             self.module = module
@@ -788,8 +790,6 @@ class NameCheckVisitor(
         if self.module is not None and hasattr(self.module, "__name__"):
             module_path = tuple(self.module.__name__.split("."))
             self.options = checker.options.for_module(module_path)
-        else:
-            self.options = checker.options
 
         # Data storage objects
         self.unused_finder = unused_finder
@@ -1329,8 +1329,9 @@ class NameCheckVisitor(
 
         if (
             potential_function is not None
-            and self.settings
-            and self.settings[ErrorCode.suggested_parameter_type]
+            and self.options.is_error_code_enabled_anywhere(
+                ErrorCode.suggested_parameter_type
+            )
         ):
             sig = self.signature_from_value(KnownValue(potential_function))
             if isinstance(sig, Signature):
@@ -1479,7 +1480,9 @@ class NameCheckVisitor(
         return KnownValue(potential_function)
 
     def record_call(self, callable: object, arguments: CallArgs) -> None:
-        if self.settings and self.settings[ErrorCode.suggested_parameter_type]:
+        if self.options.is_error_code_enabled_anywhere(
+            ErrorCode.suggested_parameter_type
+        ):
             self.checker.callable_tracker.record_call(callable, arguments)
 
     def _visit_defaults(
@@ -4465,6 +4468,11 @@ class NameCheckVisitor(
             default=False,
             help="Find unused class attributes",
         )
+        parser.add_argument(
+            "--config-file",
+            type=Path,
+            help="Path to a pyproject.toml configuration file",
+        )
         return parser
 
     @classmethod
@@ -4489,6 +4497,10 @@ class NameCheckVisitor(
         return cls.config.DEFAULT_DIRS
 
     @classmethod
+    def _get_default_settings(cls) -> Optional[Dict[enum.Enum, bool]]:
+        return {}
+
+    @classmethod
     def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
         kwargs = dict(kwargs)
         instances = []
@@ -4496,7 +4508,8 @@ class NameCheckVisitor(
             for error_code, value in kwargs["settings"].items():
                 option_cls = ConfigOption.registry[error_code.name]
                 instances.append(option_cls(value, from_command_line=True))
-        options = Options.from_option_list(instances, cls.config)
+        config_file = kwargs.pop("config_file", None)
+        options = Options.from_option_list(instances, cls.config, config_file)
         kwargs.setdefault("checker", Checker(cls.config, options))
         return kwargs
 
@@ -4514,17 +4527,16 @@ class NameCheckVisitor(
         cls,
         files: List[str],
         *,
+        checker: Checker,
         find_unused: bool = False,
-        settings: Mapping[ErrorCode, bool] = {},
         find_unused_attributes: bool = False,
         attribute_checker: Optional[ClassAttributeChecker] = None,
         unused_finder: Optional[UnusedObjectFinder] = None,
         **kwargs: Any,
     ) -> List[node_visitor.Failure]:
-        if settings is None:
-            attribute_checker_enabled = True
-        else:
-            attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
+        attribute_checker_enabled = checker.options.is_error_code_enabled_anywhere(
+            ErrorCode.attribute_is_never_set
+        )
         if attribute_checker is None:
             inner_attribute_checker_obj = attribute_checker = ClassAttributeChecker(
                 cls.config,
@@ -4548,7 +4560,7 @@ class NameCheckVisitor(
                     if attribute_checker is not None
                     else inner_attribute_checker,
                     unused_finder=inner_unused_finder,
-                    settings=settings,
+                    checker=checker,
                     **kwargs,
                 )
         if unused_finder is not None:

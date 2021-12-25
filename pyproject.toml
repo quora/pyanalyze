@@ -25,3 +25,8 @@ requires = [
     "wheel"
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.pyanalyze]
+[[tool.pyanalyze.overrides]]
+module = "pyanalyze.options"
+missing_f = true
