@@ -304,7 +304,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         if "settings" not in kwargs:
             kwargs["settings"] = cls._get_default_settings()
         kwargs = cls.prepare_constructor_kwargs(kwargs)
-        files = cls.get_files_to_check(include_tests)
+        files = cls.get_files_to_check(include_tests, **kwargs)
         all_failures = cls._run_on_files(files, **kwargs)
         if assert_passes:
             assert not all_failures, "".join(
@@ -313,7 +313,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return all_failures
 
     @classmethod
-    def get_files_to_check(cls, include_tests: bool) -> List[str]:
+    def get_files_to_check(cls, include_tests: bool, **kwargs: Any) -> List[str]:
         """Produce the list of files to check."""
         if cls.should_check_environ_for_files:
             environ_files = get_files_to_check_from_environ()
@@ -327,7 +327,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 and not filename.endswith(".so")
             ]
         else:
-            return sorted(set(cls._get_all_python_files(include_tests=include_tests)))
+            return sorted(
+                set(cls._get_all_python_files(include_tests=include_tests, **kwargs))
+            )
 
     @classmethod
     def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -941,7 +943,10 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _get_all_python_files(
-        cls, include_tests: bool = False, modules: Optional[Iterable[ModuleType]] = None
+        cls,
+        include_tests: bool = False,
+        modules: Optional[Iterable[ModuleType]] = None,
+        **kwargs: Any,
     ) -> Iterable[str]:
         """Gets Python files inside of the given modules that should be tested.
 
@@ -953,7 +958,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
         """
         if modules is None:
-            dirs = cls.get_default_directories()
+            dirs = cls.get_default_directories(**kwargs)
             if dirs:
                 for filename in _get_all_files(dirs):
                     yield filename

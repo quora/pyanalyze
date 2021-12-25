@@ -725,6 +725,8 @@ class NameCheckVisitor(
     config: ClassVar[
         Config
     ] = Config()  # subclasses may override this with a more specific config
+    config_filename: ClassVar[Optional[str]] = None
+    """Path (relative to this class's file) to a pyproject.toml config file."""
 
     checker: Checker
     arg_spec_cache: ArgSpecCache
@@ -4516,6 +4518,11 @@ class NameCheckVisitor(
         if "files" in kwargs:
             instances.append(Paths(kwargs.pop("files"), from_command_line=True))
         config_file = kwargs.pop("config_file", None)
+        if config_file is None:
+            config_filename = cls.config_filename
+            if config_filename is not None:
+                module_path = Path(sys.modules[cls.__module__].__file__).parent
+                config_file = module_path / config_filename
         options = Options.from_option_list(instances, cls.config, config_file)
         kwargs.setdefault("checker", Checker(cls.config, options))
         return kwargs
