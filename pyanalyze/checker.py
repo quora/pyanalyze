@@ -5,10 +5,11 @@ The checker maintains global state that is preserved across different modules.
 """
 import itertools
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 import sys
-from typing import Iterable, Iterator, List, Set, Tuple, Union, Dict
+from typing import Iterable, Iterator, List, Optional, Set, Tuple, Union, Dict
 
+from .options import Options
 from .node_visitor import Failure
 from .value import TypedValue
 from .arg_spec import ArgSpecCache
@@ -22,6 +23,8 @@ from .suggested_type import CallableTracker
 @dataclass
 class Checker:
     config: Config
+    raw_options: InitVar[Optional[Options]] = None
+    options: Options = field(init=False)
     arg_spec_cache: ArgSpecCache = field(init=False)
     reexport_tracker: ImplicitReexportTracker = field(init=False)
     callable_tracker: CallableTracker = field(init=False)
@@ -32,7 +35,11 @@ class Checker:
         default_factory=list
     )
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, raw_options: Optional[Options]) -> None:
+        if raw_options is None:
+            self.options = Options.from_option_list([], self.config)
+        else:
+            self.options = raw_options
         self.arg_spec_cache = ArgSpecCache(self.config)
         self.reexport_tracker = ImplicitReexportTracker(self.config)
         self.callable_tracker = CallableTracker()
