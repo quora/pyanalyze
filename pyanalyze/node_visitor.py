@@ -722,9 +722,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _run_on_files_or_all(
-        cls, files: Optional[Sequence[str]], **kwargs: Any
+        cls, files: Optional[Sequence[str]] = None, **kwargs: Any
     ) -> List[Failure]:
-        files = files or cls.get_default_directories()
+        files = files or cls.get_default_directories(**kwargs)
         if not files:
             return cls.check_all_files(**kwargs)
         else:
@@ -938,7 +938,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return ()
 
     @classmethod
-    def get_default_directories(cls) -> Sequence[str]:
+    def get_default_directories(cls, **kwargs: Any) -> Sequence[str]:
         return ()
 
     @classmethod

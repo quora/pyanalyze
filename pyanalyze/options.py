@@ -64,7 +64,7 @@ class ConfigOption(Generic[T]):
             cls.registry[cls.name] = cls
 
     @classmethod
-    def parse(cls: "Type[ConfigOption[T]]", data: object) -> T:
+    def parse(cls: "Type[ConfigOption[T]]", data: object, source_path: Path) -> T:
         raise NotImplementedError
 
     @classmethod
@@ -93,32 +93,34 @@ class BooleanOption(ConfigOption[bool]):
     default_value = False
 
     @classmethod
-    def parse(cls: "Type[BooleanOption]", data: object) -> bool:
+    def parse(cls: "Type[BooleanOption]", data: object, source_path: Path) -> bool:
         if isinstance(data, bool):
             return data
         raise InvalidConfigOption.from_parser(cls, "bool", data)
 
 
-class StringSequenceOption(ConfigOption[Sequence[str]]):
+class PathSequenceOption(ConfigOption[Sequence[Path]]):
     default_value = ()
 
     @classmethod
-    def parse(cls: "Type[StringSequenceOption]", data: object) -> Sequence[str]:
+    def parse(
+        cls: "Type[PathSequenceOption]", data: object, source_path: Path
+    ) -> Sequence[str]:
         if isinstance(data, (list, tuple)) and all(
             isinstance(elt, str) for elt in data
         ):
-            return data
+            return [source_path.parent / elt for elt in data]
         raise InvalidConfigOption.from_parser(cls, "sequence of strings", data)
 
 
-class Paths(StringSequenceOption):
+class Paths(PathSequenceOption):
     """Paths that pyanalyze should type check."""
 
     name = "paths"
     is_global = True
 
 
-class ImportPaths(StringSequenceOption):
+class ImportPaths(PathSequenceOption):
     """Directories that pyanalyze may import from."""
 
     name = "import_paths"
@@ -209,11 +211,11 @@ def parse_config_file(path: Path) -> Iterable[ConfigOption]:
     with path.open("rb") as f:
         data = tomli.load(f)
     data = data.get("tool", {}).get("pyanalyze", {})
-    yield from _parse_config_section(data)
+    yield from _parse_config_section(data, path=path)
 
 
 def _parse_config_section(
-    section: Mapping[str, Any], module_path: ModulePath = ()
+    section: Mapping[str, Any], module_path: ModulePath = (), *, path: Path
 ) -> Iterable[ConfigOption]:
     if "module" in section:
         if module_path == ():
@@ -237,10 +239,10 @@ def _parse_config_section(
                         "override section must set 'module' to a string"
                     )
                 override_path = tuple(override["module"].split("."))
-                yield from _parse_config_section(override, override_path)
+                yield from _parse_config_section(override, override_path, path=path)
         else:
             try:
                 option_cls = ConfigOption.registry[key]
             except KeyError:
                 raise InvalidConfigOption(f"Invalid configuration option {key!r}")
-            yield option_cls(option_cls.parse(value), module_path)
+            yield option_cls(option_cls.parse(value, path), module_path)

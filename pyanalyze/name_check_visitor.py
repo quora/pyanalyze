@@ -70,7 +70,7 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard, overload
 from .find_unused import UnusedObjectFinder, used
-from .options import ConfigOption, EnforceNoUnused, Options
+from .options import ConfigOption, EnforceNoUnused, Options, Paths
 from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, all_of_type
 from .stacked_scopes import (
@@ -4493,7 +4493,12 @@ class NameCheckVisitor(
         return (cls.config.DEFAULT_BASE_MODULE,)
 
     @classmethod
-    def get_default_directories(cls) -> Tuple[str, ...]:
+    def get_default_directories(
+        cls, checker: Checker, **kwargs: Any
+    ) -> Tuple[str, ...]:
+        paths = checker.options.get_value_for(Paths)
+        if paths:
+            return tuple(str(path) for path in paths)
         return cls.config.DEFAULT_DIRS
 
     @classmethod
@@ -4508,6 +4513,8 @@ class NameCheckVisitor(
             for error_code, value in kwargs["settings"].items():
                 option_cls = ConfigOption.registry[error_code.name]
                 instances.append(option_cls(value, from_command_line=True))
+        if "files" in kwargs:
+            instances.append(Paths(kwargs.pop("files"), from_command_line=True))
         config_file = kwargs.pop("config_file", None)
         options = Options.from_option_list(instances, cls.config, config_file)
         kwargs.setdefault("checker", Checker(cls.config, options))
