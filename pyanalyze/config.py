@@ -2,6 +2,8 @@
 
 Module-specific configurations for test_scope.
 
+This is in the process of being replaced with options.py.
+
 """
 import abc
 import asynq
