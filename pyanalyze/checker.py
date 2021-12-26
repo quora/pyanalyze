@@ -40,7 +40,7 @@ class Checker:
             self.options = Options.from_option_list([], self.config)
         else:
             self.options = raw_options
-        self.arg_spec_cache = ArgSpecCache(self.config)
+        self.arg_spec_cache = ArgSpecCache(self.options)
         self.reexport_tracker = ImplicitReexportTracker(self.config)
         self.callable_tracker = CallableTracker()
 

@@ -4,6 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
+from .options import Options
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import get_overloads
 from .annotations import Context, type_from_runtime
@@ -88,7 +89,9 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterable[None]:
         ):
             yield
     else:
-        argspec = ArgSpecCache(Config()).get_argspec(fn, impl=implementation_fn)
+        argspec = ArgSpecCache(Options.from_option_list([], Config())).get_argspec(
+            fn, impl=implementation_fn
+        )
         if argspec is None:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
@@ -148,8 +151,9 @@ class AnnotationsContext(Context):
 class ArgSpecCache:
     DEFAULT_ARGSPECS = implementation.get_default_argspecs()
 
-    def __init__(self, config: Config) -> None:
-        self.config = config
+    def __init__(self, options: Options) -> None:
+        self.options = options
+        self.config = options.fallback
         self.ts_finder = TypeshedFinder(verbose=False)
         self.known_argspecs = {}
         self.generic_bases_cache = {}

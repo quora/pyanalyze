@@ -104,9 +104,11 @@ class Config(object):
         "assert_not_called",
     }
 
+    # options.UnimportableModules
     # Do not attempt to import these modules if they are imported within a function
     UNIMPORTABLE_MODULES = set()
 
+    # options.IgnoredCallees
     # Calls to these aren't checked for argument validity
     IGNORED_CALLEES = [
         # not a set because trying to include a.mocklib.call in a set complains about a dict not
@@ -117,9 +119,11 @@ class Config(object):
         mock.Mock,
     ]
 
+    # Use file-specific overrides instead
     # In these files, we do not check for duplicate dictionary keys
     IGNORED_FILES_FOR_DUPLICATE_DICT_KEYS = set()
 
+    # Use file-specific overrides instead
     # In these files, strings with non-ASCII characters do not require explicit prefixes
     IGNORED_FILES_FOR_EXPLICIT_STRING_LITERALS = set()
 

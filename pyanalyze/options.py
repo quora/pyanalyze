@@ -19,9 +19,11 @@ from typing import (
     Type,
     TypeVar,
 )
+import qcore
 import tomli
+from unittest import mock
 
-
+from .find_unused import used
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 
@@ -157,6 +159,32 @@ class PathSequenceOption(ConfigOption[Sequence[Path]]):
         raise InvalidConfigOption.from_parser(cls, "sequence of strings", data)
 
 
+class PyObjectSequenceOption(ConfigOption[Sequence[T]]):
+    """Represents a sequence of objects parsed as Python objects."""
+
+    default_value = ()
+
+    @classmethod
+    def parse(
+        cls: "Type[PyObjectSequenceOption[T]]", data: object, source_path: Path
+    ) -> Sequence[T]:
+        if not isinstance(data, (list, tuple)):
+            raise InvalidConfigOption.from_parser(
+                cls, "sequence of Python objects", data
+            )
+        final = []
+        for elt in data:
+            try:
+                obj = qcore.object_from_string(elt)
+            except Exception:
+                raise InvalidConfigOption.from_parser(
+                    cls, "path to Python object", elt
+                ) from None
+            used(obj)
+            final.append(elt)
+        return final
+
+
 class Paths(PathSequenceOption):
     """Paths that pyanalyze should type check."""
 
@@ -232,6 +260,17 @@ class ExtraBuiltins(StringSequenceOption):
         return list(fallback.IGNORED_VARIABLES)
 
 
+class UnimportableModules(StringSequenceOption):
+    """Do not attempt to import these modules if they are imported within a function."""
+
+    default_value = []
+    name = "unimportable_modules"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.UNIMPORTABLE_MODULES)
+
+
 class EnforceNoUnused(BooleanOption):
     """If True, an error is raised when pyanalyze finds any unused objects."""
 
@@ -264,6 +303,22 @@ class ForLoopAlwaysEntered(BooleanOption):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> bool:
         return fallback.FOR_LOOP_ALWAYS_ENTERED
+
+
+class IgnoredCallees(PyObjectSequenceOption[object]):
+    """Calls to these aren't checked for argument validity."""
+
+    default_value = [
+        # getargspec gets confused about this subclass of tuple that overrides __new__ and __call__
+        mock.call,
+        mock.MagicMock,
+        mock.Mock,
+    ]
+    name = "ignored_callees"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return fallback.IGNORED_CALLEES
 
 
 for _code in ErrorCode:

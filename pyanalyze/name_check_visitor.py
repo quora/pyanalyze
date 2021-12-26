@@ -75,11 +75,13 @@ from .options import (
     EnforceNoUnused,
     ExtraBuiltins,
     ForLoopAlwaysEntered,
+    IgnoredCallees,
     IgnoredEndOfReference,
     IgnoredPaths,
     ImportPaths,
     Options,
     Paths,
+    UnimportableModules,
 )
 from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, safe_in, all_of_type
@@ -2040,18 +2042,13 @@ class NameCheckVisitor(
                 self.unused_finder.record(module, alias.name, self.module.__name__)
 
     def _is_unimportable_module(self, node: Union[ast.Import, ast.ImportFrom]) -> bool:
+        unimportable = self.options.get_value_for(UnimportableModules)
         if isinstance(node, ast.ImportFrom):
             # the split is needed for cases like "from foo.bar import baz" if foo is unimportable
-            return (
-                node.module is not None
-                and node.module.split(".")[0] in self.config.UNIMPORTABLE_MODULES
-            )
+            return node.module is not None and node.module.split(".")[0] in unimportable
         else:
             # need the split if the code is "import foo.bar as bar" if foo is unimportable
-            return any(
-                name.name.split(".")[0] in self.config.UNIMPORTABLE_MODULES
-                for name in node.names
-            )
+            return any(name.name.split(".")[0] in unimportable for name in node.names)
 
     def _simulate_import(
         self, node: Union[ast.ImportFrom, ast.Import], *, force_public: bool = False
@@ -4234,7 +4231,8 @@ class NameCheckVisitor(
         allow_call: bool = False,
     ) -> Value:
         if isinstance(callee_wrapped, KnownValue) and any(
-            callee_wrapped.val is ignored for ignored in self.config.IGNORED_CALLEES
+            callee_wrapped.val is ignored
+            for ignored in self.options.get_value_for(IgnoredCallees)
         ):
             self.log(logging.INFO, "Ignoring callee", callee_wrapped)
             return AnyValue(AnySource.error)
