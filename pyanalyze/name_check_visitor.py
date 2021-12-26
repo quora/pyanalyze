@@ -976,11 +976,7 @@ class NameCheckVisitor(
         )
         self.node_context = StackedContexts()
         self.asynq_checker = AsynqChecker(
-            self.options,
-            self.module,
-            self.show_error,
-            self.log,
-            self.replace_node,
+            self.options, self.module, self.show_error, self.log, self.replace_node
         )
         self.yield_checker = YieldChecker(self)
         self.current_function = None
