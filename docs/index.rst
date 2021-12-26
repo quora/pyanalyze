@@ -11,6 +11,7 @@ pyanalyze: A semi-static typechecker
    :caption: Contents:
 
    faq
+   configuration
    typesystem
    design
    glossary

@@ -14,6 +14,7 @@ import enum
 from ast_decompiler import decompile
 import asyncio
 import builtins
+import collections
 import collections.abc
 import contextlib
 from dataclasses import dataclass
@@ -21,7 +22,9 @@ import inspect
 from itertools import chain
 import logging
 import operator
+import os
 import os.path
+from pathlib import Path
 import pickle
 import random
 import re
@@ -62,15 +65,26 @@ from .annotations import (
     type_from_value,
     is_typing_name,
 )
-from .arg_spec import ArgSpecCache, is_dot_asynq_function
+from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass, IgnoredCallees
 from .boolability import Boolability, get_boolability
 from .checker import Checker
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard, overload
 from .find_unused import UnusedObjectFinder, used
+from .options import (
+    ConfigOption,
+    ConcatenatedOption,
+    BooleanOption,
+    InvalidConfigOption,
+    IntegerOption,
+    Options,
+    PyObjectSequenceOption,
+    StringSequenceOption,
+)
+from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ErrorContext, ImplicitReexportTracker
-from .safe import safe_getattr, is_hashable, safe_in, all_of_type
+from .safe import safe_getattr, is_hashable, all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
     Composite,
@@ -140,7 +154,6 @@ from .value import (
     TypedValue,
     MultiValuedValue,
     UnboundMethodValue,
-    VariableNameValue,
     ReferencingValue,
     SubclassValue,
     DictIncompleteValue,
@@ -254,14 +267,6 @@ class _AttrContext(attributes.AttrContext):
     def should_ignore_class_attribute(self, obj: object) -> bool:
         return self.visitor.config.should_ignore_class_attribute(obj)
 
-    def get_property_type_from_config(self, obj: object) -> Value:
-        try:
-            return self.visitor.config.PROPERTIES_OF_KNOWN_TYPE[obj]
-        except (KeyError, TypeError):
-            return AnyValue(
-                AnySource.inference
-            )  # can't figure out what this will return
-
     def get_property_type_from_argspec(self, obj: object) -> Value:
         argspec = self.visitor.arg_spec_cache.get_argspec(obj)
         if argspec is not None:
@@ -306,6 +311,164 @@ _DEFAULT_FUNCTION_INFO = FunctionInfo(
 )
 
 
+class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
+    """These decorators can safely be applied to nested functions."""
+
+    name = "safe_decorators_for_nested_functions"
+    default_value = [asynq.asynq, classmethod, staticmethod, asyncio.coroutine]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return list(fallback.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS)
+
+
+class ComprehensionLengthInferenceLimit(IntegerOption):
+    """If we iterate over something longer than this, we don't try to infer precise
+    types for comprehensions. Increasing this can hurt performance."""
+
+    default_value = 100
+    name = "comprehension_length_inference_limit"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> int:
+        return fallback.COMPREHENSION_LENGTH_INFERENCE_LIMIT
+
+
+class UnionSimplificationLimit(IntegerOption):
+    """We may simplify unions with more than this many values."""
+
+    default_value = 25
+    name = "union_simplification_limit"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> int:
+        return fallback.UNION_SIMPLIFICATION_LIMIT
+
+
+class AsynqDecorators(PyObjectSequenceOption[object]):
+    """Decorators that are equivalent to asynq.asynq."""
+
+    default_value = [asynq.asynq]
+    name = "asynq_decorators"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return list(fallback.ASYNQ_DECORATORS)
+
+
+class AsyncProxyDecorators(PyObjectSequenceOption[object]):
+    """Decorators that are equivalent to asynq.async_proxy."""
+
+    default_value = [asynq.async_proxy]
+    name = "async_proxy_decorators"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return list(fallback.ASYNC_PROXY_DECORATORS)
+
+
+class DisallowCallsToDunders(StringSequenceOption):
+    """Set of dunder methods (e.g., '{"__lshift__"}') that pyanalyze is not allowed to call on
+    objects."""
+
+    name = "disallow_calls_to_dunders"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.DISALLOW_CALLS_TO_DUNDERS)
+
+
+class ForLoopAlwaysEntered(BooleanOption):
+    """If True, we assume that for loops are always entered at least once,
+    which affects the potentially_undefined_name check. This will miss
+    some bugs but also remove some annoying false positives."""
+
+    name = "for_loop_always_entered"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> bool:
+        return fallback.FOR_LOOP_ALWAYS_ENTERED
+
+
+class IgnoreNoneAttributes(BooleanOption):
+    """If True, we ignore None when type checking attribute access on a Union
+    type."""
+
+    name = "ignore_none_attributes"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> bool:
+        return fallback.IGNORE_NONE_ATTRIBUTES
+
+
+class UnimportableModules(StringSequenceOption):
+    """Do not attempt to import these modules if they are imported within a function."""
+
+    default_value = []
+    name = "unimportable_modules"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.UNIMPORTABLE_MODULES)
+
+
+class ExtraBuiltins(StringSequenceOption):
+    """Even if these variables are undefined, no errors are shown."""
+
+    name = "extra_builtins"
+    default_value = ["__IPYTHON__"]  # special global defined in IPython
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.IGNORED_VARIABLES)
+
+
+class IgnoredPaths(ConcatenatedOption[Sequence[str]]):
+    """Attribute accesses on these do not result in errors."""
+
+    name = "ignored_paths"
+    default_value = ()
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[Sequence[str]]:
+        return fallback.IGNORED_PATHS
+
+    @classmethod
+    def parse(cls, data: object, source_path: Path) -> Sequence[Sequence[str]]:
+        if not isinstance(data, (list, tuple)):
+            raise InvalidConfigOption.from_parser(cls, "sequence", data)
+        for sublist in data:
+            if not isinstance(sublist, (list, tuple)):
+                raise InvalidConfigOption.from_parser(cls, "sequence", sublist)
+            for elt in sublist:
+                if not isinstance(elt, str):
+                    raise InvalidConfigOption.from_parser(cls, "string", elt)
+        return data
+
+
+class IgnoredEndOfReference(StringSequenceOption):
+    """When these attributes are accessed but they don't exist, the error is ignored."""
+
+    name = "ignored_end_of_reference"
+    default_value = [
+        # these are created by the mock module
+        "call_count",
+        "assert_has_calls",
+        "reset_mock",
+        "called",
+        "assert_called_once",
+        "assert_called_once_with",
+        "assert_called_with",
+        "count",
+        "assert_any_call",
+        "assert_not_called",
+    ]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.IGNORED_END_OF_REFERENCE)
+
+
 class ClassAttributeChecker:
     """Helper class to keep track of attributes that are read and set on instances."""
 
@@ -315,7 +478,12 @@ class ClassAttributeChecker:
         enabled: bool = True,
         should_check_unused_attributes: bool = False,
         should_serialize: bool = False,
+        *,
+        options: Optional[Options] = None,
     ) -> None:
+        if options is None:
+            options = Options.from_option_list([], config)
+        self.options = options
         # we might not have examined all parent classes when looking for attributes set
         # we dump them here. incase the callers want to extend coverage.
         self.unexamined_base_classes = set()
@@ -429,10 +597,8 @@ class ClassAttributeChecker:
             name = typ.__name__
             if module not in sys.modules:
                 return None
-            if (
-                self.config.unwrap_cls(safe_getattr(sys.modules[module], name, None))
-                is typ
-            ):
+            actual = safe_getattr(sys.modules[module], name, None)
+            if UnwrapClass.unwrap(actual, self.options) is typ:
                 return (module, name)
         return None
 
@@ -443,7 +609,8 @@ class ClassAttributeChecker:
         if module not in sys.modules:
             __import__(module)
         try:
-            return self.config.unwrap_cls(getattr(sys.modules[module], name))
+            actual = getattr(sys.modules[module], name)
+            return UnwrapClass.unwrap(actual, self.options)
         except AttributeError:
             # We've seen this happen when we import different modules under the same name.
             return None
@@ -723,6 +890,8 @@ class NameCheckVisitor(
     config: ClassVar[
         Config
     ] = Config()  # subclasses may override this with a more specific config
+    config_filename: ClassVar[Optional[str]] = None
+    """Path (relative to this class's file) to a pyproject.toml config file."""
 
     checker: Checker
     arg_spec_cache: ArgSpecCache
@@ -777,12 +946,17 @@ class NameCheckVisitor(
         self.annotate = annotate
         # true if we're in the body of a comprehension's loop
         self.in_comprehension_body = False
+        self.options = checker.options
 
         if module is not None:
             self.module = module
             self.is_compiled = False
         else:
             self.module, self.is_compiled = self._load_module()
+
+        if self.module is not None and hasattr(self.module, "__name__"):
+            module_path = tuple(self.module.__name__.split("."))
+            self.options = checker.options.for_module(module_path)
 
         # Data storage objects
         self.unused_finder = unused_finder
@@ -797,16 +971,12 @@ class NameCheckVisitor(
             self.attribute_checker.record_module_examined(self.module.__name__)
 
         self.scopes = build_stacked_scopes(
-            self.module, simplification_limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            self.module,
+            simplification_limit=self.options.get_value_for(UnionSimplificationLimit),
         )
         self.node_context = StackedContexts()
         self.asynq_checker = AsynqChecker(
-            self.config,
-            self.module,
-            self._lines,
-            self.show_error,
-            self.log,
-            self.replace_node,
+            self.options, self.module, self.show_error, self.log, self.replace_node
         )
         self.yield_checker = YieldChecker(self)
         self.current_function = None
@@ -883,9 +1053,12 @@ class NameCheckVisitor(
         if not self.filename:
             return None, False
         self.log(logging.INFO, "Checking file", (self.filename, os.getpid()))
+        import_paths = self.options.get_value_for(ImportPaths)
 
         try:
-            return self.load_module(self.filename)
+            return importer.load_module_from_file(
+                self.filename, import_paths=[str(p) for p in import_paths]
+            )
         except KeyboardInterrupt:
             raise
         except BaseException as e:
@@ -905,9 +1078,6 @@ class NameCheckVisitor(
                     # Don't print a traceback if the error was suppressed.
                     traceback.print_exc()
             return None, False
-
-    def load_module(self, filename: str) -> Tuple[Optional[types.ModuleType], bool]:
-        return importer.load_module_from_file(filename)
 
     def check(self, ignore_missing_module: bool = False) -> List[node_visitor.Failure]:
         """Run the visitor on this module."""
@@ -1122,7 +1292,7 @@ class NameCheckVisitor(
                         defining_scope.scope_object, node.id, value
                     )
         if value is UNINITIALIZED_VALUE:
-            if suppress_errors or node.id in self.config.IGNORED_VARIABLES:
+            if suppress_errors or node.id in self.options.get_value_for(ExtraBuiltins):
                 self.log(logging.INFO, "ignoring undefined name", node.id)
             else:
                 self._maybe_show_missing_import_error(node)
@@ -1281,7 +1451,7 @@ class NameCheckVisitor(
                     cls_obj = possible_values[0]
 
             if isinstance(cls_obj, KnownValue):
-                cls_obj = KnownValue(self.config.unwrap_cls(cls_obj.val))
+                cls_obj = KnownValue(UnwrapClass.unwrap(cls_obj.val, self.options))
                 current_class = cls_obj.val
                 if isinstance(current_class, type):
                     self._record_class_examined(current_class)
@@ -1322,8 +1492,9 @@ class NameCheckVisitor(
 
         if (
             potential_function is not None
-            and self.settings
-            and self.settings[ErrorCode.suggested_parameter_type]
+            and self.options.is_error_code_enabled_anywhere(
+                ErrorCode.suggested_parameter_type
+            )
         ):
             sig = self.signature_from_value(KnownValue(potential_function))
             if isinstance(sig, Signature):
@@ -1472,7 +1643,9 @@ class NameCheckVisitor(
         return KnownValue(potential_function)
 
     def record_call(self, callable: object, arguments: CallArgs) -> None:
-        if self.settings and self.settings[ErrorCode.suggested_parameter_type]:
+        if self.options.is_error_code_enabled_anywhere(
+            ErrorCode.suggested_parameter_type
+        ):
             self.checker.callable_tracker.record_call(callable, arguments)
 
     def _visit_defaults(
@@ -1496,7 +1669,9 @@ class NameCheckVisitor(
             if (
                 not isinstance(decorator, KnownValue)
                 or not isinstance(applied_decorator, KnownValue)
-                or decorator.val not in self.config.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS
+                or not SafeDecoratorsForNestedFunctions.contains(
+                    decorator.val, self.options
+                )
             ):
                 self.log(
                     logging.DEBUG,
@@ -1562,12 +1737,12 @@ class NameCheckVisitor(
                 decorator_value = self.visit(decorator)
                 callee = self.visit(decorator.func)
                 if isinstance(callee, KnownValue):
-                    if safe_in(callee.val, self.config.ASYNQ_DECORATORS):
+                    if AsynqDecorators.contains(callee.val, self.options):
                         if any(kw.arg == "pure" for kw in decorator.keywords):
                             async_kind = AsyncFunctionKind.pure
                         else:
                             async_kind = AsyncFunctionKind.normal
-                    elif safe_in(callee.val, self.config.ASYNC_PROXY_DECORATORS):
+                    elif AsyncProxyDecorators.contains(callee.val, self.options):
                         # @async_proxy(pure=True) is a noop, so don't treat it specially
                         if not any(kw.arg == "pure" for kw in decorator.keywords):
                             async_kind = AsyncFunctionKind.async_proxy
@@ -2018,18 +2193,13 @@ class NameCheckVisitor(
                 self.unused_finder.record(module, alias.name, self.module.__name__)
 
     def _is_unimportable_module(self, node: Union[ast.Import, ast.ImportFrom]) -> bool:
+        unimportable = self.options.get_value_for(UnimportableModules)
         if isinstance(node, ast.ImportFrom):
             # the split is needed for cases like "from foo.bar import baz" if foo is unimportable
-            return (
-                node.module is not None
-                and node.module.split(".")[0] in self.config.UNIMPORTABLE_MODULES
-            )
+            return node.module is not None and node.module.split(".")[0] in unimportable
         else:
             # need the split if the code is "import foo.bar as bar" if foo is unimportable
-            return any(
-                name.name.split(".")[0] in self.config.UNIMPORTABLE_MODULES
-                for name in node.names
-            )
+            return any(name.name.split(".")[0] in unimportable for name in node.names)
 
     def _simulate_import(
         self, node: Union[ast.ImportFrom, ast.Import], *, force_public: bool = False
@@ -2149,7 +2319,8 @@ class NameCheckVisitor(
             iterable_type = self._member_value_of_iterator(node.iter, is_async)
             if not isinstance(iterable_type, Value):
                 iterable_type = unite_and_simplify(
-                    *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                    *iterable_type,
+                    limit=self.options.get_value_for(UnionSimplificationLimit),
                 )
         with qcore.override(self, "in_comprehension_body", True):
             with qcore.override(self, "being_assigned", iterable_type):
@@ -2206,7 +2377,7 @@ class NameCheckVisitor(
                 and not node.generators[0].ifs
                 and 0
                 < len(iterable_type)
-                <= self.config.COMPREHENSION_LENGTH_INFERENCE_LIMIT
+                <= self.options.get_value_for(ComprehensionLengthInferenceLimit)
             ):
                 generator = node.generators[0]
                 if isinstance(node, ast.DictComp):
@@ -2235,7 +2406,8 @@ class NameCheckVisitor(
                     return SequenceIncompleteValue(typ, elts)
 
             iterable_type = unite_and_simplify(
-                *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                *iterable_type,
+                limit=self.options.get_value_for(UnionSimplificationLimit),
             )
         # need to visit the generator expression first so that we know of variables
         # created in them
@@ -2508,7 +2680,7 @@ class NameCheckVisitor(
                     values.append(elt)
             if has_unknown_value:
                 arg = unite_and_simplify(
-                    *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                    *values, limit=self.options.get_value_for(UnionSimplificationLimit)
                 )
                 return make_weak(GenericValue(typ, [arg]))
             else:
@@ -2787,7 +2959,7 @@ class NameCheckVisitor(
             imethod,
             rmethod,
         ) = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(op)]
-        allow_call = method not in self.config.DISALLOW_CALLS_TO_DUNDERS
+        allow_call = method not in self.options.get_value_for(DisallowCallsToDunders)
 
         if is_inplace:
             with self.catch_errors() as inplace_errors:
@@ -3118,7 +3290,7 @@ class NameCheckVisitor(
 
     def visit_For(self, node: ast.For) -> None:
         iterated_value = self._member_value_of_iterator(node.iter)
-        if self.config.FOR_LOOP_ALWAYS_ENTERED:
+        if self.options.get_value_for(ForLoopAlwaysEntered):
             always_entered = True
         elif isinstance(iterated_value, Value):
             iterated_value, present = unannotate_value(
@@ -3129,7 +3301,8 @@ class NameCheckVisitor(
             always_entered = len(iterated_value) > 0
         if not isinstance(iterated_value, Value):
             iterated_value = unite_and_simplify(
-                *iterated_value, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                *iterated_value,
+                limit=self.options.get_value_for(UnionSimplificationLimit),
             )
         with self.scopes.subscope() as body_scope:
             with self.scopes.loop_scope():
@@ -3538,12 +3711,9 @@ class NameCheckVisitor(
         if force_read or self._is_read_ctx(node.ctx):
             self.yield_checker.record_usage(node.id, node)
             value, origin = self.resolve_name(node)
-            varname_value = VariableNameValue.from_varname(
-                node.id, self.config.varname_value_map()
-            )
+            varname_value = self.checker.maybe_get_variable_name_value(node.id)
             if varname_value is not None and self._should_use_varname_value(value):
                 value = varname_value
-            value = self._maybe_use_hardcoded_type(value, node.id)
             return Composite(value, VarnameWithOrigin(node.id, origin), node)
         elif self._is_write_ctx(node.ctx):
             if self._name_node_to_statement is not None:
@@ -3587,18 +3757,6 @@ class NameCheckVisitor(
         return (
             isinstance(value, AnyValue) and value.source is not AnySource.variable_name
         )
-
-    def _maybe_use_hardcoded_type(self, value: Value, name: str) -> Value:
-        """Replaces a value with a name of hardcoded type where applicable."""
-        if not isinstance(value, (AnyValue, MultiValuedValue)):
-            return value
-
-        try:
-            typ = self.config.NAMES_OF_KNOWN_TYPE[name]
-        except KeyError:
-            return value
-        else:
-            return TypedValue(typ)
 
     def visit_Subscript(self, node: ast.Subscript) -> Value:
         return self.composite_from_subscript(node).value
@@ -3716,8 +3874,8 @@ class NameCheckVisitor(
                     and isinstance(index, KnownValue)
                     and isinstance(index.val, str)
                 ):
-                    varname_value = VariableNameValue.from_varname(
-                        index.val, self.config.varname_value_map()
+                    varname_value = self.checker.maybe_get_variable_name_value(
+                        index.val
                     )
                     if varname_value is not None:
                         return_value = varname_value
@@ -3750,7 +3908,7 @@ class NameCheckVisitor(
             Composite(lookup_val),
             method_name,
             node,
-            ignore_none=self.config.IGNORE_NONE_ATTRIBUTES,
+            ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
         )
         if method_object is UNINITIALIZED_VALUE:
             self.show_error(
@@ -3781,7 +3939,7 @@ class NameCheckVisitor(
                     for composite in composites
                 ]
             return unite_and_simplify(
-                *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                *values, limit=self.options.get_value_for(UnionSimplificationLimit)
             )
         return self._check_dunder_call_no_mvv(
             node, callee_composite, method_name, args, allow_call
@@ -3868,9 +4026,7 @@ class NameCheckVisitor(
                     )
             value = self._get_attribute_with_fallback(root_composite, node.attr, node)
             if self._should_use_varname_value(value):
-                varname_value = VariableNameValue.from_varname(
-                    node.attr, self.config.varname_value_map()
-                )
+                varname_value = self.checker.maybe_get_variable_name_value(node.attr)
                 if varname_value is not None:
                     return Composite(varname_value, composite, node)
             if (
@@ -3880,7 +4036,6 @@ class NameCheckVisitor(
                 local_value = self._get_composite(composite.get_varname(), node, value)
                 if local_value is not UNINITIALIZED_VALUE:
                     value = local_value
-            value = self._maybe_use_hardcoded_type(value, node.attr)
             return Composite(value, composite, node)
         else:
             self.show_error(node, "Unknown context", ErrorCode.unexpected_node)
@@ -3938,7 +4093,7 @@ class NameCheckVisitor(
     def _get_attribute_with_fallback(
         self, root_composite: Composite, attr: str, node: ast.AST
     ) -> Value:
-        ignore_none = self.config.IGNORE_NONE_ATTRIBUTES
+        ignore_none = self.options.get_value_for(IgnoreNoneAttributes)
         if isinstance(root_composite.value, TypeVarValue):
             root_composite = Composite(
                 value=root_composite.value.get_fallback_value(),
@@ -4086,17 +4241,14 @@ class NameCheckVisitor(
         if node is not None:
             path = self._get_attribute_path(node)
             if path is not None:
-                for ignored_path in self.config.IGNORED_PATHS:
+                ignored_paths = self.options.get_value_for(IgnoredPaths)
+                for ignored_path in ignored_paths:
                     if path[: len(ignored_path)] == ignored_path:
                         return True
-                if path[-1] in self.config.IGNORED_END_OF_REFERENCE:
+                if path[-1] in self.options.get_value_for(IgnoredEndOfReference):
                     self.log(logging.INFO, "Ignoring end of reference", path)
                     return True
         return False
-
-    def _should_ignore_type(self, typ: type) -> bool:
-        """Types for which we do not check whether they support the actions we take on them."""
-        return typ in self.config.IGNORED_TYPES
 
     # Call nodes
 
@@ -4211,7 +4363,8 @@ class NameCheckVisitor(
         allow_call: bool = False,
     ) -> Value:
         if isinstance(callee_wrapped, KnownValue) and any(
-            callee_wrapped.val is ignored for ignored in self.config.IGNORED_CALLEES
+            callee_wrapped.val is ignored
+            for ignored in self.options.get_value_for(IgnoredCallees)
         ):
             self.log(logging.INFO, "Ignoring callee", callee_wrapped)
             return AnyValue(AnySource.error)
@@ -4329,7 +4482,7 @@ class NameCheckVisitor(
                     Composite(value),
                     "__call__",
                     node,
-                    ignore_none=self.config.IGNORE_NONE_ATTRIBUTES,
+                    ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
                 )
                 if method_object is UNINITIALIZED_VALUE:
                     return None
@@ -4364,7 +4517,7 @@ class NameCheckVisitor(
                 call_method = self.get_attribute(
                     Composite(value),
                     "__call__",
-                    ignore_none=self.config.IGNORE_NONE_ATTRIBUTES,
+                    ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
                 )
                 if call_method is UNINITIALIZED_VALUE:
                     return None
@@ -4447,7 +4600,7 @@ class NameCheckVisitor(
             if value.val is self.current_class:
                 return
 
-            inner = self.config.unwrap_cls(value.val)
+            inner = UnwrapClass.unwrap(value.val, self.options)
             if inner is self.current_class:
                 return
 
@@ -4469,6 +4622,11 @@ class NameCheckVisitor(
             default=False,
             help="Find unused class attributes",
         )
+        parser.add_argument(
+            "--config-file",
+            type=Path,
+            help="Path to a pyproject.toml configuration file",
+        )
         return parser
 
     @classmethod
@@ -4489,14 +4647,40 @@ class NameCheckVisitor(
         return (cls.config.DEFAULT_BASE_MODULE,)
 
     @classmethod
-    def get_default_directories(cls) -> Tuple[str, ...]:
+    def get_default_directories(
+        cls, checker: Checker, **kwargs: Any
+    ) -> Tuple[str, ...]:
+        paths = checker.options.get_value_for(Paths)
+        if paths:
+            return tuple(str(path) for path in paths)
         return cls.config.DEFAULT_DIRS
+
+    @classmethod
+    def _get_default_settings(cls) -> Optional[Dict[enum.Enum, bool]]:
+        return {}
 
     @classmethod
     def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
         kwargs = dict(kwargs)
-        kwargs.setdefault("checker", Checker(cls.config))
+        instances = []
+        if "settings" in kwargs:
+            for error_code, value in kwargs["settings"].items():
+                option_cls = ConfigOption.registry[error_code.name]
+                instances.append(option_cls(value, from_command_line=True))
+        if "files" in kwargs:
+            instances.append(Paths(kwargs.pop("files"), from_command_line=True))
+        config_file = kwargs.pop("config_file", None)
+        if config_file is None:
+            config_filename = cls.config_filename
+            if config_filename is not None:
+                module_path = Path(sys.modules[cls.__module__].__file__).parent
+                config_file = module_path / config_filename
+        options = Options.from_option_list(instances, cls.config, config_file)
+        kwargs.setdefault("checker", Checker(cls.config, options))
         return kwargs
+
+    def is_enabled(self, error_code: ErrorCode) -> bool:
+        return self.options.is_error_code_enabled(error_code)
 
     @classmethod
     def perform_final_checks(
@@ -4509,30 +4693,30 @@ class NameCheckVisitor(
         cls,
         files: List[str],
         *,
+        checker: Checker,
         find_unused: bool = False,
-        settings: Mapping[ErrorCode, bool] = {},
         find_unused_attributes: bool = False,
         attribute_checker: Optional[ClassAttributeChecker] = None,
         unused_finder: Optional[UnusedObjectFinder] = None,
         **kwargs: Any,
     ) -> List[node_visitor.Failure]:
-        if settings is None:
-            attribute_checker_enabled = True
-        else:
-            attribute_checker_enabled = settings[ErrorCode.attribute_is_never_set]
+        attribute_checker_enabled = checker.options.is_error_code_enabled_anywhere(
+            ErrorCode.attribute_is_never_set
+        )
         if attribute_checker is None:
             inner_attribute_checker_obj = attribute_checker = ClassAttributeChecker(
                 cls.config,
                 enabled=attribute_checker_enabled,
                 should_check_unused_attributes=find_unused_attributes,
                 should_serialize=kwargs.get("parallel", False),
+                options=checker.options,
             )
         else:
             inner_attribute_checker_obj = qcore.empty_context
         if unused_finder is None:
             unused_finder = UnusedObjectFinder(
                 cls.config,
-                enabled=find_unused or cls.config.ENFORCE_NO_UNUSED_OBJECTS,
+                enabled=find_unused or checker.options.get_value_for(EnforceNoUnused),
                 print_output=False,
             )
         with inner_attribute_checker_obj as inner_attribute_checker:
@@ -4543,7 +4727,7 @@ class NameCheckVisitor(
                     if attribute_checker is not None
                     else inner_attribute_checker,
                     unused_finder=inner_unused_finder,
-                    settings=settings,
+                    checker=checker,
                     **kwargs,
                 )
         if unused_finder is not None:
