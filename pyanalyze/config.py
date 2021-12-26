@@ -304,6 +304,7 @@ class Config(object):
         """
         return issubclass(cls, enum.Enum)
 
+    # checker.AdditionalBaseProviders
     def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
         """Return additional classes that should be considered bae classes of typ."""
         return set()
@@ -311,6 +312,7 @@ class Config(object):
     #
     # Used by reexport.py
     #
+    # reexport.ReexportConfig
     def configure_reexports(self, tracker: "ImplicitReexportTracker") -> None:
         """Override this to set some names as explicitly re-exported."""
         pass

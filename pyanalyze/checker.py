@@ -7,9 +7,20 @@ import itertools
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
 import sys
-from typing import Iterable, Iterator, List, Optional, Set, Tuple, Union, Dict
+from typing import (
+    Callable,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+    Dict,
+)
 
-from .options import Options
+from .options import Options, PyObjectSequenceOption
 from .node_visitor import Failure
 from .value import TypedValue
 from .arg_spec import ArgSpecCache
@@ -18,6 +29,30 @@ from .reexport import ImplicitReexportTracker
 from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
 from .type_object import TypeObject, get_mro
 from .suggested_type import CallableTracker
+
+_BaseProvider = Callable[[Union[type, super]], Set[type]]
+
+
+class AdditionalBaseProviders(PyObjectSequenceOption[_BaseProvider]):
+    """Sets functions that provide additional (virtual) base classes for a class.
+    These are used for the purpose of type checking.
+
+    For example, if the following is configured to be used as a base provider:
+
+        def provider(typ: type) -> Set[type]:
+            if typ is B:
+                return {A}
+            return set()
+
+    Then to the type checker `B` is a subclass of `A`.
+
+    """
+
+    name = "additional_base_providers"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_BaseProvider]:
+        return (fallback.get_additional_bases,)
 
 
 @dataclass
@@ -48,7 +83,10 @@ class Checker:
         return self.callable_tracker.check()
 
     def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
-        return self.config.get_additional_bases(typ)
+        bases = set()
+        for provider in self.options.get_value_for(AdditionalBaseProviders):
+            bases |= provider(typ)
+        return bases
 
     def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
         try:
