@@ -4114,10 +4114,6 @@ class NameCheckVisitor(
                     return True
         return False
 
-    def _should_ignore_type(self, typ: type) -> bool:
-        """Types for which we do not check whether they support the actions we take on them."""
-        return typ in self.config.IGNORED_TYPES
-
     # Call nodes
 
     def visit_keyword(self, node: ast.keyword) -> Tuple[Optional[str], Composite]:

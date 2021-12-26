@@ -127,10 +127,6 @@ class Config(object):
     # In these files, strings with non-ASCII characters do not require explicit prefixes
     IGNORED_FILES_FOR_EXPLICIT_STRING_LITERALS = set()
 
-    # For these types, we do not check whether actions taken on them (such as subscripting) are
-    # valid
-    IGNORED_TYPES = set()
-
     # These properties always return values of these types.
     PROPERTIES_OF_KNOWN_TYPE = {}
 
