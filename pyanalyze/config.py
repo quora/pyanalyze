@@ -174,7 +174,9 @@ class Config(object):
     DISALLOW_CALLS_TO_DUNDERS = set()
 
     # Decorators that are equivalent to asynq.asynq and asynq.async_proxy.
+    # name_check_visitor.AsynqDecorators
     ASYNQ_DECORATORS = {asynq.asynq}
+    # name_check_visitor.AsyncProxyDecorators
     ASYNC_PROXY_DECORATORS = {asynq.async_proxy}
 
     # name_check_visitor.ComprehensionLengthInferenceLimit

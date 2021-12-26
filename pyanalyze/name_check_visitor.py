@@ -349,6 +349,28 @@ class UnionSimplificationLimit(IntegerOption):
         return fallback.UNION_SIMPLIFICATION_LIMIT
 
 
+class AsynqDecorators(PyObjectSequenceOption[object]):
+    """Decorators that are equivalent to asynq.asynq."""
+
+    default_value = [asynq.asynq]
+    name = "asynq_decorators"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return list(fallback.ASYNQ_DECORATORS)
+
+
+class AsyncProxyDecorators(PyObjectSequenceOption[object]):
+    """Decorators that are equivalent to asynq.async_proxy."""
+
+    default_value = [asynq.async_proxy]
+    name = "async_proxy_decorators"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return list(fallback.ASYNC_PROXY_DECORATORS)
+
+
 class ClassAttributeChecker:
     """Helper class to keep track of attributes that are read and set on instances."""
 
@@ -1618,12 +1640,12 @@ class NameCheckVisitor(
                 decorator_value = self.visit(decorator)
                 callee = self.visit(decorator.func)
                 if isinstance(callee, KnownValue):
-                    if safe_in(callee.val, self.config.ASYNQ_DECORATORS):
+                    if AsynqDecorators.contains(callee.val, self.options):
                         if any(kw.arg == "pure" for kw in decorator.keywords):
                             async_kind = AsyncFunctionKind.pure
                         else:
                             async_kind = AsyncFunctionKind.normal
-                    elif safe_in(callee.val, self.config.ASYNC_PROXY_DECORATORS):
+                    elif AsyncProxyDecorators.contains(callee.val, self.options):
                         # @async_proxy(pure=True) is a noop, so don't treat it specially
                         if not any(kw.arg == "pure" for kw in decorator.keywords):
                             async_kind = AsyncFunctionKind.async_proxy
