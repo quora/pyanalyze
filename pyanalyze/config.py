@@ -127,6 +127,7 @@ class Config(object):
     # In these files, strings with non-ASCII characters do not require explicit prefixes
     IGNORED_FILES_FOR_EXPLICIT_STRING_LITERALS = set()
 
+    # arg_spec.ClassesSafeToInstantiate
     # test_scope will instantiate instances of these classes if it can infer the value of all of
     # their arguments. This is useful mostly for classes that are commonly instantiated with static
     # arguments.
@@ -140,6 +141,7 @@ class Config(object):
         tuple,
     )
 
+    # arg_spec.FunctionsSafeToCall
     # Similarly, these functions will be called
     FUNCTIONS_SAFE_TO_CALL = (
         # we can't have len here because of code like l = []; l.append('foo'); 3 / len(l)

@@ -26,6 +26,7 @@ from unittest import mock
 from .find_unused import used
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
+from .safe import safe_in
 
 T = TypeVar("T")
 OptionT = TypeVar("OptionT", bound="ConfigOption")
@@ -183,6 +184,11 @@ class PyObjectSequenceOption(ConfigOption[Sequence[T]]):
             used(obj)
             final.append(elt)
         return final
+
+    @classmethod
+    def contains(cls, obj: object, options: "Options") -> bool:
+        val = options.get_value_for(cls)
+        return safe_in(obj, val)
 
 
 class Paths(PathSequenceOption):

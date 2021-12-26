@@ -4,9 +4,9 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .options import Options
+from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
-from .extensions import get_overloads
+from .extensions import CustomCheck, get_overloads
 from .annotations import Context, type_from_runtime
 from .config import Config
 from .find_unused import used
@@ -36,7 +36,9 @@ from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
     AnyValue,
+    Extension,
     GenericBases,
+    KVPair,
     TypedValue,
     GenericValue,
     NewTypeValue,
@@ -45,6 +47,7 @@ from .value import (
     VariableNameValue,
     TypeVarValue,
     extract_typevars,
+    make_weak,
 )
 
 import ast
@@ -148,6 +151,40 @@ class AnnotationsContext(Context):
         return self.handle_undefined_name(node.id)
 
 
+class ClassesSafeToInstantiate(PyObjectSequenceOption[type]):
+    """We will instantiate instances of these classes if we can infer the value of all of
+    their arguments. This is useful mostly for classes that are commonly instantiated with static
+    arguments."""
+
+    name = "classes_safe_to_instantiate"
+    default_value = [
+        CustomCheck,
+        Value,
+        Extension,
+        KVPair,
+        asynq.ConstFuture,
+        range,
+        tuple,
+    ]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[type]:
+        return fallback.CLASSES_SAFE_TO_INSTANTIATE
+
+
+class FunctionsSafeToCall(PyObjectSequenceOption[object]):
+    """We will instantiate instances of these classes if we can infer the value of all of
+    their arguments. This is useful mostly for classes that are commonly instantiated with static
+    arguments."""
+
+    name = "functions_safe_to_call"
+    default_value = [sorted, asynq.asynq, make_weak]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return fallback.FUNCTIONS_SAFE_TO_CALL
+
+
 class ArgSpecCache:
     DEFAULT_ARGSPECS = implementation.get_default_argspecs()
 
@@ -225,7 +262,7 @@ class ArgSpecCache:
             has_return_annotation=has_return_annotation,
             is_asynq=is_asynq,
             allow_call=allow_call
-            or safe_in(function_object, self.config.FUNCTIONS_SAFE_TO_CALL),
+            or FunctionsSafeToCall.contains(function_object, self.options),
         )
 
     def _make_sig_parameter(
@@ -417,7 +454,7 @@ class ArgSpecCache:
                     original_fn, impl, is_asynq, in_overload_resolution
                 )
 
-        allow_call = safe_in(obj, self.config.FUNCTIONS_SAFE_TO_CALL)
+        allow_call = FunctionsSafeToCall.contains(obj, self.options)
         argspec = self.ts_finder.get_argspec(obj, allow_call=allow_call)
         if argspec is not None:
             return argspec
@@ -476,9 +513,8 @@ class ArgSpecCache:
                 return_type = (
                     AnyValue(AnySource.error) if should_ignore else TypedValue(obj)
                 )
-                allow_call = safe_issubclass(
-                    obj, self.config.CLASSES_SAFE_TO_INSTANTIATE
-                )
+                safe = tuple(self.options.get_value_for(ClassesSafeToInstantiate))
+                allow_call = safe_issubclass(obj, safe)
                 if isinstance(override, inspect.Signature):
                     inspect_sig = override
                 else:
@@ -557,7 +593,7 @@ class ArgSpecCache:
         return None
 
     def _make_any_sig(self, obj: object) -> Signature:
-        if safe_in(obj, self.config.FUNCTIONS_SAFE_TO_CALL):
+        if FunctionsSafeToCall.contains(obj, self.options):
             return Signature.make(
                 [],
                 AnyValue(AnySource.inference),

@@ -75,12 +75,14 @@ from .options import (
     EnforceNoUnused,
     ExtraBuiltins,
     ForLoopAlwaysEntered,
+    IgnoreNoneAttributes,
     IgnoredCallees,
     IgnoredEndOfReference,
     IgnoredPaths,
     ImportPaths,
     Options,
     Paths,
+    PyObjectSequenceOption,
     UnimportableModules,
 )
 from .reexport import ErrorContext, ImplicitReexportTracker
@@ -310,6 +312,17 @@ class _AttrContext(attributes.AttrContext):
 _DEFAULT_FUNCTION_INFO = FunctionInfo(
     AsyncFunctionKind.normal, False, False, False, False, []
 )
+
+
+class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
+    """These decorators can safely be applied to nested functions."""
+
+    name = "safe_decorators_for_nested_functions"
+    default_value = [asynq.asynq, classmethod, staticmethod, asyncio.coroutine]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return list(fallback.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS)
 
 
 class ClassAttributeChecker:
@@ -1512,7 +1525,9 @@ class NameCheckVisitor(
             if (
                 not isinstance(decorator, KnownValue)
                 or not isinstance(applied_decorator, KnownValue)
-                or decorator.val not in self.config.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS
+                or not SafeDecoratorsForNestedFunctions.contains(
+                    decorator.val, self.options
+                )
             ):
                 self.log(
                     logging.DEBUG,
@@ -3748,7 +3763,7 @@ class NameCheckVisitor(
             Composite(lookup_val),
             method_name,
             node,
-            ignore_none=self.config.IGNORE_NONE_ATTRIBUTES,
+            ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
         )
         if method_object is UNINITIALIZED_VALUE:
             self.show_error(
@@ -3935,7 +3950,7 @@ class NameCheckVisitor(
     def _get_attribute_with_fallback(
         self, root_composite: Composite, attr: str, node: ast.AST
     ) -> Value:
-        ignore_none = self.config.IGNORE_NONE_ATTRIBUTES
+        ignore_none = self.options.get_value_for(IgnoreNoneAttributes)
         if isinstance(root_composite.value, TypeVarValue):
             root_composite = Composite(
                 value=root_composite.value.get_fallback_value(),
@@ -4324,7 +4339,7 @@ class NameCheckVisitor(
                     Composite(value),
                     "__call__",
                     node,
-                    ignore_none=self.config.IGNORE_NONE_ATTRIBUTES,
+                    ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
                 )
                 if method_object is UNINITIALIZED_VALUE:
                     return None
@@ -4359,7 +4374,7 @@ class NameCheckVisitor(
                 call_method = self.get_attribute(
                     Composite(value),
                     "__call__",
-                    ignore_none=self.config.IGNORE_NONE_ATTRIBUTES,
+                    ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
                 )
                 if call_method is UNINITIALIZED_VALUE:
                     return None
