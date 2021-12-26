@@ -23,6 +23,7 @@ class ReexportConfig(PyObjectSequenceOption[_ReexportConfigProvider]):
     usually by setting names as explicitly exported."""
 
     name = "reexport_config"
+    is_global = True
 
     @classmethod
     def get_value_from_fallback(

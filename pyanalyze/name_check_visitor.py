@@ -84,6 +84,7 @@ from .options import (
     Options,
     Paths,
     PyObjectSequenceOption,
+    StringSequenceOption,
     UnimportableModules,
 )
 from .reexport import ErrorContext, ImplicitReexportTracker
@@ -369,6 +370,17 @@ class AsyncProxyDecorators(PyObjectSequenceOption[object]):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
         return list(fallback.ASYNC_PROXY_DECORATORS)
+
+
+class DisallowCallsToDunders(StringSequenceOption):
+    """Set of dunder methods (e.g., '{"__lshift__"}') that pyanalyze is not allowed to call on
+    objects."""
+
+    name = "disallow_calls_to_dunders"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.DISALLOW_CALLS_TO_DUNDERS)
 
 
 class ClassAttributeChecker:
@@ -2862,7 +2874,7 @@ class NameCheckVisitor(
             imethod,
             rmethod,
         ) = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(op)]
-        allow_call = method not in self.config.DISALLOW_CALLS_TO_DUNDERS
+        allow_call = method not in self.options.get_value_for(DisallowCallsToDunders)
 
         if is_inplace:
             with self.catch_errors() as inplace_errors:

@@ -171,6 +171,7 @@ class Config(object):
 
     # Set of dunder methods (e.g., '{"__lshift__"}') that pyanalyze is not allowed to call on
     # objects.
+    # name_check_visitor.DisallowCallsToDunders
     DISALLOW_CALLS_TO_DUNDERS = set()
 
     # Decorators that are equivalent to asynq.asynq and asynq.async_proxy.
