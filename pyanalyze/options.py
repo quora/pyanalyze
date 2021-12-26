@@ -116,6 +116,16 @@ class BooleanOption(ConfigOption[bool]):
         raise InvalidConfigOption.from_parser(cls, "bool", data)
 
 
+class IntegerOption(ConfigOption[int]):
+    default_value = False
+
+    @classmethod
+    def parse(cls: "Type[IntegerOption]", data: object, source_path: Path) -> int:
+        if isinstance(data, int):
+            return data
+        raise InvalidConfigOption.from_parser(cls, "int", data)
+
+
 class ConcatenatedOption(ConfigOption[Sequence[T]]):
     """Option for which the value is the concatenation of all the overrides."""
 

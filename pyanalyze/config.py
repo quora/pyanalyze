@@ -151,6 +151,8 @@ class Config(object):
         asynq.asynq,
         value.make_weak,
     )
+
+    # name_check_visitor.SafeDecoratorsForNestedFunctions
     # These decorators can safely be applied to nested functions. If True, they take arguments.
     SAFE_DECORATORS_FOR_NESTED_FUNCTIONS = {
         asynq.asynq: True,
@@ -175,9 +177,11 @@ class Config(object):
     ASYNQ_DECORATORS = {asynq.asynq}
     ASYNC_PROXY_DECORATORS = {asynq.async_proxy}
 
+    # name_check_visitor.ComprehensionLengthInferenceLimit
     # If we iterate over something longer than this, we don't try to infer precise
     # types for comprehensions. Increasing this can hurt performance.
     COMPREHENSION_LENGTH_INFERENCE_LIMIT = 25
+    # name_check_visitor.UnionSimplificationLimit
     # We may simplify unions with more than this many values.
     UNION_SIMPLIFICATION_LIMIT = 100
 

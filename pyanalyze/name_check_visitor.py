@@ -80,6 +80,7 @@ from .options import (
     IgnoredEndOfReference,
     IgnoredPaths,
     ImportPaths,
+    IntegerOption,
     Options,
     Paths,
     PyObjectSequenceOption,
@@ -323,6 +324,29 @@ class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
         return list(fallback.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS)
+
+
+class ComprehensionLengthInferenceLimit(IntegerOption):
+    """If we iterate over something longer than this, we don't try to infer precise
+    types for comprehensions. Increasing this can hurt performance."""
+
+    default_value = 100
+    name = "comprehension_length_inference_limit"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> int:
+        return fallback.COMPREHENSION_LENGTH_INFERENCE_LIMIT
+
+
+class UnionSimplificationLimit(IntegerOption):
+    """We may simplify unions with more than this many values."""
+
+    default_value = 25
+    name = "union_simplification_limit"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> int:
+        return fallback.UNION_SIMPLIFICATION_LIMIT
 
 
 class ClassAttributeChecker:
@@ -823,7 +847,8 @@ class NameCheckVisitor(
             self.attribute_checker.record_module_examined(self.module.__name__)
 
         self.scopes = build_stacked_scopes(
-            self.module, simplification_limit=self.config.UNION_SIMPLIFICATION_LIMIT
+            self.module,
+            simplification_limit=self.options.get_value_for(UnionSimplificationLimit),
         )
         self.node_context = StackedContexts()
         self.asynq_checker = AsynqChecker(
@@ -2175,7 +2200,8 @@ class NameCheckVisitor(
             iterable_type = self._member_value_of_iterator(node.iter, is_async)
             if not isinstance(iterable_type, Value):
                 iterable_type = unite_and_simplify(
-                    *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                    *iterable_type,
+                    limit=self.options.get_value_for(UnionSimplificationLimit),
                 )
         with qcore.override(self, "in_comprehension_body", True):
             with qcore.override(self, "being_assigned", iterable_type):
@@ -2232,7 +2258,7 @@ class NameCheckVisitor(
                 and not node.generators[0].ifs
                 and 0
                 < len(iterable_type)
-                <= self.config.COMPREHENSION_LENGTH_INFERENCE_LIMIT
+                <= self.options.get_value_for(ComprehensionLengthInferenceLimit)
             ):
                 generator = node.generators[0]
                 if isinstance(node, ast.DictComp):
@@ -2261,7 +2287,8 @@ class NameCheckVisitor(
                     return SequenceIncompleteValue(typ, elts)
 
             iterable_type = unite_and_simplify(
-                *iterable_type, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                *iterable_type,
+                limit=self.options.get_value_for(UnionSimplificationLimit),
             )
         # need to visit the generator expression first so that we know of variables
         # created in them
@@ -2534,7 +2561,7 @@ class NameCheckVisitor(
                     values.append(elt)
             if has_unknown_value:
                 arg = unite_and_simplify(
-                    *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                    *values, limit=self.options.get_value_for(UnionSimplificationLimit)
                 )
                 return make_weak(GenericValue(typ, [arg]))
             else:
@@ -3155,7 +3182,8 @@ class NameCheckVisitor(
             always_entered = len(iterated_value) > 0
         if not isinstance(iterated_value, Value):
             iterated_value = unite_and_simplify(
-                *iterated_value, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                *iterated_value,
+                limit=self.options.get_value_for(UnionSimplificationLimit),
             )
         with self.scopes.subscope() as body_scope:
             with self.scopes.loop_scope():
@@ -3794,7 +3822,7 @@ class NameCheckVisitor(
                     for composite in composites
                 ]
             return unite_and_simplify(
-                *values, limit=self.config.UNION_SIMPLIFICATION_LIMIT
+                *values, limit=self.options.get_value_for(UnionSimplificationLimit)
             )
         return self._check_dunder_call_no_mvv(
             node, callee_composite, method_name, args, allow_call
