@@ -4,7 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .options import Options, PyObjectSequenceOption
+from .options import IgnoredCallees, Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import CustomCheck, get_overloads
 from .annotations import Context, type_from_runtime
@@ -15,7 +15,6 @@ from .safe import (
     all_of_type,
     is_newtype,
     safe_hasattr,
-    safe_in,
     safe_issubclass,
     is_typing_name,
     safe_isinstance,
@@ -61,7 +60,7 @@ import qcore
 import inspect
 import sys
 from types import FunctionType, ModuleType
-from typing import Any, Callable, Sequence, Generic, Iterable, Mapping, Optional, Union
+from typing import Any, Callable, Iterator, Sequence, Generic, Mapping, Optional, Union
 import typing_inspect
 
 # types.MethodWrapperType in 3.7+
@@ -70,7 +69,7 @@ MethodWrapperType = type(object().__str__)
 
 @used  # exposed as an API
 @contextlib.contextmanager
-def with_implementation(fn: object, implementation_fn: Impl) -> Iterable[None]:
+def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
     """Temporarily sets the implementation of fn to be implementation_fn.
 
     This is useful for invoking test_scope to aggregate all calls to a particular function. For
@@ -184,6 +183,34 @@ class FunctionsSafeToCall(PyObjectSequenceOption[object]):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
         return fallback.FUNCTIONS_SAFE_TO_CALL
+
+
+_HookReturn = Union[None, ConcreteSignature, inspect.Signature, Callable[..., Any]]
+_ConstructorHook = Callable[[type], _HookReturn]
+
+
+class ConstructorHooks(PyObjectSequenceOption[_ConstructorHook]):
+    """Customize the constructor signature for a class.
+
+    These hooks may return either a function that pyanalyze will use the signature of, an inspect
+    Signature object, or a pyanalyze Signature object. The function or signature
+    should take a self parameter.
+
+    """
+
+    name = "constructor_hooks"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_ConstructorHook]:
+        return [fallback.get_constructor]
+
+    @classmethod
+    def get_constructor(cls, typ: type, options: Options) -> _HookReturn:
+        for hook in options.get_value_for(cls):
+            result = hook(typ)
+            if result is not None:
+                return result
+        return None
 
 
 _SigProvider = Callable[["ArgSpecCache"], Mapping[object, ConcreteSignature]]
@@ -558,11 +585,11 @@ class ArgSpecCache:
 
         if inspect.isclass(obj):
             obj = UnwrapClass.unwrap(obj, self.options)
-            override = self.config.get_constructor(obj)
+            override = ConstructorHooks.get_constructor(obj, self.options)
             if isinstance(override, Signature):
                 signature = override
             else:
-                should_ignore = safe_in(obj, self.config.IGNORED_CALLEES)
+                should_ignore = IgnoredCallees.contains(obj, self.options)
                 return_type = (
                     AnyValue(AnySource.error) if should_ignore else TypedValue(obj)
                 )

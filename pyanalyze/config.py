@@ -44,6 +44,7 @@ class Config(object):
         """Does any application-specific unwrapping logic for wrapper classes."""
         return cls
 
+    # arg_spec.ConstructorHooks
     def get_constructor(
         self, cls: type
     ) -> Union[None, "ConcreteSignature", inspect.Signature, Callable[..., Any]]:
