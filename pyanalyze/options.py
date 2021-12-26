@@ -26,6 +26,7 @@ from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 
 T = TypeVar("T")
+OptionT = TypeVar("OptionT", bound="ConfigOption")
 ModulePath = Tuple[str, ...]
 
 
@@ -92,6 +93,15 @@ class ConfigOption(Generic[T]):
     def get_value_from_fallback(cls, fallback: Config) -> T:
         raise NotFound
 
+    @classmethod
+    def get_fallback_option(cls: Type[OptionT], fallback: Config) -> Optional[OptionT]:
+        try:
+            val = cls.get_value_from_fallback(fallback)
+        except NotFound:
+            return None
+        else:
+            return cls(val)
+
 
 class BooleanOption(ConfigOption[bool]):
     default_value = False
@@ -112,6 +122,8 @@ class ConcatenatedOption(ConfigOption[Sequence[T]]):
         instances: Sequence["ConcatenatedOption[T]"],
         module_path: ModulePath,
     ) -> Sequence[T]:
+        # TODO after we clean up the fallback logic, this should
+        # automatically incorporate the default value too.
         values = []
         for instance in instances:
             if instance.is_applicable_to(module_path):
@@ -294,25 +306,16 @@ class Options:
         return Options(self.options, self.fallback, module_path)
 
     def get_value_for(self, option: Type[ConfigOption[T]]) -> T:
-        instances = self.options.get(option.name, ())
-        if issubclass(option, ConcatenatedOption):
-            return [
-                option.default_value,
-                *option.get_value_from_fallback(self.fallback),
-                *option.get_value_from_instances(instances, self.module_path),
-            ]
         try:
-            return option.get_value_from_instances(instances, self.module_path)
+            return self._get_value_for_no_default(option)
         except NotFound:
-            pass
-        try:
-            return option.get_value_from_fallback(self.fallback)
-        except NotFound:
-            pass
-        return option.default_value
+            return option.default_value
 
     def _get_value_for_no_default(self, option: Type[ConfigOption[T]]) -> T:
         instances = self.options.get(option.name, ())
+        fallback = option.get_fallback_option(self.fallback)
+        if fallback is not None:
+            instances = [*instances, fallback]
         return option.get_value_from_instances(instances, self.module_path)
 
     def is_error_code_enabled(self, code: ErrorCode) -> bool:
