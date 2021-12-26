@@ -4,7 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .options import IgnoredCallees, Options, PyObjectSequenceOption
+from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import CustomCheck, get_overloads
 from .annotations import Context, type_from_runtime
@@ -62,6 +62,7 @@ import sys
 from types import FunctionType, ModuleType
 from typing import Any, Callable, Iterator, Sequence, Generic, Mapping, Optional, Union
 import typing_inspect
+from unittest import mock
 
 # types.MethodWrapperType in 3.7+
 MethodWrapperType = type(object().__str__)
@@ -149,6 +150,22 @@ class AnnotationsContext(Context):
         if self.globals is not None:
             return self.get_name_from_globals(node.id, self.globals)
         return self.handle_undefined_name(node.id)
+
+
+class IgnoredCallees(PyObjectSequenceOption[object]):
+    """Calls to these aren't checked for argument validity."""
+
+    default_value = [
+        # getargspec gets confused about this subclass of tuple that overrides __new__ and __call__
+        mock.call,
+        mock.MagicMock,
+        mock.Mock,
+    ]
+    name = "ignored_callees"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return fallback.IGNORED_CALLEES
 
 
 class ClassesSafeToInstantiate(PyObjectSequenceOption[type]):

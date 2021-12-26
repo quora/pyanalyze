@@ -74,21 +74,15 @@ from .extensions import ParameterTypeGuard, overload
 from .find_unused import UnusedObjectFinder, used
 from .options import (
     ConfigOption,
-    EnforceNoUnused,
-    ExtraBuiltins,
-    ForLoopAlwaysEntered,
-    IgnoreNoneAttributes,
-    IgnoredCallees,
-    IgnoredEndOfReference,
-    IgnoredPaths,
-    ImportPaths,
+    ConcatenatedOption,
+    BooleanOption,
+    InvalidConfigOption,
     IntegerOption,
     Options,
-    Paths,
     PyObjectSequenceOption,
     StringSequenceOption,
-    UnimportableModules,
 )
+from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ErrorContext, ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, all_of_type
 from .stacked_scopes import (
@@ -383,6 +377,97 @@ class DisallowCallsToDunders(StringSequenceOption):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
         return list(fallback.DISALLOW_CALLS_TO_DUNDERS)
+
+
+class ForLoopAlwaysEntered(BooleanOption):
+    """If True, we assume that for loops are always entered at least once,
+    which affects the potentially_undefined_name check. This will miss
+    some bugs but also remove some annoying false positives."""
+
+    name = "for_loop_always_entered"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> bool:
+        return fallback.FOR_LOOP_ALWAYS_ENTERED
+
+
+class IgnoreNoneAttributes(BooleanOption):
+    """If True, we ignore None when type checking attribute access on a Union
+    type."""
+
+    name = "ignore_none_attributes"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> bool:
+        return fallback.IGNORE_NONE_ATTRIBUTES
+
+
+class UnimportableModules(StringSequenceOption):
+    """Do not attempt to import these modules if they are imported within a function."""
+
+    default_value = []
+    name = "unimportable_modules"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.UNIMPORTABLE_MODULES)
+
+
+class ExtraBuiltins(StringSequenceOption):
+    """Even if these variables are undefined, no errors are shown."""
+
+    name = "extra_builtins"
+    default_value = ["__IPYTHON__"]  # special global defined in IPython
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.IGNORED_VARIABLES)
+
+
+class IgnoredPaths(ConcatenatedOption[Sequence[str]]):
+    """Attribute accesses on these do not result in errors."""
+
+    name = "ignored_paths"
+    default_value = ()
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[Sequence[str]]:
+        return fallback.IGNORED_PATHS
+
+    @classmethod
+    def parse(cls, data: object, source_path: Path) -> Sequence[Sequence[str]]:
+        if not isinstance(data, (list, tuple)):
+            raise InvalidConfigOption.from_parser(cls, "sequence", data)
+        for sublist in data:
+            if not isinstance(sublist, (list, tuple)):
+                raise InvalidConfigOption.from_parser(cls, "sequence", sublist)
+            for elt in sublist:
+                if not isinstance(elt, str):
+                    raise InvalidConfigOption.from_parser(cls, "string", elt)
+        return data
+
+
+class IgnoredEndOfReference(StringSequenceOption):
+    """When these attributes are accessed but they don't exist, the error is ignored."""
+
+    name = "ignored_end_of_reference"
+    default_value = [
+        # these are created by the mock module
+        "call_count",
+        "assert_has_calls",
+        "reset_mock",
+        "called",
+        "assert_called_once",
+        "assert_called_once_with",
+        "assert_called_with",
+        "count",
+        "assert_any_call",
+        "assert_not_called",
+    ]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.IGNORED_END_OF_REFERENCE)
 
 
 class ClassAttributeChecker:

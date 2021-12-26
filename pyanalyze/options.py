@@ -21,11 +21,10 @@ from typing import (
 )
 import qcore
 import tomli
-from unittest import mock
 
 from .find_unused import used
 from .config import Config
-from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
+from .error_code import ErrorCode
 from .safe import safe_in
 
 T = TypeVar("T")
@@ -199,154 +198,6 @@ class PyObjectSequenceOption(ConfigOption[Sequence[T]]):
     def contains(cls, obj: object, options: "Options") -> bool:
         val = options.get_value_for(cls)
         return safe_in(obj, val)
-
-
-class Paths(PathSequenceOption):
-    """Paths that pyanalyze should type check."""
-
-    name = "paths"
-    is_global = True
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[Path]:
-        return [Path(s) for s in fallback.DEFAULT_DIRS]
-
-
-class ImportPaths(PathSequenceOption):
-    """Directories that pyanalyze may import from."""
-
-    name = "import_paths"
-    is_global = True
-
-
-class IgnoredPaths(ConcatenatedOption[Sequence[str]]):
-    """Attribute accesses on these do not result in errors."""
-
-    name = "ignored_paths"
-    default_value = ()
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[Sequence[str]]:
-        return fallback.IGNORED_PATHS
-
-    @classmethod
-    def parse(cls, data: object, source_path: Path) -> Sequence[Sequence[str]]:
-        if not isinstance(data, (list, tuple)):
-            raise InvalidConfigOption.from_parser(cls, "sequence", data)
-        for sublist in data:
-            if not isinstance(sublist, (list, tuple)):
-                raise InvalidConfigOption.from_parser(cls, "sequence", sublist)
-            for elt in sublist:
-                if not isinstance(elt, str):
-                    raise InvalidConfigOption.from_parser(cls, "string", elt)
-        return data
-
-
-class IgnoredEndOfReference(StringSequenceOption):
-    """When these attributes are accessed but they don't exist, the error is ignored."""
-
-    name = "ignored_end_of_reference"
-    default_value = [
-        # these are created by the mock module
-        "call_count",
-        "assert_has_calls",
-        "reset_mock",
-        "called",
-        "assert_called_once",
-        "assert_called_once_with",
-        "assert_called_with",
-        "count",
-        "assert_any_call",
-        "assert_not_called",
-    ]
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
-        return list(fallback.IGNORED_END_OF_REFERENCE)
-
-
-class ExtraBuiltins(StringSequenceOption):
-    """Even if these variables are undefined, no errors are shown."""
-
-    name = "extra_builtins"
-    default_value = ["__IPYTHON__"]  # special global defined in IPython
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
-        return list(fallback.IGNORED_VARIABLES)
-
-
-class UnimportableModules(StringSequenceOption):
-    """Do not attempt to import these modules if they are imported within a function."""
-
-    default_value = []
-    name = "unimportable_modules"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
-        return list(fallback.UNIMPORTABLE_MODULES)
-
-
-class EnforceNoUnused(BooleanOption):
-    """If True, an error is raised when pyanalyze finds any unused objects."""
-
-    name = "enforce_no_unused"
-    is_global = True
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> bool:
-        return fallback.ENFORCE_NO_UNUSED_OBJECTS
-
-
-class IgnoreNoneAttributes(BooleanOption):
-    """If True, we ignore None when type checking attribute access on a Union
-    type."""
-
-    name = "ignore_none_attributes"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> bool:
-        return fallback.IGNORE_NONE_ATTRIBUTES
-
-
-class ForLoopAlwaysEntered(BooleanOption):
-    """If True, we assume that for loops are always entered at least once,
-    which affects the potentially_undefined_name check. This will miss
-    some bugs but also remove some annoying false positives."""
-
-    name = "for_loop_always_entered"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> bool:
-        return fallback.FOR_LOOP_ALWAYS_ENTERED
-
-
-class IgnoredCallees(PyObjectSequenceOption[object]):
-    """Calls to these aren't checked for argument validity."""
-
-    default_value = [
-        # getargspec gets confused about this subclass of tuple that overrides __new__ and __call__
-        mock.call,
-        mock.MagicMock,
-        mock.Mock,
-    ]
-    name = "ignored_callees"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return fallback.IGNORED_CALLEES
-
-
-for _code in ErrorCode:
-    type(
-        _code.name,
-        (BooleanOption,),
-        {
-            "__doc__": ERROR_DESCRIPTION[_code],
-            "name": _code.name,
-            "default_value": _code not in DISABLED_BY_DEFAULT,
-        },
-    )
 
 
 @dataclass
