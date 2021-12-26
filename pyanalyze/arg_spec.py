@@ -23,6 +23,7 @@ from .safe import (
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
+    ConcreteSignature,
     Impl,
     MaybeSignature,
     OverloadedSignature,
@@ -60,7 +61,7 @@ import qcore
 import inspect
 import sys
 from types import FunctionType, ModuleType
-from typing import Any, Sequence, Generic, Iterable, Mapping, Optional, Union
+from typing import Any, Callable, Sequence, Generic, Iterable, Mapping, Optional, Union
 import typing_inspect
 
 # types.MethodWrapperType in 3.7+
@@ -185,6 +186,27 @@ class FunctionsSafeToCall(PyObjectSequenceOption[object]):
         return fallback.FUNCTIONS_SAFE_TO_CALL
 
 
+_SigProvider = Callable[["ArgSpecCache"], Mapping[object, ConcreteSignature]]
+
+
+class KnownSignatures(PyObjectSequenceOption[_SigProvider]):
+    """Provide hardcoded signatures (and potentially :term:`impl` functions) for
+    particular objects.
+
+    Each entry in the list must be a function that takes an :class:`ArgSpecCache`
+    instance and returns a mapping from Python object to
+    :class:`pyanalyze.signature.Signature`.
+
+    """
+
+    name = "known_signatures"
+    default_value = []
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_SigProvider]:
+        return [fallback.get_known_argspecs]
+
+
 class ArgSpecCache:
     DEFAULT_ARGSPECS = implementation.get_default_argspecs()
 
@@ -196,7 +218,8 @@ class ArgSpecCache:
         self.generic_bases_cache = {}
         self.default_context = AnnotationsContext(self)
         default_argspecs = dict(self.DEFAULT_ARGSPECS)
-        default_argspecs.update(self.config.get_known_argspecs(self))
+        for provider in options.get_value_for(KnownSignatures):
+            default_argspecs.update(provider(self))
 
         for obj, argspec in default_argspecs.items():
             self.known_argspecs[obj] = argspec

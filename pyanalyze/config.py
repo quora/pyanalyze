@@ -289,6 +289,7 @@ class Config(object):
     #
     # Used by arg_spec.py
     #
+    # arg_spec.KnownSignatures
     def get_known_argspecs(
         self, arg_spec_cache: "ArgSpecCache"
     ) -> Dict[object, "ConcreteSignature"]:
