@@ -115,7 +115,6 @@ from .signature import (
     ANY_SIGNATURE,
     BoundMethodSignature,
     ConcreteSignature,
-    ImplReturn,
     MaybeSignature,
     OverloadedSignature,
     Signature,
@@ -145,6 +144,7 @@ from .value import (
     KnownValueWithTypeVars,
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
+    NoReturnConstraintExtension,
     kv_pairs_from_mapping,
     make_weak,
     unannotate_value,
@@ -1557,6 +1557,10 @@ class NameCheckVisitor(
             and not info.is_overload
             and expected_return_value is not None
             and expected_return_value != KnownNone
+            and not (
+                isinstance(expected_return_value, AnnotatedValue)
+                and expected_return_value.value == KnownNone
+            )
             and not any(
                 decorator == KnownValue(abstractmethod)
                 for _, decorator in info.decorators
@@ -4373,7 +4377,7 @@ class NameCheckVisitor(
         if extended_argspec is ANY_SIGNATURE:
             # don't bother calling it
             extended_argspec = None
-            impl_ret = ImplReturn(AnyValue(AnySource.from_another))
+            return_value = AnyValue(AnySource.from_another)
 
         elif extended_argspec is None:
             self._show_error_if_checking(
@@ -4381,7 +4385,7 @@ class NameCheckVisitor(
                 f"{callee_wrapped} is not callable",
                 error_code=ErrorCode.not_callable,
             )
-            impl_ret = ImplReturn(AnyValue(AnySource.error))
+            return_value = AnyValue(AnySource.error)
 
         else:
             arguments = [
@@ -4394,16 +4398,16 @@ class NameCheckVisitor(
                 for keyword, value in keywords
             ]
             if self._is_checking():
-                impl_ret = extended_argspec.check_call(arguments, self, node)
+                return_value = extended_argspec.check_call(arguments, self, node)
             else:
                 with self.catch_errors():
-                    impl_ret = extended_argspec.check_call(arguments, self, node)
+                    return_value = extended_argspec.check_call(arguments, self, node)
 
-        return_value = impl_ret.return_value
-        constraint = impl_ret.constraint
-
-        if impl_ret.no_return_unless is not NULL_CONSTRAINT:
-            self.add_constraint(node, impl_ret.no_return_unless)
+        return_value, nru_extensions = unannotate_value(
+            return_value, NoReturnConstraintExtension
+        )
+        for extension in nru_extensions:
+            self.add_constraint(node, extension.constraint)
 
         if (
             extended_argspec is not None
@@ -4441,22 +4445,16 @@ class NameCheckVisitor(
             callee_wrapped.val
         ):
             async_fn = callee_wrapped.val.__self__
-            return AsyncTaskIncompleteValue(
-                _get_task_cls(async_fn),
-                annotate_with_constraint(return_value, constraint),
-            )
+            return AsyncTaskIncompleteValue(_get_task_cls(async_fn), return_value)
         elif isinstance(
             callee_wrapped, UnboundMethodValue
         ) and callee_wrapped.secondary_attr_name in ("async", "asynq"):
             async_fn = callee_wrapped.get_method()
-            return AsyncTaskIncompleteValue(
-                _get_task_cls(async_fn),
-                annotate_with_constraint(return_value, constraint),
-            )
+            return AsyncTaskIncompleteValue(_get_task_cls(async_fn), return_value)
         elif isinstance(callee_wrapped, UnboundMethodValue) and asynq.is_pure_async_fn(
             callee_wrapped.get_method()
         ):
-            return annotate_with_constraint(return_value, constraint)
+            return return_value
         else:
             if (
                 isinstance(return_value, AnyValue)
@@ -4466,7 +4464,7 @@ class NameCheckVisitor(
                 task_cls = _get_task_cls(callee_wrapped.val)
                 if isinstance(task_cls, type):
                     return TypedValue(task_cls)
-            return annotate_with_constraint(return_value, constraint)
+            return return_value
 
     def signature_from_value(
         self, value: Value, node: Optional[ast.AST] = None

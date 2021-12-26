@@ -1062,6 +1062,20 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
                 assert_is_value(union, TypedValue(B))
 
 
+class TestNoReturnGuard(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        from pyanalyze.extensions import NoReturnGuard
+        from typing_extensions import Annotated
+
+        def assert_is_int(x: object) -> Annotated[None, NoReturnGuard["x", int]]:
+            assert isinstance(x, int)
+
+        def capybara(x):
+            assert_is_int(x)
+            assert_is_value(x, TypedValue(int))
+
+
 class TestTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
     def test_typing_extesions(self):

@@ -1588,6 +1588,27 @@ class ParameterTypeGuardExtension(Extension):
 
 
 @dataclass(frozen=True)
+class NoReturnGuardExtension(Extension):
+    """An :class:`Extension` used in a function return type. Used to
+    indicate that unless the parameter named `varname` is of type `guarded_type`,
+    the function does not return.
+
+    Corresponds to :class:`pyanalyze.extensions.NoReturnGuard`.
+
+    """
+
+    varname: str
+    guarded_type: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
+        guarded_type = self.guarded_type.substitute_typevars(typevars)
+        return NoReturnGuardExtension(self.varname, guarded_type)
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.guarded_type.walk_values()
+
+
+@dataclass(frozen=True)
 class TypeGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the first function argument is of type `guarded_type`.
@@ -1666,6 +1687,18 @@ class HasAttrExtension(Extension):
 @dataclass(frozen=True, eq=False)
 class ConstraintExtension(Extension):
     """Encapsulates a Constraint. If the value is evaluated and is truthy, the
+    constraint must be True."""
+
+    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+    # Comparing them can get too expensive
+    def __hash__(self) -> int:
+        return id(self)
+
+
+@dataclass(frozen=True, eq=False)
+class NoReturnConstraintExtension(Extension):
+    """Encapsulates a Constraint. If the value is evaluated and completes, the
     constraint must be True."""
 
     constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
@@ -1843,7 +1876,13 @@ def flatten_values(val: Value, *, unwrap_annotated: bool = False) -> Iterable[Va
     if isinstance(val, MultiValuedValue):
         yield from val.vals
     elif isinstance(val, AnnotatedValue) and isinstance(val.value, MultiValuedValue):
-        yield from val.value.vals
+        if unwrap_annotated:
+            yield from val.value.vals
+        else:
+            subvals = [
+                annotate_value(subval, val.metadata) for subval in val.value.vals
+            ]
+            yield from subvals
     elif unwrap_annotated and isinstance(val, AnnotatedValue):
         yield val.value
     else:
@@ -1865,10 +1904,6 @@ def make_weak(val: Value) -> Value:
 def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:
     if not metadata:
         return origin
-    if isinstance(origin, MultiValuedValue):
-        return MultiValuedValue(
-            [annotate_value(subval, metadata) for subval in origin.vals]
-        )
     if isinstance(origin, AnnotatedValue):
         # Flatten it
         metadata = (*origin.metadata, *metadata)
@@ -1888,9 +1923,12 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
     return AnnotatedValue(origin, metadata)
 
 
+ExtensionT = TypeVar("ExtensionT", bound=Extension)
+
+
 def unannotate_value(
-    origin: Value, extension: Type[Extension]
-) -> Tuple[Value, Sequence[Extension]]:
+    origin: Value, extension: Type[ExtensionT]
+) -> Tuple[Value, Sequence[ExtensionT]]:
     if not isinstance(origin, AnnotatedValue):
         return origin, []
     matches = [

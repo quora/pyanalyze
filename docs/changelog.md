@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `pyanalyze.extensions.NoReturnGuard` (#370)
 - Infer call signatures for `Type[X]` (#369)
 - Support configuration in a `pyproject.toml` file (#368)
 - Require `typeshed_client` 2.0 (#361)

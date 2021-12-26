@@ -54,6 +54,7 @@ from .extensions import (
     CustomCheck,
     ExternalType,
     HasAttrGuard,
+    NoReturnGuard,
     ParameterTypeGuard,
     TypeGuard,
 )
@@ -71,6 +72,7 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     NO_RETURN_VALUE,
+    NoReturnGuardExtension,
     ParameterTypeGuardExtension,
     TypeGuardExtension,
     TypedValue,
@@ -1066,6 +1068,10 @@ def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
     if isinstance(entry, KnownValue):
         if isinstance(entry.val, ParameterTypeGuard):
             return ParameterTypeGuardExtension(
+                entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
+            )
+        elif isinstance(entry.val, NoReturnGuard):
+            return NoReturnGuardExtension(
                 entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
             )
         elif isinstance(entry.val, HasAttrGuard):
