@@ -41,7 +41,7 @@ class Checker:
         else:
             self.options = raw_options
         self.arg_spec_cache = ArgSpecCache(self.options)
-        self.reexport_tracker = ImplicitReexportTracker(self.config)
+        self.reexport_tracker = ImplicitReexportTracker(self.options)
         self.callable_tracker = CallableTracker()
 
     def perform_final_checks(self) -> List[Failure]:

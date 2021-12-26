@@ -7,11 +7,28 @@ from ast import AST
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+
+from pyanalyze.options import Options, PyObjectSequenceOption
 
 from .node_visitor import Failure
 from .config import Config
 from .error_code import ErrorCode
+
+_ReexportConfigProvider = Callable[["ImplicitReexportTracker"], None]
+
+
+class ReexportConfig(PyObjectSequenceOption[_ReexportConfigProvider]):
+    """Callbacks that can configure the :class:`ImplicitReexportTracker`,
+    usually by setting names as explicitly exported."""
+
+    name = "reexport_config"
+
+    @classmethod
+    def get_value_from_fallback(
+        cls, fallback: Config
+    ) -> Sequence[_ReexportConfigProvider]:
+        return (fallback.configure_reexports,)
 
 
 class ErrorContext:
@@ -32,7 +49,7 @@ class ErrorContext:
 
 @dataclass
 class ImplicitReexportTracker:
-    config: InitVar[Config]
+    options: InitVar[Options]
     completed_modules: Set[str] = field(default_factory=set)
     module_to_reexports: Dict[str, Set[str]] = field(
         default_factory=lambda: defaultdict(set)
@@ -41,8 +58,9 @@ class ImplicitReexportTracker:
         default_factory=lambda: defaultdict(list)
     )
 
-    def __post_init__(self, config: Config) -> None:
-        config.configure_reexports(self)
+    def __post_init__(self, options: Options) -> None:
+        for func in options.get_value_for(ReexportConfig):
+            func(self)
 
     def record_exported_attribute(self, module: str, attr: str) -> None:
         self.module_to_reexports[module].add(attr)
