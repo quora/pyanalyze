@@ -6,9 +6,11 @@ Defines some concrete options that cannot easily be placed elsewhere.
 from pathlib import Path
 from typing import Sequence
 
+from pyanalyze.value import VariableNameValue
+
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
-from .options import PathSequenceOption, BooleanOption
+from .options import PathSequenceOption, BooleanOption, PyObjectSequenceOption
 
 
 class Paths(PathSequenceOption):
@@ -38,6 +40,18 @@ class EnforceNoUnused(BooleanOption):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> bool:
         return fallback.ENFORCE_NO_UNUSED_OBJECTS
+
+
+class VariableNameValues(PyObjectSequenceOption[VariableNameValue]):
+    """List of :class:`pyanalyze.value.VariableNameValue` instances that create pseudo-types
+    associated with certain variable names."""
+
+    name = "variable_name_values"
+    is_global = True
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[VariableNameValue]:
+        return fallback.VARIABLE_NAME_VALUES
 
 
 for _code in ErrorCode:

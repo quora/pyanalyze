@@ -20,9 +20,11 @@ from typing import (
     Dict,
 )
 
+from pyanalyze.shared_options import VariableNameValues
+
 from .options import Options, PyObjectSequenceOption
 from .node_visitor import Failure
-from .value import TypedValue
+from .value import TypedValue, VariableNameValue
 from .arg_spec import ArgSpecCache
 from .config import Config
 from .reexport import ImplicitReexportTracker
@@ -69,15 +71,27 @@ class Checker:
     assumed_compatibilities: List[Tuple[TypeObject, TypeObject]] = field(
         default_factory=list
     )
+    vnv_map: Dict[str, VariableNameValue] = field(default_factory=dict)
 
     def __post_init__(self, raw_options: Optional[Options]) -> None:
         if raw_options is None:
             self.options = Options.from_option_list([], self.config)
         else:
             self.options = raw_options
-        self.arg_spec_cache = ArgSpecCache(self.options)
+        self.arg_spec_cache = ArgSpecCache(
+            self.options, vnv_provider=self.maybe_get_variable_name_value
+        )
         self.reexport_tracker = ImplicitReexportTracker(self.options)
         self.callable_tracker = CallableTracker()
+
+        for vnv in self.options.get_value_for(VariableNameValues):
+            for variable in vnv.varnames:
+                self.vnv_map[variable] = vnv
+
+    def maybe_get_variable_name_value(
+        self, varname: str
+    ) -> Optional[VariableNameValue]:
+        return VariableNameValue.from_varname(varname, self.vnv_map)
 
     def perform_final_checks(self) -> List[Failure]:
         return self.callable_tracker.check()

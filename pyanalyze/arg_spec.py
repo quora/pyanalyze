@@ -284,7 +284,13 @@ class UnwrapClass(PyObjectSequenceOption[_Unwrapper]):
 class ArgSpecCache:
     DEFAULT_ARGSPECS = implementation.get_default_argspecs()
 
-    def __init__(self, options: Options) -> None:
+    def __init__(
+        self,
+        options: Options,
+        *,
+        vnv_provider: Callable[[str], Optional[Value]] = lambda _: None,
+    ) -> None:
+        self.vnv_provider = vnv_provider
         self.options = options
         self.config = options.fallback
         self.ts_finder = TypeshedFinder(verbose=False)
@@ -444,9 +450,7 @@ class ArgSpecCache:
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
             inspect.Parameter.KEYWORD_ONLY,
         ):
-            vnv = VariableNameValue.from_varname(
-                parameter.name, self.config.varname_value_map()
-            )
+            vnv = self.vnv_provider(parameter.name)
             if vnv is not None:
                 return vnv
         return AnyValue(AnySource.unannotated)

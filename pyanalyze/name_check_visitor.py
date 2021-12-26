@@ -3717,9 +3717,7 @@ class NameCheckVisitor(
         if force_read or self._is_read_ctx(node.ctx):
             self.yield_checker.record_usage(node.id, node)
             value, origin = self.resolve_name(node)
-            varname_value = VariableNameValue.from_varname(
-                node.id, self.config.varname_value_map()
-            )
+            varname_value = self.checker.maybe_get_variable_name_value(node.id)
             if varname_value is not None and self._should_use_varname_value(value):
                 value = varname_value
             return Composite(value, VarnameWithOrigin(node.id, origin), node)
@@ -3882,8 +3880,8 @@ class NameCheckVisitor(
                     and isinstance(index, KnownValue)
                     and isinstance(index.val, str)
                 ):
-                    varname_value = VariableNameValue.from_varname(
-                        index.val, self.config.varname_value_map()
+                    varname_value = self.checker.maybe_get_variable_name_value(
+                        index.val
                     )
                     if varname_value is not None:
                         return_value = varname_value
@@ -4034,9 +4032,7 @@ class NameCheckVisitor(
                     )
             value = self._get_attribute_with_fallback(root_composite, node.attr, node)
             if self._should_use_varname_value(value):
-                varname_value = VariableNameValue.from_varname(
-                    node.attr, self.config.varname_value_map()
-                )
+                varname_value = self.checker.maybe_get_variable_name_value(node.attr)
                 if varname_value is not None:
                     return Composite(varname_value, composite, node)
             if (
