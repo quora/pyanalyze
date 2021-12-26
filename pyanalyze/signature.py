@@ -340,7 +340,7 @@ class Signature:
     """What the callable returns."""
     impl: Optional[Impl] = field(default=None, compare=False)
     """:term:`impl` function for this signature."""
-    callable: Optional[Callable[..., Any]] = field(default=None, compare=False)
+    callable: Optional[object] = field(default=None, compare=False)
     """The callable that this signature represents."""
     is_asynq: bool = False
     """Whether this signature represents an asynq function."""
@@ -871,7 +871,7 @@ class Signature:
     def _maybe_perform_call(
         self, actual_args: ActualArguments, visitor: "NameCheckVisitor", node: ast.AST
     ) -> Optional[Value]:
-        if self.callable is None:
+        if self.callable is None or not callable(self.callable):
             return None
         args = []
         kwargs = {}
