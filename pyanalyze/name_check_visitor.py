@@ -65,7 +65,7 @@ from .annotations import (
     type_from_value,
     is_typing_name,
 )
-from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass
+from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass, IgnoredCallees
 from .boolability import Boolability, get_boolability
 from .checker import Checker
 from .config import Config
@@ -154,7 +154,6 @@ from .value import (
     TypedValue,
     MultiValuedValue,
     UnboundMethodValue,
-    VariableNameValue,
     ReferencingValue,
     SubclassValue,
     DictIncompleteValue,

@@ -22,8 +22,10 @@ from .find_unused import used as used
 from . import implementation
 from . import method_return_type
 from . import node_visitor
+from . import options
 from . import reexport
 from . import safe
+from . import shared_options
 from . import signature
 from . import stacked_scopes
 from . import suggested_type
@@ -46,3 +48,5 @@ used(value.UNRESOLVED_VALUE)  # keeping it around for now just in case
 used(reexport)
 used(checker)
 used(suggested_type)
+used(options)
+used(shared_options)

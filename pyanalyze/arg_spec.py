@@ -44,7 +44,6 @@ from .value import (
     NewTypeValue,
     KnownValue,
     Value,
-    VariableNameValue,
     TypeVarValue,
     extract_typevars,
     make_weak,

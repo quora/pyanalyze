@@ -35,7 +35,6 @@ class TestConfig(Config):
             "should_return_list": list,
         }
     }
-    NAMES_OF_KNOWN_TYPE = {"proper_capybara": tests.PropertyObject}
 
     VARIABLE_NAME_VALUES = [
         value.VariableNameValue(["uid"]),

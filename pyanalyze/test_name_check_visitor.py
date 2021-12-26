@@ -1183,37 +1183,6 @@ assert_eq(1, 1)
             assert_is_value(assert_eq, KnownValue(_assert_eq))
 
 
-class TestNameOfKnownValue(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_varname(self):
-        from pyanalyze.tests import PropertyObject
-
-        def capybara(proper_capybara):
-            assert_is_value(proper_capybara, TypedValue(PropertyObject))
-
-        def hutia(arg):
-            proper_capybara = 1
-            assert_is_value(proper_capybara, KnownValue(1))
-
-    @assert_passes()
-    def test_attribute(self):
-        from pyanalyze.tests import PropertyObject
-
-        class Capybara(object):
-            def __init__(self, foo, bar):
-                self.proper_capybara = foo
-
-            def eat(self):
-                assert_is_value(self.proper_capybara, TypedValue(PropertyObject))
-
-        class Hutia(object):
-            def __init__(self, arg):
-                self.proper_capybara = int(arg)
-
-            def eat(self):
-                assert_is_value(self.proper_capybara, TypedValue(int))
-
-
 class TestComprehensions(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.undefined_name)
     def test_scoping_in_list_py3(self):
