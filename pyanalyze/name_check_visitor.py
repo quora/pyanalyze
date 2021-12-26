@@ -268,14 +268,6 @@ class _AttrContext(attributes.AttrContext):
     def should_ignore_class_attribute(self, obj: object) -> bool:
         return self.visitor.config.should_ignore_class_attribute(obj)
 
-    def get_property_type_from_config(self, obj: object) -> Value:
-        try:
-            return self.visitor.config.PROPERTIES_OF_KNOWN_TYPE[obj]
-        except (KeyError, TypeError):
-            return AnyValue(
-                AnySource.inference
-            )  # can't figure out what this will return
-
     def get_property_type_from_argspec(self, obj: object) -> Value:
         argspec = self.visitor.arg_spec_cache.get_argspec(obj)
         if argspec is not None:
@@ -3562,7 +3554,6 @@ class NameCheckVisitor(
             )
             if varname_value is not None and self._should_use_varname_value(value):
                 value = varname_value
-            value = self._maybe_use_hardcoded_type(value, node.id)
             return Composite(value, VarnameWithOrigin(node.id, origin), node)
         elif self._is_write_ctx(node.ctx):
             if self._name_node_to_statement is not None:
@@ -3606,18 +3597,6 @@ class NameCheckVisitor(
         return (
             isinstance(value, AnyValue) and value.source is not AnySource.variable_name
         )
-
-    def _maybe_use_hardcoded_type(self, value: Value, name: str) -> Value:
-        """Replaces a value with a name of hardcoded type where applicable."""
-        if not isinstance(value, (AnyValue, MultiValuedValue)):
-            return value
-
-        try:
-            typ = self.config.NAMES_OF_KNOWN_TYPE[name]
-        except KeyError:
-            return value
-        else:
-            return TypedValue(typ)
 
     def visit_Subscript(self, node: ast.Subscript) -> Value:
         return self.composite_from_subscript(node).value
@@ -3899,7 +3878,6 @@ class NameCheckVisitor(
                 local_value = self._get_composite(composite.get_varname(), node, value)
                 if local_value is not UNINITIALIZED_VALUE:
                     value = local_value
-            value = self._maybe_use_hardcoded_type(value, node.attr)
             return Composite(value, composite, node)
         else:
             self.show_error(node, "Unknown context", ErrorCode.unexpected_node)

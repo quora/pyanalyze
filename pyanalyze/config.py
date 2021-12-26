@@ -127,13 +127,6 @@ class Config(object):
     # In these files, strings with non-ASCII characters do not require explicit prefixes
     IGNORED_FILES_FOR_EXPLICIT_STRING_LITERALS = set()
 
-    # These properties always return values of these types.
-    PROPERTIES_OF_KNOWN_TYPE = {}
-
-    # Any variable or attribute access to these names for which no type can be inferred uses the
-    # hardcoded type instead. Useful if certain variable names are always used for certain types.
-    NAMES_OF_KNOWN_TYPE = {}
-
     # test_scope will instantiate instances of these classes if it can infer the value of all of
     # their arguments. This is useful mostly for classes that are commonly instantiated with static
     # arguments.
