@@ -240,13 +240,16 @@ class Config(object):
 
     # Normally, async calls to async functions are only enforced in functions that are already
     # async. In subclasses of classes listed here, all async functions must be called async.
+    # asynq_checker.ClassesCheckedForAsynq
     BASE_CLASSES_CHECKED_FOR_ASYNQ = set()
 
     # Async batching in these component methods isn't checked even when they exist on a class in
     # BASE_CLASSES_CHECKED_FOR_ASYNQ
+    # asynq_checker.MethodsNotCheckedForAsynq
     METHODS_NOT_CHECKED_FOR_ASYNQ = set()
 
     # We ignore _async methdos in these modules.
+    # asynq_checker.NonAsynqModules
     NON_ASYNQ_MODULES = {"multiprocessing"}
 
     #
