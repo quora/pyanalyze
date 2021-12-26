@@ -61,9 +61,6 @@ class AttrContext:
     def should_ignore_class_attribute(self, obj: Any) -> bool:
         return False
 
-    def get_property_type_from_config(self, obj: Any) -> Value:
-        return AnyValue(AnySource.inference)
-
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         return AnyValue(AnySource.inference)
 
@@ -253,9 +250,6 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
     typevars = result.typevars if isinstance(result, KnownValueWithTypeVars) else None
     cls_val = result.val
     if isinstance(cls_val, property):
-        typ = ctx.get_property_type_from_config(cls_val)
-        if not isinstance(typ, AnyValue):
-            return typ
         return ctx.get_property_type_from_argspec(cls_val)
     elif qcore.inspection.is_classmethod(cls_val):
         return result
@@ -295,7 +289,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         typeshed_type = ctx.get_attribute_from_typeshed(typ, on_class=False)
         if typeshed_type is not UNINITIALIZED_VALUE:
             return typeshed_type
-        return ctx.get_property_type_from_config(cls_val)
+        return AnyValue(AnySource.inference)
     elif ctx.should_ignore_class_attribute(cls_val):
         return AnyValue(AnySource.error)
     else:

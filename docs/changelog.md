@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support configuration in a `pyproject.toml` file (#368)
 - Require `typeshed_client` 2.0 (#361)
 - Add JSON output for integrating pyanalyze's output with other
   tools (#360)

@@ -14,6 +14,8 @@ import inspect
 import types
 from typing import Sequence, Any, Callable, List, Optional, Iterable
 
+from pyanalyze.options import Options, PyObjectSequenceOption, StringSequenceOption
+
 from .config import Config
 from .error_code import ErrorCode
 from .safe import safe_getattr, safe_hasattr
@@ -41,11 +43,43 @@ class FunctionInfo:
     decorators: List[Any]
 
 
+class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):
+    """Normally, asynq calls to asynq functions are only enforced in functions that are already
+    asynq. In subclasses of classes listed here, all asynq functions must be called asynq."""
+
+    name = "classes_checked_for_asynq"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[type]:
+        return list(fallback.BASE_CLASSES_CHECKED_FOR_ASYNQ)
+
+
+class NonAsynqModules(StringSequenceOption):
+    """We ignore _async methods in these modules."""
+
+    name = "non_asynq_modules"
+    default_value = ["multiprocessing"]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.NON_ASYNQ_MODULES)
+
+
+class MethodsNotCheckedForAsynq(StringSequenceOption):
+    """Async batching in these component methods isn't checked even when they exist on a class in
+    ClassesCheckedForAsynq."""
+
+    name = "methods_not_checked_for_asynq"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.METHODS_NOT_CHECKED_FOR_ASYNQ)
+
+
 @dataclass
 class AsynqChecker:
-    config: Config
+    options: Options
     module: Optional[types.ModuleType]
-    lines: Sequence[str]
     on_error: Callable[..., Any]
     log: Callable[..., Any]
     replace_node: Callable[..., Any]
@@ -102,10 +136,9 @@ class AsynqChecker:
             if not safe_hasattr(inner_type, value.attr_name + "_async"):
                 return
             module = safe_getattr(inner_type, "__module__", None)
-            if (
-                isinstance(module, str)
-                and module.split(".")[0] in self.config.NON_ASYNQ_MODULES
-            ):
+            if isinstance(module, str) and module.split(".")[
+                0
+            ] in self.options.get_value_for(NonAsynqModules):
                 return
             if isinstance(node.func, ast.Attribute):
                 func_node = ast.Attribute(
@@ -170,13 +203,15 @@ class AsynqChecker:
             return True
         if self.current_class is None or self.is_classmethod:
             return False
-        if self.current_func_name in self.config.METHODS_NOT_CHECKED_FOR_ASYNQ:
+        if self.current_func_name in self.options.get_value_for(
+            MethodsNotCheckedForAsynq
+        ):
             return False
         return self.should_check_class_for_async(self.current_class)
 
     def should_check_class_for_async(self, cls: type) -> bool:
         """Returns whether we should perform async checks on all methods on this class."""
-        for base_cls in self.config.BASE_CLASSES_CHECKED_FOR_ASYNQ:
+        for base_cls in self.options.get_value_for(ClassesCheckedForAsynq):
             try:
                 if issubclass(cls, base_cls):
                     return True

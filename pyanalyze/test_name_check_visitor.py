@@ -83,10 +83,13 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
             default_settings.update(settings)
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
         mod = _make_module(code_str)
+        kwargs["settings"] = default_settings
         kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
         new_code = ""
         with ClassAttributeChecker(
-            self.visitor_cls.config, enabled=check_attributes
+            self.visitor_cls.config,
+            enabled=check_attributes,
+            options=kwargs["checker"].options,
         ) as attribute_checker:
             visitor = self.visitor_cls(
                 mod.__name__,
@@ -94,7 +97,6 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
                 tree,
                 module=mod,
                 attribute_checker=attribute_checker,
-                settings=default_settings,
                 verbosity=verbosity,
                 **kwargs,
             )
@@ -1179,37 +1181,6 @@ assert_eq(1, 1)
             from qcore.asserts import assert_eq
 
             assert_is_value(assert_eq, KnownValue(_assert_eq))
-
-
-class TestNameOfKnownValue(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_varname(self):
-        from pyanalyze.tests import PropertyObject
-
-        def capybara(proper_capybara):
-            assert_is_value(proper_capybara, TypedValue(PropertyObject))
-
-        def hutia(arg):
-            proper_capybara = 1
-            assert_is_value(proper_capybara, KnownValue(1))
-
-    @assert_passes()
-    def test_attribute(self):
-        from pyanalyze.tests import PropertyObject
-
-        class Capybara(object):
-            def __init__(self, foo, bar):
-                self.proper_capybara = foo
-
-            def eat(self):
-                assert_is_value(self.proper_capybara, TypedValue(PropertyObject))
-
-        class Hutia(object):
-            def __init__(self, arg):
-                self.proper_capybara = int(arg)
-
-            def eat(self):
-                assert_is_value(self.proper_capybara, TypedValue(int))
 
 
 class TestComprehensions(TestNameCheckVisitorBase):
