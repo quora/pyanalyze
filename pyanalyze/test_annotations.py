@@ -11,7 +11,6 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
-    NoReturnGuardExtension,
     SequenceIncompleteValue,
     TypeVarValue,
     TypedDictValue,
