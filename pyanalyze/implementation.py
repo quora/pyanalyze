@@ -894,7 +894,7 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
 
 def _remove_annotated(val: Value) -> Value:
     if isinstance(val, AnnotatedValue):
-        return val.value
+        return _remove_annotated(val.value)
     elif isinstance(val, MultiValuedValue):
         return unite_values(*[_remove_annotated(subval) for subval in val.vals])
     return val
