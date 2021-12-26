@@ -25,3 +25,17 @@ requires = [
     "wheel"
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.pyanalyze]
+paths = ["pyanalyze"]
+import_paths = ["."]
+enforce_no_unused = true
+
+possibly_undefined_name = true
+use_fstrings = true
+missing_return_annotation = true
+missing_parameter_annotation = true
+unused_variable = true
+value_always_true = true
+suggested_parameter_type = true
+suggested_return_type = true

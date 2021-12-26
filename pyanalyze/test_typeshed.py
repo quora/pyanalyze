@@ -17,6 +17,7 @@ import urllib.parse
 from .test_config import TestConfig
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
+from .options import Options
 from .signature import SigParameter, Signature
 from .arg_spec import ArgSpecCache
 from .test_arg_spec import ClassWithCall
@@ -162,7 +163,7 @@ class GenericChild(Parent[T]):
 
 class TestGetGenericBases:
     def setup(self) -> None:
-        arg_spec_cache = ArgSpecCache(TestConfig())
+        arg_spec_cache = ArgSpecCache(Options.from_option_list([], TestConfig()))
         self.get_generic_bases = arg_spec_cache.get_generic_bases
 
     def test_runtime(self):

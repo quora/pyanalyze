@@ -103,7 +103,7 @@ class PropertyObject(object):
         pass
 
     @property
-    def string_property(self):
+    def string_property(self) -> str:
         return str(self.poid)
 
     @property
