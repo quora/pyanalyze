@@ -207,6 +207,36 @@ class KnownSignatures(PyObjectSequenceOption[_SigProvider]):
         return [fallback.get_known_argspecs]
 
 
+_Unwrapper = Callable[[type], type]
+
+
+class UnwrapClass(PyObjectSequenceOption[_Unwrapper]):
+    """Provides functions that can unwrap decorated classes.
+
+    For example, if your codebase commonly uses a decorator that
+    wraps classes in a `Wrapper` subclass with a `.wrapped` attribute,
+    you may define an unwrapper like this:
+
+        def unwrap_class(typ: type) -> type:
+            if issubclass(typ, Wrapper) and typ is not Wrapper:
+                return typ.wrapped
+            return typ
+
+    """
+
+    name = "unwrap_class"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_Unwrapper]:
+        return [fallback.unwrap_cls]
+
+    @classmethod
+    def unwrap(cls, typ: type, options: Options) -> type:
+        for unwrapper in options.get_value_for(cls):
+            typ = unwrapper(typ)
+        return typ
+
+
 class ArgSpecCache:
     DEFAULT_ARGSPECS = implementation.get_default_argspecs()
 
@@ -527,7 +557,7 @@ class ArgSpecCache:
             return argspec
 
         if inspect.isclass(obj):
-            obj = self.config.unwrap_cls(obj)
+            obj = UnwrapClass.unwrap(obj, self.options)
             override = self.config.get_constructor(obj)
             if isinstance(override, Signature):
                 signature = override

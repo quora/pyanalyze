@@ -39,6 +39,7 @@ class Config(object):
     # file paths to run on by default
     DEFAULT_DIRS = ()
 
+    # arg_spec.UnwrapClass
     def unwrap_cls(self, cls: type) -> type:
         """Does any application-specific unwrapping logic for wrapper classes."""
         return cls

@@ -14,6 +14,7 @@ import enum
 from ast_decompiler import decompile
 import asyncio
 import builtins
+import collections
 import collections.abc
 import contextlib
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ import inspect
 from itertools import chain
 import logging
 import operator
+import os
 import os.path
 from pathlib import Path
 import pickle
@@ -63,7 +65,7 @@ from .annotations import (
     type_from_value,
     is_typing_name,
 )
-from .arg_spec import ArgSpecCache, is_dot_asynq_function
+from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass
 from .boolability import Boolability, get_boolability
 from .checker import Checker
 from .config import Config
@@ -88,7 +90,7 @@ from .options import (
     UnimportableModules,
 )
 from .reexport import ErrorContext, ImplicitReexportTracker
-from .safe import safe_getattr, is_hashable, safe_in, all_of_type
+from .safe import safe_getattr, is_hashable, all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
     Composite,
@@ -392,7 +394,12 @@ class ClassAttributeChecker:
         enabled: bool = True,
         should_check_unused_attributes: bool = False,
         should_serialize: bool = False,
+        *,
+        options: Optional[Options] = None,
     ) -> None:
+        if options is None:
+            options = Options.from_option_list([], config)
+        self.options = options
         # we might not have examined all parent classes when looking for attributes set
         # we dump them here. incase the callers want to extend coverage.
         self.unexamined_base_classes = set()
@@ -506,10 +513,8 @@ class ClassAttributeChecker:
             name = typ.__name__
             if module not in sys.modules:
                 return None
-            if (
-                self.config.unwrap_cls(safe_getattr(sys.modules[module], name, None))
-                is typ
-            ):
+            actual = safe_getattr(sys.modules[module], name, None)
+            if UnwrapClass.unwrap(actual, self.options) is typ:
                 return (module, name)
         return None
 
@@ -520,7 +525,8 @@ class ClassAttributeChecker:
         if module not in sys.modules:
             __import__(module)
         try:
-            return self.config.unwrap_cls(getattr(sys.modules[module], name))
+            actual = getattr(sys.modules[module], name)
+            return UnwrapClass.unwrap(actual, self.options)
         except AttributeError:
             # We've seen this happen when we import different modules under the same name.
             return None
@@ -1366,7 +1372,7 @@ class NameCheckVisitor(
                     cls_obj = possible_values[0]
 
             if isinstance(cls_obj, KnownValue):
-                cls_obj = KnownValue(self.config.unwrap_cls(cls_obj.val))
+                cls_obj = KnownValue(UnwrapClass.unwrap(cls_obj.val, self.options))
                 current_class = cls_obj.val
                 if isinstance(current_class, type):
                     self._record_class_examined(current_class)
@@ -4508,7 +4514,7 @@ class NameCheckVisitor(
             if value.val is self.current_class:
                 return
 
-            inner = self.config.unwrap_cls(value.val)
+            inner = UnwrapClass.unwrap(value.val, self.options)
             if inner is self.current_class:
                 return
 
@@ -4617,6 +4623,7 @@ class NameCheckVisitor(
                 enabled=attribute_checker_enabled,
                 should_check_unused_attributes=find_unused_attributes,
                 should_serialize=kwargs.get("parallel", False),
+                options=checker.options,
             )
         else:
             inner_attribute_checker_obj = qcore.empty_context

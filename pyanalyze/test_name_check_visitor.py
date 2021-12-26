@@ -87,7 +87,9 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
         new_code = ""
         with ClassAttributeChecker(
-            self.visitor_cls.config, enabled=check_attributes
+            self.visitor_cls.config,
+            enabled=check_attributes,
+            options=kwargs["checker"].options,
         ) as attribute_checker:
             visitor = self.visitor_cls(
                 mod.__name__,
