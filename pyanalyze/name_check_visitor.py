@@ -81,6 +81,7 @@ from .options import (
     Options,
     PyObjectSequenceOption,
     StringSequenceOption,
+    add_arguments,
 )
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ErrorContext, ImplicitReexportTracker
@@ -428,6 +429,9 @@ class IgnoredPaths(ConcatenatedOption[Sequence[str]]):
 
     name = "ignored_paths"
     default_value = ()
+
+    # too complicated and this option isn't too useful anyway
+    should_create_command_line_option = False
 
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[Sequence[str]]:
@@ -4625,6 +4629,13 @@ class NameCheckVisitor(
             type=Path,
             help="Path to a pyproject.toml configuration file",
         )
+        parser.add_argument(
+            "--display-options",
+            action="store_true",
+            default=False,
+            help="Display the options used for this check, then exit",
+        )
+        add_arguments(parser)
         return parser
 
     @classmethod
@@ -4665,8 +4676,16 @@ class NameCheckVisitor(
             for error_code, value in kwargs["settings"].items():
                 option_cls = ConfigOption.registry[error_code.name]
                 instances.append(option_cls(value, from_command_line=True))
-        if "files" in kwargs:
-            instances.append(Paths(kwargs.pop("files"), from_command_line=True))
+        files = kwargs.pop("files", [])
+        if files:
+            instances.append(Paths(files, from_command_line=True))
+        for name, option_cls in ConfigOption.registry.items():
+            if not option_cls.should_create_command_line_option:
+                continue
+            if name not in kwargs:
+                continue
+            value = kwargs.pop(name)
+            instances.append(option_cls(value, from_command_line=True))
         config_file = kwargs.pop("config_file", None)
         if config_file is None:
             config_filename = cls.config_filename
@@ -4674,6 +4693,9 @@ class NameCheckVisitor(
                 module_path = Path(sys.modules[cls.__module__].__file__).parent
                 config_file = module_path / config_filename
         options = Options.from_option_list(instances, cls.config, config_file)
+        if kwargs.pop("display_options", False):
+            options.display()
+            sys.exit(0)
         kwargs.setdefault("checker", Checker(cls.config, options))
         return kwargs
 

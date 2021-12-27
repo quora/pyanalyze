@@ -29,4 +29,15 @@ Other supported configuration options are listed below.
 
 Almost all configuration options can be overridden for individual modules or packages. To set a module-specific configuration, add an entry to the `tool.pyanalyze.overrides` list (as in the example above), and set the `module` key to the fully qualified name of the module or package.
 
+To see the current value of all configuration options, pass the `--display-options` command-line option:
+
+```
+$ python -m pyanalyze --config-file pyproject.toml --display-options
+Options:
+    add_import (value: True)
+    ...
+```
+
+Most configuration options can also be set on the command line.
+
 <!-- TODO figure out a way to dynamically include docs for each option -->
