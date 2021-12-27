@@ -1990,6 +1990,7 @@ class NameCheckVisitor(
         if node.args.kwarg is not None:
             args.append((ParameterKind.VAR_KEYWORD, node.args.kwarg))
         params = []
+        tv_index = 1
 
         with qcore.override(self, "state", VisitorState.check_names):
             for idx, ((kind, arg), default) in enumerate(zip_longest(args, defaults)):
@@ -2035,10 +2036,13 @@ class NameCheckVisitor(
                             f"Missing type annotation for parameter {arg.arg}",
                             error_code=ErrorCode.missing_parameter_annotation,
                         )
-                    if default is not None:
-                        value = unite_values(AnyValue(AnySource.unannotated), default)
+                    if isinstance(node, ast.Lambda):
+                        value = TypeVarValue(TypeVar(f"T{tv_index}"))
+                        tv_index += 1
                     else:
                         value = AnyValue(AnySource.unannotated)
+                    if default is not None:
+                        value = unite_values(value, default)
 
                 if is_self:
                     # we need this for the implementation of super()

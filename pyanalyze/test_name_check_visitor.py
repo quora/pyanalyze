@@ -1916,7 +1916,7 @@ class TestFunctionDefinitions(TestNameCheckVisitorBase):
             assert_is_value(c, AnyValue(AnySource.unannotated) | KnownValue(3))
             capybara(1, b=2)
 
-            fn = lambda a, *, b: assert_is_value(b, AnyValue(AnySource.unannotated))
+            fn = lambda a, *, b: None
             fn(a, b=b)
 
         def failing_capybara(a, *, b):
@@ -1966,7 +1966,16 @@ class TestFunctionDefinitions(TestNameCheckVisitorBase):
 
             fun2 = lambda a: a
             fun2()  # E: incompatible_call
-            assert_is_value(fun2(1), AnyValue(AnySource.unannotated))
+            assert_is_value(fun2(1), KnownValue(1))
+
+            fun3 = lambda c=3: c
+            assert_is_value(
+                fun3(), KnownValue(3) | AnyValue(AnySource.generic_argument)
+            )
+            assert_is_value(fun3(2), KnownValue(2) | KnownValue(3))
+
+            fun4 = lambda a, b, c: a if c else b
+            assert_is_value(fun4(1, 2, 3), KnownValue(1) | KnownValue(2))
 
 
 class TestMissingAwait(TestNameCheckVisitorBase):
