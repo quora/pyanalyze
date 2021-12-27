@@ -14,13 +14,21 @@ import inspect
 import types
 from typing import Sequence, Any, Callable, List, Optional, Iterable
 
-from pyanalyze.options import Options, PyObjectSequenceOption, StringSequenceOption
-
 from .config import Config
 from .error_code import ErrorCode
+from .options import Options, PyObjectSequenceOption, StringSequenceOption
+from .signature import SigParameter
 from .safe import safe_getattr, safe_hasattr
 from .stacked_scopes import Composite
-from .value import AnnotatedValue, Value, KnownValue, TypedValue, UnboundMethodValue
+from .value import (
+    AnnotatedValue,
+    AnySource,
+    AnyValue,
+    Value,
+    KnownValue,
+    TypedValue,
+    UnboundMethodValue,
+)
 
 
 class AsyncFunctionKind(enum.Enum):
@@ -32,6 +40,8 @@ class AsyncFunctionKind(enum.Enum):
 
 @dataclass(frozen=True)
 class FunctionInfo:
+    """Computed before visiting a function."""
+
     async_kind: AsyncFunctionKind
     is_classmethod: bool  # has @classmethod
     is_staticmethod: bool  # has @staticmethod
@@ -41,6 +51,16 @@ class FunctionInfo:
     # for decorators that take arguments, like @asynq(): the first element will be the asynq
     # function and the second will be the result of calling asynq().
     decorators: List[Any]
+
+
+@dataclass
+class FunctionResult:
+    """Computed after visiting a function."""
+
+    return_value: Value = AnyValue(AnySource.inference)
+    parameters: Sequence[SigParameter] = ()
+    has_return: bool = False
+    is_generator: bool = False
 
 
 class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):

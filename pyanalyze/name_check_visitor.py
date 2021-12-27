@@ -19,7 +19,7 @@ import collections.abc
 import contextlib
 from dataclasses import dataclass
 import inspect
-from itertools import chain
+from itertools import chain, zip_longest
 import logging
 import operator
 import os
@@ -117,6 +117,8 @@ from .signature import (
     ConcreteSignature,
     MaybeSignature,
     OverloadedSignature,
+    ParameterKind,
+    SigParameter,
     Signature,
     make_bound_method,
     ARGS,
@@ -128,7 +130,7 @@ from .suggested_type import (
     prepare_type,
     should_suggest_type,
 )
-from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
+from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo, FunctionResult
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
 from .value import (
@@ -1544,16 +1546,17 @@ class NameCheckVisitor(
         ), qcore.override(
             self, "expected_return_value", expected_return_value
         ):
-            return_value, has_return, is_generator = self._visit_function_body(
+            result = self._visit_function_body(
                 node,
                 function_info=info,
                 name=node.name,
                 defaults=defaults,
                 kw_defaults=kw_defaults,
             )
+        return_value = result.return_value
 
         if (
-            not has_return
+            not result.has_return
             and not info.is_overload
             and expected_return_value is not None
             and expected_return_value != KnownNone
@@ -1574,7 +1577,7 @@ class NameCheckVisitor(
                 self._show_error_if_checking(node, error_code=ErrorCode.missing_return)
 
         if (
-            has_return
+            result.has_return
             and expected_return_value is None
             and not info.is_overload
             and not any(
@@ -1603,10 +1606,10 @@ class NameCheckVisitor(
         # If there was an annotation, use it as the return value in the
         # _argspec_to_retval cache, even if we inferred something else while visiting
         # the function.
-        if not is_generator and expected_return_value is not None:
+        if not result.is_generator and expected_return_value is not None:
             return_value = expected_return_value
 
-        if is_generator and return_value == KnownNone:
+        if result.is_generator and return_value == KnownNone:
             return_value = AnyValue(AnySource.inference)
 
         # pure async functions are otherwise incorrectly inferred as returning whatever the
@@ -1720,8 +1723,14 @@ class NameCheckVisitor(
         defaults, kw_defaults = self._visit_defaults(node)
 
         with self.asynq_checker.set_func_name("<lambda>"):
-            self._visit_function_body(node, defaults=defaults, kw_defaults=kw_defaults)
-            return AnyValue(AnySource.inference)
+            result = self._visit_function_body(
+                node, defaults=defaults, kw_defaults=kw_defaults
+            )
+            return CallableValue(
+                Signature.make(
+                    result.parameters, result.return_value, has_return_annotation=False
+                )
+            )
 
     def _visit_decorators_and_check_asynq(
         self, decorator_list: List[ast.expr]
@@ -1781,12 +1790,12 @@ class NameCheckVisitor(
         name: Optional[str] = None,
         defaults: Sequence[Optional[Value]],
         kw_defaults: Sequence[Optional[Value]],
-    ) -> Tuple[Value, bool, bool]:
+    ) -> FunctionResult:
         is_collecting = self._is_collecting()
         if is_collecting and not self.scopes.contains_scope_of_type(
             ScopeType.function_scope
         ):
-            return AnyValue(AnySource.inference), False, False
+            return FunctionResult()
 
         # We pass in the node to add_scope() and visit the body once in collecting
         # mode if in a nested function, so that constraints on nonlocals in the outer
@@ -1803,27 +1812,26 @@ class NameCheckVisitor(
             scope = self.scopes.current_scope()
             assert isinstance(scope, FunctionScope)
 
-            if isinstance(node.body, list):
-                body = node.body
-            else:
-                # hack for lambdas
-                body = [node.body]
-
             class_ctx = (
                 qcore.empty_context
                 if not self.scopes.is_nested_function()
                 else qcore.override(self, "current_class", None)
             )
             with class_ctx:
-                self._visit_function_args(node, function_info, defaults, kw_defaults)
+                params = self._visit_function_args(
+                    node, function_info, defaults, kw_defaults
+                )
 
             with qcore.override(
                 self, "state", VisitorState.collect_names
             ), qcore.override(self, "return_values", []):
-                self._generic_visit_list(body)
+                if isinstance(node, ast.Lambda):
+                    self.visit(node.body)
+                else:
+                    self._generic_visit_list(node.body)
                 scope.get_local(LEAVES_SCOPE, node, self.state)
             if is_collecting:
-                return AnyValue(AnySource.inference), False, self.is_generator
+                return FunctionResult(is_generator=self.is_generator, parameters=params)
 
             # otherwise we may end up using results from the last yield (generated during the
             # collect state) to evaluate the first one visited during the check state
@@ -1832,13 +1840,16 @@ class NameCheckVisitor(
             with qcore.override(self, "current_class", None), qcore.override(
                 self, "state", VisitorState.check_names
             ), qcore.override(self, "return_values", []):
-                self._generic_visit_list(body)
-                return_values = self.return_values
+                if isinstance(node, ast.Lambda):
+                    return_values = [self.visit(node.body)]
+                else:
+                    self._generic_visit_list(node.body)
+                    return_values = self.return_values
                 return_set, _ = scope.get_local(LEAVES_SCOPE, node, self.state)
 
             self._check_function_unused_vars(scope)
             return self._compute_return_type(
-                node, name, return_values, return_set, function_info
+                node, name, return_values, return_set, function_info, params
             )
 
     def _compute_return_type(
@@ -1848,7 +1859,8 @@ class NameCheckVisitor(
         return_values: Sequence[Optional[Value]],
         return_set: Value,
         info: FunctionInfo,
-    ) -> Tuple[Value, bool, bool]:
+        params: Sequence[SigParameter],
+    ) -> FunctionResult:
         # Ignore generators for now.
         if isinstance(return_set, AnyValue) or (
             self.is_generator and info.async_kind is not AsyncFunctionKind.normal
@@ -1862,7 +1874,7 @@ class NameCheckVisitor(
         if not return_values:
             if name is not None:
                 method_return_type.check_no_return(node, self, name)
-            return KnownNone, has_return, self.is_generator
+            return FunctionResult(KnownNone, params, has_return, self.is_generator)
         # None is added to return_values if the function raises an error.
         return_values = [val for val in return_values if val is not None]
         # If it only ever raises an error, we don't know what it returns. Strictly
@@ -1870,9 +1882,10 @@ class NameCheckVisitor(
         # in practice this condition often occurs in abstract methods that just
         # raise NotImplementedError.
         if not return_values:
-            return AnyValue(AnySource.inference), has_return, self.is_generator
+            ret = AnyValue(AnySource.inference)
         else:
-            return unite_values(*return_values), has_return, self.is_generator
+            ret = unite_values(*return_values)
+        return FunctionResult(ret, params, has_return, self.is_generator)
 
     def _check_function_unused_vars(
         self, scope: FunctionScope, enclosing_statement: Optional[ast.stmt] = None
@@ -1961,16 +1974,26 @@ class NameCheckVisitor(
         function_info: FunctionInfo,
         defaults: Sequence[Optional[Value]],
         kw_defaults: Sequence[Optional[Value]],
-    ) -> None:
+    ) -> Sequence[SigParameter]:
         """Visits and checks the arguments to a function. Returns the list of argument names."""
         self._check_method_first_arg(node, function_info=function_info)
 
-        num_without_defaults = len(node.args.args) - len(defaults)
+        posonly_args = getattr(node.args, "posonlyargs", [])
+        num_without_defaults = len(node.args.args) + len(posonly_args) - len(defaults)
         defaults = [*[None] * num_without_defaults, *defaults, *kw_defaults]
-        args = node.args.args + node.args.kwonlyargs
+        args = (
+            [(ParameterKind.POSITIONAL_ONLY, arg) for arg in posonly_args]
+            + [(ParameterKind.POSITIONAL_OR_KEYWORD, arg) for arg in node.args.args]
+            + [(ParameterKind.KEYWORD_ONLY, arg) for arg in node.args.kwonlyargs]
+        )
+        if node.args.vararg is not None:
+            args.append((ParameterKind.VAR_POSITIONAL, node.args.vararg))
+        if node.args.kwarg is not None:
+            args.append((ParameterKind.VAR_KEYWORD, node.args.kwarg))
+        params = []
 
         with qcore.override(self, "state", VisitorState.check_names):
-            for idx, (arg, default) in enumerate(zip(args, defaults)):
+            for idx, ((kind, arg), default) in enumerate(zip_longest(args, defaults)):
                 is_self = (
                     idx == 0
                     and self.current_class is not None
@@ -2022,23 +2045,14 @@ class NameCheckVisitor(
                     # we need this for the implementation of super()
                     self.scopes.set("%first_arg", value, "%first_arg", self.state)
 
-                with qcore.override(self, "being_assigned", value):
-                    self.visit(arg)
+                if kind is ParameterKind.VAR_POSITIONAL:
+                    value = GenericValue(tuple, [value])
+                elif kind is ParameterKind.VAR_KEYWORD:
+                    value = GenericValue(dict, [TypedValue(str), value])
 
-            if node.args.vararg is not None:
-                # the vararg is wrapped in an arg object
-                vararg = node.args.vararg.arg
-                arg_value = self._value_of_annotated_arg(node.args.vararg)
-                if isinstance(arg_value, AnyValue):
-                    value = TypedValue(tuple)
-                else:
-                    value = GenericValue(tuple, [arg_value])
-                self.scopes.set(vararg, value, vararg, self.state)
-            if node.args.kwarg is not None:
-                kwarg = node.args.kwarg.arg
-                arg_value = self._value_of_annotated_arg(node.args.kwarg)
-                value = GenericValue(dict, [TypedValue(str), arg_value])
-                self.scopes.set(kwarg, value, kwarg, self.state)
+                self.scopes.set(arg.arg, value, arg, self.state)
+                params.append(SigParameter(arg.arg, kind, default, value))
+        return params
 
     def _value_of_annotated_arg(self, arg: ast.arg) -> Value:
         if arg.annotation is None:
@@ -4309,30 +4323,6 @@ class NameCheckVisitor(
             keyword is not None and isinstance(arg, KnownValue)
             for keyword, arg in keywords
         )
-
-    def _try_perform_call(
-        self,
-        callee_val: Any,
-        node: ast.AST,
-        args: Iterable[KnownValue],
-        keywords: Iterable[Tuple[str, KnownValue]],
-        fallback_return: Value,
-    ) -> Value:
-        """Tries to call callee_val with the given arguments.
-
-        Falls back to fallback_return and emits an error if the call fails.
-
-        """
-        unwrapped_args = [arg.val for arg in args]
-        unwrapped_kwargs = {key: value.val for key, value in keywords}
-        try:
-            value = callee_val(*unwrapped_args, **unwrapped_kwargs)
-        except Exception as e:
-            message = "Error in {}: {}".format(safe_str(callee_val), safe_str(e))
-            self._show_error_if_checking(node, message, ErrorCode.incompatible_call)
-            return fallback_return
-        else:
-            return KnownValue(value)
 
     def check_call(
         self,
