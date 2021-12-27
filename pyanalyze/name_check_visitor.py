@@ -137,6 +137,7 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    CanAssign,
     CanAssignError,
     ConstraintExtension,
     GenericBases,
@@ -237,7 +238,7 @@ class _StarredValue(Value):
         self.node = node
 
 
-@dataclass
+@dataclass(init=False)
 class _AttrContext(attributes.AttrContext):
     visitor: "NameCheckVisitor"
     node: Optional[ast.AST]
@@ -248,11 +249,16 @@ class _AttrContext(attributes.AttrContext):
         self,
         root_composite: Composite,
         attr: str,
-        node: Optional[ast.AST],
         visitor: "NameCheckVisitor",
-        ignore_none: bool,
+        *,
+        node: Optional[ast.AST] = None,
+        ignore_none: bool = False,
+        skip_mro: bool = False,
+        skip_unwrap: bool = False,
     ) -> None:
-        super().__init__(root_composite, attr)
+        super().__init__(
+            root_composite, attr, skip_mro=skip_mro, skip_unwrap=skip_unwrap
+        )
         self.node = node
         self.visitor = visitor
         self.ignore_none = ignore_none
@@ -467,6 +473,13 @@ class IgnoredEndOfReference(StringSequenceOption):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
         return list(fallback.IGNORED_END_OF_REFERENCE)
+
+
+class IgnoredForIncompatibleOverride(StringSequenceOption):
+    """These attributes are not checked for incompatible overrides."""
+
+    name = "ignored_for_incompatible_overrides"
+    default_value = ["__init__", "__eq__", "__ne__"]
 
 
 class ClassAttributeChecker:
@@ -1001,7 +1014,7 @@ class NameCheckVisitor(
         self._has_used_any_match = False
         self._fill_method_cache()
 
-    def make_type_object(self, typ: Union[type, super]) -> TypeObject:
+    def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
         return self.checker.make_type_object(typ)
 
     def can_assume_compatibility(self, left: TypeObject, right: TypeObject) -> bool:
@@ -1230,9 +1243,76 @@ class NameCheckVisitor(
                 value, _ = current_scope.get_local(varname, node, self.state)
                 return value
         if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
+            self._check_for_incompatible_overrides(varname, node, value)
             self._check_for_class_variable_redefinition(varname, node)
         current_scope.set(varname, value, node, self.state)
         return value
+
+    def _check_for_incompatible_overrides(
+        self, varname: str, node: ast.AST, value: Value
+    ) -> None:
+        if self.current_class is None:
+            return
+        if varname in self.options.get_value_for(IgnoredForIncompatibleOverride):
+            return
+        for base_class in self.get_generic_bases(self.current_class):
+            if base_class is self.current_class:
+                continue
+            base_class_value = TypedValue(base_class)
+            ctx = _AttrContext(
+                Composite(base_class_value),
+                varname,
+                self,
+                skip_mro=True,
+                skip_unwrap=True,
+            )
+            base_value = attributes.get_attribute(ctx)
+            can_assign = self._can_assign_to_base(base_value, value)
+            if isinstance(can_assign, CanAssignError):
+                error = CanAssignError(
+                    children=[
+                        CanAssignError(f"Base class: {self.display_value(base_value)}"),
+                        CanAssignError(f"Child class: {self.display_value(value)}"),
+                        can_assign,
+                    ]
+                )
+                self._show_error_if_checking(
+                    node,
+                    f"Value of {varname} incompatible with base class {base_class}",
+                    ErrorCode.incompatible_override,
+                    detail=str(error),
+                )
+
+    def display_value(self, value: Value) -> str:
+        message = f"'{value!s}'"
+        if isinstance(value, KnownValue):
+            sig = self.arg_spec_cache.get_argspec(value.val)
+        elif isinstance(value, UnboundMethodValue):
+            sig = value.get_signature(self)
+        else:
+            sig = None
+        if sig is not None:
+            message += f", signature is {sig!s}"
+        return message
+
+    def _can_assign_to_base(self, base_value: Value, child_value: Value) -> CanAssign:
+        if base_value is UNINITIALIZED_VALUE:
+            return {}
+        if isinstance(base_value, KnownValue) and callable(base_value.val):
+            base_sig = self.signature_from_value(base_value)
+            if not isinstance(base_sig, (Signature, OverloadedSignature)):
+                return {}
+            child_sig = self.signature_from_value(child_value)
+            if not isinstance(child_sig, (Signature, OverloadedSignature)):
+                return CanAssignError(f"{child_value} is not callable")
+            base_bound = base_sig.bind_self()
+            if base_bound is None:
+                return {}
+            child_bound = child_sig.bind_self()
+            if child_bound is None:
+                return CanAssignError(f"{child_value} is missing a 'self' argument")
+            return base_bound.can_assign(child_bound, self)
+        return base_value.can_assign(child_value, self)
 
     def _check_for_class_variable_redefinition(
         self, varname: str, node: ast.AST
@@ -4091,7 +4171,9 @@ class NameCheckVisitor(
         ignore_none: bool = False,
     ) -> Value:
         """Get an attribute. root_value must not be a MultiValuedValue."""
-        ctx = _AttrContext(root_composite, attr, node, self, ignore_none)
+        ctx = _AttrContext(
+            root_composite, attr, self, node=node, ignore_none=ignore_none
+        )
         return attributes.get_attribute(ctx)
 
     def _get_attribute_with_fallback(
@@ -4677,7 +4759,9 @@ class NameCheckVisitor(
         kwargs.setdefault("checker", Checker(cls.config, options))
         return kwargs
 
-    def is_enabled(self, error_code: ErrorCode) -> bool:
+    def is_enabled(self, error_code: enum.Enum) -> bool:
+        if not isinstance(error_code, ErrorCode):
+            return False
         return self.options.is_error_code_enabled(error_code)
 
     @classmethod

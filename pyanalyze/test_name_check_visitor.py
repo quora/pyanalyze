@@ -1667,9 +1667,12 @@ class TestSubscripting(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_permissive_subclass(self):
+        from typing import Any
+
         # Inspired by pyspark.sql.types.Row
         class LetItAllThrough(tuple):
-            def __getitem__(self, idx: object) -> object:
+            # TODO: make Sequence.__getitem__ args pos-only in typeshed
+            def __getitem__(self, idx: object) -> Any:  # E: incompatible_override
                 if isinstance(idx, (int, slice)):
                     return super().__getitem__(idx)
                 else:
@@ -2652,3 +2655,29 @@ class TestCompare(TestNameCheckVisitorBase):
             if 1 < i < 3 != x:
                 assert_is_value(i, KnownValue(2))
                 assert_is_value(x, KnownValue(4))
+
+
+class TestIncompatibleOverride(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_simple(self):
+        from typing_extensions import Literal
+
+        class A:
+            x: str
+            y: int
+
+            def capybara(self, x: int) -> None:
+                pass
+
+            def pacarana(self, b: int) -> None:
+                pass
+
+        class B(A):
+            x: int  # E: incompatible_override
+            y: Literal[1]
+
+            def capybara(self, x: str) -> None:  # E: incompatible_override
+                pass
+
+            def pacarana(self, b: int) -> None:
+                pass
