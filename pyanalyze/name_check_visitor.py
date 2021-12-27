@@ -56,7 +56,6 @@ from typing_extensions import Annotated
 
 import asynq
 import qcore
-from qcore.helpers import safe_str
 
 from . import attributes, format_strings, node_visitor, importer, method_return_type
 from .annotations import (
@@ -1981,7 +1980,7 @@ class NameCheckVisitor(
         posonly_args = getattr(node.args, "posonlyargs", [])
         num_without_defaults = len(node.args.args) + len(posonly_args) - len(defaults)
         defaults = [*[None] * num_without_defaults, *defaults, *kw_defaults]
-        args = (
+        args: List[Tuple[ParameterKind, ast.arg]] = (
             [(ParameterKind.POSITIONAL_ONLY, arg) for arg in posonly_args]
             + [(ParameterKind.POSITIONAL_OR_KEYWORD, arg) for arg in node.args.args]
             + [(ParameterKind.KEYWORD_ONLY, arg) for arg in node.args.kwonlyargs]

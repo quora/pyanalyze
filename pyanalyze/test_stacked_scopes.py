@@ -178,7 +178,9 @@ class TestScoping(TestNameCheckVisitorBase):
     @assert_passes()
     def test_args_kwargs(self):
         def capybara(*args, **kwargs):
-            assert_is_value(args, TypedValue(tuple))
+            assert_is_value(
+                args, GenericValue(tuple, [AnyValue(AnySource.unannotated)])
+            )
             assert_is_value(
                 kwargs,
                 GenericValue(dict, [TypedValue(str), AnyValue(AnySource.unannotated)]),
