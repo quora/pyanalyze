@@ -51,8 +51,6 @@ class TestNestedFunction(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_bad_decorator(self):
-        import types
-
         def decorator(fn):
             return fn
 
