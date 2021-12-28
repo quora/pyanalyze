@@ -1470,7 +1470,8 @@ class TestNestedFunction(TestNameCheckVisitorBase):
             class NestedClass(object):
                 pass
 
-            assert_is_value(nested, KnownValue(nested))
+            assert_is_value(nested(), KnownValue(None))
+            nested(1)  # E: incompatible_call
             # Should ideally be something more specific
             assert_is_value(NestedClass, AnyValue(AnySource.inference))
 
@@ -1487,17 +1488,9 @@ class TestNestedFunction(TestNameCheckVisitorBase):
                 class Nested(object):
                     xs = ys
 
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_argument_mismatch(self):
-        def capybara():
-            def nested():
-                pass
-
-            nested(None)
-
     @assert_passes()
     def test_async(self):
-        from asynq import asynq, result
+        from asynq import asynq
 
         @asynq()
         def capybara():
@@ -1505,8 +1498,9 @@ class TestNestedFunction(TestNameCheckVisitorBase):
             def nested():
                 return 3
 
-            assert_is_value(nested, KnownValue(nested))
-            result((yield nested.asynq()))
+            assert_is_value(nested(), KnownValue(3))
+            val = yield nested.asynq()
+            assert_is_value(val, KnownValue(3))
 
     @assert_passes()
     def test_bad_decorator(self):
@@ -1520,7 +1514,7 @@ class TestNestedFunction(TestNameCheckVisitorBase):
             def nested():
                 pass
 
-            assert_is_value(nested, TypedValue(types.FunctionType))
+            assert_is_value(nested, AnyValue(AnySource.unannotated))
 
     @assert_passes()
     def test_attribute_set(self):
@@ -1529,7 +1523,7 @@ class TestNestedFunction(TestNameCheckVisitorBase):
                 pass
 
             inner.punare = 3
-            print(inner.punare)
+            assert_is_value(inner.punare, KnownValue(3))
 
 
 class TestYieldInComprehension(TestNameCheckVisitorBase):

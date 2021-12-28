@@ -6,9 +6,10 @@ Code for understanding function definitions.
 from abc import abstractmethod
 import ast
 import asyncio
+import types
 import asynq
 import enum
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import zip_longest
 from typing import Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
 from typing_extensions import Protocol
@@ -291,8 +292,13 @@ def compute_value_of_function(
         result.return_value,
         has_return_annotation=result.has_return_annotation,
     )
-    val = CallableValue(sig)
+    val = CallableValue(sig, types.FunctionType)
     for unapplied, decorator in reversed(info.decorators):
+        # Special case asynq.asynq until we can create the type automatically
+        if unapplied == KnownValue(asynq.asynq) and isinstance(val, CallableValue):
+            sig = replace(val.signature, is_asynq=True)
+            val = CallableValue(sig, val.typ)
+            continue
         allow_call = isinstance(
             unapplied, KnownValue
         ) and SafeDecoratorsForNestedFunctions.contains(unapplied.val, ctx.options)

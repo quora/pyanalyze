@@ -1157,12 +1157,16 @@ class CallableValue(TypedValue):
 
     signature: "pyanalyze.signature.ConcreteSignature"
 
-    def __init__(self, signature: "pyanalyze.signature.ConcreteSignature") -> None:
-        super().__init__(collections.abc.Callable)
+    def __init__(
+        self,
+        signature: "pyanalyze.signature.ConcreteSignature",
+        fallback: Union[type, str] = collections.abc.Callable,
+    ) -> None:
+        super().__init__(fallback)
         self.signature = signature
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return CallableValue(self.signature.substitute_typevars(typevars))
+        return CallableValue(self.signature.substitute_typevars(typevars), self.typ)
 
     def walk_values(self) -> Iterable[Value]:
         yield self
@@ -1171,7 +1175,7 @@ class CallableValue(TypedValue):
     def get_asynq_value(self) -> Value:
         """Return the CallableValue for the .asynq attribute of an AsynqCallable."""
         sig = self.signature.get_asynq_value()
-        return CallableValue(sig)
+        return CallableValue(sig, self.typ)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if not isinstance(other, (MultiValuedValue, AnyValue)):
