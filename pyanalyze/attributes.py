@@ -47,6 +47,8 @@ NoneType = type(None)
 class AttrContext:
     root_composite: Composite
     attr: str
+    skip_mro: bool = False
+    skip_unwrap: bool = False
 
     @property
     def root_value(self) -> Value:
@@ -161,7 +163,7 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
 
 
 def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
-    if not isinstance(result, KnownValue):
+    if not isinstance(result, KnownValue) or ctx.skip_unwrap:
         return result
     cls_val = result.val
     if (
@@ -245,7 +247,7 @@ def _substitute_typevars(
 
 
 def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Value:
-    if not isinstance(result, KnownValue):
+    if not isinstance(result, KnownValue) or ctx.skip_unwrap:
         return result
     typevars = result.typevars if isinstance(result, KnownValueWithTypeVars) else None
     cls_val = result.val
@@ -400,6 +402,8 @@ def _get_attribute_from_mro(
                 and Generic in base_cls.mro()
             ):
                 continue
+            if ctx.skip_mro and base_cls is not typ:
+                continue
             try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.
@@ -421,7 +425,9 @@ def _get_attribute_from_mro(
             except Exception:
                 pass
 
-            typeshed_type = ctx.get_attribute_from_typeshed(base_cls, on_class=on_class)
+            typeshed_type = ctx.get_attribute_from_typeshed(
+                base_cls, on_class=on_class or ctx.skip_unwrap
+            )
             if typeshed_type is not UNINITIALIZED_VALUE:
                 return typeshed_type, base_cls, False
 
@@ -429,11 +435,12 @@ def _get_attribute_from_mro(
     if attrs_type is not None:
         return attrs_type, typ, False
 
-    # Even if we didn't find it any __dict__, maybe getattr() finds it directly.
-    try:
-        return KnownValue(getattr(typ, ctx.attr)), typ, True
-    except Exception:
-        pass
+    if not ctx.skip_mro:
+        # Even if we didn't find it any __dict__, maybe getattr() finds it directly.
+        try:
+            return KnownValue(getattr(typ, ctx.attr)), typ, True
+        except Exception:
+            pass
 
     return UNINITIALIZED_VALUE, object, False
 

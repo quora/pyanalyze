@@ -3,9 +3,11 @@
 Structured configuration options.
 
 """
+import argparse
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+import pathlib
 from typing import (
     Any,
     ClassVar,
@@ -26,6 +28,37 @@ from .find_unused import used
 from .config import Config
 from .error_code import ErrorCode
 from .safe import safe_in
+
+try:
+    from argparse import BooleanOptionalAction
+except ImportError:
+    # 3.8 and lower (modified from CPython)
+    class BooleanOptionalAction(argparse.Action):
+        def __init__(self, option_strings: Sequence[str], **kwargs: Any) -> None:
+
+            _option_strings = []
+            for option_string in option_strings:
+                _option_strings.append(option_string)
+
+                if option_string.startswith("--"):
+                    option_string = "--no-" + option_string[2:]
+                    _option_strings.append(option_string)
+
+            super().__init__(option_strings=_option_strings, nargs=0, **kwargs)
+
+        def __call__(
+            self,
+            parser: argparse.ArgumentParser,
+            namespace: argparse.Namespace,
+            values: object,
+            option_string: Optional[str] = None,
+        ) -> None:
+            if option_string is not None and option_string in self.option_strings:
+                setattr(namespace, self.dest, not option_string.startswith("--no-"))
+
+        def format_usage(self) -> str:
+            return " | ".join(self.option_strings)
+
 
 T = TypeVar("T")
 OptionT = TypeVar("OptionT", bound="ConfigOption")
@@ -56,6 +89,7 @@ class ConfigOption(Generic[T]):
     name: ClassVar[str]
     is_global: ClassVar[bool] = False
     default_value: ClassVar[T]
+    should_create_command_line_option: ClassVar[bool] = True
     value: T
     applicable_to: ModulePath = ()
     from_command_line: bool = False
@@ -104,6 +138,10 @@ class ConfigOption(Generic[T]):
         else:
             return cls(val)
 
+    @classmethod
+    def create_command_line_option(cls, parser: argparse.ArgumentParser) -> None:
+        raise NotImplementedError(cls)
+
 
 class BooleanOption(ConfigOption[bool]):
     default_value = False
@@ -114,15 +152,31 @@ class BooleanOption(ConfigOption[bool]):
             return data
         raise InvalidConfigOption.from_parser(cls, "bool", data)
 
+    @classmethod
+    def create_command_line_option(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            f"--{cls.name.replace('_', '-')}",
+            action=BooleanOptionalAction,
+            help=cls.__doc__,
+            default=argparse.SUPPRESS,
+        )
+
 
 class IntegerOption(ConfigOption[int]):
-    default_value = False
-
     @classmethod
     def parse(cls: "Type[IntegerOption]", data: object, source_path: Path) -> int:
         if isinstance(data, int):
             return data
         raise InvalidConfigOption.from_parser(cls, "int", data)
+
+    @classmethod
+    def create_command_line_option(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            f"--{cls.name.replace('_', '-')}",
+            type=int,
+            help=cls.__doc__,
+            default=argparse.SUPPRESS,
+        )
 
 
 class ConcatenatedOption(ConfigOption[Sequence[T]]):
@@ -154,9 +208,18 @@ class StringSequenceOption(ConcatenatedOption[str]):
             return data
         raise InvalidConfigOption.from_parser(cls, "sequence of strings", data)
 
+    @classmethod
+    def create_command_line_option(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            f"--{cls.name.replace('_', '-')}",
+            action="append",
+            help=cls.__doc__,
+            default=argparse.SUPPRESS,
+        )
+
 
 class PathSequenceOption(ConfigOption[Sequence[Path]]):
-    default_value = ()
+    default_value: ClassVar[Sequence[Path]] = ()
 
     @classmethod
     def parse(
@@ -168,11 +231,21 @@ class PathSequenceOption(ConfigOption[Sequence[Path]]):
             return [(source_path.parent / elt).resolve() for elt in data]
         raise InvalidConfigOption.from_parser(cls, "sequence of strings", data)
 
+    @classmethod
+    def create_command_line_option(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            f"--{cls.name.replace('_', '-')}",
+            action="append",
+            type=pathlib.Path,
+            help=cls.__doc__,
+            default=argparse.SUPPRESS,
+        )
+
 
 class PyObjectSequenceOption(ConfigOption[Sequence[T]]):
     """Represents a sequence of objects parsed as Python objects."""
 
-    default_value = ()
+    default_value: ClassVar[Sequence[T]] = ()
 
     @classmethod
     def parse(
@@ -198,6 +271,16 @@ class PyObjectSequenceOption(ConfigOption[Sequence[T]]):
     def contains(cls, obj: object, options: "Options") -> bool:
         val = options.get_value_for(cls)
         return safe_in(obj, val)
+
+    @classmethod
+    def create_command_line_option(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            f"--{cls.name.replace('_', '-')}",
+            action="append",
+            type=qcore.object_from_string,
+            help=cls.__doc__,
+            default=argparse.SUPPRESS,
+        )
 
 
 @dataclass
@@ -238,6 +321,8 @@ class Options:
         fallback = option.get_fallback_option(self.fallback)
         if fallback is not None:
             instances = [*instances, fallback]
+        else:
+            instances = [*instances, option(option.default_value)]
         return option.get_value_from_instances(instances, self.module_path)
 
     def is_error_code_enabled(self, code: ErrorCode) -> bool:
@@ -261,6 +346,34 @@ class Options:
         if code in self.fallback.DISABLED_ERRORS:
             return False
         return option.default_value
+
+    def display(self) -> None:
+        print("Options:")
+        prefix = " " * 8
+        for name, option_cls in sorted(ConfigOption.registry.items()):
+            current_value = self.get_value_for(option_cls)
+            print(f"    {name} (value: {current_value})")
+            instances = self.options.get(name, [])
+            for instance in instances:
+                pieces = []
+                if instance.applicable_to:
+                    pieces.append(f"module: {'.'.join(instance.applicable_to)}")
+                if instance.from_command_line:
+                    pieces.append("from command line")
+                else:
+                    pieces.append("from config file")
+                suffix = f" ({', '.join(pieces)})"
+                print(f"{prefix}{instance.value}{suffix}")
+        print(f"Fallback: {self.fallback}")
+        if self.module_path:
+            print(f"For module: {'.'.join(self.module_path)}")
+
+
+def add_arguments(parser: argparse.ArgumentParser) -> None:
+    for cls in ConfigOption.registry.values():
+        if not cls.should_create_command_line_option:
+            continue
+        cls.create_command_line_option(parser)
 
 
 def parse_config_file(path: Path) -> Iterable[ConfigOption]:

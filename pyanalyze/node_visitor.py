@@ -26,7 +26,7 @@ import tempfile
 import builtins
 from builtins import print as real_print
 from types import ModuleType
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import NotRequired, Protocol, TypedDict
 from typing import (
     Any,
     Dict,
@@ -138,6 +138,22 @@ class Failure(TypedDict):
     context: NotRequired[str]
     message: NotRequired[str]
     extra_metadata: NotRequired[Dict[str, Any]]
+
+
+class ErrorContext(Protocol):
+    all_failures: List[Failure]
+
+    def show_error(
+        self,
+        node: ast.AST,
+        e: str,
+        error_code: Enum,
+        *,
+        detail: Optional[str] = None,
+        save: bool = True,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Failure]:
+        raise NotImplementedError
 
 
 class BaseNodeVisitor(ast.NodeVisitor):

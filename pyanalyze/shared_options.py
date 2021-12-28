@@ -18,6 +18,7 @@ class Paths(PathSequenceOption):
 
     name = "paths"
     is_global = True
+    should_create_command_line_option = False
 
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[Path]:
@@ -62,5 +63,6 @@ for _code in ErrorCode:
             "__doc__": ERROR_DESCRIPTION[_code],
             "name": _code.name,
             "default_value": _code not in DISABLED_BY_DEFAULT,
+            "should_create_command_line_option": False,
         },
     )

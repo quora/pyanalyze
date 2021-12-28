@@ -49,7 +49,7 @@ class TestSuperCall(TestNameCheckVisitorBase):
                 pass
 
         class Canaanimys(Gaudeamus):
-            def eat(self, grass):
+            def eat(self, grass=None):
                 super(Canaanimys, self).eat(grass)
 
     @assert_fails(ErrorCode.incompatible_call)

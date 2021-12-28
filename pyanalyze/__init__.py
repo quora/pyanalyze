@@ -19,6 +19,7 @@ from . import error_code
 from . import extensions
 from . import find_unused
 from .find_unused import used as used
+from . import functions
 from . import implementation
 from . import method_return_type
 from . import node_visitor
@@ -50,3 +51,4 @@ used(checker)
 used(suggested_type)
 used(options)
 used(shared_options)
+used(functions)
