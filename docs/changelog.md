@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Overhaul treatment of function definitions (#372)
+  - Support positional-only arguments
+  - Infer more precise types for lambda functions
+  - Infer more precise types for nested functions
+  - Refactor related code
 - Add check for incompatible overrides in child classes
   (#371)
 - Add `pyanalyze.extensions.NoReturnGuard` (#370)
