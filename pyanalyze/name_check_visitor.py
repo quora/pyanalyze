@@ -171,7 +171,6 @@ from .value import (
     GenericValue,
     Value,
     TypeVarValue,
-    CanAssignContext,
     concrete_values_from_iterable,
     unpack_values,
 )
@@ -4432,7 +4431,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             subscopes = []
             for case in node.cases:
                 with self.scopes.subscope() as case_scope:
-                    subscopes.append(case_scope)
                     for constraint in constraints_to_apply:
                         self.add_constraint(case, constraint)
 
@@ -4448,8 +4446,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         AndConstraint.make(constraints).invert()
                     )
                     self._generic_visit_list(case.body)
+                    subscopes.append(case_scope)
 
                 self.yield_checker.reset_yield_checks()
+
+            with self.scopes.subscope() as else_scope:
+                for constraint in constraints_to_apply:
+                    self.add_constraint(node, constraint)
+                subscopes.append(else_scope)
             self.scopes.combine_subscopes(subscopes)
 
     def visit_match_case(self, node: match_case) -> None:
