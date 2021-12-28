@@ -48,7 +48,9 @@ class Context:
     variables: VarMap
     set_variables: Container[str]
     can_assign_context: CanAssignContext
-    evaluate_type: Callable[[ast.AST], Value]
+
+    def evaluate_type(self, __node: ast.AST) -> Value:
+        raise NotImplementedError
 
     @contextmanager
     def narrow_variables(self, varmap: Optional[VarMap]) -> Iterator[None]:
@@ -324,7 +326,7 @@ def get_evaluator(func: Callable[..., Any]) -> Optional[Evaluator]:
     except AttributeError:
         return None
     evaluation_func = get_type_evaluation(key)
-    if evaluation_func is None:
+    if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
         return None
     lines, _ = inspect.getsourcelines(evaluation_func)
     code = textwrap.dedent("".join(lines))

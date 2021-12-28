@@ -45,6 +45,8 @@ used(dump_value)
 used(extensions.LiteralOnly)
 used(extensions.NoAny)
 used(extensions.overload)
+used(extensions.evaluated)
+used(extensions.is_set)
 used(value.UNRESOLVED_VALUE)  # keeping it around for now just in case
 used(reexport)
 used(checker)
