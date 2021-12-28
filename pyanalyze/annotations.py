@@ -67,6 +67,7 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    CanAssignContext,
     CustomCheckExtension,
     Extension,
     HasAttrGuardExtension,
@@ -148,6 +149,8 @@ class Context:
 @dataclass
 class TypeEvaluationContext(Context, type_evaluation.Context):
     variables: type_evaluation.VarMap
+    set_variables: Container[str]
+    can_assign_context: CanAssignContext
     globals: Mapping[str, object]
 
     def evaluate_type(self, node: ast.AST) -> Value:

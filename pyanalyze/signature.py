@@ -48,6 +48,7 @@ from .value import (
     CanAssign,
     CanAssignError,
     annotate_value,
+    can_assign_and_used_any,
     concrete_values_from_iterable,
     extract_typevars,
     flatten_values,
@@ -401,7 +402,7 @@ class Signature:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
             else:
                 param_typ = param.annotation
-            tv_map, used_any = self._can_assign_and_used_any(
+            tv_map, used_any = can_assign_and_used_any(
                 param_typ, composite.value, visitor
             )
             if isinstance(tv_map, CanAssignError):
@@ -410,7 +411,7 @@ class Signature:
                     remaining_values = []
                     union_used_any = False
                     for val in composite.value.vals:
-                        can_assign, subval_used_any = self._can_assign_and_used_any(
+                        can_assign, subval_used_any = can_assign_and_used_any(
                             param_typ, val, visitor
                         )
                         if isinstance(can_assign, CanAssignError):
@@ -436,14 +437,6 @@ class Signature:
                 return None, False, None
             return tv_map, used_any, None
         return {}, False, None
-
-    def _can_assign_and_used_any(
-        self, param_typ: Value, var_value: Value, visitor: "NameCheckVisitor"
-    ) -> Tuple[CanAssign, bool]:
-        with visitor.reset_any_used():
-            tv_map = param_typ.can_assign(var_value, visitor)
-            used_any = visitor.has_used_any_match()
-        return tv_map, used_any
 
     def _get_positional_parameter(self, index: int) -> Optional[SigParameter]:
         for i, param in enumerate(self.parameters.values()):
@@ -857,10 +850,17 @@ class Signature:
                 return_value = self.impl(ctx)
             elif self.evaluator is not None:
                 varmap = {
-                    param: None if position is DEFAULT else composite.value
-                    for param, (position, composite) in bound_args.items()
+                    param: composite.value
+                    for param, (_, composite) in bound_args.items()
                 }
-                ctx = annotations.TypeEvaluationContext(varmap, self.evaluator.globals)
+                set_variables = {
+                    param
+                    for param, (position, _) in bound_args.items()
+                    if position is not DEFAULT
+                }
+                ctx = annotations.TypeEvaluationContext(
+                    varmap, set_variables, visitor, self.evaluator.globals
+                )
                 return_value = evaluate(self.evaluator, ctx)
                 if isinstance(return_value, CanAssignError):
                     self.show_call_error(

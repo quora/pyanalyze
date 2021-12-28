@@ -9,14 +9,29 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import inspect
 import textwrap
-from typing import Any, Callable, Iterator, Mapping, Optional, Sequence, Union
+from typing import (
+    Any,
+    Callable,
+    Container,
+    Iterator,
+    Mapping,
+    Optional,
+    Sequence,
+    Union,
+)
 
 from .extensions import get_type_evaluation
-from .value import AnySource, AnyValue, CanAssignError, Value, unite_values
+from .value import (
+    AnySource,
+    AnyValue,
+    CanAssignContext,
+    CanAssignError,
+    Value,
+    can_assign_and_used_any,
+    unite_values,
+)
 
-# None means the variable is unset
-
-VarMap = Mapping[str, Optional[Value]]
+VarMap = Mapping[str, Value]
 
 
 class InvalidEvaluation(Exception):
@@ -25,6 +40,8 @@ class InvalidEvaluation(Exception):
 
 class Context:
     variables: VarMap
+    set_variables: Container[str]
+    can_assign_context: CanAssignContext
     evaluate_type: Callable[[ast.AST], Value]
 
     @contextmanager
@@ -95,17 +112,31 @@ class ConditionEvaluator(ast.NodeVisitor):
             if not isinstance(node.args[0], ast.Name):
                 raise InvalidEvaluation("Argument to is_set() must be a variable")
             variable = node.args[0].id
-            if variable not in self.ctx.variables:
-                raise InvalidEvaluation(f"{variable} is not a variable")
-            match = self.ctx.variables[variable] is not None
+            match = variable in self.ctx.set_variables
             if match:
                 return ConditionReturn(left_varmap={})
             else:
                 return ConditionReturn(right_varmap={})
         elif name == "isinstance":
-            raise NotImplementedError
+            if node.keywords or len(node.args) != 2:
+                raise InvalidEvaluation("isinstance() takes two positional arguments")
+            val = self.visit(node.args[0])
+            typ = self.ctx.evaluate_type(node.args[1])
+            can_assign, used_any = can_assign_and_used_any(
+                typ, val, self.ctx.can_assign_context
+            )
+            if isinstance(can_assign, CanAssignError):
+                return ConditionReturn(right_varmap={})
+            else:
+                return ConditionReturn(left_varmap={}, is_any_match=used_any)
         else:
             raise InvalidEvaluation(f"Invalid function {name}")
+
+    def visit_Name(self, node: ast.Name) -> Value:
+        try:
+            return self.ctx.variables[node.id]
+        except KeyError:
+            raise InvalidEvaluation(f"Invalid variable {node.id}") from None
 
 
 @dataclass

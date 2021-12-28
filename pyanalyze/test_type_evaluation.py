@@ -1,5 +1,6 @@
 # static analysis: ignore
-from .value import TypedValue, assert_is_value
+from typing_extensions import Literal
+from .value import AnySource, AnyValue, TypedValue, assert_is_value
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .extensions import evaluated, is_set
@@ -25,6 +26,21 @@ def simple_evaluated(*args: object) -> Union[int, str]:
         return "x"
 
 
+@evaluated
+def isinstance_evaluated(x: int):
+    if isinstance(x, Literal[1]):
+        return str
+    else:
+        return int
+
+
+def isinstance_evaluated(x: int) -> Union[int, str]:
+    if x == 1:
+        return ""
+    else:
+        return 0
+
+
 class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_is_set(self):
@@ -33,3 +49,15 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(simple_evaluated(1), TypedValue(str))
             assert_is_value(simple_evaluated(1, "1"), TypedValue(int))
+
+    @assert_passes()
+    def test_isinstance(self):
+        from pyanalyze.test_type_evaluation import isinstance_evaluated
+
+        def capybara(unannotated):
+            assert_is_value(isinstance_evaluated(1), TypedValue(str))
+            assert_is_value(isinstance_evaluated(2), TypedValue(int))
+            assert_is_value(
+                isinstance_evaluated(unannotated),
+                AnyValue(AnySource.multiple_overload_matches),
+            )

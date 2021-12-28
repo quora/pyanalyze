@@ -2284,3 +2284,12 @@ def stringify_object(obj: Any) -> str:
             return f"{obj.__module__}.{obj.__name__}"
     except Exception:
         return repr(obj)
+
+
+def can_assign_and_used_any(
+    param_typ: Value, var_value: Value, ctx: CanAssignContext
+) -> Tuple[CanAssign, bool]:
+    with ctx.reset_any_used():
+        tv_map = param_typ.can_assign(var_value, ctx)
+        used_any = ctx.has_used_any_match()
+    return tv_map, used_any
