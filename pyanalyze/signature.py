@@ -7,7 +7,7 @@ calls.
 """
 
 from . import annotations, type_evaluation
-from .type_evaluation import Evaluator, VarMap, evaluate
+from .type_evaluation import Evaluator, VarMap, decompose_union, evaluate
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -54,6 +54,7 @@ from .value import (
     flatten_values,
     replace_known_sequence_value,
     stringify_object,
+    unannotate,
     unannotate_value,
     unify_typevar_maps,
     unite_values,
@@ -406,27 +407,10 @@ class Signature:
                 param_typ, composite.value, visitor
             )
             if isinstance(tv_map, CanAssignError):
-                if is_overload and isinstance(composite.value, MultiValuedValue):
-                    tv_maps = []
-                    remaining_values = []
-                    union_used_any = False
-                    for val in composite.value.vals:
-                        can_assign, subval_used_any = can_assign_and_used_any(
-                            param_typ, val, visitor
-                        )
-                        if isinstance(can_assign, CanAssignError):
-                            remaining_values.append(val)
-                        else:
-                            if subval_used_any:
-                                union_used_any = True
-                            tv_maps.append(can_assign)
-                    if tv_maps:
-                        tv_map = unify_typevar_maps(tv_maps)
-                        assert remaining_values, (
-                            f"all union members matched between {param_typ} and"
-                            f" {composite.value}"
-                        )
-                        return tv_map, union_used_any, unite_values(*remaining_values)
+                if is_overload:
+                    triple = decompose_union(param_typ, composite.value, visitor)
+                    if triple is not None:
+                        return triple
                 visitor.show_error(
                     composite.node if composite.node is not None else node,
                     f"Incompatible argument type for {param.name}: expected {param_typ}"

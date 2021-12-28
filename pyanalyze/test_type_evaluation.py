@@ -61,3 +61,7 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
                 isinstance_evaluated(unannotated),
                 AnyValue(AnySource.multiple_overload_matches),
             )
+            assert_is_value(
+                isinstance_evaluated(2 if unannotated else 1),
+                TypedValue(int) | TypedValue(str),
+            )

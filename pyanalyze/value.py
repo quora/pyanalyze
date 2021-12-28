@@ -1946,6 +1946,12 @@ def unannotate_value(
     return origin, []
 
 
+def unannotate(value: Value) -> Value:
+    if isinstance(value, AnnotatedValue):
+        return value.value
+    return value
+
+
 def unite_and_simplify(*values: Value, limit: int) -> Value:
     united = unite_values(*values)
     if not isinstance(united, MultiValuedValue) or len(united.vals) < limit:

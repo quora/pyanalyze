@@ -17,6 +17,7 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
+    Tuple,
     Union,
 )
 
@@ -26,9 +27,13 @@ from .value import (
     AnyValue,
     CanAssignContext,
     CanAssignError,
+    MultiValuedValue,
     Value,
     can_assign_and_used_any,
+    unannotate,
     unite_values,
+    unify_typevar_maps,
+    TypeVarMap,
 )
 
 VarMap = Mapping[str, Value]
@@ -120,15 +125,31 @@ class ConditionEvaluator(ast.NodeVisitor):
         elif name == "isinstance":
             if node.keywords or len(node.args) != 2:
                 raise InvalidEvaluation("isinstance() takes two positional arguments")
-            val = self.visit(node.args[0])
+            varname_node = node.args[0]
+            if not isinstance(varname_node, ast.Name):
+                raise InvalidEvaluation("First argument to isinstance() must be a name")
+            val = self.visit(varname_node)
             typ = self.ctx.evaluate_type(node.args[1])
             can_assign, used_any = can_assign_and_used_any(
                 typ, val, self.ctx.can_assign_context
             )
             if isinstance(can_assign, CanAssignError):
+                triple = decompose_union(typ, val, self.ctx.can_assign_context)
+                if triple is not None:
+                    _, used_any, remaining = triple
+                    return ConditionReturn(
+                        left_varmap={varname_node.id: typ},
+                        right_varmap={varname_node.id: remaining},
+                        is_any_match=used_any,
+                    )
+                cleaned = unannotate(val)
+                if isinstance(cleaned, MultiValuedValue):
+                    pass
                 return ConditionReturn(right_varmap={})
             else:
-                return ConditionReturn(left_varmap={}, is_any_match=used_any)
+                return ConditionReturn(
+                    left_varmap={varname_node.id: typ}, is_any_match=used_any
+                )
         else:
             raise InvalidEvaluation(f"Invalid function {name}")
 
@@ -266,3 +287,30 @@ def get_evaluator(func: Callable[..., Any]) -> Optional[Evaluator]:
     if not isinstance(evaluator, ast.FunctionDef):
         raise InvalidEvaluation(f"Cannot locate {func}")
     return Evaluator(evaluation_func, evaluator, evaluation_func.__globals__)
+
+
+def decompose_union(
+    expected_type: Value, parent_value: Value, ctx: CanAssignContext
+) -> Optional[Tuple[TypeVarMap, bool, Value]]:
+    value = unannotate(parent_value)
+    if isinstance(value, MultiValuedValue):
+        tv_maps = []
+        remaining_values = []
+        union_used_any = False
+        for val in value.vals:
+            can_assign, subval_used_any = can_assign_and_used_any(
+                expected_type, val, ctx
+            )
+            if isinstance(can_assign, CanAssignError):
+                remaining_values.append(val)
+            else:
+                if subval_used_any:
+                    union_used_any = True
+                tv_maps.append(can_assign)
+        if tv_maps:
+            tv_map = unify_typevar_maps(tv_maps)
+            assert (
+                remaining_values
+            ), f"all union members matched between {expected_type} and {parent_value}"
+            return tv_map, union_used_any, unite_values(*remaining_values)
+    return None
