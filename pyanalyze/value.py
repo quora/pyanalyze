@@ -160,7 +160,7 @@ class Value:
         return unite_values(other, self)
 
 
-class CanAssignContext:
+class CanAssignContext(Protocol):
     """A context passed to the :meth:`Value.can_assign` method.
 
     Provides access to various functionality used for type checking.
