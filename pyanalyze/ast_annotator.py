@@ -9,6 +9,7 @@ attributes.
 """
 import ast
 import os
+import textwrap
 import traceback
 import types
 from typing import Optional, Type, Union
@@ -53,6 +54,7 @@ def annotate_code(
     :type verbose: bool
 
     """
+    code = textwrap.dedent(code)
     tree = ast.parse(code)
     try:
         mod = make_module(code)

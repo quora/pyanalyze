@@ -82,6 +82,7 @@ from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, all_of_type
 from .stacked_scopes import (
+    EMPTY_ORIGIN,
     AbstractConstraint,
     Composite,
     CompositeIndex,
@@ -173,6 +174,11 @@ from .value import (
     concrete_values_from_iterable,
     unpack_values,
 )
+
+try:
+    from ast import NamedExpr
+except ImportError:
+    NamedExpr = Any  # 3.7 and lower
 
 T = TypeVar("T")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
@@ -1198,7 +1204,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         value: Value = AnyValue(AnySource.inference),
         *,
         private: bool = False,
-    ) -> Value:
+    ) -> Tuple[Value, VarnameOrigin]:
         current_scope = self.scopes.current_scope()
         scope_type = current_scope.scope_type
         if self.module is not None and scope_type == ScopeType.module_scope:
@@ -1208,12 +1214,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
             if varname in current_scope:
                 value, _ = current_scope.get_local(varname, node, self.state)
-                return value
+                return value, EMPTY_ORIGIN
         if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
             self._check_for_incompatible_overrides(varname, node, value)
             self._check_for_class_variable_redefinition(varname, node)
-        current_scope.set(varname, value, node, self.state)
-        return value
+        origin = current_scope.set(varname, value, node, self.state)
+        return value, origin
 
     def _check_for_incompatible_overrides(
         self, varname: str, node: ast.AST, value: Value
@@ -1465,7 +1471,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._generic_visit_list(node.bases)
         self._generic_visit_list(node.keywords)
         value = self._visit_class_and_get_value(node)
-        return self._set_name_in_scope(node.name, node, value)
+        value, _ = self._set_name_in_scope(node.name, node, value)
+        return value
 
     def _get_class_object(self, node: ast.ClassDef) -> Value:
         if self.scopes.scope_type() == ScopeType.module_scope:
@@ -2230,9 +2237,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         for val in iterable_type:
                             self.visit_comprehension(generator, iterable_type=val)
                             with qcore.override(self, "in_comprehension_body", True):
-                                items.append(
-                                    KVPair(self.visit(node.key), self.visit(node.value))
-                                )
+                                # PEP 572 mandates that the key be evaluated first.
+                                key = self.visit(node.key)
+                                value = self.visit(node.value)
+                                items.append(KVPair(key, value))
                     finally:
                         self.node_context.contexts.pop()
                     return DictIncompleteValue(typ, items)
@@ -3448,6 +3456,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     # Assignments
 
+    def visit_NamedExpr(self, node: NamedExpr) -> Value:
+        composite = self.composite_from_walrus(node)
+        return composite.value
+
+    def composite_from_walrus(self, node: NamedExpr) -> Composite:
+        rhs = self.visit(node.value)
+        with qcore.override(self, "being_assigned", rhs):
+            if self.in_comprehension_body:
+                ctx = self.scopes.ignore_topmost_scope()
+            else:
+                ctx = qcore.empty_context
+            with ctx:
+                return self.composite_from_node(node.target)
+
     def visit_Assign(self, node: ast.Assign) -> None:
         is_yield = isinstance(node.value, ast.Yield)
         value = self.visit(node.value)
@@ -3572,10 +3594,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             else:
                 is_ann_assign = False
             value = self.being_assigned
+            origin = EMPTY_ORIGIN
             if not is_ann_assign:
                 self.yield_checker.record_assignment(node.id)
-                value = self._set_name_in_scope(node.id, node, value=value)
-            return Composite(value, VarnameWithOrigin(node.id), node)
+                value, origin = self._set_name_in_scope(node.id, node, value=value)
+            varname = VarnameWithOrigin(node.id, origin)
+            constraint = Constraint(varname, ConstraintType.is_truthy, True, None)
+            value = annotate_with_constraint(value, constraint)
+            return Composite(value, varname, node)
         else:
             # not sure when (if ever) the other contexts can happen
             self.show_error(node, f"Bad context: {node.ctx}", ErrorCode.unexpected_node)
@@ -4056,6 +4082,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         elif isinstance(node, (ast.ExtSlice, ast.Slice)):
             # These don't have a .lineno attribute, which would otherwise cause trouble.
             composite = Composite(self.visit(node), None, None)
+        # We need better support for version-straddling code
+        # static analysis: ignore[value_always_true]
+        elif hasattr(ast, "NamedExpr") and isinstance(node, ast.NamedExpr):
+            composite = self.composite_from_walrus(node)
         else:
             composite = Composite(self.visit(node), None, node)
         if self.annotate:

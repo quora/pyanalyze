@@ -721,7 +721,7 @@ class Scope:
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
-    ) -> None:
+    ) -> VarnameOrigin:
         if varname not in self:
             self.variables[varname] = value
         elif isinstance(value, AnyValue) or not safe_equals(
@@ -741,6 +741,7 @@ class Scope:
                 self.variables[varname] = value
             else:
                 self.variables[varname] = unite_values(existing, value)
+        return EMPTY_ORIGIN
 
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         return self.variables.items()
@@ -1027,10 +1028,10 @@ class FunctionScope(Scope):
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
-    ) -> None:
+    ) -> VarnameOrigin:
         if isinstance(value, ReferencingValue):
             self.referencing_value_vars[varname] = value
-            return
+            return EMPTY_ORIGIN
         ref_var = self.referencing_value_vars[varname]
         if isinstance(ref_var, ReferencingValue):
             ref_var.scope.set(ref_var.name, value, node, state)
@@ -1047,6 +1048,7 @@ class FunctionScope(Scope):
             self.name_to_current_definition_nodes[composite] = []
         self.name_to_all_definition_nodes[varname].add(node)
         self._add_composite(varname)
+        return frozenset([node])
 
     def get_local(
         self,
