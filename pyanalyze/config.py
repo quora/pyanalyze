@@ -13,7 +13,17 @@ import qcore
 from unittest import mock
 import asyncio
 from types import ModuleType
-from typing import Any, Callable, Dict, Set, TYPE_CHECKING, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Mapping,
+    Sequence,
+    Set,
+    TYPE_CHECKING,
+    Tuple,
+    Union,
+)
 
 from . import value
 from .extensions import CustomCheck
@@ -174,21 +184,21 @@ class Config(object):
     # Set of dunder methods (e.g., '{"__lshift__"}') that pyanalyze is not allowed to call on
     # objects.
     # name_check_visitor.DisallowCallsToDunders
-    DISALLOW_CALLS_TO_DUNDERS = set()
+    DISALLOW_CALLS_TO_DUNDERS: Set[str] = set()
 
     # Decorators that are equivalent to asynq.asynq and asynq.async_proxy.
     # name_check_visitor.AsynqDecorators
-    ASYNQ_DECORATORS = {asynq.asynq}
+    ASYNQ_DECORATORS: Set[object] = {asynq.asynq}
     # name_check_visitor.AsyncProxyDecorators
-    ASYNC_PROXY_DECORATORS = {asynq.async_proxy}
+    ASYNC_PROXY_DECORATORS: Set[object] = {asynq.async_proxy}
 
     # name_check_visitor.ComprehensionLengthInferenceLimit
     # If we iterate over something longer than this, we don't try to infer precise
     # types for comprehensions. Increasing this can hurt performance.
-    COMPREHENSION_LENGTH_INFERENCE_LIMIT = 25
+    COMPREHENSION_LENGTH_INFERENCE_LIMIT: int = 25
     # name_check_visitor.UnionSimplificationLimit
     # We may simplify unions with more than this many values.
-    UNION_SIMPLIFICATION_LIMIT = 100
+    UNION_SIMPLIFICATION_LIMIT: int = 100
 
     #
     # Used for VariableNameValue
@@ -196,7 +206,7 @@ class Config(object):
 
     # List of VariableNameValue instances that create pseudo-types associated with certain variable
     # names
-    VARIABLE_NAME_VALUES = []
+    VARIABLE_NAME_VALUES: Sequence[value.VariableNameValue] = []
 
     @qcore.caching.cached_per_instance()
     def varname_value_map(self) -> Dict[str, value.VariableNameValue]:
@@ -241,16 +251,16 @@ class Config(object):
     # Normally, async calls to async functions are only enforced in functions that are already
     # async. In subclasses of classes listed here, all async functions must be called async.
     # asynq_checker.ClassesCheckedForAsynq
-    BASE_CLASSES_CHECKED_FOR_ASYNQ = set()
+    BASE_CLASSES_CHECKED_FOR_ASYNQ: Set[type] = set()
 
     # Async batching in these component methods isn't checked even when they exist on a class in
     # BASE_CLASSES_CHECKED_FOR_ASYNQ
     # asynq_checker.MethodsNotCheckedForAsynq
-    METHODS_NOT_CHECKED_FOR_ASYNQ = set()
+    METHODS_NOT_CHECKED_FOR_ASYNQ: Set[str] = set()
 
     # We ignore _async methdos in these modules.
     # asynq_checker.NonAsynqModules
-    NON_ASYNQ_MODULES = {"multiprocessing"}
+    NON_ASYNQ_MODULES: Set[str] = {"multiprocessing"}
 
     #
     # Used by method_return_type.py
@@ -259,14 +269,14 @@ class Config(object):
     # A dictionary of {base class: {method name: expected return type}}
     # Use this to ensure that all subclasses of a certain type maintain the same return type for
     # their methods
-    METHOD_RETURN_TYPES = {}
+    METHOD_RETURN_TYPES: Mapping[type, Mapping[str, type]] = {}
 
     #
     # Used by ClassAttributeChecker
     #
 
     # When these attributes are unused, they are not listed as such by the unused attribute finder
-    IGNORED_UNUSED_ATTRS = {
+    IGNORED_UNUSED_ATTRS: Set[str] = {
         # ABCs
         "_abc_cache",
         "_abc_negative_cache",
@@ -286,13 +296,13 @@ class Config(object):
 
     # List of pairs of (class, set of attribute names). When these attribute names are seen as
     # unused on a child or base class of the class, they are not listed.
-    IGNORED_UNUSED_ATTRS_BY_CLASS = []
+    IGNORED_UNUSED_ATTRS_BY_CLASS: Sequence[Tuple[type, Set[str]]] = []
 
     # Used in the check for object attributes that are accessed but not set. In general, the check
     # will only alert about attributes that don't exist when it has visited all the base classes of
     # the class with the possibly missing attribute. However, these classes are never going to be
     # visited (since they're builtin), but they don't set any attributes that we rely on.
-    IGNORED_TYPES_FOR_ATTRIBUTE_CHECKING = {object, abc.ABC}
+    IGNORED_TYPES_FOR_ATTRIBUTE_CHECKING: Set[type] = {object, abc.ABC}
 
     #
     # Used by arg_spec.py

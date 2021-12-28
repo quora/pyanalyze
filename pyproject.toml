@@ -39,3 +39,4 @@ unused_variable = true
 value_always_true = true
 suggested_parameter_type = true
 suggested_return_type = true
+incompatible_override = true
