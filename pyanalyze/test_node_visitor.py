@@ -31,6 +31,7 @@ class BaseNodeVisitorTester(object):
         # Can be bytes in Python 2.
         if isinstance(code_str, bytes):
             code_str = code_str.decode("utf-8")
+        code_str = textwrap.dedent(code_str)
         tree = ast.parse(code_str, "<test input>")
         try:
             result = self._run_tree(

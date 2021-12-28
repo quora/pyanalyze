@@ -178,7 +178,9 @@ class TestScoping(TestNameCheckVisitorBase):
     @assert_passes()
     def test_args_kwargs(self):
         def capybara(*args, **kwargs):
-            assert_is_value(args, TypedValue(tuple))
+            assert_is_value(
+                args, GenericValue(tuple, [AnyValue(AnySource.unannotated)])
+            )
             assert_is_value(
                 kwargs,
                 GenericValue(dict, [TypedValue(str), AnyValue(AnySource.unannotated)]),
@@ -496,14 +498,19 @@ class TestLoops(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_recursive_func_in_loop(self):
-        def capybara(xs):
+        from typing import Iterable
+
+        def capybara(xs: Iterable[int]):
             for x in xs:
 
-                def do_something(y):
+                def do_something(y: int) -> int:
                     if x:
-                        do_something(y)
+                        assert_is_value(do_something(y), TypedValue(int))
+                        do_something("x")  # E: incompatible_argument
+                    return y
 
-                do_something(x)
+                assert_is_value(do_something(x), TypedValue(int))
+                do_something("x")  # E: incompatible_argument
 
 
 class TestUnusedVariable(TestNameCheckVisitorBase):
