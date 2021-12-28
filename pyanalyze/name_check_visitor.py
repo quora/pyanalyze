@@ -82,6 +82,7 @@ from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, all_of_type
 from .stacked_scopes import (
+    EMPTY_ORIGIN,
     AbstractConstraint,
     Composite,
     CompositeIndex,
@@ -152,6 +153,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
+    annotate_value,
     kv_pairs_from_mapping,
     make_weak,
     unannotate_value,
@@ -1198,7 +1200,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         value: Value = AnyValue(AnySource.inference),
         *,
         private: bool = False,
-    ) -> Value:
+    ) -> Tuple[Value, VarnameOrigin]:
         current_scope = self.scopes.current_scope()
         scope_type = current_scope.scope_type
         if self.module is not None and scope_type == ScopeType.module_scope:
@@ -1208,12 +1210,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 )
             if varname in current_scope:
                 value, _ = current_scope.get_local(varname, node, self.state)
-                return value
+                return value, EMPTY_ORIGIN
         if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
             self._check_for_incompatible_overrides(varname, node, value)
             self._check_for_class_variable_redefinition(varname, node)
-        current_scope.set(varname, value, node, self.state)
-        return value
+        origin = current_scope.set(varname, value, node, self.state)
+        return value, origin
 
     def _check_for_incompatible_overrides(
         self, varname: str, node: ast.AST, value: Value
@@ -1465,7 +1467,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self._generic_visit_list(node.bases)
         self._generic_visit_list(node.keywords)
         value = self._visit_class_and_get_value(node)
-        return self._set_name_in_scope(node.name, node, value)
+        value, _ = self._set_name_in_scope(node.name, node, value)
+        return value
 
     def _get_class_object(self, node: ast.ClassDef) -> Value:
         if self.scopes.scope_type() == ScopeType.module_scope:
@@ -2230,9 +2233,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                         for val in iterable_type:
                             self.visit_comprehension(generator, iterable_type=val)
                             with qcore.override(self, "in_comprehension_body", True):
-                                items.append(
-                                    KVPair(self.visit(node.key), self.visit(node.value))
-                                )
+                                # PEP 572 mandates that the key be evaluated first.
+                                key = self.visit(node.key)
+                                value = self.visit(node.value)
+                                items.append(KVPair(key, value))
                     finally:
                         self.node_context.contexts.pop()
                     return DictIncompleteValue(typ, items)
@@ -3448,6 +3452,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     # Assignments
 
+    def visit_NamedExpr(self, node: "ast.NamedExpr") -> Value:
+        rhs = self.visit(node.value)
+        with qcore.override(self, "being_assigned", rhs):
+            lhs = self._visit_possible_constraint(node.target)
+            print(lhs, rhs)
+            _, constraint = unannotate_value(lhs, ConstraintExtension)
+        return annotate_value(rhs, constraint)
+
     def visit_Assign(self, node: ast.Assign) -> None:
         is_yield = isinstance(node.value, ast.Yield)
         value = self.visit(node.value)
@@ -3572,10 +3584,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             else:
                 is_ann_assign = False
             value = self.being_assigned
+            origin = EMPTY_ORIGIN
             if not is_ann_assign:
                 self.yield_checker.record_assignment(node.id)
-                value = self._set_name_in_scope(node.id, node, value=value)
-            return Composite(value, VarnameWithOrigin(node.id), node)
+                value, origin = self._set_name_in_scope(node.id, node, value=value)
+            return Composite(value, VarnameWithOrigin(node.id, origin), node)
         else:
             # not sure when (if ever) the other contexts can happen
             self.show_error(node, f"Bad context: {node.ctx}", ErrorCode.unexpected_node)
