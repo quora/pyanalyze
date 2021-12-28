@@ -1534,7 +1534,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         if info.node.decorator_list and not (
             len(info.decorators) == 1
             and info.decorators[0][0]
-            in (KnownValue(asynq.asynq), KnownValue(asyncio.coroutine))
+            in (
+                KnownValue(asynq.asynq),
+                KnownValue(asyncio.coroutine),
+                KnownValue(property),
+            )
         ):
             return  # With decorators we don't know what it will return
         return_value = result.return_value

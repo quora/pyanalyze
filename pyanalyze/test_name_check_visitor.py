@@ -842,7 +842,7 @@ class TestReturn(TestNameCheckVisitorBase):
                 async_fn.asynq(), AsyncTaskIncompleteValue(AsyncTask, KnownValue(3))
             )
             assert_is_value(WithAProperty().this_is_one, TypedValue(str))
-            assert_is_value(pure_async_proxy(oid), TypedValue(ConstFuture))
+            assert_is_value(pure_async_proxy(oid), AnyValue(AnySource.unannotated))
             assert_is_value(impure_async_proxy(), AnyValue(AnySource.unannotated))
             assert_is_value(
                 impure_async_proxy.asynq(),
