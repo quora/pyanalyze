@@ -128,7 +128,7 @@ class ConditionEvaluator(ast.NodeVisitor):
             varname_node = node.args[0]
             if not isinstance(varname_node, ast.Name):
                 raise InvalidEvaluation("First argument to isinstance() must be a name")
-            val = self.visit(varname_node)
+            val = self.get_name(varname_node)
             typ = self.ctx.evaluate_type(node.args[1])
             can_assign, used_any = can_assign_and_used_any(
                 typ, val, self.ctx.can_assign_context
@@ -153,7 +153,18 @@ class ConditionEvaluator(ast.NodeVisitor):
         else:
             raise InvalidEvaluation(f"Invalid function {name}")
 
-    def visit_Name(self, node: ast.Name) -> Value:
+    def visit_UnaryOp(self, node: ast.UnaryOp) -> ConditionReturn:
+        if isinstance(node.op, ast.Not):
+            ret = self.visit(node.operand)
+            return ConditionReturn(
+                left_varmap=ret.right_varmap,
+                right_varmap=ret.left_varmap,
+                is_any_match=ret.is_any_match,
+            )
+        else:
+            raise InvalidEvaluation("Unsupported unary operation")
+
+    def get_name(self, node: ast.Name) -> Value:
         try:
             return self.ctx.variables[node.id]
         except KeyError:

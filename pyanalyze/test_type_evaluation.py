@@ -41,6 +41,21 @@ def isinstance_evaluated(x: int) -> Union[int, str]:
         return 0
 
 
+@evaluated
+def not_evaluated(x: int):
+    if not isinstance(x, Literal[1]):
+        return str
+    else:
+        return int
+
+
+def not_evaluated(x: int) -> Union[int, str]:
+    if x != 1:
+        return ""
+    else:
+        return 0
+
+
 class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_is_set(self):
@@ -63,5 +78,21 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
             )
             assert_is_value(
                 isinstance_evaluated(2 if unannotated else 1),
+                TypedValue(int) | TypedValue(str),
+            )
+
+    @assert_passes()
+    def test_not(self):
+        from pyanalyze.test_type_evaluation import not_evaluated
+
+        def capybara(unannotated):
+            assert_is_value(not_evaluated(1), TypedValue(int))
+            assert_is_value(not_evaluated(2), TypedValue(str))
+            assert_is_value(
+                not_evaluated(unannotated),
+                AnyValue(AnySource.multiple_overload_matches),
+            )
+            assert_is_value(
+                not_evaluated(2 if unannotated else 1),
                 TypedValue(int) | TypedValue(str),
             )
