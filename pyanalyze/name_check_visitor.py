@@ -78,6 +78,7 @@ from .options import (
     StringSequenceOption,
     add_arguments,
 )
+from .patma import PatmaVisitor
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, all_of_type
@@ -179,6 +180,24 @@ try:
     from ast import NamedExpr
 except ImportError:
     NamedExpr = Any  # 3.7 and lower
+
+try:
+    from ast import (
+        match_case,
+        Match,
+        MatchAs,
+        MatchClass,
+        MatchMapping,
+        MatchOr,
+        MatchSequence,
+        MatchSingleton,
+        MatchStar,
+        MatchValue,
+    )
+except ImportError:
+    # 3.9 and lower
+    match_case = Match = MatchAs = MatchClass = MatchMapping = Any
+    MatchOr = MatchSequence = MatchSingleton = MatchStar = MatchValue = Any
 
 T = TypeVar("T")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
@@ -868,7 +887,7 @@ class CallSiteCollector:
             pass
 
 
-class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
+class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
@@ -921,6 +940,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         self.state = VisitorState.collect_names
         # value currently being assigned
         self.being_assigned = AnyValue(AnySource.inference)
+        # current match target
+        self.match_subject = Composite(AnyValue(AnySource.inference))
         # current class (for inferring the type of cls and self arguments)
         self.current_class = None
         self.current_function_name = None
@@ -4400,6 +4421,39 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             return ANY_SIGNATURE
         else:
             return None
+
+    # Match statements
+
+    def visit_Match(self, node: Match) -> None:
+        subject = self.composite_from_node(node.subject)
+        patma_visitor = PatmaVisitor(self)
+        with qcore.override(self, "match_subject", subject):
+            constraints_to_apply = []
+            subscopes = []
+            for case in node.cases:
+                with self.scopes.subscope() as case_scope:
+                    subscopes.append(case_scope)
+                    for constraint in constraints_to_apply:
+                        self.add_constraint(case, constraint)
+
+                    pattern_constraint = patma_visitor.visit(case.pattern)
+                    constraints = [pattern_constraint]
+                    self.add_constraint(case.pattern, pattern_constraint)
+                    if case.guard is not None:
+                        _, guard_constraint = self.constraint_from_condition(case.guard)
+                        self.add_constraint(case.guard, guard_constraint)
+                        constraints.append(guard_constraint)
+
+                    constraints_to_apply.append(
+                        AndConstraint.make(constraints).invert()
+                    )
+                    self._generic_visit_list(case.body)
+
+                self.yield_checker.reset_yield_checks()
+            self.scopes.combine_subscopes(subscopes)
+
+    def visit_match_case(self, node: match_case) -> None:
+        pass
 
     # Attribute checking
 
