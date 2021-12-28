@@ -27,6 +27,7 @@ from .value import (
     AnyValue,
     CanAssignContext,
     CanAssignError,
+    KnownValue,
     MultiValuedValue,
     Value,
     can_assign_and_used_any,
@@ -102,6 +103,13 @@ class ConditionReturn:
     right_varmap: Optional[VarMap] = None
     is_any_match: bool = False
 
+    def reverse(self) -> "ConditionReturn":
+        return ConditionReturn(
+            left_varmap=self.right_varmap,
+            right_varmap=self.left_varmap,
+            is_any_match=self.is_any_match,
+        )
+
 
 @dataclass
 class ConditionEvaluator(ast.NodeVisitor):
@@ -126,43 +134,72 @@ class ConditionEvaluator(ast.NodeVisitor):
             if node.keywords or len(node.args) != 2:
                 raise InvalidEvaluation("isinstance() takes two positional arguments")
             varname_node = node.args[0]
-            if not isinstance(varname_node, ast.Name):
-                raise InvalidEvaluation("First argument to isinstance() must be a name")
-            val = self.get_name(varname_node)
             typ = self.ctx.evaluate_type(node.args[1])
-            can_assign, used_any = can_assign_and_used_any(
-                typ, val, self.ctx.can_assign_context
-            )
-            if isinstance(can_assign, CanAssignError):
-                triple = decompose_union(typ, val, self.ctx.can_assign_context)
-                if triple is not None:
-                    _, used_any, remaining = triple
-                    return ConditionReturn(
-                        left_varmap={varname_node.id: typ},
-                        right_varmap={varname_node.id: remaining},
-                        is_any_match=used_any,
-                    )
-                cleaned = unannotate(val)
-                if isinstance(cleaned, MultiValuedValue):
-                    pass
-                return ConditionReturn(right_varmap={})
-            else:
-                return ConditionReturn(
-                    left_varmap={varname_node.id: typ}, is_any_match=used_any
-                )
+            return self.visit_isinstance(varname_node, typ)
         else:
             raise InvalidEvaluation(f"Invalid function {name}")
+
+    def visit_isinstance(self, varname_node: ast.AST, typ: Value) -> ConditionReturn:
+        if not isinstance(varname_node, ast.Name):
+            raise InvalidEvaluation("First argument to isinstance() must be a name")
+        val = self.get_name(varname_node)
+        can_assign, used_any = can_assign_and_used_any(
+            typ, val, self.ctx.can_assign_context
+        )
+        if isinstance(can_assign, CanAssignError):
+            triple = decompose_union(typ, val, self.ctx.can_assign_context)
+            if triple is not None:
+                _, used_any, remaining = triple
+                return ConditionReturn(
+                    left_varmap={varname_node.id: typ},
+                    right_varmap={varname_node.id: remaining},
+                    is_any_match=used_any,
+                )
+            return ConditionReturn(right_varmap={})
+        else:
+            return ConditionReturn(
+                left_varmap={varname_node.id: typ}, is_any_match=used_any
+            )
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> ConditionReturn:
         if isinstance(node.op, ast.Not):
             ret = self.visit(node.operand)
-            return ConditionReturn(
-                left_varmap=ret.right_varmap,
-                right_varmap=ret.left_varmap,
-                is_any_match=ret.is_any_match,
-            )
+            return ret.reverse()
         else:
             raise InvalidEvaluation("Unsupported unary operation")
+
+    def visit_Compare(self, node: ast.Compare) -> ConditionReturn:
+        if len(node.ops) != 1:
+            raise InvalidEvaluation("Chained comparison is unsupported")
+        op = node.ops[0]
+        right = node.comparators[0]
+        if isinstance(op, (ast.Is, ast.IsNot)):
+            if not isinstance(right, ast.NameConstant):
+                raise InvalidEvaluation(
+                    "is/is not are only supported with True, False, and None"
+                )
+            ret = self.visit_isinstance(node.left, KnownValue(right.value))
+            if isinstance(op, ast.IsNot):
+                return ret.reverse()
+            return ret
+        elif isinstance(op, (ast.Eq, ast.NotEq)):
+            operand = self.evaluate_literal(right)
+            ret = self.visit_isinstance(node.left, operand)
+            if isinstance(op, ast.NotEq):
+                return ret.reverse()
+            return ret
+        else:
+            raise InvalidEvaluation("Unsupported comparison operator")
+
+    def evaluate_literal(self, node: ast.expr) -> KnownValue:
+        if isinstance(node, ast.NameConstant):
+            return KnownValue(node.value)
+        elif isinstance(node, ast.Num):
+            return KnownValue(node.n)
+        elif isinstance(node, (ast.Str, ast.Bytes)):
+            return KnownValue(node.s)
+        else:
+            raise InvalidEvaluation("Only literals supported")
 
     def get_name(self, node: ast.Name) -> Value:
         try:
