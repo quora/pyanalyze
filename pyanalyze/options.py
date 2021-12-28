@@ -163,8 +163,6 @@ class BooleanOption(ConfigOption[bool]):
 
 
 class IntegerOption(ConfigOption[int]):
-    default_value = False
-
     @classmethod
     def parse(cls: "Type[IntegerOption]", data: object, source_path: Path) -> int:
         if isinstance(data, int):
@@ -221,7 +219,7 @@ class StringSequenceOption(ConcatenatedOption[str]):
 
 
 class PathSequenceOption(ConfigOption[Sequence[Path]]):
-    default_value = ()
+    default_value: ClassVar[Sequence[Path]] = ()
 
     @classmethod
     def parse(
@@ -247,7 +245,7 @@ class PathSequenceOption(ConfigOption[Sequence[Path]]):
 class PyObjectSequenceOption(ConfigOption[Sequence[T]]):
     """Represents a sequence of objects parsed as Python objects."""
 
-    default_value = ()
+    default_value: ClassVar[Sequence[T]] = ()
 
     @classmethod
     def parse(
@@ -323,6 +321,8 @@ class Options:
         fallback = option.get_fallback_option(self.fallback)
         if fallback is not None:
             instances = [*instances, fallback]
+        else:
+            instances = [*instances, option(option.default_value)]
         return option.get_value_from_instances(instances, self.module_path)
 
     def is_error_code_enabled(self, code: ErrorCode) -> bool:

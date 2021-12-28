@@ -7,7 +7,6 @@ type inference. It is the central object that invokes other parts of
 the system.
 
 """
-from abc import abstractmethod
 from argparse import ArgumentParser
 import ast
 import enum
@@ -18,7 +17,6 @@ import collections
 import collections.abc
 import contextlib
 from dataclasses import dataclass
-import inspect
 from itertools import chain
 import logging
 import operator
@@ -33,7 +31,6 @@ import sys
 import tempfile
 import traceback
 import types
-import typing
 from typing import (
     ClassVar,
     ContextManager,
@@ -56,7 +53,6 @@ from typing_extensions import Annotated
 
 import asynq
 import qcore
-from qcore.helpers import safe_str
 
 from . import attributes, format_strings, node_visitor, importer, method_return_type
 from .annotations import (
@@ -70,7 +66,7 @@ from .boolability import Boolability, get_boolability
 from .checker import Checker
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
-from .extensions import ParameterTypeGuard, overload
+from .extensions import ParameterTypeGuard
 from .find_unused import UnusedObjectFinder, used
 from .options import (
     ConfigOption,
@@ -79,12 +75,11 @@ from .options import (
     InvalidConfigOption,
     IntegerOption,
     Options,
-    PyObjectSequenceOption,
     StringSequenceOption,
     add_arguments,
 )
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
-from .reexport import ErrorContext, ImplicitReexportTracker
+from .reexport import ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
@@ -118,6 +113,7 @@ from .signature import (
     ConcreteSignature,
     MaybeSignature,
     OverloadedSignature,
+    SigParameter,
     Signature,
     make_bound_method,
     ARGS,
@@ -129,7 +125,16 @@ from .suggested_type import (
     prepare_type,
     should_suggest_type,
 )
-from .asynq_checker import AsyncFunctionKind, AsynqChecker, FunctionInfo
+from .asynq_checker import AsynqChecker
+from .functions import (
+    AsyncFunctionKind,
+    FunctionInfo,
+    FunctionResult,
+    FunctionNode,
+    compute_function_info,
+    IMPLICIT_CLASSMETHODS,
+    compute_value_of_function,
+)
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
 from .value import (
@@ -138,6 +143,7 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    CanAssign,
     CanAssignError,
     ConstraintExtension,
     GenericBases,
@@ -173,9 +179,7 @@ AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
 ExceptionValue = TypedValue(BaseException) | SubclassValue(TypedValue(BaseException))
 ExceptionOrNone = ExceptionValue | KnownNone
-FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
 
-IMPLICIT_CLASSMETHODS = ("__init_subclass__", "__new__")
 
 BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.Add: ("addition", "__add__", "__iadd__", "__radd__"),
@@ -238,7 +242,7 @@ class _StarredValue(Value):
         self.node = node
 
 
-@dataclass
+@dataclass(init=False)
 class _AttrContext(attributes.AttrContext):
     visitor: "NameCheckVisitor"
     node: Optional[ast.AST]
@@ -249,11 +253,16 @@ class _AttrContext(attributes.AttrContext):
         self,
         root_composite: Composite,
         attr: str,
-        node: Optional[ast.AST],
         visitor: "NameCheckVisitor",
-        ignore_none: bool,
+        *,
+        node: Optional[ast.AST] = None,
+        ignore_none: bool = False,
+        skip_mro: bool = False,
+        skip_unwrap: bool = False,
     ) -> None:
-        super().__init__(root_composite, attr)
+        super().__init__(
+            root_composite, attr, skip_mro=skip_mro, skip_unwrap=skip_unwrap
+        )
         self.node = node
         self.visitor = visitor
         self.ignore_none = ignore_none
@@ -306,23 +315,6 @@ class _AttrContext(attributes.AttrContext):
         return self.visitor.get_generic_bases(typ, generic_args)
 
 
-# FunctionInfo for a vanilla function (e.g. a lambda)
-_DEFAULT_FUNCTION_INFO = FunctionInfo(
-    AsyncFunctionKind.normal, False, False, False, False, []
-)
-
-
-class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
-    """These decorators can safely be applied to nested functions."""
-
-    name = "safe_decorators_for_nested_functions"
-    default_value = [asynq.asynq, classmethod, staticmethod, asyncio.coroutine]
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS)
-
-
 class ComprehensionLengthInferenceLimit(IntegerOption):
     """If we iterate over something longer than this, we don't try to infer precise
     types for comprehensions. Increasing this can hurt performance."""
@@ -344,28 +336,6 @@ class UnionSimplificationLimit(IntegerOption):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> int:
         return fallback.UNION_SIMPLIFICATION_LIMIT
-
-
-class AsynqDecorators(PyObjectSequenceOption[object]):
-    """Decorators that are equivalent to asynq.asynq."""
-
-    default_value = [asynq.asynq]
-    name = "asynq_decorators"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.ASYNQ_DECORATORS)
-
-
-class AsyncProxyDecorators(PyObjectSequenceOption[object]):
-    """Decorators that are equivalent to asynq.async_proxy."""
-
-    default_value = [asynq.async_proxy]
-    name = "async_proxy_decorators"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.ASYNC_PROXY_DECORATORS)
 
 
 class DisallowCallsToDunders(StringSequenceOption):
@@ -471,6 +441,13 @@ class IgnoredEndOfReference(StringSequenceOption):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
         return list(fallback.IGNORED_END_OF_REFERENCE)
+
+
+class IgnoredForIncompatibleOverride(StringSequenceOption):
+    """These attributes are not checked for incompatible overrides."""
+
+    name = "ignored_for_incompatible_overrides"
+    default_value = ["__init__", "__eq__", "__ne__"]
 
 
 class ClassAttributeChecker:
@@ -885,9 +862,7 @@ class CallSiteCollector:
             pass
 
 
-class NameCheckVisitor(
-    node_visitor.ReplacingNodeVisitor, CanAssignContext, ErrorContext
-):
+class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
@@ -898,6 +873,7 @@ class NameCheckVisitor(
     """Path (relative to this class's file) to a pyproject.toml config file."""
 
     checker: Checker
+    options: Options
     arg_spec_cache: ArgSpecCache
     reexport_tracker: ImplicitReexportTracker
     being_assigned: Value
@@ -1005,7 +981,7 @@ class NameCheckVisitor(
         self._has_used_any_match = False
         self._fill_method_cache()
 
-    def make_type_object(self, typ: Union[type, super]) -> TypeObject:
+    def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
         return self.checker.make_type_object(typ)
 
     def can_assume_compatibility(self, left: TypeObject, right: TypeObject) -> bool:
@@ -1234,9 +1210,76 @@ class NameCheckVisitor(
                 value, _ = current_scope.get_local(varname, node, self.state)
                 return value
         if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
+            self._check_for_incompatible_overrides(varname, node, value)
             self._check_for_class_variable_redefinition(varname, node)
         current_scope.set(varname, value, node, self.state)
         return value
+
+    def _check_for_incompatible_overrides(
+        self, varname: str, node: ast.AST, value: Value
+    ) -> None:
+        if self.current_class is None:
+            return
+        if varname in self.options.get_value_for(IgnoredForIncompatibleOverride):
+            return
+        for base_class in self.get_generic_bases(self.current_class):
+            if base_class is self.current_class:
+                continue
+            base_class_value = TypedValue(base_class)
+            ctx = _AttrContext(
+                Composite(base_class_value),
+                varname,
+                self,
+                skip_mro=True,
+                skip_unwrap=True,
+            )
+            base_value = attributes.get_attribute(ctx)
+            can_assign = self._can_assign_to_base(base_value, value)
+            if isinstance(can_assign, CanAssignError):
+                error = CanAssignError(
+                    children=[
+                        CanAssignError(f"Base class: {self.display_value(base_value)}"),
+                        CanAssignError(f"Child class: {self.display_value(value)}"),
+                        can_assign,
+                    ]
+                )
+                self._show_error_if_checking(
+                    node,
+                    f"Value of {varname} incompatible with base class {base_class}",
+                    ErrorCode.incompatible_override,
+                    detail=str(error),
+                )
+
+    def display_value(self, value: Value) -> str:
+        message = f"'{value!s}'"
+        if isinstance(value, KnownValue):
+            sig = self.arg_spec_cache.get_argspec(value.val)
+        elif isinstance(value, UnboundMethodValue):
+            sig = value.get_signature(self)
+        else:
+            sig = None
+        if sig is not None:
+            message += f", signature is {sig!s}"
+        return message
+
+    def _can_assign_to_base(self, base_value: Value, child_value: Value) -> CanAssign:
+        if base_value is UNINITIALIZED_VALUE:
+            return {}
+        if isinstance(base_value, KnownValue) and callable(base_value.val):
+            base_sig = self.signature_from_value(base_value)
+            if not isinstance(base_sig, (Signature, OverloadedSignature)):
+                return {}
+            child_sig = self.signature_from_value(child_value)
+            if not isinstance(child_sig, (Signature, OverloadedSignature)):
+                return CanAssignError(f"{child_value} is not callable")
+            base_bound = base_sig.bind_self()
+            if base_bound is None:
+                return {}
+            child_bound = child_sig.bind_self()
+            if child_bound is None:
+                return CanAssignError(f"{child_value} is missing a 'self' argument")
+            return base_bound.can_assign(child_bound, self)
+        return base_value.can_assign(child_value, self)
 
     def _check_for_class_variable_redefinition(
         self, varname: str, node: ast.AST
@@ -1475,17 +1518,135 @@ class NameCheckVisitor(
         return AnyValue(AnySource.inference)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Value:
-        return self.visit_FunctionDef(node, is_coroutine=True)
+        return self.visit_FunctionDef(node)
 
     def visit_FunctionDef(
-        self,
-        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
-        is_coroutine: bool = False,
+        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     ) -> Value:
-        with qcore.override(self, "current_class", None):
-            info = self._visit_decorators_and_check_asynq(node.decorator_list)
-        defaults, kw_defaults = self._visit_defaults(node)
+        potential_function = self._get_potential_function(node)
+        info = compute_function_info(
+            node,
+            self,
+            enclosing_class=TypedValue(self.current_class)
+            if self.current_class is not None
+            else None,
+            is_nested_in_class=self.node_context.includes(ast.ClassDef),
+            potential_function=potential_function,
+        )
 
+        self.yield_checker.reset_yield_checks()
+
+        if node.returns is None:
+            self._show_error_if_checking(
+                node, error_code=ErrorCode.missing_return_annotation
+            )
+
+        if potential_function is None:
+            val = compute_value_of_function(info, self)
+        else:
+            val = KnownValue(potential_function)
+        if not info.is_overload:
+            self._set_name_in_scope(node.name, node, val)
+
+        with self.asynq_checker.set_func_name(
+            node.name, async_kind=info.async_kind, is_classmethod=info.is_classmethod
+        ), qcore.override(self, "yield_checker", YieldChecker(self)), qcore.override(
+            self, "is_async_def", isinstance(node, ast.AsyncFunctionDef)
+        ), qcore.override(
+            self, "current_function_name", node.name
+        ), qcore.override(
+            self, "current_function", potential_function
+        ), qcore.override(
+            self, "expected_return_value", info.return_annotation
+        ):
+            result = self._visit_function_body(info)
+
+        if (
+            not result.has_return
+            and not info.is_overload
+            and node.returns is not None
+            and info.return_annotation != KnownNone
+            and not (
+                isinstance(info.return_annotation, AnnotatedValue)
+                and info.return_annotation.value == KnownNone
+            )
+            and not info.is_abstractmethod
+        ):
+            if info.return_annotation is NO_RETURN_VALUE:
+                self._show_error_if_checking(
+                    node, error_code=ErrorCode.no_return_may_return
+                )
+            else:
+                self._show_error_if_checking(node, error_code=ErrorCode.missing_return)
+
+        if node.returns is None:
+            if (
+                result.has_return
+                and not info.is_overload
+                and not info.is_abstractmethod
+            ):
+                prepared = prepare_type(result.return_value)
+                if should_suggest_type(prepared):
+                    detail, metadata = display_suggested_type(prepared)
+                    self._show_error_if_checking(
+                        node,
+                        error_code=ErrorCode.suggested_return_type,
+                        detail=detail,
+                        extra_metadata=metadata,
+                    )
+
+            if info.async_kind == AsyncFunctionKind.normal and _is_asynq_future(
+                result.return_value
+            ):
+                self._show_error_if_checking(
+                    node, error_code=ErrorCode.task_needs_yield
+                )
+
+        self._set_argspec_to_retval(val, info, result)
+        return val
+
+    def _set_argspec_to_retval(
+        self, val: Value, info: FunctionInfo, result: FunctionResult
+    ) -> None:
+        if isinstance(info.node, ast.Lambda) or info.node.returns is not None:
+            return
+        if info.async_kind == AsyncFunctionKind.async_proxy:
+            # Don't attempt to infer the return value of async_proxy functions, since it will be
+            # set within the Future returned. Without this, we'll incorrectly infer the return
+            # value to be the Future instead of the Future's value.
+            return
+        if info.node.decorator_list and not (
+            len(info.decorators) == 1
+            and info.decorators[0][0]
+            in (
+                KnownValue(asynq.asynq),
+                KnownValue(asyncio.coroutine),
+                KnownValue(property),
+            )
+        ):
+            return  # With decorators we don't know what it will return
+        return_value = result.return_value
+
+        if result.is_generator and return_value == KnownNone:
+            return_value = AnyValue(AnySource.inference)
+
+        # pure async functions are otherwise incorrectly inferred as returning whatever the
+        # underlying function returns
+        if info.async_kind == AsyncFunctionKind.pure:
+            task_cls = _get_task_cls(info.potential_function)
+            return_value = AsyncTaskIncompleteValue(task_cls, return_value)
+
+        if isinstance(info.node, ast.AsyncFunctionDef) or info.is_decorated_coroutine:
+            return_value = GenericValue(collections.abc.Awaitable, [return_value])
+
+        sig = self.signature_from_value(val)
+        if sig is None:
+            return
+        self._argspec_to_retval[id(sig)] = return_value
+
+    def _get_potential_function(
+        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> Optional[object]:
         scope_type = self.scopes.scope_type()
         if scope_type == ScopeType.module_scope and self.module is not None:
             potential_function = safe_getattr(self.module, node.name, None)
@@ -1505,150 +1666,7 @@ class NameCheckVisitor(
                 self.checker.callable_tracker.record_callable(
                     node, potential_function, sig, self
                 )
-
-        self.yield_checker.reset_yield_checks()
-
-        # This code handles nested functions
-        evaled_function = None
-        if potential_function is None:
-            if scope_type != ScopeType.function_scope:
-                self.log(
-                    logging.INFO, "Failed to find function", (node.name, scope_type)
-                )
-            evaled_function = self._get_evaled_function(node, info.decorators)
-            # evaled_function should be a KnownValue of a function unless a decorator messed it up.
-            if isinstance(evaled_function, KnownValue):
-                potential_function = evaled_function.val
-
-        if node.returns is not None:
-            return_annotation = self._visit_annotation(node.returns)
-            expected_return_value = self._value_of_annotation_type(
-                return_annotation, node.returns
-            )
-        else:
-            self._show_error_if_checking(
-                node, error_code=ErrorCode.missing_return_annotation
-            )
-            expected_return_value = None
-
-        if not info.is_overload:
-            if evaled_function is not None:
-                self._set_name_in_scope(node.name, node, evaled_function)
-            else:
-                self._set_name_in_scope(node.name, node, KnownValue(potential_function))
-
-        with self.asynq_checker.set_func_name(
-            node.name, async_kind=info.async_kind, is_classmethod=info.is_classmethod
-        ), qcore.override(self, "yield_checker", YieldChecker(self)), qcore.override(
-            self, "is_async_def", is_coroutine
-        ), qcore.override(
-            self, "current_function_name", node.name
-        ), qcore.override(
-            self, "current_function", potential_function
-        ), qcore.override(
-            self, "expected_return_value", expected_return_value
-        ):
-            return_value, has_return, is_generator = self._visit_function_body(
-                node,
-                function_info=info,
-                name=node.name,
-                defaults=defaults,
-                kw_defaults=kw_defaults,
-            )
-
-        if (
-            not has_return
-            and not info.is_overload
-            and expected_return_value is not None
-            and expected_return_value != KnownNone
-            and not (
-                isinstance(expected_return_value, AnnotatedValue)
-                and expected_return_value.value == KnownNone
-            )
-            and not any(
-                decorator == KnownValue(abstractmethod)
-                for _, decorator in info.decorators
-            )
-        ):
-            if expected_return_value is NO_RETURN_VALUE:
-                self._show_error_if_checking(
-                    node, error_code=ErrorCode.no_return_may_return
-                )
-            else:
-                self._show_error_if_checking(node, error_code=ErrorCode.missing_return)
-
-        if (
-            has_return
-            and expected_return_value is None
-            and not info.is_overload
-            and not any(
-                decorator == KnownValue(abstractmethod)
-                for _, decorator in info.decorators
-            )
-        ):
-            prepared = prepare_type(return_value)
-            if should_suggest_type(prepared):
-                detail, metadata = display_suggested_type(prepared)
-                self._show_error_if_checking(
-                    node,
-                    error_code=ErrorCode.suggested_return_type,
-                    detail=detail,
-                    extra_metadata=metadata,
-                )
-
-        if evaled_function:
-            return evaled_function
-
-        if info.async_kind == AsyncFunctionKind.normal and _is_asynq_future(
-            return_value
-        ):
-            self._show_error_if_checking(node, error_code=ErrorCode.task_needs_yield)
-
-        # If there was an annotation, use it as the return value in the
-        # _argspec_to_retval cache, even if we inferred something else while visiting
-        # the function.
-        if not is_generator and expected_return_value is not None:
-            return_value = expected_return_value
-
-        if is_generator and return_value == KnownNone:
-            return_value = AnyValue(AnySource.inference)
-
-        # pure async functions are otherwise incorrectly inferred as returning whatever the
-        # underlying function returns
-        if info.async_kind == AsyncFunctionKind.pure:
-            return_value = AsyncTaskIncompleteValue(
-                _get_task_cls(potential_function), return_value
-            )
-
-        # If a decorator turned the function async, believe it. This fixes one
-        # instance of the general problem where a decorator can change the return
-        # type, but we still look at the original function's annotation. A more
-        # principled fix for such issues will have to wait for better support for
-        # callable types.
-        if potential_function is not None and not is_coroutine:
-            is_coroutine = _is_coroutine_function(potential_function)
-
-        if is_coroutine or info.is_decorated_coroutine:
-            return_value = GenericValue(collections.abc.Awaitable, [return_value])
-
-        try:
-            argspec = self.arg_spec_cache.get_argspec(potential_function)
-        except TypeError:
-            return KnownValue(potential_function)
-        if argspec is not None:
-            if (
-                info.async_kind != AsyncFunctionKind.async_proxy
-                and node.returns is None
-            ):
-                # Don't attempt to infer the return value of async_proxy functions, since it will be
-                # set within the Future returned. Without this, we'll incorrectly infer the return
-                # value to be the Future instead of the Future's value.
-                # Similarly, we don't infer the return value if there is an annotation, because
-                # we should be able to get it from __annotations__ instead.
-                self._argspec_to_retval[id(argspec)] = return_value
-        else:
-            self.log(logging.DEBUG, "No argspec", (potential_function, node))
-        return KnownValue(potential_function)
+        return potential_function
 
     def record_call(self, callable: object, arguments: CallArgs) -> None:
         if self.options.is_error_code_enabled_anywhere(
@@ -1656,141 +1674,30 @@ class NameCheckVisitor(
         ):
             self.checker.callable_tracker.record_call(callable, arguments)
 
-    def _visit_defaults(
-        self, node: FunctionNode
-    ) -> Tuple[List[Value], List[Optional[Value]]]:
-        with qcore.override(self, "current_class", None):
-            defaults = self._generic_visit_list(node.args.defaults)
-            kw_defaults = [
-                None if kw_default is None else self.visit(kw_default)
-                for kw_default in node.args.kw_defaults
-            ]
-            return defaults, kw_defaults
-
-    def _get_evaled_function(
-        self,
-        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
-        decorators: Sequence[Tuple[Value, Value]],
-    ) -> Value:
-        to_apply = []
-        for decorator, applied_decorator in decorators:
-            if (
-                not isinstance(decorator, KnownValue)
-                or not isinstance(applied_decorator, KnownValue)
-                or not SafeDecoratorsForNestedFunctions.contains(
-                    decorator.val, self.options
-                )
-            ):
-                self.log(
-                    logging.DEBUG,
-                    "Reject nested function because of decorator",
-                    (node, decorator),
-                )
-                return TypedValue(types.FunctionType)
-            else:
-                to_apply.append(applied_decorator.val)
-        scope = {}
-        new_args = ast.arguments(
-            args=[self._strip_annotation(arg) for arg in node.args.args],
-            vararg=self._strip_annotation(node.args.vararg),
-            kwarg=self._strip_annotation(node.args.kwarg),
-            defaults=[ast.Name(id="None") for _ in node.args.defaults],
-            kwonlyargs=[self._strip_annotation(arg) for arg in node.args.kwonlyargs],
-            kw_defaults=[ast.Name(id="None") for _ in node.args.kw_defaults],
-        )
-        new_node = ast.FunctionDef(
-            name=node.name, args=new_args, body=[ast.Pass()], decorator_list=[]
-        )
-        code = decompile(new_node)
-        exec(code, scope, scope)
-        fn = scope[node.name]
-        for decorator in reversed(to_apply):
-            fn = decorator(fn)
-        try:
-            fn._pyanalyze_is_nested_function = True
-            fn._pyanalyze_parent_function = self.current_function
-        except AttributeError:
-            # could happen if decorator wrapped it in an object that doesn't allow attribute
-            # assignment
-            pass
-        return KnownValue(fn)
-
-    def _strip_annotation(self, node: Optional[ast.arg]) -> Optional[ast.arg]:
-        if node is None:
-            return None
-        return ast.arg(arg=node.arg, annotation=None)
-
     def visit_Lambda(self, node: ast.Lambda) -> Value:
-        defaults, kw_defaults = self._visit_defaults(node)
-
         with self.asynq_checker.set_func_name("<lambda>"):
-            self._visit_function_body(node, defaults=defaults, kw_defaults=kw_defaults)
-            return AnyValue(AnySource.inference)
+            info = compute_function_info(node, self)
+            result = self._visit_function_body(info)
+            return compute_value_of_function(info, self, result=result.return_value)
 
-    def _visit_decorators_and_check_asynq(
-        self, decorator_list: List[ast.expr]
-    ) -> FunctionInfo:
-        """Visits a function's decorator list."""
-        async_kind = AsyncFunctionKind.non_async
-        is_classmethod = False
-        is_decorated_coroutine = False
-        is_staticmethod = False
-        is_overload = False
-        decorators = []
-        for decorator in decorator_list:
-            # We have to descend into the Call node because the result of
-            # asynq.asynq() is a one-off function that we can't test against.
-            # This means that the decorator will be visited more than once, which seems OK.
-            if isinstance(decorator, ast.Call):
-                decorator_value = self.visit(decorator)
-                callee = self.visit(decorator.func)
-                if isinstance(callee, KnownValue):
-                    if AsynqDecorators.contains(callee.val, self.options):
-                        if any(kw.arg == "pure" for kw in decorator.keywords):
-                            async_kind = AsyncFunctionKind.pure
-                        else:
-                            async_kind = AsyncFunctionKind.normal
-                    elif AsyncProxyDecorators.contains(callee.val, self.options):
-                        # @async_proxy(pure=True) is a noop, so don't treat it specially
-                        if not any(kw.arg == "pure" for kw in decorator.keywords):
-                            async_kind = AsyncFunctionKind.async_proxy
-                decorators.append((callee, decorator_value))
-            else:
-                decorator_value = self.visit(decorator)
-                if decorator_value == KnownValue(classmethod):
-                    is_classmethod = True
-                elif decorator_value == KnownValue(staticmethod):
-                    is_staticmethod = True
-                elif decorator_value == KnownValue(asyncio.coroutine):
-                    is_decorated_coroutine = True
-                elif decorator_value == KnownValue(
-                    typing.overload
-                ) or decorator_value == KnownValue(overload):
-                    is_overload = True
-                decorators.append((decorator_value, decorator_value))
-        return FunctionInfo(
-            async_kind=async_kind,
-            is_decorated_coroutine=is_decorated_coroutine,
-            is_classmethod=is_classmethod,
-            is_staticmethod=is_staticmethod,
-            is_overload=is_overload,
-            decorators=decorators,
-        )
-
-    def _visit_function_body(
-        self,
-        node: FunctionNode,
-        *,
-        function_info: FunctionInfo = _DEFAULT_FUNCTION_INFO,
-        name: Optional[str] = None,
-        defaults: Sequence[Optional[Value]],
-        kw_defaults: Sequence[Optional[Value]],
-    ) -> Tuple[Value, bool, bool]:
+    def _visit_function_body(self, function_info: FunctionInfo) -> FunctionResult:
         is_collecting = self._is_collecting()
+        node = function_info.node
+
+        class_ctx = (
+            qcore.empty_context
+            if not self.scopes.is_nested_function()
+            else qcore.override(self, "current_class", None)
+        )
+        with class_ctx:
+            self._check_method_first_arg(node, function_info=function_info)
+        infos = function_info.params
+        params = [info.param for info in infos]
+
         if is_collecting and not self.scopes.contains_scope_of_type(
             ScopeType.function_scope
         ):
-            return AnyValue(AnySource.inference), False, False
+            return FunctionResult()
 
         # We pass in the node to add_scope() and visit the body once in collecting
         # mode if in a nested function, so that constraints on nonlocals in the outer
@@ -1807,27 +1714,32 @@ class NameCheckVisitor(
             scope = self.scopes.current_scope()
             assert isinstance(scope, FunctionScope)
 
-            if isinstance(node.body, list):
-                body = node.body
-            else:
-                # hack for lambdas
-                body = [node.body]
-
-            class_ctx = (
-                qcore.empty_context
-                if not self.scopes.is_nested_function()
-                else qcore.override(self, "current_class", None)
-            )
-            with class_ctx:
-                self._visit_function_args(node, function_info, defaults, kw_defaults)
+            for info in infos:
+                if info.is_self:
+                    # we need this for the implementation of super()
+                    self.scopes.set(
+                        "%first_arg",
+                        info.param.annotation,
+                        "%first_arg",
+                        VisitorState.check_names,
+                    )
+                self.scopes.set(
+                    info.param.name,
+                    info.param.annotation,
+                    info.node,
+                    VisitorState.check_names,
+                )
 
             with qcore.override(
                 self, "state", VisitorState.collect_names
             ), qcore.override(self, "return_values", []):
-                self._generic_visit_list(body)
+                if isinstance(node, ast.Lambda):
+                    self.visit(node.body)
+                else:
+                    self._generic_visit_list(node.body)
                 scope.get_local(LEAVES_SCOPE, node, self.state)
             if is_collecting:
-                return AnyValue(AnySource.inference), False, self.is_generator
+                return FunctionResult(is_generator=self.is_generator, parameters=params)
 
             # otherwise we may end up using results from the last yield (generated during the
             # collect state) to evaluate the first one visited during the check state
@@ -1836,23 +1748,26 @@ class NameCheckVisitor(
             with qcore.override(self, "current_class", None), qcore.override(
                 self, "state", VisitorState.check_names
             ), qcore.override(self, "return_values", []):
-                self._generic_visit_list(body)
-                return_values = self.return_values
+                if isinstance(node, ast.Lambda):
+                    return_values = [self.visit(node.body)]
+                else:
+                    self._generic_visit_list(node.body)
+                    return_values = self.return_values
                 return_set, _ = scope.get_local(LEAVES_SCOPE, node, self.state)
 
             self._check_function_unused_vars(scope)
             return self._compute_return_type(
-                node, name, return_values, return_set, function_info
+                node, return_values, return_set, function_info, params
             )
 
     def _compute_return_type(
         self,
-        node: ast.AST,
-        name: Optional[str],
+        node: FunctionNode,
         return_values: Sequence[Optional[Value]],
         return_set: Value,
         info: FunctionInfo,
-    ) -> Tuple[Value, bool, bool]:
+        params: Sequence[SigParameter],
+    ) -> FunctionResult:
         # Ignore generators for now.
         if isinstance(return_set, AnyValue) or (
             self.is_generator and info.async_kind is not AsyncFunctionKind.normal
@@ -1864,9 +1779,9 @@ class NameCheckVisitor(
             assert False, return_set
         # if the return value was never set, the function returns None
         if not return_values:
-            if name is not None:
-                method_return_type.check_no_return(node, self, name)
-            return KnownNone, has_return, self.is_generator
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                method_return_type.check_no_return(node, self, node.name)
+            return FunctionResult(KnownNone, params, has_return, self.is_generator)
         # None is added to return_values if the function raises an error.
         return_values = [val for val in return_values if val is not None]
         # If it only ever raises an error, we don't know what it returns. Strictly
@@ -1874,9 +1789,20 @@ class NameCheckVisitor(
         # in practice this condition often occurs in abstract methods that just
         # raise NotImplementedError.
         if not return_values:
-            return AnyValue(AnySource.inference), has_return, self.is_generator
+            ret = AnyValue(AnySource.inference)
         else:
-            return unite_values(*return_values), has_return, self.is_generator
+            ret = unite_values(*return_values)
+        if isinstance(node, ast.Lambda):
+            has_return_annotation = False
+        else:
+            has_return_annotation = node.returns is not None
+        return FunctionResult(
+            ret,
+            params,
+            has_return=has_return,
+            is_generator=self.is_generator,
+            has_return_annotation=has_return_annotation,
+        )
 
     def _check_function_unused_vars(
         self, scope: FunctionScope, enclosing_statement: Optional[ast.stmt] = None
@@ -1908,7 +1834,7 @@ class NameCheckVisitor(
                 #   [None for i in range(3)]  # error
                 #   [a for a, b in pairs]  # no error
                 #   [None for a, b in pairs]  # error
-                statement = self._name_node_to_statement[unused]
+                statement = self._name_node_to_statement.get(unused)
                 if isinstance(statement, ast.Assign):
                     # it's an assignment
                     if not (
@@ -1959,101 +1885,10 @@ class NameCheckVisitor(
                 replacement=replacement,
             )
 
-    def _visit_function_args(
-        self,
-        node: FunctionNode,
-        function_info: FunctionInfo,
-        defaults: Sequence[Optional[Value]],
-        kw_defaults: Sequence[Optional[Value]],
-    ) -> None:
-        """Visits and checks the arguments to a function. Returns the list of argument names."""
-        self._check_method_first_arg(node, function_info=function_info)
-
-        num_without_defaults = len(node.args.args) - len(defaults)
-        defaults = [*[None] * num_without_defaults, *defaults, *kw_defaults]
-        args = node.args.args + node.args.kwonlyargs
-
-        with qcore.override(self, "state", VisitorState.check_names):
-            for idx, (arg, default) in enumerate(zip(args, defaults)):
-                is_self = (
-                    idx == 0
-                    and self.current_class is not None
-                    and not function_info.is_staticmethod
-                    and not isinstance(node, ast.Lambda)
-                )
-                if arg.annotation is not None:
-                    value = self._value_of_annotated_arg(arg)
-                    if default is not None:
-                        tv_map = value.can_assign(default, self)
-                        if isinstance(tv_map, CanAssignError):
-                            self._show_error_if_checking(
-                                arg,
-                                f"Default value for argument {arg.arg} incompatible"
-                                f" with declared type {value}",
-                                error_code=ErrorCode.incompatible_default,
-                                detail=tv_map.display(),
-                            )
-                elif is_self:
-                    assert self.current_class is not None
-                    if (
-                        function_info.is_classmethod
-                        or getattr(node, "name", None) in IMPLICIT_CLASSMETHODS
-                    ):
-                        value = SubclassValue(TypedValue(self.current_class))
-                    else:
-                        # normal method
-                        value = TypedValue(self.current_class)
-                else:
-                    # This is meant to exclude methods in nested classes. It's a bit too
-                    # conservative for cases such as a function nested in a method nested in a
-                    # class nested in a function.
-                    if not isinstance(node, ast.Lambda) and not (
-                        idx == 0
-                        and not function_info.is_staticmethod
-                        and self.node_context.includes(ast.ClassDef)
-                    ):
-                        self._show_error_if_checking(
-                            node,
-                            f"Missing type annotation for parameter {arg.arg}",
-                            error_code=ErrorCode.missing_parameter_annotation,
-                        )
-                    if default is not None:
-                        value = unite_values(AnyValue(AnySource.unannotated), default)
-                    else:
-                        value = AnyValue(AnySource.unannotated)
-
-                if is_self:
-                    # we need this for the implementation of super()
-                    self.scopes.set("%first_arg", value, "%first_arg", self.state)
-
-                with qcore.override(self, "being_assigned", value):
-                    self.visit(arg)
-
-            if node.args.vararg is not None:
-                # the vararg is wrapped in an arg object
-                vararg = node.args.vararg.arg
-                arg_value = self._value_of_annotated_arg(node.args.vararg)
-                if isinstance(arg_value, AnyValue):
-                    value = TypedValue(tuple)
-                else:
-                    value = GenericValue(tuple, [arg_value])
-                self.scopes.set(vararg, value, vararg, self.state)
-            if node.args.kwarg is not None:
-                kwarg = node.args.kwarg.arg
-                arg_value = self._value_of_annotated_arg(node.args.kwarg)
-                value = GenericValue(dict, [TypedValue(str), arg_value])
-                self.scopes.set(kwarg, value, kwarg, self.state)
-
-    def _value_of_annotated_arg(self, arg: ast.arg) -> Value:
-        if arg.annotation is None:
-            return AnyValue(AnySource.unannotated)
-        # Evaluate annotations in the surrounding scope,
-        # not the function's scope.
-        with self.scopes.ignore_topmost_scope(), qcore.override(
-            self, "state", VisitorState.collect_names
-        ):
-            annotated_type = self._visit_annotation(arg.annotation)
-        return self._value_of_annotation_type(annotated_type, arg.annotation)
+    def value_of_annotation(self, node: ast.expr) -> Value:
+        with qcore.override(self, "state", VisitorState.collect_names):
+            annotated_type = self._visit_annotation(node)
+        return self._value_of_annotation_type(annotated_type, node)
 
     def _visit_annotation(self, node: ast.AST) -> Value:
         with qcore.override(self, "in_annotation", True):
@@ -2066,7 +1901,7 @@ class NameCheckVisitor(
         return type_from_value(val, visitor=self, node=node, is_typeddict=is_typeddict)
 
     def _check_method_first_arg(
-        self, node: FunctionNode, function_info: FunctionInfo = _DEFAULT_FUNCTION_INFO
+        self, node: FunctionNode, function_info: FunctionInfo
     ) -> None:
         """Makes sure the first argument to a method is self or cls."""
         if self.current_class is None:
@@ -2075,7 +1910,7 @@ class NameCheckVisitor(
         if function_info.is_staticmethod:
             return
         # try to confirm that it's actually a method
-        if not hasattr(node, "name") or not hasattr(self.current_class, node.name):
+        if isinstance(node, ast.Lambda) or not hasattr(self.current_class, node.name):
             return
         if node.name in IMPLICIT_CLASSMETHODS:
             return
@@ -3625,7 +3460,7 @@ class NameCheckVisitor(
 
         if (
             self.current_enum_members is not None
-            and self.current_function is None
+            and self.current_function_name is None
             and isinstance(value, KnownValue)
             and is_hashable(value.val)
         ):
@@ -4095,7 +3930,9 @@ class NameCheckVisitor(
         ignore_none: bool = False,
     ) -> Value:
         """Get an attribute. root_value must not be a MultiValuedValue."""
-        ctx = _AttrContext(root_composite, attr, node, self, ignore_none)
+        ctx = _AttrContext(
+            root_composite, attr, self, node=node, ignore_none=ignore_none
+        )
         return attributes.get_attribute(ctx)
 
     def _get_attribute_with_fallback(
@@ -4156,7 +3993,6 @@ class NameCheckVisitor(
             if not self._has_only_known_attributes(root_value.val) and (
                 _static_hasattr(root_value.val, "__getattr__")
                 or self._should_ignore_val(node)
-                or safe_getattr(root_value.val, "_pyanalyze_is_nested_function", False)
             ):
                 return AnyValue(AnySource.inference)
         elif isinstance(root_value, TypedValue):
@@ -4313,30 +4149,6 @@ class NameCheckVisitor(
             keyword is not None and isinstance(arg, KnownValue)
             for keyword, arg in keywords
         )
-
-    def _try_perform_call(
-        self,
-        callee_val: Any,
-        node: ast.AST,
-        args: Iterable[KnownValue],
-        keywords: Iterable[Tuple[str, KnownValue]],
-        fallback_return: Value,
-    ) -> Value:
-        """Tries to call callee_val with the given arguments.
-
-        Falls back to fallback_return and emits an error if the call fails.
-
-        """
-        unwrapped_args = [arg.val for arg in args]
-        unwrapped_kwargs = {key: value.val for key, value in keywords}
-        try:
-            value = callee_val(*unwrapped_args, **unwrapped_kwargs)
-        except Exception as e:
-            message = "Error in {}: {}".format(safe_str(callee_val), safe_str(e))
-            self._show_error_if_checking(node, message, ErrorCode.incompatible_call)
-            return fallback_return
-        else:
-            return KnownValue(value)
 
     def check_call(
         self,
@@ -4699,7 +4511,9 @@ class NameCheckVisitor(
         kwargs.setdefault("checker", Checker(cls.config, options))
         return kwargs
 
-    def is_enabled(self, error_code: ErrorCode) -> bool:
+    def is_enabled(self, error_code: enum.Enum) -> bool:
+        if not isinstance(error_code, ErrorCode):
+            return False
         return self.options.is_error_code_enabled(error_code)
 
     @classmethod
@@ -4815,6 +4629,10 @@ class NameCheckVisitor(
             )
             attribute_checker.filename_to_visitor.update(checker.filename_to_visitor)
 
+    # Protocol compliance
+    def visit_expression(self, node: ast.AST) -> Value:
+        return self.visit(node)
+
 
 def build_stacked_scopes(
     module: Optional[types.ModuleType], simplification_limit: Optional[int] = None
@@ -4895,14 +4713,6 @@ def _static_hasattr(value: object, attr: str) -> bool:
         return False
     else:
         return True
-
-
-def _is_coroutine_function(obj: object) -> bool:
-    try:
-        return inspect.iscoroutinefunction(obj)
-    except AttributeError:
-        # This can happen to cached classmethods.
-        return False
 
 
 def _has_annotation_for_attr(typ: type, attr: str) -> bool:

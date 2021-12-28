@@ -178,7 +178,8 @@ class TestAnnotations(TestNameCheckVisitorBase):
             def capybara(a: x, *b: x, c: x, d: x = 3, **kwargs: x):
                 pass
 
-            assert_is_value(capybara, KnownValue(capybara))
+            capybara(1, c=1)
+            capybara(1, c="x")  # E: incompatible_argument
 
     @assert_passes()
     def annotations_class(self):

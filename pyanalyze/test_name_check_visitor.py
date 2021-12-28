@@ -842,7 +842,7 @@ class TestReturn(TestNameCheckVisitorBase):
                 async_fn.asynq(), AsyncTaskIncompleteValue(AsyncTask, KnownValue(3))
             )
             assert_is_value(WithAProperty().this_is_one, TypedValue(str))
-            assert_is_value(pure_async_proxy(oid), TypedValue(ConstFuture))
+            assert_is_value(pure_async_proxy(oid), AnyValue(AnySource.unannotated))
             assert_is_value(impure_async_proxy(), AnyValue(AnySource.unannotated))
             assert_is_value(
                 impure_async_proxy.asynq(),
@@ -1460,78 +1460,6 @@ def capybara():
         )
 
 
-class TestNestedFunction(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_inference(self):
-        def capybara():
-            def nested():
-                pass
-
-            class NestedClass(object):
-                pass
-
-            assert_is_value(nested, KnownValue(nested))
-            # Should ideally be something more specific
-            assert_is_value(NestedClass, AnyValue(AnySource.inference))
-
-    @assert_passes()
-    def test_usage_in_nested_scope():
-        def capybara(cond, x):
-            if cond:
-
-                def nested(y):
-                    pass
-
-                ys = [nested(y) for y in x]
-
-                class Nested(object):
-                    xs = ys
-
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_argument_mismatch(self):
-        def capybara():
-            def nested():
-                pass
-
-            nested(None)
-
-    @assert_passes()
-    def test_async(self):
-        from asynq import asynq, result
-
-        @asynq()
-        def capybara():
-            @asynq()
-            def nested():
-                return 3
-
-            assert_is_value(nested, KnownValue(nested))
-            result((yield nested.asynq()))
-
-    @assert_passes()
-    def test_bad_decorator(self):
-        import types
-
-        def decorator(fn):
-            return fn
-
-        def capybara():
-            @decorator
-            def nested():
-                pass
-
-            assert_is_value(nested, TypedValue(types.FunctionType))
-
-    @assert_passes()
-    def test_attribute_set(self):
-        def capybara():
-            def inner():
-                pass
-
-            inner.punare = 3
-            print(inner.punare)
-
-
 class TestYieldInComprehension(TestNameCheckVisitorBase):
     # this became a syntax error in 3.8
     @only_before((3, 8))
@@ -1667,17 +1595,20 @@ class TestSubscripting(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_permissive_subclass(self):
+        from typing import Any
+
         # Inspired by pyspark.sql.types.Row
         class LetItAllThrough(tuple):
-            def __getitem__(self, idx: object) -> object:
+            # TODO: make Sequence.__getitem__ args pos-only in typeshed
+            def __getitem__(self, idx: object) -> Any:  # E: incompatible_override
                 if isinstance(idx, (int, slice)):
                     return super().__getitem__(idx)
                 else:
                     return "whatever"
 
         def capybara(liat: LetItAllThrough) -> None:
-            assert_is_value(liat["x"], TypedValue(object))
-            assert_is_value(liat[0], TypedValue(object))
+            assert_is_value(liat["x"], AnyValue(AnySource.explicit))
+            assert_is_value(liat[0], AnyValue(AnySource.explicit))
 
     @assert_passes()
     def test_slice(self):
@@ -1907,24 +1838,6 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
             return [x async for x in []]  # E: unsupported_operation
 
 
-class TestKeywordOnlyArguments(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_success(self):
-        def capybara(a, *, b, c=3):
-            assert_is_value(a, AnyValue(AnySource.unannotated))
-            assert_is_value(b, AnyValue(AnySource.unannotated))
-            assert_is_value(c, AnyValue(AnySource.unannotated) | KnownValue(3))
-            capybara(1, b=2)
-
-            fn = lambda a, *, b: assert_is_value(b, AnyValue(AnySource.unannotated))
-            fn(a, b=b)
-
-    @assert_fails(ErrorCode.incompatible_call)
-    def test_failure(self):
-        def capybara(a, *, b):
-            capybara(1, 2)
-
-
 class TestMissingAwait(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.missing_await)
     def test_asyncio_coroutine_internal(self):
@@ -2078,7 +1991,7 @@ class TestingCallSiteCollector(object):
     def record_call(self, caller, callee):
         try:
             self.map[callee.__qualname__].append(caller.__qualname__)
-        except TypeError:
+        except (AttributeError, TypeError):
             # Copied for consistency; see comment in name_check_visitor.py:CallSiteCollector
             pass
 
@@ -2094,36 +2007,22 @@ class TestCallSiteCollection(TestNameCheckVisitorBase):
     def test_member_function_call(self):
         call_map = self.run_and_get_call_map(
             """
-class TestClass(object):
-    def __init__(self):
-        self.first_function(5)
+            class TestClass(object):
+                def __init__(self):
+                    self.first_function(5)
 
-    def first_function(self, x):
-        print(x)
-        self.second_function(x, 4)
+                def first_function(self, x):
+                    print(x)
+                    self.second_function(x, 4)
 
-    def second_function(self, y, z):
-        print(y + z)
-"""
+                def second_function(self, y, z):
+                    print(y + z)
+            """
         )
 
         assert "TestClass.first_function" in call_map["TestClass.second_function"]
         assert "TestClass.__init__" in call_map["TestClass.first_function"]
         assert "TestClass.second_function" in call_map["print"]
-
-    def test_nested_function_call(self):
-        call_map = self.run_and_get_call_map(
-            """
-class TestClass(object):
-    def __init__(self):
-        def second_function(y):
-            print(y)
-        second_function(3)
-"""
-        )
-
-        assert "TestClass.__init__" in call_map["second_function"]
-        assert "second_function" in call_map["print"]
 
 
 def test_get_task_cls():
@@ -2652,3 +2551,29 @@ class TestCompare(TestNameCheckVisitorBase):
             if 1 < i < 3 != x:
                 assert_is_value(i, KnownValue(2))
                 assert_is_value(x, KnownValue(4))
+
+
+class TestIncompatibleOverride(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_simple(self):
+        from typing_extensions import Literal
+
+        class A:
+            x: str
+            y: int
+
+            def capybara(self, x: int) -> None:
+                pass
+
+            def pacarana(self, b: int) -> None:
+                pass
+
+        class B(A):
+            x: int  # E: incompatible_override
+            y: Literal[1]
+
+            def capybara(self, x: str) -> None:  # E: incompatible_override
+                pass
+
+            def pacarana(self, b: int) -> None:
+                pass

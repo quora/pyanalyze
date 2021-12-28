@@ -8,39 +8,18 @@ import ast
 import asynq
 import contextlib
 from dataclasses import dataclass, field
-import enum
 import qcore
 import inspect
 import types
-from typing import Sequence, Any, Callable, List, Optional, Iterable
-
-from pyanalyze.options import Options, PyObjectSequenceOption, StringSequenceOption
+from typing import Iterator, Sequence, Any, Callable, Optional
 
 from .config import Config
 from .error_code import ErrorCode
+from .functions import AsyncFunctionKind
+from .options import Options, PyObjectSequenceOption, StringSequenceOption
 from .safe import safe_getattr, safe_hasattr
 from .stacked_scopes import Composite
 from .value import AnnotatedValue, Value, KnownValue, TypedValue, UnboundMethodValue
-
-
-class AsyncFunctionKind(enum.Enum):
-    non_async = 0
-    normal = 1
-    async_proxy = 2
-    pure = 3
-
-
-@dataclass(frozen=True)
-class FunctionInfo:
-    async_kind: AsyncFunctionKind
-    is_classmethod: bool  # has @classmethod
-    is_staticmethod: bool  # has @staticmethod
-    is_decorated_coroutine: bool  # has @asyncio.coroutine
-    is_overload: bool  # typing.overload or pyanalyze.extensions.overload
-    # a list of pairs of (decorator function, applied decorator function). These are different
-    # for decorators that take arguments, like @asynq(): the first element will be the asynq
-    # function and the second will be the result of calling asynq().
-    decorators: List[Any]
 
 
 class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):
@@ -98,7 +77,7 @@ class AsynqChecker:
         name: str,
         async_kind: AsyncFunctionKind = AsyncFunctionKind.non_async,
         is_classmethod: bool = False,
-    ) -> Iterable[None]:
+    ) -> Iterator[None]:
         """Sets the current function name for async data collection."""
         # Override current_func_name only if this is the outermost function, so that data access
         # within nested functions is attributed to the outer function. However, for async inner
