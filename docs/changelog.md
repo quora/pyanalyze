@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support the walrus (`:=`) operator (#375)
 - Initial support for proposed new "type evaluation"
   mechanism (#374)
 - Create command-line options for each config option (#373)

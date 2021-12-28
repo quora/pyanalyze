@@ -4077,6 +4077,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         elif isinstance(node, (ast.ExtSlice, ast.Slice)):
             # These don't have a .lineno attribute, which would otherwise cause trouble.
             composite = Composite(self.visit(node), None, None)
+        # We need better support for version-straddling code
+        # static analysis: ignore[value_always_true]
         elif hasattr(ast, "NamedExpr") and isinstance(node, ast.NamedExpr):
             composite = self.composite_from_walrus(node)
         else:
