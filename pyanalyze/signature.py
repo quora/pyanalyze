@@ -6,8 +6,8 @@ calls.
 
 """
 
-from . import annotations, type_evaluation
-from .type_evaluation import Evaluator, VarMap, decompose_union, evaluate
+from . import annotations
+from .type_evaluation import Evaluator, decompose_union, evaluate
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -33,7 +33,6 @@ from .value import (
     HasAttrGuardExtension,
     KVPair,
     KnownValue,
-    MultiValuedValue,
     NoReturnConstraintExtension,
     NoReturnGuardExtension,
     ParameterTypeGuardExtension,
@@ -54,7 +53,6 @@ from .value import (
     flatten_values,
     replace_known_sequence_value,
     stringify_object,
-    unannotate,
     unannotate_value,
     unify_typevar_maps,
     unite_values,
@@ -75,7 +73,6 @@ from qcore.helpers import safe_str
 from typing import (
     Any,
     Iterable,
-    Mapping,
     NamedTuple,
     Optional,
     ClassVar,
