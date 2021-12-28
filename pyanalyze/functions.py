@@ -48,6 +48,13 @@ class AsyncFunctionKind(enum.Enum):
 
 
 @dataclass(frozen=True)
+class ParamInfo:
+    param: SigParameter
+    node: ast.AST
+    is_self: bool = False
+
+
+@dataclass(frozen=True)
 class FunctionInfo:
     """Computed before visiting a function."""
 
@@ -61,13 +68,10 @@ class FunctionInfo:
     # for decorators that take arguments, like @asynq(): the first element will be the asynq
     # function and the second will be the result of calling asynq().
     decorators: List[Tuple[Value, Value]]
-
-
-@dataclass(frozen=True)
-class ParamInfo:
-    param: SigParameter
-    node: ast.AST
-    is_self: bool = False
+    node: FunctionNode
+    params: Sequence[ParamInfo]
+    return_annotation: Optional[Value]
+    potential_function: Optional[object]
 
 
 @dataclass
@@ -87,7 +91,7 @@ class Context(ErrorContext, CanAssignContext, Protocol):
     def visit_expression(self, __node: ast.AST) -> Value:
         raise NotImplementedError
 
-    def value_of_annotated_arg(self, __arg: ast.arg) -> Value:
+    def value_of_annotation(self, __node: ast.expr) -> Value:
         raise NotImplementedError
 
     def check_call(
@@ -134,7 +138,14 @@ class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
         return list(fallback.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS)
 
 
-def compute_function_info(decorator_list: List[ast.expr], ctx: Context) -> FunctionInfo:
+def compute_function_info(
+    node: FunctionNode,
+    ctx: Context,
+    *,
+    is_nested_in_class: bool = False,
+    enclosing_class: Optional[TypedValue] = None,
+    potential_function: Optional[object] = None,
+) -> FunctionInfo:
     """Visits a function's decorator list."""
     async_kind = AsyncFunctionKind.non_async
     is_classmethod = False
@@ -143,7 +154,7 @@ def compute_function_info(decorator_list: List[ast.expr], ctx: Context) -> Funct
     is_overload = False
     is_abstractmethod = False
     decorators = []
-    for decorator in decorator_list:
+    for decorator in [] if isinstance(node, ast.Lambda) else node.decorator_list:
         # We have to descend into the Call node because the result of
         # asynq.asynq() is a one-off function that we can't test against.
         # This means that the decorator will be visited more than once, which seems OK.
@@ -176,6 +187,18 @@ def compute_function_info(decorator_list: List[ast.expr], ctx: Context) -> Funct
             elif decorator_value == KnownValue(abstractmethod):
                 is_abstractmethod = True
             decorators.append((decorator_value, decorator_value))
+    params = compute_parameters(
+        node,
+        enclosing_class,
+        ctx,
+        is_nested_in_class=is_nested_in_class,
+        is_classmethod=is_classmethod,
+        is_staticmethod=is_staticmethod,
+    )
+    if isinstance(node, ast.Lambda) or node.returns is None:
+        return_annotation = None
+    else:
+        return_annotation = ctx.value_of_annotation(node.returns)
     return FunctionInfo(
         async_kind=async_kind,
         is_decorated_coroutine=is_decorated_coroutine,
@@ -184,6 +207,10 @@ def compute_function_info(decorator_list: List[ast.expr], ctx: Context) -> Funct
         is_abstractmethod=is_abstractmethod,
         is_overload=is_overload,
         decorators=decorators,
+        node=node,
+        params=params,
+        return_annotation=return_annotation,
+        potential_function=potential_function,
     )
 
 
@@ -196,11 +223,12 @@ def _visit_default(node: ast.AST, ctx: Context) -> Value:
 
 def compute_parameters(
     node: FunctionNode,
-    function_info: FunctionInfo,
     enclosing_class: Optional[TypedValue],
     ctx: Context,
     *,
     is_nested_in_class: bool = False,
+    is_staticmethod: bool = False,
+    is_classmethod: bool = False,
 ) -> Sequence[ParamInfo]:
     """Visits and checks the arguments to a function."""
     defaults = [_visit_default(node, ctx) for node in node.args.defaults]
@@ -228,11 +256,11 @@ def compute_parameters(
         is_self = (
             idx == 0
             and enclosing_class is not None
-            and not function_info.is_staticmethod
+            and not is_staticmethod
             and not isinstance(node, ast.Lambda)
         )
         if arg.annotation is not None:
-            value = ctx.value_of_annotated_arg(arg)
+            value = ctx.value_of_annotation(arg.annotation)
             if default is not None:
                 tv_map = value.can_assign(default, ctx)
                 if isinstance(tv_map, CanAssignError):
@@ -245,10 +273,7 @@ def compute_parameters(
                     )
         elif is_self:
             assert enclosing_class is not None
-            if (
-                function_info.is_classmethod
-                or getattr(node, "name", None) in IMPLICIT_CLASSMETHODS
-            ):
+            if is_classmethod or getattr(node, "name", None) in IMPLICIT_CLASSMETHODS:
                 value = SubclassValue(enclosing_class)
             else:
                 # normal method
@@ -258,7 +283,7 @@ def compute_parameters(
             # conservative for cases such as a function nested in a method nested in a
             # class nested in a function.
             if not isinstance(node, ast.Lambda) and not (
-                idx == 0 and not function_info.is_staticmethod and is_nested_in_class
+                idx == 0 and not is_staticmethod and is_nested_in_class
             ):
                 ctx.show_error(
                     node,
@@ -285,12 +310,16 @@ def compute_parameters(
 
 
 def compute_value_of_function(
-    node: FunctionNode, info: FunctionInfo, result: FunctionResult, ctx: Context
+    info: FunctionInfo, ctx: Context, *, result: Optional[Value] = None
 ) -> Value:
+    if result is None:
+        result = info.return_annotation
+    if result is None:
+        result = AnyValue(AnySource.unannotated)
     sig = Signature.make(
-        result.parameters,
-        result.return_value,
-        has_return_annotation=result.has_return_annotation,
+        [param_info.param for param_info in info.params],
+        result,
+        has_return_annotation=info.return_annotation is not None,
     )
     val = CallableValue(sig, types.FunctionType)
     for unapplied, decorator in reversed(info.decorators):
@@ -302,5 +331,7 @@ def compute_value_of_function(
         allow_call = isinstance(
             unapplied, KnownValue
         ) and SafeDecoratorsForNestedFunctions.contains(unapplied.val, ctx.options)
-        val = ctx.check_call(node, decorator, [Composite(val)], allow_call=allow_call)
+        val = ctx.check_call(
+            info.node, decorator, [Composite(val)], allow_call=allow_call
+        )
     return val

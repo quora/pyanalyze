@@ -132,7 +132,6 @@ from .functions import (
     FunctionNode,
     compute_function_info,
     IMPLICIT_CLASSMETHODS,
-    compute_parameters,
     compute_value_of_function,
 )
 from .yield_checker import YieldChecker
@@ -307,12 +306,6 @@ class _AttrContext(attributes.AttrContext):
         self, typ: Union[type, str], generic_args: Sequence[Value]
     ) -> GenericBases:
         return self.visitor.get_generic_bases(typ, generic_args)
-
-
-# FunctionInfo for a vanilla function (e.g. a lambda)
-_DEFAULT_FUNCTION_INFO = FunctionInfo(
-    AsyncFunctionKind.normal, False, False, False, False, False, []
-)
 
 
 class ComprehensionLengthInferenceLimit(IntegerOption):
@@ -1441,81 +1434,74 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         return AnyValue(AnySource.inference)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Value:
-        return self.visit_FunctionDef(node, is_coroutine=True)
+        return self.visit_FunctionDef(node)
 
     def visit_FunctionDef(
-        self,
-        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
-        is_coroutine: bool = False,
+        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     ) -> Value:
-        with qcore.override(self, "current_class", None):
-            info = compute_function_info(node.decorator_list, self)
-
         potential_function = self._get_potential_function(node)
+        info = compute_function_info(
+            node,
+            self,
+            enclosing_class=TypedValue(self.current_class)
+            if self.current_class is not None
+            else None,
+            is_nested_in_class=self.node_context.includes(ast.ClassDef),
+            potential_function=potential_function,
+        )
 
         self.yield_checker.reset_yield_checks()
 
-        if node.returns is not None:
-            return_annotation = self._visit_annotation(node.returns)
-            expected_return_value = self._value_of_annotation_type(
-                return_annotation, node.returns
-            )
-        else:
+        if node.returns is None:
             self._show_error_if_checking(
                 node, error_code=ErrorCode.missing_return_annotation
             )
-            expected_return_value = None
 
+        if potential_function is None:
+            val = compute_value_of_function(info, self)
+        else:
+            val = KnownValue(potential_function)
         if not info.is_overload:
-            self._set_name_in_scope(node.name, node, AnyValue(AnySource.marker))
+            self._set_name_in_scope(node.name, node, val)
 
         with self.asynq_checker.set_func_name(
             node.name, async_kind=info.async_kind, is_classmethod=info.is_classmethod
         ), qcore.override(self, "yield_checker", YieldChecker(self)), qcore.override(
-            self, "is_async_def", is_coroutine
+            self, "is_async_def", isinstance(node, ast.AsyncFunctionDef)
         ), qcore.override(
             self, "current_function_name", node.name
         ), qcore.override(
             self, "current_function", potential_function
         ), qcore.override(
-            self, "expected_return_value", expected_return_value
+            self, "expected_return_value", info.return_annotation
         ):
-            result = self._visit_function_body(node, function_info=info, name=node.name)
-        return_value = result.return_value
-
-        if potential_function is None:
-            val = compute_value_of_function(node, info, result, self)
-        else:
-            val = KnownValue(potential_function)
-
-        if not info.is_overload:
-            self._set_name_in_scope(node.name, node, val)
+            result = self._visit_function_body(info)
 
         if (
             not result.has_return
             and not info.is_overload
-            and expected_return_value is not None
-            and expected_return_value != KnownNone
+            and node.returns is not None
+            and info.return_annotation != KnownNone
             and not (
-                isinstance(expected_return_value, AnnotatedValue)
-                and expected_return_value.value == KnownNone
+                isinstance(info.return_annotation, AnnotatedValue)
+                and info.return_annotation.value == KnownNone
             )
             and not info.is_abstractmethod
         ):
-            if expected_return_value is NO_RETURN_VALUE:
+            if info.return_annotation is NO_RETURN_VALUE:
                 self._show_error_if_checking(
                     node, error_code=ErrorCode.no_return_may_return
                 )
             else:
                 self._show_error_if_checking(node, error_code=ErrorCode.missing_return)
 
-        if node.returns is not None:
+        if node.returns is None:
             if (
                 result.has_return
                 and not info.is_overload
                 and not info.is_abstractmethod
             ):
-                prepared = prepare_type(return_value)
+                prepared = prepare_type(result.return_value)
                 if should_suggest_type(prepared):
                     detail, metadata = display_suggested_type(prepared)
                     self._show_error_if_checking(
@@ -1526,29 +1512,27 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     )
 
             if info.async_kind == AsyncFunctionKind.normal and _is_asynq_future(
-                return_value
+                result.return_value
             ):
                 self._show_error_if_checking(
                     node, error_code=ErrorCode.task_needs_yield
                 )
 
-            self._set_argspec_to_retval(node, potential_function, info, result)
+        self._set_argspec_to_retval(val, info, result)
         return val
 
     def _set_argspec_to_retval(
-        self,
-        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
-        potential_function: Optional[object],
-        info: FunctionInfo,
-        result: FunctionResult,
+        self, val: Value, info: FunctionInfo, result: FunctionResult
     ) -> None:
-        if potential_function is None or node.returns is not None:
+        if isinstance(info.node, ast.Lambda) or info.node.returns is not None:
             return
         if info.async_kind == AsyncFunctionKind.async_proxy:
             # Don't attempt to infer the return value of async_proxy functions, since it will be
             # set within the Future returned. Without this, we'll incorrectly infer the return
             # value to be the Future instead of the Future's value.
             return
+        if info.node.decorator_list:
+            return  # With decorators we don't know what it will return
         return_value = result.return_value
 
         if result.is_generator and return_value == KnownNone:
@@ -1557,19 +1541,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         # pure async functions are otherwise incorrectly inferred as returning whatever the
         # underlying function returns
         if info.async_kind == AsyncFunctionKind.pure:
-            task_cls = _get_task_cls(potential_function)
+            task_cls = _get_task_cls(info.potential_function)
             return_value = AsyncTaskIncompleteValue(task_cls, return_value)
 
-        if isinstance(node, ast.AsyncFunctionDef) or info.is_decorated_coroutine:
+        if isinstance(info.node, ast.AsyncFunctionDef) or info.is_decorated_coroutine:
             return_value = GenericValue(collections.abc.Awaitable, [return_value])
 
-        try:
-            argspec = self.arg_spec_cache.get_argspec(potential_function)
-        except TypeError:
+        sig = self.signature_from_value(val)
+        if sig is None:
             return
-        if argspec is None:
-            return
-        self._argspec_to_retval[id(argspec)] = return_value
+        self._argspec_to_retval[id(sig)] = return_value
 
     def _get_potential_function(
         self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
@@ -1603,21 +1584,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     def visit_Lambda(self, node: ast.Lambda) -> Value:
         with self.asynq_checker.set_func_name("<lambda>"):
-            result = self._visit_function_body(node)
-            return compute_value_of_function(node, _DEFAULT_FUNCTION_INFO, result, self)
+            info = compute_function_info(node, self)
+            result = self._visit_function_body(info)
+            return compute_value_of_function(info, self, result=result.return_value)
 
-    def _visit_function_body(
-        self,
-        node: FunctionNode,
-        *,
-        function_info: FunctionInfo = _DEFAULT_FUNCTION_INFO,
-        name: Optional[str] = None,
-    ) -> FunctionResult:
+    def _visit_function_body(self, function_info: FunctionInfo) -> FunctionResult:
         is_collecting = self._is_collecting()
-        if is_collecting and not self.scopes.contains_scope_of_type(
-            ScopeType.function_scope
-        ):
-            return FunctionResult()
+        node = function_info.node
 
         class_ctx = (
             qcore.empty_context
@@ -1626,15 +1599,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         )
         with class_ctx:
             self._check_method_first_arg(node, function_info=function_info)
-            infos = compute_parameters(
-                node,
-                function_info,
-                TypedValue(self.current_class)
-                if self.current_class is not None
-                else None,
-                self,
-                is_nested_in_class=self.node_context.includes(ast.ClassDef),
-            )
+        infos = function_info.params
+        params = [info.param for info in infos]
+
+        if is_collecting and not self.scopes.contains_scope_of_type(
+            ScopeType.function_scope
+        ):
+            return FunctionResult()
 
         # We pass in the node to add_scope() and visit the body once in collecting
         # mode if in a nested function, so that constraints on nonlocals in the outer
@@ -1666,7 +1637,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     info.node,
                     VisitorState.check_names,
                 )
-            params = [info.param for info in infos]
 
             with qcore.override(
                 self, "state", VisitorState.collect_names
@@ -1695,13 +1665,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
             self._check_function_unused_vars(scope)
             return self._compute_return_type(
-                node, name, return_values, return_set, function_info, params
+                node, return_values, return_set, function_info, params
             )
 
     def _compute_return_type(
         self,
-        node: ast.AST,
-        name: Optional[str],
+        node: FunctionNode,
         return_values: Sequence[Optional[Value]],
         return_set: Value,
         info: FunctionInfo,
@@ -1718,8 +1687,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             assert False, return_set
         # if the return value was never set, the function returns None
         if not return_values:
-            if name is not None:
-                method_return_type.check_no_return(node, self, name)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                method_return_type.check_no_return(node, self, node.name)
             return FunctionResult(KnownNone, params, has_return, self.is_generator)
         # None is added to return_values if the function raises an error.
         return_values = [val for val in return_values if val is not None]
@@ -1731,7 +1700,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             ret = AnyValue(AnySource.inference)
         else:
             ret = unite_values(*return_values)
-        return FunctionResult(ret, params, has_return, self.is_generator)
+        if isinstance(node, ast.Lambda):
+            has_return_annotation = False
+        else:
+            has_return_annotation = node.returns is not None
+        return FunctionResult(
+            ret,
+            params,
+            has_return=has_return,
+            is_generator=self.is_generator,
+            has_return_annotation=has_return_annotation,
+        )
 
     def _check_function_unused_vars(
         self, scope: FunctionScope, enclosing_statement: Optional[ast.stmt] = None
@@ -1814,12 +1793,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 replacement=replacement,
             )
 
-    def value_of_annotated_arg(self, arg: ast.arg) -> Value:
-        if arg.annotation is None:
-            return AnyValue(AnySource.unannotated)
+    def value_of_annotation(self, node: ast.expr) -> Value:
         with qcore.override(self, "state", VisitorState.collect_names):
-            annotated_type = self._visit_annotation(arg.annotation)
-        return self._value_of_annotation_type(annotated_type, arg.annotation)
+            annotated_type = self._visit_annotation(node)
+        return self._value_of_annotation_type(annotated_type, node)
 
     def _visit_annotation(self, node: ast.AST) -> Value:
         with qcore.override(self, "in_annotation", True):

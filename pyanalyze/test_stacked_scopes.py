@@ -505,7 +505,6 @@ class TestLoops(TestNameCheckVisitorBase):
 
                 def do_something(y: int) -> int:
                     if x:
-                        reveal_type(do_something)
                         assert_is_value(do_something(y), TypedValue(int))
                         do_something("x")  # E: incompatible_argument
                     return y

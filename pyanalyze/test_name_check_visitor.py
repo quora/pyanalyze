@@ -1491,11 +1491,12 @@ class TestNestedFunction(TestNameCheckVisitorBase):
     @assert_passes()
     def test_async(self):
         from asynq import asynq
+        from typing_extensions import Literal
 
         @asynq()
         def capybara():
             @asynq()
-            def nested():
+            def nested() -> Literal[3]:
                 return 3
 
             assert_is_value(nested(), KnownValue(3))
@@ -2125,7 +2126,7 @@ class TestingCallSiteCollector(object):
     def record_call(self, caller, callee):
         try:
             self.map[callee.__qualname__].append(caller.__qualname__)
-        except TypeError:
+        except (AttributeError, TypeError):
             # Copied for consistency; see comment in name_check_visitor.py:CallSiteCollector
             pass
 
@@ -2141,36 +2142,22 @@ class TestCallSiteCollection(TestNameCheckVisitorBase):
     def test_member_function_call(self):
         call_map = self.run_and_get_call_map(
             """
-class TestClass(object):
-    def __init__(self):
-        self.first_function(5)
+            class TestClass(object):
+                def __init__(self):
+                    self.first_function(5)
 
-    def first_function(self, x):
-        print(x)
-        self.second_function(x, 4)
+                def first_function(self, x):
+                    print(x)
+                    self.second_function(x, 4)
 
-    def second_function(self, y, z):
-        print(y + z)
-"""
+                def second_function(self, y, z):
+                    print(y + z)
+            """
         )
 
         assert "TestClass.first_function" in call_map["TestClass.second_function"]
         assert "TestClass.__init__" in call_map["TestClass.first_function"]
         assert "TestClass.second_function" in call_map["print"]
-
-    def test_nested_function_call(self):
-        call_map = self.run_and_get_call_map(
-            """
-class TestClass(object):
-    def __init__(self):
-        def second_function(y):
-            print(y)
-        second_function(3)
-"""
-        )
-
-        assert "TestClass.__init__" in call_map["second_function"]
-        assert "second_function" in call_map["print"]
 
 
 def test_get_task_cls():
