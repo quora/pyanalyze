@@ -2593,5 +2593,22 @@ class TestWalrus(TestNameCheckVisitorBase):
                 if (x := opt()):
                     assert_is_value(x, TypedValue(int))
                 assert_is_value(x, TypedValue(int) | KnownValue(None))
+
+                if (y := opt()) is not None:
+                    assert_is_value(y, TypedValue(int))
+                assert_is_value(y, TypedValue(int) | KnownValue(None))
+            """
+        )
+
+    @skip_before((3, 8))
+    def test_comprehension_scope(self):
+        self.assert_passes(
+            """
+            from typing import List, Optional
+
+            def capybara(elts: List[Optional[int]]) -> None:
+                if any((x := i) is not None for i in elts):
+                    assert_is_value(x, TypedValue(int) | KnownValue(None))
+                    print(i)  # E: undefined_name
             """
         )

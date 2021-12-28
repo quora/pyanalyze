@@ -153,7 +153,6 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
-    annotate_value,
     kv_pairs_from_mapping,
     make_weak,
     unannotate_value,
@@ -3453,12 +3452,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     # Assignments
 
     def visit_NamedExpr(self, node: "ast.NamedExpr") -> Value:
+        composite = self.composite_from_walrus(node)
+        return composite.value
+
+    def composite_from_walrus(self, node: "ast.NamedExpr") -> Composite:
         rhs = self.visit(node.value)
         with qcore.override(self, "being_assigned", rhs):
-            lhs = self._visit_possible_constraint(node.target)
-            print(lhs, rhs)
-            _, constraint = unannotate_value(lhs, ConstraintExtension)
-        return annotate_value(rhs, constraint)
+            if self.in_comprehension_body:
+                ctx = self.scopes.ignore_topmost_scope()
+            else:
+                ctx = qcore.empty_context
+            with ctx:
+                return self.composite_from_node(node.target)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         is_yield = isinstance(node.value, ast.Yield)
@@ -3588,7 +3593,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if not is_ann_assign:
                 self.yield_checker.record_assignment(node.id)
                 value, origin = self._set_name_in_scope(node.id, node, value=value)
-            return Composite(value, VarnameWithOrigin(node.id, origin), node)
+            varname = VarnameWithOrigin(node.id, origin)
+            constraint = Constraint(varname, ConstraintType.is_truthy, True, None)
+            value = annotate_with_constraint(value, constraint)
+            return Composite(value, varname, node)
         else:
             # not sure when (if ever) the other contexts can happen
             self.show_error(node, f"Bad context: {node.ctx}", ErrorCode.unexpected_node)
@@ -4069,6 +4077,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         elif isinstance(node, (ast.ExtSlice, ast.Slice)):
             # These don't have a .lineno attribute, which would otherwise cause trouble.
             composite = Composite(self.visit(node), None, None)
+        elif hasattr(ast, "NamedExpr") and isinstance(node, ast.NamedExpr):
+            composite = self.composite_from_walrus(node)
         else:
             composite = Composite(self.visit(node), None, node)
         if self.annotate:
