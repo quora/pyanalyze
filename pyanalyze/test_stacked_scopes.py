@@ -498,14 +498,20 @@ class TestLoops(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_recursive_func_in_loop(self):
-        def capybara(xs):
+        from typing import Iterable
+
+        def capybara(xs: Iterable[int]):
             for x in xs:
 
-                def do_something(y):
+                def do_something(y: int) -> int:
                     if x:
-                        do_something(y)
+                        reveal_type(do_something)
+                        assert_is_value(do_something(y), TypedValue(int))
+                        do_something("x")  # E: incompatible_argument
+                    return y
 
-                do_something(x)
+                assert_is_value(do_something(x), TypedValue(int))
+                do_something("x")  # E: incompatible_argument
 
 
 class TestUnusedVariable(TestNameCheckVisitorBase):

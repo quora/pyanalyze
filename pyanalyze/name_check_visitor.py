@@ -1451,25 +1451,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         with qcore.override(self, "current_class", None):
             info = compute_function_info(node.decorator_list, self)
 
-        scope_type = self.scopes.scope_type()
-        if scope_type == ScopeType.module_scope and self.module is not None:
-            potential_function = safe_getattr(self.module, node.name, None)
-        elif scope_type == ScopeType.class_scope and self.current_class is not None:
-            potential_function = safe_getattr(self.current_class, node.name, None)
-        else:
-            potential_function = None
-
-        if (
-            potential_function is not None
-            and self.options.is_error_code_enabled_anywhere(
-                ErrorCode.suggested_parameter_type
-            )
-        ):
-            sig = self.signature_from_value(KnownValue(potential_function))
-            if isinstance(sig, Signature):
-                self.checker.callable_tracker.record_callable(
-                    node, potential_function, sig, self
-                )
+        potential_function = self._get_potential_function(node)
 
         self.yield_checker.reset_yield_checks()
 
@@ -1483,6 +1465,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 node, error_code=ErrorCode.missing_return_annotation
             )
             expected_return_value = None
+
+        if not info.is_overload:
+            self._set_name_in_scope(node.name, node, AnyValue(AnySource.marker))
 
         with self.asynq_checker.set_func_name(
             node.name, async_kind=info.async_kind, is_classmethod=info.is_classmethod
@@ -1524,64 +1509,91 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             else:
                 self._show_error_if_checking(node, error_code=ErrorCode.missing_return)
 
-        if (
-            result.has_return
-            and expected_return_value is None
-            and not info.is_overload
-            and not info.is_abstractmethod
-        ):
-            prepared = prepare_type(return_value)
-            if should_suggest_type(prepared):
-                detail, metadata = display_suggested_type(prepared)
+        if node.returns is not None:
+            if (
+                result.has_return
+                and not info.is_overload
+                and not info.is_abstractmethod
+            ):
+                prepared = prepare_type(return_value)
+                if should_suggest_type(prepared):
+                    detail, metadata = display_suggested_type(prepared)
+                    self._show_error_if_checking(
+                        node,
+                        error_code=ErrorCode.suggested_return_type,
+                        detail=detail,
+                        extra_metadata=metadata,
+                    )
+
+            if info.async_kind == AsyncFunctionKind.normal and _is_asynq_future(
+                return_value
+            ):
                 self._show_error_if_checking(
-                    node,
-                    error_code=ErrorCode.suggested_return_type,
-                    detail=detail,
-                    extra_metadata=metadata,
+                    node, error_code=ErrorCode.task_needs_yield
                 )
 
-        if info.async_kind == AsyncFunctionKind.normal and _is_asynq_future(
-            return_value
-        ):
-            self._show_error_if_checking(node, error_code=ErrorCode.task_needs_yield)
-
-        if potential_function is not None:
-            # If there was an annotation, use it as the return value in the
-            # _argspec_to_retval cache, even if we inferred something else while visiting
-            # the function.
-            if not result.is_generator and expected_return_value is not None:
-                return_value = expected_return_value
-
-            if result.is_generator and return_value == KnownNone:
-                return_value = AnyValue(AnySource.inference)
-
-            # pure async functions are otherwise incorrectly inferred as returning whatever the
-            # underlying function returns
-            if info.async_kind == AsyncFunctionKind.pure:
-                task_cls = _get_task_cls(potential_function)
-                return_value = AsyncTaskIncompleteValue(task_cls, return_value)
-
-            if is_coroutine or info.is_decorated_coroutine:
-                return_value = GenericValue(collections.abc.Awaitable, [return_value])
-
-            try:
-                argspec = self.arg_spec_cache.get_argspec(potential_function)
-            except TypeError:
-                argspec = None
-            if argspec is not None:
-                if (
-                    info.async_kind != AsyncFunctionKind.async_proxy
-                    and node.returns is None
-                ):
-                    # Don't attempt to infer the return value of async_proxy functions, since it will be
-                    # set within the Future returned. Without this, we'll incorrectly infer the return
-                    # value to be the Future instead of the Future's value.
-                    # Similarly, we don't infer the return value if there is an annotation, because
-                    # we should be able to get it from __annotations__ instead.
-                    self._argspec_to_retval[id(argspec)] = return_value
-            else:
-                self.log(logging.DEBUG, "No argspec", (potential_function, node))
+            self._set_argspec_to_retval(node, potential_function, info, result)
         return val
+
+    def _set_argspec_to_retval(
+        self,
+        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
+        potential_function: Optional[object],
+        info: FunctionInfo,
+        result: FunctionResult,
+    ) -> None:
+        if potential_function is None or node.returns is not None:
+            return
+        if info.async_kind == AsyncFunctionKind.async_proxy:
+            # Don't attempt to infer the return value of async_proxy functions, since it will be
+            # set within the Future returned. Without this, we'll incorrectly infer the return
+            # value to be the Future instead of the Future's value.
+            return
+        return_value = result.return_value
+
+        if result.is_generator and return_value == KnownNone:
+            return_value = AnyValue(AnySource.inference)
+
+        # pure async functions are otherwise incorrectly inferred as returning whatever the
+        # underlying function returns
+        if info.async_kind == AsyncFunctionKind.pure:
+            task_cls = _get_task_cls(potential_function)
+            return_value = AsyncTaskIncompleteValue(task_cls, return_value)
+
+        if isinstance(node, ast.AsyncFunctionDef) or info.is_decorated_coroutine:
+            return_value = GenericValue(collections.abc.Awaitable, [return_value])
+
+        try:
+            argspec = self.arg_spec_cache.get_argspec(potential_function)
+        except TypeError:
+            return
+        if argspec is None:
+            return
+        self._argspec_to_retval[id(argspec)] = return_value
+
+    def _get_potential_function(
+        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    ) -> Optional[object]:
+        scope_type = self.scopes.scope_type()
+        if scope_type == ScopeType.module_scope and self.module is not None:
+            potential_function = safe_getattr(self.module, node.name, None)
+        elif scope_type == ScopeType.class_scope and self.current_class is not None:
+            potential_function = safe_getattr(self.current_class, node.name, None)
+        else:
+            potential_function = None
+
+        if (
+            potential_function is not None
+            and self.options.is_error_code_enabled_anywhere(
+                ErrorCode.suggested_parameter_type
+            )
+        ):
+            sig = self.signature_from_value(KnownValue(potential_function))
+            if isinstance(sig, Signature):
+                self.checker.callable_tracker.record_callable(
+                    node, potential_function, sig, self
+                )
+        return potential_function
 
     def record_call(self, callable: object, arguments: CallArgs) -> None:
         if self.options.is_error_code_enabled_anywhere(
