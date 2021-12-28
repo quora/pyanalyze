@@ -175,6 +175,11 @@ from .value import (
     unpack_values,
 )
 
+try:
+    from ast import NamedExpr
+except ImportError:
+    NamedExpr = Any  # 3.7 and lower
+
 T = TypeVar("T")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
@@ -3451,11 +3456,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
     # Assignments
 
-    def visit_NamedExpr(self, node: "ast.NamedExpr") -> Value:
+    def visit_NamedExpr(self, node: NamedExpr) -> Value:
         composite = self.composite_from_walrus(node)
         return composite.value
 
-    def composite_from_walrus(self, node: "ast.NamedExpr") -> Composite:
+    def composite_from_walrus(self, node: NamedExpr) -> Composite:
         rhs = self.visit(node.value)
         with qcore.override(self, "being_assigned", rhs):
             if self.in_comprehension_body:
