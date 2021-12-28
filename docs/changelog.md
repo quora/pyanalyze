@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Create command-line options for each config option (#373)
 - Overhaul treatment of function definitions (#372)
   - Support positional-only arguments
   - Infer more precise types for lambda functions
