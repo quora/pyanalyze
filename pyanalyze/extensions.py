@@ -17,6 +17,7 @@ from typing import (
     Container,
     Dict,
     Iterable,
+    Optional,
     Tuple,
     List,
     Union,
@@ -371,11 +372,17 @@ def reveal_type(value: object) -> None:
 
 
 _overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
+_type_evaluations: Dict[str, Optional[Callable[..., Any]]] = {}
 
 
 def get_overloads(fully_qualified_name: str) -> List[Callable[..., Any]]:
     """Return all defined runtime overloads for this fully qualified name."""
     return _overloads[fully_qualified_name]
+
+
+def get_type_evaluation(fully_qualified_name: str) -> Optional[Callable[..., Any]]:
+    """Return the type evaluation function for this fully qualified name, or None."""
+    return _type_evaluations.get(fully_qualified_name)
 
 
 if TYPE_CHECKING:
@@ -394,3 +401,21 @@ else:
         key = f"{func.__module__}.{func.__qualname__}"
         _overloads[key].append(func)
         return real_overload(func)
+
+
+def evaluated(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Marks a type evaluation function."""
+    key = f"{func.__module__}.{func.__qualname__}"
+    assert key not in _type_evaluations, f"multiple evaluations for {key}"
+    _type_evaluations[key] = func
+    func.__is_type_evaluation__ = True
+    return func
+
+
+def is_set(argument: object) -> bool:
+    """Helper function for type evaluators.
+
+    May not be called at runtime.
+
+    """
+    raise NotImplementedError("Should only be called in type evaluation functions")

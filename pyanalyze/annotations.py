@@ -61,6 +61,7 @@ from .extensions import (
 from .find_unused import used
 from .signature import SigParameter, Signature, ParameterKind
 from .safe import is_typing_name, is_instance_of_typing_name
+from . import type_evaluation
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -142,6 +143,19 @@ class Context:
         elif hasattr(builtins, name):
             return KnownValue(getattr(builtins, name))
         return self.handle_undefined_name(name)
+
+
+@dataclass
+class TypeEvaluationContext(Context, type_evaluation.Context):
+    variables: type_evaluation.VarMap
+    globals: Mapping[str, object]
+
+    def evaluate_type(self, node: ast.AST) -> Value:
+        return type_from_ast(node, ctx=self)
+
+    def get_name(self, node: ast.Name) -> Value:
+        """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
+        return self.get_name_from_globals(node.id, self.globals)
 
 
 @used  # part of an API

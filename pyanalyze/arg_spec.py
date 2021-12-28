@@ -4,6 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
+from pyanalyze.type_evaluation import get_evaluator
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import CustomCheck, get_overloads
@@ -54,7 +55,7 @@ import asyncio
 import asynq
 from collections.abc import Awaitable
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import qcore
 import inspect
 import sys
@@ -507,6 +508,13 @@ class ArgSpecCache:
                     ]
                     if all_of_type(sigs, Signature):
                         return OverloadedSignature(sigs)
+                evaluator = get_evaluator(obj)
+                if evaluator is not None:
+                    sig = self._cached_get_argspec(
+                        evaluator.func, impl, is_asynq, in_overload_resolution=True
+                    )
+                    if isinstance(sig, Signature):
+                        return replace(sig, evaluator=evaluator)
 
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause

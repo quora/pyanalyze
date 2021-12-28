@@ -6,6 +6,8 @@ calls.
 
 """
 
+from . import annotations, type_evaluation
+from .type_evaluation import Evaluator, VarMap, evaluate
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -71,6 +73,7 @@ from qcore.helpers import safe_str
 from typing import (
     Any,
     Iterable,
+    Mapping,
     NamedTuple,
     Optional,
     ClassVar,
@@ -93,6 +96,7 @@ EMPTY = inspect.Parameter.empty
 UNANNOTATED = AnyValue(AnySource.unannotated)
 ARGS = qcore.MarkerObject("*args")
 KWARGS = qcore.MarkerObject("**kwargs")
+DEFAULT = qcore.MarkerObject("default")
 
 
 @dataclass
@@ -109,8 +113,8 @@ Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 # Arguments bound to a call. The first member of the tuple is a reference back
 # to the ActualArguments: the value is a str for a kwarg, int for a positional,
-# None for something we cannot infer.
-BoundArgs = Dict[str, Tuple[Union[None, str, int], Composite]]
+# DEFAULT for something filled from the defaults, or None for something we cannot infer.
+BoundArgs = Dict[str, Tuple[Union[None, Literal[DEFAULT], str, int], Composite]]
 
 
 @dataclass
@@ -350,6 +354,8 @@ class Signature:
     a callable is compatible with any other callable with a compatible return type."""
     allow_call: bool = False
     """Whether type checking can call the actual function to retrieve a precise return value."""
+    evaluator: Optional[Evaluator] = None
+    """Type evaluator for this function."""
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
         init=False, default_factory=dict, repr=False, compare=False, hash=False
     )
@@ -573,7 +579,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = None, Composite(param.default)
+                    bound_args[param.name] = DEFAULT, Composite(param.default)
             elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
                 if positional_index < len(actual_args.positionals):
                     bound_args[param.name] = (
@@ -602,7 +608,7 @@ class Signature:
                     # It may also come from **kwargs
                     if actual_args.star_kwargs is not None:
                         value = unite_values(
-                            actual_args.star_kwargs, actual_args.star_kwargs
+                            actual_args.star_args, actual_args.star_kwargs
                         )
                         star_kwargs_consumed = True
                     else:
@@ -629,7 +635,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = None, Composite(param.default)
+                    bound_args[param.name] = DEFAULT, Composite(param.default)
             elif param.kind is ParameterKind.KEYWORD_ONLY:
                 if param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
@@ -653,7 +659,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = None, Composite(param.default)
+                    bound_args[param.name] = DEFAULT, Composite(param.default)
             elif param.kind is ParameterKind.VAR_POSITIONAL:
                 star_args_consumed = True
                 positionals = []
@@ -843,11 +849,27 @@ class Signature:
         # don't call the implementation function if we had an error, so that
         # the implementation function doesn't have to worry about basic
         # type checking
-        if not had_error and self.impl is not None:
-            ctx = CallContext(
-                vars=variables, visitor=visitor, composites=composites, node=node
-            )
-            return_value = self.impl(ctx)
+        if not had_error:
+            if self.impl is not None:
+                ctx = CallContext(
+                    vars=variables, visitor=visitor, composites=composites, node=node
+                )
+                return_value = self.impl(ctx)
+            elif self.evaluator is not None:
+                varmap = {
+                    param: None if position is DEFAULT else composite.value
+                    for param, (position, composite) in bound_args.items()
+                }
+                ctx = annotations.TypeEvaluationContext(varmap, self.evaluator.globals)
+                return_value = evaluate(self.evaluator, ctx)
+                if isinstance(return_value, CanAssignError):
+                    self.show_call_error(
+                        "Error in type evaluator",
+                        node,
+                        visitor,
+                        detail=str(return_value),
+                    )
+                    return_value = AnyValue(AnySource.error)
 
         if self.allow_call:
             runtime_return = self._maybe_perform_call(preprocessed, visitor, node)
@@ -1215,6 +1237,7 @@ class Signature:
             has_return_annotation=self.has_return_annotation,
             is_ellipsis_args=is_ellipsis_args,
             allow_call=self.allow_call,
+            evaluator=self.evaluator,
         )
 
     def walk_values(self) -> Iterable[Value]:
@@ -1237,6 +1260,7 @@ class Signature:
             is_ellipsis_args=self.is_ellipsis_args,
             is_asynq=False,
             allow_call=self.allow_call,
+            evaluator=self.evaluator,
         )
 
     @classmethod
@@ -1251,6 +1275,7 @@ class Signature:
         is_ellipsis_args: bool = False,
         is_asynq: bool = False,
         allow_call: bool = False,
+        evaluator: Optional[Evaluator] = None,
     ) -> "Signature":
         """Create a :class:`Signature` object.
 
@@ -1271,12 +1296,17 @@ class Signature:
             is_ellipsis_args=is_ellipsis_args,
             is_asynq=is_asynq,
             allow_call=allow_call,
+            evaluator=evaluator,
         )
 
     def __str__(self) -> str:
         param_str = ", ".join(self._render_parameters())
         asynq_str = "@asynq " if self.is_asynq else ""
         rendered = f"{asynq_str}({param_str}) -> {self.return_value}"
+        if self.impl:
+            rendered += " (with impl)"
+        if self.evaluator:
+            rendered += " (with evaluator)"
         return rendered
 
     def _render_parameters(self) -> Iterable[str]:
