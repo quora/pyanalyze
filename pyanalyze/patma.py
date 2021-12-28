@@ -24,6 +24,9 @@ from .stacked_scopes import (
     Composite,
     Constraint,
     ConstraintType,
+    OrConstraint,
+    annotate_with_constraint,
+    constrain_value,
 )
 from .value import (
     AnnotatedValue,
@@ -230,6 +233,29 @@ class PatmaVisitor(ast.NodeVisitor):
                 node.name, node, self.visitor.match_subject.value
             )
         return NULL_CONSTRAINT
+
+    def visit_MatchAs(self, node: MatchAs) -> AbstractConstraint:
+        val = self.visitor.match_subject.value
+        if node.pattern is None:
+            constraint = NULL_CONSTRAINT
+        else:
+            constraint = self.visit(node.pattern)
+
+        if node.name is not None:
+            val = constrain_value(val, constraint)
+            self.visitor._set_name_in_scope(node.name, node, val)
+
+        return constraint
+
+    def visit_MatchOr(self, node: MatchOr) -> AbstractConstraint:
+        subscopes = []
+        constraints = []
+        for pattern in node.patterns:
+            with self.visitor.scopes.subscope() as subscope:
+                constraints.append(self.visit(pattern))
+                subscopes.append(subscope)
+        self.visitor.scopes.combine_subscopes(subscopes)
+        return OrConstraint.make(constraints)
 
     def generic_visit(self, node: ast.AST) -> AbstractConstraint:
         return NULL_CONSTRAINT

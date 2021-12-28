@@ -74,3 +74,19 @@ class TestPatma(TestNameCheckVisitorBase):
                         pass
             """
         )
+
+    @skip_before((3, 10))
+    def test_or(self):
+        self.assert_passes(
+            """
+            import collections.abc
+            from typing import Tuple
+
+            def capybara(obj: object):
+                match obj:
+                    case 1 | 2:
+                        assert_is_value(obj, KnownValue(1) | KnownValue(2))
+                    case (3 as x) | (4 as x):
+                        assert_is_value(x, KnownValue(3) | KnownValue(4))
+            """
+        )
