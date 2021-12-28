@@ -82,7 +82,7 @@ from .options import (
     StringSequenceOption,
 )
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
-from .reexport import ErrorContext, ImplicitReexportTracker
+from .reexport import ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
@@ -882,9 +882,7 @@ class CallSiteCollector:
             pass
 
 
-class NameCheckVisitor(
-    node_visitor.ReplacingNodeVisitor, CanAssignContext, ErrorContext
-):
+class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
     """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode

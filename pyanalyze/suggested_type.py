@@ -9,10 +9,9 @@ from dataclasses import dataclass, field
 from types import FunctionType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 
-from pyanalyze.safe import safe_getattr, safe_isinstance
-
+from .safe import safe_getattr, safe_isinstance
 from .error_code import ErrorCode
-from .node_visitor import Failure
+from .node_visitor import Failure, ErrorContext
 from .value import (
     NO_RETURN_VALUE,
     AnnotatedValue,
@@ -33,7 +32,6 @@ from .value import (
     stringify_object,
     unite_values,
 )
-from .reexport import ErrorContext
 from .signature import Signature
 
 CallArgs = Mapping[str, Value]

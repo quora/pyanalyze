@@ -6,12 +6,10 @@ Functionality for dealing with implicit reexports.
 from ast import AST
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
-from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, List, Sequence, Set, Tuple
 
-from pyanalyze.options import Options, PyObjectSequenceOption
-
-from .node_visitor import Failure
+from .options import Options, PyObjectSequenceOption
+from .node_visitor import ErrorContext
 from .config import Config
 from .error_code import ErrorCode
 
@@ -30,22 +28,6 @@ class ReexportConfig(PyObjectSequenceOption[_ReexportConfigProvider]):
         cls, fallback: Config
     ) -> Sequence[_ReexportConfigProvider]:
         return (fallback.configure_reexports,)
-
-
-class ErrorContext:
-    all_failures: List[Failure]
-
-    def show_error(
-        self,
-        node: AST,
-        message: str,
-        error_code: Enum,
-        *,
-        detail: Optional[str] = None,
-        save: bool = True,
-        extra_metadata: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Failure]:
-        raise NotImplementedError
 
 
 @dataclass
