@@ -170,7 +170,6 @@ from .value import (
     GenericValue,
     Value,
     TypeVarValue,
-    CanAssignContext,
     concrete_values_from_iterable,
     unpack_values,
 )
@@ -868,7 +867,7 @@ class CallSiteCollector:
             pass
 
 
-class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
+class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
