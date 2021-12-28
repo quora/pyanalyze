@@ -4,7 +4,6 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from pyanalyze.type_evaluation import get_evaluator
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import CustomCheck, get_overloads
@@ -33,6 +32,7 @@ from .signature import (
     Signature,
     ParameterKind,
 )
+from .type_evaluation import get_evaluator
 from .typeshed import TypeshedFinder
 from .value import (
     AnySource,

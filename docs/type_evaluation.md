@@ -108,6 +108,10 @@ Currently unsupported features include:
 - Comparison against enum members
 - Version and platform checks
 - Use of `and` and `or`
+- Usage in stubs
+- pyanalyze should provide a way to register
+  an evaluation function for a runtime function,
+  to replace some impls.
 
 Areas that need more thought include:
 - Interaction with typevars
