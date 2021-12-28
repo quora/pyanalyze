@@ -6,14 +6,15 @@ Visitor for pattern matching.
 
 import ast
 import collections.abc
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import itertools
 
 import qcore
 import pyanalyze
-from typing import Any, Callable, Optional, Sequence, TypeVar
+from typing import Any, Callable, Container, Optional, Sequence, Set, Tuple, TypeVar
 
 from pyanalyze.implementation import len_of_value
+from pyanalyze.signature import MappingValue
 
 from .extensions import CustomCheck
 from .error_code import ErrorCode
@@ -36,13 +37,18 @@ from .value import (
     CanAssignContext,
     CanAssignError,
     CustomCheckExtension,
+    DictIncompleteValue,
+    KVPair,
     SequenceIncompleteValue,
     TypedValue,
     Value,
     KnownValue,
     flatten_values,
+    kv_pairs_from_mapping,
     unannotate,
+    unite_values,
     unpack_values,
+    UNINITIALIZED_VALUE,
 )
 
 try:
@@ -100,6 +106,7 @@ MatchableSequence = AnnotatedValue(
 class IsAssignablePredicate:
     pattern_value: Value
     ctx: CanAssignContext
+    positive_only: bool
 
     def __call__(self, value: Value, positive: bool) -> Optional[Value]:
         compatible = is_overlapping(self.pattern_value, value, self.ctx)
@@ -109,7 +116,7 @@ class IsAssignablePredicate:
             cleaned = unannotate(value)
             if cleaned == TypedValue(object) or isinstance(cleaned, AnyValue):
                 return self.pattern_value
-        else:
+        elif not self.positive_only:
             if compatible:
                 return None
         return value
@@ -191,12 +198,6 @@ class PatmaVisitor(ast.NodeVisitor):
 
     def visit_MatchSequence(self, node: MatchSequence) -> AbstractConstraint:
         self.check_impossible_pattern(node, MatchableSequence)
-        constraints = [
-            self.make_constraint(
-                ConstraintType.predicate,
-                IsAssignablePredicate(MatchableSequence, self.visitor),
-            )
-        ]
         starred_index = index_of(node.patterns, lambda pat: isinstance(pat, MatchStar))
         if starred_index is None:
             target_length = len(node.patterns)
@@ -210,7 +211,15 @@ class PatmaVisitor(ast.NodeVisitor):
             target_length,
             post_starred_length,
         )
-        constraints.append(
+        constraints = [
+            self.make_constraint(
+                ConstraintType.predicate,
+                IsAssignablePredicate(
+                    MatchableSequence,
+                    self.visitor,
+                    positive_only=len(node.patterns) > 1 or starred_index is None,
+                ),
+            ),
             self.make_constraint(
                 ConstraintType.predicate,
                 LenPredicate(
@@ -218,13 +227,63 @@ class PatmaVisitor(ast.NodeVisitor):
                     starred_index is not None,
                     self.visitor,
                 ),
-            )
-        )
+            ),
+        ]
         if isinstance(unpacked, CanAssignError):
             unpacked = itertools.repeat(AnyValue(AnySource.generic_argument))
         for pat, subject in zip(node.patterns, unpacked):
             with qcore.override(self.visitor, "match_subject", Composite(subject)):
                 constraints.append(self.visit(pat))
+        return AndConstraint.make(constraints)
+
+    def visit_MatchMapping(self, node: MatchMapping) -> AbstractConstraint:
+        self.check_impossible_pattern(node, MappingValue)
+        constraints = [
+            self.make_constraint(
+                ConstraintType.predicate,
+                IsAssignablePredicate(
+                    MappingValue, self.visitor, positive_only=len(node.keys) > 0
+                ),
+            )
+        ]
+        kv_pairs = kv_pairs_from_mapping(self.visitor.match_subject.value, self.visitor)
+        if isinstance(kv_pairs, CanAssignError):
+            kv_pairs = [
+                KVPair(
+                    AnyValue(AnySource.generic_argument),
+                    AnyValue(AnySource.generic_argument),
+                )
+            ]
+        kv_pairs = list(reversed(kv_pairs))
+        optional_pairs = set()
+        removed_pairs = set()
+        for key, pattern in zip(node.keys, node.patterns):
+            key_val = self.visitor.visit(key)
+            value, new_optional_pairs, new_removed_pairs = get_value_from_kv_pairs(
+                kv_pairs, key_val, self.visitor, optional_pairs, removed_pairs
+            )
+            optional_pairs |= new_optional_pairs
+            removed_pairs |= new_removed_pairs
+            if value is UNINITIALIZED_VALUE:
+                self.visitor.show_error(
+                    node,
+                    f"Impossible pattern: {self.visitor.match_subject.value} has no key"
+                    f" {key_val}",
+                    ErrorCode.impossible_pattern,
+                )
+                value = AnyValue(AnySource.error)
+            with qcore.override(self.visitor, "match_subject", Composite(value)):
+                constraints.append(self.visit(pattern))
+        if node.rest is not None:
+            new_kv_pairs = []
+            for kv_pair in kv_pairs:
+                if kv_pair in removed_pairs:
+                    continue
+                if kv_pair in optional_pairs:
+                    kv_pair = replace(kv_pair, is_required=False)
+                new_kv_pairs.append(kv_pair)
+            val = DictIncompleteValue(dict, list(reversed(new_kv_pairs)))
+            self.visitor._set_name_in_scope(node.rest, node, val)
         return AndConstraint.make(constraints)
 
     def visit_MatchStar(self, node: MatchStar) -> AbstractConstraint:
@@ -285,3 +344,47 @@ def index_of(elts: Sequence[T], pred: Callable[[T], bool]) -> Optional[int]:
         if pred(elt):
             return i
     return None
+
+
+def get_value_from_kv_pairs(
+    kv_pairs: Sequence[KVPair],
+    key: Value,
+    ctx: CanAssignContext,
+    optional_pairs: Container[KVPair],
+    removed_pairs: Container[KVPair],
+) -> Tuple[Value, Set[KVPair], Set[KVPair]]:
+    """Return the :class:`Value` for a specific key."""
+    possible_values = []
+    covered_keys: Set[Value] = set()
+    new_optional_pairs: Set[KVPair] = set()
+    for pair in kv_pairs:
+        if pair in removed_pairs:
+            continue
+        if not pair.is_many:
+            if isinstance(pair.key, AnnotatedValue):
+                my_key = pair.key.value
+            else:
+                my_key = pair.key
+            if isinstance(my_key, KnownValue):
+                is_required = pair.is_required and pair not in optional_pairs
+                if my_key == key and is_required:
+                    if possible_values:
+                        new_optional_pairs.add(pair)
+                        new_removed_pairs = set()
+                    else:
+                        new_removed_pairs = {pair}
+                    return (
+                        unite_values(*possible_values, pair.value),
+                        new_optional_pairs,
+                        new_removed_pairs,
+                    )
+                elif my_key in covered_keys:
+                    continue
+                elif is_required:
+                    covered_keys.add(my_key)
+        if is_overlapping(key, pair.key, ctx):
+            possible_values.append(pair.value)
+            new_optional_pairs.add(pair)
+    if not possible_values:
+        return UNINITIALIZED_VALUE, set(), set()
+    return unite_values(*possible_values), new_optional_pairs, set()

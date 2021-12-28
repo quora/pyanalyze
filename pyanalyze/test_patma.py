@@ -90,3 +90,24 @@ class TestPatma(TestNameCheckVisitorBase):
                         assert_is_value(x, KnownValue(3) | KnownValue(4))
             """
         )
+
+    @skip_before((3, 10))
+    def test_mapping(self):
+        self.assert_passes(
+            """
+            import collections.abc
+            from typing import Tuple
+
+            def capybara(obj: object):
+                match {1: 2, 3: 4, 5: 6}:
+                    case {1: x}:
+                        assert_is_value(x, KnownValue(2))
+                    case {3: 4, **x}:
+                        assert_is_value(x, DictIncompleteValue(
+                            dict, [
+                                KVPair(KnownValue(1), KnownValue(2)),
+                                KVPair(KnownValue(5), KnownValue(6)),
+                            ]
+                        ))
+            """
+        )
