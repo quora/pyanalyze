@@ -6,6 +6,8 @@ calls.
 
 """
 
+from . import annotations
+from .type_evaluation import Evaluator, decompose_union, evaluate
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -31,7 +33,6 @@ from .value import (
     HasAttrGuardExtension,
     KVPair,
     KnownValue,
-    MultiValuedValue,
     NoReturnConstraintExtension,
     NoReturnGuardExtension,
     ParameterTypeGuardExtension,
@@ -46,6 +47,7 @@ from .value import (
     CanAssign,
     CanAssignError,
     annotate_value,
+    can_assign_and_used_any,
     concrete_values_from_iterable,
     extract_typevars,
     flatten_values,
@@ -93,6 +95,7 @@ EMPTY = inspect.Parameter.empty
 UNANNOTATED = AnyValue(AnySource.unannotated)
 ARGS = qcore.MarkerObject("*args")
 KWARGS = qcore.MarkerObject("**kwargs")
+DEFAULT = qcore.MarkerObject("default")
 
 
 @dataclass
@@ -109,8 +112,8 @@ Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
 
 # Arguments bound to a call. The first member of the tuple is a reference back
 # to the ActualArguments: the value is a str for a kwarg, int for a positional,
-# None for something we cannot infer.
-BoundArgs = Dict[str, Tuple[Union[None, str, int], Composite]]
+# DEFAULT for something filled from the defaults, or None for something we cannot infer.
+BoundArgs = Dict[str, Tuple[Union[None, Literal[DEFAULT], str, int], Composite]]
 
 
 @dataclass
@@ -350,6 +353,8 @@ class Signature:
     a callable is compatible with any other callable with a compatible return type."""
     allow_call: bool = False
     """Whether type checking can call the actual function to retrieve a precise return value."""
+    evaluator: Optional[Evaluator] = None
+    """Type evaluator for this function."""
     typevars_of_params: Dict[str, List["TypeVar"]] = field(
         init=False, default_factory=dict, repr=False, compare=False, hash=False
     )
@@ -395,31 +400,14 @@ class Signature:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
             else:
                 param_typ = param.annotation
-            tv_map, used_any = self._can_assign_and_used_any(
+            tv_map, used_any = can_assign_and_used_any(
                 param_typ, composite.value, visitor
             )
             if isinstance(tv_map, CanAssignError):
-                if is_overload and isinstance(composite.value, MultiValuedValue):
-                    tv_maps = []
-                    remaining_values = []
-                    union_used_any = False
-                    for val in composite.value.vals:
-                        can_assign, subval_used_any = self._can_assign_and_used_any(
-                            param_typ, val, visitor
-                        )
-                        if isinstance(can_assign, CanAssignError):
-                            remaining_values.append(val)
-                        else:
-                            if subval_used_any:
-                                union_used_any = True
-                            tv_maps.append(can_assign)
-                    if tv_maps:
-                        tv_map = unify_typevar_maps(tv_maps)
-                        assert remaining_values, (
-                            f"all union members matched between {param_typ} and"
-                            f" {composite.value}"
-                        )
-                        return tv_map, union_used_any, unite_values(*remaining_values)
+                if is_overload:
+                    triple = decompose_union(param_typ, composite.value, visitor)
+                    if triple is not None:
+                        return triple
                 visitor.show_error(
                     composite.node if composite.node is not None else node,
                     f"Incompatible argument type for {param.name}: expected {param_typ}"
@@ -430,14 +418,6 @@ class Signature:
                 return None, False, None
             return tv_map, used_any, None
         return {}, False, None
-
-    def _can_assign_and_used_any(
-        self, param_typ: Value, var_value: Value, visitor: "NameCheckVisitor"
-    ) -> Tuple[CanAssign, bool]:
-        with visitor.reset_any_used():
-            tv_map = param_typ.can_assign(var_value, visitor)
-            used_any = visitor.has_used_any_match()
-        return tv_map, used_any
 
     def _get_positional_parameter(self, index: int) -> Optional[SigParameter]:
         for i, param in enumerate(self.parameters.values()):
@@ -573,7 +553,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = None, Composite(param.default)
+                    bound_args[param.name] = DEFAULT, Composite(param.default)
             elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
                 if positional_index < len(actual_args.positionals):
                     bound_args[param.name] = (
@@ -602,7 +582,7 @@ class Signature:
                     # It may also come from **kwargs
                     if actual_args.star_kwargs is not None:
                         value = unite_values(
-                            actual_args.star_kwargs, actual_args.star_kwargs
+                            actual_args.star_args, actual_args.star_kwargs
                         )
                         star_kwargs_consumed = True
                     else:
@@ -629,7 +609,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = None, Composite(param.default)
+                    bound_args[param.name] = DEFAULT, Composite(param.default)
             elif param.kind is ParameterKind.KEYWORD_ONLY:
                 if param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
@@ -653,7 +633,7 @@ class Signature:
                     )
                     return None
                 else:
-                    bound_args[param.name] = None, Composite(param.default)
+                    bound_args[param.name] = DEFAULT, Composite(param.default)
             elif param.kind is ParameterKind.VAR_POSITIONAL:
                 star_args_consumed = True
                 positionals = []
@@ -843,11 +823,34 @@ class Signature:
         # don't call the implementation function if we had an error, so that
         # the implementation function doesn't have to worry about basic
         # type checking
-        if not had_error and self.impl is not None:
-            ctx = CallContext(
-                vars=variables, visitor=visitor, composites=composites, node=node
-            )
-            return_value = self.impl(ctx)
+        if not had_error:
+            if self.impl is not None:
+                ctx = CallContext(
+                    vars=variables, visitor=visitor, composites=composites, node=node
+                )
+                return_value = self.impl(ctx)
+            elif self.evaluator is not None:
+                varmap = {
+                    param: composite.value
+                    for param, (_, composite) in bound_args.items()
+                }
+                set_variables = {
+                    param
+                    for param, (position, _) in bound_args.items()
+                    if position is not DEFAULT
+                }
+                ctx = annotations.TypeEvaluationContext(
+                    varmap, set_variables, visitor, self.evaluator.globals
+                )
+                return_value = evaluate(self.evaluator, ctx)
+                if isinstance(return_value, CanAssignError):
+                    self.show_call_error(
+                        "Error in type evaluator",
+                        node,
+                        visitor,
+                        detail=str(return_value),
+                    )
+                    return_value = AnyValue(AnySource.error)
 
         if self.allow_call:
             runtime_return = self._maybe_perform_call(preprocessed, visitor, node)
@@ -1215,6 +1218,7 @@ class Signature:
             has_return_annotation=self.has_return_annotation,
             is_ellipsis_args=is_ellipsis_args,
             allow_call=self.allow_call,
+            evaluator=self.evaluator,
         )
 
     def walk_values(self) -> Iterable[Value]:
@@ -1237,6 +1241,7 @@ class Signature:
             is_ellipsis_args=self.is_ellipsis_args,
             is_asynq=False,
             allow_call=self.allow_call,
+            evaluator=self.evaluator,
         )
 
     @classmethod
@@ -1251,6 +1256,7 @@ class Signature:
         is_ellipsis_args: bool = False,
         is_asynq: bool = False,
         allow_call: bool = False,
+        evaluator: Optional[Evaluator] = None,
     ) -> "Signature":
         """Create a :class:`Signature` object.
 
@@ -1271,12 +1277,17 @@ class Signature:
             is_ellipsis_args=is_ellipsis_args,
             is_asynq=is_asynq,
             allow_call=allow_call,
+            evaluator=evaluator,
         )
 
     def __str__(self) -> str:
         param_str = ", ".join(self._render_parameters())
         asynq_str = "@asynq " if self.is_asynq else ""
         rendered = f"{asynq_str}({param_str}) -> {self.return_value}"
+        if self.impl:
+            rendered += " (with impl)"
+        if self.evaluator:
+            rendered += " (with evaluator)"
         return rendered
 
     def _render_parameters(self) -> Iterable[str]:

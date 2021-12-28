@@ -14,6 +14,7 @@ pyanalyze: A semi-static typechecker
    configuration
    typesystem
    design
+   type_evaluation
    glossary
    reference/annotations
    reference/ast_annotator
