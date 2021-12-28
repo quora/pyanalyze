@@ -1679,8 +1679,8 @@ class TestSubscripting(TestNameCheckVisitorBase):
                     return "whatever"
 
         def capybara(liat: LetItAllThrough) -> None:
-            assert_is_value(liat["x"], TypedValue(object))
-            assert_is_value(liat[0], TypedValue(object))
+            assert_is_value(liat["x"], AnyValue(AnySource.explicit))
+            assert_is_value(liat[0], AnyValue(AnySource.explicit))
 
     @assert_passes()
     def test_slice(self):
