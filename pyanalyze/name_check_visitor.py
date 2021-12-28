@@ -1531,7 +1531,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             # set within the Future returned. Without this, we'll incorrectly infer the return
             # value to be the Future instead of the Future's value.
             return
-        if info.node.decorator_list:
+        if info.node.decorator_list and not (
+            len(info.decorators) == 1
+            and info.decorators[0][0]
+            in (KnownValue(asynq.asynq), KnownValue(asyncio.coroutine))
+        ):
             return  # With decorators we don't know what it will return
         return_value = result.return_value
 
