@@ -10,7 +10,7 @@ import asynq
 import enum
 from dataclasses import dataclass
 from itertools import zip_longest
-from typing import Any, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
 from typing_extensions import Protocol
 
 from .config import Config
@@ -18,8 +18,10 @@ from .error_code import ErrorCode
 from .extensions import overload, real_overload
 from .options import Options, PyObjectSequenceOption
 from .node_visitor import ErrorContext
-from .signature import SigParameter, ParameterKind
+from .signature import SigParameter, ParameterKind, Signature
+from .stacked_scopes import Composite
 from .value import (
+    CallableValue,
     CanAssignContext,
     TypedValue,
     Value,
@@ -57,7 +59,7 @@ class FunctionInfo:
     # a list of pairs of (decorator function, applied decorator function). These are different
     # for decorators that take arguments, like @asynq(): the first element will be the asynq
     # function and the second will be the result of calling asynq().
-    decorators: List[Any]
+    decorators: List[Tuple[Value, Value]]
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,7 @@ class FunctionResult:
     parameters: Sequence[SigParameter] = ()
     has_return: bool = False
     is_generator: bool = False
+    has_return_annotation: bool = False
 
 
 class Context(ErrorContext, CanAssignContext, Protocol):
@@ -84,6 +87,16 @@ class Context(ErrorContext, CanAssignContext, Protocol):
         raise NotImplementedError
 
     def value_of_annotated_arg(self, __arg: ast.arg) -> Value:
+        raise NotImplementedError
+
+    def check_call(
+        self,
+        node: ast.AST,
+        callee: Value,
+        args: Iterable[Composite],
+        *,
+        allow_call: bool = False,
+    ) -> Value:
         raise NotImplementedError
 
 
@@ -107,6 +120,17 @@ class AsyncProxyDecorators(PyObjectSequenceOption[object]):
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
         return list(fallback.ASYNC_PROXY_DECORATORS)
+
+
+class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
+    """These decorators can safely be applied to nested functions."""
+
+    name = "safe_decorators_for_nested_functions"
+    default_value = [asynq.asynq, classmethod, staticmethod, asyncio.coroutine]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
+        return list(fallback.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS)
 
 
 def compute_function_info(decorator_list: List[ast.expr], ctx: Context) -> FunctionInfo:
@@ -257,3 +281,20 @@ def compute_parameters(
         info = ParamInfo(param, arg, is_self)
         params.append(info)
     return params
+
+
+def compute_value_of_function(
+    node: FunctionNode, info: FunctionInfo, result: FunctionResult, ctx: Context
+) -> Value:
+    sig = Signature.make(
+        result.parameters,
+        result.return_value,
+        has_return_annotation=result.has_return_annotation,
+    )
+    val = CallableValue(sig)
+    for unapplied, decorator in reversed(info.decorators):
+        allow_call = isinstance(
+            unapplied, KnownValue
+        ) and SafeDecoratorsForNestedFunctions.contains(unapplied.val, ctx.options)
+        val = ctx.check_call(node, decorator, [Composite(val)], allow_call=allow_call)
+    return val

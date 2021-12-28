@@ -17,7 +17,6 @@ import collections
 import collections.abc
 import contextlib
 from dataclasses import dataclass
-import inspect
 from itertools import chain
 import logging
 import operator
@@ -76,7 +75,6 @@ from .options import (
     InvalidConfigOption,
     IntegerOption,
     Options,
-    PyObjectSequenceOption,
     StringSequenceOption,
 )
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
@@ -135,6 +133,7 @@ from .functions import (
     compute_function_info,
     IMPLICIT_CLASSMETHODS,
     compute_parameters,
+    compute_value_of_function,
 )
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
@@ -314,17 +313,6 @@ class _AttrContext(attributes.AttrContext):
 _DEFAULT_FUNCTION_INFO = FunctionInfo(
     AsyncFunctionKind.normal, False, False, False, False, False, []
 )
-
-
-class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
-    """These decorators can safely be applied to nested functions."""
-
-    name = "safe_decorators_for_nested_functions"
-    default_value = [asynq.asynq, classmethod, staticmethod, asyncio.coroutine]
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS)
 
 
 class ComprehensionLengthInferenceLimit(IntegerOption):
@@ -1485,18 +1473,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         self.yield_checker.reset_yield_checks()
 
-        # This code handles nested functions
-        evaled_function = None
-        if potential_function is None:
-            if scope_type != ScopeType.function_scope:
-                self.log(
-                    logging.INFO, "Failed to find function", (node.name, scope_type)
-                )
-            evaled_function = self._get_evaled_function(node, info.decorators)
-            # evaled_function should be a KnownValue of a function unless a decorator messed it up.
-            if isinstance(evaled_function, KnownValue):
-                potential_function = evaled_function.val
-
         if node.returns is not None:
             return_annotation = self._visit_annotation(node.returns)
             expected_return_value = self._value_of_annotation_type(
@@ -1507,12 +1483,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                 node, error_code=ErrorCode.missing_return_annotation
             )
             expected_return_value = None
-
-        if not info.is_overload:
-            if evaled_function is not None:
-                self._set_name_in_scope(node.name, node, evaled_function)
-            else:
-                self._set_name_in_scope(node.name, node, KnownValue(potential_function))
 
         with self.asynq_checker.set_func_name(
             node.name, async_kind=info.async_kind, is_classmethod=info.is_classmethod
@@ -1527,6 +1497,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             result = self._visit_function_body(node, function_info=info, name=node.name)
         return_value = result.return_value
+
+        if potential_function is None:
+            val = compute_value_of_function(node, info, result, self)
+        else:
+            val = KnownValue(potential_function)
+
+        if not info.is_overload:
+            self._set_name_in_scope(node.name, node, val)
 
         if (
             not result.has_return
@@ -1562,59 +1540,48 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
                     extra_metadata=metadata,
                 )
 
-        if evaled_function:
-            return evaled_function
-
         if info.async_kind == AsyncFunctionKind.normal and _is_asynq_future(
             return_value
         ):
             self._show_error_if_checking(node, error_code=ErrorCode.task_needs_yield)
 
-        # If there was an annotation, use it as the return value in the
-        # _argspec_to_retval cache, even if we inferred something else while visiting
-        # the function.
-        if not result.is_generator and expected_return_value is not None:
-            return_value = expected_return_value
+        if potential_function is not None:
+            # If there was an annotation, use it as the return value in the
+            # _argspec_to_retval cache, even if we inferred something else while visiting
+            # the function.
+            if not result.is_generator and expected_return_value is not None:
+                return_value = expected_return_value
 
-        if result.is_generator and return_value == KnownNone:
-            return_value = AnyValue(AnySource.inference)
+            if result.is_generator and return_value == KnownNone:
+                return_value = AnyValue(AnySource.inference)
 
-        # pure async functions are otherwise incorrectly inferred as returning whatever the
-        # underlying function returns
-        if info.async_kind == AsyncFunctionKind.pure:
-            return_value = AsyncTaskIncompleteValue(
-                _get_task_cls(potential_function), return_value
-            )
+            # pure async functions are otherwise incorrectly inferred as returning whatever the
+            # underlying function returns
+            if info.async_kind == AsyncFunctionKind.pure:
+                task_cls = _get_task_cls(potential_function)
+                return_value = AsyncTaskIncompleteValue(task_cls, return_value)
 
-        # If a decorator turned the function async, believe it. This fixes one
-        # instance of the general problem where a decorator can change the return
-        # type, but we still look at the original function's annotation. A more
-        # principled fix for such issues will have to wait for better support for
-        # callable types.
-        if potential_function is not None and not is_coroutine:
-            is_coroutine = _is_coroutine_function(potential_function)
+            if is_coroutine or info.is_decorated_coroutine:
+                return_value = GenericValue(collections.abc.Awaitable, [return_value])
 
-        if is_coroutine or info.is_decorated_coroutine:
-            return_value = GenericValue(collections.abc.Awaitable, [return_value])
-
-        try:
-            argspec = self.arg_spec_cache.get_argspec(potential_function)
-        except TypeError:
-            return KnownValue(potential_function)
-        if argspec is not None:
-            if (
-                info.async_kind != AsyncFunctionKind.async_proxy
-                and node.returns is None
-            ):
-                # Don't attempt to infer the return value of async_proxy functions, since it will be
-                # set within the Future returned. Without this, we'll incorrectly infer the return
-                # value to be the Future instead of the Future's value.
-                # Similarly, we don't infer the return value if there is an annotation, because
-                # we should be able to get it from __annotations__ instead.
-                self._argspec_to_retval[id(argspec)] = return_value
-        else:
-            self.log(logging.DEBUG, "No argspec", (potential_function, node))
-        return KnownValue(potential_function)
+            try:
+                argspec = self.arg_spec_cache.get_argspec(potential_function)
+            except TypeError:
+                argspec = None
+            if argspec is not None:
+                if (
+                    info.async_kind != AsyncFunctionKind.async_proxy
+                    and node.returns is None
+                ):
+                    # Don't attempt to infer the return value of async_proxy functions, since it will be
+                    # set within the Future returned. Without this, we'll incorrectly infer the return
+                    # value to be the Future instead of the Future's value.
+                    # Similarly, we don't infer the return value if there is an annotation, because
+                    # we should be able to get it from __annotations__ instead.
+                    self._argspec_to_retval[id(argspec)] = return_value
+            else:
+                self.log(logging.DEBUG, "No argspec", (potential_function, node))
+        return val
 
     def record_call(self, callable: object, arguments: CallArgs) -> None:
         if self.options.is_error_code_enabled_anywhere(
@@ -1622,67 +1589,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
         ):
             self.checker.callable_tracker.record_call(callable, arguments)
 
-    def _get_evaled_function(
-        self,
-        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
-        decorators: Sequence[Tuple[Value, Value]],
-    ) -> Value:
-        to_apply = []
-        for decorator, applied_decorator in decorators:
-            if (
-                not isinstance(decorator, KnownValue)
-                or not isinstance(applied_decorator, KnownValue)
-                or not SafeDecoratorsForNestedFunctions.contains(
-                    decorator.val, self.options
-                )
-            ):
-                self.log(
-                    logging.DEBUG,
-                    "Reject nested function because of decorator",
-                    (node, decorator),
-                )
-                return TypedValue(types.FunctionType)
-            else:
-                to_apply.append(applied_decorator.val)
-        scope = {}
-        new_args = ast.arguments(
-            args=[self._strip_annotation(arg) for arg in node.args.args],
-            vararg=self._strip_annotation(node.args.vararg),
-            kwarg=self._strip_annotation(node.args.kwarg),
-            defaults=[ast.Name(id="None") for _ in node.args.defaults],
-            kwonlyargs=[self._strip_annotation(arg) for arg in node.args.kwonlyargs],
-            kw_defaults=[ast.Name(id="None") for _ in node.args.kw_defaults],
-        )
-        new_node = ast.FunctionDef(
-            name=node.name, args=new_args, body=[ast.Pass()], decorator_list=[]
-        )
-        code = decompile(new_node)
-        exec(code, scope, scope)
-        fn = scope[node.name]
-        for decorator in reversed(to_apply):
-            fn = decorator(fn)
-        try:
-            fn._pyanalyze_is_nested_function = True
-            fn._pyanalyze_parent_function = self.current_function
-        except AttributeError:
-            # could happen if decorator wrapped it in an object that doesn't allow attribute
-            # assignment
-            pass
-        return KnownValue(fn)
-
-    def _strip_annotation(self, node: Optional[ast.arg]) -> Optional[ast.arg]:
-        if node is None:
-            return None
-        return ast.arg(arg=node.arg, annotation=None)
-
     def visit_Lambda(self, node: ast.Lambda) -> Value:
         with self.asynq_checker.set_func_name("<lambda>"):
             result = self._visit_function_body(node)
-            return CallableValue(
-                Signature.make(
-                    result.parameters, result.return_value, has_return_annotation=False
-                )
-            )
+            return compute_value_of_function(node, _DEFAULT_FUNCTION_INFO, result, self)
 
     def _visit_function_body(
         self,
@@ -3469,7 +3379,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
 
         if (
             self.current_enum_members is not None
-            and self.current_function is None
+            and self.current_function_name is None
             and isinstance(value, KnownValue)
             and is_hashable(value.val)
         ):
@@ -4000,7 +3910,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor, CanAssignContext):
             if not self._has_only_known_attributes(root_value.val) and (
                 _static_hasattr(root_value.val, "__getattr__")
                 or self._should_ignore_val(node)
-                or safe_getattr(root_value.val, "_pyanalyze_is_nested_function", False)
             ):
                 return AnyValue(AnySource.inference)
         elif isinstance(root_value, TypedValue):
@@ -4701,14 +4610,6 @@ def _static_hasattr(value: object, attr: str) -> bool:
         return False
     else:
         return True
-
-
-def _is_coroutine_function(obj: object) -> bool:
-    try:
-        return inspect.iscoroutinefunction(obj)
-    except AttributeError:
-        # This can happen to cached classmethods.
-        return False
 
 
 def _has_annotation_for_attr(typ: type, attr: str) -> bool:
