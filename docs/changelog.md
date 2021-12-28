@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Initial support for proposed new "type evaluation"
+  mechanism (#374)
 - Create command-line options for each config option (#373)
 - Overhaul treatment of function definitions (#372)
   - Support positional-only arguments

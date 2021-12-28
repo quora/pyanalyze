@@ -83,3 +83,53 @@ Type checkers should apply normal type narrowing rules to arguments
 that are of Union types. For example, if the `ndigits` argument to
 `round()` is of type `int | None`, the inferred return value should
 be `_T | int`.
+
+## Status
+
+A partial implementation of this feature is available
+in pyanalyze:
+
+    from pyanalyze.extensions import evaluated, is_set
+
+    @evaluated
+    def simple_evaluated(x: int, y: str = ""):
+        if is_set(y):
+            return int
+        else:
+            return str
+
+    def simple_evaluated(*args: object) -> Union[int, str]:
+        if len(args) >= 2:
+            return 1
+        else:
+            return "x"
+
+Currently unsupported features include:
+- Comparison against enum members
+- Version and platform checks
+- Use of `and` and `or`
+
+Areas that need more thought include:
+- Interaction with typevars
+- Interaction with overloads. It should be possible
+  to register multiple evaluation functions for a
+  function, treating them as overloads.
+- Consider adding support for `assert` and an
+  ergonomical way to produce a standardized error
+  if something is not supported in the current
+  version or platform.
+- Guidance on what the return annotation of an
+  evaluation function should be. Most likely,
+  it is treated as the default return type if
+  execution reaches the end of the evaluation
+  function. It can be omitted if the evaluation
+  function always return.
+- Add a `warn()` mechanism to warn on particular
+  invocations. This can be useful as a mechanism
+  to produce deprecation warnings.
+
+Motivations can include:
+- Less repetitive overload writing
+- Ability to customize error messages
+- Potential for additional features that work
+  across type checkers
