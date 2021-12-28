@@ -153,6 +153,15 @@ class VarnameWithOrigin:
             )
         return self.varname
 
+    def __str__(self) -> str:
+        pieces = [self.varname]
+        for index, _ in self.indices:
+            if isinstance(index, str):
+                pieces.append(f".{index}")
+            else:
+                pieces.append(f"[{index.val!r}]")
+        return "".join(pieces)
+
 
 SubScope = Dict[Varname, List[Node]]
 

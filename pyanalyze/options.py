@@ -362,10 +362,7 @@ class Options:
                     pieces.append("from command line")
                 else:
                     pieces.append("from config file")
-                if pieces:
-                    suffix = f" ({', '.join(pieces)})"
-                else:
-                    suffix = ""
+                suffix = f" ({', '.join(pieces)})"
                 print(f"{prefix}{instance.value}{suffix}")
         print(f"Fallback: {self.fallback}")
         if self.module_path:
