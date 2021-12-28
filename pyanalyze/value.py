@@ -1699,6 +1699,9 @@ class ConstraintExtension(Extension):
     def __hash__(self) -> int:
         return id(self)
 
+    def __str__(self) -> str:
+        return str(self.constraint)
+
 
 @dataclass(frozen=True, eq=False)
 class NoReturnConstraintExtension(Extension):
