@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support the Python 3.10 `match` statement (#376)
 - Support the walrus (`:=`) operator (#375)
 - Initial support for proposed new "type evaluation"
   mechanism (#374)
