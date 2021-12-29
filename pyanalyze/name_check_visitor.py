@@ -181,22 +181,10 @@ except ImportError:
     NamedExpr = Any  # 3.7 and lower
 
 try:
-    from ast import (
-        match_case,
-        Match,
-        MatchAs,
-        MatchClass,
-        MatchMapping,
-        MatchOr,
-        MatchSequence,
-        MatchSingleton,
-        MatchStar,
-        MatchValue,
-    )
+    from ast import match_case, Match
 except ImportError:
     # 3.9 and lower
-    match_case = Match = MatchAs = MatchClass = MatchMapping = Any
-    MatchOr = MatchSequence = MatchSingleton = MatchStar = MatchValue = Any
+    match_case = Match = Any
 
 T = TypeVar("T")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
