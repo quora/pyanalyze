@@ -181,10 +181,10 @@ except ImportError:
     NamedExpr = Any  # 3.7 and lower
 
 try:
-    from ast import match_case, Match
+    from ast import Match
 except ImportError:
     # 3.9 and lower
-    match_case = Match = Any
+    Match = Any
 
 T = TypeVar("T")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
@@ -4443,9 +4443,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     self.add_constraint(node, constraint)
                 subscopes.append(else_scope)
             self.scopes.combine_subscopes(subscopes)
-
-    def visit_match_case(self, node: match_case) -> None:
-        pass
 
     # Attribute checking
 
