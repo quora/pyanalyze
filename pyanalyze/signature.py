@@ -20,6 +20,7 @@ from .stacked_scopes import (
     AbstractConstraint,
     VarnameWithOrigin,
 )
+from .type_evaluation import ARGS, KWARGS, DEFAULT, UNKNOWN, Position
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -68,7 +69,6 @@ import enum
 import itertools
 from types import MethodType, FunctionType
 import inspect
-import qcore
 from qcore.helpers import safe_str
 from typing import (
     Any,
@@ -93,9 +93,6 @@ if TYPE_CHECKING:
 
 EMPTY = inspect.Parameter.empty
 UNANNOTATED = AnyValue(AnySource.unannotated)
-ARGS = qcore.MarkerObject("*args")
-KWARGS = qcore.MarkerObject("**kwargs")
-DEFAULT = qcore.MarkerObject("default")
 
 
 @dataclass
@@ -108,12 +105,10 @@ class PossibleKwarg:
 # Representation of a single argument to a call. Second member is
 # None for positional args, str for keyword args,
 # ARGS for *args, KWARGS for **kwargs.
-Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
+Argument = Tuple[Composite, Union[None, str, Literal[ARGS, KWARGS]]]
 
-# Arguments bound to a call. The first member of the tuple is a reference back
-# to the ActualArguments: the value is a str for a kwarg, int for a positional,
-# DEFAULT for something filled from the defaults, or None for something we cannot infer.
-BoundArgs = Dict[str, Tuple[Union[None, Literal[DEFAULT], str, int], Composite]]
+# Arguments bound to a call
+BoundArgs = Dict[str, Tuple[Position, Composite]]
 
 
 @dataclass
@@ -543,7 +538,11 @@ class Signature:
                     )
                     positional_index += 1
                 elif actual_args.star_args is not None:
-                    bound_args[param.name] = None, Composite(actual_args.star_args)
+                    if param.default is None:
+                        position = ARGS  # either that or the call fails
+                    else:
+                        position = UNKNOWN  # default or args
+                    bound_args[param.name] = position, Composite(actual_args.star_args)
                     star_args_consumed = True
                 elif param.default is None:
                     self.show_call_error(
@@ -579,15 +578,20 @@ class Signature:
                         )
                         return None
                     star_args_consumed = True
+                    if param.default is None:
+                        position = ARGS
+                    else:
+                        position = UNKNOWN
                     # It may also come from **kwargs
                     if actual_args.star_kwargs is not None:
                         value = unite_values(
                             actual_args.star_args, actual_args.star_kwargs
                         )
                         star_kwargs_consumed = True
+                        position = UNKNOWN  # could be either args or kwargs
                     else:
                         value = actual_args.star_args
-                    bound_args[param.name] = None, Composite(value)
+                    bound_args[param.name] = position, Composite(value)
                 elif param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
                     if not definitely_provided and param.default is None:
@@ -601,7 +605,13 @@ class Signature:
                     bound_args[param.name] = param.name, composite
                     keywords_consumed.add(param.name)
                 elif actual_args.star_kwargs is not None:
-                    bound_args[param.name] = None, Composite(actual_args.star_kwargs)
+                    if param.default is None:
+                        position = KWARGS
+                    else:
+                        position = UNKNOWN
+                    bound_args[param.name] = position, Composite(
+                        actual_args.star_kwargs
+                    )
                     star_kwargs_consumed = True
                 elif param.default is None:
                     self.show_call_error(
@@ -624,7 +634,13 @@ class Signature:
                     bound_args[param.name] = param.name, composite
                     keywords_consumed.add(param.name)
                 elif actual_args.star_kwargs is not None:
-                    bound_args[param.name] = None, Composite(actual_args.star_kwargs)
+                    if param.default is None:
+                        position = KWARGS
+                    else:
+                        position = UNKNOWN
+                    bound_args[param.name] = position, Composite(
+                        actual_args.star_kwargs
+                    )
                     star_kwargs_consumed = True
                     keywords_consumed.add(param.name)
                 elif param.default is None:
@@ -640,12 +656,16 @@ class Signature:
                 while positional_index < len(actual_args.positionals):
                     positionals.append(actual_args.positionals[positional_index].value)
                     positional_index += 1
+                position = ARGS
                 if actual_args.star_args is not None:
                     element_value = unite_values(*positionals, actual_args.star_args)
                     star_args_value = GenericValue(tuple, [element_value])
                 else:
                     star_args_value = SequenceIncompleteValue(tuple, positionals)
-                bound_args[param.name] = None, Composite(star_args_value)
+                    if not positionals:
+                        # no *args were actually provided
+                        position = DEFAULT
+                bound_args[param.name] = position, Composite(star_args_value)
             elif param.kind is ParameterKind.VAR_KEYWORD:
                 star_kwargs_consumed = True
                 items = {}
@@ -656,6 +676,7 @@ class Signature:
                     if key in keywords_consumed:
                         continue
                     items[key] = (definitely_provided, composite.value)
+                position = KWARGS
                 if actual_args.star_kwargs is not None:
                     value_value = unite_values(
                         *(val for _, val in items.values()), actual_args.star_kwargs
@@ -665,7 +686,9 @@ class Signature:
                     )
                 else:
                     star_kwargs_value = TypedDictValue(items)
-                bound_args[param.name] = None, Composite(star_kwargs_value)
+                    if not items:
+                        position = DEFAULT
+                bound_args[param.name] = position, Composite(star_kwargs_value)
             else:
                 assert False, f"unhandled param {param.kind}"
 
@@ -834,13 +857,11 @@ class Signature:
                     param: composite.value
                     for param, (_, composite) in bound_args.items()
                 }
-                set_variables = {
-                    param
-                    for param, (position, _) in bound_args.items()
-                    if position is not DEFAULT
+                positions = {
+                    param: position for param, (position, _) in bound_args.items()
                 }
                 ctx = annotations.TypeEvaluationContext(
-                    varmap, set_variables, visitor, self.evaluator.globals
+                    varmap, positions, visitor, self.evaluator.globals
                 )
                 return_value = evaluate(self.evaluator, ctx)
                 if isinstance(return_value, CanAssignError):

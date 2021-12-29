@@ -8,7 +8,9 @@ import ast
 from contextlib import contextmanager
 from dataclasses import dataclass
 import inspect
+import qcore
 import textwrap
+from typing_extensions import Literal
 from typing import (
     Any,
     Callable,
@@ -37,6 +39,17 @@ from .value import (
     TypeVarMap,
 )
 
+ARGS = qcore.MarkerObject("*args")
+KWARGS = qcore.MarkerObject("**kwargs")
+DEFAULT = qcore.MarkerObject("default")
+UNKNOWN = qcore.MarkerObject("unknown")
+
+# How a bound argument was filled: int for a positional arg,
+# str for a keyword arg, DEFAULT for a parameter filled from the
+# default, ARGS for a parameter filled from *args, KWARGS for **kwargs,
+# UNKNOWN if there are multiple possibilities.
+Position = Union[int, str, Literal[DEFAULT, ARGS, KWARGS, UNKNOWN]]
+
 VarMap = Mapping[str, Value]
 
 
@@ -46,7 +59,7 @@ class InvalidEvaluation(Exception):
 
 class Context:
     variables: VarMap
-    set_variables: Container[str]
+    positions: Mapping[str, Position]
     can_assign_context: CanAssignContext
 
     def evaluate_type(self, __node: ast.AST) -> Value:
@@ -121,13 +134,24 @@ class ConditionEvaluator(ast.NodeVisitor):
         if not isinstance(node.func, ast.Name):
             raise InvalidEvaluation("Unexpected call")
         name = node.func.id
-        if name == "is_provided":
+        if name in ("is_provided", "is_positional", "is_keyword"):
             if node.keywords or len(node.args) != 1:
-                raise InvalidEvaluation("is_provided() takes a single argument")
+                raise InvalidEvaluation(f"{name}() takes a single argument")
             if not isinstance(node.args[0], ast.Name):
-                raise InvalidEvaluation("Argument to is_provided() must be a variable")
+                raise InvalidEvaluation(f"Argument to {name}() must be a variable")
             variable = node.args[0].id
-            match = variable in self.ctx.set_variables
+            try:
+                position = self.ctx.positions[variable]
+            except KeyError:
+                raise InvalidEvaluation(f"{variable} is not a valid variable") from None
+            if name == "is_provided":
+                match = position is not DEFAULT
+            elif name == "is_positional":
+                match = position is ARGS or isinstance(position, int)
+            elif name == "is_keyword":
+                match = position is KWARGS or isinstance(position, str)
+            else:
+                raise InvalidEvaluation(name)
             if match:
                 return ConditionReturn(left_varmap={})
             else:

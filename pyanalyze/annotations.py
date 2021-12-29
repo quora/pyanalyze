@@ -149,7 +149,7 @@ class Context:
 @dataclass
 class TypeEvaluationContext(Context, type_evaluation.Context):
     variables: type_evaluation.VarMap
-    set_variables: Container[str]
+    positions: Mapping[str, type_evaluation.Position]
     can_assign_context: CanAssignContext
     globals: Mapping[str, object]
 

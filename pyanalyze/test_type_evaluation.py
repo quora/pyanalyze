@@ -4,7 +4,7 @@ from typing_extensions import Literal
 from .value import AnySource, AnyValue, TypedValue, assert_is_value
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .extensions import evaluated, is_provided, is_of_type
+from .extensions import evaluated, is_keyword, is_positional, is_provided, is_of_type
 
 from typing import Union
 
@@ -84,6 +84,19 @@ def nonempty_please(x: str) -> int:
     return len(x)
 
 
+@evaluated
+def restrict_kind(x: str, y: int):
+    if is_keyword(x):
+        raise Exception("x must be positional")
+    if is_positional(y):
+        raise Exception("y must be keyword")
+    return int
+
+
+def restrict_kind(*args, **kwargs):
+    return 0
+
+
 class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_is_provided(self):
@@ -145,3 +158,15 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
         def capybara():
             nonempty_please("")  # E: incompatible_call
             assert_is_value(nonempty_please("x"), TypedValue(int))
+
+    @assert_passes()
+    def test_restrict_kind(self):
+        from pyanalyze.test_type_evaluation import restrict_kind
+
+        def capybara(stuff):
+            restrict_kind("x", y=1)
+            restrict_kind(x="x", y=1)  # E: incompatible_call
+            restrict_kind("x", 1)  # E: incompatible_call
+            restrict_kind(*stuff, **stuff)
+            restrict_kind(**stuff)  # E: incompatible_call
+            restrict_kind(*stuff)  # E: incompatible_call

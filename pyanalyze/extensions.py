@@ -423,6 +423,28 @@ def is_provided(arg: Any) -> bool:
     )
 
 
+def is_positional(arg: Any) -> bool:
+    """Helper function for type evaluators.
+
+    May not be called at runtime.
+
+    """
+    raise NotImplementedError(
+        "is_positional() may only be called in type evaluation functions"
+    )
+
+
+def is_keyword(arg: Any) -> bool:
+    """Helper function for type evaluators.
+
+    May not be called at runtime.
+
+    """
+    raise NotImplementedError(
+        "is_keyword() may only be called in type evaluation functions"
+    )
+
+
 def is_of_type(arg: Any, type: Any, *, exclude_any: bool = False) -> bool:
     """Helper function for type evaluators.
 
