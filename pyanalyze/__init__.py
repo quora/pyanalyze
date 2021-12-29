@@ -24,6 +24,7 @@ from . import implementation
 from . import method_return_type
 from . import node_visitor
 from . import options
+from . import patma
 from . import reexport
 from . import safe
 from . import shared_options
@@ -49,6 +50,7 @@ used(extensions.evaluated)
 used(extensions.is_set)
 used(value.UNRESOLVED_VALUE)  # keeping it around for now just in case
 used(reexport)
+used(patma)
 used(checker)
 used(suggested_type)
 used(options)

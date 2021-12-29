@@ -78,6 +78,7 @@ from .options import (
     StringSequenceOption,
     add_arguments,
 )
+from .patma import PatmaVisitor
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
 from .safe import safe_getattr, is_hashable, all_of_type
@@ -178,6 +179,12 @@ try:
     from ast import NamedExpr
 except ImportError:
     NamedExpr = Any  # 3.7 and lower
+
+try:
+    from ast import Match
+except ImportError:
+    # 3.9 and lower
+    Match = Any
 
 T = TypeVar("T")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
@@ -920,6 +927,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.state = VisitorState.collect_names
         # value currently being assigned
         self.being_assigned = AnyValue(AnySource.inference)
+        # current match target
+        self.match_subject = Composite(AnyValue(AnySource.inference))
         # current class (for inferring the type of cls and self arguments)
         self.current_class = None
         self.current_function_name = None
@@ -4399,6 +4408,41 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return ANY_SIGNATURE
         else:
             return None
+
+    # Match statements
+
+    def visit_Match(self, node: Match) -> None:
+        subject = self.composite_from_node(node.subject)
+        patma_visitor = PatmaVisitor(self)
+        with qcore.override(self, "match_subject", subject):
+            constraints_to_apply = []
+            subscopes = []
+            for case in node.cases:
+                with self.scopes.subscope() as case_scope:
+                    for constraint in constraints_to_apply:
+                        self.add_constraint(case, constraint)
+
+                    pattern_constraint = patma_visitor.visit(case.pattern)
+                    constraints = [pattern_constraint]
+                    self.add_constraint(case.pattern, pattern_constraint)
+                    if case.guard is not None:
+                        _, guard_constraint = self.constraint_from_condition(case.guard)
+                        self.add_constraint(case.guard, guard_constraint)
+                        constraints.append(guard_constraint)
+
+                    constraints_to_apply.append(
+                        AndConstraint.make(constraints).invert()
+                    )
+                    self._generic_visit_list(case.body)
+                    subscopes.append(case_scope)
+
+                self.yield_checker.reset_yield_checks()
+
+            with self.scopes.subscope() as else_scope:
+                for constraint in constraints_to_apply:
+                    self.add_constraint(node, constraint)
+                subscopes.append(else_scope)
+            self.scopes.combine_subscopes(subscopes)
 
     # Attribute checking
 
