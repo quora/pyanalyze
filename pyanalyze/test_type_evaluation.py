@@ -102,9 +102,13 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
     def test_is_provided(self):
         from pyanalyze.test_type_evaluation import simple_evaluated
 
-        def capybara():
+        def capybara(args, kwargs):
             assert_is_value(simple_evaluated(1), TypedValue(str))
             assert_is_value(simple_evaluated(1, "1"), TypedValue(int))
+            assert_is_value(simple_evaluated(*args), TypedValue(str))
+            assert_is_value(simple_evaluated(**kwargs), TypedValue(str))
+            assert_is_value(simple_evaluated(1, y="1"), TypedValue(int))
+            assert_is_value(simple_evaluated(1, **{"y": "1"}), TypedValue(int))
 
     @assert_passes()
     def test_is_of_type(self):

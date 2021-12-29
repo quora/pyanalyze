@@ -145,7 +145,7 @@ class ConditionEvaluator(ast.NodeVisitor):
             except KeyError:
                 raise InvalidEvaluation(f"{variable} is not a valid variable") from None
             if name == "is_provided":
-                match = position is not DEFAULT
+                match = position is not DEFAULT and position is not UNKNOWN
             elif name == "is_positional":
                 match = position is ARGS or isinstance(position, int)
             elif name == "is_keyword":

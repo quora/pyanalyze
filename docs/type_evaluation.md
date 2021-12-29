@@ -24,6 +24,11 @@ This makes it easier to see at a glance what the difference is between various o
 
 ## Specification
 
+This section specifies how type evaluation works, without
+commentary. Discussion, with motivating use cases, is
+provided in the "Discussion" section below. The examples
+in this section are meant to clarify the semantics only.
+
 Type-evaluated functions may be declared both at runtime and in stub files, similar to the existing `@overload` mechanism. At runtime, the evaluated function must immediately precede
 the function implementation:
 
@@ -38,13 +43,14 @@ In stubs, the implementation is omitted.
 
 When a type checker encounters a call to a function for which a type evaluation has been provided, it should
 do the following:
+
 - Validate that the arguments to the call are compatible
   with the type annotations on the parameters to the
   evaluation function, as with a normal call.
 - Symbolically evaluate the body of the type evaluation
-  until it reaches a `return` or `raise` statement. A 
-  `raise` statement indicates that the type checker should 
-  produce an error, a `return` statement provides the type 
+  until it reaches a `return` or `raise` statement. A
+  `raise` statement indicates that the type checker should
+  produce an error, a `return` statement provides the type
   that the call should return.
 - If execution reached a `return` statement, return the type
   provided by that statement. Otherwise, return the type
@@ -91,10 +97,15 @@ The only supported features are:
 - `raise` statements of the form `raise Exception(message)`, where `message` is a string literal. When the code takes a branch that ends in a `raise` statement, the type checker should emit an error with the provided message. The return type of the call is the return annotation on the evaluation function, or `Any` if there is none.
 
 Conditions in `if` statements may contain:
+
 - A call to one of the following functions, which are covered
   in more detail below:
   - `is_provided()`, which returns whether a parameter was
     explicitly provided in a call.
+  - `is_positional()`, which returns whether a parameter
+    was provided through a positional argument.
+  - `is_keyword()`, which returns whether a parameter
+    was provided through a keyword argument.
   - `is_of_type()`, which returns whether a parameter is of
     a particular type.
 - Expressions of the form `arg is (not) <constant>`, where `<constant>` may be True, False, or None. If `arg` is `Any`, the condition always matches.
@@ -103,29 +114,67 @@ Conditions in `if` statements may contain:
 - Multiple conditions combined with `and` or `or`.
 - A negation of another condition with `not`.
 
-### is_provided()
+### is_provided(), is_positional(), and is_keyword()
 
-The special `is_provided()` function has the following
-signature:
+These special functions have the following signatures:
 
     def is_provided(arg: Any) -> bool: ...
+    def is_positional(arg: Any) -> bool: ...
+    def is_keyword(arg: Any) -> bool: ...
 
-`arg` must be one of the parameters to the function. The
-function returns True if the parameter was explicitly
+`arg` must be one of the parameters to the function.
+`is_provided()` returns True if the parameter was explicitly
 provided in the call; that is, the default value was not
-used.
+used. Similarly, `is_positional()` returns True if the
+parameter was provided as a positional argument, and
+`is_keyword()` returns True if the parameter was provided
+as a keyword argument.
 
-For variadic parameters (`*args` and `**kwargs`), the 
-function returns True if any non-variadic arguments were 
-passed that would go into these variadic parameters, or if
-a variadic argument was passed. If the type checker can
+Parameters in Python can be provided in three ways,
+which we call _argument kinds_ for the purpose of this
+specificatioon:
+
+- `POSITIONAL`: at the call site, either a single
+  positional argument or a variadic one (`*args`)
+- `KEYWORD`: at the call site, either a sinngle keyword
+  argument or a variadic one (`**kwargs`)
+- `DEFAULT`: no value provided at the call site; the
+  default defined in the function is used
+
+Static analyzers must add a fourth kind in the presence
+of calls with `*args` and `**kwargs`:
+
+- `UNKNOWN`: the kind cannot be statically determined.
+  This can happen in the following situations:
+  - A positional-only parameter with a default in a call
+    with `*args` of unknown size.
+  - A keyword-only parameter with a default in a call
+    with `**kwargs` of unknown size.
+  - A positional-or-keyword parameter that matches either
+    of the above conditions.
+  - A positional-or-keyword parameter (with or without a
+    default) in a call with both `*args` and `**kwargs`.
+
+The three special functions map to these kinds as follows:
+
+- `is_provided()`: kind is `POSITIONAL` or `KEYWORD`
+- `is_positional()`: kind is `POSITIONAL`
+- `is_keyword()`: kind is `KEYWORD`
+
+Thus, there is no way to distinguish between `DEFAULT`
+and `UNKNOWN`, and a parameter for which `is_provided()`
+returns False in the type evaluator may actually be
+provided at runtime.
+
+For variadic parameters (`*args` and `**kwargs`), the
+kind is either `DEFAULT` if no arguments are provided
+to the parameter, or either `POSITIONAL` (for `*args`)
+or `KEYWORD` (for `**kwargs`) if arguments may be
+provided. If the type checker can
 prove that a variadic argument is empty, `is_provided()`
 may return False. (For example, given a definition
 `def f(*args)` and a call `f(*())`, `is_provided(args)`
 may return False.)
-
-It is an error to call `is_provided()` on an argument
-that lacks a default and is not variadic.
 
 Examples:
 
@@ -133,10 +182,14 @@ Examples:
     def reject_arg(arg: int = 0) -> None:
         if is_provided(arg):
             raise Exception("error")
-    
+
+    args: Any = ...
+    kwargs: Any = ...
     reject_arg()  # ok
     reject_arg(0)  # error
     reject_arg(arg=0)  # error
+    reject_arg(*args)  # ok
+    reject_arg(**kwargs)  # ok
 
     @evaluated
     def reject_star_args(*args: int) -> None:
@@ -159,12 +212,31 @@ Examples:
     reject_star_args(**{})  # may error, depending on type checker
 
     @evaluated
-    def invalid(arg: object) -> None:
-        if is_provided(arg):  # error, cannot call is_provided() on required parameter
-            raise Exception("error")
-        if is_provided(x):  # error, not a function parameter
+    def reject_keyword(arg: int = 0) -> None:
+        if is_keyword(arg):
             raise Exception("error")
 
+    reject_keyword()  # ok
+    reject_keyword(0)  # ok
+    reject_keyword(arg=0)  # error
+    reject_keyword(*args)  # ok
+    reject_keyword(**kwargs)  # ok
+
+    @evaluated
+    def reject_positional(arg: int = 0)-> None:
+        if is_positional(arg):
+            raise Exception("error")
+
+    reject_keyword()  # ok
+    reject_keyword(0)  # error
+    reject_keyword(arg=0)  # ok
+    reject_keyword(*args)  # ok
+    reject_keyword(**kwargs)  # ok
+
+    @evaluated
+    def invalid(arg: object) -> None:
+        if is_provided(x):  # error, not a function parameter
+            raise Exception("error")
 
 ### is_of_type()
 
@@ -193,7 +265,7 @@ Examples:
             return int
         else:
             return None
-    
+
     any: Any = ...
     opt: int | None = ...
     reveal_type(length_or_none("x"))  # int
@@ -223,14 +295,13 @@ Examples:
             return str
         else:
             return int
-    
+
     anyseq: Sequence[Any] = ...
     nested_any("x")  # error
     reveal_type(nested_any(["x"]))  # str
     reveal_type(nested_any([1]))  # int
     reveal_type(nested_any(any))  # int
     reveal_type(nested_any(anyseq))  # int
-
 
 ### Interaction with Any
 
@@ -242,10 +313,11 @@ see that multiple overloads might match and return `Any`. There
 are good reasons for both choices<!-- insert link to Eric's explanation-->,
 and we allow the same behavior for type evaluations.
 
-Type checkers should pick one of the following two behaviors and 
+Type checkers should pick one of the following two behaviors and
 document their choice:
-1. All checks (`isinstance`, `is`, `==`) against variables typed 
-   as `Any` in the body of type evaluation succeed. 
+
+1. All checks (`isinstance`, `is`, `==`) against variables typed
+   as `Any` in the body of type evaluation succeed.
    `round(..., Any)` returns `int`. Note that
    this means that switching the `if` and `else` blocks may change
    visible behavior.
@@ -263,7 +335,7 @@ Motivating example:
             return BinaryIO
         else:
             return IO[Any]
-    
+
     any: Any = ...
     reveal_type(open("r"))  # TextIO
     reveal_type(open("rb"))  # BinaryIO
@@ -273,7 +345,7 @@ Motivating example:
 
 Type checkers should apply normal type narrowing rules to arguments
 that are of Union types. If only some members of a Union
-match a condition, both branches of the conditional are 
+match a condition, both branches of the conditional are
 taken, with the parameter type narrowed appropriately in each
 case. The return type of the function is the union of the two
 branches.
@@ -298,13 +370,71 @@ Examples:
             return None
         else:
             return Path(path)
-    
+
     _: Callable[[str | None], Path | None] = maybe_path  # ok
     _: Callable[[None], None] = maybe_path  # ok
     _: Callable[[str], Path] = maybe_path  # ok
     _: Callable[[str | None], Path] = maybe_path  # error
     _: Callable[[str], Path | None] = maybe_path  # ok
     _: Callable[[Literal["x"]], Path] = maybe_path  # ok
+
+## Discussion
+
+### Argument kind functions
+
+The three argument kind functions `is_provided()`,
+`is_positional()`, and `is_keyword()` are useful in various
+ways:
+
+- Functions implemented in C sometimes change behavior
+  depending on the presence of an argument, without a
+  meaningful default. For example, `dict.pop(key)` returns
+  the key's value type (or else it raises an exception), but
+  `dict.pop(key, default)` returns either the value type or
+  the type of `default`. Currently overloads are necessary
+  to represent this behavior, but `is_provided()` provides
+  an alternative.
+- It is common for new versions of Python to add or remove
+  parameters. For example, `zip()` gained a `strict=` keyword
+  argument in Python 3.10. Using `is_provided()` with a
+  `sys.version_info` check, we can provide an error if the
+  parameter is used in an older version, without duplicating
+  the entire function definition.
+- Similarly, new versions of Python often change parameters
+  from positional-or-keyword to positional-only or vice
+  versa. Version checks can be used with `is_positional()` or
+  `is_keyword()` to reflect such changes in the stub.
+- Library authors who want to evolve an API sometimes want
+  to make a function parameter keyword-only. An evaluation
+  function can be used to warn users who pass the parameter
+  positionally without changing the runtime parameter kind,
+  so that users have time to adapt before the runtime code
+  is broken.
+
+As an example, this is the current implemenation of `sum()`
+in typeshed:
+
+    if sys.version_info >= (3, 8):
+        @overload
+        def sum(__iterable: Iterable[_T]) -> _T | Literal[0]: ...
+        @overload
+        def sum(__iterable: Iterable[_T], start: _S) -> _T | _S: ...
+
+    else:
+        @overload
+        def sum(__iterable: Iterable[_T]) -> _T | Literal[0]: ...
+        @overload
+        def sum(__iterable: Iterable[_T], __start: _S) -> _T | _S: ...
+
+This is how it could be implemented using `@evaluated`:
+
+    @evaluated
+    def sum(__iterable: Iterable[_T], start: _S = ...):
+        if not is_provided(start):
+            return _T | Literal[0]
+        if sys.version_info < (3, 8) and is_keyword(start):
+            raise Exception("start is a positional-only argument in Python <3.8")
+        return _T | _S
 
 ## Status
 
@@ -327,6 +457,7 @@ in pyanalyze:
             return "x"
 
 Currently unsupported features include:
+
 - `is_set()` and `is_provided()` as now specified
 - Comparison against enum members
 - Version and platform checks
@@ -339,6 +470,7 @@ Currently unsupported features include:
 - Checking evaluation functions for correctness.
 
 Areas that need more thought include:
+
 - Interaction with typevars
 - Interaction with overloads. It should be possible
   to register multiple evaluation functions for a
@@ -358,6 +490,7 @@ Areas that need more thought include:
   to produce deprecation warnings.
 
 Motivations can include:
+
 - Less repetitive overload writing
 - Ability to customize error messages
 - Potential for additional features that work
