@@ -121,29 +121,29 @@ class ConditionEvaluator(ast.NodeVisitor):
         if not isinstance(node.func, ast.Name):
             raise InvalidEvaluation("Unexpected call")
         name = node.func.id
-        if name == "is_set":
+        if name == "is_provided":
             if node.keywords or len(node.args) != 1:
-                raise InvalidEvaluation("is_set() takes a single argument")
+                raise InvalidEvaluation("is_provided() takes a single argument")
             if not isinstance(node.args[0], ast.Name):
-                raise InvalidEvaluation("Argument to is_set() must be a variable")
+                raise InvalidEvaluation("Argument to is_provided() must be a variable")
             variable = node.args[0].id
             match = variable in self.ctx.set_variables
             if match:
                 return ConditionReturn(left_varmap={})
             else:
                 return ConditionReturn(right_varmap={})
-        elif name == "isinstance":
+        elif name == "is_of_type":
             if node.keywords or len(node.args) != 2:
-                raise InvalidEvaluation("isinstance() takes two positional arguments")
+                raise InvalidEvaluation("is_of_type() takes two positional arguments")
             varname_node = node.args[0]
             typ = self.ctx.evaluate_type(node.args[1])
-            return self.visit_isinstance(varname_node, typ)
+            return self.visit_is_of_type(varname_node, typ)
         else:
             raise InvalidEvaluation(f"Invalid function {name}")
 
-    def visit_isinstance(self, varname_node: ast.AST, typ: Value) -> ConditionReturn:
+    def visit_is_of_type(self, varname_node: ast.AST, typ: Value) -> ConditionReturn:
         if not isinstance(varname_node, ast.Name):
-            raise InvalidEvaluation("First argument to isinstance() must be a name")
+            raise InvalidEvaluation("First argument to is_of_type() must be a name")
         val = self.get_name(varname_node)
         can_assign, used_any = can_assign_and_used_any(
             typ, val, self.ctx.can_assign_context
@@ -180,13 +180,13 @@ class ConditionEvaluator(ast.NodeVisitor):
                 raise InvalidEvaluation(
                     "is/is not are only supported with True, False, and None"
                 )
-            ret = self.visit_isinstance(node.left, KnownValue(right.value))
+            ret = self.visit_is_of_type(node.left, KnownValue(right.value))
             if isinstance(op, ast.IsNot):
                 return ret.reverse()
             return ret
         elif isinstance(op, (ast.Eq, ast.NotEq)):
             operand = self.evaluate_literal(right)
-            ret = self.visit_isinstance(node.left, operand)
+            ret = self.visit_is_of_type(node.left, operand)
             if isinstance(op, ast.NotEq):
                 return ret.reverse()
             return ret

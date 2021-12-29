@@ -4,7 +4,7 @@ from typing_extensions import Literal
 from .value import AnySource, AnyValue, TypedValue, assert_is_value
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .extensions import evaluated, is_set
+from .extensions import evaluated, is_provided, is_of_type
 
 from typing import Union
 
@@ -14,7 +14,7 @@ from typing import Union
 # tests.
 @evaluated
 def simple_evaluated(x: int, y: str = ""):
-    if is_set(y):
+    if is_provided(y):
         return int
     else:
         return str
@@ -28,14 +28,14 @@ def simple_evaluated(*args: object) -> Union[int, str]:
 
 
 @evaluated
-def isinstance_evaluated(x: int):
-    if isinstance(x, Literal[1]):
+def is_of_type_evaluated(x: int):
+    if is_of_type(x, Literal[1]):
         return str
     else:
         return int
 
 
-def isinstance_evaluated(x: int) -> Union[int, str]:
+def is_of_type_evaluated(x: int) -> Union[int, str]:
     if x == 1:
         return ""
     else:
@@ -44,7 +44,7 @@ def isinstance_evaluated(x: int) -> Union[int, str]:
 
 @evaluated
 def not_evaluated(x: int):
-    if not isinstance(x, Literal[1]):
+    if not is_of_type(x, Literal[1]):
         return str
     else:
         return int
@@ -86,7 +86,7 @@ def nonempty_please(x: str) -> int:
 
 class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_is_set(self):
+    def test_is_provided(self):
         from pyanalyze.test_type_evaluation import simple_evaluated
 
         def capybara():
@@ -94,18 +94,18 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
             assert_is_value(simple_evaluated(1, "1"), TypedValue(int))
 
     @assert_passes()
-    def test_isinstance(self):
-        from pyanalyze.test_type_evaluation import isinstance_evaluated
+    def test_is_of_type(self):
+        from pyanalyze.test_type_evaluation import is_of_type_evaluated
 
         def capybara(unannotated):
-            assert_is_value(isinstance_evaluated(1), TypedValue(str))
-            assert_is_value(isinstance_evaluated(2), TypedValue(int))
+            assert_is_value(is_of_type_evaluated(1), TypedValue(str))
+            assert_is_value(is_of_type_evaluated(2), TypedValue(int))
             assert_is_value(
-                isinstance_evaluated(unannotated),
+                is_of_type_evaluated(unannotated),
                 AnyValue(AnySource.multiple_overload_matches),
             )
             assert_is_value(
-                isinstance_evaluated(2 if unannotated else 1),
+                is_of_type_evaluated(2 if unannotated else 1),
                 TypedValue(int) | TypedValue(str),
             )
 

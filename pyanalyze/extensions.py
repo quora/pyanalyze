@@ -412,10 +412,23 @@ def evaluated(func: Callable[..., Any]) -> Callable[..., Any]:
     return func
 
 
-def is_set(argument: object) -> bool:
+def is_provided(arg: Any) -> bool:
     """Helper function for type evaluators.
 
     May not be called at runtime.
 
     """
-    raise NotImplementedError("Should only be called in type evaluation functions")
+    raise NotImplementedError(
+        "is_provided() may only be called in type evaluation functions"
+    )
+
+
+def is_of_type(arg: Any, type: Any, *, exclude_any: bool = False) -> bool:
+    """Helper function for type evaluators.
+
+    May not be called at runtime.
+
+    """
+    raise NotImplementedError(
+        "is_of_type() may only be called in type evaluation functions"
+    )
