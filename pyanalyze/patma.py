@@ -7,15 +7,27 @@ Visitor for pattern matching.
 import ast
 import collections.abc
 from dataclasses import dataclass, replace
+import enum
 import itertools
 
 import qcore
 import pyanalyze
-from typing import Any, Callable, Container, Optional, Sequence, Set, Tuple, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Container,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 from pyanalyze.implementation import len_of_value
 from pyanalyze.signature import MappingValue
 
+from .annotations import type_from_value
 from .extensions import CustomCheck
 from .error_code import ErrorCode
 from .stacked_scopes import (
@@ -26,7 +38,6 @@ from .stacked_scopes import (
     Constraint,
     ConstraintType,
     OrConstraint,
-    annotate_with_constraint,
     constrain_value,
 )
 from .value import (
@@ -40,11 +51,13 @@ from .value import (
     DictIncompleteValue,
     KVPair,
     SequenceIncompleteValue,
+    SubclassValue,
     TypedValue,
     Value,
     KnownValue,
     flatten_values,
     kv_pairs_from_mapping,
+    replace_known_sequence_value,
     unannotate,
     unite_values,
     unpack_values,
@@ -53,8 +66,6 @@ from .value import (
 
 try:
     from ast import (
-        match_case,
-        Match,
         MatchAs,
         MatchClass,
         MatchMapping,
@@ -66,8 +77,32 @@ try:
     )
 except ImportError:
     # 3.9 and lower
-    match_case = Match = MatchAs = MatchClass = MatchMapping = Any
+    MatchAs = MatchClass = MatchMapping = Any
     MatchOr = MatchSequence = MatchSingleton = MatchStar = MatchValue = Any
+
+
+# For these types, a single class subpattern matches the whole thing
+_SPECIAL_CLASS_PATTERN_TYPES = {
+    bool,
+    bytearray,
+    bytes,
+    dict,
+    float,
+    frozenset,
+    int,
+    list,
+    set,
+    str,
+    tuple,
+}
+SpecialClassPatternValue = unite_values(
+    *[SubclassValue(TypedValue(typ)) for typ in _SPECIAL_CLASS_PATTERN_TYPES]
+)
+
+
+class SpecialPositionalMatch(enum.Enum):
+    self = 1  # match against self (special behavior for builtins)
+    error = 2  # couldn't figure out the attr, match against Any
 
 
 @dataclass(frozen=True)
@@ -113,8 +148,7 @@ class IsAssignablePredicate:
         if positive:
             if not compatible:
                 return None
-            cleaned = unannotate(value)
-            if cleaned == TypedValue(object) or isinstance(cleaned, AnyValue):
+            if value.is_assignable(self.pattern_value, self.ctx):
                 return self.pattern_value
         elif not self.positive_only:
             if compatible:
@@ -205,12 +239,6 @@ class PatmaVisitor(ast.NodeVisitor):
         else:
             target_length = starred_index
             post_starred_length = len(node.patterns) - 1 - target_length
-        unpacked = unpack_values(
-            self.visitor.match_subject.value,
-            self.visitor,
-            target_length,
-            post_starred_length,
-        )
         constraints = [
             self.make_constraint(
                 ConstraintType.predicate,
@@ -229,6 +257,14 @@ class PatmaVisitor(ast.NodeVisitor):
                 ),
             ),
         ]
+        unpacked = unpack_values(
+            constrain_value(
+                self.visitor.match_subject.value, AndConstraint.make(constraints)
+            ),
+            self.visitor,
+            target_length,
+            post_starred_length,
+        )
         if isinstance(unpacked, CanAssignError):
             unpacked = itertools.repeat(AnyValue(AnySource.generic_argument))
         for pat, subject in zip(node.patterns, unpacked):
@@ -238,15 +274,15 @@ class PatmaVisitor(ast.NodeVisitor):
 
     def visit_MatchMapping(self, node: MatchMapping) -> AbstractConstraint:
         self.check_impossible_pattern(node, MappingValue)
-        constraints = [
-            self.make_constraint(
-                ConstraintType.predicate,
-                IsAssignablePredicate(
-                    MappingValue, self.visitor, positive_only=len(node.keys) > 0
-                ),
-            )
-        ]
-        kv_pairs = kv_pairs_from_mapping(self.visitor.match_subject.value, self.visitor)
+        constraint = self.make_constraint(
+            ConstraintType.predicate,
+            IsAssignablePredicate(
+                MappingValue, self.visitor, positive_only=len(node.keys) > 0
+            ),
+        )
+        constraints = [constraint]
+        subject = constrain_value(self.visitor.match_subject.value, constraint)
+        kv_pairs = kv_pairs_from_mapping(subject, self.visitor)
         if isinstance(kv_pairs, CanAssignError):
             kv_pairs = [
                 KVPair(
@@ -284,6 +320,85 @@ class PatmaVisitor(ast.NodeVisitor):
                 new_kv_pairs.append(kv_pair)
             val = DictIncompleteValue(dict, list(reversed(new_kv_pairs)))
             self.visitor._set_name_in_scope(node.rest, node, val)
+        return AndConstraint.make(constraints)
+
+    def visit_MatchClass(self, node: MatchClass) -> AbstractConstraint:
+        cls = self.visitor.visit(node.cls)
+        can_assign = TypedValue(type).can_assign(cls, self.visitor)
+        if isinstance(can_assign, CanAssignError):
+            self.visitor.show_error(
+                node.cls,
+                "Class pattern must be a type",
+                ErrorCode.bad_match,
+                detail=str(can_assign),
+            )
+        matched_type = type_from_value(cls, visitor=self.visitor, node=node.cls)
+        self.check_impossible_pattern(node, matched_type)
+        constraint = self.make_constraint(
+            ConstraintType.predicate,
+            # TODO figure out when to turn off positive_only
+            IsAssignablePredicate(
+                matched_type,
+                self.visitor,
+                positive_only=not node.patterns and not node.kwd_patterns,
+            ),
+        )
+        subject = constrain_value(self.visitor.match_subject.value, constraint)
+        subject_composite = self.visitor.match_subject._replace(value=subject)
+        patterns = [
+            (attr, pattern) for attr, pattern in zip(node.kwd_attrs, node.kwd_patterns)
+        ]
+        if node.patterns:
+            match_args = get_match_args(cls, self.visitor)
+            if isinstance(match_args, CanAssignError):
+                self.visitor.show_error(
+                    node.cls,
+                    "Invalid class pattern",
+                    ErrorCode.bad_match,
+                    detail=str(match_args),
+                )
+                match_args = [SpecialPositionalMatch.error for _ in node.patterns]
+            if len(node.patterns) > len(match_args):
+                self.visitor.show_error(
+                    node.cls,
+                    f"{cls} takes at most {len(match_args)} positional subpatterns, but"
+                    f" {len(match_args)} were provided",
+                    ErrorCode.bad_match,
+                    detail=str(match_args),
+                )
+                match_args = [SpecialPositionalMatch.error for _ in node.patterns]
+            patterns = [*zip(match_args, node.patterns), *patterns]
+
+        seen_names = set()
+        for name, _ in patterns:
+            if isinstance(name, str):
+                if name in seen_names:
+                    self.visitor.show_error(
+                        node, f"Duplicate keyword pattern {name}", ErrorCode.bad_match
+                    )
+                seen_names.add(name)
+
+        constraints = [constraint]
+        for name, subpattern in patterns:
+            if name is SpecialPositionalMatch.self:
+                subsubject = subject_composite
+            elif name is SpecialPositionalMatch.error:
+                subsubject = Composite(AnyValue(AnySource.error))
+            else:
+                assert isinstance(name, str)
+                attr = self.visitor.get_attribute(subject_composite, name)
+                if attr is UNINITIALIZED_VALUE:
+                    # It may exist on a child class, so we don't error here.
+                    # This matches pyright's behavior.
+                    subsubject = Composite(AnyValue(AnySource.unreachable))
+                else:
+                    new_varname = self.visitor._extend_composite(
+                        subject_composite, name, subpattern
+                    )
+                    subsubject = Composite(attr, new_varname)
+            with qcore.override(self.visitor, "match_subject", subsubject):
+                constraints.append(self.visit(subpattern))
+
         return AndConstraint.make(constraints)
 
     def visit_MatchStar(self, node: MatchStar) -> AbstractConstraint:
@@ -388,3 +503,29 @@ def get_value_from_kv_pairs(
     if not possible_values:
         return UNINITIALIZED_VALUE, set(), set()
     return unite_values(*possible_values), new_optional_pairs, set()
+
+
+def get_match_args(
+    cls: Value, visitor: "pyanalyze.name_check_visitor.NameCheckVisitor"
+) -> Union[CanAssignError, Sequence[Union[str, SpecialPositionalMatch]]]:
+    if SpecialClassPatternValue.is_assignable(cls, visitor):
+        return [SpecialPositionalMatch.self]
+    match_args_value = visitor.get_attribute(Composite(cls), "__match_args__")
+    if match_args_value is UNINITIALIZED_VALUE:
+        return CanAssignError(f"{cls} has no attribute __match_args__")
+    match_args_value = replace_known_sequence_value(match_args_value)
+    if (
+        not isinstance(match_args_value, SequenceIncompleteValue)
+        or match_args_value.typ is not tuple
+    ):
+        return CanAssignError(
+            f"__match_args__ must be a literal tuple, not {match_args_value}"
+        )
+    match_args = []
+    for i, arg in enumerate(match_args_value.members):
+        if not isinstance(arg, KnownValue) or not isinstance(arg.val, str):
+            return CanAssignError(
+                f"__match_args__ element {i} is {arg}, not a string literal"
+            )
+        match_args.append(arg.val)
+    return match_args

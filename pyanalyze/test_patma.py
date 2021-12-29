@@ -66,7 +66,10 @@ class TestPatma(TestNameCheckVisitorBase):
                             TypedValue(collections.abc.Sequence),
                             skip_annotated=True
                         )
-                        assert_is_value(x, AnyValue(AnySource.generic_argument))
+                        assert_is_value(
+                            x,
+                            GenericValue(list, [AnyValue(AnySource.generic_argument)])
+                        )
 
                 assert_is_value(seq[0], TypedValue(int))
                 match seq[0]:
@@ -109,5 +112,49 @@ class TestPatma(TestNameCheckVisitorBase):
                                 KVPair(KnownValue(5), KnownValue(6)),
                             ]
                         ))
+            """
+        )
+
+    @skip_before((3, 10))
+    def test_class_pattern(self):
+        self.assert_passes(
+            """
+            import collections.abc
+            from typing import Tuple
+
+            class NotMatchable:
+                x: str
+
+            class MatchArgs:
+                __match_args__ = ("x", "y")
+                x: str
+                y: int
+
+            def capybara(obj: object):
+                match obj:
+                    case int(1, 2):  # E: bad_match
+                        pass
+                    case int(2):
+                        assert_is_value(obj, KnownValue(2))
+                    case int("x"):  # E: impossible_pattern
+                        pass
+                    case int():
+                        assert_is_value(obj, TypedValue(int))
+                    case NotMatchable(x="x"):
+                        pass
+                    case NotMatchable("x"):  # E: bad_match
+                        pass
+                    case NotMatchable():
+                        pass
+                    case MatchArgs("x", 1 as y):
+                        assert_is_value(y, KnownValue(1))
+                    case MatchArgs(x) if x == "x":
+                        assert_is_value(x, KnownValue("x"))
+                    case MatchArgs(x):
+                        assert_is_value(x, TypedValue(str))
+                    case MatchArgs("x", x="x"): # E: bad_match
+                        pass
+                    case MatchArgs(1, 2, 3):  # E: bad_match
+                        pass
             """
         )

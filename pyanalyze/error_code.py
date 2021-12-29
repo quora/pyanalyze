@@ -89,6 +89,7 @@ class ErrorCode(enum.Enum):
     suggested_parameter_type = 72
     incompatible_override = 73
     impossible_pattern = 74
+    bad_match = 75
 
 
 # Allow testing unannotated functions without too much fuss
@@ -204,6 +205,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.suggested_parameter_type: "Suggested parameter type",
     ErrorCode.incompatible_override: "Class attribute incompatible with base class",
     ErrorCode.impossible_pattern: "Pattern can never match",
+    ErrorCode.bad_match: "Invalid type in match statement",
 }
 
 
