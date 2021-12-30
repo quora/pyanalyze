@@ -7,7 +7,7 @@ calls.
 """
 
 from . import annotations
-from .type_evaluation import Evaluator, decompose_union, evaluate
+from .type_evaluation import Evaluator, decompose_union
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -863,15 +863,14 @@ class Signature:
                 ctx = annotations.TypeEvaluationContext(
                     varmap, positions, visitor, self.evaluator.globals
                 )
-                return_value = evaluate(self.evaluator, ctx)
-                if isinstance(return_value, CanAssignError):
-                    self.show_call_error(
-                        "Error in type evaluator",
-                        node,
-                        visitor,
-                        detail=str(return_value),
-                    )
-                    return_value = AnyValue(AnySource.error)
+                return_value, errors = self.evaluator.evaluate(ctx)
+                for error in errors:
+                    error_node = node
+                    if error.argument is not None:
+                        composite = bound_args[error.argument][1]
+                        if composite.node is not None:
+                            error_node = node
+                    self.show_call_error(error.message, error_node, visitor)
 
         if self.allow_call:
             runtime_return = self._maybe_perform_call(preprocessed, visitor, node)

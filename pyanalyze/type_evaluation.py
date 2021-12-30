@@ -6,7 +6,7 @@ Implementation of type evaluation.
 
 import ast
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import inspect
 import qcore
 import textwrap
@@ -14,8 +14,8 @@ from typing_extensions import Literal
 from typing import (
     Any,
     Callable,
-    Container,
     Iterator,
+    List,
     Mapping,
     Optional,
     Sequence,
@@ -53,8 +53,40 @@ Position = Union[int, str, Literal[DEFAULT, ARGS, KWARGS, UNKNOWN]]
 VarMap = Mapping[str, Value]
 
 
-class InvalidEvaluation(Exception):
-    pass
+@dataclass
+class AndCondition:
+    left: "Condition"
+    right: "Condition"
+
+
+@dataclass
+class OrCondition:
+    left: "Condition"
+    right: "Condition"
+
+
+@dataclass
+class NotCondition:
+    condition: "Condition"
+
+
+Condition = Union[ast.AST, AndCondition, OrCondition, NotCondition]
+
+
+@dataclass
+class InvalidEvaluation:
+    message: str
+    node: ast.AST
+
+
+@dataclass
+class UserRaisedError:
+    message: str
+    active_conditions: Sequence[Condition]
+    argument: Optional[str] = None
+
+
+EvaluateError = Union[InvalidEvaluation, UserRaisedError]
 
 
 class Context:
@@ -85,6 +117,12 @@ class Evaluator:
     node: ast.FunctionDef
     globals: Mapping[str, object]
 
+    def evaluate(self, ctx: Context) -> Tuple[Value, Sequence[UserRaisedError]]:
+        visitor = EvaluateVisitor(ctx)
+        result = visitor.run(self.node)
+        errors = [e for e in visitor.errors if isinstance(e, UserRaisedError)]
+        return result, errors
+
 
 @dataclass
 class UnionCombinedReturn:
@@ -98,13 +136,13 @@ class AnyCombinedReturn:
     right: "EvalReturn"
 
 
-EvalReturn = Union[None, Value, CanAssignError, UnionCombinedReturn, AnyCombinedReturn]
+EvalReturn = Union[None, Value, UnionCombinedReturn, AnyCombinedReturn]
 
 
 def may_be_none(ret: EvalReturn) -> bool:
     if ret is None:
         return True
-    elif isinstance(ret, (Value, CanAssignError)):
+    elif isinstance(ret, Value):
         return False
     else:
         return may_be_none(ret.left) or may_be_none(ret.right)
@@ -129,21 +167,31 @@ class ConditionReturn:
 @dataclass
 class ConditionEvaluator(ast.NodeVisitor):
     ctx: Context
+    validation_mode: bool = False
+    errors: List[EvaluateError] = field(default_factory=list, init=False)
+
+    def return_invalid(self, message: str, node: ast.AST) -> ConditionReturn:
+        self.errors.append(InvalidEvaluation(message, node))
+        return ConditionReturn()
 
     def visit_Call(self, node: ast.Call) -> ConditionReturn:
         if not isinstance(node.func, ast.Name):
-            raise InvalidEvaluation("Unexpected call")
+            return self.return_invalid("Unexpected call", node.func)
         name = node.func.id
         if name in ("is_provided", "is_positional", "is_keyword"):
             if node.keywords or len(node.args) != 1:
-                raise InvalidEvaluation(f"{name}() takes a single argument")
+                return self.return_invalid(f"{name}() takes a single argument", node)
             if not isinstance(node.args[0], ast.Name):
-                raise InvalidEvaluation(f"Argument to {name}() must be a variable")
+                return self.return_invalid(
+                    f"Argument to {name}() must be a variable", node.args[0]
+                )
             variable = node.args[0].id
             try:
                 position = self.ctx.positions[variable]
             except KeyError:
-                raise InvalidEvaluation(f"{variable} is not a valid variable") from None
+                return self.return_invalid(
+                    f"{variable} is not a valid variable", node.args[0]
+                )
             if name == "is_provided":
                 match = position is not DEFAULT and position is not UNKNOWN
             elif name == "is_positional":
@@ -151,24 +199,30 @@ class ConditionEvaluator(ast.NodeVisitor):
             elif name == "is_keyword":
                 match = position is KWARGS or isinstance(position, str)
             else:
-                raise InvalidEvaluation(name)
+                return self.return_invalid(name, node.func)
             if match:
                 return ConditionReturn(left_varmap={})
             else:
                 return ConditionReturn(right_varmap={})
         elif name == "is_of_type":
             if node.keywords or len(node.args) != 2:
-                raise InvalidEvaluation("is_of_type() takes two positional arguments")
+                return self.return_invalid(
+                    "is_of_type() takes two positional arguments", node
+                )
             varname_node = node.args[0]
             typ = self.ctx.evaluate_type(node.args[1])
             return self.visit_is_of_type(varname_node, typ)
         else:
-            raise InvalidEvaluation(f"Invalid function {name}")
+            return self.return_invalid(f"Invalid function {name}", node.func)
 
     def visit_is_of_type(self, varname_node: ast.AST, typ: Value) -> ConditionReturn:
         if not isinstance(varname_node, ast.Name):
-            raise InvalidEvaluation("First argument to is_of_type() must be a name")
+            return self.return_invalid(
+                "First argument to is_of_type() must be a name", varname_node
+            )
         val = self.get_name(varname_node)
+        if val is None:
+            return ConditionReturn()
         can_assign, used_any = can_assign_and_used_any(
             typ, val, self.ctx.can_assign_context
         )
@@ -192,17 +246,17 @@ class ConditionEvaluator(ast.NodeVisitor):
             ret = self.visit(node.operand)
             return ret.reverse()
         else:
-            raise InvalidEvaluation("Unsupported unary operation")
+            return self.return_invalid("Unsupported unary operation", node.op)
 
     def visit_Compare(self, node: ast.Compare) -> ConditionReturn:
         if len(node.ops) != 1:
-            raise InvalidEvaluation("Chained comparison is unsupported")
+            return self.return_invalid("Chained comparison is unsupported", node)
         op = node.ops[0]
         right = node.comparators[0]
         if isinstance(op, (ast.Is, ast.IsNot)):
             if not isinstance(right, ast.NameConstant):
-                raise InvalidEvaluation(
-                    "is/is not are only supported with True, False, and None"
+                return self.return_invalid(
+                    "is/is not are only supported with True, False, and None", right
                 )
             ret = self.visit_is_of_type(node.left, KnownValue(right.value))
             if isinstance(op, ast.IsNot):
@@ -210,14 +264,16 @@ class ConditionEvaluator(ast.NodeVisitor):
             return ret
         elif isinstance(op, (ast.Eq, ast.NotEq)):
             operand = self.evaluate_literal(right)
+            if operand is None:
+                return ConditionReturn()
             ret = self.visit_is_of_type(node.left, operand)
             if isinstance(op, ast.NotEq):
                 return ret.reverse()
             return ret
         else:
-            raise InvalidEvaluation("Unsupported comparison operator")
+            return self.return_invalid("Unsupported comparison operator", op)
 
-    def evaluate_literal(self, node: ast.expr) -> KnownValue:
+    def evaluate_literal(self, node: ast.expr) -> Optional[KnownValue]:
         if isinstance(node, ast.NameConstant):
             return KnownValue(node.value)
         elif isinstance(node, ast.Num):
@@ -225,18 +281,49 @@ class ConditionEvaluator(ast.NodeVisitor):
         elif isinstance(node, (ast.Str, ast.Bytes)):
             return KnownValue(node.s)
         else:
-            raise InvalidEvaluation("Only literals supported")
+            self.errors.append(InvalidEvaluation("Only literals supported", node))
+            return None
 
-    def get_name(self, node: ast.Name) -> Value:
+    def get_name(self, node: ast.Name) -> Optional[Value]:
         try:
             return self.ctx.variables[node.id]
         except KeyError:
-            raise InvalidEvaluation(f"Invalid variable {node.id}") from None
+            self.errors.append(InvalidEvaluation(f"Invalid variable {node.id}", node))
+            return None
 
 
 @dataclass
-class TypeEvaluator(ast.NodeVisitor):
+class EvaluateVisitor(ast.NodeVisitor):
     ctx: Context
+    errors: List[EvaluateError] = field(default_factory=list)
+    active_conditions: List[Condition] = field(default_factory=list)
+
+    def run(self, node: ast.AST) -> Value:
+        ret = self.visit(node)
+        return self._evaluate_ret(ret, node)
+
+    def _evaluate_ret(self, ret: EvalReturn, node: ast.AST) -> Value:
+        if ret is None:
+            # TODO return the func's return annotation instead
+            self.add_invalid("Evaluator failed to return", node)
+            return AnyValue(AnySource.error)
+        elif isinstance(ret, AnyCombinedReturn):
+            left = self._evaluate_ret(ret.left, node)
+            right = self._evaluate_ret(ret.right, node)
+            if left == right:
+                return left
+            else:
+                return AnyValue(AnySource.multiple_overload_matches)
+        elif isinstance(ret, UnionCombinedReturn):
+            left = self._evaluate_ret(ret.left, node)
+            right = self._evaluate_ret(ret.right, node)
+            return unite_values(left, right)
+        else:
+            return ret
+
+    def add_invalid(self, message: str, node: ast.AST) -> None:
+        error = InvalidEvaluation(message, node)
+        self.errors.append(error)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> EvalReturn:
         return self.visit_block(node.body)
@@ -253,22 +340,51 @@ class TypeEvaluator(ast.NodeVisitor):
 
     def visit_Return(self, node: ast.Return) -> EvalReturn:
         if node.value is None:
-            raise InvalidEvaluation("return statement must have a value")
+            self.add_invalid("return statement must have a value", node)
+            return KnownValue(None)
         return self.ctx.evaluate_type(node.value)
 
-    def visit_Raise(self, node: ast.Raise) -> EvalReturn:
+    def visit_Expr(self, node: ast.Expr) -> EvalReturn:
         if (
-            not isinstance(node.exc, ast.Call)
-            or not isinstance(node.exc.func, ast.Name)
-            or node.exc.func.id != "Exception"
-            or node.exc.keywords
-            or len(node.exc.args) != 1
-            or not isinstance(node.exc.args[0], ast.Str)
+            isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id == "show_error"
         ):
-            raise InvalidEvaluation(
-                "raise statement must be of the form 'raise Exception(message)'"
+            call = node.value
+            if len(call.args) != 1:
+                self.add_invalid(
+                    "show_error() takes exactly one positional argument", call
+                )
+                return None
+            if not isinstance(call.args[0], ast.Str):
+                self.add_invalid(
+                    "show_error() message must be a string literal", call.args[0]
+                )
+                return None
+            message = call.args[0].s
+            argument = None
+            for keyword in call.keywords:
+                if keyword.arg == "argument":
+                    if not isinstance(keyword.value, ast.Name):
+                        self.add_invalid("argument must be a name", keyword.value)
+                        return None
+                    argument = keyword.value.id
+                    if argument not in self.ctx.variables:
+                        self.add_invalid(
+                            f"{argument} is not a valid argument", keyword.value
+                        )
+                        return None
+                else:
+                    self.add_invalid(
+                        "Invalid keyword argument to show_error()", keyword
+                    )
+                    return None
+            self.errors.append(
+                UserRaisedError(message, self.active_conditions, argument)
             )
-        return CanAssignError(node.exc.args[0].s)
+            return None
+        self.add_invalid("Invalid statement", node)
+        return None
 
     def visit_If(self, node: ast.If) -> EvalReturn:
         visitor = ConditionEvaluator(self.ctx)
@@ -299,49 +415,12 @@ class TypeEvaluator(ast.NodeVisitor):
                 if condition.right_varmap is not None:
                     return right_result
                 else:
-                    raise InvalidEvaluation("Condition must either match or not match")
+                    self.add_invalid("Condition must either match or not match", node)
+                    return None
 
-
-def evaluate(evaluator: Evaluator, ctx: Context) -> Union[Value, CanAssignError]:
-    visitor = TypeEvaluator(ctx)
-    try:
-        result = visitor.visit(evaluator.node)
-        return _evaluate_ret(result)
-    except InvalidEvaluation as e:
-        return CanAssignError(
-            "Internal error in type evaluator", [CanAssignError(str(e))]
-        )
-
-
-def _evaluate_ret(ret: EvalReturn) -> Union[Value, CanAssignError]:
-    if ret is None:
-        raise InvalidEvaluation("Evaluator failed to return")
-    elif isinstance(ret, AnyCombinedReturn):
-        left = _evaluate_ret(ret.left)
-        right = _evaluate_ret(ret.right)
-
-        # If one branch is an error, pick the other one
-        if isinstance(left, CanAssignError):
-            if isinstance(right, CanAssignError):
-                return CanAssignError(children=[left, right])
-            return right
-        if isinstance(right, CanAssignError):
-            return left
-
-        if left == right:
-            return left
-        else:
-            return AnyValue(AnySource.multiple_overload_matches)
-    elif isinstance(ret, UnionCombinedReturn):
-        left = _evaluate_ret(ret.left)
-        if isinstance(left, CanAssignError):
-            return left
-        right = _evaluate_ret(ret.right)
-        if isinstance(right, CanAssignError):
-            return right
-        return unite_values(left, right)
-    else:
-        return ret
+    def generic_visit(self, node: ast.AST) -> Any:
+        self.add_invalid("Invalid code in type evaluator", node)
+        return None
 
 
 def get_evaluator(func: Callable[..., Any]) -> Optional[Evaluator]:
@@ -359,7 +438,7 @@ def get_evaluator(func: Callable[..., Any]) -> Optional[Evaluator]:
         return None
     evaluator = body.body[0]
     if not isinstance(evaluator, ast.FunctionDef):
-        raise InvalidEvaluation(f"Cannot locate {func}")
+        return None
     return Evaluator(evaluation_func, evaluator, evaluation_func.__globals__)
 
 

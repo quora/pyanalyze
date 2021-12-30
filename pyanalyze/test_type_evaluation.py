@@ -4,9 +4,16 @@ from typing_extensions import Literal
 from .value import AnySource, AnyValue, TypedValue, assert_is_value
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .extensions import evaluated, is_keyword, is_positional, is_provided, is_of_type
+from .extensions import (
+    evaluated,
+    is_keyword,
+    is_positional,
+    is_provided,
+    is_of_type,
+    show_error,
+)
 
-from typing import Union
+from typing import Union, Any
 
 
 # These functions must be defined globally because the
@@ -74,7 +81,8 @@ def compare_evaluated(x: object) -> Union[int, str, float]:
 @evaluated
 def nonempty_please(x: str) -> int:
     if x == "":
-        raise Exception("Non-empty string expected")
+        show_error("Non-empty string expected", argument=x)
+        return Any
     else:
         return int
 
@@ -87,9 +95,9 @@ def nonempty_please(x: str) -> int:
 @evaluated
 def restrict_kind(x: str, y: int):
     if is_keyword(x):
-        raise Exception("x must be positional")
+        show_error("x must be positional", argument=x)
     if is_positional(y):
-        raise Exception("y must be keyword")
+        show_error("y must be keyword", argument=y)
     return int
 
 

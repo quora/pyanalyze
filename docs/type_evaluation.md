@@ -48,9 +48,7 @@ do the following:
   with the type annotations on the parameters to the
   evaluation function, as with a normal call.
 - Symbolically evaluate the body of the type evaluation
-  until it reaches a `return` or `raise` statement. A
-  `raise` statement indicates that the type checker should
-  produce an error, a `return` statement provides the type
+  until it reaches a `return` statement, which provides the type
   that the call should return.
 - If execution reached a `return` statement, return the type
   provided by that statement. Otherwise, return the type
@@ -75,14 +73,14 @@ Simple examples to demonstrate the semantics:
 
     @evaluated
     def always_errors(x: int):
-        raise Exception("error")
+        show_error("error")
 
     x = always_errors(1)  # error
     reveal_type(x)  # Any
 
     @evaluated
     def always_errors_with_type(x: int) -> str:
-        raise Exception("error")
+        show_error("error")
 
     x = always_errors(1)  # error
     reveal_type(x)  # str
@@ -94,7 +92,8 @@ The only supported features are:
 
 - `if` statements and `else` blocks. These can only contain conditions of the form specified below.
 - `return` statements with return values that are interpretable as type annotations. This indicates the type that the function returns in a particular condition.
-- `raise` statements of the form `raise Exception(message)`, where `message` is a string literal. When the code takes a branch that ends in a `raise` statement, the type checker should emit an error with the provided message. The return type of the call is the return annotation on the evaluation function, or `Any` if there is none.
+- Calls to `show_error()`, which cause the type checker
+  to emit an error. These are discussed further below.
 
 Conditions in `if` statements may contain:
 
@@ -114,13 +113,32 @@ Conditions in `if` statements may contain:
 - Multiple conditions combined with `and` or `or`.
 - A negation of another condition with `not`.
 
+### show_error()
+
+The `show_error()` special function has the following
+signature:
+
+    def show_error(message: str, /, *, argument: Any | None = ...): ...
+
+The `message` parameter must be a string literal.
+Calls to this function cause the type checker to emit an
+error that includes the given message.
+Execution continues past the `show_error()` call as normal.
+
+If the `argument` parameter is provided, it must be one of
+the parameters to the function, indicating the parameter that
+is causing the error. The type checker may use this
+information to produce a more precise error (for example, by
+pointing the error caret at the specified argument in the
+call site).
+
 ### is_provided(), is_positional(), and is_keyword()
 
 These special functions have the following signatures:
 
-    def is_provided(arg: Any) -> bool: ...
-    def is_positional(arg: Any) -> bool: ...
-    def is_keyword(arg: Any) -> bool: ...
+    def is_provided(arg: Any, /) -> bool: ...
+    def is_positional(arg: Any, /) -> bool: ...
+    def is_keyword(arg: Any, /) -> bool: ...
 
 `arg` must be one of the parameters to the function.
 `is_provided()` returns True if the parameter was explicitly
@@ -181,7 +199,7 @@ Examples:
     @evaluated
     def reject_arg(arg: int = 0) -> None:
         if is_provided(arg):
-            raise Exception("error")
+            show_error("error")
 
     args: Any = ...
     kwargs: Any = ...
@@ -194,7 +212,7 @@ Examples:
     @evaluated
     def reject_star_args(*args: int) -> None:
         if is_provided(args):
-            raise Exception("error")
+            show_error("error")
 
     reject_star_args()  # ok
     reject_star_args(1)  # error
@@ -204,7 +222,7 @@ Examples:
     @evaluated
     def reject_star_kwargs(**kwargs: int) -> None:
         if is_provided(kwargs):
-            raise Exception("error")
+            show_error("error")
 
     reject_star_kwargs()  # ok
     reject_star_kwargs(x=1)  # error
@@ -214,7 +232,7 @@ Examples:
     @evaluated
     def reject_keyword(arg: int = 0) -> None:
         if is_keyword(arg):
-            raise Exception("error")
+            show_error("error")
 
     reject_keyword()  # ok
     reject_keyword(0)  # ok
@@ -225,7 +243,7 @@ Examples:
     @evaluated
     def reject_positional(arg: int = 0)-> None:
         if is_positional(arg):
-            raise Exception("error")
+            show_error("error")
 
     reject_keyword()  # ok
     reject_keyword(0)  # error
@@ -236,14 +254,14 @@ Examples:
     @evaluated
     def invalid(arg: object) -> None:
         if is_provided(x):  # error, not a function parameter
-            raise Exception("error")
+            show_error("error")
 
 ### is_of_type()
 
 The special `is_of_type()` function has the following
 signature:
 
-    def is_oF_type(arg: object, type: Any, *, exclude_any: bool = False) -> bool: ...
+    def is_oF_type(arg: object, type: Any, /, *, exclude_any: bool = False) -> bool: ...
 
 `arg` must be one of the parameters to the function and
 `type` must be a form that the type checker would accept
@@ -290,7 +308,7 @@ Examples:
     @evaluated
     def nested_any(s: Sequence[Any]):
         if is_of_type(s, str, exclude_any=True):
-            raise Exception("error")
+            show_error("error")
         elif is_of_type(s, Sequence[str], exclude_any=True):
             return str
         else:
@@ -302,44 +320,6 @@ Examples:
     reveal_type(nested_any([1]))  # int
     reveal_type(nested_any(any))  # int
     reveal_type(nested_any(anyseq))  # int
-
-### Interaction with Any
-
-What should `round()` return if the type of the `ndigits`
-argument is `Any`? Existing type checkers do not agree:
-pyright picks the first overload that matches and returns
-`int`, since `Any` is compatible with `None`; mypy and pyanalyze
-see that multiple overloads might match and return `Any`. There
-are good reasons for both choices<!-- insert link to Eric's explanation-->,
-and we allow the same behavior for type evaluations.
-
-Type checkers should pick one of the following two behaviors and
-document their choice:
-
-1. All checks (`isinstance`, `is`, `==`) against variables typed
-   as `Any` in the body of type evaluation succeed.
-   `round(..., Any)` returns `int`. Note that
-   this means that switching the `if` and `else` blocks may change
-   visible behavior.
-2. Conditions on variables typed as `Any` take both branches of the
-   conditional. If the two branches return different types, `Any`
-   is returned instead. `round(..., Any)` returns `Any`.
-
-Motivating example:
-
-    @evaluated
-    def open(mode: str):
-        if is_of_type(mode, Literal["r", "w"], exclude_any=True):
-            return TextIO
-        elif is_of_type(mode, Literal["rb", "wb"], exclude_any=True):
-            return BinaryIO
-        else:
-            return IO[Any]
-
-    any: Any = ...
-    reveal_type(open("r"))  # TextIO
-    reveal_type(open("rb"))  # BinaryIO
-    reveal_type(open(any))  # IO[Any]
 
 ### Interaction with unions
 
@@ -379,6 +359,44 @@ Examples:
     _: Callable[[Literal["x"]], Path] = maybe_path  # ok
 
 ## Discussion
+
+### Interaction with Any
+
+What should `round()` return if the type of the `ndigits`
+argument is `Any`? Existing type checkers do not agree:
+pyright picks the first overload that matches and returns
+`int`, since `Any` is compatible with `None`; mypy and pyanalyze
+see that multiple overloads might match and return `Any`. There
+are good reasons for both choices<!-- insert link to Eric's explanation-->,
+and we allow the same behavior for type evaluations.
+
+Type checkers should pick one of the following two behaviors and
+document their choice:
+
+1. All checks (`isinstance`, `is`, `==`) against variables typed
+   as `Any` in the body of type evaluation succeed.
+   `round(..., Any)` returns `int`. Note that
+   this means that switching the `if` and `else` blocks may change
+   visible behavior.
+2. Conditions on variables typed as `Any` take both branches of the
+   conditional. If the two branches return different types, `Any`
+   is returned instead. `round(..., Any)` returns `Any`.
+
+Motivating example:
+
+    @evaluated
+    def open(mode: str):
+        if is_of_type(mode, Literal["r", "w"], exclude_any=True):
+            return TextIO
+        elif is_of_type(mode, Literal["rb", "wb"], exclude_any=True):
+            return BinaryIO
+        else:
+            return IO[Any]
+
+    any: Any = ...
+    reveal_type(open("r"))  # TextIO
+    reveal_type(open("rb"))  # BinaryIO
+    reveal_type(open(any))  # IO[Any]
 
 ### Argument kind functions
 
@@ -433,7 +451,7 @@ This is how it could be implemented using `@evaluated`:
         if not is_provided(start):
             return _T | Literal[0]
         if sys.version_info < (3, 8) and is_keyword(start):
-            raise Exception("start is a positional-only argument in Python <3.8")
+            show_error("start is a positional-only argument in Python <3.8", argument=start)
         return _T | _S
 
 ## Status
