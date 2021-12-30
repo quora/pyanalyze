@@ -993,6 +993,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._method_cache = {}
         self._statement_types = set()
         self._has_used_any_match = False
+        self._should_exclude_any = False
         self._fill_method_cache()
 
     def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
@@ -1018,6 +1019,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """Context that resets the value used by :meth:`has_used_any_match` and
         :meth:`record_any_match`."""
         return qcore.override(self, "_has_used_any_match", False)
+
+    def set_exclude_any(self) -> ContextManager[None]:
+        """Within this context, `Any` is compatible only with itself."""
+        return qcore.override(self, "_should_exclude_any", True)
+
+    def should_exclude_any(self) -> bool:
+        """Whether Any should be compatible only with itself."""
+        return self._should_exclude_any
 
     # The type for typ should be type, but that leads Cython to reject calls that pass
     # an instance of ABCMeta.

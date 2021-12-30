@@ -81,7 +81,7 @@ class Value:
         This is the primary mechanism used for checking type compatibility.
 
         """
-        if isinstance(other, AnyValue):
+        if isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
         elif isinstance(other, MultiValuedValue):
@@ -240,6 +240,14 @@ class CanAssignContext(Protocol):
         """Context that resets the value used by :meth:`has_used_any_match` and
         :meth:`record_any_match`."""
         return qcore.empty_context
+
+    def set_exclude_any(self) -> ContextManager[None]:
+        """Within this context, `Any` is compatible only with itself."""
+        return qcore.empty_context
+
+    def should_exclude_any(self) -> bool:
+        """Whether Any should be compatible only with itself."""
+        return False
 
 
 @dataclass(frozen=True)
@@ -602,7 +610,7 @@ class TypedValue(Value):
         return super().can_assign(other, ctx)
 
     def can_assign_thrift_enum(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if isinstance(other, AnyValue):
+        if isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
         elif isinstance(other, KnownValue):
@@ -1317,7 +1325,7 @@ class MultiValuedValue(Value):
             if not tv_maps:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
-        elif isinstance(other, AnyValue):
+        elif isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
         else:
@@ -1839,8 +1847,6 @@ class VariableNameValue(AnyValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if not isinstance(other, VariableNameValue):
-            if isinstance(other, AnyValue):
-                ctx.record_any_used()
             return {}
         if other == self:
             return {}

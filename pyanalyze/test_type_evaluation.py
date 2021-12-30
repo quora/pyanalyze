@@ -125,10 +125,7 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
         def capybara(unannotated):
             assert_is_value(is_of_type_evaluated(1), TypedValue(str))
             assert_is_value(is_of_type_evaluated(2), TypedValue(int))
-            assert_is_value(
-                is_of_type_evaluated(unannotated),
-                AnyValue(AnySource.multiple_overload_matches),
-            )
+            assert_is_value(is_of_type_evaluated(unannotated), TypedValue(int))
             assert_is_value(
                 is_of_type_evaluated(2 if unannotated else 1),
                 TypedValue(int) | TypedValue(str),
@@ -141,10 +138,7 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
         def capybara(unannotated):
             assert_is_value(not_evaluated(1), TypedValue(int))
             assert_is_value(not_evaluated(2), TypedValue(str))
-            assert_is_value(
-                not_evaluated(unannotated),
-                AnyValue(AnySource.multiple_overload_matches),
-            )
+            assert_is_value(not_evaluated(unannotated), TypedValue(str))
             assert_is_value(
                 not_evaluated(2 if unannotated else 1),
                 TypedValue(int) | TypedValue(str),

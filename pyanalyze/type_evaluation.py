@@ -27,6 +27,7 @@ from .extensions import get_type_evaluation
 from .value import (
     AnySource,
     AnyValue,
+    CanAssign,
     CanAssignContext,
     CanAssignError,
     KnownValue,
@@ -205,17 +206,34 @@ class ConditionEvaluator(ast.NodeVisitor):
             else:
                 return ConditionReturn(right_varmap={})
         elif name == "is_of_type":
-            if node.keywords or len(node.args) != 2:
+            if len(node.args) != 2:
                 return self.return_invalid(
                     "is_of_type() takes two positional arguments", node
                 )
             varname_node = node.args[0]
             typ = self.ctx.evaluate_type(node.args[1])
-            return self.visit_is_of_type(varname_node, typ)
+            exclude_any = True
+            for keyword in node.keywords:
+                if keyword.arg == "exclude_any":
+                    if isinstance(
+                        keyword.value, ast.NameConstant
+                    ) and keyword.value.value in (True, False):
+                        exclude_any = keyword.value.value
+                    else:
+                        return self.return_invalid(
+                            "exclude_any argument must be a literal bool", keyword.value
+                        )
+                else:
+                    return self.return_invalid(
+                        "Invalid keyword argument to is_of_type()", keyword
+                    )
+            return self.visit_is_of_type(varname_node, typ, exclude_any=exclude_any)
         else:
             return self.return_invalid(f"Invalid function {name}", node.func)
 
-    def visit_is_of_type(self, varname_node: ast.AST, typ: Value) -> ConditionReturn:
+    def visit_is_of_type(
+        self, varname_node: ast.AST, typ: Value, *, exclude_any: bool = True
+    ) -> ConditionReturn:
         if not isinstance(varname_node, ast.Name):
             return self.return_invalid(
                 "First argument to is_of_type() must be a name", varname_node
@@ -223,23 +241,20 @@ class ConditionEvaluator(ast.NodeVisitor):
         val = self.get_name(varname_node)
         if val is None:
             return ConditionReturn()
-        can_assign, used_any = can_assign_and_used_any(
-            typ, val, self.ctx.can_assign_context
+        can_assign = can_assign_maybe_exclude_any(
+            typ, val, self.ctx.can_assign_context, exclude_any
         )
         if isinstance(can_assign, CanAssignError):
-            triple = decompose_union(typ, val, self.ctx.can_assign_context)
-            if triple is not None:
-                _, used_any, remaining = triple
+            pair = decompose_union(typ, val, self.ctx.can_assign_context, exclude_any)
+            if pair is not None:
+                _, remaining = pair
                 return ConditionReturn(
                     left_varmap={varname_node.id: typ},
                     right_varmap={varname_node.id: remaining},
-                    is_any_match=used_any,
                 )
             return ConditionReturn(right_varmap={})
         else:
-            return ConditionReturn(
-                left_varmap={varname_node.id: typ}, is_any_match=used_any
-            )
+            return ConditionReturn(left_varmap={varname_node.id: typ})
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> ConditionReturn:
         if isinstance(node.op, ast.Not):
@@ -443,27 +458,34 @@ def get_evaluator(func: Callable[..., Any]) -> Optional[Evaluator]:
 
 
 def decompose_union(
-    expected_type: Value, parent_value: Value, ctx: CanAssignContext
-) -> Optional[Tuple[TypeVarMap, bool, Value]]:
+    expected_type: Value, parent_value: Value, ctx: CanAssignContext, exclude_any: bool
+) -> Optional[Tuple[TypeVarMap, Value]]:
     value = unannotate(parent_value)
     if isinstance(value, MultiValuedValue):
         tv_maps = []
         remaining_values = []
-        union_used_any = False
         for val in value.vals:
-            can_assign, subval_used_any = can_assign_and_used_any(
-                expected_type, val, ctx
+            can_assign = can_assign_maybe_exclude_any(
+                expected_type, val, ctx, exclude_any
             )
             if isinstance(can_assign, CanAssignError):
                 remaining_values.append(val)
             else:
-                if subval_used_any:
-                    union_used_any = True
                 tv_maps.append(can_assign)
         if tv_maps:
             tv_map = unify_typevar_maps(tv_maps)
             assert (
                 remaining_values
             ), f"all union members matched between {expected_type} and {parent_value}"
-            return tv_map, union_used_any, unite_values(*remaining_values)
+            return tv_map, unite_values(*remaining_values)
     return None
+
+
+def can_assign_maybe_exclude_any(
+    left: Value, right: Value, ctx: CanAssignContext, exclude_any: bool
+) -> CanAssign:
+    if exclude_any:
+        with ctx.set_exclude_any():
+            return left.can_assign(right, ctx)
+    else:
+        return left.can_assign(right, ctx)

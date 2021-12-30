@@ -7,7 +7,7 @@ calls.
 """
 
 from . import annotations
-from .type_evaluation import Evaluator, decompose_union
+from .type_evaluation import Evaluator
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -34,6 +34,7 @@ from .value import (
     HasAttrGuardExtension,
     KVPair,
     KnownValue,
+    MultiValuedValue,
     NoReturnConstraintExtension,
     NoReturnGuardExtension,
     ParameterTypeGuardExtension,
@@ -57,6 +58,7 @@ from .value import (
     unannotate_value,
     unify_typevar_maps,
     unite_values,
+    unannotate,
     NO_RETURN_VALUE,
 )
 
@@ -2008,3 +2010,30 @@ def can_assign_var_keyword(
             )
         tv_maps.append(tv_map)
     return tv_maps
+
+
+def decompose_union(
+    expected_type: Value, parent_value: Value, ctx: CanAssignContext
+) -> Optional[Tuple[TypeVarMap, bool, Value]]:
+    value = unannotate(parent_value)
+    if isinstance(value, MultiValuedValue):
+        tv_maps = []
+        remaining_values = []
+        union_used_any = False
+        for val in value.vals:
+            can_assign, subval_used_any = can_assign_and_used_any(
+                expected_type, val, ctx
+            )
+            if isinstance(can_assign, CanAssignError):
+                remaining_values.append(val)
+            else:
+                if subval_used_any:
+                    union_used_any = True
+                tv_maps.append(can_assign)
+        if tv_maps:
+            tv_map = unify_typevar_maps(tv_maps)
+            assert (
+                remaining_values
+            ), f"all union members matched between {expected_type} and {parent_value}"
+            return tv_map, union_used_any, unite_values(*remaining_values)
+    return None
