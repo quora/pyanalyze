@@ -395,7 +395,7 @@ class Signature:
         - A Value or None, used for union decomposition with overloads.
 
         """
-        if param.annotation != UNANNOTATED and composite.value is not param.default:
+        if param.annotation != UNANNOTATED:
             if typevar_map:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
             else:
@@ -404,18 +404,21 @@ class Signature:
                 param_typ, composite.value, visitor
             )
             if isinstance(tv_map, CanAssignError):
-                if is_overload:
-                    triple = decompose_union(param_typ, composite.value, visitor)
-                    if triple is not None:
-                        return triple
-                visitor.show_error(
-                    composite.node if composite.node is not None else node,
-                    f"Incompatible argument type for {param.name}: expected {param_typ}"
-                    f" but got {composite.value}",
-                    ErrorCode.incompatible_argument,
-                    detail=str(tv_map),
-                )
-                return None, False, None
+                if composite.value is param.default:
+                    tv_map = {}
+                else:
+                    if is_overload:
+                        triple = decompose_union(param_typ, composite.value, visitor)
+                        if triple is not None:
+                            return triple
+                    visitor.show_error(
+                        composite.node if composite.node is not None else node,
+                        f"Incompatible argument type for {param.name}: expected"
+                        f" {param_typ} but got {composite.value}",
+                        ErrorCode.incompatible_argument,
+                        detail=str(tv_map),
+                    )
+                    return None, False, None
             return tv_map, used_any, None
         return {}, False, None
 

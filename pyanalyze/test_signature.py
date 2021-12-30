@@ -954,6 +954,24 @@ class TestTypeVar(TestNameCheckVisitorBase):
             def capybara(self) -> None:
                 super().capybara()
 
+    @assert_passes()
+    def test_default(self):
+        from typing import TypeVar, Dict
+
+        KT = TypeVar("KT")
+        VT = TypeVar("VT")
+        T = TypeVar("T")
+
+        def dictget(d: Dict[KT, VT], key: KT, default: T = None) -> VT | T:
+            try:
+                return d[key]
+            except KeyError:
+                return default
+
+        def capybara(d: Dict[str, str], key: str) -> None:
+            assert_is_value(dictget(d, key), TypedValue(str) | KnownValue(None))
+            assert_is_value(dictget(d, key, 1), TypedValue(str) | KnownValue(1))
+
 
 class TestAllowCall(TestNameCheckVisitorBase):
     @assert_passes()
