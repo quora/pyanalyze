@@ -107,8 +107,11 @@ Conditions in `if` statements may contain:
     was provided through a keyword argument.
   - `is_of_type()`, which returns whether a parameter is of
     a particular type.
-- Expressions of the form `arg is (not) <constant>`, where `<constant>` may be True, False, or None. If `arg` is `Any`, the condition always matches.
-- Expressions of the form `arg == <constant>` or `arg != <constant>`, where `<constant>` is any value valid inside `Literal[]` (a bool, int, string, or enum member). If `arg` is `Any`, the condition always matches.
+- Expressions of the form `arg <op> <constant>`, where `<op>`
+  is one of `is`, `is not`, `==`, or `!=`. This is equivalent
+  to `(not) is_of_type(arg, Literal[<constant>], exclude_any=True)`.
+  `<constant>` may be any value that is valid inside `Literal` (`None`, a string, a bool, an int, or an enum
+  member).
 - Version and platform checks that are otherwise valid in stubs, as specified in PEP 484.
 - Multiple conditions combined with `and` or `or`.
 - A negation of another condition with `not`.
@@ -261,19 +264,20 @@ Examples:
 The special `is_of_type()` function has the following
 signature:
 
-    def is_oF_type(arg: object, type: Any, /, *, exclude_any: bool = False) -> bool: ...
+    def is_oF_type(arg: object, type: Any, /, *, exclude_any: bool = True) -> bool: ...
 
 `arg` must be one of the parameters to the function and
 `type` must be a form that the type checker would accept
 in a type annotation.
 
-By default, `is_of_type(x, T)` returns true if `x` is
+If `exclude_any` is False, `is_of_type(x, T)` returns true if `x` is
 compatible with `T`; that is, if the type checker would
 accept an assignment `_: T = x`.
 
-If the `exclude_any` parameter is True, normal type checking
+If the `exclude_any` parameter is True (the default), normal type checking
 rules are modified so that `Any` is no longer compatible with
-any other type, but only with another `Any`.
+any other type, but only with another `Any`. All other types
+are still compatible with `Any`.
 
 Examples:
 
@@ -349,7 +353,7 @@ Examples:
         if path is None:
             return None
         else:
-            return Path(path)
+            return Path
 
     _: Callable[[str | None], Path | None] = maybe_path  # ok
     _: Callable[[None], None] = maybe_path  # ok
@@ -362,41 +366,105 @@ Examples:
 
 ### Interaction with Any
 
-What should `round()` return if the type of the `ndigits`
-argument is `Any`? Existing type checkers do not agree:
-pyright picks the first overload that matches and returns
-`int`, since `Any` is compatible with `None`; mypy and pyanalyze
-see that multiple overloads might match and return `Any`. There
-are good reasons for both choices<!-- insert link to Eric's explanation-->,
-and we allow the same behavior for type evaluations.
-
-Type checkers should pick one of the following two behaviors and
-document their choice:
-
-1. All checks (`isinstance`, `is`, `==`) against variables typed
-   as `Any` in the body of type evaluation succeed.
-   `round(..., Any)` returns `int`. Note that
-   this means that switching the `if` and `else` blocks may change
-   visible behavior.
-2. Conditions on variables typed as `Any` take both branches of the
-   conditional. If the two branches return different types, `Any`
-   is returned instead. `round(..., Any)` returns `Any`.
-
-Motivating example:
+The below is an evaluation function for a simplified
+version of the `open()` builtin:
 
     @evaluated
     def open(mode: str):
-        if is_of_type(mode, Literal["r", "w"], exclude_any=True):
+        if is_of_type(mode, Literal["r", "w"]):
             return TextIO
-        elif is_of_type(mode, Literal["rb", "wb"], exclude_any=True):
+        elif is_of_type(mode, Literal["rb", "wb"]):
             return BinaryIO
         else:
             return IO[Any]
 
-    any: Any = ...
-    reveal_type(open("r"))  # TextIO
-    reveal_type(open("rb"))  # BinaryIO
-    reveal_type(open(any))  # IO[Any]
+What should `open()` return if the type of the `mode`
+argument is `Any`? With the equivalent code expressed
+using overloads, existing type checkers do not agree:
+pyright picks the first overload that matches and returns
+`int`, since `Any` is compatible with `None`; mypy and pyanalyze
+see that multiple overloads might match and return `Any`.
+There are good reasons for both choices,
+as discussed [here](https://github.com/microsoft/pyright/issues/2521#issuecomment-956823577)
+by Eric Traut. In particular, mypy's behavior is more sound
+for a type checker, but pyright's behavior helps generate
+better autocompletion suggestions in a language server.
+
+Type evaluation functions potentially have
+the same ambiguity, so in order to provide predictable
+behavior across type checkers, we need to specify a single
+behavior.
+
+As specified above, our choice is to treat `Any` specially
+by default within evaluation functions, making it
+incompatible with other types, both within `is`/`==`
+comparisons and within the `is_of_type` primitive.
+This behavior makes it easiest
+to write evaluation functions that read naturally and
+behave as desired. In particular, this choice makes
+`open(Any)` return `IO[Any]`, which is both the most
+intuitive and the most useful result.
+
+The most natural alternative is to make `is_of_type()` follow
+normal type compatibility rules, where `Any` is compatible
+with everything. But this would create confusing behavior
+for evaluation functions like the one for `open()`:
+
+- `open()` would return `TextIO` if `mode` is `Any`, which
+  is too precise in general.
+- The order of the `BinaryIO` and `TextIO` checks would
+  matter:
+  the function would behave differently if the two checks
+  were flipped. This would be a subtle behavior that is
+  not obvious to readers of the code.
+- There would be no obvious way to provide a customized
+  fallback behavior for `Any`. Technically, a check like
+  `is_of_type(mode, Literal["r"]) and is_of_type(mode, Literal["w"])`
+  could be used to check for `Any` (only `Any` is compatible
+  with both literals), but this would be obscure and
+  unreadable.
+- It would be difficult to show an error for a particular
+  parameter value. For example, a stub for `open()` might
+  want to show a warning if the deprecated `rU` mode is used.
+  The obvious way to do that would be to write
+  `if mode == "rU": show_error(...)`, but if this returned
+  true for `Any`, we would show the error for `mode: Any`.
+
+As an additional example, consider functions that take
+some object or `None` and return either `None` or a
+transformed version of the object, like this:
+
+    @evaluated
+    def maybe_path(path: str | None):
+        if path is None:
+            return None
+        else:
+            return Path
+
+Functions of this form are fairly common, and it is
+natural to write them with the trivial branch (`None`) first,
+both in the implementation and in the evaluation function.
+But if `path is None` would be true for `Any`, the evaluation
+function would return `None`, which is bad both for type
+checkers and for autocomplete suggestions.
+
+One downside of this behavior is that type checkers may
+incorrectly flag `is None` checks after a `maybe_path()`
+call as unreachable. However, such checks are usually only
+enabled in a strict mode, and `Any` should be rare in
+strictly typed code. Type checkers could also provide a
+mechanism that labels types derived from an evaluation
+function that used `Any` to disable diagnostics about
+unreachable code.
+
+Another alternative would be to use a mechanism similar to
+mypy-style overload resolution: conditions that match due to
+`Any` would essentially match neither branch and simply
+return `Any`. This behavior would avoid returning any
+overly precise types, but it would be useless for
+autocompletion suggestions and would remove a lot of
+useful type precision. For example, there would be no way
+for the `open()` evaluation function to produce `IO[Any]`.
 
 ### Argument kind functions
 
