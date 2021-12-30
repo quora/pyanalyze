@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix usage of type variables in function parameters
+  with defaults (#378)
 - Support the Python 3.10 `match` statement (#376)
 - Support the walrus (`:=`) operator (#375)
 - Initial support for proposed new "type evaluation"
