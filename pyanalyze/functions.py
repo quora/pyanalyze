@@ -16,7 +16,7 @@ from typing_extensions import Protocol
 
 from .config import Config
 from .error_code import ErrorCode
-from .extensions import overload, real_overload
+from .extensions import overload, real_overload, evaluated
 from .options import Options, PyObjectSequenceOption
 from .node_visitor import ErrorContext
 from .signature import SigParameter, ParameterKind, Signature
@@ -63,6 +63,7 @@ class FunctionInfo:
     is_staticmethod: bool  # has @staticmethod
     is_decorated_coroutine: bool  # has @asyncio.coroutine
     is_overload: bool  # typing.overload or pyanalyze.extensions.overload
+    is_evaluated: bool  # @pyanalyze.extensions.evaluated
     is_abstractmethod: bool  # has @abstractmethod
     # a list of pairs of (decorator function, applied decorator function). These are different
     # for decorators that take arguments, like @asynq(): the first element will be the asynq
@@ -153,6 +154,7 @@ def compute_function_info(
     is_staticmethod = False
     is_overload = False
     is_abstractmethod = False
+    is_evaluated = False
     decorators = []
     for decorator in [] if isinstance(node, ast.Lambda) else node.decorator_list:
         # We have to descend into the Call node because the result of
@@ -186,6 +188,8 @@ def compute_function_info(
                 is_overload = True
             elif decorator_value == KnownValue(abstractmethod):
                 is_abstractmethod = True
+            elif decorator_value == KnownValue(evaluated):
+                is_evaluated = True
             decorators.append((decorator_value, decorator_value))
     params = compute_parameters(
         node,
@@ -206,6 +210,7 @@ def compute_function_info(
         is_staticmethod=is_staticmethod,
         is_abstractmethod=is_abstractmethod,
         is_overload=is_overload,
+        is_evaluated=is_evaluated,
         decorators=decorators,
         node=node,
         params=params,

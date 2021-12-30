@@ -4,6 +4,8 @@ Commonly useful components for static analysis tools.
 
 """
 import ast
+from dataclasses import dataclass
+import linecache
 import os
 import secrets
 import sys
@@ -85,18 +87,35 @@ def get_line_range_for_node(node: ast.AST, lines: List[str]) -> List[int]:
     return list(range(first_lineno, last_lineno))
 
 
+@dataclass
+class _FakeLoader:
+    source: str
+
+    def get_source(self, name: object) -> str:
+        return self.source
+
+
 def make_module(
     code_str: str, extra_scope: Mapping[str, object] = {}
 ) -> types.ModuleType:
     """Creates a Python module with the given code."""
     # Make the name unique to avoid clobbering the overloads dict
     # from pyanalyze.extensions.overload.
+    token = secrets.token_hex()
     module_name = f"<test input {secrets.token_hex()}>"
+    filename = f"{token}.py"
     mod = types.ModuleType(module_name)
     scope = mod.__dict__
     scope["__name__"] = module_name
+    scope["__file__"] = filename
+    scope["__loader__"] = _FakeLoader(code_str)
+
+    # This allows linecache later to retrieve source code
+    # from this module, which helps the type evaluator.
+    linecache.lazycache(filename, scope)
     scope.update(extra_scope)
-    exec(code_str, scope)
+    code = compile(code_str, filename, "exec")
+    exec(code, scope)
     sys.modules[module_name] = mod
     return mod
 

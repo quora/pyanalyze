@@ -1569,7 +1569,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             val = compute_value_of_function(info, self)
         else:
             val = KnownValue(potential_function)
-        if not info.is_overload:
+        if not info.is_overload and not info.is_evaluated:
             self._set_name_in_scope(node.name, node, val)
 
         with self.asynq_checker.set_func_name(
@@ -1721,7 +1721,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if is_collecting and not self.scopes.contains_scope_of_type(
             ScopeType.function_scope
         ):
-            return FunctionResult()
+            return FunctionResult(parameters=params)
+
+        if function_info.is_evaluated:
+            # TODO validate the evaluation function
+            return FunctionResult(parameters=params)
 
         # We pass in the node to add_scope() and visit the body once in collecting
         # mode if in a nested function, so that constraints on nonlocals in the outer
