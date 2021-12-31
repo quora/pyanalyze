@@ -1,5 +1,5 @@
 # static analysis: ignore
-from .value import KnownValue, AnyValue, AnySource
+from .value import GenericValue, KnownValue, AnyValue, AnySource, TypedValue
 from .error_code import ErrorCode
 from .implementation import assert_is_value
 from .test_node_visitor import assert_passes, skip_before
@@ -35,7 +35,7 @@ class TestNestedFunction(TestNameCheckVisitorBase):
                     xs = ys
 
     @assert_passes()
-    def test_async(self):
+    def test_asynq(self):
         from asynq import asynq
         from typing_extensions import Literal
 
@@ -48,6 +48,18 @@ class TestNestedFunction(TestNameCheckVisitorBase):
             assert_is_value(nested(), KnownValue(3))
             val = yield nested.asynq()
             assert_is_value(val, KnownValue(3))
+
+    @assert_passes()
+    def test_async_def(self):
+        import collections.abc
+
+        def capybara():
+            async def nested() -> int:
+                return 1
+
+            assert_is_value(
+                nested(), GenericValue(collections.abc.Awaitable, [TypedValue(int)])
+            )
 
     @assert_passes()
     def test_bad_decorator(self):
