@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix inference for nested `async def` functions (#380)
 - Fix usage of type variables in function parameters
   with defaults (#378)
 - Support the Python 3.10 `match` statement (#376)

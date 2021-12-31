@@ -6,6 +6,7 @@ Code for understanding function definitions.
 from abc import abstractmethod
 import ast
 import asyncio
+import collections.abc
 import types
 import asynq
 import enum
@@ -316,6 +317,8 @@ def compute_value_of_function(
         result = info.return_annotation
     if result is None:
         result = AnyValue(AnySource.unannotated)
+    if isinstance(info.node, ast.AsyncFunctionDef):
+        result = GenericValue(collections.abc.Awaitable, [result])
     sig = Signature.make(
         [param_info.param for param_info in info.params],
         result,
