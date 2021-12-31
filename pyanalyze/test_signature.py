@@ -18,6 +18,7 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .error_code import ErrorCode
 from .signature import (
+    ELLIPSIS_PARAM,
     ConcreteSignature,
     OverloadedSignature,
     Signature,
@@ -37,9 +38,7 @@ def test_stringify() -> None:
     assert "() -> Any[unannotated]" == str(Signature.make([]))
     assert "() -> int" == str(Signature.make([], TypedValue(int)))
     assert "@asynq () -> int" == str(Signature.make([], TypedValue(int), is_asynq=True))
-    assert "(...) -> int" == str(
-        Signature.make([], TypedValue(int), is_ellipsis_args=True)
-    )
+    assert "(...) -> int" == str(Signature.make([ELLIPSIS_PARAM], TypedValue(int)))
     assert "(x: int) -> int" == str(
         Signature.make([P("x", annotation=TypedValue(int))], TypedValue(int))
     )

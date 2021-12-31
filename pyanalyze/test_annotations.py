@@ -824,14 +824,14 @@ class TestCallable(TestNameCheckVisitorBase):
     def test_asynq_callable(self):
         from asynq import asynq
         from pyanalyze.extensions import AsynqCallable
-        from pyanalyze.signature import Signature
+        from pyanalyze.signature import Signature, ELLIPSIS_PARAM
         from typing import Optional
 
         @asynq()
         def func_example(x: int) -> str:
             return ""
 
-        sig = Signature.make([], is_asynq=True, is_ellipsis_args=True)
+        sig = Signature.make([ELLIPSIS_PARAM], is_asynq=True)
 
         @asynq()
         def bare_asynq_callable(fn: AsynqCallable) -> None:
