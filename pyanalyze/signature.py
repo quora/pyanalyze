@@ -1510,7 +1510,7 @@ def preprocess_args(
             assert False, f"unhandled label {label}"
 
     # Step 2: enforce invariants about ARGS and KWARGS placement. We dump
-    # any single argument that come after *args into *args, and we merge all *args.
+    # any single arguments that come after *args into *args, and we merge all *args.
     # But for keywords, we first get all the arguments with known keys, and after that unite
     # all the **kwargs into a single argument.
     more_processed_args: List[Composite] = []
@@ -1534,7 +1534,7 @@ def preprocess_args(
                 more_processed_args.append(arg)
         elif label is ARGS:
             # This is legal: f(x=3, *args)
-            # But this is not: f(**kwargs, **args)
+            # But this is not: f(**kwargs, *args)
             if star_kwargs is not None:
                 visitor.show_error(
                     node, "*args follows **kwargs", ErrorCode.incompatible_call
@@ -1588,14 +1588,15 @@ def _preprocess_kwargs_no_mvv(
 ) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
     """Preprocess a Value passed as **kwargs.
 
-    Three possible return types:
+    Two possible return types:
 
     - None if there was a blocking error (the passed in type is not a mapping).
     - A pair of two values:
         - An {argument: (required, Value)} dict if we know the precise arguments (e.g.,
             for a TypedDict).
         - A single Value if the argument is a mapping, but we don't know all the precise keys.
-            This is None if all the keys are known.
+            This is None if all the keys are known. The Value represents the values in the
+            mapping (all the keys must be strings).
 
     """
     value = replace_known_sequence_value(value)
