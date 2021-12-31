@@ -706,6 +706,11 @@ class EvaluateVisitor(ast.NodeVisitor):
                         )
                         return None
                 else:
+                    # Before 3.9 keyword nodes don't have a lineno
+                    if sys.version_info >= (3, 9):
+                        error_node = keyword
+                    else:
+                        error_node = node
                     self.add_invalid(
                         "Invalid keyword argument to show_error()", keyword
                     )
