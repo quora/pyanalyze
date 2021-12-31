@@ -175,7 +175,7 @@ from .value import (
     concrete_values_from_iterable,
     unpack_values,
 )
-from pyanalyze import annotations, type_evaluation
+from pyanalyze import type_evaluation
 
 try:
     from ast import NamedExpr
@@ -1740,6 +1740,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     self.show_error(
                         error.node, error.message, error_code=ErrorCode.bad_evaluator
                     )
+                if self.annotate:
+                    with self.catch_errors(), self.scopes.add_scope(
+                        ScopeType.function_scope, scope_node=node
+                    ):
+                        if isinstance(node, ast.Lambda):
+                            self.generic_visit(node.body)
+                        else:
+                            self._generic_visit_list(node.body)
             return FunctionResult(parameters=params)
 
         # We pass in the node to add_scope() and visit the body once in collecting

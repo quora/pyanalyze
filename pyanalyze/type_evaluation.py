@@ -21,7 +21,6 @@ from typing import (
     Iterator,
     List,
     Mapping,
-    NoReturn,
     Optional,
     Sequence,
     Tuple,
@@ -30,6 +29,7 @@ from typing import (
 )
 
 from .extensions import get_type_evaluation
+from .safe import all_of_type
 from .value import (
     NO_RETURN_VALUE,
     AnySource,
@@ -39,6 +39,7 @@ from .value import (
     CanAssignError,
     KnownValue,
     MultiValuedValue,
+    SequenceIncompleteValue,
     Value,
     flatten_values,
     unannotate,
@@ -207,10 +208,10 @@ _Operator = Union[Type[ast.cmpop], Literal["matches", "does not match"]]
 class _Comparator:
     text: str
     negation: _Operator
-    impl: Callable[[Any, Any], object]
+    impl: Callable[[Any, Any], Any]
 
 
-def _dummy_impl(left: object, right: object) -> NoReturn:
+def _dummy_impl(left: object, right: object) -> object:
     raise NotImplementedError
 
 
@@ -582,6 +583,12 @@ class ConditionEvaluator(ast.NodeVisitor):
 
     def evaluate_literal(self, node: ast.expr) -> Optional[KnownValue]:
         val = self.ctx.evaluate_value(node)
+        if (
+            isinstance(val, SequenceIncompleteValue)
+            and isinstance(val.typ, type)
+            and all_of_type(val.members, KnownValue)
+        ):
+            val = KnownValue(val.typ(elt.val for elt in val.members))
         if isinstance(val, KnownValue):
             return val
         self.errors.append(InvalidEvaluation("Only literals supported", node))
