@@ -1553,8 +1553,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         info = compute_function_info(
             node,
             self,
+            # If we set the current_class in the collecting phase,
+            # the self argument of nested methods with an unannotated
+            # first argument is incorrectly inferred.
             enclosing_class=TypedValue(self.current_class)
-            if self.current_class is not None
+            if self.current_class is not None and self._is_checking()
             else None,
             is_nested_in_class=self.node_context.includes(ast.ClassDef),
             potential_function=potential_function,
