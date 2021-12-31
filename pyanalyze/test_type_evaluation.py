@@ -1,18 +1,15 @@
 # static analysis: ignore
-from typing_extensions import Literal
-
 from .value import TypedValue, assert_is_value
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .extensions import is_keyword, is_positional, is_provided, is_of_type, show_error
-
-from typing import Union, Any
 
 
 class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_is_provided(self):
         from pyanalyze.extensions import evaluated
+        from typing import Union
 
         @evaluated
         def simple_evaluated(x: int, y: str = ""):
@@ -38,6 +35,8 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_is_of_type(self):
         from pyanalyze.extensions import evaluated
+        from typing import Union
+        from typing_extensions import Literal
 
         @evaluated
         def is_of_type_evaluated(x: int):
@@ -64,6 +63,8 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_not(self):
         from pyanalyze.extensions import evaluated
+        from typing import Union
+        from typing_extensions import Literal
 
         @evaluated
         def not_evaluated(x: int):
@@ -90,6 +91,7 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_compare(self):
         from pyanalyze.extensions import evaluated
+        from typing import Union
 
         @evaluated
         def compare_evaluated(x: object):
@@ -115,6 +117,7 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_error(self):
         from pyanalyze.extensions import evaluated
+        from typing import Any
 
         @evaluated
         def nonempty_please(x: str) -> int:

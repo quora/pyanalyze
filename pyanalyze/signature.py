@@ -872,7 +872,9 @@ class Signature:
                         composite = bound_args[error.argument][1]
                         if composite.node is not None:
                             error_node = node
-                    self.show_call_error(error.message, error_node, visitor)
+                    self.show_call_error(
+                        error.message, error_node, visitor, detail=error.get_detail()
+                    )
 
         if self.allow_call:
             runtime_return = self._maybe_perform_call(preprocessed, visitor, node)

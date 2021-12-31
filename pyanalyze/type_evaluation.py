@@ -106,12 +106,18 @@ class ArgumentKindCondition(Condition):
 @dataclass
 class IsOfTypeCondition(Condition):
     arg: str
+    op: Type[ast.cmpop]
     original_arg_type: Value
     remaining_type: Value
     expected_type: Value
     exclude_any: bool = True
 
     def display(self, negated: bool = False) -> CanAssignError:
+        positive_text = _OP_TO_DATA[self.op].text
+        negative_text = _OP_TO_DATA[_OP_TO_DATA[self.op].negation].text
+        if negated:
+            positive_text, negative_text = negative_text, positive_text
+
         original_arg_type = self.original_arg_type
         remaining_type = self.remaining_type
         matched_type = subtract_unions(original_arg_type, remaining_type)
@@ -119,21 +125,26 @@ class IsOfTypeCondition(Condition):
             matched_type, remaining_type = remaining_type, matched_type
 
         if matched_type is NO_RETURN_VALUE:
-            text = "does not match"
+            text = negative_text
             type_to_show = remaining_type
         elif remaining_type is NO_RETURN_VALUE:
-            text = "matches"
+            text = positive_text
             type_to_show = matched_type
         else:
-            text = "partially matches"
+            text = f"partially {positive_text}"
             type_to_show = unite_values(matched_type, remaining_type)
         if self.exclude_any:
             epilog = ""
         else:
             epilog = " (using permissive Any semantics)"
+        if self.op not in (ast.LtE, ast.Gt) and isinstance(
+            self.expected_type, KnownValue
+        ):
+            expected_type = repr(self.expected_type.val)
+        else:
+            expected_type = str(self.expected_type)
         return CanAssignError(
-            f"Argument {self.arg} (type: {type_to_show})"
-            f"{text} {self.expected_type}{epilog}"
+            f"Argument {self.arg} (type: {type_to_show}) {text} {expected_type}{epilog}"
         )
 
 
@@ -160,26 +171,10 @@ _OP_TO_DATA: Dict[Type[ast.cmpop], _Comparator] = {
     ast.IsNot: _Comparator("is not", ast.Is),
     ast.Eq: _Comparator("==", ast.Eq),
     ast.NotEq: _Comparator("!=", ast.NotEq),
+    # We use this to emulate the is_of_type() call for simplicity
+    ast.LtE: _Comparator("matches", ast.Gt),
+    ast.Gt: _Comparator("does not match", ast.LtE),
 }
-
-
-@dataclass
-class CompareCondition(Condition):
-    op: ast.cmpop
-    arg: str
-    arg_type: Value
-    expected_type: object
-    is_partial_match: bool
-
-    def display(self, negated: bool = False) -> CanAssignError:
-        if negated:
-            op_type = _OP_TO_DATA[type(self.op)].negation
-        else:
-            op_type = type(self.op)
-        text = _OP_TO_DATA[op_type].text
-        return CanAssignError(
-            f"Argument {self.arg} (type: {self.arg_type}) {text} {self.expected_type}"
-        )
 
 
 @dataclass
@@ -193,6 +188,15 @@ class UserRaisedError:
     message: str
     active_conditions: Sequence[Condition]
     argument: Optional[str] = None
+
+    def get_detail(self) -> Optional[str]:
+        if self.active_conditions:
+            return str(
+                CanAssignError(
+                    children=[cond.display() for cond in self.active_conditions]
+                )
+            )
+        return None
 
 
 EvaluateError = Union[InvalidEvaluation, UserRaisedError]
@@ -338,12 +342,19 @@ class ConditionEvaluator(ast.NodeVisitor):
                     return self.return_invalid(
                         "Invalid keyword argument to is_of_type()", keyword
                     )
-            return self.visit_is_of_type(varname_node, typ, exclude_any=exclude_any)
+            return self.visit_is_of_type(
+                varname_node, typ, ast.LtE, exclude_any=exclude_any
+            )
         else:
             return self.return_invalid(f"Invalid function {name}", node.func)
 
     def visit_is_of_type(
-        self, varname_node: ast.AST, typ: Value, *, exclude_any: bool = True
+        self,
+        varname_node: ast.AST,
+        typ: Value,
+        op: Type[ast.cmpop],
+        *,
+        exclude_any: bool = True,
     ) -> ConditionReturn:
         if not isinstance(varname_node, ast.Name):
             return self.return_invalid(
@@ -361,14 +372,29 @@ class ConditionEvaluator(ast.NodeVisitor):
                 _, remaining = pair
                 return ConditionReturn(
                     condition=IsOfTypeCondition(
-                        varname_node.id, val, remaining, typ, exclude_any=exclude_any
+                        varname_node.id,
+                        op,
+                        val,
+                        remaining,
+                        typ,
+                        exclude_any=exclude_any,
                     ),
                     left_varmap={varname_node.id: typ},
                     right_varmap={varname_node.id: remaining},
                 )
-            return ConditionReturn(right_varmap={})
+            return ConditionReturn(right_varmap={}, condition=NullCondition())
         else:
-            return ConditionReturn(left_varmap={varname_node.id: typ})
+            return ConditionReturn(
+                left_varmap={varname_node.id: typ},
+                condition=IsOfTypeCondition(
+                    varname_node.id,
+                    op,
+                    val,
+                    NO_RETURN_VALUE,
+                    typ,
+                    exclude_any=exclude_any,
+                ),
+            )
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> ConditionReturn:
         if isinstance(node.op, ast.Not):
@@ -385,8 +411,8 @@ class ConditionEvaluator(ast.NodeVisitor):
         if isinstance(op, (ast.Is, ast.IsNot, ast.Eq, ast.NotEq)):
             operand = self.evaluate_literal(right)
             if operand is None:
-                return ConditionReturn()
-            ret = self.visit_is_of_type(node.left, operand)
+                return ConditionReturn(NullCondition())
+            ret = self.visit_is_of_type(node.left, operand, type(op))
             if isinstance(op, (ast.NotEq, ast.IsNot)):
                 return ret.reverse()
             return ret
@@ -509,7 +535,7 @@ class EvaluateVisitor(ast.NodeVisitor):
                     )
                     return None
             self.errors.append(
-                UserRaisedError(message, self.active_conditions, argument)
+                UserRaisedError(message, list(self.active_conditions), argument)
             )
             return None
         self.add_invalid("Invalid statement", node)
@@ -518,34 +544,29 @@ class EvaluateVisitor(ast.NodeVisitor):
     def visit_If(self, node: ast.If) -> EvalReturn:
         visitor = ConditionEvaluator(self.ctx)
         condition = visitor.visit(node.test)
-        if condition.is_any_match:
-            with self.ctx.narrow_variables(condition.left_varmap):
+        if condition.left_varmap is not None:
+            with self.ctx.narrow_variables(
+                condition.left_varmap
+            ), self.add_active_condition(condition.condition):
                 left_result = self.visit_block(node.body)
+        else:
+            left_result = None
+        if condition.right_varmap is not None:
             with self.ctx.narrow_variables(condition.right_varmap):
                 right_result = self.visit_block(node.orelse)
-            return AnyCombinedReturn(left_result, right_result)
         else:
-            if condition.left_varmap is not None:
-                with self.ctx.narrow_variables(condition.left_varmap):
-                    left_result = self.visit_block(node.body)
-            else:
-                left_result = None
+            right_result = None
+        if condition.left_varmap is not None:
             if condition.right_varmap is not None:
-                with self.ctx.narrow_variables(condition.right_varmap):
-                    right_result = self.visit_block(node.orelse)
+                return UnionCombinedReturn(left_result, right_result)
             else:
-                right_result = None
-            if condition.left_varmap is not None:
-                if condition.right_varmap is not None:
-                    return UnionCombinedReturn(left_result, right_result)
-                else:
-                    return left_result
+                return left_result
+        else:
+            if condition.right_varmap is not None:
+                return right_result
             else:
-                if condition.right_varmap is not None:
-                    return right_result
-                else:
-                    self.add_invalid("Condition must either match or not match", node)
-                    return None
+                self.add_invalid("Condition must either match or not match", node)
+                return None
 
     def generic_visit(self, node: ast.AST) -> Any:
         self.add_invalid("Invalid code in type evaluator", node)

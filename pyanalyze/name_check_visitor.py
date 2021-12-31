@@ -1588,13 +1588,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if (
             not result.has_return
             and not info.is_overload
+            and not info.is_evaluated
+            and not info.is_abstractmethod
             and node.returns is not None
             and info.return_annotation != KnownNone
             and not (
                 isinstance(info.return_annotation, AnnotatedValue)
                 and info.return_annotation.value == KnownNone
             )
-            and not info.is_abstractmethod
         ):
             if info.return_annotation is NO_RETURN_VALUE:
                 self._show_error_if_checking(

@@ -151,7 +151,7 @@ class TypeEvaluationContext(Context, type_evaluation.Context):
     variables: type_evaluation.VarMap
     positions: Mapping[str, type_evaluation.Position]
     can_assign_context: CanAssignContext
-    globals: Mapping[str, object]
+    globals: Mapping[str, object] = field(repr=False)
 
     def evaluate_type(self, node: ast.AST) -> Value:
         return type_from_ast(node, ctx=self)
