@@ -82,6 +82,18 @@ class TestNestedFunction(TestNameCheckVisitorBase):
             inner.punare = 3
             assert_is_value(inner.punare, KnownValue(3))
 
+    @assert_passes()
+    def test_nested_in_method(self):
+        class Capybara:
+            def method(self):
+                def nested(arg) -> int:
+                    assert_is_value(arg, AnyValue(AnySource.unannotated))
+                    # Make sure we don't think this is an access to Capybara.numerator
+                    print(arg.numerator)
+                    return 1
+
+                assert_is_value(nested(1), TypedValue(int))
+
 
 class TestFunctionDefinitions(TestNameCheckVisitorBase):
     @assert_passes()
