@@ -6,6 +6,7 @@ Implementation of type evaluation.
 
 import ast
 from contextlib import contextmanager
+import contextlib
 from dataclasses import dataclass, field
 import inspect
 import qcore
@@ -68,15 +69,13 @@ class NullCondition(Condition):
 
 
 @dataclass
-class AndCondition(Condition):
-    left: Condition
-    right: Condition
+class ConditionList(Condition):
+    children: Sequence[Condition]
 
-
-@dataclass
-class OrCondition(Condition):
-    left: Condition
-    right: Condition
+    def display(self, negated: bool = False) -> CanAssignError:
+        return CanAssignError(
+            children=[c.display(negated=negated) for c in self.children]
+        )
 
 
 @dataclass
@@ -238,27 +237,23 @@ class Evaluator:
 
 
 @dataclass
-class UnionCombinedReturn:
-    left: "EvalReturn"
-    right: "EvalReturn"
+class CombinedReturn:
+    children: Sequence[Optional[Value]]
+
+    @classmethod
+    def make(cls, *returns: "EvalReturn") -> "EvalReturn":
+        if len(returns) == 1:
+            return returns[0]
+        children = []
+        for child in returns:
+            if isinstance(child, CombinedReturn):
+                children += child.children
+            else:
+                children.append(child)
+        return CombinedReturn(children)
 
 
-@dataclass
-class AnyCombinedReturn:
-    left: "EvalReturn"
-    right: "EvalReturn"
-
-
-EvalReturn = Union[None, Value, UnionCombinedReturn, AnyCombinedReturn]
-
-
-def may_be_none(ret: EvalReturn) -> bool:
-    if ret is None:
-        return True
-    elif isinstance(ret, Value):
-        return False
-    else:
-        return may_be_none(ret.left) or may_be_none(ret.right)
+EvalReturn = Union[None, Value, CombinedReturn]
 
 
 @dataclass
@@ -419,6 +414,80 @@ class ConditionEvaluator(ast.NodeVisitor):
         else:
             return self.return_invalid("Unsupported comparison operator", node)
 
+    def visit_BoolOp(self, node: ast.BoolOp) -> ConditionReturn:
+        if self.validation_mode:
+            for operand in node.values:
+                self.visit(operand)
+            return ConditionReturn(NullCondition())
+        active = []
+        is_and = isinstance(node.op, ast.And)
+        remaining_varmaps = []
+        narrowed_varmap = {}
+        stack = contextlib.ExitStack()
+        with stack:
+            for operand in node.values:
+                result = self.visit(operand)
+                if is_and:
+                    if result.left_varmap is None:
+                        # Condition returns False
+                        active.append(NotCondition(result.condition))
+                        return ConditionReturn(
+                            right_varmap=result.right_varmap,
+                            condition=ConditionList(active),
+                        )
+                    elif result.right_varmap is None:
+                        # Condition returns True
+                        narrowed_varmap.update(result.left_varmap)
+                        stack.enter_context(
+                            self.ctx.narrow_variables(result.left_varmap)
+                        )
+                        active.append(result.condition)
+                    else:
+                        # Condition matches partially
+                        active.append(result.condition)
+                        narrowed_varmap.update(result.left_varmap)
+                        stack.enter_context(
+                            self.ctx.narrow_variables(result.left_varmap)
+                        )
+                        remaining_varmaps.append(result.right_varmap)
+                else:
+                    if result.left_varmap is None:
+                        # Condition returns False
+                        narrowed_varmap.update(result.right_varmap)
+                        stack.enter_context(
+                            self.ctx.narrow_variables(result.right_varmap)
+                        )
+                        active.append(NotCondition(result.condition))
+                    elif result.right_varmap is None:
+                        # Condition returns True
+                        active.append(result.condition)
+                        return ConditionReturn(
+                            left_varmap=result.left_varmap,
+                            condition=ConditionList(active),
+                        )
+                    else:
+                        # Condition partially matches
+                        active.append(result.condition)
+                        narrowed_varmap.update(result.right_varmap)
+                        stack.enter_context(
+                            self.ctx.narrow_variables(result.right_varmap)
+                        )
+                        remaining_varmaps.append(result.left_varmap)
+
+        # We got only partial matches
+        if is_and:
+            return ConditionReturn(
+                ConditionList(active),
+                left_varmap=narrowed_varmap,
+                right_varmap=unite_varmaps(remaining_varmaps),
+            )
+        else:
+            return ConditionReturn(
+                ConditionList(active),
+                left_varmap=unite_varmaps(remaining_varmaps),
+                right_varmap=narrowed_varmap,
+            )
+
     def evaluate_literal(self, node: ast.expr) -> Optional[KnownValue]:
         if isinstance(node, ast.NameConstant):
             return KnownValue(node.value)
@@ -455,17 +524,9 @@ class EvaluateVisitor(ast.NodeVisitor):
             if not self.validation_mode:
                 self.add_invalid("Evaluator failed to return", node)
             return AnyValue(AnySource.error)
-        elif isinstance(ret, AnyCombinedReturn):
-            left = self._evaluate_ret(ret.left, node)
-            right = self._evaluate_ret(ret.right, node)
-            if left == right:
-                return left
-            else:
-                return AnyValue(AnySource.multiple_overload_matches)
-        elif isinstance(ret, UnionCombinedReturn):
-            left = self._evaluate_ret(ret.left, node)
-            right = self._evaluate_ret(ret.right, node)
-            return unite_values(left, right)
+        elif isinstance(ret, CombinedReturn):
+            children = [self._evaluate_ret(child, node) for child in ret.children]
+            return unite_values(*children)
         else:
             return ret
 
@@ -489,11 +550,21 @@ class EvaluateVisitor(ast.NodeVisitor):
         return self.visit_block(node.body)
 
     def visit_block(self, statements: Sequence[ast.stmt]) -> EvalReturn:
+        possible_returns = []
         for stmt in statements:
             result = self.visit(stmt)
-            if not may_be_none(result) and not self.validation_mode:
-                return result
-        return None
+            if result is None:
+                continue
+            if isinstance(result, Value):
+                return CombinedReturn.make(*possible_returns, result)
+            else:
+                if all(res is not None for res in result.children):
+                    return CombinedReturn.make(*possible_returns, *result.children)
+                else:
+                    possible_returns += [
+                        res for res in result.children if res is not None
+                    ]
+        return CombinedReturn.make(*possible_returns, None)
 
     def visit_Pass(self, node: ast.Pass) -> EvalReturn:
         return None
@@ -568,7 +639,7 @@ class EvaluateVisitor(ast.NodeVisitor):
             right_result = None
         if condition.left_varmap is not None:
             if condition.right_varmap is not None:
-                return UnionCombinedReturn(left_result, right_result)
+                return CombinedReturn.make(left_result, right_result)
             else:
                 return left_result
         else:
@@ -640,3 +711,13 @@ def can_assign_maybe_exclude_any(
             return left.can_assign(right, ctx)
     else:
         return left.can_assign(right, ctx)
+
+
+def unite_varmaps(varmaps: Sequence[VarMap]) -> Optional[VarMap]:
+    if not varmaps:
+        return None
+    keys = set.intersection(*[set(m) for m in varmaps])
+    return {
+        key: unite_values(*[varmap.get(key, NO_RETURN_VALUE) for varmap in varmaps])
+        for key in keys
+    }

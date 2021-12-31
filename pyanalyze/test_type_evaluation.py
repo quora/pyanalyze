@@ -178,6 +178,54 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
             assert_is_value(only_one(2), TypedValue(str))  # E: incompatible_call
 
 
+class TestBoolOp(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_and(self):
+        from pyanalyze.extensions import evaluated
+        from typing_extensions import Literal
+
+        @evaluated
+        def use_and(a: int, b: str):
+            if a == 1 and b == "x":
+                return str
+            return int
+
+        def use_and(a: int, b: str) -> object:
+            raise NotImplementedError
+
+        def capybara(
+            a: int, b: str, maybe_a: Literal[1, 2], maybe_b: Literal["x", "y"]
+        ) -> None:
+            assert_is_value(use_and(1, "x"), TypedValue(str))
+            assert_is_value(use_and(a, b), TypedValue(int))
+            assert_is_value(
+                use_and(maybe_a, maybe_b), TypedValue(str) | TypedValue(int)
+            )
+
+    @assert_passes()
+    def test_or(self):
+        from pyanalyze.extensions import evaluated
+        from typing_extensions import Literal
+
+        @evaluated
+        def use_or(b: str):
+            if b == "x" or b == "y":
+                return str
+            return int
+
+        def use_or(b: str) -> object:
+            raise NotImplementedError
+
+        def capybara(
+            b: str, x_or_y: Literal["x", "y"], x_or_z: Literal["x", "z"]
+        ) -> None:
+            assert_is_value(use_or("x"), TypedValue(str))
+            assert_is_value(use_or("y"), TypedValue(str))
+            assert_is_value(use_or(b), TypedValue(int))
+            assert_is_value(use_or(x_or_y), TypedValue(str))
+            assert_is_value(use_or(x_or_z), TypedValue(str) | TypedValue(int))
+
+
 class TestValidation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_bad(self):
