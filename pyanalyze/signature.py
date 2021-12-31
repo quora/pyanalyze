@@ -37,6 +37,8 @@ from .value import (
     MultiValuedValue,
     NoReturnConstraintExtension,
     NoReturnGuardExtension,
+    ParamSpecArgsValue,
+    ParamSpecKwargsValue,
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
@@ -730,13 +732,32 @@ class Signature:
                     AnyValue(AnySource.ellipsis_callable)
                 )
             elif param.kind is ParameterKind.PARAM_SPEC:
-                param_spec_consumed = True
-                if actual_args.param_spec is None:
+                if actual_args.param_spec is not None:
+                    bound_args[param.name] = KWARGS, Composite(actual_args.param_spec)
+                    param_spec_consumed = True
+                elif (
+                    actual_args.star_args is not None
+                    and actual_args.star_kwargs is not None
+                    and not star_args_consumed
+                    and not star_kwargs_consumed
+                    and isinstance(actual_args.star_args, ParamSpecArgsValue)
+                    and isinstance(actual_args.star_kwargs, ParamSpecKwargsValue)
+                    and actual_args.star_args.param_spec
+                    is actual_args.star_kwargs.param_spec
+                ):
+                    star_kwargs_consumed = True
+                    star_args_consumed = True
+                    composite = Composite(
+                        TypeVarValue(
+                            actual_args.star_kwargs.param_spec, is_paramspec=True
+                        )
+                    )
+                    bound_args[param.name] = KWARGS, composite
+                else:
                     self.show_call_error(
                         "Callable requires a ParamSpec argument", node, visitor
                     )
                     return None
-                bound_args[param.name] = KWARGS, Composite(actual_args.param_spec)
             else:
                 assert False, f"unhandled param {param.kind}"
 

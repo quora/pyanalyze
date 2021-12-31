@@ -154,7 +154,7 @@ as a keyword argument.
 
 Parameters in Python can be provided in three ways,
 which we call _argument kinds_ for the purpose of this
-specificatioon:
+specification:
 
 - `POSITIONAL`: at the call site, either a single
   positional argument or a variadic one (`*args`)
