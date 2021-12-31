@@ -157,3 +157,51 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
             restrict_kind(*stuff, **stuff)
             restrict_kind(**stuff)  # E: incompatible_call
             restrict_kind(*stuff)  # E: incompatible_call
+
+
+class TestValidation(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_bad(self):
+        from pyanalyze.extensions import evaluated
+
+        @evaluated
+        def bad_evaluator(a: int):
+            if is_of_type(a, Literal[1]):  # E: undefined_name
+                print("hello")  # E: bad_evaluator
+            if is_of_type():  # E: bad_evaluator
+                return  # E: bad_evaluator
+            if is_of_type(b, int):  # E: bad_evaluator
+                return None
+            if is_of_type(a, int, exclude_any=None):  # E: bad_evaluator
+                return None
+            if is_of_type(a, int, exclude_any=bool(a)):  # E: bad_evaluator
+                return None
+            if is_of_type(a, int, bad_kwarg=True):  # E: bad_evaluator
+                return None
+            if not_a_function():  # E: bad_evaluator
+                return None
+            if ~is_provided(a):  # E: bad_evaluator
+                return None
+            if a == 1 == a:  # E: bad_evaluator
+                return None
+            if a > 1:  # E: bad_evaluator
+                return None
+            if a == len("x"):  # E: bad_evaluator
+                return None
+
+            if is_provided("x"):  # E: bad_evaluator
+                return None
+
+            if is_provided(b):  # E: bad_evaluator
+                show_error()  # E: bad_evaluator
+                show_error(1)  # E: bad_evaluator
+                show_error("message", argument=b)  # E: bad_evaluator
+                show_error("message", arg=a)  # E: bad_evaluator
+                show_error("message", argument=a)
+
+            if (is_provided,)[0](a):  # E: bad_evaluator
+                return None
+            return None
+
+        def bad_evaluator(a: int) -> None:
+            pass

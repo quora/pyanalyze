@@ -90,6 +90,7 @@ class ErrorCode(enum.Enum):
     incompatible_override = 73
     impossible_pattern = 74
     bad_match = 75
+    bad_evaluator = 76
 
 
 # Allow testing unannotated functions without too much fuss
@@ -206,6 +207,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.incompatible_override: "Class attribute incompatible with base class",
     ErrorCode.impossible_pattern: "Pattern can never match",
     ErrorCode.bad_match: "Invalid type in match statement",
+    ErrorCode.bad_evaluator: "Invalid code in type evaluator",
 }
 
 

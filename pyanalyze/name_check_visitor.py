@@ -56,6 +56,7 @@ import qcore
 
 from . import attributes, format_strings, node_visitor, importer, method_return_type
 from .annotations import (
+    EvaluatorValidationContext,
     is_instance_of_typing_name,
     type_from_runtime,
     type_from_value,
@@ -174,6 +175,7 @@ from .value import (
     concrete_values_from_iterable,
     unpack_values,
 )
+from pyanalyze import annotations, type_evaluation
 
 try:
     from ast import NamedExpr
@@ -1725,7 +1727,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return FunctionResult(parameters=params)
 
         if function_info.is_evaluated:
-            # TODO validate the evaluation function
+            if self._is_collecting():
+                return FunctionResult(parameters=params)
+            with self.scopes.allow_only_module_scope():
+                ctx = EvaluatorValidationContext(
+                    variables={param.name: param.annotation for param in params},
+                    positions={param.name: type_evaluation.DEFAULT for param in params},
+                    can_assign_context=self,
+                    node=node,
+                )
+                for error in type_evaluation.validate(node, ctx):
+                    self.show_error(
+                        error.node, error.message, error_code=ErrorCode.bad_evaluator
+                    )
             return FunctionResult(parameters=params)
 
         # We pass in the node to add_scope() and visit the body once in collecting

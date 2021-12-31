@@ -1298,13 +1298,23 @@ class StackedScopes:
             self.scopes.pop()
 
     @contextlib.contextmanager
-    def ignore_topmost_scope(self) -> Iterable[None]:
+    def ignore_topmost_scope(self) -> Iterator[None]:
         """Context manager that temporarily ignores the topmost scope."""
         scope = self.scopes.pop()
         try:
             yield
         finally:
             self.scopes.append(scope)
+
+    @contextlib.contextmanager
+    def allow_only_module_scope(self) -> Iterator[None]:
+        """Context manager that allows only lookups in the module and builtin scopes."""
+        rest = self.scopes[2:]
+        del self.scopes[2:]
+        try:
+            yield
+        finally:
+            self.scopes += rest
 
     def get(self, varname: Varname, node: Node, state: VisitorState) -> Value:
         """Gets a variable of the given name from the current scope stack.

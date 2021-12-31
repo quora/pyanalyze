@@ -401,7 +401,7 @@ class ConditionEvaluator(ast.NodeVisitor):
             ret = self.visit(node.operand)
             return ret.reverse()
         else:
-            return self.return_invalid("Unsupported unary operation", node.op)
+            return self.return_invalid("Unsupported unary operation", node)
 
     def visit_Compare(self, node: ast.Compare) -> ConditionReturn:
         if len(node.ops) != 1:
@@ -417,7 +417,7 @@ class ConditionEvaluator(ast.NodeVisitor):
                 return ret.reverse()
             return ret
         else:
-            return self.return_invalid("Unsupported comparison operator", op)
+            return self.return_invalid("Unsupported comparison operator", node)
 
     def evaluate_literal(self, node: ast.expr) -> Optional[KnownValue]:
         if isinstance(node, ast.NameConstant):
@@ -443,6 +443,7 @@ class EvaluateVisitor(ast.NodeVisitor):
     ctx: Context
     errors: List[EvaluateError] = field(default_factory=list)
     active_conditions: List[Condition] = field(default_factory=list)
+    validation_mode: bool = False
 
     def run(self, node: ast.AST) -> Value:
         ret = self.visit(node)
@@ -451,7 +452,8 @@ class EvaluateVisitor(ast.NodeVisitor):
     def _evaluate_ret(self, ret: EvalReturn, node: ast.AST) -> Value:
         if ret is None:
             # TODO return the func's return annotation instead
-            self.add_invalid("Evaluator failed to return", node)
+            if not self.validation_mode:
+                self.add_invalid("Evaluator failed to return", node)
             return AnyValue(AnySource.error)
         elif isinstance(ret, AnyCombinedReturn):
             left = self._evaluate_ret(ret.left, node)
@@ -489,7 +491,7 @@ class EvaluateVisitor(ast.NodeVisitor):
     def visit_block(self, statements: Sequence[ast.stmt]) -> EvalReturn:
         for stmt in statements:
             result = self.visit(stmt)
-            if not may_be_none(result):
+            if not may_be_none(result) and not self.validation_mode:
                 return result
         return None
 
@@ -542,8 +544,13 @@ class EvaluateVisitor(ast.NodeVisitor):
         return None
 
     def visit_If(self, node: ast.If) -> EvalReturn:
-        visitor = ConditionEvaluator(self.ctx)
+        visitor = ConditionEvaluator(self.ctx, self.validation_mode)
         condition = visitor.visit(node.test)
+        self.errors += visitor.errors
+        if self.validation_mode:
+            self.visit_block(node.body)
+            self.visit_block(node.orelse)
+            return None
         if condition.left_varmap is not None:
             with self.ctx.narrow_variables(
                 condition.left_varmap
@@ -590,6 +597,12 @@ def get_evaluator(func: Callable[..., Any]) -> Optional[Evaluator]:
     if not isinstance(evaluator, ast.FunctionDef):
         return None
     return Evaluator(evaluation_func, evaluator, evaluation_func.__globals__)
+
+
+def validate(node: ast.AST, ctx: Context) -> List[InvalidEvaluation]:
+    visitor = EvaluateVisitor(ctx, validation_mode=True)
+    visitor.run(node)
+    return [error for error in visitor.errors if isinstance(error, InvalidEvaluation)]
 
 
 def decompose_union(
