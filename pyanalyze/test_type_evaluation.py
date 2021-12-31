@@ -158,6 +158,25 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
             restrict_kind(**stuff)  # E: incompatible_call
             restrict_kind(*stuff)  # E: incompatible_call
 
+    @assert_passes()
+    def test_pass(self):
+        from pyanalyze.extensions import evaluated
+
+        @evaluated
+        def only_one(a: int):
+            if a == 1:
+                pass
+            else:
+                show_error("a must be 1", argument=a)
+            return str
+
+        def only_one(a: int) -> str:
+            raise NotImplementedError
+
+        def capybara():
+            assert_is_value(only_one(1), TypedValue(str))
+            assert_is_value(only_one(2), TypedValue(str))  # E: incompatible_call
+
 
 class TestValidation(TestNameCheckVisitorBase):
     @assert_passes()

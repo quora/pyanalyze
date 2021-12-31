@@ -92,6 +92,7 @@ The only supported features are:
 
 - `if` statements and `else` blocks. These can only contain conditions of the form specified below.
 - `return` statements with return values that are interpretable as type annotations. This indicates the type that the function returns in a particular condition.
+- `pass` statements, which do nothing.
 - Calls to `show_error()`, which cause the type checker
   to emit an error. These are discussed further below.
 

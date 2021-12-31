@@ -495,6 +495,9 @@ class EvaluateVisitor(ast.NodeVisitor):
                 return result
         return None
 
+    def visit_Pass(self, node: ast.Pass) -> EvalReturn:
+        return None
+
     def visit_Return(self, node: ast.Return) -> EvalReturn:
         if node.value is None:
             self.add_invalid("return statement must have a value", node)
