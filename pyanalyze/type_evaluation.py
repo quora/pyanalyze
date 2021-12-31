@@ -392,8 +392,13 @@ class ConditionEvaluator(ast.NodeVisitor):
                             "exclude_any argument must be a literal bool", keyword.value
                         )
                 else:
+                    # Before 3.9 keyword nodes don't have a lineno
+                    if sys.version_info >= (3, 9):
+                        error_node = keyword
+                    else:
+                        error_node = node
                     return self.return_invalid(
-                        "Invalid keyword argument to is_of_type()", keyword
+                        "Invalid keyword argument to is_of_type()", error_node
                     )
             return self.visit_is_of_type(
                 varname_node, typ, "matches", exclude_any=exclude_any
