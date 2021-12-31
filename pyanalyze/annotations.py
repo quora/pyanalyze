@@ -59,7 +59,7 @@ from .extensions import (
     TypeGuard,
 )
 from .find_unused import used
-from .signature import SigParameter, Signature, ParameterKind
+from .signature import ELLIPSIS_PARAM, SigParameter, Signature, ParameterKind
 from .safe import is_typing_name, is_instance_of_typing_name
 from . import type_evaluation
 from .value import (
@@ -391,7 +391,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         args = typing_inspect.get_args(val)
         return _value_of_origin_args(Callable, args, val, ctx)
     elif val is AsynqCallable:
-        return CallableValue(Signature.make([], is_ellipsis_args=True, is_asynq=True))
+        return CallableValue(Signature.make([ELLIPSIS_PARAM], is_asynq=True))
     elif isinstance(val, type):
         return _maybe_typed_value(val)
     elif val is None:
@@ -467,14 +467,9 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             [TypeGuardExtension(_type_from_runtime(val.__type__, ctx))],
         )
     elif isinstance(val, AsynqCallable):
-        params, is_ellipsis_args = _callable_args_from_runtime(
-            val.args, "AsynqCallable", ctx
-        )
+        params = _callable_args_from_runtime(val.args, "AsynqCallable", ctx)
         sig = Signature.make(
-            params,
-            _type_from_runtime(val.return_type, ctx),
-            is_asynq=True,
-            is_ellipsis_args=is_ellipsis_args,
+            params, _type_from_runtime(val.return_type, ctx), is_asynq=True
         )
         return CallableValue(sig)
     elif isinstance(val, ExternalType):
@@ -506,14 +501,14 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
 
 def _callable_args_from_runtime(
     arg_types: Any, label: str, ctx: Context
-) -> Tuple[Sequence[SigParameter], bool]:
+) -> Sequence[SigParameter]:
     if arg_types is Ellipsis or arg_types == [Ellipsis]:
-        return [], True
+        return [ELLIPSIS_PARAM]
     elif type(arg_types) in (tuple, list):
         if len(arg_types) == 1:
             (arg,) = arg_types
             if arg is Ellipsis:
-                return [], True
+                return [ELLIPSIS_PARAM]
             elif is_typing_name(getattr(arg, "__origin__", None), "Concatenate"):
                 return _args_from_concatenate(arg, ctx)
             elif is_instance_of_typing_name(arg, "ParamSpec"):
@@ -521,7 +516,7 @@ def _callable_args_from_runtime(
                 param = SigParameter(
                     "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
                 )
-                return [param], False
+                return [param]
         types = [_type_from_runtime(arg, ctx) for arg in arg_types]
         params = [
             SigParameter(
@@ -533,23 +528,21 @@ def _callable_args_from_runtime(
             )
             for i, typ in enumerate(types)
         ]
-        return params, False
+        return params
     elif is_instance_of_typing_name(arg_types, "ParamSpec"):
         param_spec = TypeVarValue(arg_types, is_paramspec=True)
         param = SigParameter(
             "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
         )
-        return [param], False
+        return [param]
     elif is_typing_name(getattr(arg_types, "__origin__", None), "Concatenate"):
         return _args_from_concatenate(arg_types, ctx)
     else:
         ctx.show_error(f"Invalid arguments to {label}: {arg_types!r}")
-        return [], True
+        return [ELLIPSIS_PARAM]
 
 
-def _args_from_concatenate(
-    concatenate: Any, ctx: Context
-) -> Tuple[Sequence[SigParameter], bool]:
+def _args_from_concatenate(concatenate: Any, ctx: Context) -> Sequence[SigParameter]:
     types = [_type_from_runtime(arg, ctx) for arg in concatenate.__args__]
     params = [
         SigParameter(
@@ -561,7 +554,7 @@ def _args_from_concatenate(
         )
         for i, annotation in enumerate(types)
     ]
-    return params, False
+    return params
 
 
 def _get_typeddict_value(
@@ -987,14 +980,8 @@ def _value_of_origin_args(
         *arg_types, return_type = args
         if len(arg_types) == 1 and isinstance(arg_types[0], list):
             arg_types = arg_types[0]
-        params, is_ellipsis_args = _callable_args_from_runtime(
-            arg_types, "Callable", ctx
-        )
-        sig = Signature.make(
-            params,
-            _type_from_runtime(return_type, ctx),
-            is_ellipsis_args=is_ellipsis_args,
-        )
+        params = _callable_args_from_runtime(arg_types, "Callable", ctx)
+        sig = Signature.make(params, _type_from_runtime(return_type, ctx))
         return CallableValue(sig)
     elif is_typing_name(origin, "Annotated"):
         origin, metadata = args
@@ -1077,10 +1064,7 @@ def _make_callable_from_value(
     if args == KnownValue(Ellipsis):
         return CallableValue(
             Signature.make(
-                [],
-                return_annotation=return_annotation,
-                is_ellipsis_args=True,
-                is_asynq=is_asynq,
+                [ELLIPSIS_PARAM], return_annotation=return_annotation, is_asynq=is_asynq
             )
         )
     elif isinstance(args, SequenceIncompleteValue):

@@ -338,6 +338,8 @@ class AnySource(enum.Enum):
     """A special form like ClassVar without a type argument."""
     multiple_overload_matches = 12
     """Multiple matching overloads."""
+    ellipsis_callable = 13
+    """Callable using an ellipsis."""
 
 
 @dataclass(frozen=True)
