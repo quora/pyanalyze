@@ -1,5 +1,5 @@
 # static analysis: ignore
-from .value import TypedValue, assert_is_value
+from .value import KnownValue, TypedValue, assert_is_value
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .extensions import is_keyword, is_positional, is_provided, is_of_type, show_error
@@ -202,6 +202,47 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
             assert_is_value(want_enum(Color.magenta), TypedValue(str))
             assert_is_value(want_enum(Color.cyan), TypedValue(int))
             assert_is_value(want_enum(c), TypedValue(bool))
+
+    @assert_passes()
+    def test_platform(self):
+        from pyanalyze.extensions import evaluated
+        import sys
+        from typing_extensions import Literal
+
+        @evaluated
+        def where_am_i():
+            if sys.platform == "darwin":
+                return Literal["On a Mac"]
+            else:
+                return Literal["Somewhere else"]
+
+        def where_am_i():
+            raise NotImplementedError
+
+        expected = "On a Mac" if sys.platform == "darwin" else "Somewhere else"
+
+        def capybara():
+            assert_is_value(where_am_i(), KnownValue(expected))
+
+    @assert_passes()
+    def test_version(self):
+        from pyanalyze.extensions import evaluated
+        import sys
+        from typing_extensions import Literal
+
+        @evaluated
+        def is_walrus_available():
+            if sys.version_info >= (3, 8):
+                return Literal[True]
+            return Literal[False]
+
+        def is_walrus_available():
+            return sys.version_info >= (3, 8)
+
+        expected = is_walrus_available()
+
+        def capybara():
+            assert_is_value(is_walrus_available(), KnownValue(expected))
 
 
 class TestBoolOp(TestNameCheckVisitorBase):

@@ -60,7 +60,7 @@ from .extensions import (
 )
 from .find_unused import used
 from .signature import SigParameter, Signature, ParameterKind
-from .safe import is_typing_name, is_instance_of_typing_name
+from .safe import all_of_type, is_typing_name, is_instance_of_typing_name
 from . import type_evaluation
 from .value import (
     AnnotatedValue,
@@ -848,6 +848,13 @@ class _Visitor(ast.NodeVisitor):
 
     def visit_Num(self, node: ast.Num) -> Value:
         return KnownValue(node.n)
+
+    def visit_Tuple(self, node: ast.Tuple) -> Optional[Value]:
+        elts = [self.visit(elt) for elt in node.elts]
+        if all_of_type(elts, KnownValue):
+            return KnownValue(tuple(elt.val for elt in elts))
+        self.ctx.show_error("Tuple may only contain literals", node=node)
+        return None
 
     def visit_Str(self, node: ast.Str) -> Value:
         return KnownValue(node.s)

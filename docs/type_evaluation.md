@@ -545,7 +545,6 @@ in pyanalyze:
 
 Currently unsupported features include:
 
-- Version and platform checks
 - Usage in stubs
 - pyanalyze should provide a way to register
   an evaluation function for a runtime function,

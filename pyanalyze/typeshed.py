@@ -82,7 +82,10 @@ class _AnnotationContext(Context):
     module: str
 
     def show_error(
-        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        node: Optional[ast.AST] = None,
     ) -> None:
         self.finder.log(message, ())
 

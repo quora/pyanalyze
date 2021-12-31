@@ -9,7 +9,9 @@ from contextlib import contextmanager
 import contextlib
 from dataclasses import dataclass, field
 import inspect
+import operator
 import qcore
+import sys
 import textwrap
 from typing_extensions import Literal
 from typing import (
@@ -19,6 +21,7 @@ from typing import (
     Iterator,
     List,
     Mapping,
+    NoReturn,
     Optional,
     Sequence,
     Tuple,
@@ -103,9 +106,47 @@ class ArgumentKindCondition(Condition):
 
 
 @dataclass
+class PlatformCondition(Condition):
+    actual: str
+    op: Type[ast.cmpop]
+    expected: object
+
+    def display(self, negated: bool = False) -> CanAssignError:
+        if negated:
+            op = _OP_TO_DATA[self.op].negation
+        else:
+            op = self.op
+        text = _OP_TO_DATA[op].text
+        return CanAssignError(f"Platform ({self.actual}) {text} {self.expected}")
+
+
+@dataclass
+class VersionCondition(Condition):
+    actual: Tuple[int, ...]
+    op: Type[ast.cmpop]
+    expected: object
+
+    def _display_version(self, version: object) -> str:
+        if isinstance(version, tuple):
+            return ".".join(map(str, version))
+        return str(version)
+
+    def display(self, negated: bool = False) -> CanAssignError:
+        if negated:
+            op = _OP_TO_DATA[self.op].negation
+        else:
+            op = self.op
+        text = _OP_TO_DATA[op].text
+        return CanAssignError(
+            f"Platform ({self._display_version(self.actual)})"
+            f" {text} {self._display_version(self.expected)}"
+        )
+
+
+@dataclass
 class IsOfTypeCondition(Condition):
     arg: str
-    op: Type[ast.cmpop]
+    op: "_Operator"
     original_arg_type: Value
     remaining_type: Value
     expected_type: Value
@@ -159,20 +200,33 @@ def subtract_unions(left: Value, right: Value) -> Value:
     return unite_values(*remaining)
 
 
+_Operator = Union[Type[ast.cmpop], Literal["matches", "does not match"]]
+
+
 @dataclass
 class _Comparator:
     text: str
-    negation: Type[ast.cmpop]
+    negation: _Operator
+    impl: Callable[[Any, Any], object]
 
 
-_OP_TO_DATA: Dict[Type[ast.cmpop], _Comparator] = {
-    ast.Is: _Comparator("is", ast.IsNot),
-    ast.IsNot: _Comparator("is not", ast.Is),
-    ast.Eq: _Comparator("==", ast.Eq),
-    ast.NotEq: _Comparator("!=", ast.NotEq),
-    # We use this to emulate the is_of_type() call for simplicity
-    ast.LtE: _Comparator("matches", ast.Gt),
-    ast.Gt: _Comparator("does not match", ast.LtE),
+def _dummy_impl(left: object, right: object) -> NoReturn:
+    raise NotImplementedError
+
+
+_OP_TO_DATA: Dict[_Operator, _Comparator] = {
+    ast.Is: _Comparator("is", ast.IsNot, operator.is_),
+    ast.IsNot: _Comparator("is not", ast.Is, operator.is_not),
+    ast.Eq: _Comparator("==", ast.Eq, operator.eq),
+    ast.NotEq: _Comparator("!=", ast.NotEq, operator.ne),
+    ast.Gt: _Comparator(">", ast.LtE, operator.gt),
+    ast.LtE: _Comparator("<=", ast.Gt, operator.le),
+    ast.Lt: _Comparator("<", ast.GtE, operator.lt),
+    ast.GtE: _Comparator(">=", ast.Lt, operator.ge),
+    ast.In: _Comparator("in", ast.NotIn, lambda a, b: a in b),
+    ast.NotIn: _Comparator("not in", ast.In, lambda a, b: a not in b),
+    "matches": _Comparator("matches", "matches", _dummy_impl),
+    "does not match": _Comparator("does not match", "matches", _dummy_impl),
 }
 
 
@@ -341,7 +395,7 @@ class ConditionEvaluator(ast.NodeVisitor):
                         "Invalid keyword argument to is_of_type()", keyword
                     )
             return self.visit_is_of_type(
-                varname_node, typ, ast.LtE, exclude_any=exclude_any
+                varname_node, typ, "matches", exclude_any=exclude_any
             )
         else:
             return self.return_invalid(f"Invalid function {name}", node.func)
@@ -350,7 +404,7 @@ class ConditionEvaluator(ast.NodeVisitor):
         self,
         varname_node: ast.AST,
         typ: Value,
-        op: Type[ast.cmpop],
+        op: _Operator,
         *,
         exclude_any: bool = True,
     ) -> ConditionReturn:
@@ -406,16 +460,51 @@ class ConditionEvaluator(ast.NodeVisitor):
             return self.return_invalid("Chained comparison is unsupported", node)
         op = node.ops[0]
         right = node.comparators[0]
-        if isinstance(op, (ast.Is, ast.IsNot, ast.Eq, ast.NotEq)):
-            operand = self.evaluate_literal(right)
-            if operand is None:
-                return ConditionReturn(NullCondition())
-            ret = self.visit_is_of_type(node.left, operand, type(op))
+        right_operand = self.evaluate_literal(right)
+        if right_operand is None:
+            return ConditionReturn(NullCondition())
+        if isinstance(node.left, ast.Name) and isinstance(
+            op, (ast.Is, ast.IsNot, ast.Eq, ast.NotEq)
+        ):
+            ret = self.visit_is_of_type(node.left, right_operand, type(op))
             if isinstance(op, (ast.NotEq, ast.IsNot)):
                 return ret.reverse()
             return ret
-        else:
-            return self.return_invalid("Unsupported comparison operator", node)
+
+        if isinstance(node.left, ast.Attribute):
+            mod = self.evaluate_literal(node.left.value)
+            if mod == KnownValue(sys):
+                if node.left.attr == "platform":
+                    left_operand = sys.platform
+                elif node.left.attr == "version_info":
+                    left_operand = sys.version_info
+                else:
+                    return self.return_invalid(
+                        "Only comparisons on sys.platform and sys.version_info are"
+                        " suppoorted",
+                        node.left,
+                    )
+                data = _OP_TO_DATA[type(op)]
+                try:
+                    result = data.impl(left_operand, right_operand.val)
+                except Exception:
+                    return self.return_invalid(
+                        f"Invalid sys.{node.left.attr} comparison", node
+                    )
+                if node.left.attr == "platform":
+                    condition = PlatformCondition(
+                        sys.platform, type(op), right_operand.val
+                    )
+                else:
+                    condition = VersionCondition(
+                        sys.version_info[:2], type(op), right_operand.val
+                    )
+                if result:
+                    return ConditionReturn(condition, left_varmap={})
+                else:
+                    return ConditionReturn(condition, right_varmap={})
+
+        return self.return_invalid("Unsupported comparison operator", node)
 
     def visit_BoolOp(self, node: ast.BoolOp) -> ConditionReturn:
         if self.validation_mode:
