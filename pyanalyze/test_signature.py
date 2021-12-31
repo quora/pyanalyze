@@ -956,13 +956,13 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_default(self):
-        from typing import TypeVar, Dict
+        from typing import TypeVar, Dict, Union
 
         KT = TypeVar("KT")
         VT = TypeVar("VT")
         T = TypeVar("T")
 
-        def dictget(d: Dict[KT, VT], key: KT, default: T = None) -> VT | T:
+        def dictget(d: Dict[KT, VT], key: KT, default: T = None) -> Union[VT, T]:
             try:
                 return d[key]
             except KeyError:
