@@ -1365,9 +1365,8 @@ class Signature:
             allow_call=self.allow_call,
         )
 
-    # TODO: do we need these?
     def has_return_value(self) -> bool:
-        return self.has_return_annotation
+        return self.has_return_annotation or self.evaluator is not None
 
 
 ANY_SIGNATURE = Signature.make(

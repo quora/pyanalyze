@@ -209,6 +209,9 @@ class Context:
     def evaluate_type(self, __node: ast.AST) -> Value:
         raise NotImplementedError
 
+    def evaluate_value(self, __node: ast.AST) -> Value:
+        raise NotImplementedError
+
     @contextmanager
     def narrow_variables(self, varmap: Optional[VarMap]) -> Iterator[None]:
         if varmap is None:
@@ -489,15 +492,11 @@ class ConditionEvaluator(ast.NodeVisitor):
             )
 
     def evaluate_literal(self, node: ast.expr) -> Optional[KnownValue]:
-        if isinstance(node, ast.NameConstant):
-            return KnownValue(node.value)
-        elif isinstance(node, ast.Num):
-            return KnownValue(node.n)
-        elif isinstance(node, (ast.Str, ast.Bytes)):
-            return KnownValue(node.s)
-        else:
-            self.errors.append(InvalidEvaluation("Only literals supported", node))
-            return None
+        val = self.ctx.evaluate_value(node)
+        if isinstance(val, KnownValue):
+            return val
+        self.errors.append(InvalidEvaluation("Only literals supported", node))
+        return None
 
     def get_name(self, node: ast.Name) -> Optional[Value]:
         try:

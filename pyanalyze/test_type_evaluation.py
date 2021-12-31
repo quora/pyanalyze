@@ -177,6 +177,32 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
             assert_is_value(only_one(1), TypedValue(str))
             assert_is_value(only_one(2), TypedValue(str))  # E: incompatible_call
 
+    @assert_passes()
+    def test_enum(self):
+        import enum
+        from pyanalyze.extensions import evaluated
+
+        class Color(enum.Enum):
+            magenta = 1
+            cyan = 2
+
+        @evaluated
+        def want_enum(color: Color):
+            if color is Color.magenta:
+                return str
+            elif color is Color.cyan:
+                return int
+            else:
+                return bool
+
+        def want_enum(color: Color):
+            raise NotImplementedError
+
+        def capybara(c: Color):
+            assert_is_value(want_enum(Color.magenta), TypedValue(str))
+            assert_is_value(want_enum(Color.cyan), TypedValue(int))
+            assert_is_value(want_enum(c), TypedValue(bool))
+
 
 class TestBoolOp(TestNameCheckVisitorBase):
     @assert_passes()

@@ -159,6 +159,9 @@ class TypeEvaluationContext(Context, type_evaluation.Context):
     def evaluate_type(self, node: ast.AST) -> Value:
         return type_from_ast(node, ctx=self)
 
+    def evaluate_value(self, node: ast.AST) -> Value:
+        return value_from_ast(node, ctx=self, error_on_unrecognized=False)
+
     def get_name(self, node: ast.Name) -> Value:
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
         return self.get_name_from_globals(node.id, self.globals)
@@ -183,6 +186,9 @@ class EvaluatorValidationContext(Context, type_evaluation.Context):
 
     def evaluate_type(self, node: ast.AST) -> Value:
         return type_from_ast(node, ctx=self)
+
+    def evaluate_value(self, node: ast.AST) -> Value:
+        return value_from_ast(node, ctx=self, error_on_unrecognized=False)
 
     def get_name(self, node: ast.Name) -> Value:
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
@@ -282,10 +288,13 @@ def type_from_value(
     return _type_from_value(value, ctx, is_typeddict=is_typeddict)
 
 
-def value_from_ast(ast_node: ast.AST, ctx: Context) -> Value:
+def value_from_ast(
+    ast_node: ast.AST, ctx: Context, *, error_on_unrecognized: bool = True
+) -> Value:
     val = _Visitor(ctx).visit(ast_node)
     if val is None:
-        ctx.show_error("Invalid type annotation")
+        if error_on_unrecognized:
+            ctx.show_error("Invalid type annotation", node=ast_node)
         return AnyValue(AnySource.error)
     return val
 

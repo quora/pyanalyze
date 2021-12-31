@@ -1667,7 +1667,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return_value = GenericValue(collections.abc.Awaitable, [return_value])
 
         sig = self.signature_from_value(val)
-        if sig is None:
+        if sig is None or sig.has_return_value():
             return
         self._argspec_to_retval[id(sig)] = return_value
 

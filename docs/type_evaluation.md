@@ -545,7 +545,6 @@ in pyanalyze:
 
 Currently unsupported features include:
 
-- Comparison against enum members
 - Version and platform checks
 - Usage in stubs
 - pyanalyze should provide a way to register
