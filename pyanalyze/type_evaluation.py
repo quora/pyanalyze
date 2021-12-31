@@ -712,7 +712,7 @@ class EvaluateVisitor(ast.NodeVisitor):
                     else:
                         error_node = node
                     self.add_invalid(
-                        "Invalid keyword argument to show_error()", keyword
+                        "Invalid keyword argument to show_error()", error_node
                     )
                     return None
             self.errors.append(
