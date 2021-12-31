@@ -327,7 +327,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
             # annotated as def ... -> Future in typeshed
             assert_is_value(
                 asyncio.sleep(3),
-                GenericValue(asyncio.Future, [AnyValue(AnySource.generic_argument)]),
+                GenericValue(asyncio.Future, [AnyValue(AnySource.unannotated)]),
             )
             return 42
 
