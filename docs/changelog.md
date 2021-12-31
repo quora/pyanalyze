@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix compatibility between `Callable` and `Annotated`
+  (#381)
 - Fix inference for nested `async def` functions (#380)
 - Fix usage of type variables in function parameters
   with defaults (#378)

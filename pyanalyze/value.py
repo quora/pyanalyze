@@ -1186,7 +1186,7 @@ class CallableValue(TypedValue):
         return CallableValue(sig, self.typ)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if not isinstance(other, (MultiValuedValue, AnyValue)):
+        if not isinstance(other, (MultiValuedValue, AnyValue, AnnotatedValue)):
             signature = ctx.signature_from_value(other)
             if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
