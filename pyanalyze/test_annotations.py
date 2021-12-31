@@ -1592,3 +1592,35 @@ class TestParamSpec(TestNameCheckVisitorBase):
             assert_is_value(
                 refined(), GenericValue(list, [AnyValue(AnySource.generic_argument)])
             )
+
+
+class TestCallable(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_compatibility(self):
+        from typing import Callable, TypeVar
+
+        T = TypeVar("T")
+
+        def want_callable(c: Callable[[int], T]) -> T:
+            return c(1)
+
+        def string_func(s: str) -> str:
+            return s
+
+        def capybara(unannotated, other):
+            assert_is_value(want_callable(lambda _: 3), KnownValue(3))
+            assert_is_value(
+                want_callable(unannotated), AnyValue(AnySource.generic_argument)
+            )
+            # generates an AnnotatedValue(MultiValuedValue(...))
+            assert_is_value(
+                want_callable(unannotated or other),
+                AnyValue(AnySource.generic_argument),
+            )
+
+            assert_is_value(
+                want_callable(string_func),  # E: incompatible_argument
+                AnyValue(AnySource.error),
+            )
+            want_callable(1)  # E: incompatible_argument
+            want_callable(int(unannotated))  # E: incompatible_argument
