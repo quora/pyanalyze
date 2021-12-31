@@ -7,7 +7,7 @@ calls.
 """
 
 from . import annotations
-from .type_evaluation import Evaluator, decompose_union, evaluate
+from .type_evaluation import Evaluator
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -20,6 +20,7 @@ from .stacked_scopes import (
     AbstractConstraint,
     VarnameWithOrigin,
 )
+from .type_evaluation import ARGS, KWARGS, DEFAULT, UNKNOWN, Position
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -33,6 +34,7 @@ from .value import (
     HasAttrGuardExtension,
     KVPair,
     KnownValue,
+    MultiValuedValue,
     NoReturnConstraintExtension,
     NoReturnGuardExtension,
     ParameterTypeGuardExtension,
@@ -56,6 +58,7 @@ from .value import (
     unannotate_value,
     unify_typevar_maps,
     unite_values,
+    unannotate,
     NO_RETURN_VALUE,
 )
 
@@ -68,7 +71,6 @@ import enum
 import itertools
 from types import MethodType, FunctionType
 import inspect
-import qcore
 from qcore.helpers import safe_str
 from typing import (
     Any,
@@ -93,9 +95,6 @@ if TYPE_CHECKING:
 
 EMPTY = inspect.Parameter.empty
 UNANNOTATED = AnyValue(AnySource.unannotated)
-ARGS = qcore.MarkerObject("*args")
-KWARGS = qcore.MarkerObject("**kwargs")
-DEFAULT = qcore.MarkerObject("default")
 
 
 @dataclass
@@ -108,12 +107,10 @@ class PossibleKwarg:
 # Representation of a single argument to a call. Second member is
 # None for positional args, str for keyword args,
 # ARGS for *args, KWARGS for **kwargs.
-Argument = Tuple[Composite, Union[None, str, Literal[ARGS], Literal[KWARGS]]]
+Argument = Tuple[Composite, Union[None, str, Literal[ARGS, KWARGS]]]
 
-# Arguments bound to a call. The first member of the tuple is a reference back
-# to the ActualArguments: the value is a str for a kwarg, int for a positional,
-# DEFAULT for something filled from the defaults, or None for something we cannot infer.
-BoundArgs = Dict[str, Tuple[Union[None, Literal[DEFAULT], str, int], Composite]]
+# Arguments bound to a call
+BoundArgs = Dict[str, Tuple[Position, Composite]]
 
 
 @dataclass
@@ -546,7 +543,11 @@ class Signature:
                     )
                     positional_index += 1
                 elif actual_args.star_args is not None:
-                    bound_args[param.name] = None, Composite(actual_args.star_args)
+                    if param.default is None:
+                        position = ARGS  # either that or the call fails
+                    else:
+                        position = UNKNOWN  # default or args
+                    bound_args[param.name] = position, Composite(actual_args.star_args)
                     star_args_consumed = True
                 elif param.default is None:
                     self.show_call_error(
@@ -582,15 +583,20 @@ class Signature:
                         )
                         return None
                     star_args_consumed = True
+                    if param.default is None:
+                        position = ARGS
+                    else:
+                        position = UNKNOWN
                     # It may also come from **kwargs
                     if actual_args.star_kwargs is not None:
                         value = unite_values(
                             actual_args.star_args, actual_args.star_kwargs
                         )
                         star_kwargs_consumed = True
+                        position = UNKNOWN  # could be either args or kwargs
                     else:
                         value = actual_args.star_args
-                    bound_args[param.name] = None, Composite(value)
+                    bound_args[param.name] = position, Composite(value)
                 elif param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
                     if not definitely_provided and param.default is None:
@@ -604,7 +610,13 @@ class Signature:
                     bound_args[param.name] = param.name, composite
                     keywords_consumed.add(param.name)
                 elif actual_args.star_kwargs is not None:
-                    bound_args[param.name] = None, Composite(actual_args.star_kwargs)
+                    if param.default is None:
+                        position = KWARGS
+                    else:
+                        position = UNKNOWN
+                    bound_args[param.name] = position, Composite(
+                        actual_args.star_kwargs
+                    )
                     star_kwargs_consumed = True
                 elif param.default is None:
                     self.show_call_error(
@@ -627,7 +639,13 @@ class Signature:
                     bound_args[param.name] = param.name, composite
                     keywords_consumed.add(param.name)
                 elif actual_args.star_kwargs is not None:
-                    bound_args[param.name] = None, Composite(actual_args.star_kwargs)
+                    if param.default is None:
+                        position = KWARGS
+                    else:
+                        position = UNKNOWN
+                    bound_args[param.name] = position, Composite(
+                        actual_args.star_kwargs
+                    )
                     star_kwargs_consumed = True
                     keywords_consumed.add(param.name)
                 elif param.default is None:
@@ -643,12 +661,16 @@ class Signature:
                 while positional_index < len(actual_args.positionals):
                     positionals.append(actual_args.positionals[positional_index].value)
                     positional_index += 1
+                position = ARGS
                 if actual_args.star_args is not None:
                     element_value = unite_values(*positionals, actual_args.star_args)
                     star_args_value = GenericValue(tuple, [element_value])
                 else:
                     star_args_value = SequenceIncompleteValue(tuple, positionals)
-                bound_args[param.name] = None, Composite(star_args_value)
+                    if not positionals:
+                        # no *args were actually provided
+                        position = DEFAULT
+                bound_args[param.name] = position, Composite(star_args_value)
             elif param.kind is ParameterKind.VAR_KEYWORD:
                 star_kwargs_consumed = True
                 items = {}
@@ -659,6 +681,7 @@ class Signature:
                     if key in keywords_consumed:
                         continue
                     items[key] = (definitely_provided, composite.value)
+                position = KWARGS
                 if actual_args.star_kwargs is not None:
                     value_value = unite_values(
                         *(val for _, val in items.values()), actual_args.star_kwargs
@@ -668,7 +691,9 @@ class Signature:
                     )
                 else:
                     star_kwargs_value = TypedDictValue(items)
-                bound_args[param.name] = None, Composite(star_kwargs_value)
+                    if not items:
+                        position = DEFAULT
+                bound_args[param.name] = position, Composite(star_kwargs_value)
             else:
                 assert False, f"unhandled param {param.kind}"
 
@@ -837,23 +862,22 @@ class Signature:
                     param: composite.value
                     for param, (_, composite) in bound_args.items()
                 }
-                set_variables = {
-                    param
-                    for param, (position, _) in bound_args.items()
-                    if position is not DEFAULT
+                positions = {
+                    param: position for param, (position, _) in bound_args.items()
                 }
                 ctx = annotations.TypeEvaluationContext(
-                    varmap, set_variables, visitor, self.evaluator.globals
+                    varmap, positions, visitor, self.evaluator.globals
                 )
-                return_value = evaluate(self.evaluator, ctx)
-                if isinstance(return_value, CanAssignError):
+                return_value, errors = self.evaluator.evaluate(ctx)
+                for error in errors:
+                    error_node = node
+                    if error.argument is not None:
+                        composite = bound_args[error.argument][1]
+                        if composite.node is not None:
+                            error_node = node
                     self.show_call_error(
-                        "Error in type evaluator",
-                        node,
-                        visitor,
-                        detail=str(return_value),
+                        error.message, error_node, visitor, detail=error.get_detail()
                     )
-                    return_value = AnyValue(AnySource.error)
 
         if self.allow_call:
             runtime_return = self._maybe_perform_call(preprocessed, visitor, node)
@@ -1344,9 +1368,8 @@ class Signature:
             allow_call=self.allow_call,
         )
 
-    # TODO: do we need these?
     def has_return_value(self) -> bool:
-        return self.has_return_annotation
+        return self.has_return_annotation or self.evaluator is not None
 
 
 ANY_SIGNATURE = Signature.make(
@@ -1991,3 +2014,30 @@ def can_assign_var_keyword(
             )
         tv_maps.append(tv_map)
     return tv_maps
+
+
+def decompose_union(
+    expected_type: Value, parent_value: Value, ctx: CanAssignContext
+) -> Optional[Tuple[TypeVarMap, bool, Value]]:
+    value = unannotate(parent_value)
+    if isinstance(value, MultiValuedValue):
+        tv_maps = []
+        remaining_values = []
+        union_used_any = False
+        for val in value.vals:
+            can_assign, subval_used_any = can_assign_and_used_any(
+                expected_type, val, ctx
+            )
+            if isinstance(can_assign, CanAssignError):
+                remaining_values.append(val)
+            else:
+                if subval_used_any:
+                    union_used_any = True
+                tv_maps.append(can_assign)
+        if tv_maps:
+            tv_map = unify_typevar_maps(tv_maps)
+            assert (
+                remaining_values
+            ), f"all union members matched between {expected_type} and {parent_value}"
+            return tv_map, union_used_any, unite_values(*remaining_values)
+    return None

@@ -121,7 +121,10 @@ class Context:
         return qcore.override(self, "should_suppress_undefined_names", True)
 
     def show_error(
-        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        node: Optional[ast.AST] = None,
     ) -> None:
         """Show an error found while evaluating an annotation."""
         pass
@@ -149,16 +152,50 @@ class Context:
 @dataclass
 class TypeEvaluationContext(Context, type_evaluation.Context):
     variables: type_evaluation.VarMap
-    set_variables: Container[str]
+    positions: Mapping[str, type_evaluation.Position]
     can_assign_context: CanAssignContext
-    globals: Mapping[str, object]
+    globals: Mapping[str, object] = field(repr=False)
 
     def evaluate_type(self, node: ast.AST) -> Value:
         return type_from_ast(node, ctx=self)
 
+    def evaluate_value(self, node: ast.AST) -> Value:
+        return value_from_ast(node, ctx=self, error_on_unrecognized=False)
+
     def get_name(self, node: ast.Name) -> Value:
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
         return self.get_name_from_globals(node.id, self.globals)
+
+
+@dataclass
+class EvaluatorValidationContext(Context, type_evaluation.Context):
+    variables: type_evaluation.VarMap
+    positions: Mapping[str, type_evaluation.Position]
+    can_assign_context: "NameCheckVisitor"
+    node: ast.AST
+
+    def show_error(
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        node: Optional[ast.AST] = None,
+    ) -> None:
+        self.can_assign_context.show_error(
+            node or self.node, message, error_code=error_code
+        )
+
+    def evaluate_type(self, node: ast.AST) -> Value:
+        return type_from_ast(node, ctx=self)
+
+    def evaluate_value(self, node: ast.AST) -> Value:
+        return value_from_ast(node, ctx=self, error_on_unrecognized=False)
+
+    def get_name(self, node: ast.Name) -> Value:
+        """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
+        val, _ = self.can_assign_context.resolve_name(
+            node, suppress_errors=self.should_suppress_undefined_names
+        )
+        return val
 
 
 @used  # part of an API
@@ -251,10 +288,13 @@ def type_from_value(
     return _type_from_value(value, ctx, is_typeddict=is_typeddict)
 
 
-def value_from_ast(ast_node: ast.AST, ctx: Context) -> Value:
+def value_from_ast(
+    ast_node: ast.AST, ctx: Context, *, error_on_unrecognized: bool = True
+) -> Value:
     val = _Visitor(ctx).visit(ast_node)
     if val is None:
-        ctx.show_error("Invalid type annotation")
+        if error_on_unrecognized:
+            ctx.show_error("Invalid type annotation", node=ast_node)
         return AnyValue(AnySource.error)
     return val
 
@@ -599,7 +639,8 @@ def _type_from_subscripted_value(
         return GenericValue(root.typ, [_type_from_value(elt, ctx) for elt in members])
 
     if not isinstance(root, KnownValue):
-        ctx.show_error(f"Cannot resolve subscripted annotation: {root}")
+        if root != AnyValue(AnySource.error):
+            ctx.show_error(f"Cannot resolve subscripted annotation: {root}")
         return AnyValue(AnySource.error)
     root = root.val
     if root is typing.Union:
@@ -706,10 +747,15 @@ class _DefaultContext(Context):
         self.globals = globals
 
     def show_error(
-        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        node: Optional[ast.AST] = None,
     ) -> None:
-        if self.visitor is not None and self.node is not None:
-            self.visitor.show_error(self.node, message, error_code)
+        if node is None:
+            node = self.node
+        if self.visitor is not None and node is not None:
+            self.visitor.show_error(node, message, error_code)
 
     def get_name(self, node: ast.Name) -> Value:
         if self.visitor is not None:
@@ -727,7 +773,9 @@ class _DefaultContext(Context):
         if self.should_suppress_undefined_names:
             return AnyValue(AnySource.inference)
         self.show_error(
-            f"Undefined name {node.id!r} used in annotation", ErrorCode.undefined_name
+            f"Undefined name {node.id!r} used in annotation",
+            ErrorCode.undefined_name,
+            node=node,
         )
         return AnyValue(AnySource.error)
 
@@ -770,11 +818,11 @@ class _Visitor(ast.NodeVisitor):
                 return KnownValue(getattr(root_value.val, node.attr))
             except AttributeError:
                 self.ctx.show_error(
-                    f"{root_value.val!r} has no attribute {node.attr!r}"
+                    f"{root_value.val!r} has no attribute {node.attr!r}", node=node
                 )
                 return AnyValue(AnySource.error)
         elif not isinstance(root_value, AnyValue):
-            self.ctx.show_error(f"Cannot resolve annotation {root_value}")
+            self.ctx.show_error(f"Cannot resolve annotation {root_value}", node=node)
         return AnyValue(AnySource.error)
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
@@ -861,11 +909,13 @@ class _Visitor(ast.NodeVisitor):
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             if not arg_values:
-                self.ctx.show_error("TypeVar() requires at least one argument")
+                self.ctx.show_error(
+                    "TypeVar() requires at least one argument", node=node
+                )
                 return None
             name_val = arg_values[0]
             if not isinstance(name_val, KnownValue):
-                self.ctx.show_error("TypeVar name must be a literal")
+                self.ctx.show_error("TypeVar name must be a literal", node=node.args[0])
                 return None
             constraints = []
             for arg_value in arg_values[1:]:
@@ -877,7 +927,7 @@ class _Visitor(ast.NodeVisitor):
                 elif name == "bound":
                     bound = _type_from_value(kwarg_value, self.ctx)
                 else:
-                    self.ctx.show_error(f"Unrecognized TypeVar kwarg {name}")
+                    self.ctx.show_error(f"Unrecognized TypeVar kwarg {name}", node=node)
                     return None
             tv = TypeVar(name_val.val)
             return TypeVarValue(tv, bound, tuple(constraints))
@@ -885,14 +935,18 @@ class _Visitor(ast.NodeVisitor):
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             if not arg_values:
-                self.ctx.show_error("ParamSpec() requires at least one argument")
+                self.ctx.show_error(
+                    "ParamSpec() requires at least one argument", node=node
+                )
                 return None
             name_val = arg_values[0]
             if not isinstance(name_val, KnownValue):
-                self.ctx.show_error("ParamSpec name must be a literal")
+                self.ctx.show_error(
+                    "ParamSpec name must be a literal", node=node.args[0]
+                )
                 return None
             for name, _ in kwarg_values:
-                self.ctx.show_error(f"Unrecognized ParamSpec kwarg {name}")
+                self.ctx.show_error(f"Unrecognized ParamSpec kwarg {name}", node=node)
                 return None
             tv = ParamSpec(name_val.val)
             return TypeVarValue(tv, is_paramspec=True)

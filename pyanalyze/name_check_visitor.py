@@ -56,6 +56,7 @@ import qcore
 
 from . import attributes, format_strings, node_visitor, importer, method_return_type
 from .annotations import (
+    EvaluatorValidationContext,
     is_instance_of_typing_name,
     type_from_runtime,
     type_from_value,
@@ -174,6 +175,7 @@ from .value import (
     concrete_values_from_iterable,
     unpack_values,
 )
+from pyanalyze import type_evaluation
 
 try:
     from ast import NamedExpr
@@ -993,6 +995,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._method_cache = {}
         self._statement_types = set()
         self._has_used_any_match = False
+        self._should_exclude_any = False
         self._fill_method_cache()
 
     def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
@@ -1018,6 +1021,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """Context that resets the value used by :meth:`has_used_any_match` and
         :meth:`record_any_match`."""
         return qcore.override(self, "_has_used_any_match", False)
+
+    def set_exclude_any(self) -> ContextManager[None]:
+        """Within this context, `Any` is compatible only with itself."""
+        return qcore.override(self, "_should_exclude_any", True)
+
+    def should_exclude_any(self) -> bool:
+        """Whether Any should be compatible only with itself."""
+        return self._should_exclude_any
 
     # The type for typ should be type, but that leads Cython to reject calls that pass
     # an instance of ABCMeta.
@@ -1560,7 +1571,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             val = compute_value_of_function(info, self)
         else:
             val = KnownValue(potential_function)
-        if not info.is_overload:
+        if not info.is_overload and not info.is_evaluated:
             self._set_name_in_scope(node.name, node, val)
 
         with self.asynq_checker.set_func_name(
@@ -1579,13 +1590,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if (
             not result.has_return
             and not info.is_overload
+            and not info.is_evaluated
+            and not info.is_abstractmethod
             and node.returns is not None
             and info.return_annotation != KnownNone
             and not (
                 isinstance(info.return_annotation, AnnotatedValue)
                 and info.return_annotation.value == KnownNone
             )
-            and not info.is_abstractmethod
         ):
             if info.return_annotation is NO_RETURN_VALUE:
                 self._show_error_if_checking(
@@ -1655,7 +1667,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return_value = GenericValue(collections.abc.Awaitable, [return_value])
 
         sig = self.signature_from_value(val)
-        if sig is None:
+        if sig is None or sig.has_return_value():
             return
         self._argspec_to_retval[id(sig)] = return_value
 
@@ -1712,7 +1724,31 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if is_collecting and not self.scopes.contains_scope_of_type(
             ScopeType.function_scope
         ):
-            return FunctionResult()
+            return FunctionResult(parameters=params)
+
+        if function_info.is_evaluated:
+            if self._is_collecting():
+                return FunctionResult(parameters=params)
+            with self.scopes.allow_only_module_scope():
+                ctx = EvaluatorValidationContext(
+                    variables={param.name: param.annotation for param in params},
+                    positions={param.name: type_evaluation.DEFAULT for param in params},
+                    can_assign_context=self,
+                    node=node,
+                )
+                for error in type_evaluation.validate(node, ctx):
+                    self.show_error(
+                        error.node, error.message, error_code=ErrorCode.bad_evaluator
+                    )
+                if self.annotate:
+                    with self.catch_errors(), self.scopes.add_scope(
+                        ScopeType.function_scope, scope_node=node
+                    ):
+                        if isinstance(node, ast.Lambda):
+                            self.generic_visit(node.body)
+                        else:
+                            self._generic_visit_list(node.body)
+            return FunctionResult(parameters=params)
 
         # We pass in the node to add_scope() and visit the body once in collecting
         # mode if in a nested function, so that constraints on nonlocals in the outer
