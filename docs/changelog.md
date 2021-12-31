@@ -4,6 +4,8 @@
 
 - Fix incorrect inference of `self` argument on
   some nested methods (#382)
+- Fix compatibility between `Callable` and `Annotated`
+  (#381)
 - Fix inference for nested `async def` functions (#380)
 - Fix usage of type variables in function parameters
   with defaults (#378)
