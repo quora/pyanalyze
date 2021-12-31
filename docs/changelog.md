@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix incorrect inference of `self` argument on
+  some nested methods (#382)
 - Fix inference for nested `async def` functions (#380)
 - Fix usage of type variables in function parameters
   with defaults (#378)
