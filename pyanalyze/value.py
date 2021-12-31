@@ -1557,6 +1557,22 @@ class TypeVarValue(Value):
         return str(self.typevar)
 
 
+@dataclass
+class ParamSpecArgsValue(Value):
+    param_spec: ParamSpec
+
+    def __str__(self):
+        return f"{self.param_spec}.args"
+
+
+@dataclass
+class ParamSpecKwargsValue(Value):
+    param_spec: ParamSpec
+
+    def __str__(self):
+        return f"{self.param_spec}.kwargs"
+
+
 class Extension:
     """An extra piece of information about a type that can be stored in
     an :class:`AnnotatedValue`."""

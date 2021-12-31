@@ -75,6 +75,8 @@ from .value import (
     MultiValuedValue,
     NO_RETURN_VALUE,
     NoReturnGuardExtension,
+    ParamSpecArgsValue,
+    ParamSpecKwargsValue,
     ParameterTypeGuardExtension,
     TypeGuardExtension,
     TypedValue,
@@ -425,6 +427,10 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return TypeVarValue(tv, bound=bound, constraints=constraints)
     elif is_instance_of_typing_name(val, "ParamSpec"):
         return TypeVarValue(val, is_paramspec=True)
+    elif is_instance_of_typing_name(val, "ParamSpecArgs"):
+        return ParamSpecArgsValue(val.__origin__)
+    elif is_instance_of_typing_name(val, "ParamSpecKwargs"):
+        return ParamSpecKwargsValue(val.__origin__)
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
     elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):
