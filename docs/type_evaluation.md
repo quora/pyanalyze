@@ -545,16 +545,13 @@ in pyanalyze:
 
 Currently unsupported features include:
 
-- `is_set()` and `is_provided()` as now specified
 - Comparison against enum members
 - Version and platform checks
-- Use of `and` and `or`
 - Usage in stubs
 - pyanalyze should provide a way to register
   an evaluation function for a runtime function,
   to replace some impls.
 - Type compatibility for evaluated functions.
-- Checking evaluation functions for correctness.
 
 Areas that need more thought include:
 
