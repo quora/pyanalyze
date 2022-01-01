@@ -819,12 +819,19 @@ class TypeshedFinder:
     def _make_typeddict(
         self, module: str, info: typeshed_client.NameInfo, bases: Sequence[Value]
     ) -> Value:
+        total = True
+        if isinstance(info.ast, ast.ClassDef):
+            for keyword in info.ast.keywords:
+                if keyword.arg == "total":
+                    val = self._parse_expr(keyword.value, module)
+                    if isinstance(val, KnownValue) and isinstance(val.val, bool):
+                        total = val.val
         attrs = self._get_all_attributes_from_info(info, module)
         fields = [
             self._get_attribute_from_info(info, module, attr, on_class=True)
             for attr in attrs
         ]
-        items = {attr: (True, field) for attr, field in zip(attrs, fields)}
+        items = {attr: (total, field) for attr, field in zip(attrs, fields)}
         return TypedDictValue(items)
 
     def _value_from_info(
