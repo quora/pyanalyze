@@ -54,6 +54,12 @@ class CustomCheck:
         func("x")  # ok
         func(str(some_call()))  # error
 
+    It is also possible to customize checks in the other direction
+    by overriding the ``can_be_assigned()`` method. For example, if
+    the above ``CustomCheck`` overrode the ``can_be_assigned`` method
+    instead, a value of type ``Annotated[str, LiteralOnly()]`` could
+    only be passed to functions that take a ``Literal`` parameter.
+
     A ``CustomCheck`` can also be generic over a ``TypeVar``. To implement support
     for ``TypeVar``, two more methods must be overridden:
 
@@ -64,7 +70,12 @@ class CustomCheck:
 
     """
 
-    def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
+    def can_assign(self, __value: "Value", __ctx: "CanAssignContext") -> "CanAssign":
+        return {}
+
+    def can_be_assigned(
+        self, __value: "Value", __ctx: "CanAssignContext"
+    ) -> "CanAssign":
         return {}
 
     def walk_values(self) -> Iterable["Value"]:

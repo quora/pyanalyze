@@ -95,9 +95,7 @@ class Value:
             if not tv_maps:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
-        elif isinstance(other, AnnotatedValue):
-            return self.can_assign(other.value, ctx)
-        elif isinstance(other, TypeVarValue):
+        elif isinstance(other, (AnnotatedValue, TypeVarValue)):
             return other.can_be_assigned(self, ctx)
         elif (
             isinstance(other, UnboundMethodValue)
@@ -354,6 +352,8 @@ class AnyValue(Value):
         return f"Any[{self.source.name}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(other, (AnnotatedValue, MultiValuedValue)):
+            return super().can_assign(other, ctx)
         return {}  # Always allowed
 
 
@@ -1788,6 +1788,18 @@ class AnnotatedValue(Value):
         tv_maps = [can_assign]
         for custom_check in self.get_metadata_of_type(CustomCheckExtension):
             custom_can_assign = custom_check.custom_check.can_assign(other, ctx)
+            if isinstance(custom_can_assign, CanAssignError):
+                return custom_can_assign
+            tv_maps.append(custom_can_assign)
+        return unify_typevar_maps(tv_maps)
+
+    def can_be_assigned(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        can_assign = other.can_assign(self.value, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return can_assign
+        tv_maps = [can_assign]
+        for custom_check in self.get_metadata_of_type(CustomCheckExtension):
+            custom_can_assign = custom_check.custom_check.can_be_assigned(other, ctx)
             if isinstance(custom_can_assign, CanAssignError):
                 return custom_can_assign
             tv_maps.append(custom_can_assign)
