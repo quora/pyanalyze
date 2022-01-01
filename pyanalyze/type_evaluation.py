@@ -28,6 +28,13 @@ from typing import (
     Union,
 )
 
+from .stacked_scopes import (
+    Constraint,
+    ConstraintType,
+    VarnameWithOrigin,
+    constrain_value,
+    IsAssignablePredicate,
+)
 from .extensions import get_type_evaluation
 from .safe import all_of_type
 from .value import (
@@ -162,8 +169,6 @@ class IsOfTypeCondition(Condition):
         original_arg_type = self.original_arg_type
         remaining_type = self.remaining_type
         matched_type = subtract_unions(original_arg_type, remaining_type)
-        if negated:
-            matched_type, remaining_type = remaining_type, matched_type
 
         if matched_type is NO_RETURN_VALUE:
             text = negative_text
@@ -201,7 +206,7 @@ def subtract_unions(left: Value, right: Value) -> Value:
     return unite_values(*remaining)
 
 
-_Operator = Union[Type[ast.cmpop], Literal["matches", "does not match"]]
+_Operator = Union[Type[ast.cmpop], Literal["is of type", "is not of type"]]
 
 
 @dataclass
@@ -218,16 +223,16 @@ def _dummy_impl(left: object, right: object) -> object:
 _OP_TO_DATA: Dict[_Operator, _Comparator] = {
     ast.Is: _Comparator("is", ast.IsNot, operator.is_),
     ast.IsNot: _Comparator("is not", ast.Is, operator.is_not),
-    ast.Eq: _Comparator("==", ast.Eq, operator.eq),
-    ast.NotEq: _Comparator("!=", ast.NotEq, operator.ne),
+    ast.Eq: _Comparator("==", ast.NotEq, operator.eq),
+    ast.NotEq: _Comparator("!=", ast.Eq, operator.ne),
     ast.Gt: _Comparator(">", ast.LtE, operator.gt),
     ast.LtE: _Comparator("<=", ast.Gt, operator.le),
     ast.Lt: _Comparator("<", ast.GtE, operator.lt),
     ast.GtE: _Comparator(">=", ast.Lt, operator.ge),
     ast.In: _Comparator("in", ast.NotIn, lambda a, b: a in b),
     ast.NotIn: _Comparator("not in", ast.In, lambda a, b: a not in b),
-    "matches": _Comparator("matches", "matches", _dummy_impl),
-    "does not match": _Comparator("does not match", "matches", _dummy_impl),
+    "is of type": _Comparator("is of type", "is not of type", _dummy_impl),
+    "is not of type": _Comparator("is not of type", "is of type", _dummy_impl),
 }
 
 
@@ -401,7 +406,7 @@ class ConditionEvaluator(ast.NodeVisitor):
                         "Invalid keyword argument to is_of_type()", error_node
                     )
             return self.visit_is_of_type(
-                varname_node, typ, "matches", exclude_any=exclude_any
+                varname_node, typ, "is of type", exclude_any=exclude_any
             )
         else:
             return self.return_invalid(f"Invalid function {name}", node.func)
@@ -424,6 +429,17 @@ class ConditionEvaluator(ast.NodeVisitor):
         can_assign = can_assign_maybe_exclude_any(
             typ, val, self.ctx.can_assign_context, exclude_any
         )
+        condition = IsOfTypeCondition(
+            varname_node.id, op, val, NO_RETURN_VALUE, typ, exclude_any=exclude_any
+        )
+        constraint = Constraint(
+            VarnameWithOrigin(""),
+            ConstraintType.predicate,
+            True,
+            IsAssignablePredicate(
+                typ, self.ctx.can_assign_context, positive_only=False
+            ),
+        )
         if isinstance(can_assign, CanAssignError):
             pair = decompose_union(typ, val, self.ctx.can_assign_context, exclude_any)
             if pair is not None:
@@ -437,21 +453,14 @@ class ConditionEvaluator(ast.NodeVisitor):
                         typ,
                         exclude_any=exclude_any,
                     ),
-                    left_varmap={varname_node.id: typ},
+                    left_varmap={varname_node.id: constrain_value(val, constraint)},
                     right_varmap={varname_node.id: remaining},
                 )
-            return ConditionReturn(right_varmap={}, condition=NullCondition())
+            return ConditionReturn(right_varmap={}, condition=NotCondition(condition))
         else:
             return ConditionReturn(
-                left_varmap={varname_node.id: typ},
-                condition=IsOfTypeCondition(
-                    varname_node.id,
-                    op,
-                    val,
-                    NO_RETURN_VALUE,
-                    typ,
-                    exclude_any=exclude_any,
-                ),
+                left_varmap={varname_node.id: constrain_value(val, constraint)},
+                condition=condition,
             )
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> ConditionReturn:
@@ -525,10 +534,10 @@ class ConditionEvaluator(ast.NodeVisitor):
         with stack:
             for operand in node.values:
                 result = self.visit(operand)
+                active.append(result.condition)
                 if is_and:
                     if result.left_varmap is None:
                         # Condition returns False
-                        active.append(NotCondition(result.condition))
                         return ConditionReturn(
                             right_varmap=result.right_varmap,
                             condition=ConditionList(active),
@@ -539,10 +548,8 @@ class ConditionEvaluator(ast.NodeVisitor):
                         stack.enter_context(
                             self.ctx.narrow_variables(result.left_varmap)
                         )
-                        active.append(result.condition)
                     else:
                         # Condition matches partially
-                        active.append(result.condition)
                         narrowed_varmap.update(result.left_varmap)
                         stack.enter_context(
                             self.ctx.narrow_variables(result.left_varmap)
@@ -555,17 +562,14 @@ class ConditionEvaluator(ast.NodeVisitor):
                         stack.enter_context(
                             self.ctx.narrow_variables(result.right_varmap)
                         )
-                        active.append(NotCondition(result.condition))
                     elif result.right_varmap is None:
                         # Condition returns True
-                        active.append(result.condition)
                         return ConditionReturn(
                             left_varmap=result.left_varmap,
                             condition=ConditionList(active),
                         )
                     else:
                         # Condition partially matches
-                        active.append(result.condition)
                         narrowed_varmap.update(result.right_varmap)
                         stack.enter_context(
                             self.ctx.narrow_variables(result.right_varmap)
@@ -676,50 +680,69 @@ class EvaluateVisitor(ast.NodeVisitor):
         return self.ctx.evaluate_type(node.value)
 
     def visit_Expr(self, node: ast.Expr) -> EvalReturn:
-        if (
-            isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Name)
-            and node.value.func.id == "show_error"
-        ):
-            call = node.value
-            if len(call.args) != 1:
-                self.add_invalid(
-                    "show_error() takes exactly one positional argument", call
-                )
-                return None
-            if not isinstance(call.args[0], ast.Str):
-                self.add_invalid(
-                    "show_error() message must be a string literal", call.args[0]
-                )
-                return None
-            message = call.args[0].s
-            argument = None
-            for keyword in call.keywords:
-                if keyword.arg == "argument":
-                    if not isinstance(keyword.value, ast.Name):
-                        self.add_invalid("argument must be a name", keyword.value)
-                        return None
-                    argument = keyword.value.id
-                    if argument not in self.ctx.variables:
-                        self.add_invalid(
-                            f"{argument} is not a valid argument", keyword.value
-                        )
-                        return None
-                else:
-                    # Before 3.9 keyword nodes don't have a lineno
-                    if sys.version_info >= (3, 9):
-                        error_node = keyword
-                    else:
-                        error_node = node
-                    self.add_invalid(
-                        "Invalid keyword argument to show_error()", error_node
-                    )
-                    return None
-            self.errors.append(
-                UserRaisedError(message, list(self.active_conditions), argument)
+        if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
+            name = node.value.func.id
+            if name == "show_error":
+                return self.visit_show_error(node.value)
+            elif name == "reveal_type":
+                return self.visit_reveal_type(node.value)
+        self.add_invalid("Invalid statement", node)
+        return None
+
+    def visit_reveal_type(self, call: ast.Call) -> EvalReturn:
+        if len(call.args) != 1 or call.keywords:
+            self.add_invalid(
+                "reveal_type() takes exactly one positional argument", call
             )
             return None
-        self.add_invalid("Invalid statement", node)
+        arg = call.args[0]
+        if not isinstance(arg, ast.Name):
+            self.add_invalid("reveal_type() argument must be a variable name", arg)
+            return None
+        try:
+            val = self.ctx.variables[arg.id]
+        except KeyError:
+            self.errors.append(InvalidEvaluation(f"Invalid variable {arg.id}", arg))
+            return None
+        message = (
+            f"Type of {arg.id} is {self.ctx.can_assign_context.display_value(val)}"
+        )
+        self.errors.append(UserRaisedError(message, [], argument=arg.id))
+        return None
+
+    def visit_show_error(self, call: ast.Call) -> EvalReturn:
+        if len(call.args) != 1:
+            self.add_invalid("show_error() takes exactly one positional argument", call)
+            return None
+        if not isinstance(call.args[0], ast.Str):
+            self.add_invalid(
+                "show_error() message must be a string literal", call.args[0]
+            )
+            return None
+        message = call.args[0].s
+        argument = None
+        for keyword in call.keywords:
+            if keyword.arg == "argument":
+                if not isinstance(keyword.value, ast.Name):
+                    self.add_invalid("argument must be a name", keyword.value)
+                    return None
+                argument = keyword.value.id
+                if argument not in self.ctx.variables:
+                    self.add_invalid(
+                        f"{argument} is not a valid argument", keyword.value
+                    )
+                    return None
+            else:
+                # Before 3.9 keyword nodes don't have a lineno
+                if sys.version_info >= (3, 9):
+                    error_node = keyword
+                else:
+                    error_node = call
+                self.add_invalid("Invalid keyword argument to show_error()", error_node)
+                return None
+        self.errors.append(
+            UserRaisedError(message, list(self.active_conditions), argument)
+        )
         return None
 
     def visit_If(self, node: ast.If) -> EvalReturn:

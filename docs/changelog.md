@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Small improvements to `ParamSpec` support (#385)
+- Allow `CustomCheck` to customize what values
+  a value can be assigned to (#383)
 - Fix incorrect inference of `self` argument on
   some nested methods (#382)
 - Fix compatibility between `Callable` and `Annotated`
@@ -12,7 +15,7 @@
 - Support the Python 3.10 `match` statement (#376)
 - Support the walrus (`:=`) operator (#375)
 - Initial support for proposed new "type evaluation"
-  mechanism (#374, #379)
+  mechanism (#374, #379, #384)
 - Create command-line options for each config option (#373)
 - Overhaul treatment of function definitions (#372)
   - Support positional-only arguments

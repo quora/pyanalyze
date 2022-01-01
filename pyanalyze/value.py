@@ -247,6 +247,10 @@ class CanAssignContext(Protocol):
         """Whether Any should be compatible only with itself."""
         return False
 
+    def display_value(self, value: Value) -> str:
+        """Provide a pretty, user-readable display of this value."""
+        return str(value)
+
 
 @dataclass(frozen=True)
 class CanAssignError:
@@ -1557,7 +1561,7 @@ class TypeVarValue(Value):
 class ParamSpecArgsValue(Value):
     param_spec: ParamSpec
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.param_spec}.args"
 
 
@@ -1565,7 +1569,7 @@ class ParamSpecArgsValue(Value):
 class ParamSpecKwargsValue(Value):
     param_spec: ParamSpec
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.param_spec}.kwargs"
 
 
@@ -2342,3 +2346,7 @@ def can_assign_and_used_any(
         tv_map = param_typ.can_assign(var_value, ctx)
         used_any = ctx.has_used_any_match()
     return tv_map, used_any
+
+
+def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
+    return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)

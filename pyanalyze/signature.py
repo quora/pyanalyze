@@ -1023,6 +1023,8 @@ class Signature:
         ):
             self.show_call_error("**kwargs provided but not used", ctx)
             return None
+        if not param_spec_consumed and actual_args.param_spec is not None:
+            self.show_call_error("ParamSpec provided but not used", node, visitor)
         return bound_args
 
     def show_call_error(
