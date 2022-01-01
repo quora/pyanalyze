@@ -614,6 +614,8 @@ Currently unsupported features include:
   an evaluation function for a runtime function,
   to replace some impls.
 - Type compatibility for evaluated functions.
+- Implementation of the desired behavior for
+  return annotations
 
 Areas that need more thought include:
 
@@ -625,12 +627,6 @@ Areas that need more thought include:
   ergonomical way to produce a standardized error
   if something is not supported in the current
   version or platform.
-- Guidance on what the return annotation of an
-  evaluation function should be. Most likely,
-  it is treated as the default return type if
-  execution reaches the end of the evaluation
-  function. It can be omitted if the evaluation
-  function always return.
 - Add a `warn()` mechanism to warn on particular
   invocations. This can be useful as a mechanism
   to produce deprecation warnings.
