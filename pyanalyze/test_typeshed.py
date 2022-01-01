@@ -24,6 +24,7 @@ from .arg_spec import ArgSpecCache
 from .test_arg_spec import ClassWithCall
 from .typeshed import TypeshedFinder
 from .value import (
+    SubclassValue,
     TypedDictValue,
     assert_is_value,
     AnySource,
@@ -164,14 +165,37 @@ class TestBundledStubs:
     def test_typeddict(self):
         tsf = TypeshedFinder(verbose=True)
         mod = "_pyanalyze_tests.typeddict"
-        assert tsf.resolve_name(mod, "TD1") == TypedDictValue(
-            {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
+
+        def check(name: str, val: TypedDictValue) -> None:
+            assert tsf.resolve_name(mod, name) == SubclassValue(val, exactly=True)
+
+        check(
+            "TD1",
+            TypedDictValue(
+                {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
+            ),
         )
-        assert tsf.resolve_name(mod, "TD2") == TypedDictValue(
-            {"a": (False, TypedValue(int)), "b": (False, TypedValue(str))}
+        check(
+            "TD2",
+            TypedDictValue(
+                {"a": (False, TypedValue(int)), "b": (False, TypedValue(str))}
+            ),
         )
-        assert tsf.resolve_name(mod, "PEP655") == TypedDictValue(
-            {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
+        check(
+            "PEP655",
+            TypedDictValue(
+                {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
+            ),
+        )
+        check(
+            "Inherited",
+            TypedDictValue(
+                {
+                    "a": (True, TypedValue(int)),
+                    "b": (True, TypedValue(str)),
+                    "c": (True, TypedValue(float)),
+                }
+            ),
         )
 
 

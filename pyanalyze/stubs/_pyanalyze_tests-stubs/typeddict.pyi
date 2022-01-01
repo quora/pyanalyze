@@ -11,3 +11,6 @@ class TD2(TypedDict, total=False):
 class PEP655(TypedDict):
     a: NotRequired[int]
     b: Required[str]
+
+class Inherited(TD1):
+    c: float

@@ -818,15 +818,16 @@ class TypeshedFinder:
         typ = TypedValue(fq_name)
         if bases is not None:
             if any(
-                isinstance(base, KnownValue) and is_typing_name(base.val, "TypedDict")
+                (isinstance(base, KnownValue) and is_typing_name(base.val, "TypedDict"))
+                or isinstance(base, TypedDictValue)
                 for base in bases
             ):
-                return self._make_typeddict(module, info, bases)
+                typ = self._make_typeddict(module, info, bases)
         return SubclassValue(typ, exactly=True)
 
     def _make_typeddict(
         self, module: str, info: typeshed_client.NameInfo, bases: Sequence[Value]
-    ) -> Value:
+    ) -> TypedDictValue:
         total = True
         if isinstance(info.ast, ast.ClassDef):
             for keyword in info.ast.keywords:
@@ -841,10 +842,16 @@ class TypeshedFinder:
             )
             for attr in attrs
         ]
-        items = {
-            attr: self._make_td_value(field, total)
-            for attr, field in zip(attrs, fields)
-        }
+        items = {}
+        for base in bases:
+            if isinstance(base, TypedDictValue):
+                items.update(base.items)
+        items.update(
+            {
+                attr: self._make_td_value(field, total)
+                for attr, field in zip(attrs, fields)
+            }
+        )
         return TypedDictValue(items)
 
     def _make_td_value(self, field: Value, total: bool) -> Tuple[bool, Value]:
