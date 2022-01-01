@@ -1561,7 +1561,7 @@ class TypeVarValue(Value):
 class ParamSpecArgsValue(Value):
     param_spec: ParamSpec
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.param_spec}.args"
 
 
@@ -1569,7 +1569,7 @@ class ParamSpecArgsValue(Value):
 class ParamSpecKwargsValue(Value):
     param_spec: ParamSpec
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.param_spec}.kwargs"
 
 
