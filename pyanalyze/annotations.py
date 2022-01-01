@@ -35,7 +35,6 @@ from typing import (
     Any,
     Container,
     NamedTuple,
-    TypedDict,
     cast,
     TypeVar,
     ContextManager,
@@ -47,7 +46,7 @@ from typing import (
     Union,
     TYPE_CHECKING,
 )
-from typing_extensions import ParamSpec
+from typing_extensions import ParamSpec, TypedDict
 
 from .error_code import ErrorCode
 from .extensions import (

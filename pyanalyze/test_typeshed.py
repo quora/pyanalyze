@@ -154,7 +154,40 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         )
 
 
-class TestBundledStubs:
+_EXPECTED_TYPED_DICTS = {
+    "TD1": TypedDictValue({"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}),
+    "TD2": TypedDictValue(
+        {"a": (False, TypedValue(int)), "b": (False, TypedValue(str))}
+    ),
+    "PEP655": TypedDictValue(
+        {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
+    ),
+    "Inherited": TypedDictValue(
+        {
+            "a": (True, TypedValue(int)),
+            "b": (True, TypedValue(str)),
+            "c": (True, TypedValue(float)),
+        }
+    ),
+}
+
+
+class TestBundledStubs(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_import_aliases(self):
+        def capybara():
+            from _pyanalyze_tests.aliases import (
+                constant,
+                aliased_constant,
+                explicitly_aliased_constant,
+                ExplicitAlias,
+            )
+
+            assert_is_value(ExplicitAlias, KnownValue(int))
+            assert_is_value(constant, TypedValue(int))
+            assert_is_value(aliased_constant, TypedValue(int))
+            assert_is_value(explicitly_aliased_constant, TypedValue(int))
+
     def test_aliases(self):
         tsf = TypeshedFinder(verbose=True)
         mod = "_pyanalyze_tests.aliases"
@@ -166,37 +199,20 @@ class TestBundledStubs:
         tsf = TypeshedFinder(verbose=True)
         mod = "_pyanalyze_tests.typeddict"
 
-        def check(name: str, val: TypedDictValue) -> None:
-            assert tsf.resolve_name(mod, name) == SubclassValue(val, exactly=True)
+        for name, expected in _EXPECTED_TYPED_DICTS.items():
+            assert tsf.resolve_name(mod, name) == SubclassValue(expected, exactly=True)
 
-        check(
-            "TD1",
-            TypedDictValue(
-                {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
-            ),
-        )
-        check(
-            "TD2",
-            TypedDictValue(
-                {"a": (False, TypedValue(int)), "b": (False, TypedValue(str))}
-            ),
-        )
-        check(
-            "PEP655",
-            TypedDictValue(
-                {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
-            ),
-        )
-        check(
-            "Inherited",
-            TypedDictValue(
-                {
-                    "a": (True, TypedValue(int)),
-                    "b": (True, TypedValue(str)),
-                    "c": (True, TypedValue(float)),
-                }
-            ),
-        )
+    @assert_passes()
+    def test_import_typeddicts(self):
+        def capybara():
+            from _pyanalyze_tests.typeddict import TD1, TD2, PEP655, Inherited
+            from pyanalyze.test_typeshed import _EXPECTED_TYPED_DICTS
+
+            def nested(td1: TD1, td2: TD2, pep655: PEP655, inherited: Inherited):
+                assert_is_value(td1, _EXPECTED_TYPED_DICTS["TD1"])
+                assert_is_value(td2, _EXPECTED_TYPED_DICTS["TD2"])
+                assert_is_value(pep655, _EXPECTED_TYPED_DICTS["PEP655"])
+                assert_is_value(inherited, _EXPECTED_TYPED_DICTS["Inherited"])
 
 
 class Parent(Generic[T]):

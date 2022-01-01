@@ -360,6 +360,7 @@ class TypeshedFinder:
             val = getattr(builtins, name)
             if val is None or isinstance(val, type):
                 return KnownValue(val)
+        # TODO change to UNINITIALIZED_VALUE
         return AnyValue(AnySource.inference)
 
     def _get_attribute_from_info(

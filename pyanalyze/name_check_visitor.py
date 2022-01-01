@@ -31,6 +31,7 @@ import sys
 import tempfile
 import traceback
 import types
+import typeshed_client
 from typing import (
     ClassVar,
     ContextManager,
@@ -2118,6 +2119,30 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if self.module is None:
             self._handle_imports(node.names, force_public=force_public)
             return
+
+        # See if we can get the names from the stub instead
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and node.level == 0
+        ):
+            path = typeshed_client.ModulePath(tuple(node.module.split(".")))
+            finder = self.arg_spec_cache.ts_finder
+            mod = finder.resolver.get_module(path)
+            if mod.exists:
+                for alias in node.names:
+                    val = finder.resolve_name(node.module, alias.name)
+                    if val is UNINITIALIZED_VALUE:
+                        self._show_error_if_checking(
+                            node,
+                            f"Cannot import name {alias.name!r} from {node.module!r}",
+                            ErrorCode.import_failed,
+                        )
+                        val = AnyValue(AnySource.error)
+                    self._set_name_in_scope(
+                        alias.asname or alias.name, alias, val, private=not force_public
+                    )
+                return
 
         source_code = decompile(node)
 
