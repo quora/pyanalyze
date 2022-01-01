@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Allow `CustomCheck` to customize what values
+  a value can be assigned to (#383)
 - Fix incorrect inference of `self` argument on
   some nested methods (#382)
 - Fix compatibility between `Callable` and `Annotated`
