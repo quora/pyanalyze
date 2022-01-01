@@ -587,6 +587,87 @@ This is how it could be implemented using `@evaluated`:
             show_error("start is a positional-only argument in Python <3.8", argument=start)
         return _T | _S
 
+## Possible extensions
+
+The following features may be useful, but are deferred
+for now for simplicity.
+
+### Error categories
+
+It may be useful to provide hints to the type checker
+about the severity of a `show_error()` call. For example,
+deprecation warnings could be marked so that the user can
+control whether to show them.
+
+One possibility is to add a keyword-only argument
+`category: str = ...` to `show_error()`. We would specify
+some standard categories that can be used in typeshed:
+
+- `deprecation` (for deprecated behavior)
+- `python_version` (for wrong Python version)
+- `platform` (for wrong sys.platform)
+- `warning` (for miscellaneous non-blocking issues)
+
+Type checkers could add support for additional categories
+as desired. Other type checkers would be expected to
+silently ignore unrecognized category strings.
+
+### Reusable error messages
+
+Because `show_error()` requires a string literal as the
+message, typeshed would contain a lot of hardcoded string
+messages about version changes.
+
+Some possible solutions include:
+
+- Allow the message to be a variable of `Literal` type
+  instead of a string literal. However, this would not
+  allow customizing an error message to include e.g.
+  the name of the argument or the Python version when
+  some behavior changed.
+- Allow the message to be a call to `.format()` on a
+  string literal or `Literal` variable, where all the
+  arguments are function arguments or literals:
+  `show_error(NEW_IN_VERSION.format(arg, "3.10"))`.
+- Allow the message to be a call to another evaluation
+  function that returns a string literal instead of a type.
+  This would allow even more complex logic for emitting the
+  error message.
+
+The last option could look like this:
+
+    @evaluated
+    def added_in_py_version(feature: str, version: str):
+        return f"{feature} was added in Python {version}"
+
+    def zip(strict: bool = False):
+        if is_provided(strict) and sys.version_info < (3, 10):
+            show_error(
+                added_in_py_version("strict", "3.10"), 
+                argument="strict"
+            )
+
+
+### Adding attributes
+
+A common pattern in type checker plugins is for the plugin
+to add some extra attribute to the object. For example,
+`@functools.total_ordering` inserts various dunder methods
+into the class it decorates.
+
+We could add an `add_attributes()` primitive that given
+a type and a dictionary of attributes, modifies the type
+to add these attributes.
+
+Usage could look like this:
+
+    @evaluated
+    def total_ordering(cls: Type[T]):
+        return add_attributes(
+            cls,
+            {"__eq__": Callable[[T, T], bool]}
+        )
+
 ## Status
 
 A partial implementation of this feature is available
@@ -623,10 +704,3 @@ Areas that need more thought include:
 - Interaction with overloads. It should be possible
   to register multiple evaluation functions for a
   function, treating them as overloads.
-- Consider adding support for `assert` and an
-  ergonomical way to produce a standardized error
-  if something is not supported in the current
-  version or platform.
-- Add a `warn()` mechanism to warn on particular
-  invocations. This can be useful as a mechanism
-  to produce deprecation warnings.
