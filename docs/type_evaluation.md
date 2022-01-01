@@ -1,7 +1,13 @@
 # Type evaluation
 
 Type evaluation is a mechanism for replacing complex
-overloads and version checks. For example, consider the
+overloads and version checks. It provides a restricted
+subset of Python that can be executed by type checkers
+to customize the behavior of a particular function.
+
+## Motivation
+
+Consider the
 definition of `round()` in typeshed:
 
     @overload
@@ -21,6 +27,33 @@ With type evaluation, this could instead be written as:
             return _T
 
 This makes it easier to see at a glance what the difference is between various overloads.
+
+Other features of type evaluation, as proposed here, include
+customizable error messages, branching on the type of an
+argument, and branching on whether an argument was provided
+as a positional or keyword argument.
+
+Type evaluation functions can replace most complex overloads
+with simpler, more readable code. They solve a number of
+problems:
+
+- Error messages involving overloads are often hard to read.
+  Type evaluation functions enable the author of a function
+  to provide custom error messages that clearly point out
+  the issue in the user's code.
+- Complex overloads can be difficult to understand and write.
+  Type evaluation functions provide a more natural interface
+  that is closer to how such functions are written at
+  runtime.
+- The precise behavior of overloads is not specified and
+  varies across type checkers. The behavior of type
+  evaluation functions is more precisely specified.
+- Type evaluation functions provide ways to implement
+  several type system features that have been previously
+  requested, including:
+  - Marking a function, parameter, or parameter type as
+    deprecated.
+  - Accepting `Sequence[str]` but not `str`.
 
 ## Specification
 
@@ -49,7 +82,9 @@ do the following:
   evaluation function, as with a normal call.
 - Symbolically evaluate the body of the type evaluation
   until it reaches a `return` statement, which provides the type
-  that the call should return.
+  that the call should return. During this symbolic
+  evaluation, each argument is set to the value it has at
+  the call site that is being evaluated.
 - If execution reached a `return` statement, return the type
   provided by that statement. Otherwise, return the type
   set in the evaluation function's return annotation, or
@@ -60,6 +95,13 @@ that produces an error if an evaluation function is missing
 a type annotation on a parameter or return type. However, no
 error should be provided if the return annotation is missing
 and all branches (including error branches) return a type.
+
+The default value of a parameter to an evaluation function
+may be either `...` or any value that is valid inside
+`Literal[...]`. If an argument with default `X` is not
+provided in a call, the type of the argument within the
+evaluation function is `Literal[X]`. If the default is
+`...`, the type is the parameter's annotation instead.
 
 Simple examples to demonstrate the semantics:
 
@@ -85,6 +127,14 @@ Simple examples to demonstrate the semantics:
     x = always_errors(1)  # error
     reveal_type(x)  # str
 
+    @evaluated
+    def with_defaults(x: int = ..., y: int = 1) -> None:
+        reveal_type(x)
+        reveal_type(y)
+
+    with_defaults()  # x is "int", y is "Literal[1]"
+    with_defaults(1)  # x and y are both "Literal[1]"
+
 ### Supported features
 
 The body of a type evaluation uses a restricted subset of Python.
@@ -95,6 +145,10 @@ The only supported features are:
 - `pass` statements, which do nothing.
 - Calls to `show_error()`, which cause the type checker
   to emit an error. These are discussed further below.
+- Calls to `reveal_type(arg)`, where arg is one of the
+  arguments to the type evaluation function. These cause the
+  type checker to emit a message showing the current type
+  of `arg`. This is a debugging feature.
 
 Conditions in `if` statements may contain:
 
@@ -154,7 +208,7 @@ as a keyword argument.
 
 Parameters in Python can be provided in three ways,
 which we call _argument kinds_ for the purpose of this
-specificatioon:
+specification:
 
 - `POSITIONAL`: at the call site, either a single
   positional argument or a variadic one (`*args`)
@@ -335,9 +389,19 @@ taken, with the parameter type narrowed appropriately in each
 case. The return type of the function is the union of the two
 branches.
 
-For example, if the `ndigits` argument to
-`round()` is of type `int | None`, the inferred return value should
-be `_T | int`.
+For example:
+
+    @evaluated
+    def switch_types(arg: str | int):
+        if is_of_type(arg, str):
+            return int
+        else:
+            return str
+
+    reveal_type(switch_types(1))  # str
+    reveal_type(switch_types("x"))  # int
+    union: int | str
+    reveal_type(switch_types(union))  # int | str
 
 ### Type compatibility
 
@@ -523,6 +587,87 @@ This is how it could be implemented using `@evaluated`:
             show_error("start is a positional-only argument in Python <3.8", argument=start)
         return _T | _S
 
+## Possible extensions
+
+The following features may be useful, but are deferred
+for now for simplicity.
+
+### Error categories
+
+It may be useful to provide hints to the type checker
+about the severity of a `show_error()` call. For example,
+deprecation warnings could be marked so that the user can
+control whether to show them.
+
+One possibility is to add a keyword-only argument
+`category: str = ...` to `show_error()`. We would specify
+some standard categories that can be used in typeshed:
+
+- `deprecation` (for deprecated behavior)
+- `python_version` (for wrong Python version)
+- `platform` (for wrong sys.platform)
+- `warning` (for miscellaneous non-blocking issues)
+
+Type checkers could add support for additional categories
+as desired. Other type checkers would be expected to
+silently ignore unrecognized category strings.
+
+### Reusable error messages
+
+Because `show_error()` requires a string literal as the
+message, typeshed would contain a lot of hardcoded string
+messages about version changes.
+
+Some possible solutions include:
+
+- Allow the message to be a variable of `Literal` type
+  instead of a string literal. However, this would not
+  allow customizing an error message to include e.g.
+  the name of the argument or the Python version when
+  some behavior changed.
+- Allow the message to be a call to `.format()` on a
+  string literal or `Literal` variable, where all the
+  arguments are function arguments or literals:
+  `show_error(NEW_IN_VERSION.format(arg, "3.10"))`.
+- Allow the message to be a call to another evaluation
+  function that returns a string literal instead of a type.
+  This would allow even more complex logic for emitting the
+  error message.
+
+The last option could look like this:
+
+    @evaluated
+    def added_in_py_version(feature: str, version: str):
+        return f"{feature} was added in Python {version}"
+
+    def zip(strict: bool = False):
+        if is_provided(strict) and sys.version_info < (3, 10):
+            show_error(
+                added_in_py_version("strict", "3.10"), 
+                argument="strict"
+            )
+
+
+### Adding attributes
+
+A common pattern in type checker plugins is for the plugin
+to add some extra attribute to the object. For example,
+`@functools.total_ordering` inserts various dunder methods
+into the class it decorates.
+
+We could add an `add_attributes()` primitive that given
+a type and a dictionary of attributes, modifies the type
+to add these attributes.
+
+Usage could look like this:
+
+    @evaluated
+    def total_ordering(cls: Type[T]):
+        return add_attributes(
+            cls,
+            {"__eq__": Callable[[T, T], bool]}
+        )
+
 ## Status
 
 A partial implementation of this feature is available
@@ -550,6 +695,8 @@ Currently unsupported features include:
   an evaluation function for a runtime function,
   to replace some impls.
 - Type compatibility for evaluated functions.
+- Implementation of the desired behavior for
+  return annotations
 
 Areas that need more thought include:
 
@@ -557,23 +704,3 @@ Areas that need more thought include:
 - Interaction with overloads. It should be possible
   to register multiple evaluation functions for a
   function, treating them as overloads.
-- Consider adding support for `assert` and an
-  ergonomical way to produce a standardized error
-  if something is not supported in the current
-  version or platform.
-- Guidance on what the return annotation of an
-  evaluation function should be. Most likely,
-  it is treated as the default return type if
-  execution reaches the end of the evaluation
-  function. It can be omitted if the evaluation
-  function always return.
-- Add a `warn()` mechanism to warn on particular
-  invocations. This can be useful as a mechanism
-  to produce deprecation warnings.
-
-Motivations can include:
-
-- Less repetitive overload writing
-- Ability to customize error messages
-- Potential for additional features that work
-  across type checkers
