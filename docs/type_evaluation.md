@@ -368,9 +368,19 @@ taken, with the parameter type narrowed appropriately in each
 case. The return type of the function is the union of the two
 branches.
 
-For example, if the `ndigits` argument to
-`round()` is of type `int | None`, the inferred return value should
-be `_T | int`.
+For example:
+
+    @evaluated
+    def switch_types(arg: str | int):
+        if is_of_type(arg, str):
+            return int
+        else:
+            return str
+
+    reveal_type(switch_types(1))  # str
+    reveal_type(switch_types("x"))  # int
+    union: int | str
+    reveal_type(switch_types(union))  # int | str
 
 ### Type compatibility
 
