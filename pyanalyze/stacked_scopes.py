@@ -68,7 +68,7 @@ from .value import (
     unite_values,
     flatten_values,
     CanAssignContext,
-    is_overlapping
+    is_overlapping,
 )
 
 T = TypeVar("T")
