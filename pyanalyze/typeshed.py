@@ -5,7 +5,7 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 """
 
 from .analysis_lib import is_positional_only_arg_name
-from .annotations import Context, type_from_value, value_from_ast
+from .annotations import Context, Pep655Value, type_from_value, value_from_ast
 from .error_code import ErrorCode
 from .safe import is_typing_name
 from .stacked_scopes import uniq_chain
@@ -66,6 +66,7 @@ from typing import (
 )
 from typing_extensions import Protocol, TypedDict
 import typeshed_client
+
 
 try:
     # 3.7+
@@ -368,6 +369,7 @@ class TypeshedFinder:
         attr: str,
         *,
         on_class: bool,
+        is_typeddict: bool = False,
     ) -> Value:
         if info is None:
             return UNINITIALIZED_VALUE
@@ -381,7 +383,11 @@ class TypeshedFinder:
                     child_info = info.child_nodes[attr]
                     if isinstance(child_info, typeshed_client.NameInfo):
                         if isinstance(child_info.ast, ast.AnnAssign):
-                            return self._parse_type(child_info.ast.annotation, mod)
+                            return self._parse_type(
+                                child_info.ast.annotation,
+                                mod,
+                                is_typeddict=is_typeddict,
+                            )
                         elif isinstance(child_info.ast, ast.FunctionDef):
                             decorators = [
                                 self._parse_expr(decorator, mod)
@@ -779,10 +785,12 @@ class TypeshedFinder:
         ctx = _AnnotationContext(finder=self, module=module)
         return value_from_ast(node, ctx=ctx)
 
-    def _parse_type(self, node: ast.AST, module: str) -> Value:
+    def _parse_type(
+        self, node: ast.AST, module: str, *, is_typeddict: bool = False
+    ) -> Value:
         val = self._parse_expr(node, module)
         ctx = _AnnotationContext(finder=self, module=module)
-        typ = type_from_value(val, ctx=ctx)
+        typ = type_from_value(val, ctx=ctx, is_typeddict=is_typeddict)
         if self.verbose and isinstance(typ, AnyValue):
             self.log("Got Any", (ast.dump(node), module))
         return typ
@@ -828,11 +836,22 @@ class TypeshedFinder:
                         total = val.val
         attrs = self._get_all_attributes_from_info(info, module)
         fields = [
-            self._get_attribute_from_info(info, module, attr, on_class=True)
+            self._get_attribute_from_info(
+                info, module, attr, on_class=True, is_typeddict=True
+            )
             for attr in attrs
         ]
-        items = {attr: (total, field) for attr, field in zip(attrs, fields)}
+        items = {
+            attr: self._make_td_value(field, total)
+            for attr, field in zip(attrs, fields)
+        }
         return TypedDictValue(items)
+
+    def _make_td_value(self, field: Value, total: bool) -> Tuple[bool, Value]:
+        if isinstance(field, Pep655Value):
+            return (field.required, field.value)
+        else:
+            return (total, field)
 
     def _value_from_info(
         self, info: typeshed_client.resolver.ResolvedName, module: str

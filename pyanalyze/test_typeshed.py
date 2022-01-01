@@ -170,6 +170,9 @@ class TestBundledStubs:
         assert tsf.resolve_name(mod, "TD2") == TypedDictValue(
             {"a": (False, TypedValue(int)), "b": (False, TypedValue(str))}
         )
+        assert tsf.resolve_name(mod, "PEP655") == TypedDictValue(
+            {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
+        )
 
 
 class Parent(Generic[T]):

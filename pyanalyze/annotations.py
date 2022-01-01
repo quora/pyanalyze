@@ -510,7 +510,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
     elif is_instance_of_typing_name(val, "_MaybeRequired"):
         required = is_instance_of_typing_name(val, "_Required")
         if is_typeddict:
-            return _Pep655Value(required, _type_from_runtime(val.__type__, ctx))
+            return Pep655Value(required, _type_from_runtime(val.__type__, ctx))
         else:
             cls = "Required" if required else "NotRequired"
             ctx.show_error(f"{cls}[] used in unsupported context")
@@ -595,7 +595,7 @@ def _get_typeddict_value(
     total: bool,
 ) -> Tuple[bool, Value]:
     val = _type_from_runtime(value, ctx, is_typeddict=True)
-    if isinstance(val, _Pep655Value):
+    if isinstance(val, Pep655Value):
         return (val.required, val.value)
     if required_keys is None:
         required = total
@@ -726,7 +726,7 @@ def _type_from_subscripted_value(
         if len(members) != 1:
             ctx.show_error("Required[] requires a single argument")
             return AnyValue(AnySource.error)
-        return _Pep655Value(True, _type_from_value(members[0], ctx))
+        return Pep655Value(True, _type_from_value(members[0], ctx))
     elif is_typing_name(root, "NotRequired"):
         if not is_typeddict:
             ctx.show_error("NotRequired[] used in unsupported context")
@@ -734,7 +734,7 @@ def _type_from_subscripted_value(
         if len(members) != 1:
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
-        return _Pep655Value(False, _type_from_value(members[0], ctx))
+        return Pep655Value(False, _type_from_value(members[0], ctx))
     elif root is Callable or root is typing.Callable:
         if len(members) == 2:
             args, return_value = members
@@ -821,7 +821,7 @@ class _SubscriptedValue(Value):
 
 
 @dataclass
-class _Pep655Value(Value):
+class Pep655Value(Value):
     required: bool
     value: Value
 
@@ -1073,7 +1073,7 @@ def _value_of_origin_args(
         if len(args) != 1:
             ctx.show_error("Required[] requires a single argument")
             return AnyValue(AnySource.error)
-        return _Pep655Value(True, _type_from_runtime(args[0], ctx))
+        return Pep655Value(True, _type_from_runtime(args[0], ctx))
     elif is_typing_name(origin, "NotRequired"):
         if not is_typeddict:
             ctx.show_error("NotRequired[] used in unsupported context")
@@ -1081,7 +1081,7 @@ def _value_of_origin_args(
         if len(args) != 1:
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
-        return _Pep655Value(False, _type_from_runtime(args[0], ctx))
+        return Pep655Value(False, _type_from_runtime(args[0], ctx))
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
         return _maybe_typed_value(val)
