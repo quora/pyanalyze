@@ -25,6 +25,8 @@ from .stacked_scopes import Composite
 from .value import (
     CallableValue,
     CanAssignContext,
+    ParamSpecArgsValue,
+    ParamSpecKwargsValue,
     TypedValue,
     Value,
     AnySource,
@@ -304,9 +306,9 @@ def compute_parameters(
             if default is not None:
                 value = unite_values(value, default)
 
-        if kind is ParameterKind.VAR_POSITIONAL:
+        if kind is ParameterKind.VAR_POSITIONAL and not isinstance(value, ParamSpecArgsValue):
             value = GenericValue(tuple, [value])
-        elif kind is ParameterKind.VAR_KEYWORD:
+        elif kind is ParameterKind.VAR_KEYWORD and not isinstance(value, ParamSpecKwargsValue):
             value = GenericValue(dict, [TypedValue(str), value])
 
         param = SigParameter(arg.arg, kind, default, value)

@@ -8,6 +8,7 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    CanAssignError,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
@@ -1151,6 +1152,33 @@ class TestCustomCheck(TestNameCheckVisitorBase):
             capybara("x" if x else x)  # E: incompatible_argument
 
     @assert_passes()
+    def test_reverse_direction(self):
+        from pyanalyze.extensions import CustomCheck
+        from pyanalyze.value import (
+            CanAssignContext,
+            Value,
+            CanAssign,
+            flatten_values,
+            CanAssignError,
+        )
+        from typing import Any
+        from typing_extensions import Annotated
+
+        class DontAssignToAny(CustomCheck):
+            def can_be_assigned(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+                for val in flatten_values(value, unwrap_annotated=True):
+                    if isinstance(val, AnyValue):
+                        return CanAssignError("Assignment to Any disallowed")
+                return {}
+
+        def want_any(x: Any) -> None:
+            pass
+
+        def capybara(arg: Annotated[str, DontAssignToAny()]) -> None:
+            want_any(arg)  # E: incompatible_argument
+            print(len(arg))
+
+    @assert_passes()
     def test_no_any(self) -> None:
         from pyanalyze.extensions import NoAny
         from typing_extensions import Annotated
@@ -1566,6 +1594,8 @@ class TestParamSpec(TestNameCheckVisitorBase):
 
                 refined = wrapper(wrapped)
                 assert_is_value(refined("x", 1), GenericValue(list, [TypedValue(str)]))
+                reveal_type(refined)
+                reveal_type(wrapper)
                 refined(1)  # E: incompatible_call
 
                 quoted_refined = quoted_wrapper(wrapped)
