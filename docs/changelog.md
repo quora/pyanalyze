@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Small improvements to `ParamSpec` support (#385)
 - Allow `CustomCheck` to customize what values
   a value can be assigned to (#383)
 - Fix incorrect inference of `self` argument on

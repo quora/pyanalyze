@@ -18,11 +18,9 @@ class TestSyntheticType(TestNameCheckVisitorBase):
     def test_functools(self):
         import functools
         import types
-        from pyanalyze.signature import Signature
+        from pyanalyze.signature import Signature, ELLIPSIS_PARAM
 
-        sig = Signature.make(
-            [], is_ellipsis_args=True, return_annotation=TypedValue(int)
-        )
+        sig = Signature.make([ELLIPSIS_PARAM], return_annotation=TypedValue(int))
 
         def f() -> int:
             return 0

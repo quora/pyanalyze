@@ -340,6 +340,8 @@ class AnySource(enum.Enum):
     """A special form like ClassVar without a type argument."""
     multiple_overload_matches = 12
     """Multiple matching overloads."""
+    ellipsis_callable = 13
+    """Callable using an ellipsis."""
 
 
 @dataclass(frozen=True)
@@ -1553,6 +1555,22 @@ class TypeVarValue(Value):
             constraints = ", ".join(map(str, self.constraints))
             return f"{self.typevar} in ({constraints})"
         return str(self.typevar)
+
+
+@dataclass
+class ParamSpecArgsValue(Value):
+    param_spec: ParamSpec
+
+    def __str__(self) -> str:
+        return f"{self.param_spec}.args"
+
+
+@dataclass
+class ParamSpecKwargsValue(Value):
+    param_spec: ParamSpec
+
+    def __str__(self) -> str:
+        return f"{self.param_spec}.kwargs"
 
 
 class Extension:

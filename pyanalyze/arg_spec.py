@@ -22,6 +22,7 @@ from .safe import (
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
+    ELLIPSIS_PARAM,
     ConcreteSignature,
     Impl,
     MaybeSignature,
@@ -642,9 +643,8 @@ class ArgSpecCache:
                     inspect_sig = self._safe_get_signature(constructor)
                 if inspect_sig is None:
                     return Signature.make(
-                        [],
+                        [ELLIPSIS_PARAM],
                         return_type,
-                        is_ellipsis_args=True,
                         callable=obj,
                         allow_call=allow_call,
                     )
@@ -703,9 +703,8 @@ class ArgSpecCache:
     def _make_any_sig(self, obj: object) -> Signature:
         if FunctionsSafeToCall.contains(obj, self.options):
             return Signature.make(
-                [],
+                [ELLIPSIS_PARAM],
                 AnyValue(AnySource.inference),
-                is_ellipsis_args=True,
                 is_asynq=True,
                 allow_call=True,
                 callable=obj,

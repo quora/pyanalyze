@@ -37,6 +37,8 @@ from .value import (
     MultiValuedValue,
     NoReturnConstraintExtension,
     NoReturnGuardExtension,
+    ParamSpecArgsValue,
+    ParamSpecKwargsValue,
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
@@ -95,6 +97,7 @@ if TYPE_CHECKING:
 
 EMPTY = inspect.Parameter.empty
 UNANNOTATED = AnyValue(AnySource.unannotated)
+ELLIPSIS_COMPOSITE = Composite(AnyValue(AnySource.ellipsis_callable))
 
 
 @dataclass
@@ -131,6 +134,8 @@ class ActualArguments:
     keywords: Dict[str, Tuple[bool, Composite]]
     star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
     kwargs_required: bool
+    ellipsis: bool = False
+    param_spec: Optional[TypeVarValue] = None
 
 
 class CallReturn(NamedTuple):
@@ -252,6 +257,10 @@ class ParameterKind(enum.Enum):
     KEYWORD_ONLY = 3
     VAR_KEYWORD = 4
     PARAM_SPEC = 5
+    ELLIPSIS = 6  # Callable[..., T]
+    """Special kind for `Callable[..., T]`. Such callables are compatible
+    with any other callable. There can only be one ELLIPSIS parameter
+    and it must be the last one."""
 
 
 @dataclass
@@ -263,7 +272,7 @@ class SigParameter:
     kind: ParameterKind = ParameterKind.POSITIONAL_OR_KEYWORD
     """How the parameter can be passed."""
     default: Optional[Value] = None
-    """The default for the parameter, or EMPTY if there is no default."""
+    """The default for the parameter, or None if there is no default."""
     annotation: Value = AnyValue(AnySource.unannotated)
     """Type annotation for the parameter."""
 
@@ -345,9 +354,6 @@ class Signature:
     is_asynq: bool = False
     """Whether this signature represents an asynq function."""
     has_return_annotation: bool = True
-    is_ellipsis_args: bool = False
-    """Whether this signature represents a ``Callable[..., T]`` callable. Such
-    a callable is compatible with any other callable with a compatible return type."""
     allow_call: bool = False
     """Whether type checking can call the actual function to retrieve a precise return value."""
     evaluator: Optional[Evaluator] = None
@@ -533,6 +539,7 @@ class Signature:
         bound_args: BoundArgs = {}
         star_args_consumed = False
         star_kwargs_consumed = False
+        param_spec_consumed = False
 
         for param in self.parameters.values():
             if param.kind is ParameterKind.POSITIONAL_ONLY:
@@ -549,15 +556,17 @@ class Signature:
                         position = UNKNOWN  # default or args
                     bound_args[param.name] = position, Composite(actual_args.star_args)
                     star_args_consumed = True
-                elif param.default is None:
+                elif param.default is not None:
+                    bound_args[param.name] = DEFAULT, Composite(param.default)
+                elif actual_args.ellipsis:
+                    bound_args[param.name] = UNKNOWN, ELLIPSIS_COMPOSITE
+                else:
                     self.show_call_error(
                         f"Missing required positional argument: '{param.name}'",
                         node,
                         visitor,
                     )
                     return None
-                else:
-                    bound_args[param.name] = DEFAULT, Composite(param.default)
             elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
                 if positional_index < len(actual_args.positionals):
                     bound_args[param.name] = (
@@ -599,7 +608,11 @@ class Signature:
                     bound_args[param.name] = position, Composite(value)
                 elif param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
-                    if not definitely_provided and param.default is None:
+                    if (
+                        not definitely_provided
+                        and param.default is None
+                        and not actual_args.ellipsis
+                    ):
                         self.show_call_error(
                             f"Parameter '{param.name}' may not be provided by this"
                             " call",
@@ -618,17 +631,23 @@ class Signature:
                         actual_args.star_kwargs
                     )
                     star_kwargs_consumed = True
-                elif param.default is None:
+                elif param.default is not None:
+                    bound_args[param.name] = DEFAULT, Composite(param.default)
+                elif actual_args.ellipsis:
+                    bound_args[param.name] = DEFAULT, ELLIPSIS_COMPOSITE
+                else:
                     self.show_call_error(
                         f"Missing required argument: '{param.name}'", node, visitor
                     )
                     return None
-                else:
-                    bound_args[param.name] = DEFAULT, Composite(param.default)
             elif param.kind is ParameterKind.KEYWORD_ONLY:
                 if param.name in actual_args.keywords:
                     definitely_provided, composite = actual_args.keywords[param.name]
-                    if not definitely_provided and param.default is None:
+                    if (
+                        not definitely_provided
+                        and param.default is None
+                        and not actual_args.ellipsis
+                    ):
                         self.show_call_error(
                             f"Parameter '{param.name}' may not be provided by this"
                             " call",
@@ -648,13 +667,15 @@ class Signature:
                     )
                     star_kwargs_consumed = True
                     keywords_consumed.add(param.name)
-                elif param.default is None:
+                elif param.default is not None:
+                    bound_args[param.name] = DEFAULT, Composite(param.default)
+                elif actual_args.ellipsis:
+                    bound_args[param.name] = DEFAULT, ELLIPSIS_COMPOSITE
+                else:
                     self.show_call_error(
                         f"Missing required argument: '{param.name}'", node, visitor
                     )
                     return None
-                else:
-                    bound_args[param.name] = DEFAULT, Composite(param.default)
             elif param.kind is ParameterKind.VAR_POSITIONAL:
                 star_args_consumed = True
                 positionals = []
@@ -662,7 +683,11 @@ class Signature:
                     positionals.append(actual_args.positionals[positional_index].value)
                     positional_index += 1
                 position = ARGS
-                if actual_args.star_args is not None:
+                if actual_args.ellipsis:
+                    star_args_value = GenericValue(
+                        tuple, [AnyValue(AnySource.ellipsis_callable)]
+                    )
+                elif actual_args.star_args is not None:
                     element_value = unite_values(*positionals, actual_args.star_args)
                     star_args_value = GenericValue(tuple, [element_value])
                 else:
@@ -682,7 +707,11 @@ class Signature:
                         continue
                     items[key] = (definitely_provided, composite.value)
                 position = KWARGS
-                if actual_args.star_kwargs is not None:
+                if actual_args.ellipsis:
+                    star_kwargs_value = GenericValue(
+                        dict, [TypedValue(str), AnyValue(AnySource.ellipsis_callable)]
+                    )
+                elif actual_args.star_kwargs is not None:
                     value_value = unite_values(
                         *(val for _, val in items.values()), actual_args.star_kwargs
                     )
@@ -694,6 +723,41 @@ class Signature:
                     if not items:
                         position = DEFAULT
                 bound_args[param.name] = position, Composite(star_kwargs_value)
+            elif param.kind is ParameterKind.ELLIPSIS:
+                # just take it all
+                star_args_consumed = True
+                star_kwargs_consumed = True
+                param_spec_consumed = True
+                bound_args[param.name] = UNKNOWN, Composite(
+                    AnyValue(AnySource.ellipsis_callable)
+                )
+            elif param.kind is ParameterKind.PARAM_SPEC:
+                if actual_args.param_spec is not None:
+                    bound_args[param.name] = KWARGS, Composite(actual_args.param_spec)
+                    param_spec_consumed = True
+                elif (
+                    actual_args.star_args is not None
+                    and actual_args.star_kwargs is not None
+                    and not star_args_consumed
+                    and not star_kwargs_consumed
+                    and isinstance(actual_args.star_args, ParamSpecArgsValue)
+                    and isinstance(actual_args.star_kwargs, ParamSpecKwargsValue)
+                    and actual_args.star_args.param_spec
+                    is actual_args.star_kwargs.param_spec
+                ):
+                    star_kwargs_consumed = True
+                    star_args_consumed = True
+                    composite = Composite(
+                        TypeVarValue(
+                            actual_args.star_kwargs.param_spec, is_paramspec=True
+                        )
+                    )
+                    bound_args[param.name] = KWARGS, composite
+                else:
+                    self.show_call_error(
+                        "Callable requires a ParamSpec argument", node, visitor
+                    )
+                    return None
             else:
                 assert False, f"unhandled param {param.kind}"
 
@@ -725,6 +789,8 @@ class Signature:
         ):
             self.show_call_error("**kwargs provided but not used", node, visitor)
             return None
+        if not param_spec_consumed and actual_args.param_spec is not None:
+            self.show_call_error("ParamSpec provided but not used", node, visitor)
         return bound_args
 
     def show_call_error(
@@ -767,13 +833,6 @@ class Signature:
         node: ast.AST,
         is_overload: bool = False,
     ) -> CallReturn:
-        if self.is_ellipsis_args:
-            if self.allow_call:
-                runtime_return = self._maybe_perform_call(preprocessed, visitor, node)
-                if runtime_return is not None:
-                    return CallReturn(runtime_return)
-            return CallReturn(self.return_value, used_any_for_match=True)
-
         bound_args = self.bind_arguments(preprocessed, visitor, node)
         if bound_args is None:
             return self.get_default_return()
@@ -981,8 +1040,6 @@ class Signature:
             return CanAssignError(
                 "return annotation is not compatible", [return_tv_map]
             )
-        if self.is_ellipsis_args or other.is_ellipsis_args:
-            return return_tv_map
         tv_maps = [return_tv_map]
         their_params = list(other.parameters.values())
         their_args = other.get_param_of_kind(ParameterKind.VAR_POSITIONAL)
@@ -997,6 +1054,9 @@ class Signature:
             kwargs_annotation = their_kwargs.get_annotation()
         else:
             kwargs_annotation = None
+        their_ellipsis = other.get_param_of_kind(ParameterKind.ELLIPSIS)
+        if their_ellipsis is not None:
+            args_annotation = kwargs_annotation = AnyValue(AnySource.ellipsis_callable)
         consumed_positional = set()
         consumed_keyword = set()
         consumed_paramspec = False
@@ -1170,6 +1230,8 @@ class Signature:
                 assert isinstance(my_annotation, TypeVarValue)
                 tv_maps.append({my_annotation.typevar: CallableValue(new_sig)})
                 consumed_paramspec = True
+            elif my_param.kind is ParameterKind.ELLIPSIS:
+                consumed_paramspec = True
             else:
                 assert False, f"unhandled param {my_param}"
 
@@ -1198,6 +1260,8 @@ class Signature:
                         return CanAssignError(f"takes extra parameter {param.name!r}")
                 elif param.kind is ParameterKind.PARAM_SPEC:
                     return CanAssignError(f"takes extra ParamSpec {param!r}")
+                elif param.kind is ParameterKind.ELLIPSIS:
+                    continue
                 else:
                     assert False, f"unhandled param {param}"
 
@@ -1211,7 +1275,6 @@ class Signature:
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Signature":
         params = []
-        is_ellipsis_args = self.is_ellipsis_args
         for name, param in self.parameters.items():
             if param.kind is ParameterKind.PARAM_SPEC:
                 assert isinstance(param.annotation, TypeVarValue)
@@ -1225,9 +1288,8 @@ class Signature:
                         )
                         params.append((name, new_param))
                     elif isinstance(new_val, AnyValue):
-                        is_ellipsis_args = True
-                        params = []
-                        break
+                        new_param = SigParameter(param.name, ParameterKind.ELLIPSIS)
+                        params.append((param.name, new_param))
                     else:
                         assert isinstance(new_val, CallableValue), new_val
                         assert isinstance(new_val.signature, Signature), new_val
@@ -1243,7 +1305,6 @@ class Signature:
             callable=self.callable,
             is_asynq=self.is_asynq,
             has_return_annotation=self.has_return_annotation,
-            is_ellipsis_args=is_ellipsis_args,
             allow_call=self.allow_call,
             evaluator=self.evaluator,
         )
@@ -1265,7 +1326,6 @@ class Signature:
             impl=self.impl,
             callable=self.callable,
             has_return_annotation=self.has_return_annotation,
-            is_ellipsis_args=self.is_ellipsis_args,
             is_asynq=False,
             allow_call=self.allow_call,
             evaluator=self.evaluator,
@@ -1280,7 +1340,6 @@ class Signature:
         impl: Optional[Impl] = None,
         callable: Optional[object] = None,
         has_return_annotation: bool = True,
-        is_ellipsis_args: bool = False,
         is_asynq: bool = False,
         allow_call: bool = False,
         evaluator: Optional[Evaluator] = None,
@@ -1301,7 +1360,6 @@ class Signature:
             impl=impl,
             callable=callable,
             has_return_annotation=has_return_annotation,
-            is_ellipsis_args=is_ellipsis_args,
             is_asynq=is_asynq,
             allow_call=allow_call,
             evaluator=evaluator,
@@ -1318,10 +1376,7 @@ class Signature:
         return rendered
 
     def _render_parameters(self) -> Iterable[str]:
-        # Adapted from Signature's own __str__
-        if self.is_ellipsis_args:
-            yield "..."
-            return
+        # Adapted from inspect.Signature's __str__
         render_pos_only_separator = False
         render_kw_only_separator = True
         for param in self.parameters.values():
@@ -1347,16 +1402,21 @@ class Signature:
             yield "/"
 
     def bind_self(self, *, preserve_impl: bool = False) -> Optional["Signature"]:
-        if self.is_ellipsis_args:
-            return ANY_SIGNATURE
         params = list(self.parameters.values())
-        if not params or params[0].kind not in (
+        if not params:
+            return None
+        kind = params[0].kind
+        if kind is ParameterKind.ELLIPSIS:
+            new_params = {param.name: param for param in params}
+        elif kind in (
             ParameterKind.POSITIONAL_ONLY,
             ParameterKind.POSITIONAL_OR_KEYWORD,
         ):
+            new_params = {param.name: param for param in params[1:]}
+        else:
             return None
         return Signature(
-            {param.name: param for param in params[1:]},
+            new_params,
             self.return_value,
             # We don't carry over the implementation function by default, because it
             # may not work when passed different arguments.
@@ -1364,7 +1424,6 @@ class Signature:
             callable=self.callable,
             is_asynq=self.is_asynq,
             has_return_annotation=self.has_return_value(),
-            is_ellipsis_args=self.is_ellipsis_args,
             allow_call=self.allow_call,
         )
 
@@ -1372,8 +1431,9 @@ class Signature:
         return self.has_return_annotation or self.evaluator is not None
 
 
+ELLIPSIS_PARAM = SigParameter("...", ParameterKind.ELLIPSIS)
 ANY_SIGNATURE = Signature.make(
-    [], AnyValue(AnySource.explicit), is_ellipsis_args=True, is_asynq=True
+    [ELLIPSIS_PARAM], AnyValue(AnySource.explicit), is_asynq=True
 )
 """:class:`Signature` that should be compatible with any other
 :class:`Signature`."""

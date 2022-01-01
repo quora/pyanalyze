@@ -824,14 +824,14 @@ class TestCallable(TestNameCheckVisitorBase):
     def test_asynq_callable(self):
         from asynq import asynq
         from pyanalyze.extensions import AsynqCallable
-        from pyanalyze.signature import Signature
+        from pyanalyze.signature import Signature, ELLIPSIS_PARAM
         from typing import Optional
 
         @asynq()
         def func_example(x: int) -> str:
             return ""
 
-        sig = Signature.make([], is_asynq=True, is_ellipsis_args=True)
+        sig = Signature.make([ELLIPSIS_PARAM], is_asynq=True)
 
         @asynq()
         def bare_asynq_callable(fn: AsynqCallable) -> None:
@@ -1651,3 +1651,28 @@ class TestCallable(TestNameCheckVisitorBase):
             )
             want_callable(1)  # E: incompatible_argument
             want_callable(int(unannotated))  # E: incompatible_argument
+
+    @assert_passes()
+    def test_args_kwargs(self):
+        from typing import Callable, TypeVar
+        from typing_extensions import Concatenate, ParamSpec
+
+        P = ParamSpec("P")
+        R = TypeVar("R")
+
+        class Request:
+            pass
+
+        def with_request(f: Callable[Concatenate[Request, P], R]) -> Callable[P, R]:
+            def inner(*args: P.args, **kwargs: P.kwargs) -> R:
+                return f(Request(), *args, **kwargs)
+
+            return inner
+
+        def takes_int_str(request: Request, x: int, y: str) -> int:
+            return x + 7
+
+        def capybara():
+            func = with_request(takes_int_str)
+            func(1, "A")
+            func(1, 2)  # E: incompatible_argument
