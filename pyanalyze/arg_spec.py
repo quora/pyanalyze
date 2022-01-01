@@ -294,7 +294,7 @@ class ArgSpecCache:
         self.vnv_provider = vnv_provider
         self.options = options
         self.config = options.fallback
-        self.ts_finder = TypeshedFinder(verbose=False)
+        self.ts_finder = TypeshedFinder(verbose=True)
         self.known_argspecs = {}
         self.generic_bases_cache = {}
         self.default_context = AnnotationsContext(self)

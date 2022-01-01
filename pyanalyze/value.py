@@ -1112,7 +1112,7 @@ class TypedDictValue(GenericValue):
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
 
-    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+    def substitute_typevars(self, typevars: TypeVarMap) -> "TypedDictValue":
         return TypedDictValue(
             {
                 key: (is_required, value.substitute_typevars(typevars))
@@ -1134,6 +1134,30 @@ class TypedDictValue(GenericValue):
         yield self
         for _, value in self.items.values():
             yield from value.walk_values()
+
+
+@dataclass(init=False)
+class SyntheticTypedDict(GenericValue):
+    """Represents a ``TypedDict`` class."""
+
+    td: TypedDictValue
+
+    def __init__(self, td: TypedDictValue) -> None:
+        super().__init__(dict, td.args)
+        self.td = td
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return SyntheticTypedDict(self.td.substitute_typevars(typevars))
+
+    def __str__(self) -> str:
+        return f"type[{self.td}]"
+
+    def __hash__(self) -> int:
+        return hash(self.td)
+
+    def walk_values(self) -> Iterable["Value"]:
+        yield self
+        yield from self.td.walk_values()
 
 
 @dataclass(unsafe_hash=True, init=False)
@@ -1228,9 +1252,11 @@ class SubclassValue(Value):
 
     typ: Union[TypedValue, "TypeVarValue"]
     """The underlying type."""
+    exactly: bool = False
+    """If True, represents exactly this class and not a subclass."""
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return self.make(self.typ.substitute_typevars(typevars))
+        return self.make(self.typ.substitute_typevars(typevars), exactly=self.exactly)
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -1283,14 +1309,16 @@ class SubclassValue(Value):
         return f"Type[{self.typ}]"
 
     @classmethod
-    def make(cls, origin: Value) -> Value:
+    def make(cls, origin: Value, *, exactly: bool = False) -> Value:
         if isinstance(origin, MultiValuedValue):
-            return unite_values(*[cls.make(val) for val in origin.vals])
+            return unite_values(
+                *[cls.make(val, exactly=exactly) for val in origin.vals]
+            )
         elif isinstance(origin, AnyValue):
             # Type[Any] is equivalent to plain type
             return TypedValue(type)
         elif isinstance(origin, (TypeVarValue, TypedValue)):
-            return cls(origin)
+            return cls(origin, exactly=exactly)
         else:
             return AnyValue(AnySource.inference)
 

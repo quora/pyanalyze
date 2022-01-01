@@ -626,6 +626,8 @@ def _type_from_value(value: Value, ctx: Context, is_typeddict: bool = False) -> 
         )
     elif isinstance(value, AnyValue):
         return value
+    elif isinstance(value, SubclassValue) and value.exactly:
+        return value.typ
     elif isinstance(value, TypedValue) and isinstance(value.typ, str):
         # Synthetic type
         return value
@@ -655,6 +657,15 @@ def _type_from_subscripted_value(
                 for subval in root.vals
             ]
         )
+    if (
+        isinstance(root, SubclassValue)
+        and root.exactly
+        and isinstance(root.typ, TypedValue)
+    ):
+        return GenericValue(
+            root.typ.typ, [_type_from_value(elt, ctx) for elt in members]
+        )
+
     if isinstance(root, TypedValue) and isinstance(root.typ, str):
         return GenericValue(root.typ, [_type_from_value(elt, ctx) for elt in members])
 

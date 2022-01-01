@@ -20,6 +20,7 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    SubclassValue,
     TypedValue,
     GenericValue,
     KnownValue,
@@ -833,7 +834,9 @@ class TypeshedFinder:
                 return KnownValue(getattr(mod, info.name))
             except Exception:
                 if isinstance(info.ast, ast.ClassDef):
-                    return TypedValue(f"{module}.{info.name}")
+                    return SubclassValue(
+                        TypedValue(f"{module}.{info.name}"), exactly=True
+                    )
                 elif isinstance(info.ast, ast.AnnAssign):
                     val = self._parse_type(info.ast.annotation, module)
                     if val != AnyValue(AnySource.incomplete_annotation):

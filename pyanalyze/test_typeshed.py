@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 import sys
 import tempfile
+import textwrap
 import time
 from typeshed_client import Resolver, get_search_context
 import typing
@@ -23,6 +24,7 @@ from .arg_spec import ArgSpecCache
 from .test_arg_spec import ClassWithCall
 from .typeshed import TypeshedFinder
 from .value import (
+    TypedDictValue,
     assert_is_value,
     AnySource,
     AnyValue,
@@ -79,7 +81,8 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             temp_dir = Path(temp_dir_str)
             (temp_dir / "typing.pyi").write_text("def NewType(a, b): pass\n")
             (temp_dir / "newt.pyi").write_text(
-                """
+                textwrap.dedent(
+                    """
                 from typing import NewType
 
                 NT = NewType("NT", int)
@@ -88,6 +91,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
                 def f(x: NT, y: Alias) -> None:
                     pass
                 """
+                )
             )
             (temp_dir / "VERSIONS").write_text("newt: 3.5\ntyping: 3.5\n")
             (temp_dir / "@python2").mkdir()
@@ -156,6 +160,13 @@ class TestBundledStubs:
         assert tsf.resolve_name(mod, "constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "aliased_constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "explicitly_aliased_constant") == TypedValue(int)
+
+    def test_typeddict(self):
+        tsf = TypeshedFinder(verbose=True)
+        mod = "_pyanalyze_tests.typeddict"
+        assert tsf.resolve_name(mod, "TD1") == TypedDictValue(
+            {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
+        )
 
 
 class Parent(Generic[T]):
