@@ -21,6 +21,7 @@ from .value import (
     AnyValue,
     CallableValue,
     SubclassValue,
+    TypedDictValue,
     TypedValue,
     GenericValue,
     KnownValue,
@@ -50,6 +51,7 @@ import sys
 from types import GeneratorType
 from typing import (
     Dict,
+    Sequence,
     Set,
     Tuple,
     Any,
@@ -802,6 +804,29 @@ class TypeshedFinder:
         ctx = _AnnotationContext(finder=self, module=module)
         return value_from_ast(info.ast.value, ctx=ctx)
 
+    def make_synthetic_type(self, module: str, info: typeshed_client.NameInfo) -> Value:
+        fq_name = f"{module}.{info.name}"
+        bases = self.get_bases_for_fq_name(fq_name)
+        typ = TypedValue(fq_name)
+        if bases is not None:
+            if any(
+                isinstance(base, KnownValue) and is_typing_name(base.val, "TypedDict")
+                for base in bases
+            ):
+                return self._make_typeddict(module, info, bases)
+        return SubclassValue(typ, exactly=True)
+
+    def _make_typeddict(
+        self, module: str, info: typeshed_client.NameInfo, bases: Sequence[Value]
+    ) -> Value:
+        attrs = self._get_all_attributes_from_info(info, module)
+        fields = [
+            self._get_attribute_from_info(info, module, attr, on_class=True)
+            for attr in attrs
+        ]
+        items = {attr: (True, field) for attr, field in zip(attrs, fields)}
+        return TypedDictValue(items)
+
     def _value_from_info(
         self, info: typeshed_client.resolver.ResolvedName, module: str
     ) -> Value:
@@ -834,9 +859,7 @@ class TypeshedFinder:
                 return KnownValue(getattr(mod, info.name))
             except Exception:
                 if isinstance(info.ast, ast.ClassDef):
-                    return SubclassValue(
-                        TypedValue(f"{module}.{info.name}"), exactly=True
-                    )
+                    return self.make_synthetic_type(module, info)
                 elif isinstance(info.ast, ast.AnnAssign):
                     val = self._parse_type(info.ast.annotation, module)
                     if val != AnyValue(AnySource.incomplete_annotation):

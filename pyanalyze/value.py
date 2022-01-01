@@ -1136,30 +1136,6 @@ class TypedDictValue(GenericValue):
             yield from value.walk_values()
 
 
-@dataclass(init=False)
-class SyntheticTypedDict(GenericValue):
-    """Represents a ``TypedDict`` class."""
-
-    td: TypedDictValue
-
-    def __init__(self, td: TypedDictValue) -> None:
-        super().__init__(dict, td.args)
-        self.td = td
-
-    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return SyntheticTypedDict(self.td.substitute_typevars(typevars))
-
-    def __str__(self) -> str:
-        return f"type[{self.td}]"
-
-    def __hash__(self) -> int:
-        return hash(self.td)
-
-    def walk_values(self) -> Iterable["Value"]:
-        yield self
-        yield from self.td.walk_values()
-
-
 @dataclass(unsafe_hash=True, init=False)
 class AsyncTaskIncompleteValue(GenericValue):
     """A :class:`GenericValue` representing an async task.

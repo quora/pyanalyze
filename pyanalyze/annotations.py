@@ -35,6 +35,7 @@ from typing import (
     Any,
     Container,
     NamedTuple,
+    TypedDict,
     cast,
     TypeVar,
     ContextManager,
@@ -516,6 +517,8 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             return AnyValue(AnySource.error)
     elif is_typing_name(val, "TypeAlias"):
         return AnyValue(AnySource.incomplete_annotation)
+    elif is_typing_name(val, "TypedDict"):
+        return KnownValue(TypedDict)
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
