@@ -737,7 +737,7 @@ class EvaluateVisitor(ast.NodeVisitor):
                 if sys.version_info >= (3, 9):
                     error_node = keyword
                 else:
-                    error_node = node
+                    error_node = call
                 self.add_invalid("Invalid keyword argument to show_error()", error_node)
                 return None
         self.errors.append(
