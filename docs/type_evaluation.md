@@ -1,7 +1,13 @@
 # Type evaluation
 
 Type evaluation is a mechanism for replacing complex
-overloads and version checks. For example, consider the
+overloads and version checks. It provides a restricted
+subset of Python that can be executed by type checkers
+to customize the behavior of a particular function.
+
+## Motivation
+
+Consider the
 definition of `round()` in typeshed:
 
     @overload
@@ -21,6 +27,33 @@ With type evaluation, this could instead be written as:
             return _T
 
 This makes it easier to see at a glance what the difference is between various overloads.
+
+Other features of type evaluation, as proposed here, include
+customizable error messages, branching on the type of an
+argument, and branching on whether an argument was provided
+as a positional or keyword argument.
+
+Type evaluation functions can replace most complex overloads
+with simpler, more readable code. They solve a number of
+problems:
+
+- Error messages involving overloads are often hard to read.
+  Type evaluation functions enable the author of a function
+  to provide custom error messages that clearly point out
+  the issue in the user's code.
+- Complex overloads can be difficult to understand and write.
+  Type evaluation functions provide a more natural interface
+  that is closer to how such functions are written at
+  runtime.
+- The precise behavior of overloads is not specified and
+  varies across type checkers. The behavior of type
+  evaluation functions is more precisely specified.
+- Type evaluation functions provide ways to implement
+  several type system features that have been previously
+  requested, including:
+  - Marking a function, parameter, or parameter type as
+    deprecated.
+  - Accepting `Sequence[str]` but not `str`.
 
 ## Specification
 
@@ -570,10 +603,3 @@ Areas that need more thought include:
 - Add a `warn()` mechanism to warn on particular
   invocations. This can be useful as a mechanism
   to produce deprecation warnings.
-
-Motivations can include:
-
-- Less repetitive overload writing
-- Ability to customize error messages
-- Potential for additional features that work
-  across type checkers

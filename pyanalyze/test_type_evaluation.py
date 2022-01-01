@@ -244,6 +244,42 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(is_walrus_available(), KnownValue(expected))
 
+    @assert_passes()
+    def test_nested_ifs(self):
+        from pyanalyze.extensions import evaluated, is_of_type
+        from typing_extensions import Literal
+
+        @evaluated
+        def is_int(i: int):
+            if is_of_type(i, Literal[1, 2]):
+                if i == 1:
+                    return Literal[1]
+                elif i == 2:
+                    return Literal[2]
+            return Literal[3]
+
+        def capybara():
+            assert_is_value(is_int(1), KnownValue(1))
+
+    @assert_passes()
+    def test_not_equals(self):
+        from pyanalyze.extensions import evaluated, is_of_type
+
+        @evaluated
+        def want_one(x: int = 1, y: bool = True):
+            if x != 1:
+                show_error("want one", argument=x)
+            if y is not True:
+                show_error("want one", argument=y)
+            return None
+
+        def want_one(x: int = 1, y: bool = True) -> None:
+            pass
+
+        def capybara():
+            want_one(2)  # E: incompatible_call
+            want_one(y=False)  # E: incompatible_call
+
 
 class TestBoolOp(TestNameCheckVisitorBase):
     @assert_passes()
@@ -292,6 +328,26 @@ class TestBoolOp(TestNameCheckVisitorBase):
             assert_is_value(use_or(x_or_y), TypedValue(str))
             assert_is_value(use_or(x_or_z), TypedValue(str) | TypedValue(int))
 
+    @assert_passes()
+    def test_literal_or(self):
+        from pyanalyze.extensions import evaluated
+        from typing import Union
+
+        @evaluated
+        def is_one(i: int):
+            if i == 1 or i == -1:
+                show_error("bad argument", argument=i)
+                return int
+            return str
+
+        def is_one(i: int) -> Union[int, str]:
+            raise NotImplementedError
+
+        def capybara():
+            val = is_one(-1)  # E: incompatible_call
+            assert_is_value(val, TypedValue(int))
+            assert_is_value(is_one(2), TypedValue(str))
+
 
 class TestValidation(TestNameCheckVisitorBase):
     @assert_passes()
@@ -339,3 +395,87 @@ class TestValidation(TestNameCheckVisitorBase):
 
         def bad_evaluator(a: int) -> None:
             pass
+
+
+class TestExamples(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_open(self):
+        from pyanalyze.extensions import evaluated, is_of_type
+        from typing import Callable, Union, IO, BinaryIO, Any, Optional
+        from typing_extensions import Literal
+        from io import (
+            BufferedRandom,
+            BufferedReader,
+            BufferedWriter,
+            FileIO,
+            TextIOWrapper,
+        )
+
+        _OpenFile = Union[str, bytes, int]
+        _Opener = Callable[[str, int], int]
+
+        # These are simplified
+        OpenTextModeUpdating = Literal["r+", "w+", "a+", "x+",]
+        OpenTextModeWriting = Literal["w", "wt", "tw", "a", "at", "ta", "x", "xt", "tx"]
+        OpenTextModeReading = Literal["r", "rt", "tr"]
+        OpenTextMode = Union[
+            OpenTextModeUpdating, OpenTextModeWriting, OpenTextModeReading
+        ]
+        OpenBinaryModeUpdating = Literal["rb+", "wb+", "ab+", "xb+"]
+        OpenBinaryModeWriting = Literal["wb", "bw", "ab", "ba", "xb", "bx"]
+        OpenBinaryModeReading = Literal["rb", "br"]
+        OpenBinaryMode = Union[
+            OpenBinaryModeUpdating, OpenBinaryModeReading, OpenBinaryModeWriting
+        ]
+
+        @evaluated
+        def open2(
+            file: _OpenFile,
+            mode: str = "r",
+            buffering: int = -1,
+            encoding: Optional[str] = None,
+            errors: Optional[str] = None,
+            newline: Optional[str] = None,
+            closefd: bool = False,
+            opener: Optional[_Opener] = None,
+        ) -> IO[Any]:
+            if is_of_type(mode, OpenTextMode):
+                return TextIOWrapper
+            elif is_of_type(mode, OpenBinaryMode):
+                if encoding is not None:
+                    show_error(
+                        "'encoding' argument may not be provided in binary moode",
+                        argument=encoding,
+                    )
+                if errors is not None:
+                    show_error(
+                        "'errors' argument may not be provided in binary moode",
+                        argument=errors,
+                    )
+                if newline is not None:
+                    show_error(
+                        "'newline' argument may not be provided in binary moode",
+                        argument=newline,
+                    )
+                if buffering == 0:
+                    return FileIO
+                elif buffering == -1 or buffering == 1:
+                    if is_of_type(mode, OpenBinaryModeUpdating):
+                        return BufferedRandom
+                    elif is_of_type(mode, OpenBinaryModeWriting):
+                        return BufferedWriter
+                    elif is_of_type(mode, OpenBinaryModeReading):
+                        return BufferedReader
+
+                # Buffering cannot be determined: fall back to BinaryIO
+                return BinaryIO
+            # Fallback if mode is not specified
+            return IO[Any]
+
+        def capybara():
+            assert_is_value(open2("x", "r"), TypedValue(TextIOWrapper))
+            open2("x", "rb", encoding="utf-8")  # E: incompatible_call
+            assert_is_value(open2("x", "rb", buffering=0), TypedValue(FileIO))
+            assert_is_value(open2("x", "rb+"), TypedValue(BufferedRandom))
+            assert_is_value(open2("x", "rb"), TypedValue(BufferedReader))
+            assert_is_value(open2("x", "rb", buffering=1), TypedValue(BufferedReader))

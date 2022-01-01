@@ -24,9 +24,8 @@ from typing import (
     Union,
 )
 
-from pyanalyze.implementation import len_of_value
-from pyanalyze.signature import MappingValue
-
+from .implementation import len_of_value
+from .signature import MappingValue
 from .annotations import type_from_value
 from .extensions import CustomCheck
 from .error_code import ErrorCode
@@ -39,6 +38,7 @@ from .stacked_scopes import (
     ConstraintType,
     OrConstraint,
     constrain_value,
+    IsAssignablePredicate,
 )
 from .value import (
     AnnotatedValue,
@@ -61,6 +61,7 @@ from .value import (
     unannotate,
     unite_values,
     unpack_values,
+    is_overlapping,
     UNINITIALIZED_VALUE,
 )
 
@@ -135,25 +136,6 @@ MatchableSequence = AnnotatedValue(
         )
     ],
 )
-
-
-@dataclass
-class IsAssignablePredicate:
-    pattern_value: Value
-    ctx: CanAssignContext
-    positive_only: bool
-
-    def __call__(self, value: Value, positive: bool) -> Optional[Value]:
-        compatible = is_overlapping(self.pattern_value, value, self.ctx)
-        if positive:
-            if not compatible:
-                return None
-            if value.is_assignable(self.pattern_value, self.ctx):
-                return self.pattern_value
-        elif not self.positive_only:
-            if compatible:
-                return None
-        return value
 
 
 @dataclass
@@ -448,10 +430,6 @@ class PatmaVisitor(ast.NodeVisitor):
                 f" {value}",
                 ErrorCode.impossible_pattern,
             )
-
-
-def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
-    return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)
 
 
 def index_of(elts: Sequence[T], pred: Callable[[T], bool]) -> Optional[int]:
