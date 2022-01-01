@@ -431,7 +431,7 @@ class TestExamples(TestNameCheckVisitorBase):
         _Opener = Callable[[str, int], int]
 
         # These are simplified
-        OpenTextModeUpdating = Literal["r+", "w+", "a+", "x+",]
+        OpenTextModeUpdating = Literal["r+", "w+", "a+", "x+"]
         OpenTextModeWriting = Literal["w", "wt", "tw", "a", "at", "ta", "x", "xt", "tx"]
         OpenTextModeReading = Literal["r", "rt", "tr"]
         OpenTextMode = Union[
