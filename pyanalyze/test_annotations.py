@@ -1685,9 +1685,11 @@ class TestTypeAlias(TestNameCheckVisitorBase):
 
         X: TypeAlias = int
         Y = X
+        Z: "TypeAlias" = int
 
-        def capybara(x: X, y: Y, x_quoted: "X", y_quoted: "Y") -> None:
+        def capybara(x: X, y: Y, x_quoted: "X", y_quoted: "Y", z: Z) -> None:
             assert_is_value(x, TypedValue(int))
             assert_is_value(y, TypedValue(int))
             assert_is_value(x_quoted, TypedValue(int))
             assert_is_value(y_quoted, TypedValue(int))
+            assert_is_value(z, TypedValue(int))
