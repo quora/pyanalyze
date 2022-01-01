@@ -82,7 +82,9 @@ do the following:
   evaluation function, as with a normal call.
 - Symbolically evaluate the body of the type evaluation
   until it reaches a `return` statement, which provides the type
-  that the call should return.
+  that the call should return. During this symbolic
+  evaluation, each argument is set to the value it has at
+  the call site that is being evaluated.
 - If execution reached a `return` statement, return the type
   provided by that statement. Otherwise, return the type
   set in the evaluation function's return annotation, or
@@ -93,6 +95,13 @@ that produces an error if an evaluation function is missing
 a type annotation on a parameter or return type. However, no
 error should be provided if the return annotation is missing
 and all branches (including error branches) return a type.
+
+The default value of a parameter to an evaluation function
+may be either `...` or any value that is valid inside
+`Literal[...]`. If an argument with default `X` is not
+provided in a call, the type of the argument within the
+evaluation function is `Literal[X]`. If the default is
+`...`, the type is the parameter's annotation instead.
 
 Simple examples to demonstrate the semantics:
 
@@ -118,6 +127,14 @@ Simple examples to demonstrate the semantics:
     x = always_errors(1)  # error
     reveal_type(x)  # str
 
+    @evaluated
+    def with_defaults(x: int = ..., y: int = 1) -> None:
+        reveal_type(x)
+        reveal_type(y)
+
+    with_defaults()  # x is "int", y is "Literal[1]"
+    with_defaults(1)  # x and y are both "Literal[1]"
+
 ### Supported features
 
 The body of a type evaluation uses a restricted subset of Python.
@@ -128,6 +145,10 @@ The only supported features are:
 - `pass` statements, which do nothing.
 - Calls to `show_error()`, which cause the type checker
   to emit an error. These are discussed further below.
+- Calls to `reveal_type(arg)`, where arg is one of the
+  arguments to the type evaluation function. These cause the
+  type checker to emit a message showing the current type
+  of `arg`. This is a debugging feature.
 
 Conditions in `if` statements may contain:
 

@@ -680,50 +680,69 @@ class EvaluateVisitor(ast.NodeVisitor):
         return self.ctx.evaluate_type(node.value)
 
     def visit_Expr(self, node: ast.Expr) -> EvalReturn:
-        if (
-            isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Name)
-            and node.value.func.id == "show_error"
-        ):
-            call = node.value
-            if len(call.args) != 1:
-                self.add_invalid(
-                    "show_error() takes exactly one positional argument", call
-                )
-                return None
-            if not isinstance(call.args[0], ast.Str):
-                self.add_invalid(
-                    "show_error() message must be a string literal", call.args[0]
-                )
-                return None
-            message = call.args[0].s
-            argument = None
-            for keyword in call.keywords:
-                if keyword.arg == "argument":
-                    if not isinstance(keyword.value, ast.Name):
-                        self.add_invalid("argument must be a name", keyword.value)
-                        return None
-                    argument = keyword.value.id
-                    if argument not in self.ctx.variables:
-                        self.add_invalid(
-                            f"{argument} is not a valid argument", keyword.value
-                        )
-                        return None
-                else:
-                    # Before 3.9 keyword nodes don't have a lineno
-                    if sys.version_info >= (3, 9):
-                        error_node = keyword
-                    else:
-                        error_node = node
-                    self.add_invalid(
-                        "Invalid keyword argument to show_error()", error_node
-                    )
-                    return None
-            self.errors.append(
-                UserRaisedError(message, list(self.active_conditions), argument)
+        if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
+            name = node.value.func.id
+            if name == "show_error":
+                return self.visit_show_error(node.value)
+            elif name == "reveal_type":
+                return self.visit_reveal_type(node.value)
+        self.add_invalid("Invalid statement", node)
+        return None
+
+    def visit_reveal_type(self, call: ast.Call) -> EvalReturn:
+        if len(call.args) != 1 or call.keywords:
+            self.add_invalid(
+                "reveal_type() takes exactly one positional argument", call
             )
             return None
-        self.add_invalid("Invalid statement", node)
+        arg = call.args[0]
+        if not isinstance(arg, ast.Name):
+            self.add_invalid("reveal_type() argument must be a variable name", arg)
+            return None
+        try:
+            val = self.ctx.variables[arg.id]
+        except KeyError:
+            self.errors.append(InvalidEvaluation(f"Invalid variable {arg.id}", arg))
+            return None
+        message = (
+            f"Type of {arg.id} is {self.ctx.can_assign_context.display_value(val)}"
+        )
+        self.errors.append(UserRaisedError(message, [], argument=arg.id))
+        return None
+
+    def visit_show_error(self, call: ast.Call) -> EvalReturn:
+        if len(call.args) != 1:
+            self.add_invalid("show_error() takes exactly one positional argument", call)
+            return None
+        if not isinstance(call.args[0], ast.Str):
+            self.add_invalid(
+                "show_error() message must be a string literal", call.args[0]
+            )
+            return None
+        message = call.args[0].s
+        argument = None
+        for keyword in call.keywords:
+            if keyword.arg == "argument":
+                if not isinstance(keyword.value, ast.Name):
+                    self.add_invalid("argument must be a name", keyword.value)
+                    return None
+                argument = keyword.value.id
+                if argument not in self.ctx.variables:
+                    self.add_invalid(
+                        f"{argument} is not a valid argument", keyword.value
+                    )
+                    return None
+            else:
+                # Before 3.9 keyword nodes don't have a lineno
+                if sys.version_info >= (3, 9):
+                    error_node = keyword
+                else:
+                    error_node = node
+                self.add_invalid("Invalid keyword argument to show_error()", error_node)
+                return None
+        self.errors.append(
+            UserRaisedError(message, list(self.active_conditions), argument)
+        )
         return None
 
     def visit_If(self, node: ast.If) -> EvalReturn:

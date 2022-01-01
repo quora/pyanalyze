@@ -249,6 +249,10 @@ class CanAssignContext(Protocol):
         """Whether Any should be compatible only with itself."""
         return False
 
+    def display_value(self, value: Value) -> str:
+        """Provide a pretty, user-readable display of this value."""
+        return str(value)
+
 
 @dataclass(frozen=True)
 class CanAssignError:

@@ -263,7 +263,7 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_not_equals(self):
-        from pyanalyze.extensions import evaluated, is_of_type
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def want_one(x: int = 1, y: bool = True):
@@ -279,6 +279,22 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
         def capybara():
             want_one(2)  # E: incompatible_call
             want_one(y=False)  # E: incompatible_call
+
+    @assert_passes()
+    def test_reveal_type(self):
+        from pyanalyze.extensions import evaluated
+
+        @evaluated
+        def has_default(x: int = 1):
+            reveal_type(x)
+            return None
+
+        def has_default(x: int = 1) -> None:
+            pass
+
+        def capybara(i: int):
+            has_default()  # E: incompatible_call
+            has_default(i)  # E: incompatible_call
 
 
 class TestBoolOp(TestNameCheckVisitorBase):
