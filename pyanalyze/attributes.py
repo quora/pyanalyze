@@ -375,11 +375,16 @@ def _get_attribute_from_mro(
         except Exception:
             pass
     elif safe_isinstance(typ, types.ModuleType):
-        attr_type = type_from_annotations(
-            typ.__annotations__, ctx.attr, ctx=AnnotationsContext(ctx, typ)
-        )
-        if attr_type is not None:
-            return (attr_type, typ, False)
+        try:
+            annotations = typ.__annotations__
+        except Exception:
+            pass
+        else:
+            attr_type = type_from_annotations(
+                annotations, ctx.attr, ctx=AnnotationsContext(ctx, typ)
+            )
+            if attr_type is not None:
+                return (attr_type, typ, False)
 
     try:
         mro = list(typ.mro())
