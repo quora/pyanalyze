@@ -223,6 +223,25 @@ def type_from_ast(
     return _type_from_ast(ast_node, ctx)
 
 
+def type_from_annotations(
+    annotations: Mapping[str, object],
+    key: str,
+    *,
+    globals: Optional[Mapping[str, object]] = None,
+    ctx: Optional[Context] = None,
+) -> Optional[Value]:
+    try:
+        annotation = annotations[key]
+    except Exception:
+        # Malformed __annotations__
+        return None
+    else:
+        maybe_val = type_from_runtime(annotation, globals=globals, ctx=ctx)
+        if maybe_val != AnyValue(AnySource.incomplete_annotation):
+            return maybe_val
+    return None
+
+
 def type_from_runtime(
     val: object,
     visitor: Optional["NameCheckVisitor"] = None,
@@ -495,6 +514,8 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             cls = "Required" if required else "NotRequired"
             ctx.show_error(f"{cls}[] used in unsupported context")
             return AnyValue(AnySource.error)
+    elif is_typing_name(val, "TypeAlias"):
+        return AnyValue(AnySource.incomplete_annotation)
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
