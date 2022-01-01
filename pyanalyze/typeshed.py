@@ -44,6 +44,7 @@ from dataclasses import dataclass, field, replace
 import collections.abc
 import qcore
 import inspect
+from pathlib import Path
 import sys
 from types import GeneratorType
 from typing import (
@@ -109,10 +110,17 @@ _TYPING_ALIASES = {
 }
 
 
+def _create_resolver() -> typeshed_client.Resolver:
+    ctx = typeshed_client.get_search_context()
+    extra_path = Path(__file__).parent / "stubs"
+    ctx = typeshed_client.get_search_context(search_path=[*ctx.search_path, extra_path])
+    return typeshed_client.Resolver(ctx)
+
+
 @dataclass
 class TypeshedFinder:
     verbose: bool = True
-    resolver: typeshed_client.Resolver = field(default_factory=typeshed_client.Resolver)
+    resolver: typeshed_client.Resolver = field(default_factory=_create_resolver)
     _assignment_cache: Dict[Tuple[str, ast.AST], Value] = field(
         default_factory=dict, repr=False, init=False
     )
@@ -827,7 +835,11 @@ class TypeshedFinder:
                 if isinstance(info.ast, ast.ClassDef):
                     return TypedValue(f"{module}.{info.name}")
                 elif isinstance(info.ast, ast.AnnAssign):
-                    return self._parse_type(info.ast.annotation, module)
+                    val = self._parse_type(info.ast.annotation, module)
+                    if val != AnyValue(AnySource.incomplete_annotation):
+                        return val
+                    if info.ast.value:
+                        return self._parse_expr(info.ast.value, module)
                 self.log("Unable to import", (module, info))
                 return AnyValue(AnySource.inference)
         elif isinstance(info, tuple):

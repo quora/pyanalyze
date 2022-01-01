@@ -80,14 +80,14 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             (temp_dir / "typing.pyi").write_text("def NewType(a, b): pass\n")
             (temp_dir / "newt.pyi").write_text(
                 """
-from typing import NewType
+                from typing import NewType
 
-NT = NewType("NT", int)
-Alias = int
+                NT = NewType("NT", int)
+                Alias = int
 
-def f(x: NT, y: Alias) -> None:
-    pass
-"""
+                def f(x: NT, y: Alias) -> None:
+                    pass
+                """
             )
             (temp_dir / "VERSIONS").write_text("newt: 3.5\ntyping: 3.5\n")
             (temp_dir / "@python2").mkdir()
@@ -147,6 +147,15 @@ def f(x: NT, y: Alias) -> None:
         assert TypedValue(bool) == tsf.get_attribute(
             staticmethod, "__isabstractmethod__", on_class=False
         )
+
+
+class TestBundledStubs:
+    def test_aliases(self):
+        tsf = TypeshedFinder(verbose=True)
+        mod = "_pyanalyze_tests.aliases"
+        assert tsf.resolve_name(mod, "constant") == TypedValue(int)
+        assert tsf.resolve_name(mod, "aliased_constant") == TypedValue(int)
+        assert tsf.resolve_name(mod, "explicitly_aliased_constant") == TypedValue(int)
 
 
 class Parent(Generic[T]):
