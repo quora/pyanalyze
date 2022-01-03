@@ -87,6 +87,10 @@ class ErrorCode(enum.Enum):
     invalid_context_manager = 70
     suggested_return_type = 71
     suggested_parameter_type = 72
+    incompatible_override = 73
+    impossible_pattern = 74
+    bad_match = 75
+    bad_evaluator = 76
 
 
 # Allow testing unannotated functions without too much fuss
@@ -111,6 +115,7 @@ DISABLED_BY_DEFAULT = {
     ErrorCode.bare_ignore,
     # TODO: turn this on
     ErrorCode.implicit_reexport,
+    ErrorCode.incompatible_override,
 }
 
 ERROR_DESCRIPTION = {
@@ -199,6 +204,10 @@ ERROR_DESCRIPTION = {
     ErrorCode.invalid_context_manager: "Use of invalid object in with or async with",
     ErrorCode.suggested_return_type: "Suggested return type",
     ErrorCode.suggested_parameter_type: "Suggested parameter type",
+    ErrorCode.incompatible_override: "Class attribute incompatible with base class",
+    ErrorCode.impossible_pattern: "Pattern can never match",
+    ErrorCode.bad_match: "Invalid type in match statement",
+    ErrorCode.bad_evaluator: "Invalid code in type evaluator",
 }
 
 

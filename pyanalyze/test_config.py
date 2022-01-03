@@ -4,7 +4,10 @@ Configuration file specific to tests.
 
 """
 from typing import Dict, Optional
+from pathlib import Path
 
+from .options import Options
+from .typeshed import StubPath
 from .arg_spec import ArgSpecCache
 from .signature import (
     CallContext,
@@ -35,10 +38,6 @@ class TestConfig(Config):
             "should_return_list": list,
         }
     }
-    PROPERTIES_OF_KNOWN_TYPE = {
-        tests.PropertyObject.string_property: value.TypedValue(str)
-    }
-    NAMES_OF_KNOWN_TYPE = {"proper_capybara": tests.PropertyObject}
 
     VARIABLE_NAME_VALUES = [
         value.VariableNameValue(["uid"]),
@@ -117,3 +116,7 @@ class TestConfig(Config):
         ):
             return cls.base
         return cls
+
+
+TEST_INSTANCES = [StubPath([Path(__file__).parent / "stubs"])]
+TEST_OPTIONS = Options.from_option_list(TEST_INSTANCES, TestConfig())

@@ -5,24 +5,65 @@ The checker maintains global state that is preserved across different modules.
 """
 import itertools
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 import sys
-from typing import Iterable, Iterator, List, Set, Tuple, Union, Dict
+from typing import (
+    Callable,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+    Dict,
+)
 
+from .options import Options, PyObjectSequenceOption
 from .node_visitor import Failure
-from .value import TypedValue
+from .value import TypedValue, VariableNameValue
 from .arg_spec import ArgSpecCache
 from .config import Config
 from .reexport import ImplicitReexportTracker
 from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
+from .shared_options import VariableNameValues
+from .typeshed import TypeshedFinder
 from .type_object import TypeObject, get_mro
 from .suggested_type import CallableTracker
+
+_BaseProvider = Callable[[Union[type, super]], Set[type]]
+
+
+class AdditionalBaseProviders(PyObjectSequenceOption[_BaseProvider]):
+    """Sets functions that provide additional (virtual) base classes for a class.
+    These are used for the purpose of type checking.
+
+    For example, if the following is configured to be used as a base provider:
+
+        def provider(typ: type) -> Set[type]:
+            if typ is B:
+                return {A}
+            return set()
+
+    Then to the type checker `B` is a subclass of `A`.
+
+    """
+
+    name = "additional_base_providers"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_BaseProvider]:
+        return (fallback.get_additional_bases,)
 
 
 @dataclass
 class Checker:
     config: Config
+    raw_options: InitVar[Optional[Options]] = None
+    options: Options = field(init=False)
     arg_spec_cache: ArgSpecCache = field(init=False)
+    ts_finder: TypeshedFinder = field(init=False)
     reexport_tracker: ImplicitReexportTracker = field(init=False)
     callable_tracker: CallableTracker = field(init=False)
     type_object_cache: Dict[Union[type, super, str], TypeObject] = field(
@@ -31,17 +72,39 @@ class Checker:
     assumed_compatibilities: List[Tuple[TypeObject, TypeObject]] = field(
         default_factory=list
     )
+    vnv_map: Dict[str, VariableNameValue] = field(default_factory=dict)
 
-    def __post_init__(self) -> None:
-        self.arg_spec_cache = ArgSpecCache(self.config)
-        self.reexport_tracker = ImplicitReexportTracker(self.config)
+    def __post_init__(self, raw_options: Optional[Options]) -> None:
+        if raw_options is None:
+            self.options = Options.from_option_list([], self.config)
+        else:
+            self.options = raw_options
+        self.ts_finder = TypeshedFinder.make(self.options)
+        self.arg_spec_cache = ArgSpecCache(
+            self.options,
+            self.ts_finder,
+            vnv_provider=self.maybe_get_variable_name_value,
+        )
+        self.reexport_tracker = ImplicitReexportTracker(self.options)
         self.callable_tracker = CallableTracker()
+
+        for vnv in self.options.get_value_for(VariableNameValues):
+            for variable in vnv.varnames:
+                self.vnv_map[variable] = vnv
+
+    def maybe_get_variable_name_value(
+        self, varname: str
+    ) -> Optional[VariableNameValue]:
+        return VariableNameValue.from_varname(varname, self.vnv_map)
 
     def perform_final_checks(self) -> List[Failure]:
         return self.callable_tracker.check()
 
     def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
-        return self.config.get_additional_bases(typ)
+        bases = set()
+        for provider in self.options.get_value_for(AdditionalBaseProviders):
+            bases |= provider(typ)
+        return bases
 
     def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
         try:
@@ -71,7 +134,7 @@ class Checker:
         else:
             additional_bases = self.get_additional_bases(typ)
             # Is it marked as a protocol in stubs? If so, use the stub definition.
-            if self.arg_spec_cache.ts_finder.is_protocol(typ):
+            if self.ts_finder.is_protocol(typ):
                 bases = self._get_typeshed_bases(typ)
                 return TypeObject(
                     typ,
@@ -96,13 +159,13 @@ class Checker:
             return TypeObject(typ, additional_bases)
 
     def _get_typeshed_bases(self, typ: Union[type, str]) -> Set[Union[type, str]]:
-        base_values = self.arg_spec_cache.ts_finder.get_bases_recursively(typ)
+        base_values = self.ts_finder.get_bases_recursively(typ)
         return set(base.typ for base in base_values if isinstance(base, TypedValue))
 
     def _get_protocol_members(self, bases: Iterable[Union[type, str]]) -> Set[str]:
         return set(
             itertools.chain.from_iterable(
-                self.arg_spec_cache.ts_finder.get_all_attributes(base) for base in bases
+                self.ts_finder.get_all_attributes(base) for base in bases
             )
         )
 

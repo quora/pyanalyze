@@ -81,7 +81,7 @@ class Value:
         This is the primary mechanism used for checking type compatibility.
 
         """
-        if isinstance(other, AnyValue):
+        if isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
         elif isinstance(other, MultiValuedValue):
@@ -95,9 +95,7 @@ class Value:
             if not tv_maps:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
-        elif isinstance(other, AnnotatedValue):
-            return self.can_assign(other.value, ctx)
-        elif isinstance(other, TypeVarValue):
+        elif isinstance(other, (AnnotatedValue, TypeVarValue)):
             return other.can_be_assigned(self, ctx)
         elif (
             isinstance(other, UnboundMethodValue)
@@ -160,7 +158,7 @@ class Value:
         return unite_values(other, self)
 
 
-class CanAssignContext:
+class CanAssignContext(Protocol):
     """A context passed to the :meth:`Value.can_assign` method.
 
     Provides access to various functionality used for type checking.
@@ -240,6 +238,18 @@ class CanAssignContext:
         """Context that resets the value used by :meth:`has_used_any_match` and
         :meth:`record_any_match`."""
         return qcore.empty_context
+
+    def set_exclude_any(self) -> ContextManager[None]:
+        """Within this context, `Any` is compatible only with itself."""
+        return qcore.empty_context
+
+    def should_exclude_any(self) -> bool:
+        """Whether Any should be compatible only with itself."""
+        return False
+
+    def display_value(self, value: Value) -> str:
+        """Provide a pretty, user-readable display of this value."""
+        return str(value)
 
 
 @dataclass(frozen=True)
@@ -330,6 +340,8 @@ class AnySource(enum.Enum):
     """A special form like ClassVar without a type argument."""
     multiple_overload_matches = 12
     """Multiple matching overloads."""
+    ellipsis_callable = 13
+    """Callable using an ellipsis."""
 
 
 @dataclass(frozen=True)
@@ -346,6 +358,8 @@ class AnyValue(Value):
         return f"Any[{self.source.name}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(other, (AnnotatedValue, MultiValuedValue)):
+            return super().can_assign(other, ctx)
         return {}  # Always allowed
 
 
@@ -602,7 +616,7 @@ class TypedValue(Value):
         return super().can_assign(other, ctx)
 
     def can_assign_thrift_enum(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if isinstance(other, AnyValue):
+        if isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
         elif isinstance(other, KnownValue):
@@ -1098,7 +1112,7 @@ class TypedDictValue(GenericValue):
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
 
-    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+    def substitute_typevars(self, typevars: TypeVarMap) -> "TypedDictValue":
         return TypedDictValue(
             {
                 key: (is_required, value.substitute_typevars(typevars))
@@ -1157,12 +1171,16 @@ class CallableValue(TypedValue):
 
     signature: "pyanalyze.signature.ConcreteSignature"
 
-    def __init__(self, signature: "pyanalyze.signature.ConcreteSignature") -> None:
-        super().__init__(collections.abc.Callable)
+    def __init__(
+        self,
+        signature: "pyanalyze.signature.ConcreteSignature",
+        fallback: Union[type, str] = collections.abc.Callable,
+    ) -> None:
+        super().__init__(fallback)
         self.signature = signature
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return CallableValue(self.signature.substitute_typevars(typevars))
+        return CallableValue(self.signature.substitute_typevars(typevars), self.typ)
 
     def walk_values(self) -> Iterable[Value]:
         yield self
@@ -1171,10 +1189,10 @@ class CallableValue(TypedValue):
     def get_asynq_value(self) -> Value:
         """Return the CallableValue for the .asynq attribute of an AsynqCallable."""
         sig = self.signature.get_asynq_value()
-        return CallableValue(sig)
+        return CallableValue(sig, self.typ)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if not isinstance(other, (MultiValuedValue, AnyValue)):
+        if not isinstance(other, (MultiValuedValue, AnyValue, AnnotatedValue)):
             signature = ctx.signature_from_value(other)
             if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
@@ -1210,9 +1228,11 @@ class SubclassValue(Value):
 
     typ: Union[TypedValue, "TypeVarValue"]
     """The underlying type."""
+    exactly: bool = False
+    """If True, represents exactly this class and not a subclass."""
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return self.make(self.typ.substitute_typevars(typevars))
+        return self.make(self.typ.substitute_typevars(typevars), exactly=self.exactly)
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -1265,14 +1285,16 @@ class SubclassValue(Value):
         return f"Type[{self.typ}]"
 
     @classmethod
-    def make(cls, origin: Value) -> Value:
+    def make(cls, origin: Value, *, exactly: bool = False) -> Value:
         if isinstance(origin, MultiValuedValue):
-            return unite_values(*[cls.make(val) for val in origin.vals])
+            return unite_values(
+                *[cls.make(val, exactly=exactly) for val in origin.vals]
+            )
         elif isinstance(origin, AnyValue):
             # Type[Any] is equivalent to plain type
             return TypedValue(type)
         elif isinstance(origin, (TypeVarValue, TypedValue)):
-            return cls(origin)
+            return cls(origin, exactly=exactly)
         else:
             return AnyValue(AnySource.inference)
 
@@ -1313,7 +1335,7 @@ class MultiValuedValue(Value):
             if not tv_maps:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
-        elif isinstance(other, AnyValue):
+        elif isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
         else:
@@ -1539,6 +1561,22 @@ class TypeVarValue(Value):
         return str(self.typevar)
 
 
+@dataclass
+class ParamSpecArgsValue(Value):
+    param_spec: ParamSpec
+
+    def __str__(self) -> str:
+        return f"{self.param_spec}.args"
+
+
+@dataclass
+class ParamSpecKwargsValue(Value):
+    param_spec: ParamSpec
+
+    def __str__(self) -> str:
+        return f"{self.param_spec}.kwargs"
+
+
 class Extension:
     """An extra piece of information about a type that can be stored in
     an :class:`AnnotatedValue`."""
@@ -1582,6 +1620,27 @@ class ParameterTypeGuardExtension(Extension):
     def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
         guarded_type = self.guarded_type.substitute_typevars(typevars)
         return ParameterTypeGuardExtension(self.varname, guarded_type)
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.guarded_type.walk_values()
+
+
+@dataclass(frozen=True)
+class NoReturnGuardExtension(Extension):
+    """An :class:`Extension` used in a function return type. Used to
+    indicate that unless the parameter named `varname` is of type `guarded_type`,
+    the function does not return.
+
+    Corresponds to :class:`pyanalyze.extensions.NoReturnGuard`.
+
+    """
+
+    varname: str
+    guarded_type: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
+        guarded_type = self.guarded_type.substitute_typevars(typevars)
+        return NoReturnGuardExtension(self.varname, guarded_type)
 
     def walk_values(self) -> Iterable[Value]:
         yield from self.guarded_type.walk_values()
@@ -1674,6 +1733,21 @@ class ConstraintExtension(Extension):
     def __hash__(self) -> int:
         return id(self)
 
+    def __str__(self) -> str:
+        return str(self.constraint)
+
+
+@dataclass(frozen=True, eq=False)
+class NoReturnConstraintExtension(Extension):
+    """Encapsulates a Constraint. If the value is evaluated and completes, the
+    constraint must be True."""
+
+    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+    # Comparing them can get too expensive
+    def __hash__(self) -> int:
+        return id(self)
+
 
 @dataclass(frozen=True)
 class WeakExtension(Extension):
@@ -1745,6 +1819,18 @@ class AnnotatedValue(Value):
             tv_maps.append(custom_can_assign)
         return unify_typevar_maps(tv_maps)
 
+    def can_be_assigned(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        can_assign = other.can_assign(self.value, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return can_assign
+        tv_maps = [can_assign]
+        for custom_check in self.get_metadata_of_type(CustomCheckExtension):
+            custom_can_assign = custom_check.custom_check.can_be_assigned(other, ctx)
+            if isinstance(custom_can_assign, CanAssignError):
+                return custom_can_assign
+            tv_maps.append(custom_can_assign)
+        return unify_typevar_maps(tv_maps)
+
     def walk_values(self) -> Iterable[Value]:
         yield self
         yield from self.value.walk_values()
@@ -1799,8 +1885,6 @@ class VariableNameValue(AnyValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if not isinstance(other, VariableNameValue):
-            if isinstance(other, AnyValue):
-                ctx.record_any_used()
             return {}
         if other == self:
             return {}
@@ -1843,7 +1927,13 @@ def flatten_values(val: Value, *, unwrap_annotated: bool = False) -> Iterable[Va
     if isinstance(val, MultiValuedValue):
         yield from val.vals
     elif isinstance(val, AnnotatedValue) and isinstance(val.value, MultiValuedValue):
-        yield from val.value.vals
+        if unwrap_annotated:
+            yield from val.value.vals
+        else:
+            subvals = [
+                annotate_value(subval, val.metadata) for subval in val.value.vals
+            ]
+            yield from subvals
     elif unwrap_annotated and isinstance(val, AnnotatedValue):
         yield val.value
     else:
@@ -1865,10 +1955,6 @@ def make_weak(val: Value) -> Value:
 def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:
     if not metadata:
         return origin
-    if isinstance(origin, MultiValuedValue):
-        return MultiValuedValue(
-            [annotate_value(subval, metadata) for subval in origin.vals]
-        )
     if isinstance(origin, AnnotatedValue):
         # Flatten it
         metadata = (*origin.metadata, *metadata)
@@ -1888,9 +1974,12 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
     return AnnotatedValue(origin, metadata)
 
 
+ExtensionT = TypeVar("ExtensionT", bound=Extension)
+
+
 def unannotate_value(
-    origin: Value, extension: Type[Extension]
-) -> Tuple[Value, Sequence[Extension]]:
+    origin: Value, extension: Type[ExtensionT]
+) -> Tuple[Value, Sequence[ExtensionT]]:
     if not isinstance(origin, AnnotatedValue):
         return origin, []
     matches = [
@@ -1906,6 +1995,12 @@ def unannotate_value(
         ]
         return annotate_value(origin.value, remaining), matches
     return origin, []
+
+
+def unannotate(value: Value) -> Value:
+    if isinstance(value, AnnotatedValue):
+        return value.value
+    return value
 
 
 def unite_and_simplify(*values: Value, limit: int) -> Value:
@@ -2246,3 +2341,16 @@ def stringify_object(obj: Any) -> str:
             return f"{obj.__module__}.{obj.__name__}"
     except Exception:
         return repr(obj)
+
+
+def can_assign_and_used_any(
+    param_typ: Value, var_value: Value, ctx: CanAssignContext
+) -> Tuple[CanAssign, bool]:
+    with ctx.reset_any_used():
+        tv_map = param_typ.can_assign(var_value, ctx)
+        used_any = ctx.has_used_any_match()
+    return tv_map, used_any
+
+
+def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
+    return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)

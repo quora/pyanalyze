@@ -67,6 +67,8 @@ from .value import (
     unite_and_simplify,
     unite_values,
     flatten_values,
+    CanAssignContext,
+    is_overlapping,
 )
 
 T = TypeVar("T")
@@ -152,6 +154,15 @@ class VarnameWithOrigin:
                 self.varname, tuple(index for index, _ in self.indices)
             )
         return self.varname
+
+    def __str__(self) -> str:
+        pieces = [self.varname]
+        for index, _ in self.indices:
+            if isinstance(index, str):
+                pieces.append(f".{index}")
+            else:
+                pieces.append(f"[{index.val!r}]")
+        return "".join(pieces)
 
 
 SubScope = Dict[Varname, List[Node]]
@@ -505,6 +516,25 @@ class PredicateProvider(AbstractConstraint):
         return NULL_CONSTRAINT
 
 
+@dataclass
+class IsAssignablePredicate:
+    pattern_value: Value
+    ctx: CanAssignContext
+    positive_only: bool
+
+    def __call__(self, value: Value, positive: bool) -> Optional[Value]:
+        compatible = is_overlapping(self.pattern_value, value, self.ctx)
+        if positive:
+            if not compatible:
+                return None
+            if value.is_assignable(self.pattern_value, self.ctx):
+                return self.pattern_value
+        elif not self.positive_only:
+            if compatible:
+                return None
+        return value
+
+
 @dataclass(frozen=True)
 class AndConstraint(AbstractConstraint):
     """Represents the AND of two constraints."""
@@ -712,7 +742,7 @@ class Scope:
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
-    ) -> None:
+    ) -> VarnameOrigin:
         if varname not in self:
             self.variables[varname] = value
         elif isinstance(value, AnyValue) or not safe_equals(
@@ -732,6 +762,7 @@ class Scope:
                 self.variables[varname] = value
             else:
                 self.variables[varname] = unite_values(existing, value)
+        return EMPTY_ORIGIN
 
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         return self.variables.items()
@@ -1018,10 +1049,10 @@ class FunctionScope(Scope):
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
-    ) -> None:
+    ) -> VarnameOrigin:
         if isinstance(value, ReferencingValue):
             self.referencing_value_vars[varname] = value
-            return
+            return EMPTY_ORIGIN
         ref_var = self.referencing_value_vars[varname]
         if isinstance(ref_var, ReferencingValue):
             ref_var.scope.set(ref_var.name, value, node, state)
@@ -1038,6 +1069,7 @@ class FunctionScope(Scope):
             self.name_to_current_definition_nodes[composite] = []
         self.name_to_all_definition_nodes[varname].add(node)
         self._add_composite(varname)
+        return frozenset([node])
 
     def get_local(
         self,
@@ -1287,13 +1319,23 @@ class StackedScopes:
             self.scopes.pop()
 
     @contextlib.contextmanager
-    def ignore_topmost_scope(self) -> Iterable[None]:
+    def ignore_topmost_scope(self) -> Iterator[None]:
         """Context manager that temporarily ignores the topmost scope."""
         scope = self.scopes.pop()
         try:
             yield
         finally:
             self.scopes.append(scope)
+
+    @contextlib.contextmanager
+    def allow_only_module_scope(self) -> Iterator[None]:
+        """Context manager that allows only lookups in the module and builtin scopes."""
+        rest = self.scopes[2:]
+        del self.scopes[2:]
+        try:
+            yield
+        finally:
+            self.scopes += rest
 
     def get(self, varname: Varname, node: Node, state: VisitorState) -> Value:
         """Gets a variable of the given name from the current scope stack.

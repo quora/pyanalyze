@@ -14,7 +14,7 @@ from . import tests
 from . import value
 from .checker import Checker
 from .name_check_visitor import NameCheckVisitor
-from .signature import Signature
+from .signature import ELLIPSIS_PARAM, Signature
 from .stacked_scopes import Composite
 from .test_config import TestConfig
 from .value import (
@@ -112,7 +112,7 @@ def test_unbound_method_value() -> None:
     assert val.get_signature(CTX) is not None
     assert_can_assign(val, val)
     assert_cannot_assign(val, KnownValue(1))
-    assert_can_assign(val, CallableValue(Signature.make([], is_ellipsis_args=True)))
+    assert_can_assign(val, CallableValue(Signature.make([ELLIPSIS_PARAM])))
     assert_can_assign(val, CallableValue(Signature.make([])))
 
 

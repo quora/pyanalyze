@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- Support some imports from stub-only modules (#386)
+- Support type evaluation functions in stubs (#386)
+- Support `TypedDict` in stubs (#386)
+- Support `TypeAlias` (PEP 612) (#386)
+- Small improvements to `ParamSpec` support (#385)
+- Allow `CustomCheck` to customize what values
+  a value can be assigned to (#383)
+- Fix incorrect inference of `self` argument on
+  some nested methods (#382)
+- Fix compatibility between `Callable` and `Annotated`
+  (#381)
+- Fix inference for nested `async def` functions (#380)
+- Fix usage of type variables in function parameters
+  with defaults (#378)
+- Support the Python 3.10 `match` statement (#376)
+- Support the walrus (`:=`) operator (#375)
+- Initial support for proposed new "type evaluation"
+  mechanism (#374, #379, #384)
+- Create command-line options for each config option (#373)
+- Overhaul treatment of function definitions (#372)
+  - Support positional-only arguments
+  - Infer more precise types for lambda functions
+  - Infer more precise types for nested functions
+  - Refactor related code
+- Add check for incompatible overrides in child classes
+  (#371)
+- Add `pyanalyze.extensions.NoReturnGuard` (#370)
+- Infer call signatures for `Type[X]` (#369)
+- Support configuration in a `pyproject.toml` file (#368)
 - Require `typeshed_client` 2.0 (#361)
 - Add JSON output for integrating pyanalyze's output with other
   tools (#360)
