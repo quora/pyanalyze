@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Support type evaluation functions in stubs (#386)
+- Support `TypedDict` in stubs (#386)
+- Support `TypeAlias` (PEP 612) (#386)
 - Small improvements to `ParamSpec` support (#385)
 - Allow `CustomCheck` to customize what values
   a value can be assigned to (#383)
