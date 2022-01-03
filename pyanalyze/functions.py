@@ -39,7 +39,8 @@ from .value import (
     CanAssignError,
 )
 
-FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]
+FunctionDefNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
+FunctionNode = Union[FunctionDefNode, ast.Lambda]
 IMPLICIT_CLASSMETHODS = ("__init_subclass__", "__new__")
 
 

@@ -8,11 +8,9 @@ import ast
 from contextlib import contextmanager
 import contextlib
 from dataclasses import dataclass, field
-import inspect
 import operator
 import qcore
 import sys
-import textwrap
 from typing_extensions import Literal
 from typing import (
     Any,
@@ -35,7 +33,6 @@ from .stacked_scopes import (
     constrain_value,
     IsAssignablePredicate,
 )
-from .extensions import get_type_evaluation
 from .safe import all_of_type
 from .value import (
     NO_RETURN_VALUE,
@@ -261,16 +258,11 @@ class UserRaisedError:
 EvaluateError = Union[InvalidEvaluation, UserRaisedError]
 
 
-class Context:
+@dataclass
+class EvalContext:
     variables: VarMap
     positions: Mapping[str, Position]
     can_assign_context: CanAssignContext
-
-    def evaluate_type(self, __node: ast.AST) -> Value:
-        raise NotImplementedError
-
-    def evaluate_value(self, __node: ast.AST) -> Value:
-        raise NotImplementedError
 
     @contextmanager
     def narrow_variables(self, varmap: Optional[VarMap]) -> Iterator[None]:
@@ -288,15 +280,26 @@ class Context:
 
 @dataclass
 class Evaluator:
-    func: Callable[..., Any]
-    node: ast.FunctionDef
-    globals: Mapping[str, object]
+    node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
-    def evaluate(self, ctx: Context) -> Tuple[Value, Sequence[UserRaisedError]]:
-        visitor = EvaluateVisitor(ctx)
-        result = visitor.run(self.node)
+    def evaluate(self, ctx: EvalContext) -> Tuple[Value, Sequence[UserRaisedError]]:
+        visitor = EvaluateVisitor(self, ctx)
+        result = visitor.run()
         errors = [e for e in visitor.errors if isinstance(e, UserRaisedError)]
         return result, errors
+
+    def validate(self, ctx: EvalContext) -> List[InvalidEvaluation]:
+        visitor = EvaluateVisitor(self, ctx, validation_mode=True)
+        visitor.run()
+        return [
+            error for error in visitor.errors if isinstance(error, InvalidEvaluation)
+        ]
+
+    def evaluate_type(self, __node: ast.AST) -> Value:
+        raise NotImplementedError
+
+    def evaluate_value(self, __node: ast.AST) -> Value:
+        raise NotImplementedError
 
 
 @dataclass
@@ -337,7 +340,8 @@ class ConditionReturn:
 
 @dataclass
 class ConditionEvaluator(ast.NodeVisitor):
-    ctx: Context
+    evaluator: Evaluator
+    ctx: EvalContext
     validation_mode: bool = False
     errors: List[EvaluateError] = field(default_factory=list, init=False)
 
@@ -384,7 +388,7 @@ class ConditionEvaluator(ast.NodeVisitor):
                     "is_of_type() takes two positional arguments", node
                 )
             varname_node = node.args[0]
-            typ = self.ctx.evaluate_type(node.args[1])
+            typ = self.evaluator.evaluate_type(node.args[1])
             exclude_any = True
             for keyword in node.keywords:
                 if keyword.arg == "exclude_any":
@@ -591,7 +595,7 @@ class ConditionEvaluator(ast.NodeVisitor):
             )
 
     def evaluate_literal(self, node: ast.expr) -> Optional[KnownValue]:
-        val = self.ctx.evaluate_value(node)
+        val = self.evaluator.evaluate_value(node)
         if (
             isinstance(val, SequenceIncompleteValue)
             and isinstance(val.typ, type)
@@ -613,14 +617,15 @@ class ConditionEvaluator(ast.NodeVisitor):
 
 @dataclass
 class EvaluateVisitor(ast.NodeVisitor):
-    ctx: Context
+    evaluator: Evaluator
+    ctx: EvalContext
     errors: List[EvaluateError] = field(default_factory=list)
     active_conditions: List[Condition] = field(default_factory=list)
     validation_mode: bool = False
 
-    def run(self, node: ast.AST) -> Value:
-        ret = self.visit(node)
-        return self._evaluate_ret(ret, node)
+    def run(self) -> Value:
+        ret = self.visit(self.evaluator.node)
+        return self._evaluate_ret(ret, self.evaluator.node)
 
     def _evaluate_ret(self, ret: EvalReturn, node: ast.AST) -> Value:
         if ret is None:
@@ -677,7 +682,7 @@ class EvaluateVisitor(ast.NodeVisitor):
         if node.value is None:
             self.add_invalid("return statement must have a value", node)
             return KnownValue(None)
-        return self.ctx.evaluate_type(node.value)
+        return self.evaluator.evaluate_type(node.value)
 
     def visit_Expr(self, node: ast.Expr) -> EvalReturn:
         if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
@@ -746,7 +751,7 @@ class EvaluateVisitor(ast.NodeVisitor):
         return None
 
     def visit_If(self, node: ast.If) -> EvalReturn:
-        visitor = ConditionEvaluator(self.ctx, self.validation_mode)
+        visitor = ConditionEvaluator(self.evaluator, self.ctx, self.validation_mode)
         condition = visitor.visit(node.test)
         self.errors += visitor.errors
         if self.validation_mode:
@@ -780,31 +785,6 @@ class EvaluateVisitor(ast.NodeVisitor):
     def generic_visit(self, node: ast.AST) -> Any:
         self.add_invalid("Invalid code in type evaluator", node)
         return None
-
-
-def get_evaluator(func: Callable[..., Any]) -> Optional[Evaluator]:
-    try:
-        key = f"{func.__module__}.{func.__qualname__}"
-    except AttributeError:
-        return None
-    evaluation_func = get_type_evaluation(key)
-    if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
-        return None
-    lines, _ = inspect.getsourcelines(evaluation_func)
-    code = textwrap.dedent("".join(lines))
-    body = ast.parse(code)
-    if not body.body:
-        return None
-    evaluator = body.body[0]
-    if not isinstance(evaluator, ast.FunctionDef):
-        return None
-    return Evaluator(evaluation_func, evaluator, evaluation_func.__globals__)
-
-
-def validate(node: ast.AST, ctx: Context) -> List[InvalidEvaluation]:
-    visitor = EvaluateVisitor(ctx, validation_mode=True)
-    visitor.run(node)
-    return [error for error in visitor.errors if isinstance(error, InvalidEvaluation)]
 
 
 def decompose_union(

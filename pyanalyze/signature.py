@@ -6,9 +6,9 @@ calls.
 
 """
 
-from pyanalyze.extensions import CustomCheck
+from .extensions import CustomCheck
 from . import annotations
-from .type_evaluation import Evaluator
+from .type_evaluation import EvalContext, Evaluator
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -1166,9 +1166,7 @@ class Signature:
                 positions = {
                     param: position for param, (position, _) in bound_args.items()
                 }
-                eval_ctx = annotations.TypeEvaluationContext(
-                    varmap, positions, ctx.can_assign_ctx, self.evaluator.globals
-                )
+                eval_ctx = EvalContext(varmap, positions, visitor)
                 return_value, errors = self.evaluator.evaluate(eval_ctx)
                 for error in errors:
                     error_node = None

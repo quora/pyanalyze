@@ -31,6 +31,7 @@ import sys
 import tempfile
 import traceback
 import types
+import typeshed_client
 from typing import (
     ClassVar,
     ContextManager,
@@ -56,9 +57,9 @@ import qcore
 
 from . import attributes, format_strings, node_visitor, importer, method_return_type
 from .annotations import (
-    EvaluatorValidationContext,
+    SyntheticEvaluator,
     is_instance_of_typing_name,
-    type_from_runtime,
+    type_from_annotations,
     type_from_value,
     is_typing_name,
 )
@@ -133,6 +134,7 @@ from .functions import (
     AsyncFunctionKind,
     FunctionInfo,
     FunctionResult,
+    FunctionDefNode,
     FunctionNode,
     compute_function_info,
     IMPLICIT_CLASSMETHODS,
@@ -303,7 +305,7 @@ class _AttrContext(attributes.AttrContext):
         return AnyValue(AnySource.inference)
 
     def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
-        typeshed_type = self.visitor.arg_spec_cache.ts_finder.get_attribute(
+        typeshed_type = self.visitor.checker.ts_finder.get_attribute(
             typ, self.attr, on_class=on_class
         )
         if (
@@ -316,7 +318,7 @@ class _AttrContext(attributes.AttrContext):
     def get_attribute_from_typeshed_recursively(
         self, fq_name: str, *, on_class: bool
     ) -> Tuple[Value, object]:
-        return self.visitor.arg_spec_cache.ts_finder.get_attribute_recursively(
+        return self.visitor.checker.ts_finder.get_attribute_recursively(
             fq_name, self.attr, on_class=on_class
         )
 
@@ -1546,9 +1548,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Value:
         return self.visit_FunctionDef(node)
 
-    def visit_FunctionDef(
-        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
-    ) -> Value:
+    def visit_FunctionDef(self, node: FunctionDefNode) -> Value:
         potential_function = self._get_potential_function(node)
         info = compute_function_info(
             node,
@@ -1674,9 +1674,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return
         self._argspec_to_retval[id(sig)] = return_value
 
-    def _get_potential_function(
-        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
-    ) -> Optional[object]:
+    def _get_potential_function(self, node: FunctionDefNode) -> Optional[object]:
         scope_type = self.scopes.scope_type()
         if scope_type == ScopeType.module_scope and self.module is not None:
             potential_function = safe_getattr(self.module, node.name, None)
@@ -1730,16 +1728,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return FunctionResult(parameters=params)
 
         if function_info.is_evaluated:
-            if self._is_collecting():
+            if self._is_collecting() or isinstance(node, ast.Lambda):
                 return FunctionResult(parameters=params)
             with self.scopes.allow_only_module_scope():
-                ctx = EvaluatorValidationContext(
+                evaluator = SyntheticEvaluator.from_visitor(node, self)
+                ctx = type_evaluation.EvalContext(
                     variables={param.name: param.annotation for param in params},
                     positions={param.name: type_evaluation.DEFAULT for param in params},
                     can_assign_context=self,
-                    node=node,
                 )
-                for error in type_evaluation.validate(node, ctx):
+                for error in evaluator.validate(ctx):
                     self.show_error(
                         error.node, error.message, error_code=ErrorCode.bad_evaluator
                     )
@@ -1747,10 +1745,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     with self.catch_errors(), self.scopes.add_scope(
                         ScopeType.function_scope, scope_node=node
                     ):
-                        if isinstance(node, ast.Lambda):
-                            self.generic_visit(node.body)
-                        else:
-                            self._generic_visit_list(node.body)
+                        self._generic_visit_list(node.body)
             return FunctionResult(parameters=params)
 
         # We pass in the node to add_scope() and visit the body once in collecting
@@ -2118,6 +2113,30 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if self.module is None:
             self._handle_imports(node.names, force_public=force_public)
             return
+
+        # See if we can get the names from the stub instead
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and node.level == 0
+        ):
+            path = typeshed_client.ModulePath(tuple(node.module.split(".")))
+            finder = self.checker.ts_finder
+            mod = finder.resolver.get_module(path)
+            if mod.exists:
+                for alias in node.names:
+                    val = finder.resolve_name(node.module, alias.name)
+                    if val is UNINITIALIZED_VALUE:
+                        self._show_error_if_checking(
+                            node,
+                            f"Cannot import name {alias.name!r} from {node.module!r}",
+                            ErrorCode.import_failed,
+                        )
+                        val = AnyValue(AnySource.error)
+                    self._set_name_in_scope(
+                        alias.asname or alias.name, alias, val, private=not force_public
+                    )
+                return
 
         source_code = decompile(node)
 
@@ -4105,7 +4124,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return True
         if issubclass(typ, enum.Enum):
             return True
-        ts_finder = self.arg_spec_cache.ts_finder
+        ts_finder = self.checker.ts_finder
         if (
             ts_finder.has_stubs(typ)
             and not ts_finder.has_attribute(typ, "__getattr__")
@@ -4593,9 +4612,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return {}
 
     @classmethod
-    def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
+    def prepare_constructor_kwargs(
+        cls, kwargs: Mapping[str, Any], extra_options: Sequence[ConfigOption] = ()
+    ) -> Mapping[str, Any]:
         kwargs = dict(kwargs)
-        instances = []
+        instances = [*extra_options]
         if "settings" in kwargs:
             for error_code, value in kwargs["settings"].items():
                 option_cls = ConfigOption.registry[error_code.name]
@@ -4757,17 +4778,9 @@ def build_stacked_scopes(
         module_vars = {}
         annotations = getattr(module, "__annotations__", {})
         for key, value in module.__dict__.items():
-            try:
-                annotation = annotations[key]
-            except Exception:
-                # Malformed __annotations__
+            val = type_from_annotations(annotations, key, globals=module.__dict__)
+            if val is None:
                 val = KnownValue(value)
-            else:
-                maybe_val = type_from_runtime(annotation, globals=module.__dict__)
-                if maybe_val == AnyValue(AnySource.incomplete_annotation):
-                    val = KnownValue(value)
-                else:
-                    val = maybe_val
             module_vars[key] = val
     return StackedScopes(module_vars, module, simplification_limit=simplification_limit)
 
