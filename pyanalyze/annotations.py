@@ -62,6 +62,8 @@ from .extensions import (
     get_type_evaluation,
 )
 from .find_unused import used
+from .functions import FunctionDefNode
+from .node_visitor import ErrorContext
 from .signature import ELLIPSIS_PARAM, SigParameter, Signature, ParameterKind
 from .safe import is_typing_name, is_instance_of_typing_name
 from . import type_evaluation
@@ -189,8 +191,9 @@ class RuntimeEvaluator(type_evaluation.Evaluator, Context):
 
 
 @dataclass
-class SyntheticEvaluator(type_evaluation.Evaluator, Context):
-    ctx: "NameCheckVisitor"
+class SyntheticEvaluator(type_evaluation.Evaluator):
+    error_ctx: ErrorContext
+    annotations_context: Context
 
     def show_error(
         self,
@@ -198,20 +201,27 @@ class SyntheticEvaluator(type_evaluation.Evaluator, Context):
         error_code: ErrorCode = ErrorCode.invalid_annotation,
         node: Optional[ast.AST] = None,
     ) -> None:
-        self.ctx.show_error(node or self.node, message, error_code=error_code)
+        self.error_ctx.show_error(node or self.node, message, error_code=error_code)
 
     def evaluate_type(self, node: ast.AST) -> Value:
-        return type_from_ast(node, ctx=self)
+        return type_from_ast(node, ctx=self.annotations_context)
 
     def evaluate_value(self, node: ast.AST) -> Value:
-        return value_from_ast(node, ctx=self, error_on_unrecognized=False)
+        return value_from_ast(
+            node, ctx=self.annotations_context, error_on_unrecognized=False
+        )
 
     def get_name(self, node: ast.Name) -> Value:
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
-        val, _ = self.ctx.resolve_name(
-            node, suppress_errors=self.should_suppress_undefined_names
+        return self.annotations_context.get_name(node)
+
+    @classmethod
+    def from_visitor(
+        cls, node: FunctionDefNode, visitor: "NameCheckVisitor"
+    ) -> "SyntheticEvaluator":
+        return cls(
+            node, visitor, _DefaultContext(visitor, node, use_name_node_for_error=True)
         )
-        return val
 
 
 @used  # part of an API
@@ -787,11 +797,13 @@ class _DefaultContext(Context):
         visitor: "NameCheckVisitor",
         node: Optional[ast.AST],
         globals: Optional[Mapping[str, object]] = None,
+        use_name_node_for_error: bool = False,
     ) -> None:
         super().__init__()
         self.visitor = visitor
         self.node = node
         self.globals = globals
+        self.use_name_node_for_error = use_name_node_for_error
 
     def show_error(
         self,
@@ -808,7 +820,7 @@ class _DefaultContext(Context):
         if self.visitor is not None:
             val, _ = self.visitor.resolve_name(
                 node,
-                error_node=self.node,
+                error_node=node if self.use_name_node_for_error else self.node,
                 suppress_errors=self.should_suppress_undefined_names,
             )
             return val
@@ -949,7 +961,6 @@ class _Visitor(ast.NodeVisitor):
                     if isinstance(kwarg_value, KnownValue):
                         kwargs[name] = kwarg_value.val
                     else:
-                        print(kwarg_value)
                         return None
             return KnownValue(func.val(*args, **kwargs))
         elif func.val == TypeVar:

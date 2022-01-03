@@ -4,16 +4,16 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
-from pyanalyze.options import Options, PathSequenceOption
-from pyanalyze.type_evaluation import Evaluator
+from .node_visitor import Failure
+from .options import Options, PathSequenceOption
 from .extensions import evaluated
 from .analysis_lib import is_positional_only_arg_name
 from .annotations import (
     Context,
     Pep655Value,
+    SyntheticEvaluator,
     type_from_value,
     value_from_ast,
-    type_from_ast,
 )
 from .error_code import ErrorCode
 from .safe import is_typing_name
@@ -53,6 +53,7 @@ from collections.abc import (
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 import collections.abc
+from enum import Enum
 import qcore
 import inspect
 import sys
@@ -106,13 +107,20 @@ class _AnnotationContext(Context):
         return self.finder.resolve_name(self.module, node.id)
 
 
-@dataclass
-class StubEvaluator(_AnnotationContext, Evaluator):
-    def evaluate_type(self, node: ast.AST) -> Value:
-        return type_from_ast(node, ctx=self)
+class _DummyErrorContext:
+    all_failures: List[Failure] = []
 
-    def evaluate_value(self, node: ast.AST) -> Value:
-        return value_from_ast(node, ctx=self, error_on_unrecognized=False)
+    def show_error(
+        self,
+        node: ast.AST,
+        e: str,
+        error_code: Enum,
+        *,
+        detail: Optional[str] = None,
+        save: bool = True,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Failure]:
+        return None
 
 
 class StubPath(PathSequenceOption):
@@ -750,7 +758,8 @@ class TypeshedFinder:
                 seen_non_positional = True
             cleaned_arguments.append(arg)
         if is_evaluated:
-            evaluator = StubEvaluator(node, self, mod)
+            ctx = _AnnotationContext(self, mod)
+            evaluator = SyntheticEvaluator(node, _DummyErrorContext(), ctx)
         else:
             evaluator = None
         return Signature.make(

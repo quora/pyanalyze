@@ -134,6 +134,7 @@ from .functions import (
     AsyncFunctionKind,
     FunctionInfo,
     FunctionResult,
+    FunctionDefNode,
     FunctionNode,
     compute_function_info,
     IMPLICIT_CLASSMETHODS,
@@ -1547,9 +1548,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Value:
         return self.visit_FunctionDef(node)
 
-    def visit_FunctionDef(
-        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
-    ) -> Value:
+    def visit_FunctionDef(self, node: FunctionDefNode) -> Value:
         potential_function = self._get_potential_function(node)
         info = compute_function_info(
             node,
@@ -1675,9 +1674,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return
         self._argspec_to_retval[id(sig)] = return_value
 
-    def _get_potential_function(
-        self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
-    ) -> Optional[object]:
+    def _get_potential_function(self, node: FunctionDefNode) -> Optional[object]:
         scope_type = self.scopes.scope_type()
         if scope_type == ScopeType.module_scope and self.module is not None:
             potential_function = safe_getattr(self.module, node.name, None)
@@ -1734,7 +1731,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if self._is_collecting() or isinstance(node, ast.Lambda):
                 return FunctionResult(parameters=params)
             with self.scopes.allow_only_module_scope():
-                evaluator = SyntheticEvaluator(node, self)
+                evaluator = SyntheticEvaluator.from_visitor(node, self)
                 ctx = type_evaluation.EvalContext(
                     variables={param.name: param.annotation for param in params},
                     positions={param.name: type_evaluation.DEFAULT for param in params},
