@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Show an error when a parameter may be passed a value with the wrong name (#340)
 - Support some imports from stub-only modules (#386)
 - Support type evaluation functions in stubs (#386)
 - Support `TypedDict` in stubs (#386)

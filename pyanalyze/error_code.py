@@ -91,6 +91,7 @@ class ErrorCode(enum.Enum):
     impossible_pattern = 74
     bad_match = 75
     bad_evaluator = 76
+    mismatched_parameter_name = 77
 
 
 # Allow testing unannotated functions without too much fuss
@@ -201,6 +202,9 @@ ERROR_DESCRIPTION = {
     ErrorCode.missing_return: "Function may exit without returning a value",
     ErrorCode.no_return_may_return: "Function is annotated as NoReturn but may return",
     ErrorCode.implicit_reexport: "Use of implicitly re-exported name",
+    ErrorCode.mismatched_parameter_name: (
+        "Passing a parameter that may be passed to the wrong name"
+    ),
     ErrorCode.invalid_context_manager: "Use of invalid object in with or async with",
     ErrorCode.suggested_return_type: "Suggested return type",
     ErrorCode.suggested_parameter_type: "Suggested parameter type",

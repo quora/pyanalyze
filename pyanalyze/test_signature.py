@@ -818,6 +818,31 @@ class TestCalls(TestNameCheckVisitorBase):
             kwonly(**bad_td)  # E: incompatible_call
 
 
+class TestMismatchedParameterName(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from dataclasses import dataclass
+
+        def f(a, b=None):
+            pass
+
+        @dataclass
+        class HasAB:
+            a: int = 0
+            b: int = 0
+
+        def capybara():
+            b = 3
+            a = 3
+            f(a, b)  # ok
+            f(b)  # E: mismatched_parameter_name
+            f(a, a)  # E: mismatched_parameter_name
+            obj = HasAB()
+            f(obj.b)  # E: mismatched_parameter_name
+            d = {"a": 1, "b": 2}
+            f(d["b"])  # E: mismatched_parameter_name
+
+
 class TestTypeVar(TestNameCheckVisitorBase):
     @assert_passes()
     def test_simple(self):
