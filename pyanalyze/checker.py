@@ -20,9 +20,6 @@ from typing import (
     Dict,
 )
 
-from pyanalyze.shared_options import VariableNameValues
-from pyanalyze.typeshed import TypeshedFinder
-
 from .options import Options, PyObjectSequenceOption
 from .node_visitor import Failure
 from .value import TypedValue, VariableNameValue
@@ -30,9 +27,10 @@ from .arg_spec import ArgSpecCache
 from .config import Config
 from .reexport import ImplicitReexportTracker
 from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
+from .shared_options import VariableNameValues
+from .typeshed import TypeshedFinder
 from .type_object import TypeObject, get_mro
 from .suggested_type import CallableTracker
-from pyanalyze import options
 
 _BaseProvider = Callable[[Union[type, super]], Set[type]]
 
