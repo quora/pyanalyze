@@ -136,7 +136,7 @@ class Checker:
         else:
             additional_bases = self.get_additional_bases(typ)
             # Is it marked as a protocol in stubs? If so, use the stub definition.
-            if self.arg_spec_cache.ts_finder.is_protocol(typ):
+            if self.ts_finder.is_protocol(typ):
                 bases = self._get_typeshed_bases(typ)
                 return TypeObject(
                     typ,
@@ -161,13 +161,13 @@ class Checker:
             return TypeObject(typ, additional_bases)
 
     def _get_typeshed_bases(self, typ: Union[type, str]) -> Set[Union[type, str]]:
-        base_values = self.arg_spec_cache.ts_finder.get_bases_recursively(typ)
+        base_values = self.ts_finder.get_bases_recursively(typ)
         return set(base.typ for base in base_values if isinstance(base, TypedValue))
 
     def _get_protocol_members(self, bases: Iterable[Union[type, str]]) -> Set[str]:
         return set(
             itertools.chain.from_iterable(
-                self.arg_spec_cache.ts_finder.get_all_attributes(base) for base in bases
+                self.ts_finder.get_all_attributes(base) for base in bases
             )
         )
 

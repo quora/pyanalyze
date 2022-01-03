@@ -304,7 +304,7 @@ class _AttrContext(attributes.AttrContext):
         return AnyValue(AnySource.inference)
 
     def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
-        typeshed_type = self.visitor.arg_spec_cache.ts_finder.get_attribute(
+        typeshed_type = self.visitor.checker.ts_finder.get_attribute(
             typ, self.attr, on_class=on_class
         )
         if (
@@ -317,7 +317,7 @@ class _AttrContext(attributes.AttrContext):
     def get_attribute_from_typeshed_recursively(
         self, fq_name: str, *, on_class: bool
     ) -> Tuple[Value, object]:
-        return self.visitor.arg_spec_cache.ts_finder.get_attribute_recursively(
+        return self.visitor.checker.ts_finder.get_attribute_recursively(
             fq_name, self.attr, on_class=on_class
         )
 
@@ -2124,7 +2124,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             and node.level == 0
         ):
             path = typeshed_client.ModulePath(tuple(node.module.split(".")))
-            finder = self.arg_spec_cache.ts_finder
+            finder = self.checker.ts_finder
             mod = finder.resolver.get_module(path)
             if mod.exists:
                 for alias in node.names:
@@ -4127,7 +4127,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return True
         if issubclass(typ, enum.Enum):
             return True
-        ts_finder = self.arg_spec_cache.ts_finder
+        ts_finder = self.checker.ts_finder
         if (
             ts_finder.has_stubs(typ)
             and not ts_finder.has_attribute(typ, "__getattr__")
