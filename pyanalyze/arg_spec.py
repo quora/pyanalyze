@@ -7,7 +7,7 @@ Implementation of extended argument specifications used by test_scope.
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import CustomCheck, get_overloads
-from .annotations import Context, type_from_runtime
+from .annotations import Context, RuntimeEvaluator, type_from_runtime
 from .config import Config
 from .find_unused import used
 from . import implementation
@@ -33,7 +33,6 @@ from .signature import (
     Signature,
     ParameterKind,
 )
-from .type_evaluation import get_evaluator
 from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
@@ -509,7 +508,7 @@ class ArgSpecCache:
                     ]
                     if all_of_type(sigs, Signature):
                         return OverloadedSignature(sigs)
-                evaluator = get_evaluator(obj)
+                evaluator = RuntimeEvaluator.get_for(obj)
                 if evaluator is not None:
                     sig = self._cached_get_argspec(
                         evaluator.func, impl, is_asynq, in_overload_resolution=True

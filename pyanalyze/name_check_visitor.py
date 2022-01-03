@@ -57,7 +57,7 @@ import qcore
 
 from . import attributes, format_strings, node_visitor, importer, method_return_type
 from .annotations import (
-    EvaluatorValidationContext,
+    SyntheticEvaluator,
     is_instance_of_typing_name,
     type_from_annotations,
     type_from_value,
@@ -1731,16 +1731,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return FunctionResult(parameters=params)
 
         if function_info.is_evaluated:
-            if self._is_collecting():
+            if self._is_collecting() or isinstance(node, ast.Lambda):
                 return FunctionResult(parameters=params)
             with self.scopes.allow_only_module_scope():
-                ctx = EvaluatorValidationContext(
+                evaluator = SyntheticEvaluator(node, self)
+                ctx = type_evaluation.EvalContext(
                     variables={param.name: param.annotation for param in params},
                     positions={param.name: type_evaluation.DEFAULT for param in params},
                     can_assign_context=self,
-                    node=node,
                 )
-                for error in type_evaluation.validate(node, ctx):
+                for error in evaluator.validate(ctx):
                     self.show_error(
                         error.node, error.message, error_code=ErrorCode.bad_evaluator
                     )
@@ -1748,10 +1748,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     with self.catch_errors(), self.scopes.add_scope(
                         ScopeType.function_scope, scope_node=node
                     ):
-                        if isinstance(node, ast.Lambda):
-                            self.generic_visit(node.body)
-                        else:
-                            self._generic_visit_list(node.body)
+                        self._generic_visit_list(node.body)
             return FunctionResult(parameters=params)
 
         # We pass in the node to add_scope() and visit the body once in collecting

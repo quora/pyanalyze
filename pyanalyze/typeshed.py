@@ -4,8 +4,16 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
+from pyanalyze.type_evaluation import Evaluator
+from .extensions import evaluated
 from .analysis_lib import is_positional_only_arg_name
-from .annotations import Context, Pep655Value, type_from_value, value_from_ast
+from .annotations import (
+    Context,
+    Pep655Value,
+    type_from_value,
+    value_from_ast,
+    type_from_ast,
+)
 from .error_code import ErrorCode
 from .safe import is_typing_name
 from .stacked_scopes import uniq_chain
@@ -96,6 +104,15 @@ class _AnnotationContext(Context):
 
     def get_name(self, node: ast.Name) -> Value:
         return self.finder.resolve_name(self.module, node.id)
+
+
+@dataclass
+class StubEvaluator(_AnnotationContext, Evaluator):
+    def evaluate_type(self, node: ast.AST) -> Value:
+        return type_from_ast(node, ctx=self)
+
+    def evaluate_value(self, node: ast.AST) -> Value:
+        return value_from_ast(node, ctx=self, error_on_unrecognized=False)
 
 
 # These are specified as just "List = _Alias()" in typing.pyi. Redirect
@@ -654,7 +671,7 @@ class TypeshedFinder:
         autobind: bool = False,
         allow_call: bool = False,
     ) -> Optional[Signature]:
-        is_classmethod = is_staticmethod = False
+        is_classmethod = is_staticmethod = is_evaluated = False
         for decorator_ast in node.decorator_list:
             decorator = self._parse_expr(decorator_ast, mod)
             if decorator == KnownValue(abstractmethod) or decorator == KnownValue(
@@ -669,6 +686,9 @@ class TypeshedFinder:
                 is_staticmethod = True
                 if autobind:  # TODO support staticmethods otherwise
                     continue
+            elif decorator == KnownValue(evaluated):
+                is_evaluated = True
+                continue
             # might be @overload or something else we don't recognize
             return None
         if node.returns is None:
@@ -720,6 +740,10 @@ class TypeshedFinder:
             else:
                 seen_non_positional = True
             cleaned_arguments.append(arg)
+        if is_evaluated:
+            evaluator = StubEvaluator(node, self, mod)
+        else:
+            evaluator = None
         return Signature.make(
             cleaned_arguments,
             callable=obj,
@@ -727,6 +751,7 @@ class TypeshedFinder:
             if isinstance(node, ast.AsyncFunctionDef)
             else return_value,
             allow_call=allow_call,
+            evaluator=evaluator,
         )
 
     def _parse_param_list(
@@ -900,6 +925,10 @@ class TypeshedFinder:
                         return val
                     if info.ast.value:
                         return self._parse_expr(info.ast.value, module)
+                elif isinstance(info.ast, ast.FunctionDef):
+                    sig = self._get_signature_from_info(info, None, fq_name, module)
+                    if sig is not None:
+                        return CallableValue(sig)
                 self.log("Unable to import", (module, info))
                 return AnyValue(AnySource.inference)
         elif isinstance(info, tuple):

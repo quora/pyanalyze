@@ -7,7 +7,7 @@ calls.
 """
 
 from . import annotations
-from .type_evaluation import Evaluator
+from .type_evaluation import EvalContext, Evaluator
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
@@ -924,9 +924,7 @@ class Signature:
                 positions = {
                     param: position for param, (position, _) in bound_args.items()
                 }
-                ctx = annotations.TypeEvaluationContext(
-                    varmap, positions, visitor, self.evaluator.globals
-                )
+                ctx = EvalContext(varmap, positions, visitor)
                 return_value, errors = self.evaluator.evaluate(ctx)
                 for error in errors:
                     error_node = node

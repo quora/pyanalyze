@@ -15,6 +15,7 @@ from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
 import urllib.parse
 
+from .extensions import evaluated
 from .test_config import TestConfig
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
@@ -213,6 +214,19 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 assert_is_value(td2, _EXPECTED_TYPED_DICTS["TD2"])
                 assert_is_value(pep655, _EXPECTED_TYPED_DICTS["PEP655"])
                 assert_is_value(inherited, _EXPECTED_TYPED_DICTS["Inherited"])
+
+    def test_evaluated(self):
+        tsf = TypeshedFinder(verbose=True)
+        mod = "_pyanalyze_tests.evaluated"
+        assert tsf.resolve_name(mod, "evaluated") == KnownValue(evaluated)
+
+    @assert_passes()
+    def test_evaluated_import(self):
+        def capybara():
+            from _pyanalyze_tests.evaluated import open
+            from typing import TextIO
+
+            assert_is_value(open("r"), TypedValue(TextIO))
 
 
 class Parent(Generic[T]):

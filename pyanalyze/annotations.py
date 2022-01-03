@@ -30,7 +30,9 @@ import typing_inspect
 import qcore
 import ast
 import builtins
+import inspect
 from collections.abc import Callable, Iterable
+import textwrap
 from typing import (
     Any,
     Container,
@@ -57,6 +59,7 @@ from .extensions import (
     NoReturnGuard,
     ParameterTypeGuard,
     TypeGuard,
+    get_type_evaluation,
 )
 from .find_unused import used
 from .signature import ELLIPSIS_PARAM, SigParameter, Signature, ParameterKind
@@ -67,7 +70,6 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
-    CanAssignContext,
     CustomCheckExtension,
     Extension,
     HasAttrGuardExtension,
@@ -152,11 +154,9 @@ class Context:
 
 
 @dataclass
-class TypeEvaluationContext(Context, type_evaluation.Context):
-    variables: type_evaluation.VarMap
-    positions: Mapping[str, type_evaluation.Position]
-    can_assign_context: CanAssignContext
+class RuntimeEvaluator(type_evaluation.Evaluator, Context):
     globals: Mapping[str, object] = field(repr=False)
+    func: typing.Callable[..., Any]
 
     def evaluate_type(self, node: ast.AST) -> Value:
         return type_from_ast(node, ctx=self)
@@ -168,13 +168,29 @@ class TypeEvaluationContext(Context, type_evaluation.Context):
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
         return self.get_name_from_globals(node.id, self.globals)
 
+    @classmethod
+    def get_for(cls, func: typing.Callable[..., Any]) -> Optional["RuntimeEvaluator"]:
+        try:
+            key = f"{func.__module__}.{func.__qualname__}"
+        except AttributeError:
+            return None
+        evaluation_func = get_type_evaluation(key)
+        if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
+            return None
+        lines, _ = inspect.getsourcelines(evaluation_func)
+        code = textwrap.dedent("".join(lines))
+        body = ast.parse(code)
+        if not body.body:
+            return None
+        evaluator = body.body[0]
+        if not isinstance(evaluator, ast.FunctionDef):
+            return None
+        return RuntimeEvaluator(evaluator, evaluation_func.__globals__, evaluation_func)
+
 
 @dataclass
-class EvaluatorValidationContext(Context, type_evaluation.Context):
-    variables: type_evaluation.VarMap
-    positions: Mapping[str, type_evaluation.Position]
-    can_assign_context: "NameCheckVisitor"
-    node: ast.AST
+class SyntheticEvaluator(type_evaluation.Evaluator, Context):
+    ctx: "NameCheckVisitor"
 
     def show_error(
         self,
@@ -182,9 +198,7 @@ class EvaluatorValidationContext(Context, type_evaluation.Context):
         error_code: ErrorCode = ErrorCode.invalid_annotation,
         node: Optional[ast.AST] = None,
     ) -> None:
-        self.can_assign_context.show_error(
-            node or self.node, message, error_code=error_code
-        )
+        self.ctx.show_error(node or self.node, message, error_code=error_code)
 
     def evaluate_type(self, node: ast.AST) -> Value:
         return type_from_ast(node, ctx=self)
@@ -194,7 +208,7 @@ class EvaluatorValidationContext(Context, type_evaluation.Context):
 
     def get_name(self, node: ast.Name) -> Value:
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
-        val, _ = self.can_assign_context.resolve_name(
+        val, _ = self.ctx.resolve_name(
             node, suppress_errors=self.should_suppress_undefined_names
         )
         return val
