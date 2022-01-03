@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support some imports from stub-only modules (#386)
 - Support type evaluation functions in stubs (#386)
 - Support `TypedDict` in stubs (#386)
 - Support `TypeAlias` (PEP 612) (#386)
