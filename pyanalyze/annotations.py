@@ -29,9 +29,10 @@ import typing
 import typing_inspect
 import qcore
 import ast
-from typed_ast import ast3
 import builtins
+import inspect
 from collections.abc import Callable, Iterable
+import textwrap
 from typing import (
     Any,
     Container,
@@ -47,7 +48,7 @@ from typing import (
     Union,
     TYPE_CHECKING,
 )
-from typing_extensions import ParamSpec
+from typing_extensions import ParamSpec, TypedDict
 
 from .error_code import ErrorCode
 from .extensions import (
@@ -55,12 +56,17 @@ from .extensions import (
     CustomCheck,
     ExternalType,
     HasAttrGuard,
+    NoReturnGuard,
     ParameterTypeGuard,
     TypeGuard,
+    get_type_evaluation,
 )
 from .find_unused import used
-from .signature import SigParameter, Signature, ParameterKind
+from .functions import FunctionDefNode
+from .node_visitor import ErrorContext
+from .signature import ELLIPSIS_PARAM, SigParameter, Signature, ParameterKind
 from .safe import is_typing_name, is_instance_of_typing_name
+from . import type_evaluation
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -72,6 +78,9 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     NO_RETURN_VALUE,
+    NoReturnGuardExtension,
+    ParamSpecArgsValue,
+    ParamSpecKwargsValue,
     ParameterTypeGuardExtension,
     TypeGuardExtension,
     TypedValue,
@@ -118,7 +127,10 @@ class Context:
         return qcore.override(self, "should_suppress_undefined_names", True)
 
     def show_error(
-        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        node: Optional[ast.AST] = None,
     ) -> None:
         """Show an error found while evaluating an annotation."""
         pass
@@ -143,6 +155,75 @@ class Context:
         return self.handle_undefined_name(name)
 
 
+@dataclass
+class RuntimeEvaluator(type_evaluation.Evaluator, Context):
+    globals: Mapping[str, object] = field(repr=False)
+    func: typing.Callable[..., Any]
+
+    def evaluate_type(self, node: ast.AST) -> Value:
+        return type_from_ast(node, ctx=self)
+
+    def evaluate_value(self, node: ast.AST) -> Value:
+        return value_from_ast(node, ctx=self, error_on_unrecognized=False)
+
+    def get_name(self, node: ast.Name) -> Value:
+        """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
+        return self.get_name_from_globals(node.id, self.globals)
+
+    @classmethod
+    def get_for(cls, func: typing.Callable[..., Any]) -> Optional["RuntimeEvaluator"]:
+        try:
+            key = f"{func.__module__}.{func.__qualname__}"
+        except AttributeError:
+            return None
+        evaluation_func = get_type_evaluation(key)
+        if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
+            return None
+        lines, _ = inspect.getsourcelines(evaluation_func)
+        code = textwrap.dedent("".join(lines))
+        body = ast.parse(code)
+        if not body.body:
+            return None
+        evaluator = body.body[0]
+        if not isinstance(evaluator, ast.FunctionDef):
+            return None
+        return RuntimeEvaluator(evaluator, evaluation_func.__globals__, evaluation_func)
+
+
+@dataclass
+class SyntheticEvaluator(type_evaluation.Evaluator):
+    error_ctx: ErrorContext
+    annotations_context: Context
+
+    def show_error(
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        node: Optional[ast.AST] = None,
+    ) -> None:
+        self.error_ctx.show_error(node or self.node, message, error_code=error_code)
+
+    def evaluate_type(self, node: ast.AST) -> Value:
+        return type_from_ast(node, ctx=self.annotations_context)
+
+    def evaluate_value(self, node: ast.AST) -> Value:
+        return value_from_ast(
+            node, ctx=self.annotations_context, error_on_unrecognized=False
+        )
+
+    def get_name(self, node: ast.Name) -> Value:
+        """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
+        return self.annotations_context.get_name(node)
+
+    @classmethod
+    def from_visitor(
+        cls, node: FunctionDefNode, visitor: "NameCheckVisitor"
+    ) -> "SyntheticEvaluator":
+        return cls(
+            node, visitor, _DefaultContext(visitor, node, use_name_node_for_error=True)
+        )
+
+
 @used  # part of an API
 def type_from_ast(
     ast_node: ast.AST,
@@ -164,6 +245,25 @@ def type_from_ast(
     if ctx is None:
         ctx = _DefaultContext(visitor, ast_node)
     return _type_from_ast(ast_node, ctx)
+
+
+def type_from_annotations(
+    annotations: Mapping[str, object],
+    key: str,
+    *,
+    globals: Optional[Mapping[str, object]] = None,
+    ctx: Optional[Context] = None,
+) -> Optional[Value]:
+    try:
+        annotation = annotations[key]
+    except Exception:
+        # Malformed __annotations__
+        return None
+    else:
+        maybe_val = type_from_runtime(annotation, globals=globals, ctx=ctx)
+        if maybe_val != AnyValue(AnySource.incomplete_annotation):
+            return maybe_val
+    return None
 
 
 def type_from_runtime(
@@ -233,10 +333,13 @@ def type_from_value(
     return _type_from_value(value, ctx, is_typeddict=is_typeddict)
 
 
-def value_from_ast(ast_node: ast.AST, ctx: Context) -> Value:
+def value_from_ast(
+    ast_node: ast.AST, ctx: Context, *, error_on_unrecognized: bool = True
+) -> Value:
     val = _Visitor(ctx).visit(ast_node)
     if val is None:
-        ctx.show_error("Invalid type annotation")
+        if error_on_unrecognized:
+            ctx.show_error("Invalid type annotation", node=ast_node)
         return AnyValue(AnySource.error)
     return val
 
@@ -333,7 +436,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         args = typing_inspect.get_args(val)
         return _value_of_origin_args(Callable, args, val, ctx)
     elif val is AsynqCallable:
-        return CallableValue(Signature.make([], is_ellipsis_args=True, is_asynq=True))
+        return CallableValue(Signature.make([ELLIPSIS_PARAM], is_asynq=True))
     elif isinstance(val, type):
         return _maybe_typed_value(val)
     elif val is None:
@@ -367,6 +470,10 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return TypeVarValue(tv, bound=bound, constraints=constraints)
     elif is_instance_of_typing_name(val, "ParamSpec"):
         return TypeVarValue(val, is_paramspec=True)
+    elif is_instance_of_typing_name(val, "ParamSpecArgs"):
+        return ParamSpecArgsValue(val.__origin__)
+    elif is_instance_of_typing_name(val, "ParamSpecKwargs"):
+        return ParamSpecKwargsValue(val.__origin__)
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
     elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):
@@ -409,14 +516,9 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             [TypeGuardExtension(_type_from_runtime(val.__type__, ctx))],
         )
     elif isinstance(val, AsynqCallable):
-        params, is_ellipsis_args = _callable_args_from_runtime(
-            val.args, "AsynqCallable", ctx
-        )
+        params = _callable_args_from_runtime(val.args, "AsynqCallable", ctx)
         sig = Signature.make(
-            params,
-            _type_from_runtime(val.return_type, ctx),
-            is_asynq=True,
-            is_ellipsis_args=is_ellipsis_args,
+            params, _type_from_runtime(val.return_type, ctx), is_asynq=True
         )
         return CallableValue(sig)
     elif isinstance(val, ExternalType):
@@ -431,11 +533,15 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
     elif is_instance_of_typing_name(val, "_MaybeRequired"):
         required = is_instance_of_typing_name(val, "_Required")
         if is_typeddict:
-            return _Pep655Value(required, _type_from_runtime(val.__type__, ctx))
+            return Pep655Value(required, _type_from_runtime(val.__type__, ctx))
         else:
             cls = "Required" if required else "NotRequired"
             ctx.show_error(f"{cls}[] used in unsupported context")
             return AnyValue(AnySource.error)
+    elif is_typing_name(val, "TypeAlias"):
+        return AnyValue(AnySource.incomplete_annotation)
+    elif is_typing_name(val, "TypedDict"):
+        return KnownValue(TypedDict)
     else:
         origin = get_origin(val)
         if isinstance(origin, type):
@@ -448,14 +554,14 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
 
 def _callable_args_from_runtime(
     arg_types: Any, label: str, ctx: Context
-) -> Tuple[Sequence[SigParameter], bool]:
+) -> Sequence[SigParameter]:
     if arg_types is Ellipsis or arg_types == [Ellipsis]:
-        return [], True
+        return [ELLIPSIS_PARAM]
     elif type(arg_types) in (tuple, list):
         if len(arg_types) == 1:
             (arg,) = arg_types
             if arg is Ellipsis:
-                return [], True
+                return [ELLIPSIS_PARAM]
             elif is_typing_name(getattr(arg, "__origin__", None), "Concatenate"):
                 return _args_from_concatenate(arg, ctx)
             elif is_instance_of_typing_name(arg, "ParamSpec"):
@@ -463,7 +569,7 @@ def _callable_args_from_runtime(
                 param = SigParameter(
                     "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
                 )
-                return [param], False
+                return [param]
         types = [_type_from_runtime(arg, ctx) for arg in arg_types]
         params = [
             SigParameter(
@@ -475,23 +581,21 @@ def _callable_args_from_runtime(
             )
             for i, typ in enumerate(types)
         ]
-        return params, False
+        return params
     elif is_instance_of_typing_name(arg_types, "ParamSpec"):
         param_spec = TypeVarValue(arg_types, is_paramspec=True)
         param = SigParameter(
             "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
         )
-        return [param], False
+        return [param]
     elif is_typing_name(getattr(arg_types, "__origin__", None), "Concatenate"):
         return _args_from_concatenate(arg_types, ctx)
     else:
         ctx.show_error(f"Invalid arguments to {label}: {arg_types!r}")
-        return [], True
+        return [ELLIPSIS_PARAM]
 
 
-def _args_from_concatenate(
-    concatenate: Any, ctx: Context
-) -> Tuple[Sequence[SigParameter], bool]:
+def _args_from_concatenate(concatenate: Any, ctx: Context) -> Sequence[SigParameter]:
     types = [_type_from_runtime(arg, ctx) for arg in concatenate.__args__]
     params = [
         SigParameter(
@@ -503,7 +607,7 @@ def _args_from_concatenate(
         )
         for i, annotation in enumerate(types)
     ]
-    return params, False
+    return params
 
 
 def _get_typeddict_value(
@@ -514,7 +618,7 @@ def _get_typeddict_value(
     total: bool,
 ) -> Tuple[bool, Value]:
     val = _type_from_runtime(value, ctx, is_typeddict=True)
-    if isinstance(val, _Pep655Value):
+    if isinstance(val, Pep655Value):
         return (val.required, val.value)
     if required_keys is None:
         required = total
@@ -548,6 +652,8 @@ def _type_from_value(value: Value, ctx: Context, is_typeddict: bool = False) -> 
         )
     elif isinstance(value, AnyValue):
         return value
+    elif isinstance(value, SubclassValue) and value.exactly:
+        return value.typ
     elif isinstance(value, TypedValue) and isinstance(value.typ, str):
         # Synthetic type
         return value
@@ -577,11 +683,21 @@ def _type_from_subscripted_value(
                 for subval in root.vals
             ]
         )
+    if (
+        isinstance(root, SubclassValue)
+        and root.exactly
+        and isinstance(root.typ, TypedValue)
+    ):
+        return GenericValue(
+            root.typ.typ, [_type_from_value(elt, ctx) for elt in members]
+        )
+
     if isinstance(root, TypedValue) and isinstance(root.typ, str):
         return GenericValue(root.typ, [_type_from_value(elt, ctx) for elt in members])
 
     if not isinstance(root, KnownValue):
-        ctx.show_error(f"Cannot resolve subscripted annotation: {root}")
+        if root != AnyValue(AnySource.error):
+            ctx.show_error(f"Cannot resolve subscripted annotation: {root}")
         return AnyValue(AnySource.error)
     root = root.val
     if root is typing.Union:
@@ -633,7 +749,7 @@ def _type_from_subscripted_value(
         if len(members) != 1:
             ctx.show_error("Required[] requires a single argument")
             return AnyValue(AnySource.error)
-        return _Pep655Value(True, _type_from_value(members[0], ctx))
+        return Pep655Value(True, _type_from_value(members[0], ctx))
     elif is_typing_name(root, "NotRequired"):
         if not is_typeddict:
             ctx.show_error("NotRequired[] used in unsupported context")
@@ -641,7 +757,7 @@ def _type_from_subscripted_value(
         if len(members) != 1:
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
-        return _Pep655Value(False, _type_from_value(members[0], ctx))
+        return Pep655Value(False, _type_from_value(members[0], ctx))
     elif root is Callable or root is typing.Callable:
         if len(members) == 2:
             args, return_value = members
@@ -681,23 +797,30 @@ class _DefaultContext(Context):
         visitor: "NameCheckVisitor",
         node: Optional[ast.AST],
         globals: Optional[Mapping[str, object]] = None,
+        use_name_node_for_error: bool = False,
     ) -> None:
         super().__init__()
         self.visitor = visitor
         self.node = node
         self.globals = globals
+        self.use_name_node_for_error = use_name_node_for_error
 
     def show_error(
-        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        node: Optional[ast.AST] = None,
     ) -> None:
-        if self.visitor is not None and self.node is not None:
-            self.visitor.show_error(self.node, message, error_code)
+        if node is None:
+            node = self.node
+        if self.visitor is not None and node is not None:
+            self.visitor.show_error(node, message, error_code)
 
     def get_name(self, node: ast.Name) -> Value:
         if self.visitor is not None:
             val, _ = self.visitor.resolve_name(
                 node,
-                error_node=self.node,
+                error_node=node if self.use_name_node_for_error else self.node,
                 suppress_errors=self.should_suppress_undefined_names,
             )
             return val
@@ -709,7 +832,9 @@ class _DefaultContext(Context):
         if self.should_suppress_undefined_names:
             return AnyValue(AnySource.inference)
         self.show_error(
-            f"Undefined name {node.id!r} used in annotation", ErrorCode.undefined_name
+            f"Undefined name {node.id!r} used in annotation",
+            ErrorCode.undefined_name,
+            node=node,
         )
         return AnyValue(AnySource.error)
 
@@ -721,7 +846,7 @@ class _SubscriptedValue(Value):
 
 
 @dataclass
-class _Pep655Value(Value):
+class Pep655Value(Value):
     required: bool
     value: Value
 
@@ -752,11 +877,11 @@ class _Visitor(ast.NodeVisitor):
                 return KnownValue(getattr(root_value.val, node.attr))
             except AttributeError:
                 self.ctx.show_error(
-                    f"{root_value.val!r} has no attribute {node.attr!r}"
+                    f"{root_value.val!r} has no attribute {node.attr!r}", node=node
                 )
                 return AnyValue(AnySource.error)
         elif not isinstance(root_value, AnyValue):
-            self.ctx.show_error(f"Cannot resolve annotation {root_value}")
+            self.ctx.show_error(f"Cannot resolve annotation {root_value}", node=node)
         return AnyValue(AnySource.error)
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
@@ -793,7 +918,7 @@ class _Visitor(ast.NodeVisitor):
         return self.visit(node.value)
 
     def visit_BinOp(self, node: ast.BinOp) -> Optional[Value]:
-        if isinstance(node.op, (ast.BitOr, ast3.BitOr)):
+        if isinstance(node.op, ast.BitOr):
             return _SubscriptedValue(
                 KnownValue(Union), (self.visit(node.left), self.visit(node.right))
             )
@@ -802,7 +927,7 @@ class _Visitor(ast.NodeVisitor):
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Optional[Value]:
         # Only int and float negation on literals are supported.
-        if isinstance(node.op, (ast.USub, ast3.USub)):
+        if isinstance(node.op, ast.USub):
             operand = self.visit(node.operand)
             if isinstance(operand, KnownValue) and isinstance(
                 operand.val, (int, float)
@@ -836,18 +961,19 @@ class _Visitor(ast.NodeVisitor):
                     if isinstance(kwarg_value, KnownValue):
                         kwargs[name] = kwarg_value.val
                     else:
-                        print(kwarg_value)
                         return None
             return KnownValue(func.val(*args, **kwargs))
         elif func.val == TypeVar:
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             if not arg_values:
-                self.ctx.show_error("TypeVar() requires at least one argument")
+                self.ctx.show_error(
+                    "TypeVar() requires at least one argument", node=node
+                )
                 return None
             name_val = arg_values[0]
             if not isinstance(name_val, KnownValue):
-                self.ctx.show_error("TypeVar name must be a literal")
+                self.ctx.show_error("TypeVar name must be a literal", node=node.args[0])
                 return None
             constraints = []
             for arg_value in arg_values[1:]:
@@ -859,7 +985,7 @@ class _Visitor(ast.NodeVisitor):
                 elif name == "bound":
                     bound = _type_from_value(kwarg_value, self.ctx)
                 else:
-                    self.ctx.show_error(f"Unrecognized TypeVar kwarg {name}")
+                    self.ctx.show_error(f"Unrecognized TypeVar kwarg {name}", node=node)
                     return None
             tv = TypeVar(name_val.val)
             return TypeVarValue(tv, bound, tuple(constraints))
@@ -867,14 +993,18 @@ class _Visitor(ast.NodeVisitor):
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             if not arg_values:
-                self.ctx.show_error("ParamSpec() requires at least one argument")
+                self.ctx.show_error(
+                    "ParamSpec() requires at least one argument", node=node
+                )
                 return None
             name_val = arg_values[0]
             if not isinstance(name_val, KnownValue):
-                self.ctx.show_error("ParamSpec name must be a literal")
+                self.ctx.show_error(
+                    "ParamSpec name must be a literal", node=node.args[0]
+                )
                 return None
             for name, _ in kwarg_values:
-                self.ctx.show_error(f"Unrecognized ParamSpec kwarg {name}")
+                self.ctx.show_error(f"Unrecognized ParamSpec kwarg {name}", node=node)
                 return None
             tv = ParamSpec(name_val.val)
             return TypeVarValue(tv, is_paramspec=True)
@@ -915,14 +1045,8 @@ def _value_of_origin_args(
         *arg_types, return_type = args
         if len(arg_types) == 1 and isinstance(arg_types[0], list):
             arg_types = arg_types[0]
-        params, is_ellipsis_args = _callable_args_from_runtime(
-            arg_types, "Callable", ctx
-        )
-        sig = Signature.make(
-            params,
-            _type_from_runtime(return_type, ctx),
-            is_ellipsis_args=is_ellipsis_args,
-        )
+        params = _callable_args_from_runtime(arg_types, "Callable", ctx)
+        sig = Signature.make(params, _type_from_runtime(return_type, ctx))
         return CallableValue(sig)
     elif is_typing_name(origin, "Annotated"):
         origin, metadata = args
@@ -973,7 +1097,7 @@ def _value_of_origin_args(
         if len(args) != 1:
             ctx.show_error("Required[] requires a single argument")
             return AnyValue(AnySource.error)
-        return _Pep655Value(True, _type_from_runtime(args[0], ctx))
+        return Pep655Value(True, _type_from_runtime(args[0], ctx))
     elif is_typing_name(origin, "NotRequired"):
         if not is_typeddict:
             ctx.show_error("NotRequired[] used in unsupported context")
@@ -981,7 +1105,7 @@ def _value_of_origin_args(
         if len(args) != 1:
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
-        return _Pep655Value(False, _type_from_runtime(args[0], ctx))
+        return Pep655Value(False, _type_from_runtime(args[0], ctx))
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
         return _maybe_typed_value(val)
@@ -1005,10 +1129,7 @@ def _make_callable_from_value(
     if args == KnownValue(Ellipsis):
         return CallableValue(
             Signature.make(
-                [],
-                return_annotation=return_annotation,
-                is_ellipsis_args=True,
-                is_asynq=is_asynq,
+                [ELLIPSIS_PARAM], return_annotation=return_annotation, is_asynq=is_asynq
             )
         )
     elif isinstance(args, SequenceIncompleteValue):
@@ -1067,6 +1188,10 @@ def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
     if isinstance(entry, KnownValue):
         if isinstance(entry.val, ParameterTypeGuard):
             return ParameterTypeGuardExtension(
+                entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
+            )
+        elif isinstance(entry.val, NoReturnGuard):
+            return NoReturnGuardExtension(
                 entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
             )
         elif isinstance(entry.val, HasAttrGuard):

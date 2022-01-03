@@ -4,8 +4,17 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
+from .node_visitor import Failure
+from .options import Options, PathSequenceOption
+from .extensions import evaluated
 from .analysis_lib import is_positional_only_arg_name
-from .annotations import Context, type_from_value, value_from_ast
+from .annotations import (
+    Context,
+    Pep655Value,
+    SyntheticEvaluator,
+    type_from_value,
+    value_from_ast,
+)
 from .error_code import ErrorCode
 from .extensions import overload, real_overload
 from .safe import is_typing_name
@@ -21,6 +30,8 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    SubclassValue,
+    TypedDictValue,
     TypedValue,
     GenericValue,
     KnownValue,
@@ -43,15 +54,16 @@ from collections.abc import (
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 import collections.abc
+from enum import Enum
 import qcore
 import inspect
 import sys
 from types import GeneratorType
 from typing import (
     Dict,
+    Sequence,
     Set,
     Tuple,
-    cast,
     Any,
     Generic,
     Iterable,
@@ -63,7 +75,7 @@ from typing import (
 )
 from typing_extensions import Protocol, TypedDict
 import typeshed_client
-from typed_ast import ast3
+
 
 try:
     # 3.7+
@@ -84,12 +96,37 @@ class _AnnotationContext(Context):
     module: str
 
     def show_error(
-        self, message: str, error_code: ErrorCode = ErrorCode.invalid_annotation
+        self,
+        message: str,
+        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        node: Optional[ast.AST] = None,
     ) -> None:
         self.finder.log(message, ())
 
     def get_name(self, node: ast.Name) -> Value:
         return self.finder.resolve_name(self.module, node.id)
+
+
+class _DummyErrorContext:
+    all_failures: List[Failure] = []
+
+    def show_error(
+        self,
+        node: ast.AST,
+        e: str,
+        error_code: Enum,
+        *,
+        detail: Optional[str] = None,
+        save: bool = True,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Failure]:
+        return None
+
+
+class StubPath(PathSequenceOption):
+    """Extra paths in which to look for stubs."""
+
+    name = "stub_path"
 
 
 # These are specified as just "List = _Alias()" in typing.pyi. Redirect
@@ -112,12 +149,22 @@ _TYPING_ALIASES = {
 class TypeshedFinder:
     verbose: bool = True
     resolver: typeshed_client.Resolver = field(default_factory=typeshed_client.Resolver)
-    _assignment_cache: Dict[Tuple[str, ast3.AST], Value] = field(
+    _assignment_cache: Dict[Tuple[str, ast.AST], Value] = field(
         default_factory=dict, repr=False, init=False
     )
     _attribute_cache: Dict[Tuple[str, str, bool], Value] = field(
         default_factory=dict, repr=False, init=False
     )
+
+    @classmethod
+    def make(cls, options: Options, *, verbose: bool = False) -> "TypeshedFinder":
+        extra_paths = options.get_value_for(StubPath)
+        ctx = typeshed_client.get_search_context()
+        ctx = typeshed_client.get_search_context(
+            search_path=[*ctx.search_path, *extra_paths]
+        )
+        resolver = typeshed_client.Resolver(ctx)
+        return TypeshedFinder(verbose, resolver)
 
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
@@ -347,6 +394,7 @@ class TypeshedFinder:
             val = getattr(builtins, name)
             if val is None or isinstance(val, type):
                 return KnownValue(val)
+        # TODO change to UNINITIALIZED_VALUE
         return AnyValue(AnySource.inference)
 
     def _get_attribute_from_info(
@@ -356,6 +404,7 @@ class TypeshedFinder:
         attr: str,
         *,
         on_class: bool,
+        is_typeddict: bool = False,
     ) -> Value:
         if info is None:
             return UNINITIALIZED_VALUE
@@ -364,13 +413,17 @@ class TypeshedFinder:
                 info.info, ".".join(info.source_module), attr, on_class=on_class
             )
         elif isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, ast3.ClassDef):
+            if isinstance(info.ast, ast.ClassDef):
                 if info.child_nodes and attr in info.child_nodes:
                     child_info = info.child_nodes[attr]
                     if isinstance(child_info, typeshed_client.NameInfo):
-                        if isinstance(child_info.ast, ast3.AnnAssign):
-                            return self._parse_type(child_info.ast.annotation, mod)
-                        elif isinstance(child_info.ast, ast3.FunctionDef):
+                        if isinstance(child_info.ast, ast.AnnAssign):
+                            return self._parse_type(
+                                child_info.ast.annotation,
+                                mod,
+                                is_typeddict=is_typeddict,
+                            )
+                        elif isinstance(child_info.ast, ast.FunctionDef):
                             decorators = [
                                 self._parse_expr(decorator, mod)
                                 for decorator in child_info.ast.decorator_list
@@ -386,13 +439,13 @@ class TypeshedFinder:
                                 return AnyValue(AnySource.inference)
                             else:
                                 return CallableValue(sig)
-                        elif isinstance(child_info.ast, ast3.AsyncFunctionDef):
+                        elif isinstance(child_info.ast, ast.AsyncFunctionDef):
                             return UNINITIALIZED_VALUE
-                        elif isinstance(child_info.ast, ast3.Assign):
+                        elif isinstance(child_info.ast, ast.Assign):
                             return UNINITIALIZED_VALUE
                     assert False, repr(child_info)
                 return UNINITIALIZED_VALUE
-            elif isinstance(info.ast, ast3.Assign):
+            elif isinstance(info.ast, ast.Assign):
                 val = self._parse_type(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
                     return self.get_attribute(val.val, attr, on_class=on_class)
@@ -410,11 +463,11 @@ class TypeshedFinder:
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_child_info(info.info, attr, ".".join(info.source_module))
         elif isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, ast3.ClassDef):
+            if isinstance(info.ast, ast.ClassDef):
                 if info.child_nodes and attr in info.child_nodes:
                     return info.child_nodes[attr], mod
                 return None
-            elif isinstance(info.ast, ast3.Assign):
+            elif isinstance(info.ast, ast.Assign):
                 return None  # TODO maybe we need this for aliased methods
             else:
                 return None
@@ -444,10 +497,10 @@ class TypeshedFinder:
                 info.info, ".".join(info.source_module)
             )
         elif isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, ast3.ClassDef):
+            if isinstance(info.ast, ast.ClassDef):
                 if info.child_nodes is not None:
                     return set(info.child_nodes)
-            elif isinstance(info.ast, ast3.Assign):
+            elif isinstance(info.ast, ast.Assign):
                 val = self._parse_expr(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
                     return self.get_all_attributes(val.val)
@@ -467,11 +520,11 @@ class TypeshedFinder:
                 info.info, ".".join(info.source_module), attr
             )
         elif isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, ast3.ClassDef):
+            if isinstance(info.ast, ast.ClassDef):
                 if info.child_nodes and attr in info.child_nodes:
                     return True
                 return False
-            elif isinstance(info.ast, ast3.Assign):
+            elif isinstance(info.ast, ast.Assign):
                 val = self._parse_expr(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
                     return self.has_attribute(val.val, attr)
@@ -489,10 +542,10 @@ class TypeshedFinder:
         elif isinstance(info, typeshed_client.ImportedInfo):
             return self._get_bases_from_info(info.info, ".".join(info.source_module))
         elif isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, ast3.ClassDef):
+            if isinstance(info.ast, ast.ClassDef):
                 bases = info.ast.bases
                 return [self._parse_type(base, mod) for base in bases]
-            elif isinstance(info.ast, ast3.Assign):
+            elif isinstance(info.ast, ast.Assign):
                 val = self._parse_type(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
                     return self.get_bases(val.val)
@@ -505,12 +558,12 @@ class TypeshedFinder:
                     typeshed_client.OverloadedName,
                     typeshed_client.ImportedName,
                     # typeshed pretends the class is a function
-                    ast3.FunctionDef,
+                    ast.FunctionDef,
                 ),
             ):
                 return None
             else:
-                raise NotImplementedError(ast3.dump(info.ast))
+                raise NotImplementedError(ast.dump(info.ast))
         return None
 
     def _get_method_signature_from_info(
@@ -583,14 +636,14 @@ class TypeshedFinder:
         allow_call: bool = False,
     ) -> Optional[ConcreteSignature]:
         if isinstance(info, typeshed_client.NameInfo):
-            if isinstance(info.ast, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
+            if isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 return self._get_signature_from_func_def(
                     info.ast, obj, mod, objclass, allow_call=allow_call
                 )
             elif isinstance(info.ast, typeshed_client.OverloadedName):
                 sigs = []
                 for defn in info.ast.definitions:
-                    if not isinstance(defn, (ast3.FunctionDef, ast3.AsyncFunctionDef)):
+                    if not isinstance(defn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         self.log(
                             "Ignoring unrecognized AST in overload", (fq_name, info)
                         )
@@ -627,7 +680,7 @@ class TypeshedFinder:
 
     def _get_signature_from_func_def(
         self,
-        node: Union[ast3.FunctionDef, ast3.AsyncFunctionDef],
+        node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
         obj: object,
         mod: str,
         objclass: Optional[type] = None,
@@ -635,7 +688,7 @@ class TypeshedFinder:
         autobind: bool = False,
         allow_call: bool = False,
     ) -> Optional[Signature]:
-        is_classmethod = is_staticmethod = False
+        is_classmethod = is_staticmethod = is_evaluated = False
         for decorator_ast in node.decorator_list:
             decorator = self._parse_expr(decorator_ast, mod)
             if (
@@ -652,6 +705,9 @@ class TypeshedFinder:
                 is_staticmethod = True
                 if autobind:  # TODO support staticmethods otherwise
                     continue
+            elif decorator == KnownValue(evaluated):
+                is_evaluated = True
+                continue
             # might be @overload or something else we don't recognize
             return None
         if node.returns is None:
@@ -703,19 +759,25 @@ class TypeshedFinder:
             else:
                 seen_non_positional = True
             cleaned_arguments.append(arg)
+        if is_evaluated:
+            ctx = _AnnotationContext(self, mod)
+            evaluator = SyntheticEvaluator(node, _DummyErrorContext(), ctx)
+        else:
+            evaluator = None
         return Signature.make(
             cleaned_arguments,
             callable=obj,
             return_annotation=GenericValue(Awaitable, [return_value])
-            if isinstance(node, ast3.AsyncFunctionDef)
+            if isinstance(node, ast.AsyncFunctionDef)
             else return_value,
             allow_call=allow_call,
+            evaluator=evaluator,
         )
 
     def _parse_param_list(
         self,
-        args: Iterable[ast3.arg],
-        defaults: Iterable[Optional[ast3.AST]],
+        args: Iterable[ast.arg],
+        defaults: Iterable[Optional[ast.AST]],
         module: str,
         kind: ParameterKind,
         objclass: Optional[type] = None,
@@ -727,8 +789,8 @@ class TypeshedFinder:
 
     def _parse_param(
         self,
-        arg: ast3.arg,
-        default: Optional[ast3.arg],
+        arg: ast.arg,
+        default: Optional[ast.arg],
         module: str,
         kind: ParameterKind,
         objclass: Optional[type] = None,
@@ -765,16 +827,18 @@ class TypeshedFinder:
                 default_value = AnyValue(AnySource.unannotated)
             return SigParameter(name, kind, annotation=typ, default=default_value)
 
-    def _parse_expr(self, node: ast3.AST, module: str) -> Value:
+    def _parse_expr(self, node: ast.AST, module: str) -> Value:
         ctx = _AnnotationContext(finder=self, module=module)
-        return value_from_ast(cast(ast.AST, node), ctx=ctx)
+        return value_from_ast(node, ctx=ctx)
 
-    def _parse_type(self, node: ast3.AST, module: str) -> Value:
+    def _parse_type(
+        self, node: ast.AST, module: str, *, is_typeddict: bool = False
+    ) -> Value:
         val = self._parse_expr(node, module)
         ctx = _AnnotationContext(finder=self, module=module)
-        typ = type_from_value(val, ctx=ctx)
+        typ = type_from_value(val, ctx=ctx, is_typeddict=is_typeddict)
         if self.verbose and isinstance(typ, AnyValue):
-            self.log("Got Any", (ast3.dump(node), module))
+            self.log("Got Any", (ast.dump(node), module))
         return typ
 
     def _parse_call_assignment(
@@ -787,12 +851,60 @@ class TypeshedFinder:
         except Exception:
             pass
 
-        if not isinstance(info.ast, ast3.Assign) or not isinstance(
-            info.ast.value, ast3.Call
+        if not isinstance(info.ast, ast.Assign) or not isinstance(
+            info.ast.value, ast.Call
         ):
             return AnyValue(AnySource.inference)
         ctx = _AnnotationContext(finder=self, module=module)
-        return value_from_ast(cast(ast.AST, info.ast.value), ctx=ctx)
+        return value_from_ast(info.ast.value, ctx=ctx)
+
+    def make_synthetic_type(self, module: str, info: typeshed_client.NameInfo) -> Value:
+        fq_name = f"{module}.{info.name}"
+        bases = self.get_bases_for_fq_name(fq_name)
+        typ = TypedValue(fq_name)
+        if bases is not None:
+            if any(
+                (isinstance(base, KnownValue) and is_typing_name(base.val, "TypedDict"))
+                or isinstance(base, TypedDictValue)
+                for base in bases
+            ):
+                typ = self._make_typeddict(module, info, bases)
+        return SubclassValue(typ, exactly=True)
+
+    def _make_typeddict(
+        self, module: str, info: typeshed_client.NameInfo, bases: Sequence[Value]
+    ) -> TypedDictValue:
+        total = True
+        if isinstance(info.ast, ast.ClassDef):
+            for keyword in info.ast.keywords:
+                if keyword.arg == "total":
+                    val = self._parse_expr(keyword.value, module)
+                    if isinstance(val, KnownValue) and isinstance(val.val, bool):
+                        total = val.val
+        attrs = self._get_all_attributes_from_info(info, module)
+        fields = [
+            self._get_attribute_from_info(
+                info, module, attr, on_class=True, is_typeddict=True
+            )
+            for attr in attrs
+        ]
+        items = {}
+        for base in bases:
+            if isinstance(base, TypedDictValue):
+                items.update(base.items)
+        items.update(
+            {
+                attr: self._make_td_value(field, total)
+                for attr, field in zip(attrs, fields)
+            }
+        )
+        return TypedDictValue(items)
+
+    def _make_td_value(self, field: Value, total: bool) -> Tuple[bool, Value]:
+        if isinstance(field, Pep655Value):
+            return (field.required, field.value)
+        else:
+            return (total, field)
 
     def _value_from_info(
         self, info: typeshed_client.resolver.ResolvedName, module: str
@@ -810,11 +922,11 @@ class TypeshedFinder:
             elif IS_PRE_38:
                 if fq_name in ("typing.Protocol", "typing_extensions.Protocol"):
                     return KnownValue(Protocol)
-            if isinstance(info.ast, ast3.Assign):
+            if isinstance(info.ast, ast.Assign):
                 key = (module, info.ast)
                 if key in self._assignment_cache:
                     return self._assignment_cache[key]
-                if isinstance(info.ast.value, ast3.Call):
+                if isinstance(info.ast.value, ast.Call):
                     value = self._parse_call_assignment(info, module)
                 else:
                     value = self._parse_expr(info.ast.value, module)
@@ -825,10 +937,18 @@ class TypeshedFinder:
                 mod = sys.modules[module]
                 return KnownValue(getattr(mod, info.name))
             except Exception:
-                if isinstance(info.ast, ast3.ClassDef):
-                    return TypedValue(f"{module}.{info.name}")
-                elif isinstance(info.ast, ast3.AnnAssign):
-                    return self._parse_type(info.ast.annotation, module)
+                if isinstance(info.ast, ast.ClassDef):
+                    return self.make_synthetic_type(module, info)
+                elif isinstance(info.ast, ast.AnnAssign):
+                    val = self._parse_type(info.ast.annotation, module)
+                    if val != AnyValue(AnySource.incomplete_annotation):
+                        return val
+                    if info.ast.value:
+                        return self._parse_expr(info.ast.value, module)
+                elif isinstance(info.ast, ast.FunctionDef):
+                    sig = self._get_signature_from_info(info, None, fq_name, module)
+                    if sig is not None:
+                        return CallableValue(sig)
                 self.log("Unable to import", (module, info))
                 return AnyValue(AnySource.inference)
         elif isinstance(info, tuple):

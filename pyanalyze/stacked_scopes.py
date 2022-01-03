@@ -6,16 +6,16 @@ This module is responsible for mapping names to their values in pyanalyze. Varia
 mostly through a series of nested dictionaries. When pyanalyze sees a reference to a name inside a
 nested function, it will first look at that function's scope, then in the enclosing function's
 scope, then in the module scope, and finally in the builtin scope containing Python builtins. Each
-of these scopes is represented as a :class:`Scope` object, which by default is just a thin wrapper around a
-dictionary. However, function scopes are more complicated in order to track variable values
-accurately through control flow structures like if blocks. See the :class:`FunctionScope` docstring for
-details.
+of these scopes is represented as a :class:`Scope` object, which by default is just a thin
+wrapper around a dictionary. However, function scopes are more complicated in order to track
+variable values accurately through control flow structures like if blocks. See the
+:class:`FunctionScope` docstring for details.
 
 Other subtleties implemented here:
 
 - Multiple assignments to the same name result in :class:`pyanalyze.value.MultiValuedValue`
-- Globals are represented as :class:`pyanalyze.value.ReferencingValue`, and name lookups for such names are delegated to
-  the :class:`pyanalyze.value.ReferencingValue`\'s scope
+- Globals are represented as :class:`pyanalyze.value.ReferencingValue`, and name lookups for such
+  names are delegated to the :class:`pyanalyze.value.ReferencingValue`\'s scope
 - Class scopes except the current one are skipped in name lookup
 
 """
@@ -67,6 +67,8 @@ from .value import (
     unite_and_simplify,
     unite_values,
     flatten_values,
+    CanAssignContext,
+    is_overlapping,
 )
 
 T = TypeVar("T")
@@ -153,6 +155,15 @@ class VarnameWithOrigin:
             )
         return self.varname
 
+    def __str__(self) -> str:
+        pieces = [self.varname]
+        for index, _ in self.indices:
+            if isinstance(index, str):
+                pieces.append(f".{index}")
+            else:
+                pieces.append(f"[{index.val!r}]")
+        return "".join(pieces)
+
 
 SubScope = Dict[Varname, List[Node]]
 
@@ -217,8 +228,8 @@ class ConstraintType(enum.Enum):
 
     For the `one_of` and `all_of` constraint types, the value is itself a list of constraints. These
     constraints are always positive. They are similar to the abstract
-    :class:`AndConstraint` and :class:`OrConstraint`, but unlike these, all constraints in a `one_of`
-    or `all_of` constraint apply to the same :term:`varname`.
+    :class:`AndConstraint` and :class:`OrConstraint`, but unlike these, all constraints in a
+    `one_of` or `all_of` constraint apply to the same :term:`varname`.
     """
     all_of = 5
     """All of several other constraints on `varname` are true."""
@@ -505,6 +516,25 @@ class PredicateProvider(AbstractConstraint):
         return NULL_CONSTRAINT
 
 
+@dataclass
+class IsAssignablePredicate:
+    pattern_value: Value
+    ctx: CanAssignContext
+    positive_only: bool
+
+    def __call__(self, value: Value, positive: bool) -> Optional[Value]:
+        compatible = is_overlapping(self.pattern_value, value, self.ctx)
+        if positive:
+            if not compatible:
+                return None
+            if value.is_assignable(self.pattern_value, self.ctx):
+                return self.pattern_value
+        elif not self.positive_only:
+            if compatible:
+                return None
+        return value
+
+
 @dataclass(frozen=True)
 class AndConstraint(AbstractConstraint):
     """Represents the AND of two constraints."""
@@ -712,7 +742,7 @@ class Scope:
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
-    ) -> None:
+    ) -> VarnameOrigin:
         if varname not in self:
             self.variables[varname] = value
         elif isinstance(value, AnyValue) or not safe_equals(
@@ -732,6 +762,7 @@ class Scope:
                 self.variables[varname] = value
             else:
                 self.variables[varname] = unite_values(existing, value)
+        return EMPTY_ORIGIN
 
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         return self.variables.items()
@@ -779,9 +810,9 @@ class Scope:
 class FunctionScope(Scope):
     """Keeps track of the local variables of a single function.
 
-    :class:`FunctionScope` is designed to produce the correct value for each variable at each point in the
-    function, unlike the base :class:`Scope` class, which assumes that each variable has the same value
-    throughout the scope it represents.
+    :class:`FunctionScope` is designed to produce the correct value for each variable at each point
+    in the function, unlike the base :class:`Scope` class, which assumes that each variable has
+    the same value throughout the scope it represents.
 
     For example, given the code::
 
@@ -789,8 +820,9 @@ class FunctionScope(Scope):
         x = 4
         print(x)
 
-    :class:`FunctionScope` will infer the value of `x` to be ``KnownValue(4)``, but :class:`Scope` will produce a
-    :class:`pyanalyze.value.MultiValuedValue` because it does not know whether the assignment to 3 or 4 is active.
+    :class:`FunctionScope` will infer the value of `x` to be ``KnownValue(4)``, but :class:`Scope`
+    will produce a :class:`pyanalyze.value.MultiValuedValue` because it does not know whether the
+    assignment to 3 or 4 is active.
 
     The approach taken is to map each usage node (a place where the variable is used) to a set of
     definition nodes (places where the variable is assigned to) that could be active when the
@@ -802,8 +834,8 @@ class FunctionScope(Scope):
         x = 3  # (a)
         print(x)  # (b)
 
-    (a) is the only definition node for the usage node at (b), and (a) is mapped to ``KnownValue(3)``,
-    so at (b) x is inferred to be ``KnownValue(3)``.
+    (a) is the only definition node for the usage node at (b), and (a) is mapped to
+    ``KnownValue(3)``, so at (b) x is inferred to be ``KnownValue(3)``.
 
     However, in this code::
 
@@ -817,12 +849,13 @@ class FunctionScope(Scope):
     inferred to be a ``MultiValuedValue([KnownValue(3), KnownValue(4)])``.
 
     These mappings are implemented as the `usage_to_definition_nodes` and `definition_node_to_value`
-    attributes on the :class:`FunctionScope` object. They are created completely during the collecting
-    :term:`phase`. The basic mechanism uses the `name_to_current_definition_nodes` dictionary, which maps
-    each local variable to a list of active definition nodes. When pyanalyze encounters an
-    assignment, it updates `name_to_current_definition_nodes` to map to that assignment node, and
-    when it encounters a variable usage it updates `usage_to_definition_nodes` to map that usage
-    to the current definition nodes in `name_to_current_definition_nodes`. For example::
+    attributes on the :class:`FunctionScope` object. They are created completely during the
+    collecting :term:`phase`. The basic mechanism uses the `name_to_current_definition_nodes`
+    dictionary, which maps each local variable to a list of active definition nodes. When pyanalyze
+    encounters an assignment, it updates `name_to_current_definition_nodes` to map to that
+    assignment node, and when it encounters a variable usage it updates `usage_to_definition_nodes`
+    to map that usage to the current definition nodes in `name_to_current_definition_nodes`. For
+    example::
 
         # name_to_current_definition_nodes (n2cdn) = {}, usage_to_definition_nodes (u2dn) = {}
         x = 3  # (a)
@@ -835,12 +868,12 @@ class FunctionScope(Scope):
         # n2cdn = {'x': [(c)]}, u2dn = {(b): [(a)], (d): [(c)]}
 
     However, this simple approach is not sufficient to handle control flow inside the function. To
-    handle this case, :class:`FunctionScope` supports the creation of subscopes and the `combine_subscopes`
-    operation. Each branch in a conditional statement is mapped to a separate subscope, which
-    contains an independently updated copy of `name_to_current_definition_nodes`. After pyanalyze
-    visits all branches, it runs the `combine_subscopes` operation on all of the branches' subscopes.
-    This operation takes, for each variable, the union of the definition nodes created in all of the
-    branches. For example::
+    handle this case, :class:`FunctionScope` supports the creation of subscopes and the
+    `combine_subscopes` operation. Each branch in a conditional statement is mapped to a separate
+    subscope, which contains an independently updated copy of `name_to_current_definition_nodes`.
+    After pyanalyze visits all branches, it runs the `combine_subscopes` operation on all of the
+    branches' subscopes. This operation takes, for each variable, the union of the definition nodes
+    created in all of the branches. For example::
 
         # n2cdn = {}, u2dn = {}
         if some_condition():
@@ -869,11 +902,11 @@ class FunctionScope(Scope):
             else:
                 x = (1, 2)  # (b)
 
-    a naive approach would infer that `x` is ``None`` at (a). To take care of this case, pyanalyze visits
-    the loop body twice during the collecting :term:`phase`, so that `usage_to_definition_nodes` can add a
-    mapping of (a) to (b). To handle `break` and `continue` correctly, it also uses a separate "loop
-    scope" that ends up combining the scopes created by normal control flow through the body of the
-    loop and by each `break` and `continue` statement.
+    a naive approach would infer that `x` is ``None`` at (a). To take care of this case, pyanalyze
+    visits the loop body twice during the collecting :term:`phase`, so that
+    `usage_to_definition_nodes` can add a mapping of (a) to (b). To handle `break` and `continue`
+    correctly, it also uses a separate "loop scope" that ends up combining the scopes created by
+    normal control flow through the body of the loop and by each `break` and `continue` statement.
 
     Try-finally blocks are handled by visiting the finally block twice. Essentially, we treat::
 
@@ -1016,10 +1049,10 @@ class FunctionScope(Scope):
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
-    ) -> None:
+    ) -> VarnameOrigin:
         if isinstance(value, ReferencingValue):
             self.referencing_value_vars[varname] = value
-            return
+            return EMPTY_ORIGIN
         ref_var = self.referencing_value_vars[varname]
         if isinstance(ref_var, ReferencingValue):
             ref_var.scope.set(ref_var.name, value, node, state)
@@ -1036,6 +1069,7 @@ class FunctionScope(Scope):
             self.name_to_current_definition_nodes[composite] = []
         self.name_to_all_definition_nodes[varname].add(node)
         self._add_composite(varname)
+        return frozenset([node])
 
     def get_local(
         self,
@@ -1285,13 +1319,23 @@ class StackedScopes:
             self.scopes.pop()
 
     @contextlib.contextmanager
-    def ignore_topmost_scope(self) -> Iterable[None]:
+    def ignore_topmost_scope(self) -> Iterator[None]:
         """Context manager that temporarily ignores the topmost scope."""
         scope = self.scopes.pop()
         try:
             yield
         finally:
             self.scopes.append(scope)
+
+    @contextlib.contextmanager
+    def allow_only_module_scope(self) -> Iterator[None]:
+        """Context manager that allows only lookups in the module and builtin scopes."""
+        rest = self.scopes[2:]
+        del self.scopes[2:]
+        try:
+            yield
+        finally:
+            self.scopes += rest
 
     def get(self, varname: Varname, node: Node, state: VisitorState) -> Value:
         """Gets a variable of the given name from the current scope stack.
@@ -1314,7 +1358,8 @@ class StackedScopes:
                       in the code.
         :type state: VisitorState
 
-        Returns :data:`pyanalyze.value.UNINITIALIZED_VALUE` if the name is not defined in any known scope.
+        Returns :data:`pyanalyze.value.UNINITIALIZED_VALUE` if the name is not defined in any known
+        scope.
 
         """
         value, _, _ = self.get_with_scope(varname, node, state)

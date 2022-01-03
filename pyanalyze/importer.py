@@ -9,7 +9,7 @@ import importlib
 import importlib.util
 from pathlib import Path
 import sys
-from typing import List, cast, Tuple
+from typing import Optional, Sequence, cast, Tuple
 from types import ModuleType
 
 
@@ -19,8 +19,8 @@ def directory_has_init(path: Path) -> bool:
 
 
 def load_module_from_file(
-    filename: str, verbose: bool = False
-) -> Tuple[ModuleType, bool]:
+    filename: str, *, verbose: bool = False, import_paths: Sequence[str] = ()
+) -> Tuple[Optional[ModuleType], bool]:
     """Import the Python code in the given file.
 
     Return a tuple (module object, whether it is a compiled file).
@@ -32,7 +32,7 @@ def load_module_from_file(
     # somewhat properly
     abspath = Path(filename).resolve()
     candidate_paths = []
-    path: List[str] = sys.path
+    path: Sequence[str] = import_paths if import_paths else sys.path
     for sys_path_entry in path:
         if not sys_path_entry:
             continue
@@ -95,6 +95,8 @@ def load_module_from_file(
 
     # If all else fails, try to import it under its own name
     # regardless of sys.path.
+    if import_paths:
+        return None, False
     if verbose:
         print(f"falling back to importing {abspath} outside the import path")
     return import_module(str(abspath), abspath), False

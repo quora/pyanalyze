@@ -11,8 +11,10 @@ pyanalyze: A semi-static typechecker
    :caption: Contents:
 
    faq
+   configuration
    typesystem
    design
+   type_evaluation
    glossary
    reference/annotations
    reference/ast_annotator

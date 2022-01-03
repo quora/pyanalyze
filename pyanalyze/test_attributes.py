@@ -224,7 +224,7 @@ class TestAttributes(TestNameCheckVisitorBase):
         import enum
 
         class E(enum.Enum):
-            name = 1
+            name = 1  # E: incompatible_override
             no_name = 2
 
         def capybara():

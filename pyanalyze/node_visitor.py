@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from enum import Enum
 import qcore
 import cProfile
+import json
 import logging
 import os
 import os.path
@@ -25,7 +26,7 @@ import tempfile
 import builtins
 from builtins import print as real_print
 from types import ModuleType
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, Protocol, TypedDict
 from typing import (
     Any,
     Dict,
@@ -38,7 +39,6 @@ from typing import (
     Tuple,
     Type,
     Union,
-    cast,
 )
 
 from . import analysis_lib
@@ -128,13 +128,32 @@ class FileNotFoundError(Exception):
     pass
 
 
-class Failure(TypedDict, total=False):
+class Failure(TypedDict):
     description: str
     filename: str
-    code: Enum
-    lineno: int
-    context: str
-    message: str
+    absolute_filename: str
+    code: NotRequired[Enum]
+    lineno: NotRequired[int]
+    col_offset: NotRequired[int]
+    context: NotRequired[str]
+    message: NotRequired[str]
+    extra_metadata: NotRequired[Dict[str, Any]]
+
+
+class ErrorContext(Protocol):
+    all_failures: List[Failure]
+
+    def show_error(
+        self,
+        node: ast.AST,
+        e: str,
+        error_code: Enum,
+        *,
+        detail: Optional[str] = None,
+        save: bool = True,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Failure]:
+        raise NotImplementedError
 
 
 class BaseNodeVisitor(ast.NodeVisitor):
@@ -301,7 +320,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         if "settings" not in kwargs:
             kwargs["settings"] = cls._get_default_settings()
         kwargs = cls.prepare_constructor_kwargs(kwargs)
-        files = cls.get_files_to_check(include_tests)
+        files = cls.get_files_to_check(include_tests, **kwargs)
         all_failures = cls._run_on_files(files, **kwargs)
         if assert_passes:
             assert not all_failures, "".join(
@@ -310,7 +329,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return all_failures
 
     @classmethod
-    def get_files_to_check(cls, include_tests: bool) -> List[str]:
+    def get_files_to_check(cls, include_tests: bool, **kwargs: Any) -> List[str]:
         """Produce the list of files to check."""
         if cls.should_check_environ_for_files:
             environ_files = get_files_to_check_from_environ()
@@ -324,11 +343,17 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 and not filename.endswith(".so")
             ]
         else:
-            return sorted(set(cls._get_all_python_files(include_tests=include_tests)))
+            return sorted(
+                set(cls._get_all_python_files(include_tests=include_tests, **kwargs))
+            )
 
     @classmethod
     def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
         return kwargs
+
+    @classmethod
+    def perform_final_checks(cls, kwargs: Mapping[str, Any]) -> List[Failure]:
+        return []
 
     @classmethod
     def main(cls) -> int:
@@ -356,6 +381,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             kwargs = dict(args.__dict__)
         markdown_output = kwargs.pop("markdown_output", None)
+        json_output = kwargs.pop("json_output", None)
 
         verbose = kwargs.pop("verbose", 0)
         if verbose == 0 or verbose is None:
@@ -391,7 +417,15 @@ class BaseNodeVisitor(ast.NodeVisitor):
             failures = cls._run(**kwargs)
             if markdown_output is not None and failures:
                 cls._write_markdown_report(markdown_output, failures)
+            if json_output is not None and failures:
+                cls._write_json_report(json_output, failures)
         return 1 if failures else 0
+
+    @classmethod
+    def _write_json_report(cls, output_file: str, failures: List[Failure]) -> None:
+        failures = [_make_serializable(failure) for failure in failures]
+        with open(output_file, "w") as f:
+            json.dump(failures, f)
 
     @classmethod
     def _write_markdown_report(cls, output_file: str, failures: List[Failure]) -> None:
@@ -405,7 +439,6 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
         with open(output_file, "w") as f:
             f.write("%d total failures in %d files\n\n" % (len(failures), len(by_file)))
-
             for filename, file_failures in sorted(by_file.items()):
                 if filename != UNUSED_OBJECT_FILENAME:
                     filename = filename[len(prefix) :]
@@ -510,6 +543,11 @@ class BaseNodeVisitor(ast.NodeVisitor):
         for error in errors:
             self.show_error(**error)
 
+    def is_enabled(self, error_code: Enum) -> bool:
+        if self.settings is not None:
+            return self.settings.get(error_code, True)
+        return True
+
     def show_error(
         self,
         node: Union[ast.AST, _FakeNode, None],
@@ -520,6 +558,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
         obey_ignore: bool = True,
         ignore_comment: str = IGNORE_COMMENT,
         detail: Optional[str] = None,
+        save: bool = True,
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Failure]:
         """Shows an error associated with this node.
 
@@ -535,6 +575,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
           file-level ignore comments.)
         - ignore_comment: Comment that can be used to ignore this error. (By default, this
           is "# static analysis: ignore".)
+        - detail: extra detail to append to the error on a separate line
+        - save: if False, do not add the failure to the all_failures list
+        - extra_metadata: if given, is added to JSON failures output
 
         """
         if self.caught_errors is not None:
@@ -547,14 +590,15 @@ class BaseNodeVisitor(ast.NodeVisitor):
                     "obey_ignore": obey_ignore,
                     "ignore_comment": ignore_comment,
                     "detail": detail,
+                    "save": save,
+                    "extra_metadata": extra_metadata,
                 }
             )
             return None
 
         # check if error was disabled
-        if self.settings is not None and error_code is not None:
-            if not self.settings.get(error_code, True):
-                return None
+        if error_code is not None and not self.is_enabled(error_code):
+            return None
 
         if self.has_file_level_ignore(error_code, ignore_comment):
             return None
@@ -577,8 +621,13 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             lineno = col_offset = None
 
-        # https://github.com/quora/pyanalyze/issues/112
-        error = cast(Failure, {"description": str(e), "filename": self.filename})
+        error: Failure = {
+            "description": str(e),
+            "filename": self.filename,
+            "absolute_filename": os.path.abspath(self.filename),
+        }
+        if extra_metadata is not None:
+            error["extra_metadata"] = extra_metadata
         message = f"\n{e}"
         if error_code is not None:
             error["code"] = error_code
@@ -590,6 +639,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
             message += f"\nIn {self.filename} at line {lineno}\n"
         else:
             message += f"\n In {self.filename}"
+        if col_offset is not None:
+            error["col_offset"] = col_offset
         lines = self._lines()
 
         if obey_ignore and lineno is not None:
@@ -647,7 +698,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
             self._changes_for_fixer[self.filename].append(replacement)
 
         error["message"] = message
-        self.all_failures.append(error)
+        if save:
+            self.all_failures.append(error)
         sys.stderr.write(message)
         sys.stderr.flush()
         if self.fail_after_first:
@@ -688,9 +740,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _run_on_files_or_all(
-        cls, files: Optional[Sequence[str]], **kwargs: Any
+        cls, files: Optional[Sequence[str]] = None, **kwargs: Any
     ) -> List[Failure]:
-        files = files or cls.get_default_directories()
+        files = files or cls.get_default_directories(**kwargs)
         if not files:
             return cls.check_all_files(**kwargs)
         else:
@@ -710,6 +762,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             for failures, _ in map(cls._check_file_single_arg, args):
                 all_failures += failures
+        all_failures += cls.perform_final_checks(kwargs)
         return all_failures
 
     @classmethod
@@ -721,7 +774,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
         try:
             return cls.check_file_in_worker(filename, **kwargs)
         finally:
-            # Some modules cause __main__ to get reassigned for unclear reasons. So let's put it back.
+            # Some modules cause __main__ to get reassigned for unclear reasons. So let's put it
+            # back.
             sys.modules["__main__"] = main_module
 
     @classmethod
@@ -775,9 +829,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             epilog=epilog,
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
-        parser.add_argument(
-            "files", nargs="*", default=".", help="Files or directories to check"
-        )
+        parser.add_argument("files", nargs="*", help="Files or directories to check")
         parser.add_argument(
             "-v", "--verbose", help="Print more information.", action="count"
         )
@@ -838,6 +890,13 @@ class BaseNodeVisitor(ast.NodeVisitor):
             ),
         )
         parser.add_argument(
+            "--json-output",
+            help=(
+                "Write errors to this file in JSON format. "
+                "Suitable for integrating with other tools."
+            ),
+        )
+        parser.add_argument(
             "--add-ignores",
             help=(
                 "Add ignore comments for all errors detected. "
@@ -895,12 +954,15 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return ()
 
     @classmethod
-    def get_default_directories(cls) -> Sequence[str]:
-        return ()
+    def get_default_directories(cls, **kwargs: Any) -> Sequence[str]:
+        return (".",)
 
     @classmethod
     def _get_all_python_files(
-        cls, include_tests: bool = False, modules: Optional[Iterable[ModuleType]] = None
+        cls,
+        include_tests: bool = False,
+        modules: Optional[Iterable[ModuleType]] = None,
+        **kwargs: Any,
     ) -> Iterable[str]:
         """Gets Python files inside of the given modules that should be tested.
 
@@ -912,7 +974,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
         """
         if modules is None:
-            dirs = cls.get_default_directories()
+            dirs = cls.get_default_directories(**kwargs)
             if dirs:
                 for filename in _get_all_files(dirs):
                     yield filename
@@ -1089,3 +1151,10 @@ class _Profile(object):
         self.filename = tempfile.mktemp()
         self.prof.dump_stats(self.filename)
         print("profiler output saved as {}".format(self.filename))
+
+
+def _make_serializable(failure: Failure) -> Dict[str, Any]:
+    result = dict(failure)
+    if "code" in failure:
+        result["code"] = failure["code"].name
+    return result

@@ -1,6 +1,7 @@
 """
 
-Extensions to the type system supported by pyanalyze. These can be imported at runtime and used in user code.
+Extensions to the type system supported by pyanalyze. These can be imported at runtime and used in
+user code.
 
 Several type system extensions are used with the ``Annotated`` type from
 `PEP 593 <https://www.python.org/dev/peps/pep-0593/>`_. This allows them to
@@ -17,6 +18,7 @@ from typing import (
     Container,
     Dict,
     Iterable,
+    Optional,
     Tuple,
     List,
     Union,
@@ -56,6 +58,12 @@ class CustomCheck:
         func("x")  # ok
         func(str(some_call()))  # error
 
+    It is also possible to customize checks in the other direction
+    by overriding the ``can_be_assigned()`` method. For example, if
+    the above ``CustomCheck`` overrode the ``can_be_assigned`` method
+    instead, a value of type ``Annotated[str, LiteralOnly()]`` could
+    only be passed to functions that take a ``Literal`` parameter.
+
     A ``CustomCheck`` can also be generic over a ``TypeVar``. To implement support
     for ``TypeVar``, two more methods must be overridden:
 
@@ -66,7 +74,12 @@ class CustomCheck:
 
     """
 
-    def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
+    def can_assign(self, __value: "Value", __ctx: "CanAssignContext") -> "CanAssign":
+        return {}
+
+    def can_be_assigned(
+        self, __value: "Value", __ctx: "CanAssignContext"
+    ) -> "CanAssign":
         return {}
 
     def walk_values(self) -> Iterable["Value"]:
@@ -146,7 +159,8 @@ class _AsynqCallableMeta(type):
 
 @dataclass(frozen=True)
 class AsynqCallable(metaclass=_AsynqCallableMeta):
-    """Represents an `asynq <https://github.com/quora/asynq>`_ function (a function decorated with ``@asynq()``).
+    """Represents an `asynq <https://github.com/quora/asynq>`_ function (a function decorated with
+    ``@asynq()``).
 
     Similar to ``Callable``, but ``AsynqCallable`` also supports calls
     through ``.asynq()``. Because asynq functions can also be called synchronously,
@@ -207,26 +221,43 @@ class AsynqCallable(metaclass=_AsynqCallableMeta):
         raise TypeError(f"{self} is not callable")
 
 
-class _ParameterTypeGuardMeta(type):
-    def __getitem__(self, params: Tuple[str, object]) -> "ParameterTypeGuard":
+class _ParameterGuardMeta(type):
+    def __getitem__(self, params: Tuple[str, object]) -> Any:
         if not isinstance(params, tuple) or len(params) != 2:
             raise TypeError(
-                "ParameterTypeGuard[...] should be instantiated "
+                f"{self.__name__}[...] should be instantiated "
                 "with two arguments (a variable name and a type)."
             )
         if not isinstance(params[0], str):
-            raise TypeError("The first argument to ParameterTypeGuard must be a string")
-        return ParameterTypeGuard(params[0], params[1])
+            raise TypeError(f"The first argument to {self.__name__} must be a string")
+        return self(params[0], params[1])
 
 
 @dataclass(frozen=True)
-class ParameterTypeGuard(metaclass=_ParameterTypeGuardMeta):
+class ParameterTypeGuard(metaclass=_ParameterGuardMeta):
     """A guard on an arbitrary parameter. Used with ``Annotated``.
 
     Example usage::
 
         def is_int(arg: object) -> Annotated[bool, ParameterTypeGuard["arg", int]]:
             return isinstance(arg, int)
+
+    """
+
+    varname: str
+    guarded_type: object
+
+
+@dataclass(frozen=True)
+class NoReturnGuard(metaclass=_ParameterGuardMeta):
+    """A no-return guard on an arbitrary parameter. Used with ``Annotated``.
+
+    If the function returns, then the condition is true.
+
+    Example usage::
+
+        def assert_is_int(arg: object) -> Annotated[bool, NoReturnGuard["arg", int]]:
+            assert isinstance(arg, int)
 
     """
 
@@ -356,11 +387,17 @@ def reveal_type(value: object) -> None:
 
 
 _overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
+_type_evaluations: Dict[str, Optional[Callable[..., Any]]] = {}
 
 
 def get_overloads(fully_qualified_name: str) -> List[Callable[..., Any]]:
     """Return all defined runtime overloads for this fully qualified name."""
     return _overloads[fully_qualified_name]
+
+
+def get_type_evaluation(fully_qualified_name: str) -> Optional[Callable[..., Any]]:
+    """Return the type evaluation function for this fully qualified name, or None."""
+    return _type_evaluations.get(fully_qualified_name)
 
 
 if TYPE_CHECKING:
@@ -391,3 +428,67 @@ def patch_typing_overload() -> None:
     """
     typing.overload = overload
     typing_extensions.overload = overload
+
+
+def evaluated(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Marks a type evaluation function."""
+    key = f"{func.__module__}.{func.__qualname__}"
+    assert key not in _type_evaluations, f"multiple evaluations for {key}"
+    _type_evaluations[key] = func
+    func.__is_type_evaluation__ = True
+    return func
+
+
+def is_provided(arg: Any) -> bool:
+    """Helper function for type evaluators.
+
+    May not be called at runtime.
+
+    """
+    raise NotImplementedError(
+        "is_provided() may only be called in type evaluation functions"
+    )
+
+
+def is_positional(arg: Any) -> bool:
+    """Helper function for type evaluators.
+
+    May not be called at runtime.
+
+    """
+    raise NotImplementedError(
+        "is_positional() may only be called in type evaluation functions"
+    )
+
+
+def is_keyword(arg: Any) -> bool:
+    """Helper function for type evaluators.
+
+    May not be called at runtime.
+
+    """
+    raise NotImplementedError(
+        "is_keyword() may only be called in type evaluation functions"
+    )
+
+
+def is_of_type(arg: Any, type: Any, *, exclude_any: bool = False) -> bool:
+    """Helper function for type evaluators.
+
+    May not be called at runtime.
+
+    """
+    raise NotImplementedError(
+        "is_of_type() may only be called in type evaluation functions"
+    )
+
+
+def show_error(message: str, *, argument: Optional[Any] = None) -> bool:
+    """Helper function for type evaluators.
+
+    May not be called at runtime.
+
+    """
+    raise NotImplementedError(
+        "show_error() may only be called in type evaluation functions"
+    )

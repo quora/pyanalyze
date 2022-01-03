@@ -173,11 +173,13 @@ class TestAnnotations(TestNameCheckVisitorBase):
     def test_annotations_function(self):
         def caviidae() -> None:
             x = int
-            # tests that annotations in a nested functions are not evaluated in a context where they don't exist
+            # tests that annotations in a nested functions are not evaluated in a context where
+            # they don't exist
             def capybara(a: x, *b: x, c: x, d: x = 3, **kwargs: x):
                 pass
 
-            assert_is_value(capybara, KnownValue(capybara))
+            capybara(1, c=1)
+            capybara(1, c="x")  # E: incompatible_argument
 
     @assert_passes()
     def annotations_class(self):
@@ -822,14 +824,14 @@ class TestCallable(TestNameCheckVisitorBase):
     def test_asynq_callable(self):
         from asynq import asynq
         from pyanalyze.extensions import AsynqCallable
-        from pyanalyze.signature import Signature
+        from pyanalyze.signature import Signature, ELLIPSIS_PARAM
         from typing import Optional
 
         @asynq()
         def func_example(x: int) -> str:
             return ""
 
-        sig = Signature.make([], is_asynq=True, is_ellipsis_args=True)
+        sig = Signature.make([ELLIPSIS_PARAM], is_asynq=True)
 
         @asynq()
         def bare_asynq_callable(fn: AsynqCallable) -> None:
@@ -1061,6 +1063,20 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
                 assert_is_value(union, TypedValue(B))
 
 
+class TestNoReturnGuard(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        from pyanalyze.extensions import NoReturnGuard
+        from typing_extensions import Annotated
+
+        def assert_is_int(x: object) -> Annotated[None, NoReturnGuard["x", int]]:
+            assert isinstance(x, int)
+
+        def capybara(x):
+            assert_is_int(x)
+            assert_is_value(x, TypedValue(int))
+
+
 class TestTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
     def test_typing_extesions(self):
@@ -1133,6 +1149,33 @@ class TestCustomCheck(TestNameCheckVisitorBase):
             capybara(str(1))  # E: incompatible_argument
             capybara("x" if x else "y")
             capybara("x" if x else x)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_reverse_direction(self):
+        from pyanalyze.extensions import CustomCheck
+        from pyanalyze.value import (
+            CanAssignContext,
+            Value,
+            CanAssign,
+            flatten_values,
+            CanAssignError,
+        )
+        from typing import Any
+        from typing_extensions import Annotated
+
+        class DontAssignToAny(CustomCheck):
+            def can_be_assigned(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+                for val in flatten_values(value, unwrap_annotated=True):
+                    if isinstance(val, AnyValue):
+                        return CanAssignError("Assignment to Any disallowed")
+                return {}
+
+        def want_any(x: Any) -> None:
+            pass
+
+        def capybara(arg: Annotated[str, DontAssignToAny()]) -> None:
+            want_any(arg)  # E: incompatible_argument
+            print(len(arg))
 
     @assert_passes()
     def test_no_any(self) -> None:
@@ -1576,3 +1619,77 @@ class TestParamSpec(TestNameCheckVisitorBase):
             assert_is_value(
                 refined(), GenericValue(list, [AnyValue(AnySource.generic_argument)])
             )
+
+
+class TestCallable(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_compatibility(self):
+        from typing import Callable, TypeVar
+
+        T = TypeVar("T")
+
+        def want_callable(c: Callable[[int], T]) -> T:
+            return c(1)
+
+        def string_func(s: str) -> str:
+            return s
+
+        def capybara(unannotated, other):
+            assert_is_value(want_callable(lambda _: 3), KnownValue(3))
+            assert_is_value(
+                want_callable(unannotated), AnyValue(AnySource.generic_argument)
+            )
+            # generates an AnnotatedValue(MultiValuedValue(...))
+            assert_is_value(
+                want_callable(unannotated or other),
+                AnyValue(AnySource.generic_argument),
+            )
+
+            assert_is_value(
+                want_callable(string_func),  # E: incompatible_argument
+                AnyValue(AnySource.error),
+            )
+            want_callable(1)  # E: incompatible_argument
+            want_callable(int(unannotated))  # E: incompatible_argument
+
+    @assert_passes()
+    def test_args_kwargs(self):
+        from typing import Callable, TypeVar
+        from typing_extensions import Concatenate, ParamSpec
+
+        P = ParamSpec("P")
+        R = TypeVar("R")
+
+        class Request:
+            pass
+
+        def with_request(f: Callable[Concatenate[Request, P], R]) -> Callable[P, R]:
+            def inner(*args: P.args, **kwargs: P.kwargs) -> R:
+                return f(Request(), *args, **kwargs)
+
+            return inner
+
+        def takes_int_str(request: Request, x: int, y: str) -> int:
+            return x + 7
+
+        def capybara():
+            func = with_request(takes_int_str)
+            func(1, "A")
+            func(1, 2)  # E: incompatible_argument
+
+
+class TestTypeAlias(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_runtime(self):
+        from typing_extensions import TypeAlias
+
+        X: TypeAlias = int
+        Y = X
+        Z: "TypeAlias" = int
+
+        def capybara(x: X, y: Y, x_quoted: "X", y_quoted: "Y", z: Z) -> None:
+            assert_is_value(x, TypedValue(int))
+            assert_is_value(y, TypedValue(int))
+            assert_is_value(x_quoted, TypedValue(int))
+            assert_is_value(y_quoted, TypedValue(int))
+            assert_is_value(z, TypedValue(int))

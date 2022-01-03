@@ -43,7 +43,6 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     KNOWN_MUTABLE_TYPES,
-    UnboundMethodValue,
     Value,
     WeakExtension,
     concrete_values_from_iterable,
@@ -894,7 +893,7 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
 
 def _remove_annotated(val: Value) -> Value:
     if isinstance(val, AnnotatedValue):
-        return val.value
+        return _remove_annotated(val.value)
     elif isinstance(val, MultiValuedValue):
         return unite_values(*[_remove_annotated(subval) for subval in val.vals])
     return val
@@ -926,15 +925,7 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
 def _reveal_type_impl(ctx: CallContext) -> Value:
     if ctx.visitor._is_checking():
         value = ctx.vars["value"]
-        message = f"Revealed type is '{value!s}'"
-        if isinstance(value, KnownValue):
-            sig = ctx.visitor.arg_spec_cache.get_argspec(value.val)
-        elif isinstance(value, UnboundMethodValue):
-            sig = value.get_signature(ctx.visitor)
-        else:
-            sig = None
-        if sig is not None:
-            message += f", signature is {sig!s}"
+        message = f"Revealed type is {ctx.visitor.display_value(value)}"
         ctx.show_error(message, ErrorCode.inference_failure, arg="value")
     return KnownValue(None)
 

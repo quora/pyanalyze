@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 import sys
 import tempfile
+import textwrap
 import time
 from typeshed_client import Resolver, get_search_context
 import typing
@@ -14,14 +15,18 @@ from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
 import urllib.parse
 
-from .test_config import TestConfig
+from .extensions import evaluated
+from .test_config import TestConfig, TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
+from .options import Options
 from .signature import SigParameter, Signature
 from .arg_spec import ArgSpecCache
 from .test_arg_spec import ClassWithCall
 from .typeshed import TypeshedFinder
 from .value import (
+    SubclassValue,
+    TypedDictValue,
     assert_is_value,
     AnySource,
     AnyValue,
@@ -78,15 +83,17 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             temp_dir = Path(temp_dir_str)
             (temp_dir / "typing.pyi").write_text("def NewType(a, b): pass\n")
             (temp_dir / "newt.pyi").write_text(
+                textwrap.dedent(
+                    """
+                from typing import NewType
+
+                NT = NewType("NT", int)
+                Alias = int
+
+                def f(x: NT, y: Alias) -> None:
+                    pass
                 """
-from typing import NewType
-
-NT = NewType("NT", int)
-Alias = int
-
-def f(x: NT, y: Alias) -> None:
-    pass
-"""
+                )
             )
             (temp_dir / "VERSIONS").write_text("newt: 3.5\ntyping: 3.5\n")
             (temp_dir / "@python2").mkdir()
@@ -148,6 +155,88 @@ def f(x: NT, y: Alias) -> None:
         )
 
 
+_EXPECTED_TYPED_DICTS = {
+    "TD1": TypedDictValue({"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}),
+    "TD2": TypedDictValue(
+        {"a": (False, TypedValue(int)), "b": (False, TypedValue(str))}
+    ),
+    "PEP655": TypedDictValue(
+        {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
+    ),
+    "Inherited": TypedDictValue(
+        {
+            "a": (True, TypedValue(int)),
+            "b": (True, TypedValue(str)),
+            "c": (True, TypedValue(float)),
+        }
+    ),
+}
+
+
+class TestBundledStubs(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_import_aliases(self):
+        def capybara():
+            from _pyanalyze_tests.aliases import (
+                constant,
+                aliased_constant,
+                explicitly_aliased_constant,
+                ExplicitAlias,
+            )
+
+            assert_is_value(ExplicitAlias, KnownValue(int))
+            assert_is_value(constant, TypedValue(int))
+            assert_is_value(aliased_constant, TypedValue(int))
+            assert_is_value(explicitly_aliased_constant, TypedValue(int))
+
+    def test_aliases(self):
+        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
+        mod = "_pyanalyze_tests.aliases"
+        assert tsf.resolve_name(mod, "constant") == TypedValue(int)
+        assert tsf.resolve_name(mod, "aliased_constant") == TypedValue(int)
+        assert tsf.resolve_name(mod, "explicitly_aliased_constant") == TypedValue(int)
+
+    def test_typeddict(self):
+        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
+        mod = "_pyanalyze_tests.typeddict"
+
+        for name, expected in _EXPECTED_TYPED_DICTS.items():
+            assert tsf.resolve_name(mod, name) == SubclassValue(expected, exactly=True)
+
+    @assert_passes()
+    def test_import_typeddicts(self):
+        def capybara():
+            from _pyanalyze_tests.typeddict import TD1, TD2, PEP655, Inherited
+            from pyanalyze.test_typeshed import _EXPECTED_TYPED_DICTS
+
+            def nested(td1: TD1, td2: TD2, pep655: PEP655, inherited: Inherited):
+                assert_is_value(td1, _EXPECTED_TYPED_DICTS["TD1"])
+                assert_is_value(td2, _EXPECTED_TYPED_DICTS["TD2"])
+                assert_is_value(pep655, _EXPECTED_TYPED_DICTS["PEP655"])
+                assert_is_value(inherited, _EXPECTED_TYPED_DICTS["Inherited"])
+
+    def test_evaluated(self):
+        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
+        mod = "_pyanalyze_tests.evaluated"
+        assert tsf.resolve_name(mod, "evaluated") == KnownValue(evaluated)
+
+    @assert_passes()
+    def test_evaluated_import(self):
+        def capybara(unannotated):
+            from _pyanalyze_tests.evaluated import open
+            from typing import TextIO, BinaryIO, IO
+
+            assert_is_value(open("r"), TypedValue(TextIO))
+            assert_is_value(open("rb"), TypedValue(BinaryIO))
+            assert_is_value(
+                open(unannotated), GenericValue(IO, [AnyValue(AnySource.explicit)])
+            )
+            assert_is_value(
+                open("r" if unannotated else "rb"),
+                TypedValue(TextIO) | TypedValue(BinaryIO),
+            )
+
+
 class Parent(Generic[T]):
     pass
 
@@ -162,7 +251,9 @@ class GenericChild(Parent[T]):
 
 class TestGetGenericBases:
     def setup(self) -> None:
-        arg_spec_cache = ArgSpecCache(TestConfig())
+        arg_spec_cache = ArgSpecCache(
+            Options.from_option_list([], TestConfig()), TypeshedFinder()
+        )
         self.get_generic_bases = arg_spec_cache.get_generic_bases
 
     def test_runtime(self):
