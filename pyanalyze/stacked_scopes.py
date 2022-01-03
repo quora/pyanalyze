@@ -6,16 +6,16 @@ This module is responsible for mapping names to their values in pyanalyze. Varia
 mostly through a series of nested dictionaries. When pyanalyze sees a reference to a name inside a
 nested function, it will first look at that function's scope, then in the enclosing function's
 scope, then in the module scope, and finally in the builtin scope containing Python builtins. Each
-of these scopes is represented as a :class:`Scope` object, which by default is just a thin wrapper around a
-dictionary. However, function scopes are more complicated in order to track variable values
-accurately through control flow structures like if blocks. See the :class:`FunctionScope` docstring for
-details.
+of these scopes is represented as a :class:`Scope` object, which by default is just a thin
+wrapper around a dictionary. However, function scopes are more complicated in order to track
+variable values accurately through control flow structures like if blocks. See the
+:class:`FunctionScope` docstring for details.
 
 Other subtleties implemented here:
 
 - Multiple assignments to the same name result in :class:`pyanalyze.value.MultiValuedValue`
-- Globals are represented as :class:`pyanalyze.value.ReferencingValue`, and name lookups for such names are delegated to
-  the :class:`pyanalyze.value.ReferencingValue`\'s scope
+- Globals are represented as :class:`pyanalyze.value.ReferencingValue`, and name lookups for such
+  names are delegated to the :class:`pyanalyze.value.ReferencingValue`\'s scope
 - Class scopes except the current one are skipped in name lookup
 
 """
@@ -33,6 +33,7 @@ from typing import (
     Callable,
     ContextManager,
     Dict,
+    FrozenSet,
     Iterable,
     Iterator,
     List,
@@ -49,10 +50,13 @@ from .boolability import get_boolability
 from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
+    ConstraintExtension,
     KnownValue,
+    MultiValuedValue,
     ReferencingValue,
     SubclassValue,
     TypeVarMap,
@@ -63,6 +67,8 @@ from .value import (
     unite_and_simplify,
     unite_values,
     flatten_values,
+    CanAssignContext,
+    is_overlapping,
 )
 
 T = TypeVar("T")
@@ -87,6 +93,15 @@ class ScopeType(enum.Enum):
     function_scope = 4
 
 
+# Nodes as used in scopes can be any object, as long as they are hashable.
+Node = object
+# Tag for a Varname that changes when the variable is assigned to.
+VarnameOrigin = FrozenSet[Optional[Node]]
+CompositeIndex = Union[str, KnownValue]
+
+EMPTY_ORIGIN = frozenset((None,))
+
+
 @dataclass(frozen=True)
 class CompositeVariable:
     """:term:`varname` used to implement constraints on instance variables.
@@ -103,15 +118,53 @@ class CompositeVariable:
     """
 
     varname: str
-    attributes: Sequence[Union[str, KnownValue]]
+    attributes: Sequence[CompositeIndex]
 
-    def extend_with(self, index: Union[str, KnownValue]) -> "CompositeVariable":
+    def extend_with(self, index: CompositeIndex) -> "CompositeVariable":
         return CompositeVariable(self.varname, (*self.attributes, index))
 
 
 Varname = Union[str, CompositeVariable]
-# Nodes as used in scopes can be any object, as long as they are hashable.
-Node = object
+
+
+@dataclass(frozen=True)
+class VarnameWithOrigin:
+    varname: str
+    origin: VarnameOrigin = EMPTY_ORIGIN
+    indices: Sequence[Tuple[CompositeIndex, VarnameOrigin]] = ()
+
+    def extend_with(
+        self, index: CompositeIndex, origin: VarnameOrigin
+    ) -> "VarnameWithOrigin":
+        return VarnameWithOrigin(
+            self.varname, self.origin, (*self.indices, (index, origin))
+        )
+
+    def get_all_varnames(self) -> Iterable[Tuple[Varname, VarnameOrigin]]:
+        yield self.varname, self.origin
+        for i, (_, origin) in enumerate(self.indices):
+            varname = CompositeVariable(
+                self.varname, tuple(index for index, _ in self.indices[: i + 1])
+            )
+            yield varname, origin
+
+    def get_varname(self) -> Varname:
+        if self.indices:
+            return CompositeVariable(
+                self.varname, tuple(index for index, _ in self.indices)
+            )
+        return self.varname
+
+    def __str__(self) -> str:
+        pieces = [self.varname]
+        for index, _ in self.indices:
+            if isinstance(index, str):
+                pieces.append(f".{index}")
+            else:
+                pieces.append(f"[{index.val!r}]")
+        return "".join(pieces)
+
+
 SubScope = Dict[Varname, List[Node]]
 
 # Type for Constraint.value if constraint type is predicate
@@ -123,18 +176,23 @@ class Composite(NamedTuple):
     origin. This is useful for setting constraints."""
 
     value: Value
-    varname: Optional[Varname] = None
+    varname: Optional[VarnameWithOrigin] = None
     node: Optional[AST] = None
 
-    def get_extended_varname(
-        self, index: Union[str, KnownValue]
-    ) -> Optional[CompositeVariable]:
+    def get_extended_varname(self, index: CompositeIndex) -> Optional[Varname]:
         if self.varname is None:
             return None
-        if isinstance(self.varname, str):
-            return CompositeVariable(self.varname, (index,))
-        else:
-            return self.varname.extend_with(index)
+        base = self.varname.get_varname()
+        if isinstance(base, CompositeVariable):
+            return CompositeVariable(base.varname, (*base.attributes, index))
+        return CompositeVariable(base, (index,))
+
+    def get_extended_varname_with_origin(
+        self, index: CompositeIndex, origin: VarnameOrigin
+    ) -> Optional[VarnameWithOrigin]:
+        if self.varname is None:
+            return None
+        return self.varname.extend_with(index, origin)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Composite":
         return Composite(
@@ -170,8 +228,8 @@ class ConstraintType(enum.Enum):
 
     For the `one_of` and `all_of` constraint types, the value is itself a list of constraints. These
     constraints are always positive. They are similar to the abstract
-    :class:`AndConstraint` and :class:`OrConstraint`, but unlike these, all constraints in a `one_of`
-    or `all_of` constraint apply to the same :term:`varname`.
+    :class:`AndConstraint` and :class:`OrConstraint`, but unlike these, all constraints in a
+    `one_of` or `all_of` constraint apply to the same :term:`varname`.
     """
     all_of = 5
     """All of several other constraints on `varname` are true."""
@@ -230,7 +288,7 @@ class Constraint(AbstractConstraint):
 
     """
 
-    varname: Varname
+    varname: VarnameWithOrigin
     """The :term:`varname` that the constraint applies to."""
     constraint_type: ConstraintType
     """Type of constraint. Determines the meaning of :attr:`value`."""
@@ -242,14 +300,24 @@ class Constraint(AbstractConstraint):
     """Type for an ``is_instance`` constraint; value identical to the variable
     for ``is_value``; unused for is_truthy; :class:`pyanalyze.value.Value` object for
     `is_value_object`."""
+    inverted: Optional["Constraint"] = field(
+        compare=False, repr=False, hash=False, default=None
+    )
+
+    def __post_init__(self) -> None:
+        assert isinstance(self.varname, VarnameWithOrigin), self.varname
 
     def apply(self) -> Iterable["Constraint"]:
         yield self
 
     def invert(self) -> "Constraint":
-        return Constraint(
+        if self.inverted is not None:
+            return self.inverted
+        inverted = Constraint(
             self.varname, self.constraint_type, not self.positive, self.value
         )
+        object.__setattr__(self, "inverted", inverted)
+        return inverted
 
     def apply_to_values(self, values: Iterable[Value]) -> Iterable[Value]:
         for value in values:
@@ -377,9 +445,21 @@ class Constraint(AbstractConstraint):
         else:
             assert False, f"unknown constraint type {self.constraint_type}"
 
+    def __str__(self) -> str:
+        sign = "+" if self.positive else "-"
+        if isinstance(self.value, list):
+            value = str(list(map(str, self.value)))
+        else:
+            value = str(self.value)
+        return f"<{sign}{self.varname} {self.constraint_type.name} {value}>"
 
-TRUTHY_CONSTRAINT = Constraint("%unused", ConstraintType.is_truthy, True, None)
-FALSY_CONSTRAINT = Constraint("%unused", ConstraintType.is_truthy, False, None)
+
+TRUTHY_CONSTRAINT = Constraint(
+    VarnameWithOrigin("%unused"), ConstraintType.is_truthy, True, None
+)
+FALSY_CONSTRAINT = Constraint(
+    VarnameWithOrigin("%unused"), ConstraintType.is_truthy, False, None
+)
 
 
 @dataclass(frozen=True)
@@ -425,7 +505,7 @@ class PredicateProvider(AbstractConstraint):
 
     """
 
-    varname: Varname
+    varname: VarnameWithOrigin
     provider: Callable[[Value], Value]
 
     def apply(self) -> Iterable[Constraint]:
@@ -436,50 +516,95 @@ class PredicateProvider(AbstractConstraint):
         return NULL_CONSTRAINT
 
 
+@dataclass
+class IsAssignablePredicate:
+    pattern_value: Value
+    ctx: CanAssignContext
+    positive_only: bool
+
+    def __call__(self, value: Value, positive: bool) -> Optional[Value]:
+        compatible = is_overlapping(self.pattern_value, value, self.ctx)
+        if positive:
+            if not compatible:
+                return None
+            if value.is_assignable(self.pattern_value, self.ctx):
+                return self.pattern_value
+        elif not self.positive_only:
+            if compatible:
+                return None
+        return value
+
+
 @dataclass(frozen=True)
 class AndConstraint(AbstractConstraint):
     """Represents the AND of two constraints."""
 
-    left: AbstractConstraint
-    right: AbstractConstraint
+    constraints: Tuple[AbstractConstraint, ...]
 
     def apply(self) -> Iterable["Constraint"]:
-        for constraint in self.left.apply():
-            yield constraint
-        for constraint in self.right.apply():
-            yield constraint
+        for cons in self.constraints:
+            yield from cons.apply()
 
     def invert(self) -> "OrConstraint":
         # ~(A and B) -> ~A or ~B
-        return OrConstraint(self.left.invert(), self.right.invert())
+        return OrConstraint(tuple([cons.invert() for cons in self.constraints]))
+
+    @classmethod
+    def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
+        processed = {}
+        for cons in constraints:
+            if isinstance(cons, AndConstraint):
+                for subcons in cons.constraints:
+                    processed[id(subcons)] = subcons
+                continue
+            processed[id(cons)] = cons
+
+        final = []
+        for constraint in processed.values():
+            if isinstance(constraint, OrConstraint):
+                # A AND (A OR B) reduces to a
+                if any(id(subcons) in processed for subcons in constraint.constraints):
+                    continue
+            final.append(constraint)
+
+        if not final:
+            return NULL_CONSTRAINT
+        if len(final) == 1:
+            (cons,) = final
+            return cons
+        return cls(tuple(final))
+
+    def __str__(self) -> str:
+        children = " AND ".join(map(str, self.constraints))
+        return f"({children})"
 
 
 @dataclass(frozen=True)
 class OrConstraint(AbstractConstraint):
     """Represents the OR of two constraints."""
 
-    left: AbstractConstraint
-    right: AbstractConstraint
+    constraints: Tuple[AbstractConstraint, ...]
 
     def apply(self) -> Iterable[Constraint]:
-        left = self._group_constraints(self.left)
-        right = self._group_constraints(self.right)
+        grouped = [self._group_constraints(cons) for cons in self.constraints]
+        left, *rest = grouped
         for varname, constraints in left.items():
             # Produce one_of constraints if the same variable name
             # applies on both the left and the right side.
-            if varname in right:
-                yield Constraint(
-                    varname,
-                    ConstraintType.one_of,
-                    True,
-                    [
-                        self._constraint_from_list(varname, constraints),
-                        self._constraint_from_list(varname, right[varname]),
+            if all(varname in group for group in rest):
+                constraints = [
+                    self._constraint_from_list(varname, constraints),
+                    *[
+                        self._constraint_from_list(varname, group[varname])
+                        for group in rest
                     ],
+                ]
+                yield Constraint(
+                    varname, ConstraintType.one_of, True, list(set(constraints))
                 )
 
     def _constraint_from_list(
-        self, varname: Varname, constraints: Sequence[Constraint]
+        self, varname: VarnameWithOrigin, constraints: Sequence[Constraint]
     ) -> Constraint:
         if len(constraints) == 1:
             return constraints[0]
@@ -488,7 +613,7 @@ class OrConstraint(AbstractConstraint):
 
     def _group_constraints(
         self, abstract_constraint: AbstractConstraint
-    ) -> Dict[str, List[Constraint]]:
+    ) -> Dict[VarnameWithOrigin, List[Constraint]]:
         by_varname = defaultdict(list)
         for constraint in abstract_constraint.apply():
             by_varname[constraint.varname].append(constraint)
@@ -496,21 +621,54 @@ class OrConstraint(AbstractConstraint):
 
     def invert(self) -> AndConstraint:
         # ~(A or B) -> ~A and ~B
-        return AndConstraint(self.left.invert(), self.right.invert())
+        return AndConstraint(tuple([cons.invert() for cons in self.constraints]))
+
+    @classmethod
+    def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
+        processed = {}
+        for cons in constraints:
+            if isinstance(cons, OrConstraint):
+                for subcons in cons.constraints:
+                    processed[id(subcons)] = subcons
+                continue
+            processed[id(cons)] = cons
+
+        final = []
+        for constraint in processed.values():
+            if isinstance(constraint, AndConstraint):
+                # A OR (A AND B) reduces to a
+                if any(id(subcons) in processed for subcons in constraint.constraints):
+                    continue
+            elif isinstance(constraint, Constraint):
+                inverted = id(constraint.invert())
+                if inverted in processed:
+                    continue
+            final.append(constraint)
+
+        if not final:
+            return NULL_CONSTRAINT
+        if len(final) == 1:
+            (cons,) = final
+            return cons
+        return cls(tuple(final))
+
+    def __str__(self) -> str:
+        children = " OR ".join(map(str, self.constraints))
+        return f"({children})"
 
 
+@dataclass(frozen=True)
 class _ConstrainedValue(Value):
     """Helper class, only used within a FunctionScope."""
 
-    def __init__(
-        self, definition_nodes: Set[Node], constraints: Sequence[Constraint]
-    ) -> None:
-        self.definition_nodes = definition_nodes
-        self.constraints = constraints
-        self.resolution_cache = {}
+    definition_nodes: FrozenSet[Node]
+    constraints: Sequence[Constraint]
+    resolution_cache: Dict[_LookupContext, Value] = field(
+        default_factory=dict, init=False, compare=False, hash=False, repr=False
+    )
 
 
-_empty_constrained = _ConstrainedValue(set(), [])
+_empty_constrained = _ConstrainedValue(frozenset(), [])
 
 
 @dataclass
@@ -544,22 +702,25 @@ class Scope:
         node: object,
         state: VisitorState,
         from_parent_scope: bool = False,
-    ) -> Tuple[Value, Optional["Scope"]]:
-        local_value = self.get_local(
+    ) -> Tuple[Value, Optional["Scope"], VarnameOrigin]:
+        local_value, origin = self.get_local(
             varname, node, state, from_parent_scope=from_parent_scope
         )
         if local_value is not UNINITIALIZED_VALUE:
-            return self.resolve_reference(local_value, state), self
+            return self.resolve_reference(local_value, state), self, origin
         elif self.parent_scope is not None:
             # Parent scopes don't get the node to help local lookup.
             parent_node = (
                 (varname, self.scope_node) if self.scope_node is not None else None
             )
-            return self.parent_scope.get(
+            val, scope, _ = self.parent_scope.get(
                 varname, parent_node, state, from_parent_scope=True
             )
+            # Tag lookups in the parent scope with this scope node, so we
+            # don't carry over constraints across scopes.
+            return val, scope, EMPTY_ORIGIN
         else:
-            return UNINITIALIZED_VALUE, None
+            return UNINITIALIZED_VALUE, None, EMPTY_ORIGIN
 
     def get_local(
         self,
@@ -568,15 +729,20 @@ class Scope:
         state: VisitorState,
         from_parent_scope: bool = False,
         fallback_value: Optional[Value] = None,
-    ) -> Value:
+    ) -> Tuple[Value, VarnameOrigin]:
         if varname in self.variables:
-            return self.variables[varname]
+            return self.variables[varname], EMPTY_ORIGIN
         else:
-            return UNINITIALIZED_VALUE
+            return UNINITIALIZED_VALUE, EMPTY_ORIGIN
+
+    def get_origin(
+        self, varname: Varname, node: Node, state: VisitorState
+    ) -> VarnameOrigin:
+        return EMPTY_ORIGIN
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
-    ) -> None:
+    ) -> VarnameOrigin:
         if varname not in self:
             self.variables[varname] = value
         elif isinstance(value, AnyValue) or not safe_equals(
@@ -596,6 +762,7 @@ class Scope:
                 self.variables[varname] = value
             else:
                 self.variables[varname] = unite_values(existing, value)
+        return EMPTY_ORIGIN
 
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         return self.variables.items()
@@ -620,7 +787,7 @@ class Scope:
 
     def resolve_reference(self, value: Value, state: VisitorState) -> Value:
         if isinstance(value, ReferencingValue):
-            referenced, _ = value.scope.get(value.name, None, state)
+            referenced, _, _ = value.scope.get(value.name, None, state)
             # globals that are None are probably set to something else later
             if safe_equals(referenced, KnownValue(None)):
                 return AnyValue(AnySource.inference)
@@ -643,9 +810,9 @@ class Scope:
 class FunctionScope(Scope):
     """Keeps track of the local variables of a single function.
 
-    :class:`FunctionScope` is designed to produce the correct value for each variable at each point in the
-    function, unlike the base :class:`Scope` class, which assumes that each variable has the same value
-    throughout the scope it represents.
+    :class:`FunctionScope` is designed to produce the correct value for each variable at each point
+    in the function, unlike the base :class:`Scope` class, which assumes that each variable has
+    the same value throughout the scope it represents.
 
     For example, given the code::
 
@@ -653,8 +820,9 @@ class FunctionScope(Scope):
         x = 4
         print(x)
 
-    :class:`FunctionScope` will infer the value of `x` to be ``KnownValue(4)``, but :class:`Scope` will produce a
-    :class:`pyanalyze.value.MultiValuedValue` because it does not know whether the assignment to 3 or 4 is active.
+    :class:`FunctionScope` will infer the value of `x` to be ``KnownValue(4)``, but :class:`Scope`
+    will produce a :class:`pyanalyze.value.MultiValuedValue` because it does not know whether the
+    assignment to 3 or 4 is active.
 
     The approach taken is to map each usage node (a place where the variable is used) to a set of
     definition nodes (places where the variable is assigned to) that could be active when the
@@ -666,8 +834,8 @@ class FunctionScope(Scope):
         x = 3  # (a)
         print(x)  # (b)
 
-    (a) is the only definition node for the usage node at (b), and (a) is mapped to ``KnownValue(3)``,
-    so at (b) x is inferred to be ``KnownValue(3)``.
+    (a) is the only definition node for the usage node at (b), and (a) is mapped to
+    ``KnownValue(3)``, so at (b) x is inferred to be ``KnownValue(3)``.
 
     However, in this code::
 
@@ -681,12 +849,13 @@ class FunctionScope(Scope):
     inferred to be a ``MultiValuedValue([KnownValue(3), KnownValue(4)])``.
 
     These mappings are implemented as the `usage_to_definition_nodes` and `definition_node_to_value`
-    attributes on the :class:`FunctionScope` object. They are created completely during the collecting
-    :term:`phase`. The basic mechanism uses the `name_to_current_definition_nodes` dictionary, which maps
-    each local variable to a list of active definition nodes. When pyanalyze encounters an
-    assignment, it updates `name_to_current_definition_nodes` to map to that assignment node, and
-    when it encounters a variable usage it updates `usage_to_definition_nodes` to map that usage
-    to the current definition nodes in `name_to_current_definition_nodes`. For example::
+    attributes on the :class:`FunctionScope` object. They are created completely during the
+    collecting :term:`phase`. The basic mechanism uses the `name_to_current_definition_nodes`
+    dictionary, which maps each local variable to a list of active definition nodes. When pyanalyze
+    encounters an assignment, it updates `name_to_current_definition_nodes` to map to that
+    assignment node, and when it encounters a variable usage it updates `usage_to_definition_nodes`
+    to map that usage to the current definition nodes in `name_to_current_definition_nodes`. For
+    example::
 
         # name_to_current_definition_nodes (n2cdn) = {}, usage_to_definition_nodes (u2dn) = {}
         x = 3  # (a)
@@ -699,12 +868,12 @@ class FunctionScope(Scope):
         # n2cdn = {'x': [(c)]}, u2dn = {(b): [(a)], (d): [(c)]}
 
     However, this simple approach is not sufficient to handle control flow inside the function. To
-    handle this case, :class:`FunctionScope` supports the creation of subscopes and the `combine_subscopes`
-    operation. Each branch in a conditional statement is mapped to a separate subscope, which
-    contains an independently updated copy of `name_to_current_definition_nodes`. After pyanalyze
-    visits all branches, it runs the `combine_subscopes` operation on all of the branches' subscopes.
-    This operation takes, for each variable, the union of the definition nodes created in all of the
-    branches. For example::
+    handle this case, :class:`FunctionScope` supports the creation of subscopes and the
+    `combine_subscopes` operation. Each branch in a conditional statement is mapped to a separate
+    subscope, which contains an independently updated copy of `name_to_current_definition_nodes`.
+    After pyanalyze visits all branches, it runs the `combine_subscopes` operation on all of the
+    branches' subscopes. This operation takes, for each variable, the union of the definition nodes
+    created in all of the branches. For example::
 
         # n2cdn = {}, u2dn = {}
         if some_condition():
@@ -733,11 +902,11 @@ class FunctionScope(Scope):
             else:
                 x = (1, 2)  # (b)
 
-    a naive approach would infer that `x` is ``None`` at (a). To take care of this case, pyanalyze visits
-    the loop body twice during the collecting :term:`phase`, so that `usage_to_definition_nodes` can add a
-    mapping of (a) to (b). To handle `break` and `continue` correctly, it also uses a separate "loop
-    scope" that ends up combining the scopes created by normal control flow through the body of the
-    loop and by each `break` and `continue` statement.
+    a naive approach would infer that `x` is ``None`` at (a). To take care of this case, pyanalyze
+    visits the loop body twice during the collecting :term:`phase`, so that
+    `usage_to_definition_nodes` can add a mapping of (a) to (b). To handle `break` and `continue`
+    correctly, it also uses a separate "loop scope" that ends up combining the scopes created by
+    normal control flow through the body of the loop and by each `break` and `continue` statement.
 
     Try-finally blocks are handled by visiting the finally block twice. Essentially, we treat::
 
@@ -785,7 +954,7 @@ class FunctionScope(Scope):
     """
 
     name_to_current_definition_nodes: SubScope
-    usage_to_definition_nodes: Dict[Node, List[Node]]
+    usage_to_definition_nodes: Dict[Tuple[Node, Varname], List[Node]]
     definition_node_to_value: Dict[Node, Value]
     name_to_all_definition_nodes: Dict[str, Set[Node]]
     name_to_composites: Dict[str, Set[CompositeVariable]]
@@ -832,27 +1001,58 @@ class FunctionScope(Scope):
 
         """
         for constraint in abstract_constraint.apply():
-            def_nodes = set(self.name_to_current_definition_nodes[constraint.varname])
-            # We set both a constraint and its inverse using the same node as the definition
-            # node, so cheat and include the constraint itself in the key. If you write constraints
-            # to the same key in definition_node_to_value multiple times, you're likely to get
-            # infinite recursion.
-            node = (node, constraint)
-            assert (
-                node not in self.definition_node_to_value
-            ), "duplicate constraint for {}".format(node)
-            self.definition_node_to_value[node] = _ConstrainedValue(
-                def_nodes, [constraint]
-            )
-            self.name_to_current_definition_nodes[constraint.varname] = [node]
-            self._add_composite(constraint.varname)
+            self._add_single_constraint(constraint, node, state)
+
+    def _add_single_constraint(
+        self, constraint: Constraint, node: Node, state: VisitorState
+    ) -> None:
+        for parent_varname, constraint_origin in constraint.varname.get_all_varnames():
+            current_origin = self.get_origin(parent_varname, node, state)
+            current_set = self._resolve_origin(current_origin)
+            constraint_set = self._resolve_origin(constraint_origin)
+            if current_set - constraint_set:
+                return
+
+        varname = constraint.varname.get_varname()
+        def_nodes = frozenset(self.name_to_current_definition_nodes[varname])
+        # We set both a constraint and its inverse using the same node as the definition
+        # node, so cheat and include the constraint itself in the key.
+        node = (node, constraint)
+        val = _ConstrainedValue(def_nodes, [constraint])
+        self.definition_node_to_value[node] = val
+        self.name_to_current_definition_nodes[varname] = [node]
+        self._add_composite(varname)
+
+    def _resolve_origin(self, definers: Iterable[Node]) -> FrozenSet[Node]:
+        seen = set()
+        pending = set(definers)
+        out = set()
+        while pending:
+            definer = pending.pop()
+            if definer in seen:
+                continue
+            seen.add(definer)
+            if definer is None:
+                out.add(None)
+            elif definer not in self.definition_node_to_value:
+                # maybe from a different scope
+                return EMPTY_ORIGIN
+            else:
+                val = self.definition_node_to_value[definer]
+                if isinstance(val, _ConstrainedValue):
+                    pending |= val.definition_nodes
+                else:
+                    out.add(definer)
+        if not out:
+            return EMPTY_ORIGIN
+        return frozenset(out)
 
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
-    ) -> None:
+    ) -> VarnameOrigin:
         if isinstance(value, ReferencingValue):
             self.referencing_value_vars[varname] = value
-            return
+            return EMPTY_ORIGIN
         ref_var = self.referencing_value_vars[varname]
         if isinstance(ref_var, ReferencingValue):
             ref_var.scope.set(ref_var.name, value, node, state)
@@ -869,41 +1069,65 @@ class FunctionScope(Scope):
             self.name_to_current_definition_nodes[composite] = []
         self.name_to_all_definition_nodes[varname].add(node)
         self._add_composite(varname)
+        return frozenset([node])
 
     def get_local(
         self,
-        varname: str,
+        varname: Varname,
         node: Node,
         state: VisitorState,
         from_parent_scope: bool = False,
         fallback_value: Optional[Value] = None,
-    ) -> Value:
+    ) -> Tuple[Value, VarnameOrigin]:
         self._add_composite(varname)
         ctx = _LookupContext(varname, fallback_value, node, state)
         if from_parent_scope:
             self.accessed_from_special_nodes.add(varname)
+        key = (node, varname)
         if node is None:
             self.accessed_from_special_nodes.add(varname)
             # this indicates that we're not looking at a normal local variable reference, but
             # something special like a nested function
             if varname in self.name_to_all_definition_nodes:
-                return self._get_value_from_nodes(
-                    self.name_to_all_definition_nodes[varname], ctx
-                )
+                definers = self.name_to_all_definition_nodes[varname]
             else:
-                return self.referencing_value_vars[varname]
-        if state is VisitorState.check_names:
-            if node not in self.usage_to_definition_nodes:
-                return self.referencing_value_vars[varname]
+                return self.referencing_value_vars[varname], EMPTY_ORIGIN
+        elif state is VisitorState.check_names:
+            if key not in self.usage_to_definition_nodes:
+                return self.referencing_value_vars[varname], EMPTY_ORIGIN
             else:
-                definers = self.usage_to_definition_nodes[node]
+                definers = self.usage_to_definition_nodes[key]
         else:
             if varname in self.name_to_current_definition_nodes:
                 definers = self.name_to_current_definition_nodes[varname]
-                self.usage_to_definition_nodes[node] += definers
+                self.usage_to_definition_nodes[key] += definers
             else:
-                return self.referencing_value_vars[varname]
-        return self._get_value_from_nodes(definers, ctx)
+                return self.referencing_value_vars[varname], EMPTY_ORIGIN
+        return self._get_value_from_nodes(definers, ctx), self._resolve_origin(definers)
+
+    def get_origin(
+        self, varname: Varname, node: Node, state: VisitorState
+    ) -> VarnameOrigin:
+        key = (node, varname)
+        if node is None:
+            # this indicates that we're not looking at a normal local variable reference, but
+            # something special like a nested function
+            if varname in self.name_to_all_definition_nodes:
+                definers = self.name_to_all_definition_nodes[varname]
+            else:
+                return EMPTY_ORIGIN
+        elif state is VisitorState.check_names:
+            if key not in self.usage_to_definition_nodes:
+                return EMPTY_ORIGIN
+            else:
+                definers = self.usage_to_definition_nodes[key]
+        else:
+            if varname in self.name_to_current_definition_nodes:
+                definers = self.name_to_current_definition_nodes[varname]
+                self.usage_to_definition_nodes[key] += definers
+            else:
+                return EMPTY_ORIGIN
+        return self._resolve_origin(definers)
 
     @contextlib.contextmanager
     def subscope(self) -> Iterable[SubScope]:
@@ -971,6 +1195,9 @@ class FunctionScope(Scope):
             key = replace(ctx, fallback_value=None)
             if key in val.resolution_cache:
                 return val.resolution_cache[key]
+            # Guard against recursion. This happens in the test_len_condition test.
+            # Perhaps we should do something smarter to prevent recursion.
+            val.resolution_cache[key] = NO_RETURN_VALUE
             if val.definition_nodes or ctx.fallback_value:
                 resolved = self._get_value_from_nodes(
                     val.definition_nodes, ctx, val.constraints
@@ -979,7 +1206,7 @@ class FunctionScope(Scope):
                 assert (
                     self.parent_scope
                 ), "constrained value must have definition nodes or parent scope"
-                parent_val, _ = self.parent_scope.get(ctx.varname, None, ctx.state)
+                parent_val, _, _ = self.parent_scope.get(ctx.varname, None, ctx.state)
                 resolved = _constrain_value(
                     [parent_val],
                     val.constraints,
@@ -1092,13 +1319,23 @@ class StackedScopes:
             self.scopes.pop()
 
     @contextlib.contextmanager
-    def ignore_topmost_scope(self) -> Iterable[None]:
+    def ignore_topmost_scope(self) -> Iterator[None]:
         """Context manager that temporarily ignores the topmost scope."""
         scope = self.scopes.pop()
         try:
             yield
         finally:
             self.scopes.append(scope)
+
+    @contextlib.contextmanager
+    def allow_only_module_scope(self) -> Iterator[None]:
+        """Context manager that allows only lookups in the module and builtin scopes."""
+        rest = self.scopes[2:]
+        del self.scopes[2:]
+        try:
+            yield
+        finally:
+            self.scopes += rest
 
     def get(self, varname: Varname, node: Node, state: VisitorState) -> Value:
         """Gets a variable of the given name from the current scope stack.
@@ -1121,18 +1358,20 @@ class StackedScopes:
                       in the code.
         :type state: VisitorState
 
-        Returns :data:`pyanalyze.value.UNINITIALIZED_VALUE` if the name is not defined in any known scope.
+        Returns :data:`pyanalyze.value.UNINITIALIZED_VALUE` if the name is not defined in any known
+        scope.
 
         """
-        value, _ = self.get_with_scope(varname, node, state)
+        value, _, _ = self.get_with_scope(varname, node, state)
         return value
 
     def get_with_scope(
         self, varname: Varname, node: Node, state: VisitorState
-    ) -> Tuple[Value, Optional[Scope]]:
+    ) -> Tuple[Value, Optional[Scope], VarnameOrigin]:
         """Like :meth:`get`, but also returns the scope object the name was found in.
 
-        Returns a (:class:`pyanalyze.value.Value`, :class:`Scope`) tuple. The :class:`Scope` is ``None`` if the name was not found.
+        Returns a (:class:`pyanalyze.value.Value`, :class:`Scope`, origin) tuple. The :class:`Scope`
+        is ``None`` if the name was not found.
 
         """
         return self.scopes[-1].get(varname, node, state)
@@ -1233,9 +1472,30 @@ def _constrain_value(
     for constraint in constraints:
         values = list(constraint.apply_to_values(values))
     if not values:
-        # TODO: maybe show an error here? This branch should mean the code is
-        # unreachable.
         return AnyValue(AnySource.unreachable)
     if simplification_limit is not None:
         return unite_and_simplify(*values, limit=simplification_limit)
     return unite_values(*values)
+
+
+def annotate_with_constraint(value: Value, constraint: AbstractConstraint) -> Value:
+    if constraint is NULL_CONSTRAINT:
+        return value
+    return annotate_value(value, [ConstraintExtension(constraint)])
+
+
+def extract_constraints(value: Value) -> AbstractConstraint:
+    if isinstance(value, AnnotatedValue):
+        extensions = list(value.get_metadata_of_type(ConstraintExtension))
+        constraints = [ext.constraint for ext in extensions]
+        base = extract_constraints(value.value)
+        constraints = [
+            cons for cons in [*constraints, base] if cons is not NULL_CONSTRAINT
+        ]
+        return AndConstraint.make(constraints)
+    elif isinstance(value, MultiValuedValue):
+        constraints = [extract_constraints(subval) for subval in value.vals]
+        if not constraints:
+            return NULL_CONSTRAINT
+        return OrConstraint.make(constraints)
+    return NULL_CONSTRAINT

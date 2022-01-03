@@ -223,7 +223,7 @@ class PercentFormatString:
     pattern: Union[bytes, str]
     is_bytes: bool = False
     specifiers: Sequence[ConversionSpecifier] = ()
-    raw_pieces: Sequence[str] = ()
+    raw_pieces: Union[Sequence[bytes], Sequence[str]] = ()
 
     @classmethod
     def from_pattern(cls, pattern: str) -> "PercentFormatString":

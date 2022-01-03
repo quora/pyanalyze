@@ -9,7 +9,7 @@ from .test_name_check_visitor import (
     ConfiguredNameCheckVisitor,
 )
 from .test_node_visitor import assert_passes
-from .signature import SigParameter, BoundMethodSignature, Signature
+from .signature import SigParameter, BoundMethodSignature, Signature, ParameterKind
 from .stacked_scopes import Composite
 from .arg_spec import ArgSpecCache, is_dot_asynq_function
 from .tests import l0cached_async_fn
@@ -100,6 +100,7 @@ def test_get_argspec():
 
     # test everything twice because calling qcore.get_original_fn has side effects
     for _ in range(2):
+        asc = ArgSpecCache(checker.options, checker.ts_finder)
 
         # there's special logic for this in signature_from_value; TODO move that into
         # ExtendedArgSpec
@@ -113,32 +114,32 @@ def test_get_argspec():
                 callable=ClassWithCall.normal_classmethod.__func__,
             ),
             Composite(KnownValue(ClassWithCall)),
-        ) == ArgSpecCache(config).get_argspec(ClassWithCall.normal_classmethod)
+        ) == asc.get_argspec(ClassWithCall.normal_classmethod)
         assert Signature.make(
             [SigParameter("arg")], callable=ClassWithCall.normal_staticmethod
-        ) == ArgSpecCache(config).get_argspec(ClassWithCall.normal_staticmethod)
+        ) == asc.get_argspec(ClassWithCall.normal_staticmethod)
 
         assert Signature.make(
             [
                 SigParameter("capybara"),
                 SigParameter("hutia", default=KnownValue(3)),
-                SigParameter("tucotucos", SigParameter.VAR_POSITIONAL),
-                SigParameter("proechimys", SigParameter.VAR_KEYWORD),
+                SigParameter("tucotucos", ParameterKind.VAR_POSITIONAL),
+                SigParameter("proechimys", ParameterKind.VAR_KEYWORD),
             ],
             callable=function,
-        ) == ArgSpecCache(config).get_argspec(function)
+        ) == asc.get_argspec(function)
 
         assert Signature.make(
             [SigParameter("x"), SigParameter("y")],
             callable=async_function.fn,
             is_asynq=True,
-        ) == ArgSpecCache(config).get_argspec(async_function)
+        ) == asc.get_argspec(async_function)
 
         assert Signature.make(
             [SigParameter("x"), SigParameter("y")],
             callable=async_function.fn,
             is_asynq=True,
-        ) == ArgSpecCache(config).get_argspec(async_function.asynq)
+        ) == asc.get_argspec(async_function.asynq)
 
         instance = ClassWithCall(1)
 
@@ -149,7 +150,7 @@ def test_get_argspec():
                 is_asynq=True,
             ),
             Composite(KnownValue(instance)),
-        ) == ArgSpecCache(config).get_argspec(instance.async_method)
+        ) == asc.get_argspec(instance.async_method)
 
         assert BoundMethodSignature(
             Signature.make(
@@ -158,19 +159,19 @@ def test_get_argspec():
                 is_asynq=True,
             ),
             Composite(KnownValue(instance)),
-        ) == ArgSpecCache(config).get_argspec(instance.async_method.asynq)
+        ) == asc.get_argspec(instance.async_method.asynq)
 
         assert Signature.make(
             [SigParameter("y")],
             callable=ClassWithCall.async_staticmethod.fn,
             is_asynq=True,
-        ) == ArgSpecCache(config).get_argspec(ClassWithCall.async_staticmethod)
+        ) == asc.get_argspec(ClassWithCall.async_staticmethod)
 
         assert Signature.make(
             [SigParameter("y")],
             callable=ClassWithCall.async_staticmethod.fn,
             is_asynq=True,
-        ) == ArgSpecCache(config).get_argspec(ClassWithCall.async_staticmethod.asynq)
+        ) == asc.get_argspec(ClassWithCall.async_staticmethod.asynq)
 
         assert BoundMethodSignature(
             Signature.make(
@@ -179,7 +180,7 @@ def test_get_argspec():
                 is_asynq=True,
             ),
             Composite(KnownValue(ClassWithCall)),
-        ) == ArgSpecCache(config).get_argspec(ClassWithCall.async_classmethod)
+        ) == asc.get_argspec(ClassWithCall.async_classmethod)
 
         assert BoundMethodSignature(
             Signature.make(
@@ -188,7 +189,7 @@ def test_get_argspec():
                 is_asynq=True,
             ),
             Composite(KnownValue(ClassWithCall)),
-        ) == ArgSpecCache(config).get_argspec(ClassWithCall.async_classmethod.asynq)
+        ) == asc.get_argspec(ClassWithCall.async_classmethod.asynq)
 
         assert BoundMethodSignature(
             Signature.make(
@@ -196,7 +197,7 @@ def test_get_argspec():
                 callable=ClassWithCall.pure_async_classmethod.decorator.fn,
             ),
             Composite(KnownValue(ClassWithCall)),
-        ) == ArgSpecCache(config).get_argspec(ClassWithCall.pure_async_classmethod)
+        ) == asc.get_argspec(ClassWithCall.pure_async_classmethod)
 
         # This behaves differently in 3.9 (decorator) than in 3.6-3.8 (__func__). Not
         # sure why.
@@ -212,7 +213,7 @@ def test_get_argspec():
                 is_asynq=True,
             ),
             Composite(KnownValue(ClassWithCall)),
-        ) == ArgSpecCache(config).get_argspec(ClassWithCall.classmethod_before_async)
+        ) == asc.get_argspec(ClassWithCall.classmethod_before_async)
 
         assert Signature.make(
             [
@@ -221,32 +222,69 @@ def test_get_argspec():
             ],
             KnownValue(None),
             callable=wrapped,
-        ) == ArgSpecCache(config).get_argspec(wrapped)
+        ) == asc.get_argspec(wrapped)
         decorated = decorator(wrapped)
         assert Signature.make(
             [
                 SigParameter(
                     "args",
-                    SigParameter.VAR_POSITIONAL,
+                    ParameterKind.VAR_POSITIONAL,
                     annotation=AnyValue(AnySource.inference),
                 ),
                 SigParameter(
                     "kwargs",
-                    SigParameter.VAR_KEYWORD,
+                    ParameterKind.VAR_KEYWORD,
                     annotation=AnyValue(AnySource.inference),
                 ),
             ],
             callable=decorated,
-        ) == ArgSpecCache(config).get_argspec(decorated)
+        ) == asc.get_argspec(decorated)
         assert Signature.make(
             [
                 SigParameter(
-                    "x", SigParameter.POSITIONAL_ONLY, annotation=TypedValue(int)
+                    "x", ParameterKind.POSITIONAL_ONLY, annotation=TypedValue(int)
                 )
             ],
             NewTypeValue(NT),
             callable=NT,
-        ) == ArgSpecCache(config).get_argspec(NT)
+        ) == asc.get_argspec(NT)
+
+
+def test_positional_only():
+    def f(__x, _f__x):
+        pass
+
+    class Y:
+        def f(self, __x):
+            pass
+
+        class X:
+            def f(self, __x, _Y__x):
+                pass
+
+    asc = Checker(ConfiguredNameCheckVisitor.config).arg_spec_cache
+    assert asc.get_argspec(f) == Signature.make(
+        [
+            SigParameter("__x", ParameterKind.POSITIONAL_ONLY),
+            SigParameter("_f__x", ParameterKind.POSITIONAL_OR_KEYWORD),
+        ],
+        callable=f,
+    )
+    assert asc.get_argspec(Y.f) == Signature.make(
+        [
+            SigParameter("self", ParameterKind.POSITIONAL_OR_KEYWORD),
+            SigParameter("_Y__x", ParameterKind.POSITIONAL_ONLY),
+        ],
+        callable=Y.f,
+    )
+    assert asc.get_argspec(Y.X.f) == Signature.make(
+        [
+            SigParameter("self", ParameterKind.POSITIONAL_OR_KEYWORD),
+            SigParameter("_X__x", ParameterKind.POSITIONAL_ONLY),
+            SigParameter("_Y__x", ParameterKind.POSITIONAL_OR_KEYWORD),
+        ],
+        callable=Y.X.f,
+    )
 
 
 def test_is_dot_asynq_function():
@@ -280,7 +318,7 @@ class TestCoroutines(TestNameCheckVisitorBase):
             # annotated as def ... -> Future in typeshed
             assert_is_value(
                 asyncio.sleep(3),
-                GenericValue(asyncio.Future, [AnyValue(AnySource.generic_argument)]),
+                GenericValue(asyncio.Future, [AnyValue(AnySource.unannotated)]),
             )
             return 42
 
@@ -348,6 +386,18 @@ class TestClassInstantiation(TestNameCheckVisitorBase):
         def capybara():
             FailingImpl()  # E: incompatible_call
 
+    @assert_passes()
+    def test_subclass_value(self):
+        from typing import Type
+
+        class A:
+            def __init__(self, x: int) -> None:
+                pass
+
+        def capybara(t: Type[A]) -> None:
+            assert_is_value(t(1), TypedValue(A))
+            t("x")  # E: incompatible_argument
+
 
 class TestFunctionsSafeToCall(TestNameCheckVisitorBase):
     @assert_passes()
@@ -380,3 +430,16 @@ class TestNamedTuple(TestNameCheckVisitorBase):
             CustomNew("x")  # E: incompatible_argument
             cn = CustomNew(a=3)
             assert_is_value(cn, TypedValue(CustomNew))
+
+
+class TestBuiltinMethods(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_method_wrapper(self):
+        import collections.abc
+
+        def capybara():
+            r = range(10)
+            assert_is_value(r, KnownValue(range(10)))
+            assert_is_value(
+                r.__iter__(), GenericValue(collections.abc.Iterator, [TypedValue(int)])
+            )

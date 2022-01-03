@@ -14,7 +14,7 @@ import types
 from typing import Any, Generic, Sequence, Tuple, Optional, Union
 
 
-from .annotations import type_from_runtime, Context
+from .annotations import type_from_annotations, type_from_runtime, Context
 from .safe import safe_isinstance, safe_issubclass
 from .signature import Signature, MaybeSignature
 from .stacked_scopes import Composite
@@ -47,6 +47,8 @@ NoneType = type(None)
 class AttrContext:
     root_composite: Composite
     attr: str
+    skip_mro: bool = False
+    skip_unwrap: bool = False
 
     @property
     def root_value(self) -> Value:
@@ -60,9 +62,6 @@ class AttrContext:
 
     def should_ignore_class_attribute(self, obj: Any) -> bool:
         return False
-
-    def get_property_type_from_config(self, obj: Any) -> Value:
-        return AnyValue(AnySource.inference)
 
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         return AnyValue(AnySource.inference)
@@ -164,7 +163,7 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
 
 
 def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
-    if not isinstance(result, KnownValue):
+    if not isinstance(result, KnownValue) or ctx.skip_unwrap:
         return result
     cls_val = result.val
     if (
@@ -248,14 +247,11 @@ def _substitute_typevars(
 
 
 def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Value:
-    if not isinstance(result, KnownValue):
+    if not isinstance(result, KnownValue) or ctx.skip_unwrap:
         return result
     typevars = result.typevars if isinstance(result, KnownValueWithTypeVars) else None
     cls_val = result.val
     if isinstance(cls_val, property):
-        typ = ctx.get_property_type_from_config(cls_val)
-        if not isinstance(typ, AnyValue):
-            return typ
         return ctx.get_property_type_from_argspec(cls_val)
     elif qcore.inspection.is_classmethod(cls_val):
         return result
@@ -295,7 +291,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         typeshed_type = ctx.get_attribute_from_typeshed(typ, on_class=False)
         if typeshed_type is not UNINITIALIZED_VALUE:
             return typeshed_type
-        return ctx.get_property_type_from_config(cls_val)
+        return AnyValue(AnySource.inference)
     elif ctx.should_ignore_class_attribute(cls_val):
         return AnyValue(AnySource.error)
     else:
@@ -380,13 +376,14 @@ def _get_attribute_from_mro(
             pass
     elif safe_isinstance(typ, types.ModuleType):
         try:
-            annotation = typ.__annotations__[ctx.attr]
+            annotations = typ.__annotations__
         except Exception:
-            # Module doesn't have annotations or it's not in there
             pass
         else:
-            attr_type = type_from_runtime(annotation, ctx=AnnotationsContext(ctx, typ))
-            if attr_type != AnyValue(AnySource.incomplete_annotation):
+            attr_type = type_from_annotations(
+                annotations, ctx.attr, ctx=AnnotationsContext(ctx, typ)
+            )
+            if attr_type is not None:
                 return (attr_type, typ, False)
 
     try:
@@ -406,18 +403,20 @@ def _get_attribute_from_mro(
                 and Generic in base_cls.mro()
             ):
                 continue
+            if ctx.skip_mro and base_cls is not typ:
+                continue
             try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.
-                annotation = base_cls.__dict__["__annotations__"][ctx.attr]
+                annotations = base_cls.__dict__["__annotations__"]
             except Exception:
                 # no __annotations__, or it's not a dict, or the attr isn't there
                 pass
             else:
-                attr_type = type_from_runtime(
-                    annotation, ctx=AnnotationsContext(ctx, base_cls)
+                attr_type = type_from_annotations(
+                    annotations, ctx.attr, ctx=AnnotationsContext(ctx, base_cls)
                 )
-                if attr_type != AnyValue(AnySource.incomplete_annotation):
+                if attr_type is not None:
                     return (attr_type, base_cls, False)
             try:
                 # Make sure we use only the object from this class, but do invoke
@@ -427,7 +426,9 @@ def _get_attribute_from_mro(
             except Exception:
                 pass
 
-            typeshed_type = ctx.get_attribute_from_typeshed(base_cls, on_class=on_class)
+            typeshed_type = ctx.get_attribute_from_typeshed(
+                base_cls, on_class=on_class or ctx.skip_unwrap
+            )
             if typeshed_type is not UNINITIALIZED_VALUE:
                 return typeshed_type, base_cls, False
 
@@ -435,11 +436,12 @@ def _get_attribute_from_mro(
     if attrs_type is not None:
         return attrs_type, typ, False
 
-    # Even if we didn't find it any __dict__, maybe getattr() finds it directly.
-    try:
-        return KnownValue(getattr(typ, ctx.attr)), typ, True
-    except Exception:
-        pass
+    if not ctx.skip_mro:
+        # Even if we didn't find it any __dict__, maybe getattr() finds it directly.
+        try:
+            return KnownValue(getattr(typ, ctx.attr)), typ, True
+        except Exception:
+            pass
 
     return UNINITIALIZED_VALUE, object, False
 

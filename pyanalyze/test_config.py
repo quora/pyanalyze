@@ -4,7 +4,10 @@ Configuration file specific to tests.
 
 """
 from typing import Dict, Optional
+from pathlib import Path
 
+from .options import Options
+from .typeshed import StubPath
 from .arg_spec import ArgSpecCache
 from .signature import (
     CallContext,
@@ -12,6 +15,7 @@ from .signature import (
     OverloadedSignature,
     Signature,
     SigParameter,
+    ParameterKind,
 )
 from .config import Config
 from . import tests
@@ -34,10 +38,6 @@ class TestConfig(Config):
             "should_return_list": list,
         }
     }
-    PROPERTIES_OF_KNOWN_TYPE = {
-        tests.PropertyObject.string_property: value.TypedValue(str)
-    }
-    NAMES_OF_KNOWN_TYPE = {"proper_capybara": tests.PropertyObject}
 
     VARIABLE_NAME_VALUES = [
         value.VariableNameValue(["uid"]),
@@ -55,11 +55,11 @@ class TestConfig(Config):
         if issubclass(cls, tests.KeywordOnlyArguments):
             return Signature.make(
                 [
-                    SigParameter("self", kind=SigParameter.POSITIONAL_ONLY),
-                    SigParameter("args", kind=SigParameter.VAR_POSITIONAL),
+                    SigParameter("self", kind=ParameterKind.POSITIONAL_ONLY),
+                    SigParameter("args", kind=ParameterKind.VAR_POSITIONAL),
                     SigParameter(
                         "kwonly_arg",
-                        kind=SigParameter.KEYWORD_ONLY,
+                        kind=ParameterKind.KEYWORD_ONLY,
                         default=value.KnownValue(None),
                     ),
                 ],
@@ -80,7 +80,7 @@ class TestConfig(Config):
                     SigParameter("a"),
                     SigParameter(
                         "kwonly_arg",
-                        SigParameter.KEYWORD_ONLY,
+                        ParameterKind.KEYWORD_ONLY,
                         annotation=value.TypedValue(bool),
                     ),
                 ],
@@ -96,7 +96,7 @@ class TestConfig(Config):
                         [
                             SigParameter(
                                 "x",
-                                SigParameter.POSITIONAL_ONLY,
+                                ParameterKind.POSITIONAL_ONLY,
                                 annotation=value.TypedValue(str),
                             )
                         ],
@@ -116,3 +116,7 @@ class TestConfig(Config):
         ):
             return cls.base
         return cls
+
+
+TEST_INSTANCES = [StubPath([Path(__file__).parent / "stubs"])]
+TEST_OPTIONS = Options.from_option_list(TEST_INSTANCES, TestConfig())

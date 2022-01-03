@@ -84,13 +84,22 @@ class ErrorCode(enum.Enum):
     missing_return = 67
     no_return_may_return = 68
     implicit_reexport = 69
-    mismatched_parameter_name = 70
+    invalid_context_manager = 70
+    suggested_return_type = 71
+    suggested_parameter_type = 72
+    incompatible_override = 73
+    impossible_pattern = 74
+    bad_match = 75
+    bad_evaluator = 76
+    mismatched_parameter_name = 77
 
 
 # Allow testing unannotated functions without too much fuss
 DISABLED_IN_TESTS = {
     ErrorCode.missing_return_annotation,
     ErrorCode.missing_parameter_annotation,
+    ErrorCode.suggested_return_type,
+    ErrorCode.suggested_parameter_type,
 }
 
 
@@ -107,6 +116,7 @@ DISABLED_BY_DEFAULT = {
     ErrorCode.bare_ignore,
     # TODO: turn this on
     ErrorCode.implicit_reexport,
+    ErrorCode.incompatible_override,
 }
 
 ERROR_DESCRIPTION = {
@@ -195,6 +205,13 @@ ERROR_DESCRIPTION = {
     ErrorCode.mismatched_parameter_name: (
         "Passing a parameter that may be passed to the wrong name"
     ),
+    ErrorCode.invalid_context_manager: "Use of invalid object in with or async with",
+    ErrorCode.suggested_return_type: "Suggested return type",
+    ErrorCode.suggested_parameter_type: "Suggested parameter type",
+    ErrorCode.incompatible_override: "Class attribute incompatible with base class",
+    ErrorCode.impossible_pattern: "Pattern can never match",
+    ErrorCode.bad_match: "Invalid type in match statement",
+    ErrorCode.bad_evaluator: "Invalid code in type evaluator",
 }
 
 

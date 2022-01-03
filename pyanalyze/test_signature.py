@@ -18,6 +18,7 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .error_code import ErrorCode
 from .signature import (
+    ELLIPSIS_PARAM,
     ConcreteSignature,
     OverloadedSignature,
     Signature,
@@ -37,9 +38,7 @@ def test_stringify() -> None:
     assert "() -> Any[unannotated]" == str(Signature.make([]))
     assert "() -> int" == str(Signature.make([], TypedValue(int)))
     assert "@asynq () -> int" == str(Signature.make([], TypedValue(int), is_asynq=True))
-    assert "(...) -> int" == str(
-        Signature.make([], TypedValue(int), is_ellipsis_args=True)
-    )
+    assert "(...) -> int" == str(Signature.make([ELLIPSIS_PARAM], TypedValue(int)))
     assert "(x: int) -> int" == str(
         Signature.make([P("x", annotation=TypedValue(int))], TypedValue(int))
     )
@@ -497,24 +496,6 @@ class TestCalls(TestNameCheckVisitorBase):
             assert_is_value(capybara, TypedValue(int))
 
     @assert_passes()
-    def test_return_value(self):
-        from pyanalyze.value import HasAttrGuardExtension
-
-        def capybara(x):
-            l = hasattr(x, "foo")
-            assert_is_value(
-                l,
-                AnnotatedValue(
-                    TypedValue(bool),
-                    [
-                        HasAttrGuardExtension(
-                            "object", KnownValue("foo"), AnyValue(AnySource.inference)
-                        )
-                    ],
-                ),
-            )
-
-    @assert_passes()
     def test_required_kwonly_args(self):
         from pyanalyze.tests import takes_kwonly_argument
 
@@ -600,12 +581,20 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_hasattr(self):
-        from pyanalyze.value import HasAttrGuardExtension
+        from typing import Any, cast
+        from qcore.testing import Anything
+        from dataclasses import dataclass
 
+        @dataclass
         class Quemisia(object):
             def gravis(self):
                 if hasattr(self, "xaymaca"):
                     print(self.xaymaca)
+
+        def now_it_has_it(o: object):
+            o.xaymaca  # E: undefined_attribute
+            if hasattr(o, "xaymaca"):
+                print(o.xaymaca)
 
         def wrong_args():
             hasattr()  # E: incompatible_call
@@ -613,21 +602,12 @@ class TestCalls(TestNameCheckVisitorBase):
         def mistyped_args():
             hasattr(True, False)  # E: incompatible_argument
 
+        # The HasAttrGuard gets stripped.
+        inferred = AnnotatedValue(TypedValue(bool), [cast(Any, Anything)])
+
         def only_on_class(o: object):
             val = hasattr(o, "__qualname__")
-            assert_is_value(
-                val,
-                AnnotatedValue(
-                    TypedValue(bool),
-                    [
-                        HasAttrGuardExtension(
-                            "object",
-                            KnownValue("__qualname__"),
-                            AnyValue(AnySource.inference),
-                        )
-                    ],
-                ),
-            )
+            assert_is_value(val, inferred)
 
     @assert_fails(ErrorCode.incompatible_call)
     def test_keyword_only_args(self):
@@ -998,6 +978,24 @@ class TestTypeVar(TestNameCheckVisitorBase):
             def capybara(self) -> None:
                 super().capybara()
 
+    @assert_passes()
+    def test_default(self):
+        from typing import TypeVar, Dict, Union
+
+        KT = TypeVar("KT")
+        VT = TypeVar("VT")
+        T = TypeVar("T")
+
+        def dictget(d: Dict[KT, VT], key: KT, default: T = None) -> Union[VT, T]:
+            try:
+                return d[key]
+            except KeyError:
+                return default
+
+        def capybara(d: Dict[str, str], key: str) -> None:
+            assert_is_value(dictget(d, key), TypedValue(str) | KnownValue(None))
+            assert_is_value(dictget(d, key, 1), TypedValue(str) | KnownValue(1))
+
 
 class TestAllowCall(TestNameCheckVisitorBase):
     @assert_passes()
@@ -1107,7 +1105,7 @@ class TestOverload(TestNameCheckVisitorBase):
     @assert_passes()
     def test_any_and_union(self):
         from pyanalyze.extensions import overload
-        from typing import List, Any, Union
+        from typing import Any, Union
         from typing_extensions import Literal
 
         @overload

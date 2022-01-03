@@ -224,7 +224,7 @@ class TestAttributes(TestNameCheckVisitorBase):
         import enum
 
         class E(enum.Enum):
-            name = 1
+            name = 1  # E: incompatible_override
             no_name = 2
 
         def capybara():
@@ -235,7 +235,6 @@ class TestAttributes(TestNameCheckVisitorBase):
     @assert_passes()
     def test_module_annotations(self):
         from pyanalyze import test_attributes
-        from pyanalyze.type_object import TypeObject
         from typing import Optional
 
         annotated_global: Optional[str] = None

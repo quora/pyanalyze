@@ -462,7 +462,7 @@ def f():
         # if the result value isn't assigned, we assume it's a side-effecting operation that can't
         # be batched
         from pyanalyze.tests import async_fn
-        from asynq import asynq, result
+        from asynq import asynq
 
         @asynq()
         def f():

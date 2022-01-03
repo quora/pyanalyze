@@ -45,19 +45,21 @@ from typing import (
     TypeVar,
     cast,
 )
-from typing_extensions import Literal, Protocol
+from typing_extensions import Literal, Protocol, ParamSpec
 
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
-from .safe import all_of_type, safe_issubclass
+from .safe import all_of_type, safe_issubclass, safe_isinstance
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
 BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
+ITERATION_LIMIT = 1000
 
-TypeVarMap = Mapping["TypeVar", "Value"]
+TypeVarLike = Union["TypeVar", "ParamSpec"]
+TypeVarMap = Mapping[TypeVarLike, "Value"]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
 
 
@@ -79,7 +81,7 @@ class Value:
         This is the primary mechanism used for checking type compatibility.
 
         """
-        if isinstance(other, AnyValue):
+        if isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
         elif isinstance(other, MultiValuedValue):
@@ -93,9 +95,7 @@ class Value:
             if not tv_maps:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
-        elif isinstance(other, AnnotatedValue):
-            return self.can_assign(other.value, ctx)
-        elif isinstance(other, TypeVarValue):
+        elif isinstance(other, (AnnotatedValue, TypeVarValue)):
             return other.can_be_assigned(self, ctx)
         elif (
             isinstance(other, UnboundMethodValue)
@@ -158,7 +158,7 @@ class Value:
         return unite_values(other, self)
 
 
-class CanAssignContext:
+class CanAssignContext(Protocol):
     """A context passed to the :meth:`Value.can_assign` method.
 
     Provides access to various functionality used for type checking.
@@ -239,6 +239,18 @@ class CanAssignContext:
         :meth:`record_any_match`."""
         return qcore.empty_context
 
+    def set_exclude_any(self) -> ContextManager[None]:
+        """Within this context, `Any` is compatible only with itself."""
+        return qcore.empty_context
+
+    def should_exclude_any(self) -> bool:
+        """Whether Any should be compatible only with itself."""
+        return False
+
+    def display_value(self, value: Value) -> str:
+        """Provide a pretty, user-readable display of this value."""
+        return str(value)
+
 
 @dataclass(frozen=True)
 class CanAssignError:
@@ -271,7 +283,7 @@ class CanAssignError:
 CanAssign = Union[TypeVarMap, CanAssignError]
 
 
-def assert_is_value(obj: object, value: Value) -> None:
+def assert_is_value(obj: object, value: Value, *, skip_annotated: bool = False) -> None:
     """Used to test pyanalyze's value inference.
 
     Takes two arguments: a Python object and a :class:`Value` object. At runtime
@@ -282,6 +294,8 @@ def assert_is_value(obj: object, value: Value) -> None:
 
         assert_is_value(1, KnownValue(1))  # passes
         assert_is_value(1, TypedValue(int))  # shows an error
+
+    If skip_annotated is True, unwraps any :class:`AnnotatedValue` in the input.
 
     """
     pass
@@ -326,6 +340,8 @@ class AnySource(enum.Enum):
     """A special form like ClassVar without a type argument."""
     multiple_overload_matches = 12
     """Multiple matching overloads."""
+    ellipsis_callable = 13
+    """Callable using an ellipsis."""
 
 
 @dataclass(frozen=True)
@@ -342,6 +358,8 @@ class AnyValue(Value):
         return f"Any[{self.source.name}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(other, (AnnotatedValue, MultiValuedValue)):
+            return super().can_assign(other, ctx)
         return {}  # Always allowed
 
 
@@ -445,6 +463,9 @@ class KnownValue(Value):
     def simplify(self) -> Value:
         val = replace_known_sequence_value(self)
         if isinstance(val, KnownValue):
+            # don't simplify None
+            if val.val is None:
+                return self
             return TypedValue(type(val.val))
         return val.simplify()
 
@@ -582,7 +603,7 @@ class TypedValue(Value):
             if (
                 isinstance(other.typ, TypedValue)
                 and isinstance(self.typ, type)
-                and isinstance(other.typ.typ, self.typ)
+                and safe_isinstance(other.typ.typ, self.typ)
             ):
                 return {}
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):
@@ -595,7 +616,7 @@ class TypedValue(Value):
         return super().can_assign(other, ctx)
 
     def can_assign_thrift_enum(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if isinstance(other, AnyValue):
+        if isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
         elif isinstance(other, KnownValue):
@@ -731,6 +752,8 @@ class GenericValue(TypedValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         other = replace_known_sequence_value(other)
+        if isinstance(other, KnownValue):
+            other = TypedValue(type(other.val))
         if isinstance(other, TypedValue) and not isinstance(other.typ, super):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
             # If we don't think it's a generic base, try super;
@@ -908,7 +931,10 @@ class SequenceIncompleteValue(GenericValue):
                 tuple, [member.simplify() for member in self.members]
             )
         members = [member.simplify() for member in self.members]
-        return GenericValue(self.typ, [unite_values(*members)])
+        arg = unite_values(*members)
+        if arg is NO_RETURN_VALUE:
+            arg = AnyValue(AnySource.unreachable)
+        return GenericValue(self.typ, [arg])
 
 
 @dataclass(frozen=True)
@@ -980,7 +1006,13 @@ class DictIncompleteValue(GenericValue):
     def simplify(self) -> GenericValue:
         keys = [pair.key.simplify() for pair in self.kv_pairs]
         values = [pair.value.simplify() for pair in self.kv_pairs]
-        return GenericValue(self.typ, [unite_values(*keys), unite_values(*values)])
+        key = unite_values(*keys)
+        value = unite_values(*values)
+        if key is NO_RETURN_VALUE:
+            key = AnyValue(AnySource.unreachable)
+        if value is NO_RETURN_VALUE:
+            value = AnyValue(AnySource.unreachable)
+        return GenericValue(self.typ, [key, value])
 
     @property
     def items(self) -> Sequence[Tuple[Value, Value]]:
@@ -1080,7 +1112,7 @@ class TypedDictValue(GenericValue):
             return unify_typevar_maps(tv_maps)
         return super().can_assign(other, ctx)
 
-    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+    def substitute_typevars(self, typevars: TypeVarMap) -> "TypedDictValue":
         return TypedDictValue(
             {
                 key: (is_required, value.substitute_typevars(typevars))
@@ -1139,12 +1171,16 @@ class CallableValue(TypedValue):
 
     signature: "pyanalyze.signature.ConcreteSignature"
 
-    def __init__(self, signature: "pyanalyze.signature.ConcreteSignature") -> None:
-        super().__init__(collections.abc.Callable)
+    def __init__(
+        self,
+        signature: "pyanalyze.signature.ConcreteSignature",
+        fallback: Union[type, str] = collections.abc.Callable,
+    ) -> None:
+        super().__init__(fallback)
         self.signature = signature
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return CallableValue(self.signature.substitute_typevars(typevars))
+        return CallableValue(self.signature.substitute_typevars(typevars), self.typ)
 
     def walk_values(self) -> Iterable[Value]:
         yield self
@@ -1153,10 +1189,10 @@ class CallableValue(TypedValue):
     def get_asynq_value(self) -> Value:
         """Return the CallableValue for the .asynq attribute of an AsynqCallable."""
         sig = self.signature.get_asynq_value()
-        return CallableValue(sig)
+        return CallableValue(sig, self.typ)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if not isinstance(other, (MultiValuedValue, AnyValue)):
+        if not isinstance(other, (MultiValuedValue, AnyValue, AnnotatedValue)):
             signature = ctx.signature_from_value(other)
             if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
@@ -1192,9 +1228,11 @@ class SubclassValue(Value):
 
     typ: Union[TypedValue, "TypeVarValue"]
     """The underlying type."""
+    exactly: bool = False
+    """If True, represents exactly this class and not a subclass."""
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        return self.make(self.typ.substitute_typevars(typevars))
+        return self.make(self.typ.substitute_typevars(typevars), exactly=self.exactly)
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -1247,14 +1285,16 @@ class SubclassValue(Value):
         return f"Type[{self.typ}]"
 
     @classmethod
-    def make(cls, origin: Value) -> Value:
+    def make(cls, origin: Value, *, exactly: bool = False) -> Value:
         if isinstance(origin, MultiValuedValue):
-            return unite_values(*[cls.make(val) for val in origin.vals])
+            return unite_values(
+                *[cls.make(val, exactly=exactly) for val in origin.vals]
+            )
         elif isinstance(origin, AnyValue):
             # Type[Any] is equivalent to plain type
             return TypedValue(type)
         elif isinstance(origin, (TypeVarValue, TypedValue)):
-            return cls(origin)
+            return cls(origin, exactly=exactly)
         else:
             return AnyValue(AnySource.inference)
 
@@ -1295,7 +1335,7 @@ class MultiValuedValue(Value):
             if not tv_maps:
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_typevar_maps(tv_maps)
-        elif isinstance(other, AnyValue):
+        elif isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
         else:
@@ -1428,15 +1468,16 @@ class ReferencingValue(Value):
 
 @dataclass(frozen=True)
 class TypeVarValue(Value):
-    """Value representing a ``typing.TypeVar``.
+    """Value representing a ``typing.TypeVar`` or ``typing.ParamSpec``.
 
-    Currently, bounds, value restrictions, and variance are ignored.
+    Currently, variance is ignored.
 
     """
 
-    typevar: TypeVar
+    typevar: TypeVarLike
     bound: Optional[Value] = None
     constraints: Sequence[Value] = ()
+    is_paramspec: bool = False
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return typevars.get(self.typevar, self)
@@ -1520,6 +1561,22 @@ class TypeVarValue(Value):
         return str(self.typevar)
 
 
+@dataclass
+class ParamSpecArgsValue(Value):
+    param_spec: ParamSpec
+
+    def __str__(self) -> str:
+        return f"{self.param_spec}.args"
+
+
+@dataclass
+class ParamSpecKwargsValue(Value):
+    param_spec: ParamSpec
+
+    def __str__(self) -> str:
+        return f"{self.param_spec}.kwargs"
+
+
 class Extension:
     """An extra piece of information about a type that can be stored in
     an :class:`AnnotatedValue`."""
@@ -1563,6 +1620,27 @@ class ParameterTypeGuardExtension(Extension):
     def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
         guarded_type = self.guarded_type.substitute_typevars(typevars)
         return ParameterTypeGuardExtension(self.varname, guarded_type)
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.guarded_type.walk_values()
+
+
+@dataclass(frozen=True)
+class NoReturnGuardExtension(Extension):
+    """An :class:`Extension` used in a function return type. Used to
+    indicate that unless the parameter named `varname` is of type `guarded_type`,
+    the function does not return.
+
+    Corresponds to :class:`pyanalyze.extensions.NoReturnGuard`.
+
+    """
+
+    varname: str
+    guarded_type: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
+        guarded_type = self.guarded_type.substitute_typevars(typevars)
+        return NoReturnGuardExtension(self.varname, guarded_type)
 
     def walk_values(self) -> Iterable[Value]:
         yield from self.guarded_type.walk_values()
@@ -1644,6 +1722,33 @@ class HasAttrExtension(Extension):
         yield from self.attribute_type.walk_values()
 
 
+@dataclass(frozen=True, eq=False)
+class ConstraintExtension(Extension):
+    """Encapsulates a Constraint. If the value is evaluated and is truthy, the
+    constraint must be True."""
+
+    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+    # Comparing them can get too expensive
+    def __hash__(self) -> int:
+        return id(self)
+
+    def __str__(self) -> str:
+        return str(self.constraint)
+
+
+@dataclass(frozen=True, eq=False)
+class NoReturnConstraintExtension(Extension):
+    """Encapsulates a Constraint. If the value is evaluated and completes, the
+    constraint must be True."""
+
+    constraint: "pyanalyze.stacked_scopes.AbstractConstraint"
+
+    # Comparing them can get too expensive
+    def __hash__(self) -> int:
+        return id(self)
+
+
 @dataclass(frozen=True)
 class WeakExtension(Extension):
     """Used to indicate that a generic argument to a container may be widened.
@@ -1656,6 +1761,15 @@ class WeakExtension(Extension):
     widen the type to accommodate later appends.
 
     The ``TestGenericMutators.test_weak_value`` test case is an example.
+
+    """
+
+
+@dataclass(frozen=True)
+class AlwaysPresentExtension(Extension):
+    """Extension that indicates that an iterable value is nonempty.
+
+    Currently cannot be used from user code.
 
     """
 
@@ -1700,6 +1814,18 @@ class AnnotatedValue(Value):
         tv_maps = [can_assign]
         for custom_check in self.get_metadata_of_type(CustomCheckExtension):
             custom_can_assign = custom_check.custom_check.can_assign(other, ctx)
+            if isinstance(custom_can_assign, CanAssignError):
+                return custom_can_assign
+            tv_maps.append(custom_can_assign)
+        return unify_typevar_maps(tv_maps)
+
+    def can_be_assigned(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        can_assign = other.can_assign(self.value, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return can_assign
+        tv_maps = [can_assign]
+        for custom_check in self.get_metadata_of_type(CustomCheckExtension):
+            custom_can_assign = custom_check.custom_check.can_be_assigned(other, ctx)
             if isinstance(custom_can_assign, CanAssignError):
                 return custom_can_assign
             tv_maps.append(custom_can_assign)
@@ -1759,8 +1885,6 @@ class VariableNameValue(AnyValue):
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if not isinstance(other, VariableNameValue):
-            if isinstance(other, AnyValue):
-                ctx.record_any_used()
             return {}
         if other == self:
             return {}
@@ -1803,7 +1927,13 @@ def flatten_values(val: Value, *, unwrap_annotated: bool = False) -> Iterable[Va
     if isinstance(val, MultiValuedValue):
         yield from val.vals
     elif isinstance(val, AnnotatedValue) and isinstance(val.value, MultiValuedValue):
-        yield from val.value.vals
+        if unwrap_annotated:
+            yield from val.value.vals
+        else:
+            subvals = [
+                annotate_value(subval, val.metadata) for subval in val.value.vals
+            ]
+            yield from subvals
     elif unwrap_annotated and isinstance(val, AnnotatedValue):
         yield val.value
     else:
@@ -1825,10 +1955,6 @@ def make_weak(val: Value) -> Value:
 def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:
     if not metadata:
         return origin
-    if isinstance(origin, MultiValuedValue):
-        return MultiValuedValue(
-            [annotate_value(subval, metadata) for subval in origin.vals]
-        )
     if isinstance(origin, AnnotatedValue):
         # Flatten it
         metadata = (*origin.metadata, *metadata)
@@ -1846,6 +1972,35 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
             unhashable_vals.append(item)
     metadata = (*hashable_vals, *unhashable_vals)
     return AnnotatedValue(origin, metadata)
+
+
+ExtensionT = TypeVar("ExtensionT", bound=Extension)
+
+
+def unannotate_value(
+    origin: Value, extension: Type[ExtensionT]
+) -> Tuple[Value, Sequence[ExtensionT]]:
+    if not isinstance(origin, AnnotatedValue):
+        return origin, []
+    matches = [
+        metadata for metadata in origin.metadata if isinstance(metadata, extension)
+    ]
+    # the all_of_type call is redundant but necessary for pyanalyze's narrower for now
+    # TODO remove it
+    if matches and all_of_type(matches, Extension):
+        remaining = [
+            metadata
+            for metadata in origin.metadata
+            if not isinstance(metadata, extension)
+        ]
+        return annotate_value(origin.value, remaining), matches
+    return origin, []
+
+
+def unannotate(value: Value) -> Value:
+    if isinstance(value, AnnotatedValue):
+        return value.value
+    return value
 
 
 def unite_and_simplify(*values: Value, limit: int) -> Value:
@@ -1902,7 +2057,7 @@ IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 
 
 class GetItemProto(Protocol[T]):
-    def __getitem__(self, i: int) -> T:
+    def __getitem__(self, __i: int) -> T:
         raise NotImplementedError
 
 
@@ -1929,6 +2084,7 @@ def concrete_values_from_iterable(
 
     """
     value = replace_known_sequence_value(value)
+    is_nonempty = False
     if isinstance(value, MultiValuedValue):
         subvals = [concrete_values_from_iterable(val, ctx) for val in value.vals]
         errors = [subval for subval in subvals if isinstance(subval, CanAssignError)]
@@ -1956,16 +2112,25 @@ def concrete_values_from_iterable(
             return [pair.key for pair in value.kv_pairs]
     elif isinstance(value, KnownValue):
         if isinstance(value.val, (str, bytes, range)):
-            return [KnownValue(c) for c in value.val]
+            if len(value.val) < ITERATION_LIMIT:
+                return [KnownValue(c) for c in value.val]
+            is_nonempty = True
     elif value is NO_RETURN_VALUE:
         return NO_RETURN_VALUE
     iter_tv_map = IterableValue.can_assign(value, ctx)
     if not isinstance(iter_tv_map, CanAssignError):
-        return iter_tv_map.get(T, AnyValue(AnySource.generic_argument))
-    getitem_tv_map = GetItemProtoValue.can_assign(value, ctx)
-    if not isinstance(getitem_tv_map, CanAssignError):
-        return getitem_tv_map.get(T, AnyValue(AnySource.generic_argument))
-    return iter_tv_map
+        val = iter_tv_map.get(T, AnyValue(AnySource.generic_argument))
+    else:
+        getitem_tv_map = GetItemProtoValue.can_assign(value, ctx)
+        if not isinstance(getitem_tv_map, CanAssignError):
+            val = getitem_tv_map.get(T, AnyValue(AnySource.generic_argument))
+        else:
+            # We return the error from the __iter__ check because the __getitem__
+            # check is more arcane.
+            return iter_tv_map
+    if is_nonempty:
+        return annotate_value(val, [AlwaysPresentExtension()])
+    return val
 
 
 K = TypeVar("K")
@@ -1983,19 +2148,19 @@ def kv_pairs_from_mapping(
     value_val = replace_known_sequence_value(value_val)
     # Special case: if we have a Union including an empty dict, just get the
     # pairs from the rest of the union and make them all non-required.
-    if isinstance(value_val, MultiValuedValue) and any(
-        subval in EMPTY_DICTS for subval in value_val.vals
-    ):
-        other_val = unite_values(
-            *[subval for subval in value_val.vals if subval not in EMPTY_DICTS]
-        )
-        pairs = kv_pairs_from_mapping(other_val, ctx)
-        if isinstance(pairs, CanAssignError):
-            return pairs
-        return [
-            KVPair(pair.key, pair.value, pair.is_many, is_required=False)
-            for pair in pairs
-        ]
+    if isinstance(value_val, MultiValuedValue):
+        subvals = [replace_known_sequence_value(subval) for subval in value_val.vals]
+        if any(subval in EMPTY_DICTS for subval in subvals):
+            other_val = unite_values(
+                *[subval for subval in subvals if subval not in EMPTY_DICTS]
+            )
+            pairs = kv_pairs_from_mapping(other_val, ctx)
+            if isinstance(pairs, CanAssignError):
+                return pairs
+            return [
+                KVPair(pair.key, pair.value, pair.is_many, is_required=False)
+                for pair in pairs
+            ]
     if isinstance(value_val, DictIncompleteValue):
         return value_val.kv_pairs
     elif isinstance(value_val, TypedDictValue):
@@ -2176,3 +2341,16 @@ def stringify_object(obj: Any) -> str:
             return f"{obj.__module__}.{obj.__name__}"
     except Exception:
         return repr(obj)
+
+
+def can_assign_and_used_any(
+    param_typ: Value, var_value: Value, ctx: CanAssignContext
+) -> Tuple[CanAssign, bool]:
+    with ctx.reset_any_used():
+        tv_map = param_typ.can_assign(var_value, ctx)
+        used_any = ctx.has_used_any_match()
+    return tv_map, used_any
+
+
+def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
+    return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)
