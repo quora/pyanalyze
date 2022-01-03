@@ -6,7 +6,6 @@ calls.
 
 """
 
-from . import annotations
 from .type_evaluation import EvalContext, Evaluator
 from .error_code import ErrorCode
 from .safe import all_of_type

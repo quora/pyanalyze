@@ -93,9 +93,9 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
         ):
             yield
     else:
-        argspec = ArgSpecCache(Options.from_option_list([], Config())).get_argspec(
-            fn, impl=implementation_fn
-        )
+        options = Options.from_option_list([], Config())
+        tsf = TypeshedFinder.make(options)
+        argspec = ArgSpecCache(options, tsf).get_argspec(fn, impl=implementation_fn)
         if argspec is None:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
