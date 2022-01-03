@@ -222,11 +222,19 @@ class TestBundledStubs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_evaluated_import(self):
-        def capybara():
+        def capybara(unannotated):
             from _pyanalyze_tests.evaluated import open
-            from typing import TextIO
+            from typing import TextIO, BinaryIO, IO
 
             assert_is_value(open("r"), TypedValue(TextIO))
+            assert_is_value(open("rb"), TypedValue(BinaryIO))
+            assert_is_value(
+                open(unannotated), GenericValue(IO, [AnyValue(AnySource.explicit)])
+            )
+            assert_is_value(
+                open("r" if unannotated else "rb"),
+                TypedValue(TextIO) | TypedValue(BinaryIO),
+            )
 
 
 class Parent(Generic[T]):
