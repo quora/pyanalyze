@@ -287,13 +287,14 @@ class ArgSpecCache:
     def __init__(
         self,
         options: Options,
+        ts_finder: TypeshedFinder,
         *,
         vnv_provider: Callable[[str], Optional[Value]] = lambda _: None,
     ) -> None:
         self.vnv_provider = vnv_provider
         self.options = options
         self.config = options.fallback
-        self.ts_finder = TypeshedFinder(verbose=True)
+        self.ts_finder = ts_finder
         self.known_argspecs = {}
         self.generic_bases_cache = {}
         self.default_context = AnnotationsContext(self)

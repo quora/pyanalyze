@@ -21,6 +21,7 @@ from typing import (
 )
 
 from pyanalyze.shared_options import VariableNameValues
+from pyanalyze.typeshed import TypeshedFinder
 
 from .options import Options, PyObjectSequenceOption
 from .node_visitor import Failure
@@ -31,6 +32,7 @@ from .reexport import ImplicitReexportTracker
 from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
 from .type_object import TypeObject, get_mro
 from .suggested_type import CallableTracker
+from pyanalyze import options
 
 _BaseProvider = Callable[[Union[type, super]], Set[type]]
 
@@ -63,6 +65,7 @@ class Checker:
     raw_options: InitVar[Optional[Options]] = None
     options: Options = field(init=False)
     arg_spec_cache: ArgSpecCache = field(init=False)
+    ts_finder: TypeshedFinder = field(init=False)
     reexport_tracker: ImplicitReexportTracker = field(init=False)
     callable_tracker: CallableTracker = field(init=False)
     type_object_cache: Dict[Union[type, super, str], TypeObject] = field(
@@ -78,8 +81,11 @@ class Checker:
             self.options = Options.from_option_list([], self.config)
         else:
             self.options = raw_options
+        self.ts_finder = TypeshedFinder.make(self.options)
         self.arg_spec_cache = ArgSpecCache(
-            self.options, vnv_provider=self.maybe_get_variable_name_value
+            self.options,
+            self.ts_finder,
+            vnv_provider=self.maybe_get_variable_name_value,
         )
         self.reexport_tracker = ImplicitReexportTracker(self.options)
         self.callable_tracker = CallableTracker()

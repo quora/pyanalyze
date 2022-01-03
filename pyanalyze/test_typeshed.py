@@ -16,7 +16,7 @@ from urllib.error import HTTPError
 import urllib.parse
 
 from .extensions import evaluated
-from .test_config import TestConfig
+from .test_config import TestConfig, TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .options import Options
@@ -190,14 +190,14 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             assert_is_value(explicitly_aliased_constant, TypedValue(int))
 
     def test_aliases(self):
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.aliases"
         assert tsf.resolve_name(mod, "constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "aliased_constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "explicitly_aliased_constant") == TypedValue(int)
 
     def test_typeddict(self):
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.typeddict"
 
         for name, expected in _EXPECTED_TYPED_DICTS.items():
@@ -216,7 +216,7 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 assert_is_value(inherited, _EXPECTED_TYPED_DICTS["Inherited"])
 
     def test_evaluated(self):
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.evaluated"
         assert tsf.resolve_name(mod, "evaluated") == KnownValue(evaluated)
 
@@ -251,7 +251,9 @@ class GenericChild(Parent[T]):
 
 class TestGetGenericBases:
     def setup(self) -> None:
-        arg_spec_cache = ArgSpecCache(Options.from_option_list([], TestConfig()))
+        arg_spec_cache = ArgSpecCache(
+            Options.from_option_list([], TestConfig()), TypeshedFinder()
+        )
         self.get_generic_bases = arg_spec_cache.get_generic_bases
 
     def test_runtime(self):

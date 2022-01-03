@@ -4,7 +4,6 @@ from asynq import FutureBase, AsyncTask
 import collections
 import os
 import types
-
 from .analysis_lib import make_module
 from .checker import Checker
 from .name_check_visitor import (
@@ -15,7 +14,7 @@ from .name_check_visitor import (
 )
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
-from .test_config import TestConfig
+from .test_config import TEST_INSTANCES, TestConfig
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -63,6 +62,8 @@ class ConfiguredNameCheckVisitor(NameCheckVisitor):
     config = TestConfig()
 
 
+
+
 class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
     visitor_cls = ConfiguredNameCheckVisitor
 
@@ -84,7 +85,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
         mod = _make_module(code_str)
         kwargs["settings"] = default_settings
-        kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
+        kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs, TEST_INSTANCES)
         new_code = ""
         with ClassAttributeChecker(
             self.visitor_cls.config,

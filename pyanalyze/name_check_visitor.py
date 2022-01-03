@@ -4615,9 +4615,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return {}
 
     @classmethod
-    def prepare_constructor_kwargs(cls, kwargs: Mapping[str, Any]) -> Mapping[str, Any]:
+    def prepare_constructor_kwargs(
+        cls, kwargs: Mapping[str, Any], extra_options: Sequence[ConfigOption] = ()
+    ) -> Mapping[str, Any]:
         kwargs = dict(kwargs)
-        instances = []
+        instances = [*extra_options]
         if "settings" in kwargs:
             for error_code, value in kwargs["settings"].items():
                 option_cls = ConfigOption.registry[error_code.name]

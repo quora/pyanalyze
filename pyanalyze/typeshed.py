@@ -4,6 +4,7 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
+from pyanalyze.options import Options, PathSequenceOption
 from pyanalyze.type_evaluation import Evaluator
 from .extensions import evaluated
 from .analysis_lib import is_positional_only_arg_name
@@ -54,7 +55,6 @@ from dataclasses import dataclass, field, replace
 import collections.abc
 import qcore
 import inspect
-from pathlib import Path
 import sys
 from types import GeneratorType
 from typing import (
@@ -115,6 +115,12 @@ class StubEvaluator(_AnnotationContext, Evaluator):
         return value_from_ast(node, ctx=self, error_on_unrecognized=False)
 
 
+class StubPath(PathSequenceOption):
+    """Extra paths in which to look for stubs."""
+
+    name = "stub_path"
+
+
 # These are specified as just "List = _Alias()" in typing.pyi. Redirect
 # them to the proper runtime equivalent.
 _TYPING_ALIASES = {
@@ -131,23 +137,26 @@ _TYPING_ALIASES = {
 }
 
 
-def _create_resolver() -> typeshed_client.Resolver:
-    ctx = typeshed_client.get_search_context()
-    extra_path = Path(__file__).parent / "stubs"
-    ctx = typeshed_client.get_search_context(search_path=[*ctx.search_path, extra_path])
-    return typeshed_client.Resolver(ctx)
-
-
 @dataclass
 class TypeshedFinder:
     verbose: bool = True
-    resolver: typeshed_client.Resolver = field(default_factory=_create_resolver)
+    resolver: typeshed_client.Resolver = field(default_factory=typeshed_client.Resolver)
     _assignment_cache: Dict[Tuple[str, ast.AST], Value] = field(
         default_factory=dict, repr=False, init=False
     )
     _attribute_cache: Dict[Tuple[str, str, bool], Value] = field(
         default_factory=dict, repr=False, init=False
     )
+
+    @classmethod
+    def make(cls, options: Options, *, verbose: bool = False) -> "TypeshedFinder":
+        extra_paths = options.get_value_for(StubPath)
+        ctx = typeshed_client.get_search_context()
+        ctx = typeshed_client.get_search_context(
+            search_path=[*ctx.search_path, *extra_paths]
+        )
+        resolver = typeshed_client.Resolver(ctx)
+        return TypeshedFinder(verbose, resolver)
 
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
