@@ -62,8 +62,6 @@ class ConfiguredNameCheckVisitor(NameCheckVisitor):
     config = TestConfig()
 
 
-
-
 class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
     visitor_cls = ConfiguredNameCheckVisitor
 
