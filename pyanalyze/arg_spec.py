@@ -7,7 +7,7 @@ Implementation of extended argument specifications used by test_scope.
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import CustomCheck, get_overloads
-from .annotations import Context, type_from_runtime
+from .annotations import Context, RuntimeEvaluator, type_from_runtime
 from .config import Config
 from .find_unused import used
 from . import implementation
@@ -33,7 +33,6 @@ from .signature import (
     Signature,
     ParameterKind,
 )
-from .type_evaluation import get_evaluator
 from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
@@ -94,9 +93,9 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
         ):
             yield
     else:
-        argspec = ArgSpecCache(Options.from_option_list([], Config())).get_argspec(
-            fn, impl=implementation_fn
-        )
+        options = Options.from_option_list([], Config())
+        tsf = TypeshedFinder.make(options)
+        argspec = ArgSpecCache(options, tsf).get_argspec(fn, impl=implementation_fn)
         if argspec is None:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
@@ -288,13 +287,14 @@ class ArgSpecCache:
     def __init__(
         self,
         options: Options,
+        ts_finder: TypeshedFinder,
         *,
         vnv_provider: Callable[[str], Optional[Value]] = lambda _: None,
     ) -> None:
         self.vnv_provider = vnv_provider
         self.options = options
         self.config = options.fallback
-        self.ts_finder = TypeshedFinder(verbose=False)
+        self.ts_finder = ts_finder
         self.known_argspecs = {}
         self.generic_bases_cache = {}
         self.default_context = AnnotationsContext(self)
@@ -509,7 +509,7 @@ class ArgSpecCache:
                     ]
                     if all_of_type(sigs, Signature):
                         return OverloadedSignature(sigs)
-                evaluator = get_evaluator(obj)
+                evaluator = RuntimeEvaluator.get_for(obj)
                 if evaluator is not None:
                     sig = self._cached_get_argspec(
                         evaluator.func, impl, is_asynq, in_overload_resolution=True

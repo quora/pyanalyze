@@ -14,7 +14,7 @@ import types
 from typing import Any, Generic, Sequence, Tuple, Optional, Union
 
 
-from .annotations import type_from_runtime, Context
+from .annotations import type_from_annotations, type_from_runtime, Context
 from .safe import safe_isinstance, safe_issubclass
 from .signature import Signature, MaybeSignature
 from .stacked_scopes import Composite
@@ -376,13 +376,14 @@ def _get_attribute_from_mro(
             pass
     elif safe_isinstance(typ, types.ModuleType):
         try:
-            annotation = typ.__annotations__[ctx.attr]
+            annotations = typ.__annotations__
         except Exception:
-            # Module doesn't have annotations or it's not in there
             pass
         else:
-            attr_type = type_from_runtime(annotation, ctx=AnnotationsContext(ctx, typ))
-            if attr_type != AnyValue(AnySource.incomplete_annotation):
+            attr_type = type_from_annotations(
+                annotations, ctx.attr, ctx=AnnotationsContext(ctx, typ)
+            )
+            if attr_type is not None:
                 return (attr_type, typ, False)
 
     try:
@@ -407,15 +408,15 @@ def _get_attribute_from_mro(
             try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.
-                annotation = base_cls.__dict__["__annotations__"][ctx.attr]
+                annotations = base_cls.__dict__["__annotations__"]
             except Exception:
                 # no __annotations__, or it's not a dict, or the attr isn't there
                 pass
             else:
-                attr_type = type_from_runtime(
-                    annotation, ctx=AnnotationsContext(ctx, base_cls)
+                attr_type = type_from_annotations(
+                    annotations, ctx.attr, ctx=AnnotationsContext(ctx, base_cls)
                 )
-                if attr_type != AnyValue(AnySource.incomplete_annotation):
+                if attr_type is not None:
                     return (attr_type, base_cls, False)
             try:
                 # Make sure we use only the object from this class, but do invoke

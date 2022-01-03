@@ -1676,3 +1676,20 @@ class TestCallable(TestNameCheckVisitorBase):
             func = with_request(takes_int_str)
             func(1, "A")
             func(1, 2)  # E: incompatible_argument
+
+
+class TestTypeAlias(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_runtime(self):
+        from typing_extensions import TypeAlias
+
+        X: TypeAlias = int
+        Y = X
+        Z: "TypeAlias" = int
+
+        def capybara(x: X, y: Y, x_quoted: "X", y_quoted: "Y", z: Z) -> None:
+            assert_is_value(x, TypedValue(int))
+            assert_is_value(y, TypedValue(int))
+            assert_is_value(x_quoted, TypedValue(int))
+            assert_is_value(y_quoted, TypedValue(int))
+            assert_is_value(z, TypedValue(int))
