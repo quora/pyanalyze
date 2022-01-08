@@ -6,7 +6,6 @@ calls.
 
 """
 
-from .extensions import CustomCheck
 from .type_evaluation import EvalContext, Evaluator
 from .error_code import ErrorCode
 from .safe import all_of_type
@@ -101,7 +100,6 @@ EMPTY = inspect.Parameter.empty
 UNANNOTATED = AnyValue(AnySource.unannotated)
 ELLIPSIS = qcore.MarkerObject("ellipsis")
 ELLIPSIS_COMPOSITE = Composite(AnyValue(AnySource.ellipsis_callable))
-DEFAULT_MARKER = KnownValue(ELLIPSIS)
 
 # TODO turn on
 USE_CHECK_CALL_FOR_CAN_ASSIGN = False
@@ -172,6 +170,7 @@ class _CanAssignBasedContext:
         detail: Optional[str] = ...,
     ) -> object:
         self.errors.append(message)
+        return None
 
 
 @dataclass
@@ -432,15 +431,6 @@ class SigParameter:
             return val, PosOrKeyword(self.name, self.default is None)
         else:
             assert False, self.kind
-
-
-@dataclass(frozen=True)
-class WithParamSpec(CustomCheck):
-    param_spec: TypeVarValue
-    params: List[SigParameter] = field(default_factory=list, hash=False)
-
-    def can_be_assigned(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        return {self.param_spec.typevar: CallableValue(Signature.make(self.params))}
 
 
 @dataclass(frozen=True)
@@ -878,7 +868,6 @@ class Signature:
                 val = AnyValue(AnySource.ellipsis_callable)
                 bound_args[param.name] = UNKNOWN, Composite(val)
             elif param.kind is ParameterKind.PARAM_SPEC:
-                bound_args[param.name] = KWARGS, Composite(actual_args.param_spec)
                 if actual_args.param_spec is not None:
                     bound_args[param.name] = KWARGS, Composite(actual_args.param_spec)
                     param_spec_consumed = True
@@ -901,9 +890,7 @@ class Signature:
                     )
                     bound_args[param.name] = KWARGS, composite
                 else:
-                    self.show_call_error(
-                        "Callable requires a ParamSpec argument", node, visitor
-                    )
+                    self.show_call_error("Callable requires a ParamSpec argument", ctx)
                     return None
             else:
                 assert False, f"unhandled param {param.kind}"
@@ -936,7 +923,7 @@ class Signature:
             self.show_call_error("**kwargs provided but not used", ctx)
             return None
         if not param_spec_consumed and actual_args.param_spec is not None:
-            self.show_call_error("ParamSpec provided but not used", node, visitor)
+            self.show_call_error("ParamSpec provided but not used", ctx)
         return bound_args
 
     def show_call_error(
@@ -1078,7 +1065,7 @@ class Signature:
                 positions = {
                     param: position for param, (position, _) in bound_args.items()
                 }
-                eval_ctx = EvalContext(varmap, positions, visitor)
+                eval_ctx = EvalContext(varmap, positions, ctx.can_assign_ctx)
                 return_value, errors = self.evaluator.evaluate(eval_ctx)
                 for error in errors:
                     error_node = None
