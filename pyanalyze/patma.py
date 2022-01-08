@@ -208,6 +208,22 @@ class PatmaVisitor(ast.NodeVisitor):
                     return pattern_val
                 else:
                     return None
+            elif isinstance(pattern_val.val, bool):
+                simplified = unannotate(value)
+                if isinstance(simplified, TypedValue) and simplified.typ is bool:
+                    return KnownValue(not pattern_val.val)
+            elif isinstance(pattern_val.val, enum.Enum):
+                simplified = unannotate(value)
+                if isinstance(simplified, TypedValue) and simplified.typ is type(
+                    pattern_val.val
+                ):
+                    return unite_values(
+                        *[
+                            KnownValue(val)
+                            for val in type(pattern_val.val)
+                            if val is not pattern_val.val
+                        ]
+                    )
             return value
 
         return self.make_constraint(ConstraintType.predicate, predicate_func)
