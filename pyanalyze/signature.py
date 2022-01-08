@@ -7,7 +7,6 @@ calls.
 """
 
 from .extensions import CustomCheck
-from . import annotations
 from .type_evaluation import EvalContext, Evaluator
 from .error_code import ErrorCode
 from .safe import all_of_type
@@ -104,6 +103,9 @@ UNANNOTATED = AnyValue(AnySource.unannotated)
 ELLIPSIS = qcore.MarkerObject("ellipsis")
 ELLIPSIS_COMPOSITE = Composite(AnyValue(AnySource.ellipsis_callable))
 DEFAULT_MARKER = KnownValue(ELLIPSIS)
+
+# TODO turn on
+USE_CHECK_CALL_FOR_CAN_ASSIGN = False
 
 
 @dataclass
@@ -1274,7 +1276,8 @@ class Signature:
             return CanAssignError("overloaded function is incompatible", errors)
         if self.is_asynq and not other.is_asynq:
             return CanAssignError("callable is not asynq")
-        return self.can_assign_through_check_call(other, ctx)
+        if USE_CHECK_CALL_FOR_CAN_ASSIGN:
+            return self.can_assign_through_check_call(other, ctx)
         their_return = other.return_value
         my_return = self.return_value
         return_tv_map = my_return.can_assign(their_return, ctx)
