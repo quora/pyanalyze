@@ -176,6 +176,17 @@ class TestPatma(TestNameCheckVisitorBase):
                         assert_is_value(b2, KnownValue(False))
             """
         )
+        self.assert_passes(
+            """
+            def capybara(b: bool):
+                match b:
+                    case True:
+                        assert_is_value(b, KnownValue(True))
+                    case _ as b2:
+                        assert_is_value(b, KnownValue(False))
+                        assert_is_value(b2, KnownValue(False))
+            """
+        )
 
     @skip_before((3, 10))
     def test_enum_narrowing(self):
