@@ -105,6 +105,10 @@ ELLIPSIS_COMPOSITE = Composite(AnyValue(AnySource.ellipsis_callable))
 USE_CHECK_CALL_FOR_CAN_ASSIGN = False
 
 
+class InvalidSignature(Exception):
+    """Raised when an invalid signature is encountered."""
+
+
 @dataclass
 class PossibleArg:
     # Label used for arguments that may not be present at runtiime.
@@ -341,6 +345,38 @@ class ParameterKind(enum.Enum):
     and it must be the last one."""
 
 
+KIND_TO_ALLOWED_PREVIOUS = {
+    ParameterKind.POSITIONAL_ONLY: {ParameterKind.POSITIONAL_ONLY},
+    ParameterKind.POSITIONAL_OR_KEYWORD: {
+        ParameterKind.POSITIONAL_ONLY,
+        ParameterKind.POSITIONAL_OR_KEYWORD,
+    },
+    ParameterKind.VAR_POSITIONAL: {
+        ParameterKind.POSITIONAL_OR_KEYWORD,
+        ParameterKind.POSITIONAL_ONLY,
+    },
+    ParameterKind.KEYWORD_ONLY: {
+        ParameterKind.POSITIONAL_ONLY,
+        ParameterKind.POSITIONAL_OR_KEYWORD,
+        ParameterKind.VAR_POSITIONAL,
+        ParameterKind.KEYWORD_ONLY,
+    },
+    ParameterKind.VAR_KEYWORD: {
+        ParameterKind.POSITIONAL_ONLY,
+        ParameterKind.POSITIONAL_OR_KEYWORD,
+        ParameterKind.VAR_POSITIONAL,
+        ParameterKind.KEYWORD_ONLY,
+    },
+    ParameterKind.PARAM_SPEC: {ParameterKind.POSITIONAL_ONLY},
+    ParameterKind.ELLIPSIS: {ParameterKind.POSITIONAL_ONLY},
+}
+CAN_HAVE_DEFAULT = {
+    ParameterKind.POSITIONAL_ONLY,
+    ParameterKind.POSITIONAL_OR_KEYWORD,
+    ParameterKind.KEYWORD_ONLY,
+}
+
+
 @dataclass
 class SigParameter:
     """Represents a single parameter to a callable."""
@@ -481,6 +517,45 @@ class Signature:
                 for typevar in tv_list
             }
         )
+        self.validate()
+
+    def validate(self) -> None:
+        seen_kinds = set()
+        seen_with_default = set()
+        for name, param in self.parameters.items():
+            if name != param.name:
+                raise InvalidSignature(f"names {name} and {param.name} do not match")
+            disallowed_previous = seen_kinds - KIND_TO_ALLOWED_PREVIOUS[param.kind]
+            if disallowed_previous:
+                disallowed_text = ", ".join(kind.name for kind in disallowed_previous)
+                raise InvalidSignature(
+                    f"param {param} of kind {param.kind.name} may not follow param of"
+                    f" kind {disallowed_text} {self.parameters}"
+                )
+            if param.default is not None and param.kind not in CAN_HAVE_DEFAULT:
+                raise InvalidSignature(
+                    f"param {param} of kind {param.kind.name} may not have a default"
+                )
+            if param.default is None:
+                if param.kind is ParameterKind.POSITIONAL_ONLY:
+                    if ParameterKind.POSITIONAL_ONLY in seen_with_default:
+                        raise InvalidSignature(
+                            f"param {param} has no default but follows a param with a"
+                            " default"
+                        )
+                elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
+                    if seen_with_default & {
+                        ParameterKind.POSITIONAL_ONLY,
+                        ParameterKind.POSITIONAL_OR_KEYWORD,
+                    }:
+                        raise InvalidSignature(
+                            f"param {param} has no default but follows a param with a"
+                            " default"
+                        )
+
+            seen_kinds.add(param.kind)
+            if param.default is not None:
+                seen_with_default.add(param.kind)
 
     def _check_param_type_compatibility(
         self,
