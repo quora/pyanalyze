@@ -29,7 +29,6 @@ from .value import (
     CallableValue,
     CanAssignContext,
     ConstraintExtension,
-    CustomCheckExtension,
     GenericValue,
     HasAttrExtension,
     HasAttrGuardExtension,
@@ -652,12 +651,7 @@ class Signature:
         bound_args: BoundArgs = {}
         star_args_consumed = False
         star_kwargs_consumed = False
-        if actual_args.param_spec:
-            param_spec_check = WithParamSpec(actual_args.param_spec)
-            extensions = [CustomCheckExtension(param_spec_check)]
-        else:
-            param_spec_check = None
-            extensions = []
+        param_spec_consumed = False
 
         for param in self.parameters.values():
             if param.kind is ParameterKind.POSITIONAL_ONLY:
@@ -692,11 +686,6 @@ class Signature:
                         position = UNKNOWN  # default or args
                     bound_args[param.name] = position, Composite(actual_args.star_args)
                     star_args_consumed = True
-                elif param_spec_check is not None:
-                    param_spec_check.params.append(param)
-                    bound_args[param.name] = UNKNOWN, Composite(
-                        annotate_value(param.annotation, extensions)
-                    )
                 elif param.default is not None:
                     bound_args[param.name] = DEFAULT, Composite(param.default)
                 elif actual_args.ellipsis:
@@ -781,11 +770,6 @@ class Signature:
                         actual_args.star_kwargs
                     )
                     star_kwargs_consumed = True
-                elif param_spec_check is not None:
-                    param_spec_check.params.append(param)
-                    bound_args[param.name] = UNKNOWN, Composite(
-                        annotate_value(param.annotation, extensions)
-                    )
                 elif param.default is not None:
                     bound_args[param.name] = DEFAULT, Composite(param.default)
                 elif actual_args.ellipsis:
@@ -828,11 +812,6 @@ class Signature:
                     )
                     star_kwargs_consumed = True
                     keywords_consumed.add(param.name)
-                elif param_spec_check is not None:
-                    param_spec_check.params.append(param)
-                    bound_args[param.name] = UNKNOWN, Composite(
-                        annotate_value(param.annotation, extensions)
-                    )
                 elif param.default is not None:
                     bound_args[param.name] = DEFAULT, Composite(param.default)
                 elif actual_args.ellipsis:
@@ -843,15 +822,6 @@ class Signature:
                     )
                     return None
             elif param.kind is ParameterKind.VAR_POSITIONAL:
-                if (
-                    isinstance(param.annotation, ParamSpecArgsValue)
-                    and param_spec_check is not None
-                ):
-                    param_spec_check.params.append(param)
-                    bound_args[param.name] = ARGS, Composite(
-                        annotate_value(param.annotation, extensions)
-                    )
-                    continue
                 star_args_consumed = True
                 positionals = []
                 while positional_index < len(actual_args.positionals):
@@ -872,21 +842,8 @@ class Signature:
                     if not positionals:
                         # no *args were actually provided
                         position = DEFAULT
-                if param_spec_check is not None:
-                    param_spec_check.params.append(param)
-                    bound_args[param.name] = position, Composite(
-                        annotate_value(star_args_value, extensions)
-                    )
-                else:
-                    bound_args[param.name] = position, Composite(star_args_value)
+                bound_args[param.name] = position, Composite(star_args_value)
             elif param.kind is ParameterKind.VAR_KEYWORD:
-                if (
-                    isinstance(param.annotation, ParamSpecKwargsValue)
-                    and actual_args.param_spec is not None
-                ):
-                    param_spec_consumed = True
-                    bound_args[param.name] = KWARGS, Composite(actual_args.param_spec)
-                    continue
                 star_kwargs_consumed = True
                 items = {}
                 for key, (
@@ -912,89 +869,42 @@ class Signature:
                     star_kwargs_value = TypedDictValue(items)
                     if not items:
                         position = DEFAULT
-                if param_spec_check is not None:
-                    param_spec_check.params.append(param)
-                    bound_args[param.name] = position, Composite(
-                        annotate_value(star_kwargs_value, extensions)
-                    )
-                else:
-                    bound_args[param.name] = position, Composite(star_kwargs_value)
+                bound_args[param.name] = position, Composite(star_kwargs_value)
             elif param.kind is ParameterKind.ELLIPSIS:
                 # just take it all
                 star_args_consumed = True
                 star_kwargs_consumed = True
                 param_spec_consumed = True
                 val = AnyValue(AnySource.ellipsis_callable)
-                if param_spec_check is not None:
-                    param_spec_check.params.append(param)
-                    val = annotate_value(param.annotation, extensions)
                 bound_args[param.name] = UNKNOWN, Composite(val)
             elif param.kind is ParameterKind.PARAM_SPEC:
-                params: List[SigParameter] = []
-                for i, (required, positional) in enumerate(actual_args.positionals):
-                    if i < positional_index or i in actual_args.pos_or_keyword_params:
-                        continue
-                    params.append(
-                        SigParameter(
-                            f"__arg{i}",
-                            ParameterKind.POSITIONAL_ONLY,
-                            default=DEFAULT_MARKER if not required else None,
-                            annotation=positional.value,
-                        )
-                    )
-                positional_index = len(actual_args.positionals)
-                for name, (required, keyword) in actual_args.keywords.items():
-                    if name in keywords_consumed:
-                        continue
-                    params.append(
-                        SigParameter(
-                            name,
-                            ParameterKind.POSITIONAL_OR_KEYWORD
-                            if name in actual_args.pos_or_keyword_params
-                            else ParameterKind.KEYWORD_ONLY,
-                            default=DEFAULT_MARKER if not required else None,
-                            annotation=keyword.value,
-                        )
-                    )
-                    keywords_consumed.add(name)
+                bound_args[param.name] = KWARGS, Composite(actual_args.param_spec)
                 if actual_args.param_spec is not None:
-                    params.append(
-                        SigParameter(
-                            "**P",
-                            ParameterKind.PARAM_SPEC,
-                            annotation=actual_args.param_spec,
-                        )
-                    )
+                    bound_args[param.name] = KWARGS, Composite(actual_args.param_spec)
                     param_spec_consumed = True
-                if actual_args.ellipsis is not None:
-                    params.append(SigParameter("...", ParameterKind.ELLIPSIS))
-                if not star_args_consumed and actual_args.star_args is not None:
-                    if isinstance(actual_args.star_args, ParamSpecArgsValue):
-                        val = actual_args.star_args
-                    else:
-                        val = GenericValue(tuple, [actual_args.star_args])
-                    params.append(
-                        SigParameter(
-                            "*args", ParameterKind.VAR_POSITIONAL, annotation=val
-                        )
-                    )
-                    star_args_consumed = True
-                if not star_kwargs_consumed and actual_args.star_kwargs is not None:
-                    if isinstance(actual_args.star_kwargs, ParamSpecKwargsValue):
-                        val = actual_args.star_kwargs
-                    else:
-                        val = GenericValue(
-                            dict, [TypedValue(str), actual_args.star_kwargs]
-                        )
-                    params.append(
-                        SigParameter(
-                            "**kwargs", ParameterKind.VAR_KEYWORD, annotation=val
-                        )
-                    )
+                elif (
+                    actual_args.star_args is not None
+                    and actual_args.star_kwargs is not None
+                    and not star_args_consumed
+                    and not star_kwargs_consumed
+                    and isinstance(actual_args.star_args, ParamSpecArgsValue)
+                    and isinstance(actual_args.star_kwargs, ParamSpecKwargsValue)
+                    and actual_args.star_args.param_spec
+                    is actual_args.star_kwargs.param_spec
+                ):
                     star_kwargs_consumed = True
-                new_sig = Signature.make(params)
-                val = CallableValue(Signature.make(params))
-                bound_args[param.name] = KWARGS, Composite(CallableValue(new_sig))
+                    star_args_consumed = True
+                    composite = Composite(
+                        TypeVarValue(
+                            actual_args.star_kwargs.param_spec, is_paramspec=True
+                        )
+                    )
+                    bound_args[param.name] = KWARGS, composite
+                else:
+                    self.show_call_error(
+                        "Callable requires a ParamSpec argument", node, visitor
+                    )
+                    return None
             else:
                 assert False, f"unhandled param {param.kind}"
 
@@ -1715,7 +1625,7 @@ def preprocess_args(
     processed_args: List[Argument] = []
     kwargs_requireds = []
     for arg, label in args:
-        if label is ARGS and not isinstance(arg.value, ParamSpecArgsValue):
+        if label is ARGS:
             concrete_values = concrete_values_from_iterable(
                 arg.value, ctx.can_assign_ctx
             )
@@ -1735,7 +1645,7 @@ def preprocess_args(
                 # args.
                 for subval in concrete_values:
                     processed_args.append((Composite(subval), None))
-        elif label is KWARGS and not isinstance(arg.value, ParamSpecKwargsValue):
+        elif label is KWARGS:
             items = {}
             extra_values = []
             # We union all the kwargs that may be provided by any union member, so that
@@ -1803,17 +1713,11 @@ def preprocess_args(
                 ctx.on_error("*args follows **kwargs")
                 return None
             if star_args is not None:
-                if isinstance(arg.value, ParamSpecArgsValue):
-                    ctx.on_error("Cannot have both *args and *P.args")
-                    return None
                 assert isinstance(arg.value, GenericValue), repr(processed_args)
                 star_args = unite_values(arg.value.args[0], star_args)
             else:
-                if isinstance(arg.value, ParamSpecArgsValue):
-                    star_args = arg.value
-                else:
-                    assert isinstance(arg.value, GenericValue), repr(processed_args)
-                    star_args = arg.value.args[0]
+                assert isinstance(arg.value, GenericValue), repr(processed_args)
+                star_args = arg.value.args[0]
         elif isinstance(label, (str, PossibleArg)):
             is_required = isinstance(label, str)
             if isinstance(label, PossibleArg):
@@ -1824,18 +1728,12 @@ def preprocess_args(
                 return None
             more_processed_kwargs[label] = (is_required, arg)
         elif label is KWARGS:
-            if isinstance(arg.value, ParamSpecKwargsValue):
-                if star_kwargs is not None:
-                    ctx.on_error("Cannot have both **kwargs and **P.kwargs")
-                    return None
-                star_kwargs = arg.value
+            assert isinstance(arg.value, GenericValue), repr(processed_args)
+            new_kwargs = arg.value.args[1]
+            if star_kwargs is None:
+                star_kwargs = new_kwargs
             else:
-                assert isinstance(arg.value, GenericValue), repr(processed_args)
-                new_kwargs = arg.value.args[1]
-                if star_kwargs is None:
-                    star_kwargs = new_kwargs
-                else:
-                    star_kwargs = unite_values(star_kwargs, new_kwargs)
+                star_kwargs = unite_values(star_kwargs, new_kwargs)
         elif isinstance(label, PosOrKeyword):
             if label.name in more_processed_kwargs:
                 ctx.on_error(f"Multiple values provided for argument '{label}'")
@@ -1850,23 +1748,6 @@ def preprocess_args(
             is_ellipsis = True
         else:
             assert False, repr(label)
-
-    # if isinstance(star_args, ParamSpecArgsValue) or isinstance(
-    #     star_kwargs, ParamSpecKwargsValue
-    # ):
-    #     if (
-    #         not (
-    #             isinstance(star_args, ParamSpecArgsValue)
-    #             and isinstance(star_kwargs, ParamSpecKwargsValue)
-    #         )
-    #         or star_args.param_spec is not star_kwargs.param_spec
-    #     ):
-    #         ctx.on_error(
-    #             "If *P.args or **P.kwargs is used, both must be used in the same call"
-    #         )
-    #         return None
-    #     param_spec = TypeVarValue(star_kwargs.param_spec)
-    #     star_kwargs = star_args = None
 
     return ActualArguments(
         more_processed_args,
