@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Do not error on boolean operations on values typed
+  as `object` (#388)
+- Support type narrowing on enum types and `bool`
+  in `match` statements (#387)
 - Support some imports from stub-only modules (#386)
 - Support type evaluation functions in stubs (#386)
 - Support `TypedDict` in stubs (#386)

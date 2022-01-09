@@ -142,7 +142,7 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
                 return Boolability.value_always_true_mutable
             else:
                 return Boolability.value_always_false_mutable
-        type_boolability = _get_type_boolability(type(value.val))
+        type_boolability = _get_type_boolability(type(value.val), is_exact=True)
         if boolean_value:
             if type_boolability is Boolability.boolable:
                 return Boolability.value_always_true
@@ -169,7 +169,11 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
         assert False, f"unhandled value {value!r}"
 
 
-def _get_type_boolability(typ: type) -> Boolability:
+def _get_type_boolability(typ: type, *, is_exact: bool = False) -> Boolability:
+    # Special-case object as boolable because it could easily be a subtype
+    # that does support __bool__.
+    if typ is object and not is_exact:
+        return Boolability.boolable
     if safe_hasattr(typ, "__len__"):
         return Boolability.boolable
     dunder_bool = safe_getattr(typ, "__bool__", None)
