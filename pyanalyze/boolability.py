@@ -170,7 +170,9 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
 
 
 def _get_type_boolability(typ: type) -> Boolability:
-    if safe_hasattr(typ, "__len__"):
+    # Special-case object as boolable because it could easily be a subtype
+    # that does support __bool__.
+    if typ is object or safe_hasattr(typ, "__len__"):
         return Boolability.boolable
     dunder_bool = safe_getattr(typ, "__bool__", None)
     if dunder_bool is None:

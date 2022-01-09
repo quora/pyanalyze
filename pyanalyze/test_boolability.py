@@ -88,6 +88,7 @@ def test_get_boolability() -> None:
     assert Boolability.erroring_bool == get_boolability(future)
     assert Boolability.type_always_true == get_boolability(TypedValue(object))
     assert Boolability.boolable == get_boolability(TypedValue(int))
+    assert Boolability.boolable == get_boolability(TypedValue(object))
 
     # MultiValuedValue and AnnotatedValue
     assert Boolability.erroring_bool == get_boolability(

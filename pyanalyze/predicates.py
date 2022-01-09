@@ -8,6 +8,7 @@ import enum
 import operator
 from typing import Optional
 
+from .safe import safe_issubclass
 from .value import (
     KnownValue,
     TypedValue,
@@ -73,20 +74,22 @@ class EqualsPredicate:
                 return known_self
             else:
                 return None
-        elif isinstance(self.pattern_val, bool):
-            simplified = unannotate(value)
-            if isinstance(simplified, TypedValue) and simplified.typ is bool:
-                return KnownValue(not self.pattern_val)
-        elif isinstance(self.pattern_val, enum.Enum):
-            simplified = unannotate(value)
-            if isinstance(simplified, TypedValue) and simplified.typ is type(
-                self.pattern_val
-            ):
-                return unite_values(
-                    *[
-                        KnownValue(val)
-                        for val in type(self.pattern_val)
-                        if val is not self.pattern_val
-                    ]
-                )
+        else:
+            pattern_type = type(self.pattern_val)
+            if pattern_type is bool:
+                simplified = unannotate(value)
+                if isinstance(simplified, TypedValue) and simplified.typ is bool:
+                    return KnownValue(not self.pattern_val)
+            elif safe_issubclass(pattern_type, enum.Enum):
+                simplified = unannotate(value)
+                if isinstance(simplified, TypedValue) and simplified.typ is type(
+                    self.pattern_val
+                ):
+                    return unite_values(
+                        *[
+                            KnownValue(val)
+                            for val in pattern_type
+                            if val is not self.pattern_val
+                        ]
+                    )
         return value
