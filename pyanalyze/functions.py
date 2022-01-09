@@ -246,14 +246,19 @@ def compute_parameters(
 
     posonly_args = getattr(node.args, "posonlyargs", [])
     num_without_defaults = len(node.args.args) + len(posonly_args) - len(defaults)
-    defaults = [*[None] * num_without_defaults, *defaults, *kw_defaults]
-    args: List[Tuple[ParameterKind, ast.arg]] = (
-        [(ParameterKind.POSITIONAL_ONLY, arg) for arg in posonly_args]
-        + [(ParameterKind.POSITIONAL_OR_KEYWORD, arg) for arg in node.args.args]
-        + [(ParameterKind.KEYWORD_ONLY, arg) for arg in node.args.kwonlyargs]
-    )
+    vararg_defaults = [None] if node.args.vararg is not None else []
+    defaults = [
+        *[None] * num_without_defaults,
+        *defaults,
+        *vararg_defaults,
+        *kw_defaults,
+    ]
+    args: List[Tuple[ParameterKind, ast.arg]] = [
+        (ParameterKind.POSITIONAL_ONLY, arg) for arg in posonly_args
+    ] + [(ParameterKind.POSITIONAL_OR_KEYWORD, arg) for arg in node.args.args]
     if node.args.vararg is not None:
         args.append((ParameterKind.VAR_POSITIONAL, node.args.vararg))
+    args += [(ParameterKind.KEYWORD_ONLY, arg) for arg in node.args.kwonlyargs]
     if node.args.kwarg is not None:
         args.append((ParameterKind.VAR_KEYWORD, node.args.kwarg))
     params = []

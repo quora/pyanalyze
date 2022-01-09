@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Check against invalid `Signature` objects and prepare
+  for refactoring `Signature` compatibility logic (#390)
 - Treat `int` and `float` as compatible with `complex`,
   as specified in PEP 484 (#389)
 - Do not error on boolean operations on values typed
