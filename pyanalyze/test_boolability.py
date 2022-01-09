@@ -86,7 +86,7 @@ def test_get_boolability() -> None:
     # TypedValue
     assert Boolability.boolable == get_boolability(TypedValue(HasLen))
     assert Boolability.erroring_bool == get_boolability(future)
-    assert Boolability.type_always_true == get_boolability(TypedValue(object))
+    assert Boolability.boolable == get_boolability(TypedValue(object))
     assert Boolability.boolable == get_boolability(TypedValue(int))
     assert Boolability.boolable == get_boolability(TypedValue(object))
 
@@ -167,12 +167,14 @@ class TestConditionAlwaysTrue(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_object():
+        obj = object()
+
         def capybara():
-            True if object() else False  # E: type_always_true
-            object() and False  # E: type_always_true
-            [] and object() and False  # E: type_always_true
-            object() or True  # E: type_always_true
-            not object()  # E: type_always_true
+            True if obj else False  # E: type_always_true
+            obj and False  # E: type_always_true
+            [] and obj and False  # E: type_always_true
+            obj or True  # E: type_always_true
+            not obj  # E: type_always_true
 
     @assert_passes()
     def test_async_yield_or(self):

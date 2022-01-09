@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Do not error on boolean operations on values typed
-  as `object` (#387)
+  as `object` (#388)
 - Support type narrowing on enum types and `bool`
   in `match` statements (#387)
 - Support some imports from stub-only modules (#386)
