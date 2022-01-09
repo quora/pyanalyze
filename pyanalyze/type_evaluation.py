@@ -26,12 +26,12 @@ from typing import (
     Union,
 )
 
-from .predicates import IsAssignablePredicate
 from .stacked_scopes import (
     Constraint,
     ConstraintType,
     VarnameWithOrigin,
     constrain_value,
+    IsAssignablePredicate,
 )
 from .safe import all_of_type
 from .value import (
