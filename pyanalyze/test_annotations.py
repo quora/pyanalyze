@@ -8,7 +8,6 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
-    CanAssignError,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
