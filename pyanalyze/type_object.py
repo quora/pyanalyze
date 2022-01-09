@@ -56,10 +56,13 @@ class TypeObject:
             self.is_universally_assignable = issubclass(self.typ, mock.NonCallableMock)
         self.is_thrift_enum = hasattr(self.typ, "_VALUES_TO_NAMES")
         self.base_classes |= set(get_mro(self.typ))
+        # As a special case, the Python type system treats int as
+        # a subtype of float, and both int and float as subtypes of complex.
         if self.typ is int:
-            # As a special case, the Python type system treats int as
-            # a subtype of float.
             self.base_classes.add(float)
+            self.base_classes.add(complex)
+        if self.typ is float:
+            self.base_classes.add(complex)
 
     def is_assignable_to_type(self, typ: type) -> bool:
         for base in self.base_classes:

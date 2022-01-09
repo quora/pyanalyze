@@ -13,6 +13,53 @@ from .value import (
 )
 
 
+class TestNumerics(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_float(self):
+        from typing import NewType
+
+        NT = NewType("NT", int)
+
+        def take_float(x: float) -> None:
+            pass
+
+        def capybara(nt: NT, i: int, f: float) -> None:
+            take_float(nt)
+            take_float(i)
+            take_float(f)
+            take_float(3.0)
+            take_float(3)
+            take_float(1 + 1j)  # E: incompatible_argument
+            take_float("string")  # E: incompatible_argument
+            # Strictly speaking this should be allowed, but it doesn't
+            # seem useful and I don't know of a concrete use case that would
+            # require this to work. This can be revisited if we do find a use
+            # case.
+            take_float(True)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_complex(self):
+        from typing import NewType
+
+        NTI = NewType("NTI", int)
+        NTF = NewType("NTF", float)
+
+        def take_complex(c: complex) -> None:
+            pass
+
+        def capybara(nti: NTI, ntf: NTF, i: int, f: float, c: complex) -> None:
+            take_complex(ntf)
+            take_complex(nti)
+            take_complex(i)
+            take_complex(f)
+            take_complex(c)
+            take_complex(3.0)
+            take_complex(3)
+            take_complex(1 + 1j)
+            take_complex("string")  # E: incompatible_argument
+            take_complex(True)  # E: incompatible_argument
+
+
 class TestSyntheticType(TestNameCheckVisitorBase):
     @assert_passes()
     def test_functools(self):

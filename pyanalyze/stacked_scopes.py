@@ -67,8 +67,6 @@ from .value import (
     unite_and_simplify,
     unite_values,
     flatten_values,
-    CanAssignContext,
-    is_overlapping,
 )
 
 T = TypeVar("T")
@@ -514,25 +512,6 @@ class PredicateProvider(AbstractConstraint):
     def invert(self) -> AbstractConstraint:
         # inverting is meaningless
         return NULL_CONSTRAINT
-
-
-@dataclass
-class IsAssignablePredicate:
-    pattern_value: Value
-    ctx: CanAssignContext
-    positive_only: bool
-
-    def __call__(self, value: Value, positive: bool) -> Optional[Value]:
-        compatible = is_overlapping(self.pattern_value, value, self.ctx)
-        if positive:
-            if not compatible:
-                return None
-            if value.is_assignable(self.pattern_value, self.ctx):
-                return self.pattern_value
-        elif not self.positive_only:
-            if compatible:
-                return None
-        return value
 
 
 @dataclass(frozen=True)

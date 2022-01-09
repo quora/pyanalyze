@@ -4479,6 +4479,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 with self.scopes.subscope() as case_scope:
                     for constraint in constraints_to_apply:
                         self.add_constraint(case, constraint)
+                    self.match_subject = self.match_subject._replace(
+                        value=constrain_value(
+                            self.match_subject.value,
+                            AndConstraint.make(constraints_to_apply),
+                        )
+                    )
 
                     pattern_constraint = patma_visitor.visit(case.pattern)
                     constraints = [pattern_constraint]
