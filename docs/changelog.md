@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix interaction of `register_error_code()` with new
+  configuration mechanism (#391)
 - Check against invalid `Signature` objects and prepare
   for refactoring `Signature` compatibility logic (#390)
 - Treat `int` and `float` as compatible with `complex`,
