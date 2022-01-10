@@ -18,12 +18,18 @@ from .signature import (
     ParameterKind,
 )
 from .config import Config
+from .error_code import ErrorCode, register_error_code
 from . import tests
 from . import value
 
 
 def _failing_impl(ctx: CallContext) -> value.Value:
     ctx.show_error("Always errors")
+    return value.AnyValue(value.AnySource.error)
+
+
+def _custom_code_impl(ctx: CallContext) -> value.Value:
+    ctx.show_error("Always errors", ErrorCode.internal_test)
     return value.AnyValue(value.AnySource.error)
 
 
@@ -73,6 +79,10 @@ class TestConfig(Config):
         failing_impl_sig = arg_spec_cache.get_argspec(
             tests.FailingImpl, impl=_failing_impl
         )
+        custom_sig = arg_spec_cache.get_argspec(
+            tests.custom_code, impl=_custom_code_impl
+        )
+        assert isinstance(custom_sig, Signature), custom_sig
         assert isinstance(failing_impl_sig, Signature), failing_impl_sig
         return {
             tests.takes_kwonly_argument: Signature.make(
@@ -87,6 +97,7 @@ class TestConfig(Config):
                 callable=tests.takes_kwonly_argument,
             ),
             tests.FailingImpl: failing_impl_sig,
+            tests.custom_code: custom_sig,
             tests.overloaded: OverloadedSignature(
                 [
                     Signature.make(
@@ -120,3 +131,5 @@ class TestConfig(Config):
 
 TEST_INSTANCES = [StubPath([Path(__file__).parent / "stubs"])]
 TEST_OPTIONS = Options.from_option_list(TEST_INSTANCES, TestConfig())
+
+register_error_code("internal_test", "Used in an internal test")
