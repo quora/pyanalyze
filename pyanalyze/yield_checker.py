@@ -181,7 +181,6 @@ class YieldChecker:
     previous_yield: Optional[ast.Yield] = None
     statement_for_previous_yield: Optional[ast.stmt] = None
     used_varnames: Set[str] = field(default_factory=set)
-    added_decorator: bool = False
 
     @contextlib.contextmanager
     def check_yield(
@@ -234,15 +233,9 @@ class YieldChecker:
     # Missing @async detection
 
     def record_call(self, value: Value, node: ast.Call) -> None:
-        if (
-            not self.in_non_async_yield
-            or not self._is_async_call(value, node.func)
-            or self.added_decorator
-        ):
+        if not self.in_non_async_yield or not self._is_async_call(value, node.func):
             return
 
-        # prevent ourselves from adding the decorator to the same function multiple times
-        self.added_decorator = True
         func_node = self.visitor.node_context.nearest_enclosing(ast.FunctionDef)
         lines = self.visitor._lines()
         # this doesn't handle decorator order, it just adds @asynq() right before the def
