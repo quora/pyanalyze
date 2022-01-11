@@ -568,6 +568,22 @@ class TestMissingAsync(TestNameCheckVisitorBase):
             """,
         )
 
+    @assert_passes()
+    def test_lambda(self):
+        from asynq import asynq
+        from asynq.tools import afilter
+
+        @asynq()
+        def inner(obj):
+            return bool(obj)
+
+        @asynq()
+        def outer(objs):
+            objs = yield afilter.asynq(
+                asynq()(lambda obj: not (yield inner.asynq(obj))), objs
+            )
+            return objs
+
 
 class TestDuplicateYield(TestNameCheckVisitorBase):
     @assert_passes()
