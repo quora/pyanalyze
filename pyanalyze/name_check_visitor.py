@@ -157,6 +157,8 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
+    flatten_values,
+    is_union,
     kv_pairs_from_mapping,
     make_weak,
     unannotate_value,
@@ -3959,7 +3961,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     self.reexport_tracker.record_attribute_accessed(
                         root_composite.value.val.__name__, node.attr, node, self
                     )
-            value = self._get_attribute_with_fallback(root_composite, node.attr, node)
+            value = self.get_attribute(
+                root_composite, node.attr, node, use_fallback=True
+            )
             if self._should_use_varname_value(value):
                 varname_value = self.checker.maybe_get_variable_name_value(node.attr)
                 if varname_value is not None:
@@ -3981,7 +3985,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         root_composite: Composite,
         attr: str,
         node: Optional[ast.AST] = None,
+        *,
         ignore_none: bool = False,
+        use_fallback: bool = False,
     ) -> Value:
         """Get an attribute of this value.
 
@@ -3994,68 +4000,37 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 varname=root_composite.varname,
                 node=root_composite.node,
             )
-        if isinstance(root_composite.value, MultiValuedValue):
-            values = [
-                self.get_attribute(
-                    Composite(subval, root_composite.varname, root_composite.node),
-                    attr,
-                    node,
-                    ignore_none=ignore_none,
-                )
-                for subval in root_composite.value.vals
-            ]
-            if any(value is UNINITIALIZED_VALUE for value in values):
-                return UNINITIALIZED_VALUE
-            return unite_values(*values)
-        return self._get_attribute_no_mvv(
-            root_composite, attr, node, ignore_none=ignore_none
-        )
-
-    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
-        return self.get_attribute(Composite(root_value), attribute)
-
-    def _get_attribute_no_mvv(
-        self,
-        root_composite: Composite,
-        attr: str,
-        node: Optional[ast.AST] = None,
-        ignore_none: bool = False,
-    ) -> Value:
-        """Get an attribute. root_value must not be a MultiValuedValue."""
-        ctx = _AttrContext(
-            root_composite, attr, self, node=node, ignore_none=ignore_none
-        )
-        return attributes.get_attribute(ctx)
-
-    def _get_attribute_with_fallback(
-        self, root_composite: Composite, attr: str, node: ast.AST
-    ) -> Value:
-        ignore_none = self.options.get_value_for(IgnoreNoneAttributes)
-        if isinstance(root_composite.value, TypeVarValue):
-            root_composite = Composite(
-                value=root_composite.value.get_fallback_value(),
-                varname=root_composite.varname,
-                node=root_composite.node,
-            )
-        if isinstance(root_composite.value, MultiValuedValue):
+        if is_union(root_composite.value):
             results = []
-            for subval in root_composite.value.vals:
+            for subval in flatten_values(root_composite.value):
                 composite = Composite(
                     subval, root_composite.varname, root_composite.node
                 )
                 subresult = self.get_attribute(
-                    composite, attr, node, ignore_none=ignore_none
+                    composite,
+                    attr,
+                    node,
+                    ignore_none=ignore_none,
+                    use_fallback=use_fallback,
                 )
-                if subresult is UNINITIALIZED_VALUE:
+                if (
+                    subresult is UNINITIALIZED_VALUE
+                    and use_fallback
+                    and node is not None
+                ):
                     subresult = self._get_attribute_fallback(subval, attr, node)
                 results.append(subresult)
             return unite_values(*results)
-        result = self._get_attribute_no_mvv(
-            root_composite, attr, node, ignore_none=ignore_none
+        ctx = _AttrContext(
+            root_composite, attr, self, node=node, ignore_none=ignore_none
         )
-        if result is UNINITIALIZED_VALUE:
+        result = attributes.get_attribute(ctx)
+        if result is UNINITIALIZED_VALUE and use_fallback and node is not None:
             return self._get_attribute_fallback(root_composite.value, attr, node)
         return result
+
+    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
+        return self.get_attribute(Composite(root_value), attribute)
 
     def _get_attribute_fallback(
         self, root_value: Value, attr: str, node: ast.AST
