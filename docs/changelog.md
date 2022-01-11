@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix compatibility between Thrift enums and TypeVars (#394)
 - Fix accessing attributes on Unions nested within
   Annotated (#393)
 - Fix interaction of `register_error_code()` with new

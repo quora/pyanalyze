@@ -619,6 +619,8 @@ class TypedValue(Value):
         if isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
+        elif isinstance(other, TypeVarValue):
+            return super().can_assign(other, ctx)
         elif isinstance(other, KnownValue):
             if not isinstance(other.val, int):
                 return CanAssignError(f"{other} is not an int")
@@ -1483,7 +1485,7 @@ class TypeVarValue(Value):
         return typevars.get(self.typevar, self)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if self == other:
+        if self == other or (isinstance(other, AnnotatedValue) and self == other.value):
             return {}
         if self.bound is not None:
             can_assign = self.bound.can_assign(other, ctx)
