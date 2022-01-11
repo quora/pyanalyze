@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix potential incorrect inferred return value for
+  unannotated functions (#396)
 - Fix compatibility between Thrift enums and TypeVars (#394)
 - Fix accessing attributes on Unions nested within
   Annotated (#393)
