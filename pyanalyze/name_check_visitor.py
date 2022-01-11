@@ -1791,7 +1791,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
             with qcore.override(
                 self, "state", VisitorState.collect_names
-            ), qcore.override(self, "return_values", []):
+            ), qcore.override(
+                self, "return_values", []
+            ), self.yield_checker.set_function_node(
+                node
+            ):
                 if isinstance(node, ast.Lambda):
                     self.visit(node.body)
                 else:
@@ -1806,7 +1810,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
             with qcore.override(self, "current_class", None), qcore.override(
                 self, "state", VisitorState.check_names
-            ), qcore.override(self, "return_values", []):
+            ), qcore.override(
+                self, "return_values", []
+            ), self.yield_checker.set_function_node(
+                node
+            ):
                 if isinstance(node, ast.Lambda):
                     return_values = [self.visit(node.body)]
                 else:

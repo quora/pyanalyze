@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix "This function should have an @asynq() decorator"
+  false positive on lambdas (#399)
 - Fix compatibility between Union and Annotated (#397)
 - Fix potential incorrect inferred return value for
   unannotated functions (#396)
