@@ -2,6 +2,7 @@ from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import reveal_type
 from .format_strings import parse_format_string
+from .predicates import IsAssignablePredicate
 from .safe import safe_hasattr, safe_isinstance, safe_issubclass
 from .stacked_scopes import (
     NULL_CONSTRAINT,
@@ -12,6 +13,7 @@ from .stacked_scopes import (
     PredicateProvider,
     OrConstraint,
     VarnameWithOrigin,
+    annotate_with_constraint,
 )
 from .signature import (
     ANY_SIGNATURE,
@@ -96,20 +98,21 @@ def flatten_unions(
 
 def _issubclass_impl(ctx: CallContext) -> Value:
     class_or_tuple = ctx.vars["class_or_tuple"]
-    extension = None
-    if isinstance(class_or_tuple, KnownValue):
-        if isinstance(class_or_tuple.val, type):
-            extension = ParameterTypeGuardExtension(
-                "cls", SubclassValue(TypedValue(class_or_tuple.val))
-            )
-        elif isinstance(class_or_tuple.val, tuple) and all(
-            isinstance(elt, type) for elt in class_or_tuple.val
-        ):
-            vals = [SubclassValue(TypedValue(elt)) for elt in class_or_tuple.val]
-            extension = ParameterTypeGuardExtension("cls", MultiValuedValue(vals))
-    if extension is not None:
-        return AnnotatedValue(TypedValue(bool), [extension])
-    return TypedValue(bool)
+    varname = ctx.varname_for_arg("cls")
+    if varname is None or not isinstance(class_or_tuple, KnownValue):
+        return TypedValue(bool)
+    if isinstance(class_or_tuple.val, type):
+        narrowed_type = SubclassValue(TypedValue(class_or_tuple.val))
+    elif isinstance(class_or_tuple.val, tuple) and all(
+        isinstance(elt, type) for elt in class_or_tuple.val
+    ):
+        vals = [SubclassValue(TypedValue(elt)) for elt in class_or_tuple.val]
+        narrowed_type = unite_values(*vals)
+    else:
+        return TypedValue(bool)
+    predicate = IsAssignablePredicate(narrowed_type, ctx.visitor, positive_only=False)
+    constraint = Constraint(varname, ConstraintType.predicate, True, predicate)
+    return annotate_with_constraint(TypedValue(bool), constraint)
 
 
 def _isinstance_impl(ctx: CallContext) -> ImplReturn:
