@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Fix accessing attributes on Unions nested within
-  Annotated (#392)
+  Annotated (#393)
 - Fix interaction of `register_error_code()` with new
   configuration mechanism (#391)
 - Check against invalid `Signature` objects and prepare
