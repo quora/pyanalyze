@@ -99,6 +99,8 @@ class BaseNodeVisitorTester(object):
         If repeat is True, repeatedly applies the visitor until the code no longer changes.
 
         """
+        code_str = textwrap.dedent(code_str)
+        expected_code_str = textwrap.dedent(expected_code_str)
         if repeat:
             while True:
                 output = self._run_str(code_str, apply_changes=True, **kwargs)[1]
