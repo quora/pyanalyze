@@ -31,6 +31,8 @@ from typing import (
     Tuple,
 )
 
+from pyanalyze.functions import FunctionNode
+
 from .asynq_checker import AsyncFunctionKind
 from .error_code import ErrorCode
 from .value import Value, KnownValue, UnboundMethodValue, UNINITIALIZED_VALUE
@@ -181,6 +183,11 @@ class YieldChecker:
     previous_yield: Optional[ast.Yield] = None
     statement_for_previous_yield: Optional[ast.stmt] = None
     used_varnames: Set[str] = field(default_factory=set)
+    current_function_node: Optional[FunctionNode] = None
+    alerted_nodes: Set[FunctionNode] = field(default_factory=set)
+
+    def set_function_node(self, node: FunctionNode) -> ContextManager[None]:
+        return qcore.override(self, "current_function_node", node)
 
     @contextlib.contextmanager
     def check_yield(
@@ -233,19 +240,28 @@ class YieldChecker:
     # Missing @async detection
 
     def record_call(self, value: Value, node: ast.Call) -> None:
-        if not self.in_non_async_yield or not self._is_async_call(value, node.func):
+        if (
+            self.current_function_node is None
+            or not self.in_non_async_yield
+            or not self._is_async_call(value, node.func)
+            or self.current_function_node in self.alerted_nodes
+        ):
             return
 
-        func_node = self.visitor.node_context.nearest_enclosing(ast.FunctionDef)
+        # async functions can't be asynq. Lambdas can be but can't have decorators.
+        if isinstance(self.current_function_node, (ast.Lambda, ast.AsyncFunctionDef)):
+            return
+
         lines = self.visitor._lines()
         # this doesn't handle decorator order, it just adds @asynq() right before the def
-        i = func_node.lineno - 1
+        i = self.current_function_node.lineno - 1
         def_line = lines[i]
         indentation = len(def_line) - len(def_line.lstrip())
         replacement = Replacement([i + 1], [" " * indentation + "@asynq()\n", def_line])
         self.visitor.show_error(
             node, error_code=ErrorCode.missing_asynq, replacement=replacement
         )
+        self.alerted_nodes.add(self.current_function_node)
 
     # Internal part
 
