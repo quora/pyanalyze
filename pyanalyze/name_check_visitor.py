@@ -302,8 +302,10 @@ class _AttrContext(attributes.AttrContext):
                 return argspec.return_value
             # If we visited the property and inferred a return value,
             # use it.
-            if id(argspec) in self.visitor._argspec_to_retval:
-                return self.visitor._argspec_to_retval[id(argspec)]
+            try:
+                return self.visitor.get_local_return_value(argspec)
+            except KeyError:
+                pass
         return AnyValue(AnySource.inference)
 
     def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
@@ -995,12 +997,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # Cache the return values of functions within this file, so that we can use them to
         # infer types. Previously, we cached this globally, but that makes things non-
         # deterministic because we'll start depending on the order modules are checked.
-        self._argspec_to_retval = {}
+        self._argspec_to_retval: Dict[int, Tuple[Value, MaybeSignature]] = {}
         self._method_cache = {}
         self._statement_types = set()
         self._has_used_any_match = False
         self._should_exclude_any = False
         self._fill_method_cache()
+
+    def get_local_return_value(self, sig: MaybeSignature) -> Value:
+        val, saved_sig = self._argspec_to_retval[id(sig)]
+        if sig is not saved_sig:
+            raise KeyError(sig)
+        return val
 
     def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
         return self.checker.make_type_object(typ)
@@ -1674,7 +1682,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         sig = self.signature_from_value(val)
         if sig is None or sig.has_return_value():
             return
-        self._argspec_to_retval[id(sig)] = return_value
+        self._argspec_to_retval[id(sig)] = (return_value, sig)
 
     def _get_potential_function(self, node: FunctionDefNode) -> Optional[object]:
         scope_type = self.scopes.scope_type()
@@ -4300,12 +4308,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         for extension in nru_extensions:
             self.add_constraint(node, extension.constraint)
 
-        if (
-            extended_argspec is not None
-            and not extended_argspec.has_return_value()
-            and id(extended_argspec) in self._argspec_to_retval
-        ):
-            return_value = self._argspec_to_retval[id(extended_argspec)]
+        if extended_argspec is not None and not extended_argspec.has_return_value():
+            try:
+                return_value = self.get_local_return_value(extended_argspec)
+            except KeyError:
+                pass
 
         if allow_call and isinstance(callee_wrapped, KnownValue):
             arg_values = [arg.value for arg in args]
@@ -4388,7 +4395,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     # TODO return None here and figure out when the signature is missing
                     return ANY_SIGNATURE
                 try:
-                    return_override = self._argspec_to_retval[id(sig)]
+                    return_override = self.get_local_return_value(sig)
                 except KeyError:
                     return_override = None
                 bound = make_bound_method(sig, value.composite, return_override)
@@ -4418,7 +4425,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             call_fn = typ.__call__
             sig = self.arg_spec_cache.get_argspec(call_fn)
             try:
-                return_override = self._argspec_to_retval[id(sig)]
+                return_override = self.get_local_return_value(sig)
             except KeyError:
                 return_override = None
             bound_method = make_bound_method(sig, Composite(value), return_override)
