@@ -3962,7 +3962,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         root_composite.value.val.__name__, node.attr, node, self
                     )
             value = self.get_attribute(
-                root_composite, node.attr, node, use_fallback=True
+                root_composite,
+                node.attr,
+                node,
+                use_fallback=True,
+                ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
             )
             if self._should_use_varname_value(value):
                 varname_value = self.checker.maybe_get_variable_name_value(node.attr)
