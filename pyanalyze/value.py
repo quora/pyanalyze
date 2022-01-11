@@ -1914,6 +1914,12 @@ class VariableNameValue(AnyValue):
         return None
 
 
+def is_union(val: Value) -> bool:
+    return isinstance(val, MultiValuedValue) or (
+        isinstance(val, AnnotatedValue) and isinstance(val.value, MultiValuedValue)
+    )
+
+
 def flatten_values(val: Value, *, unwrap_annotated: bool = False) -> Iterable[Value]:
     """Flatten a :class:`MultiValuedValue` into its constituent values.
 
