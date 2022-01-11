@@ -1326,9 +1326,9 @@ class MultiValuedValue(Value):
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, TypeVarValue):
             other = other.get_fallback_value()
-        if isinstance(other, MultiValuedValue):
+        if is_union(other):
             tv_maps = []
-            for val in other.vals:
+            for val in flatten_values(other):
                 tv_map = self.can_assign(val, ctx)
                 if isinstance(tv_map, CanAssignError):
                     # Adding an additional layer here isn't helpful
