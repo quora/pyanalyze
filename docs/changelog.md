@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix indexing a list with an index typed as a
+  `TypeVar` (#400)
 - Fix "This function should have an @asynq() decorator"
   false positive on lambdas (#399)
 - Fix compatibility between Union and Annotated (#397)
