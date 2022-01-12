@@ -21,7 +21,6 @@ from . import find_unused
 from .find_unused import used as used
 from . import functions
 from . import implementation
-from . import method_return_type
 from . import node_visitor
 from . import options
 from . import patma

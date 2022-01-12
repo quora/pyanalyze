@@ -258,15 +258,6 @@ class Config(object):
     NON_ASYNQ_MODULES: Set[str] = {"multiprocessing"}
 
     #
-    # Used by method_return_type.py
-    #
-
-    # A dictionary of {base class: {method name: expected return type}}
-    # Use this to ensure that all subclasses of a certain type maintain the same return type for
-    # their methods
-    METHOD_RETURN_TYPES: Mapping[type, Mapping[str, type]] = {}
-
-    #
     # Used by ClassAttributeChecker
     #
 

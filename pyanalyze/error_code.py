@@ -46,7 +46,7 @@ class ErrorCode(enum.Enum):
     inference_failure = 24
     bad_format_string = 25
     yield_without_value = 28
-    invalid_method_return_type = 30
+    invalid_method_return_type = 30  # deprecated
     missing_asynq = 31
     bad_exception = 32
     bad_async_yield = 34
