@@ -206,6 +206,7 @@ class TestCanAssign:
             kw_only_sig,
             Signature.make([P("x", annotation=DictBool, kind=P.VAR_KEYWORD)]),
         )
+        self.cannot(Signature.make([]), kw_only_sig)
 
     def test_var_positional(self) -> None:
         var_pos_int = P("a", annotation=TupleInt, kind=P.VAR_POSITIONAL)
@@ -329,8 +330,17 @@ class TestCanAssign:
             three_ints_sig,
             Signature.make([P("a", annotation=good_td, kind=P.VAR_KEYWORD)]),
         )
-        bad_td = TypedDictValue(
+        smaller_td = TypedDictValue(
             {"a": (True, TypedValue(int)), "b": (True, TypedValue(int))}
+        )
+        # This is still OK because TypedDicts are allowed to have extra keys.
+        # TODO change to can
+        self.cannot(
+            three_ints_sig,
+            Signature.make([P("a", annotation=smaller_td, kind=P.VAR_KEYWORD)]),
+        )
+        bad_td = TypedDictValue(
+            {"a": (True, TypedValue(str)), "b": (True, TypedValue(int))}
         )
         self.cannot(
             three_ints_sig,

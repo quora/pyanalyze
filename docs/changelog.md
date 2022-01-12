@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Fix type narrowing on the `else` case of `issubclass()`
+  (#401)
+- Fix indexing a list with an index typed as a
+  `TypeVar` (#400)
+- Fix "This function should have an @asynq() decorator"
+  false positive on lambdas (#399)
+- Fix compatibility between Union and Annotated (#397)
+- Fix potential incorrect inferred return value for
+  unannotated functions (#396)
+- Fix compatibility between Thrift enums and TypeVars (#394)
+- Fix accessing attributes on Unions nested within
+  Annotated (#393)
+- Fix interaction of `register_error_code()` with new
+  configuration mechanism (#391)
+- Check against invalid `Signature` objects and prepare
+  for refactoring `Signature` compatibility logic (#390)
+- Treat `int` and `float` as compatible with `complex`,
+  as specified in PEP 484 (#389)
+- Do not error on boolean operations on values typed
+  as `object` (#388)
+- Support type narrowing on enum types and `bool`
+  in `match` statements (#387)
 - Support some imports from stub-only modules (#386)
 - Support type evaluation functions in stubs (#386)
 - Support `TypedDict` in stubs (#386)

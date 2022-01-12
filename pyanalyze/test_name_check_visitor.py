@@ -2611,3 +2611,14 @@ class TestWalrus(TestNameCheckVisitorBase):
                     print(i)  # E: undefined_name
             """
         )
+
+
+class TestUnion(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_union_to_union(self):
+        from typing import Optional
+
+        def capybara(x: Optional[str], y: Optional[str]) -> Optional[str]:
+            assert_is_value(x, TypedValue(str) | KnownValue(None))
+            assert_is_value(y, TypedValue(str) | KnownValue(None))
+            return x or y

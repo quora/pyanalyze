@@ -619,6 +619,8 @@ class TypedValue(Value):
         if isinstance(other, AnyValue) and not ctx.should_exclude_any():
             ctx.record_any_used()
             return {}
+        elif isinstance(other, TypeVarValue):
+            return super().can_assign(other, ctx)
         elif isinstance(other, KnownValue):
             if not isinstance(other.val, int):
                 return CanAssignError(f"{other} is not an int")
@@ -1324,9 +1326,9 @@ class MultiValuedValue(Value):
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, TypeVarValue):
             other = other.get_fallback_value()
-        if isinstance(other, MultiValuedValue):
+        if is_union(other):
             tv_maps = []
-            for val in other.vals:
+            for val in flatten_values(other):
                 tv_map = self.can_assign(val, ctx)
                 if isinstance(tv_map, CanAssignError):
                     # Adding an additional layer here isn't helpful
@@ -1483,7 +1485,7 @@ class TypeVarValue(Value):
         return typevars.get(self.typevar, self)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
-        if self == other:
+        if self == other or (isinstance(other, AnnotatedValue) and self == other.value):
             return {}
         if self.bound is not None:
             can_assign = self.bound.can_assign(other, ctx)
@@ -1912,6 +1914,12 @@ class VariableNameValue(AnyValue):
                 shortened_varname = parts[-1]
             return varname_map.get(shortened_varname)
         return None
+
+
+def is_union(val: Value) -> bool:
+    return isinstance(val, MultiValuedValue) or (
+        isinstance(val, AnnotatedValue) and isinstance(val.value, MultiValuedValue)
+    )
 
 
 def flatten_values(val: Value, *, unwrap_annotated: bool = False) -> Iterable[Value]:

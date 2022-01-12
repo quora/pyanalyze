@@ -205,6 +205,10 @@ class FailingImpl:
         pass
 
 
+def custom_code() -> None:
+    pass
+
+
 @overload
 def overloaded() -> int:
     ...

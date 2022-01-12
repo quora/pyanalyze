@@ -29,6 +29,7 @@ from .signature import MappingValue
 from .annotations import type_from_value
 from .extensions import CustomCheck
 from .error_code import ErrorCode
+from .predicates import EqualsPredicate, IsAssignablePredicate
 from .stacked_scopes import (
     NULL_CONSTRAINT,
     AbstractConstraint,
@@ -38,7 +39,6 @@ from .stacked_scopes import (
     ConstraintType,
     OrConstraint,
     constrain_value,
-    IsAssignablePredicate,
 )
 from .value import (
     AnnotatedValue,
@@ -178,7 +178,10 @@ class PatmaVisitor(ast.NodeVisitor):
 
     def visit_MatchSingleton(self, node: MatchSingleton) -> AbstractConstraint:
         self.check_impossible_pattern(node, KnownValue(node.value))
-        return self.make_constraint(ConstraintType.is_value, node.value)
+        return self.make_constraint(
+            ConstraintType.predicate,
+            EqualsPredicate(node.value, self.visitor, use_is=True),
+        )
 
     def visit_MatchValue(self, node: MatchValue) -> AbstractConstraint:
         pattern_val = self.visitor.visit(node.value)
@@ -191,26 +194,9 @@ class PatmaVisitor(ast.NodeVisitor):
             )
             return NULL_CONSTRAINT
 
-        def predicate_func(value: Value, positive: bool) -> Optional[Value]:
-            if isinstance(value, KnownValue):
-                try:
-                    if positive:
-                        result = value.val == pattern_val.val
-                    else:
-                        result = value.val != pattern_val.val
-                except Exception:
-                    pass
-                else:
-                    if not result:
-                        return None
-            elif positive:
-                if value.is_assignable(pattern_val, self.visitor):
-                    return pattern_val
-                else:
-                    return None
-            return value
-
-        return self.make_constraint(ConstraintType.predicate, predicate_func)
+        return self.make_constraint(
+            ConstraintType.predicate, EqualsPredicate(pattern_val.val, self.visitor)
+        )
 
     def visit_MatchSequence(self, node: MatchSequence) -> AbstractConstraint:
         self.check_impossible_pattern(node, MatchableSequence)

@@ -161,6 +161,8 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
+    flatten_values,
+    is_union,
     kv_pairs_from_mapping,
     make_weak,
     unannotate_value,
@@ -304,8 +306,10 @@ class _AttrContext(attributes.AttrContext):
                 return argspec.return_value
             # If we visited the property and inferred a return value,
             # use it.
-            if id(argspec) in self.visitor._argspec_to_retval:
-                return self.visitor._argspec_to_retval[id(argspec)]
+            try:
+                return self.visitor.get_local_return_value(argspec)
+            except KeyError:
+                pass
         return AnyValue(AnySource.inference)
 
     def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
@@ -997,12 +1001,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # Cache the return values of functions within this file, so that we can use them to
         # infer types. Previously, we cached this globally, but that makes things non-
         # deterministic because we'll start depending on the order modules are checked.
-        self._argspec_to_retval = {}
+        self._argspec_to_retval: Dict[int, Tuple[Value, MaybeSignature]] = {}
         self._method_cache = {}
         self._statement_types = set()
         self._has_used_any_match = False
         self._should_exclude_any = False
         self._fill_method_cache()
+
+    def get_local_return_value(self, sig: MaybeSignature) -> Value:
+        val, saved_sig = self._argspec_to_retval[id(sig)]
+        if sig is not saved_sig:
+            raise KeyError(sig)
+        return val
 
     def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
         return self.checker.make_type_object(typ)
@@ -1676,7 +1686,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         sig = self.signature_from_value(val)
         if sig is None or sig.has_return_value():
             return
-        self._argspec_to_retval[id(sig)] = return_value
+        self._argspec_to_retval[id(sig)] = (return_value, sig)
 
     def _get_potential_function(self, node: FunctionDefNode) -> Optional[object]:
         scope_type = self.scopes.scope_type()
@@ -1785,7 +1795,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
             with qcore.override(
                 self, "state", VisitorState.collect_names
-            ), qcore.override(self, "return_values", []):
+            ), qcore.override(
+                self, "return_values", []
+            ), self.yield_checker.set_function_node(
+                node
+            ):
                 if isinstance(node, ast.Lambda):
                     self.visit(node.body)
                 else:
@@ -1800,7 +1814,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
             with qcore.override(self, "current_class", None), qcore.override(
                 self, "state", VisitorState.check_names
-            ), qcore.override(self, "return_values", []):
+            ), qcore.override(
+                self, "return_values", []
+            ), self.yield_checker.set_function_node(
+                node
+            ):
                 if isinstance(node, ast.Lambda):
                     return_values = [self.visit(node.body)]
                 else:
@@ -3963,7 +3981,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     self.reexport_tracker.record_attribute_accessed(
                         root_composite.value.val.__name__, node.attr, node, self
                     )
-            value = self._get_attribute_with_fallback(root_composite, node.attr, node)
+            value = self.get_attribute(
+                root_composite,
+                node.attr,
+                node,
+                use_fallback=True,
+                ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
+            )
             if self._should_use_varname_value(value):
                 varname_value = self.checker.maybe_get_variable_name_value(node.attr)
                 if varname_value is not None:
@@ -3985,7 +4009,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         root_composite: Composite,
         attr: str,
         node: Optional[ast.AST] = None,
+        *,
         ignore_none: bool = False,
+        use_fallback: bool = False,
     ) -> Value:
         """Get an attribute of this value.
 
@@ -3998,68 +4024,37 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 varname=root_composite.varname,
                 node=root_composite.node,
             )
-        if isinstance(root_composite.value, MultiValuedValue):
-            values = [
-                self.get_attribute(
-                    Composite(subval, root_composite.varname, root_composite.node),
-                    attr,
-                    node,
-                    ignore_none=ignore_none,
-                )
-                for subval in root_composite.value.vals
-            ]
-            if any(value is UNINITIALIZED_VALUE for value in values):
-                return UNINITIALIZED_VALUE
-            return unite_values(*values)
-        return self._get_attribute_no_mvv(
-            root_composite, attr, node, ignore_none=ignore_none
-        )
-
-    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
-        return self.get_attribute(Composite(root_value), attribute)
-
-    def _get_attribute_no_mvv(
-        self,
-        root_composite: Composite,
-        attr: str,
-        node: Optional[ast.AST] = None,
-        ignore_none: bool = False,
-    ) -> Value:
-        """Get an attribute. root_value must not be a MultiValuedValue."""
-        ctx = _AttrContext(
-            root_composite, attr, self, node=node, ignore_none=ignore_none
-        )
-        return attributes.get_attribute(ctx)
-
-    def _get_attribute_with_fallback(
-        self, root_composite: Composite, attr: str, node: ast.AST
-    ) -> Value:
-        ignore_none = self.options.get_value_for(IgnoreNoneAttributes)
-        if isinstance(root_composite.value, TypeVarValue):
-            root_composite = Composite(
-                value=root_composite.value.get_fallback_value(),
-                varname=root_composite.varname,
-                node=root_composite.node,
-            )
-        if isinstance(root_composite.value, MultiValuedValue):
+        if is_union(root_composite.value):
             results = []
-            for subval in root_composite.value.vals:
+            for subval in flatten_values(root_composite.value):
                 composite = Composite(
                     subval, root_composite.varname, root_composite.node
                 )
                 subresult = self.get_attribute(
-                    composite, attr, node, ignore_none=ignore_none
+                    composite,
+                    attr,
+                    node,
+                    ignore_none=ignore_none,
+                    use_fallback=use_fallback,
                 )
-                if subresult is UNINITIALIZED_VALUE:
+                if (
+                    subresult is UNINITIALIZED_VALUE
+                    and use_fallback
+                    and node is not None
+                ):
                     subresult = self._get_attribute_fallback(subval, attr, node)
                 results.append(subresult)
             return unite_values(*results)
-        result = self._get_attribute_no_mvv(
-            root_composite, attr, node, ignore_none=ignore_none
+        ctx = _AttrContext(
+            root_composite, attr, self, node=node, ignore_none=ignore_none
         )
-        if result is UNINITIALIZED_VALUE:
+        result = attributes.get_attribute(ctx)
+        if result is UNINITIALIZED_VALUE and use_fallback and node is not None:
             return self._get_attribute_fallback(root_composite.value, attr, node)
         return result
+
+    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
+        return self.get_attribute(Composite(root_value), attribute)
 
     def _get_attribute_fallback(
         self, root_value: Value, attr: str, node: ast.AST
@@ -4325,12 +4320,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         for extension in nru_extensions:
             self.add_constraint(node, extension.constraint)
 
-        if (
-            extended_argspec is not None
-            and not extended_argspec.has_return_value()
-            and id(extended_argspec) in self._argspec_to_retval
-        ):
-            return_value = self._argspec_to_retval[id(extended_argspec)]
+        if extended_argspec is not None and not extended_argspec.has_return_value():
+            try:
+                return_value = self.get_local_return_value(extended_argspec)
+            except KeyError:
+                pass
 
         if allow_call and isinstance(callee_wrapped, KnownValue):
             arg_values = [arg.value for arg in args]
@@ -4413,7 +4407,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     # TODO return None here and figure out when the signature is missing
                     return ANY_SIGNATURE
                 try:
-                    return_override = self._argspec_to_retval[id(sig)]
+                    return_override = self.get_local_return_value(sig)
                 except KeyError:
                     return_override = None
                 bound = make_bound_method(sig, value.composite, return_override)
@@ -4443,7 +4437,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             call_fn = typ.__call__
             sig = self.arg_spec_cache.get_argspec(call_fn)
             try:
-                return_override = self._argspec_to_retval[id(sig)]
+                return_override = self.get_local_return_value(sig)
             except KeyError:
                 return_override = None
             bound_method = make_bound_method(sig, Composite(value), return_override)
@@ -4483,6 +4477,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 with self.scopes.subscope() as case_scope:
                     for constraint in constraints_to_apply:
                         self.add_constraint(case, constraint)
+                    self.match_subject = self.match_subject._replace(
+                        value=constrain_value(
+                            self.match_subject.value,
+                            AndConstraint.make(constraints_to_apply),
+                        )
+                    )
 
                     pattern_constraint = patma_visitor.visit(case.pattern)
                     constraints = [pattern_constraint]

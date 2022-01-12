@@ -37,24 +37,24 @@ class TestUnnecessaryYield(TestNameCheckVisitorBase):
     def test_attribute(self):
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq
+            from pyanalyze.tests import async_fn
+            from asynq import asynq
 
-class Capybara(object):
-    @asynq()
-    def load(self):
-        self.var1 = yield async_fn.asynq(1)
-        self.var2 = yield async_fn.asynq(2)
-""",
+            class Capybara(object):
+                @asynq()
+                def load(self):
+                    self.var1 = yield async_fn.asynq(1)
+                    self.var2 = yield async_fn.asynq(2)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq
+            from pyanalyze.tests import async_fn
+            from asynq import asynq
 
-class Capybara(object):
-    @asynq()
-    def load(self):
-        self.var1, self.var2 = yield async_fn.asynq(1), async_fn.asynq(2)
-""",
+            class Capybara(object):
+                @asynq()
+                def load(self):
+                    self.var1, self.var2 = yield async_fn.asynq(1), async_fn.asynq(2)
+            """,
         )
 
     @assert_passes()
@@ -177,29 +177,29 @@ class TestBatchingYields(TestNameCheckVisitorBase):
         # also tests that it only fixes one error and stops
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val1 = yield async_fn.asynq(1)
-    # some other code
-    val2 = 1 + 2 + 3
-    # back to yielding
-    val3 = yield async_fn.asynq(3)
-    val4 = yield async_fn.asynq(4)
-    result(val1 + val2 + val3)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val1 = yield async_fn.asynq(1)
+                # some other code
+                val2 = 1 + 2 + 3
+                # back to yielding
+                val3 = yield async_fn.asynq(3)
+                val4 = yield async_fn.asynq(4)
+                result(val1 + val2 + val3)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    # some other code
-    val2 = 1 + 2 + 3
-    # back to yielding
-    val1, val3, val4 = yield async_fn.asynq(1), async_fn.asynq(3), async_fn.asynq(4)
-    result(val1 + val2 + val3)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                # some other code
+                val2 = 1 + 2 + 3
+                # back to yielding
+                val1, val3, val4 = yield async_fn.asynq(1), async_fn.asynq(3), async_fn.asynq(4)
+                result(val1 + val2 + val3)
+            """,
             repeat=True,
         )
 
@@ -207,34 +207,34 @@ def f():
         # also tests multiple line assign statement
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val1, val2 = \
-        yield tuple((
-            async_fn.asynq(1),
-            async_fn.asynq(2)
-        ))
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val4 = yield async_fn.asynq(
-        val3
-    )
-    result(val1 + val2 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val1, val2 = \
+                    yield tuple((
+                        async_fn.asynq(1),
+                        async_fn.asynq(2)
+                    ))
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val4 = yield async_fn.asynq(
+                    val3
+                )
+                result(val1 + val2 + val4)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val1, val2, val4 = yield async_fn.asynq(1), async_fn.asynq(2), async_fn.asynq(val3)
-    result(val1 + val2 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val1, val2, val4 = yield async_fn.asynq(1), async_fn.asynq(2), async_fn.asynq(val3)
+                result(val1 + val2 + val4)
+            """,
             repeat=True,
         )
 
@@ -242,189 +242,189 @@ def f():
         # when multiple values are yielded to one target
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val1 = yield async_fn.asynq(1), async_fn.asynq(2)
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val4 = yield async_fn.asynq(4)
-    result(val1[1] + val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val1 = yield async_fn.asynq(1), async_fn.asynq(2)
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val4 = yield async_fn.asynq(4)
+                result(val1[1] + val3 + val4)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val1, val4 = yield (async_fn.asynq(1), async_fn.asynq(2)), async_fn.asynq(4)
-    result(val1[1] + val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val1, val4 = yield (async_fn.asynq(1), async_fn.asynq(2)), async_fn.asynq(4)
+                result(val1[1] + val3 + val4)
+            """,
             repeat=True,
         )
         # same as above but List instead of Tuple
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val1 = yield [async_fn.asynq(1), async_fn.asynq(2)]
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val4 = yield async_fn.asynq(4)
-    result(val1[1] + val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val1 = yield [async_fn.asynq(1), async_fn.asynq(2)]
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val4 = yield async_fn.asynq(4)
+                result(val1[1] + val3 + val4)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val1, val4 = yield [async_fn.asynq(1), async_fn.asynq(2)], async_fn.asynq(4)
-    result(val1[1] + val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val1, val4 = yield [async_fn.asynq(1), async_fn.asynq(2)], async_fn.asynq(4)
+                result(val1[1] + val3 + val4)
+            """,
             repeat=True,
         )
         # when target is a Tuple and value is a List
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val1, val2 = yield [async_fn.asynq(1), async_fn.asynq(2)]
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val4 = yield async_fn.asynq(4)
-    result(val1 + val2 + val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val1, val2 = yield [async_fn.asynq(1), async_fn.asynq(2)]
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val4 = yield async_fn.asynq(4)
+                result(val1 + val2 + val3 + val4)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    (val1, val2), val4 = yield [async_fn.asynq(1), async_fn.asynq(2)], async_fn.asynq(4)
-    result(val1 + val2 + val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                (val1, val2), val4 = yield [async_fn.asynq(1), async_fn.asynq(2)], async_fn.asynq(4)
+                result(val1 + val2 + val3 + val4)
+            """,
             repeat=True,
         )
         # when one value is unwrapped to a target tuple
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val1, val2 = yield async_fn.asynq(1)
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val4 = yield async_fn.asynq(4)
-    result(val1 + val2 + val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val1, val2 = yield async_fn.asynq(1)
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val4 = yield async_fn.asynq(4)
+                result(val1 + val2 + val3 + val4)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    (val1, val2), val4 = yield async_fn.asynq(1), async_fn.asynq(4)
-    result(val1 + val2 + val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                (val1, val2), val4 = yield async_fn.asynq(1), async_fn.asynq(4)
+                result(val1 + val2 + val3 + val4)
+            """,
             repeat=True,
         )
 
     def test_assign_and_non_assign(self):
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val1 = yield async_fn.asynq(1)
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val3 += yield async_fn.asynq(4)
-    result(val1 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val1 = yield async_fn.asynq(1)
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val3 += yield async_fn.asynq(4)
+                result(val1 + val4)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val1, async_fn_result = yield async_fn.asynq(1), async_fn.asynq(4)
-    # some other code
-    val3 = 1 + 2 + 3
-    # back to yielding
-    val3 += async_fn_result
-    result(val1 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val1, async_fn_result = yield async_fn.asynq(1), async_fn.asynq(4)
+                # some other code
+                val3 = 1 + 2 + 3
+                # back to yielding
+                val3 += async_fn_result
+                result(val1 + val4)
+            """,
             repeat=True,
         )
 
     def test_non_assign_and_assign(self):
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val3 = 1 + 2 + 3
-    val3 += yield async_fn.asynq(1)
-    val4 = yield async_fn.asynq(4)
-    result(val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val3 = 1 + 2 + 3
+                val3 += yield async_fn.asynq(1)
+                val4 = yield async_fn.asynq(4)
+                result(val3 + val4)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val3 = 1 + 2 + 3
-    async_fn_result, val4 = yield async_fn.asynq(1), async_fn.asynq(4)
-    val3 += async_fn_result
-    result(val3 + val4)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val3 = 1 + 2 + 3
+                async_fn_result, val4 = yield async_fn.asynq(1), async_fn.asynq(4)
+                val3 += async_fn_result
+                result(val3 + val4)
+            """,
             repeat=True,
         )
 
     def test_both_non_assign(self):
         self.assert_is_changed(
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val3 = 1 + 2 + 3
-    val3 += yield async_fn.asynq(1)
-    val3 += yield async_fn.asynq(4)
-    result(val3)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val3 = 1 + 2 + 3
+                val3 += yield async_fn.asynq(1)
+                val3 += yield async_fn.asynq(4)
+                result(val3)
+            """,
             """
-from pyanalyze.tests import async_fn
-from asynq import asynq, result
-@asynq()
-def f():
-    val3 = 1 + 2 + 3
-    async_fn_result, async_fn_result2 = yield async_fn.asynq(1), async_fn.asynq(4)
-    val3 += async_fn_result
-    val3 += async_fn_result2
-    result(val3)
-""",
+            from pyanalyze.tests import async_fn
+            from asynq import asynq, result
+            @asynq()
+            def f():
+                val3 = 1 + 2 + 3
+                async_fn_result, async_fn_result2 = yield async_fn.asynq(1), async_fn.asynq(4)
+                val3 += async_fn_result
+                val3 += async_fn_result2
+                result(val3)
+            """,
             repeat=True,
         )
 
@@ -534,39 +534,55 @@ class TestMissingAsync(TestNameCheckVisitorBase):
     def test_autofix(self):
         self.assert_is_changed(
             """
-from asynq import asynq
+            from asynq import asynq
 
-def capybara(fn):
-    return (yield fn.asynq())
-""",
+            def capybara(fn):
+                return (yield fn.asynq())
+            """,
             """
-from asynq import asynq
+            from asynq import asynq
 
-@asynq()
-def capybara(fn):
-    return (yield fn.asynq())
-""",
+            @asynq()
+            def capybara(fn):
+                return (yield fn.asynq())
+            """,
         )
         # make sure it's only added once
         self.assert_is_changed(
             """
-from asynq import asynq
+            from asynq import asynq
 
-def capybara(fn, fn2):
-    val = yield fn.asynq()
-    val2 = yield fn2.asynq()
-    return val ^ val2
-""",
+            def capybara(fn, fn2):
+                val = yield fn.asynq()
+                val2 = yield fn2.asynq()
+                return val ^ val2
+            """,
             """
-from asynq import asynq
+            from asynq import asynq
 
-@asynq()
-def capybara(fn, fn2):
-    val = yield fn.asynq()
-    val2 = yield fn2.asynq()
-    return val ^ val2
-""",
+            @asynq()
+            def capybara(fn, fn2):
+                val = yield fn.asynq()
+                val2 = yield fn2.asynq()
+                return val ^ val2
+            """,
         )
+
+    @assert_passes()
+    def test_lambda(self):
+        from asynq import asynq
+        from asynq.tools import afilter
+
+        @asynq()
+        def inner(obj):
+            return bool(obj)
+
+        @asynq()
+        def outer(objs):
+            objs = yield afilter.asynq(
+                asynq()(lambda obj: not (yield inner.asynq(obj))), objs
+            )
+            return objs
 
 
 class TestDuplicateYield(TestNameCheckVisitorBase):
@@ -592,56 +608,56 @@ class TestDuplicateYield(TestNameCheckVisitorBase):
     def test_autofix(self):
         self.assert_is_changed(
             """
-from asynq import asynq
+            from asynq import asynq
 
-@asynq()
-def capybara():
-    yield None, None
-""",
+            @asynq()
+            def capybara():
+                yield None, None
+            """,
             """
-from asynq import asynq
+            from asynq import asynq
 
-@asynq()
-def capybara():
-    yield None
-""",
+            @asynq()
+            def capybara():
+                yield None
+            """,
         )
         self.assert_is_changed(
             """
-from asynq import asynq
-from pyanalyze.tests import async_fn
+            from asynq import asynq
+            from pyanalyze.tests import async_fn
 
-@asynq()
-def capybara(oid):
-    a, b = yield async_fn.asynq(oid), async_fn.asynq(oid)
-""",
+            @asynq()
+            def capybara(oid):
+                a, b = yield async_fn.asynq(oid), async_fn.asynq(oid)
+            """,
             """
-from asynq import asynq
-from pyanalyze.tests import async_fn
+            from asynq import asynq
+            from pyanalyze.tests import async_fn
 
-@asynq()
-def capybara(oid):
-    a = yield async_fn.asynq(oid)
-    b = a
-""",
+            @asynq()
+            def capybara(oid):
+                a = yield async_fn.asynq(oid)
+                b = a
+            """,
         )
         self.assert_is_changed(
             """
-from asynq import asynq
-from pyanalyze.tests import async_fn
+            from asynq import asynq
+            from pyanalyze.tests import async_fn
 
-@asynq()
-def capybara(oid):
-    a, _ = yield async_fn.asynq(oid), async_fn.asynq(oid)
-""",
+            @asynq()
+            def capybara(oid):
+                a, _ = yield async_fn.asynq(oid), async_fn.asynq(oid)
+            """,
             """
-from asynq import asynq
-from pyanalyze.tests import async_fn
+            from asynq import asynq
+            from pyanalyze.tests import async_fn
 
-@asynq()
-def capybara(oid):
-    a = yield async_fn.asynq(oid)
-""",
+            @asynq()
+            def capybara(oid):
+                a = yield async_fn.asynq(oid)
+            """,
         )
 
 
