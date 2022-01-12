@@ -527,7 +527,7 @@ class ArgSpecCache:
             sig = self._cached_get_argspec(
                 evaluation_func, impl, is_asynq, in_overload_resolution=True
             )
-            if sig is None:
+            if not isinstance(sig, Signature):
                 return None
             lines, _ = inspect.getsourcelines(evaluation_func)
             code = textwrap.dedent("".join(lines))
