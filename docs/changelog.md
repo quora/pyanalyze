@@ -50,7 +50,7 @@
 - Support the Python 3.10 `match` statement (#376)
 - Support the walrus (`:=`) operator (#375)
 - Initial support for proposed new "type evaluation"
-  mechanism (#374, #379, #384)
+  mechanism (#374, #379, #384, #410)
 - Create command-line options for each config option (#373)
 - Overhaul treatment of function definitions (#372)
   - Support positional-only arguments

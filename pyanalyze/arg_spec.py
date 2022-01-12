@@ -6,7 +6,7 @@ Implementation of extended argument specifications used by test_scope.
 
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
-from .extensions import CustomCheck, get_overloads, get_type_evaluation
+from .extensions import CustomCheck, get_overloads, get_type_evaluations
 from .annotations import Context, RuntimeEvaluator, type_from_runtime
 from .config import Config
 from .find_unused import used
@@ -517,29 +517,36 @@ class ArgSpecCache:
             key = f"{func.__module__}.{func.__qualname__}"
         except AttributeError:
             return None
-        evaluation_func = get_type_evaluation(key)
-        if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
+        evaluation_funcs = get_type_evaluations(key)
+        if not evaluation_funcs:
             return None
-        sig = self._cached_get_argspec(
-            evaluation_func, impl, is_asynq, in_overload_resolution=True
-        )
-        if sig is None:
-            return None
-        lines, _ = inspect.getsourcelines(evaluation_func)
-        code = textwrap.dedent("".join(lines))
-        body = ast.parse(code)
-        if not body.body:
-            return None
-        evaluator_node = body.body[0]
-        if not isinstance(evaluator_node, ast.FunctionDef):
-            return None
-        evaluator = RuntimeEvaluator(
-            evaluator_node,
-            sig.return_value,
-            evaluation_func.__globals__,
-            evaluation_func,
-        )
-        return replace(sig, evaluator=evaluator)
+        sigs = []
+        for evaluation_func in evaluation_funcs:
+            if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
+                return None
+            sig = self._cached_get_argspec(
+                evaluation_func, impl, is_asynq, in_overload_resolution=True
+            )
+            if not isinstance(sig, Signature):
+                return None
+            lines, _ = inspect.getsourcelines(evaluation_func)
+            code = textwrap.dedent("".join(lines))
+            body = ast.parse(code)
+            if not body.body:
+                return None
+            evaluator_node = body.body[0]
+            if not isinstance(evaluator_node, ast.FunctionDef):
+                return None
+            evaluator = RuntimeEvaluator(
+                evaluator_node,
+                sig.return_value,
+                evaluation_func.__globals__,
+                evaluation_func,
+            )
+            sigs.append(replace(sig, evaluator=evaluator))
+        if len(sigs) == 1:
+            return sigs[0]
+        return OverloadedSignature(sigs)
 
     def _uncached_get_argspec(
         self,
