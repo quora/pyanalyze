@@ -1150,3 +1150,30 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_is_value(f.__round__(None), TypedValue(int))
             f.__round__(ndigits=None)  # E: incompatible_call
             assert_is_value(f.__round__(1), TypedValue(float))
+
+    @assert_passes()
+    def test_runtime(self):
+        from pyanalyze.extensions import (
+            overload as extension_overload,
+            patch_typing_overload,
+        )
+
+        patch_typing_overload()
+        from typing import overload
+
+        assert overload is extension_overload, (overload, extension_overload)
+
+        @overload
+        def f(x: int) -> str:
+            pass
+
+        @overload
+        def f(x: str) -> int:
+            pass
+
+        def f(x: object) -> object:
+            raise NotImplementedError
+
+        def capybara():
+            assert_is_value(f(1), TypedValue(str))
+            assert_is_value(f(""), TypedValue(int))

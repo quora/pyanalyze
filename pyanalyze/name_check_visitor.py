@@ -68,7 +68,7 @@ from .boolability import Boolability, get_boolability
 from .checker import Checker
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
-from .extensions import ParameterTypeGuard
+from .extensions import ParameterTypeGuard, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
 from .options import (
     ConfigOption,
@@ -4642,6 +4642,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             options.display()
             sys.exit(0)
         kwargs.setdefault("checker", Checker(cls.config, options))
+        patch_typing_overload()
         return kwargs
 
     def is_enabled(self, error_code: enum.Enum) -> bool:

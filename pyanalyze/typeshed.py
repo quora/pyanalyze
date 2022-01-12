@@ -16,6 +16,7 @@ from .annotations import (
     value_from_ast,
 )
 from .error_code import ErrorCode
+from .extensions import overload, real_overload
 from .safe import is_typing_name
 from .stacked_scopes import uniq_chain
 from .signature import (
@@ -71,7 +72,6 @@ from typing import (
     Callable,
     List,
     TypeVar,
-    overload,
 )
 from typing_extensions import Protocol, TypedDict
 import typeshed_client
@@ -691,8 +691,10 @@ class TypeshedFinder:
         is_classmethod = is_staticmethod = is_evaluated = False
         for decorator_ast in node.decorator_list:
             decorator = self._parse_expr(decorator_ast, mod)
-            if decorator == KnownValue(abstractmethod) or decorator == KnownValue(
-                overload
+            if (
+                decorator == KnownValue(abstractmethod)
+                or decorator == KnownValue(overload)
+                or decorator == KnownValue(real_overload)
             ):
                 continue
             elif decorator == KnownValue(classmethod):
