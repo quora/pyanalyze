@@ -315,7 +315,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         if typeshed_type is not UNINITIALIZED_VALUE:
             return typeshed_type
         return AnyValue(AnySource.inference)
-    elif TreatClassAttributeAsAny.should_treat_as_any(result, ctx.options):
+    elif TreatClassAttributeAsAny.should_treat_as_any(cls_val, ctx.options):
         return AnyValue(AnySource.error)
     else:
         return result
