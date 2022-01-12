@@ -688,12 +688,8 @@ class ClassAttributeChecker:
         for typ, attrs in self.config.IGNORED_UNUSED_ATTRS_BY_CLASS:
             _add_attrs(typ, attrs)
 
-        used_bases = tuple(self.config.USED_BASE_CLASSES)
-
         for typ, attrs_read in sorted(all_attrs_read.items(), key=self._cls_sort):
-            if self.serialize_type(typ) not in self.classes_examined or issubclass(
-                typ, used_bases
-            ):
+            if self.serialize_type(typ) not in self.classes_examined:
                 continue
             existing_attrs = set(typ.__dict__.keys())
             for attr in existing_attrs - attrs_read - self.config.IGNORED_UNUSED_ATTRS:

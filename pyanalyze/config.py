@@ -178,6 +178,7 @@ class Config(object):
     for assert_helper in qcore.asserts.__all__:
         NAMES_TO_IMPORTS[assert_helper] = "qcore.asserts"
 
+    # attributes.TreatClassAttributeAsAny
     def should_ignore_class_attribute(self, cls_val: object) -> bool:
         return cls_val is None or cls_val is NotImplemented
 
@@ -220,10 +221,6 @@ class Config(object):
     #
     # Used by find_unused.py
     #
-
-    # Subclasses of these classes are not marked as unused by the find_unused check, nor are their
-    # attributes
-    USED_BASE_CLASSES = set()
 
     def registered_values(self) -> Set[object]:
         """Returns a set of objects that are registered by various decorators.
