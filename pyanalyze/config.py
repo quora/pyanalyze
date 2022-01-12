@@ -13,17 +13,7 @@ import qcore
 from unittest import mock
 import asyncio
 from types import ModuleType
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Mapping,
-    Sequence,
-    Set,
-    TYPE_CHECKING,
-    Tuple,
-    Union,
-)
+from typing import Any, Callable, Dict, Sequence, Set, TYPE_CHECKING, Tuple, Union
 
 from . import value
 from .extensions import CustomCheck
