@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support `extend_config` option in `pyproject.toml` (#407)
 - Remove the old method return type check. Use the new
   `incompatible_override` check instead (#404)
 - Migrate remaining config options to new abstraction (#403)
