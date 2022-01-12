@@ -764,7 +764,9 @@ class TypeshedFinder:
             cleaned_arguments.append(arg)
         if is_evaluated:
             ctx = _AnnotationContext(self, mod)
-            evaluator = SyntheticEvaluator(node, _DummyErrorContext(), ctx)
+            evaluator = SyntheticEvaluator(
+                node, return_value, _DummyErrorContext(), ctx
+            )
         else:
             evaluator = None
         return Signature.make(

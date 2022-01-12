@@ -281,6 +281,7 @@ class EvalContext:
 @dataclass
 class Evaluator:
     node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    return_annotation: Value
 
     def evaluate(self, ctx: EvalContext) -> Tuple[Value, Sequence[UserRaisedError]]:
         visitor = EvaluateVisitor(self, ctx)
@@ -629,10 +630,7 @@ class EvaluateVisitor(ast.NodeVisitor):
 
     def _evaluate_ret(self, ret: EvalReturn, node: ast.AST) -> Value:
         if ret is None:
-            # TODO return the func's return annotation instead
-            if not self.validation_mode:
-                self.add_invalid("Evaluator failed to return", node)
-            return AnyValue(AnySource.error)
+            return self.evaluator.return_annotation
         elif isinstance(ret, CombinedReturn):
             children = [self._evaluate_ret(child, node) for child in ret.children]
             return unite_values(*children)

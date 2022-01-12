@@ -6,7 +6,7 @@ Implementation of extended argument specifications used by test_scope.
 
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
-from .extensions import CustomCheck, get_overloads
+from .extensions import CustomCheck, get_overloads, get_type_evaluation
 from .annotations import Context, RuntimeEvaluator, type_from_runtime
 from .config import Config
 from .find_unused import used
@@ -60,6 +60,7 @@ from dataclasses import dataclass, replace
 import qcore
 import inspect
 import sys
+import textwrap
 from types import FunctionType, ModuleType
 from typing import (
     Any,
@@ -509,6 +510,37 @@ class ArgSpecCache:
             self.known_argspecs[obj] = extended
         return extended
 
+    def _maybe_make_evaluator_sig(
+        self, func: Callable[..., Any], impl: Optional[Impl], is_asynq: bool
+    ) -> MaybeSignature:
+        try:
+            key = f"{func.__module__}.{func.__qualname__}"
+        except AttributeError:
+            return None
+        evaluation_func = get_type_evaluation(key)
+        if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
+            return None
+        sig = self._cached_get_argspec(
+            evaluation_func, impl, is_asynq, in_overload_resolution=True
+        )
+        if sig is None:
+            return None
+        lines, _ = inspect.getsourcelines(evaluation_func)
+        code = textwrap.dedent("".join(lines))
+        body = ast.parse(code)
+        if not body.body:
+            return None
+        evaluator_node = body.body[0]
+        if not isinstance(evaluator_node, ast.FunctionDef):
+            return None
+        evaluator = RuntimeEvaluator(
+            evaluator_node,
+            sig.return_value,
+            evaluation_func.__globals__,
+            evaluation_func,
+        )
+        return replace(sig, evaluator=evaluator)
+
     def _uncached_get_argspec(
         self,
         obj: Any,
@@ -529,13 +561,9 @@ class ArgSpecCache:
                     ]
                     if all_of_type(sigs, Signature):
                         return OverloadedSignature(sigs)
-                evaluator = RuntimeEvaluator.get_for(obj)
-                if evaluator is not None:
-                    sig = self._cached_get_argspec(
-                        evaluator.func, impl, is_asynq, in_overload_resolution=True
-                    )
-                    if isinstance(sig, Signature):
-                        return replace(sig, evaluator=evaluator)
+                evaluator_sig = self._maybe_make_evaluator_sig(obj, impl, is_asynq)
+                if evaluator_sig is not None:
+                    return evaluator_sig
 
         if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
             return None  # lost cause

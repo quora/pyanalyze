@@ -1805,7 +1805,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if self._is_collecting() or isinstance(node, ast.Lambda):
                 return FunctionResult(parameters=params)
             with self.scopes.allow_only_module_scope():
-                evaluator = SyntheticEvaluator.from_visitor(node, self)
+                # The return annotation doesn't actually matter for validation.
+                evaluator = SyntheticEvaluator.from_visitor(
+                    node, self, AnyValue(AnySource.marker)
+                )
                 ctx = type_evaluation.EvalContext(
                     variables={param.name: param.annotation for param in params},
                     positions={param.name: type_evaluation.DEFAULT for param in params},

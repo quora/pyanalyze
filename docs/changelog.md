@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Implement return annotation behavior for type evaluation
+  functions (#408)
 - Support `extend_config` option in `pyproject.toml` (#407)
 - Remove the old method return type check. Use the new
   `incompatible_override` check instead (#404)

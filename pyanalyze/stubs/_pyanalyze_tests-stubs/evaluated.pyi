@@ -9,3 +9,10 @@ def open(mode: str):
         return BinaryIO
     else:
         return IO[Any]
+
+@evaluated
+def open2(mode: str) -> IO[Any]:
+    if mode == "r":
+        return TextIO
+    elif mode == "rb":
+        return BinaryIO
