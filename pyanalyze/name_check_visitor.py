@@ -474,7 +474,8 @@ class IgnoredForIncompatibleOverride(StringSequenceOption):
 
 
 class IgnoredUnusedAttributes(StringSequenceOption):
-    """When these attributes are unused, they are not listed as such by the unused attribute finder."""
+    """When these attributes are unused, they are not listed as such by the unused attribute
+    finder."""
 
     name = "ignored_unused_attributes"
     default_value = [
