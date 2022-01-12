@@ -691,10 +691,9 @@ The last option could look like this:
     def zip(strict: bool = False):
         if is_provided(strict) and sys.version_info < (3, 10):
             show_error(
-                added_in_py_version("strict", "3.10"), 
+                added_in_py_version("strict", "3.10"),
                 argument="strict"
             )
-
 
 ### Adding attributes
 

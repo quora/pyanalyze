@@ -170,7 +170,7 @@
 - Add `pyanalyze.extensions.CustomCheck`
 - Add `pyanalyze.extensions.ExternalType`
 - If you have code dealing with `Value` objects, note that there are several changes:
-  - The `UnresolvedValue` class was renamed to `AnyValue`. 
+  - The `UnresolvedValue` class was renamed to `AnyValue`.
   - `value is UNRESOLVED_VALUE` will no longer be reliable. Use `isinstance(value, AnyValue)` instead.
   - `TypedDictValue` now stores whether each key is required or not in its `items` dictionary.
   - `UnboundMethodValue` now stores a `Composite` object instead of a `Value` object, and has a new
