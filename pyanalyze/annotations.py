@@ -30,9 +30,7 @@ import typing_inspect
 import qcore
 import ast
 import builtins
-import inspect
 from collections.abc import Callable, Iterable
-import textwrap
 from typing import (
     Any,
     Container,
@@ -59,7 +57,6 @@ from .extensions import (
     NoReturnGuard,
     ParameterTypeGuard,
     TypeGuard,
-    get_type_evaluation,
 )
 from .find_unused import used
 from .functions import FunctionDefNode
@@ -170,25 +167,6 @@ class RuntimeEvaluator(type_evaluation.Evaluator, Context):
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
         return self.get_name_from_globals(node.id, self.globals)
 
-    @classmethod
-    def get_for(cls, func: typing.Callable[..., Any]) -> Optional["RuntimeEvaluator"]:
-        try:
-            key = f"{func.__module__}.{func.__qualname__}"
-        except AttributeError:
-            return None
-        evaluation_func = get_type_evaluation(key)
-        if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
-            return None
-        lines, _ = inspect.getsourcelines(evaluation_func)
-        code = textwrap.dedent("".join(lines))
-        body = ast.parse(code)
-        if not body.body:
-            return None
-        evaluator = body.body[0]
-        if not isinstance(evaluator, ast.FunctionDef):
-            return None
-        return RuntimeEvaluator(evaluator, evaluation_func.__globals__, evaluation_func)
-
 
 @dataclass
 class SyntheticEvaluator(type_evaluation.Evaluator):
@@ -217,10 +195,16 @@ class SyntheticEvaluator(type_evaluation.Evaluator):
 
     @classmethod
     def from_visitor(
-        cls, node: FunctionDefNode, visitor: "NameCheckVisitor"
+        cls,
+        node: FunctionDefNode,
+        visitor: "NameCheckVisitor",
+        return_annotation: Value,
     ) -> "SyntheticEvaluator":
         return cls(
-            node, visitor, _DefaultContext(visitor, node, use_name_node_for_error=True)
+            node,
+            return_annotation,
+            visitor,
+            _DefaultContext(visitor, node, use_name_node_for_error=True),
         )
 
 

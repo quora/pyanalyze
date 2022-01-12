@@ -690,13 +690,10 @@ in pyanalyze:
 
 Currently unsupported features include:
 
-- Usage in stubs
 - pyanalyze should provide a way to register
   an evaluation function for a runtime function,
   to replace some impls.
 - Type compatibility for evaluated functions.
-- Implementation of the desired behavior for
-  return annotations
 
 Areas that need more thought include:
 

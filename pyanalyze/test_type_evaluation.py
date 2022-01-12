@@ -296,6 +296,19 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
             has_default()  # E: incompatible_call
             has_default(i)  # E: incompatible_call
 
+    @assert_passes()
+    def test_return(self):
+        from pyanalyze.extensions import evaluated
+
+        @evaluated
+        def maybe_use_header(x: bool) -> int:
+            if x is True:
+                return str
+
+        def capybara(x: bool):
+            assert_is_value(maybe_use_header(True), TypedValue(str))
+            assert_is_value(maybe_use_header(x), TypedValue(int))
+
 
 class TestBoolOp(TestNameCheckVisitorBase):
     @assert_passes()
