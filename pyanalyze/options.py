@@ -382,13 +382,14 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 def parse_config_file(
     path: Path, *, priority: int = 0, seen_paths: Collection[Path] = frozenset()
 ) -> Iterable[ConfigOption]:
-    if path in seen_paths:
-        raise InvalidConfigOption("Recursive config inclusion detected")
     try:
-        with path.open("rb") as f:
-            data = tomli.load(f)
+        path = path.resolve(strict=True)
     except FileNotFoundError:
         raise InvalidConfigOption(f"Cannot open config file at {path}")
+    if path in seen_paths:
+        raise InvalidConfigOption("Recursive config inclusion detected")
+    with path.open("rb") as f:
+        data = tomli.load(f)
     data = data.get("tool", {}).get("pyanalyze", {})
     yield from _parse_config_section(
         data, path=path, priority=priority, seen_paths={path, *seen_paths}
@@ -417,8 +418,9 @@ def _parse_config_section(
         elif key == "extend_config":
             if not isinstance(value, str):
                 raise InvalidConfigOption("extend_config must be a string")
+            extended_path = path.parent / value
             yield from parse_config_file(
-                Path(value), priority=priority + 1, seen_paths=seen_paths
+                extended_path, priority=priority + 1, seen_paths=seen_paths
             )
         elif key == "overrides":
             if module_path:
