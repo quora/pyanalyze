@@ -11,10 +11,12 @@ import inspect
 import qcore
 import sys
 import types
-from typing import Any, Generic, Sequence, Tuple, Optional, Union
+from typing import Any, Callable, Generic, Sequence, Tuple, Optional, Union
 
 
 from .annotations import type_from_annotations, type_from_runtime, Context
+from .config import Config
+from .options import Options, PyObjectSequenceOption
 from .safe import safe_isinstance, safe_issubclass
 from .signature import Signature, MaybeSignature
 from .stacked_scopes import Composite
@@ -47,6 +49,7 @@ NoneType = type(None)
 class AttrContext:
     root_composite: Composite
     attr: str
+    options: Options
     skip_mro: bool = False
     skip_unwrap: bool = False
 
@@ -59,9 +62,6 @@ class AttrContext:
 
     def record_attr_read(self, obj: Any) -> None:
         pass
-
-    def should_ignore_class_attribute(self, obj: Any) -> bool:
-        return False
 
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         return AnyValue(AnySource.inference)
@@ -162,6 +162,29 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
     return result
 
 
+class TreatClassAttributeAsAny(PyObjectSequenceOption[Callable[[object], bool]]):
+    """Allows treating certain class attributes as Any.
+
+    Instances of this option are callables that take an object found among
+    a class's attributes and return True if the attribute should instead
+    be treated as Any.
+
+    """
+
+    name = "treat_class_attribute_as_any"
+
+    @classmethod
+    def should_treat_as_any(cls, val: object, options: Options) -> bool:
+        option_value = options.get_value_for(cls)
+        return any(func(val) for func in option_value)
+
+    @classmethod
+    def get_value_from_fallback(
+        cls, fallback: Config
+    ) -> Sequence[Callable[[object], bool]]:
+        return (fallback.should_ignore_class_attribute,)
+
+
 def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
     if not isinstance(result, KnownValue) or ctx.skip_unwrap:
         return result
@@ -183,7 +206,7 @@ def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
         return KnownValue(cls_val)
     elif _static_hasattr(cls_val, "__get__"):
         return AnyValue(AnySource.inference)  # can't figure out what this will return
-    elif ctx.should_ignore_class_attribute(cls_val):
+    elif TreatClassAttributeAsAny.should_treat_as_any(cls_val, ctx.options):
         return AnyValue(AnySource.error)
     else:
         return KnownValue(cls_val)
@@ -292,7 +315,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         if typeshed_type is not UNINITIALIZED_VALUE:
             return typeshed_type
         return AnyValue(AnySource.inference)
-    elif ctx.should_ignore_class_attribute(cls_val):
+    elif TreatClassAttributeAsAny.should_treat_as_any(result, ctx.options):
         return AnyValue(AnySource.error)
     else:
         return result

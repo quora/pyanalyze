@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Migrate remaining config options to new abstraction (#403)
 - Fix stub classes with references to themselves in their
   base classes, such as `os._ScandirIterator` in typeshed (#402)
 - Fix type narrowing on the `else` case of `issubclass()`
