@@ -1052,7 +1052,7 @@ class Signature:
             ctx.visitor.record_call(self.callable, variables)
 
         return_value = self.return_value
-        typevar_values: Dict[TypeVar, Value] = {}
+        typevar_values: TypeVarMap = {}
         if self.all_typevars:
             tv_possible_values: Dict[TypeVar, List[Value]] = defaultdict(list)
             for param_name in self.typevars_of_params:
@@ -1140,7 +1140,9 @@ class Signature:
                 positions = {
                     param: position for param, (position, _) in bound_args.items()
                 }
-                eval_ctx = EvalContext(varmap, positions, ctx.can_assign_ctx)
+                eval_ctx = EvalContext(
+                    varmap, positions, ctx.can_assign_ctx, typevar_values
+                )
                 return_value, errors = self.evaluator.evaluate(eval_ctx)
                 for error in errors:
                     error_node = None

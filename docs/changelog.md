@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support generic type evaluators (#409)
 - Implement return annotation behavior for type evaluation
   functions (#408)
 - Support `extend_config` option in `pyproject.toml` (#407)

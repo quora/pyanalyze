@@ -261,6 +261,7 @@ class EvalContext:
     variables: VarMap
     positions: Mapping[str, Position]
     can_assign_context: CanAssignContext
+    tv_map: TypeVarMap
 
     @contextmanager
     def narrow_variables(self, varmap: Optional[VarMap]) -> Iterator[None]:
@@ -299,6 +300,10 @@ class Evaluator:
 
     def evaluate_value(self, __node: ast.AST) -> Value:
         raise NotImplementedError
+
+    def evaluate_generic_type(self, __node: ast.AST, __ctx: EvalContext) -> Value:
+        typ = self.evaluate_type(__node)
+        return typ.substitute_typevars(__ctx.tv_map)
 
 
 @dataclass
@@ -387,7 +392,7 @@ class ConditionEvaluator(ast.NodeVisitor):
                     "is_of_type() takes two positional arguments", node
                 )
             varname_node = node.args[0]
-            typ = self.evaluator.evaluate_type(node.args[1])
+            typ = self.evaluator.evaluate_generic_type(node.args[1], self.ctx)
             exclude_any = True
             for keyword in node.keywords:
                 if keyword.arg == "exclude_any":
@@ -628,7 +633,7 @@ class EvaluateVisitor(ast.NodeVisitor):
 
     def _evaluate_ret(self, ret: EvalReturn, node: ast.AST) -> Value:
         if ret is None:
-            return self.evaluator.return_annotation
+            return self.evaluator.return_annotation.substitute_typevars(self.ctx.tv_map)
         elif isinstance(ret, CombinedReturn):
             children = [self._evaluate_ret(child, node) for child in ret.children]
             return unite_values(*children)
@@ -678,7 +683,7 @@ class EvaluateVisitor(ast.NodeVisitor):
         if node.value is None:
             self.add_invalid("return statement must have a value", node)
             return KnownValue(None)
-        return self.evaluator.evaluate_type(node.value)
+        return self.evaluator.evaluate_generic_type(node.value, self.ctx)
 
     def visit_Expr(self, node: ast.Expr) -> EvalReturn:
         if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):

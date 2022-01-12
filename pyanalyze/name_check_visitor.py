@@ -1813,6 +1813,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     variables={param.name: param.annotation for param in params},
                     positions={param.name: type_evaluation.DEFAULT for param in params},
                     can_assign_context=self,
+                    tv_map={},
                 )
                 for error in evaluator.validate(ctx):
                     self.show_error(
