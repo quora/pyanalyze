@@ -59,7 +59,7 @@ class AdditionalBaseProviders(PyObjectSequenceOption[_BaseProvider]):
 
 @dataclass
 class Checker:
-    config: Config
+    config: Config = Config()
     raw_options: InitVar[Optional[Options]] = None
     options: Options = field(init=False)
     arg_spec_cache: ArgSpecCache = field(init=False)
