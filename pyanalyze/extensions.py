@@ -19,6 +19,7 @@ from typing import (
     Dict,
     Iterable,
     Optional,
+    Sequence,
     Tuple,
     List,
     Union,
@@ -387,7 +388,7 @@ def reveal_type(value: object) -> None:
 
 
 _overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
-_type_evaluations: Dict[str, Optional[Callable[..., Any]]] = {}
+_type_evaluations: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
 
 
 def get_overloads(fully_qualified_name: str) -> List[Callable[..., Any]]:
@@ -395,9 +396,9 @@ def get_overloads(fully_qualified_name: str) -> List[Callable[..., Any]]:
     return _overloads[fully_qualified_name]
 
 
-def get_type_evaluation(fully_qualified_name: str) -> Optional[Callable[..., Any]]:
+def get_type_evaluations(fully_qualified_name: str) -> Sequence[Callable[..., Any]]:
     """Return the type evaluation function for this fully qualified name, or None."""
-    return _type_evaluations.get(fully_qualified_name)
+    return _type_evaluations[fully_qualified_name]
 
 
 if TYPE_CHECKING:
@@ -433,8 +434,7 @@ def patch_typing_overload() -> None:
 def evaluated(func: Callable[..., Any]) -> Callable[..., Any]:
     """Marks a type evaluation function."""
     key = f"{func.__module__}.{func.__qualname__}"
-    assert key not in _type_evaluations, f"multiple evaluations for {key}"
-    _type_evaluations[key] = func
+    _type_evaluations[key].append(func)
     func.__is_type_evaluation__ = True
     return func
 

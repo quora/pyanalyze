@@ -339,7 +339,7 @@ Examples:
 
     @evaluated
     def length_or_none(s: str | None = None):
-        if is_of_type(s, str):
+        if is_of_type(s, str, exclude_any=False):
             return int
         else:
             return None
@@ -353,9 +353,9 @@ Examples:
 
     @evaluated
     def length_or_none2(s: str | None):
-        if is_of_type(s, str, exclude_any=True):
+        if is_of_type(s, str):
             return int
-        elif is_of_type(s, None, exclude_any=True):
+        elif is_of_type(s, None):
             return None
         else:
             return Any
@@ -367,9 +367,9 @@ Examples:
 
     @evaluated
     def nested_any(s: Sequence[Any]):
-        if is_of_type(s, str, exclude_any=True):
+        if is_of_type(s, str):
             show_error("error")
-        elif is_of_type(s, Sequence[str], exclude_any=True):
+        elif is_of_type(s, Sequence[str]):
             return str
         else:
             return int
@@ -452,6 +452,31 @@ Examples:
     _: Callable[[str | None], Path] = maybe_path  # error
     _: Callable[[str], Path | None] = maybe_path  # ok
     _: Callable[[Literal["x"]], Path] = maybe_path  # ok
+
+### Runtime behavior
+
+At runtime, the `@evaluated` decorator returns a dummy function
+that throws an error when called, similar to `@overload`. In
+order to support dynamic type checkers, it also stores the
+original function, keyed by its fully qualified name.
+
+A helper function is provided to retrieve all registered
+evaluation functions for a given fully qualified name:
+
+    def get_type_evaluations(
+        fully_qualified_name: str
+    ) -> Sequence[Callable[..., Any]]: ...
+
+For example, if method `B.c` in module `a` has an evaluation function,
+`get_type_evaluations("a.B.c")` will retrieve it.
+
+Dummy implementations are provided for the various helper
+functions (`is_provided()`, `is_positional()`, `is_keyword()`,
+`is_of_type()`, and `show_error()`). These throw an error
+if called at runtime.
+
+The `reveal_type()` function has a runtime implementation
+that simply returns its argument.
 
 ## Discussion
 
@@ -634,6 +659,17 @@ that checks whether two types have any overlap:
 Thus, type evaluation provides a way to implement checks similar to mypy's
 [strict equality](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict-equality)
 flag directly in stubs.
+
+## Compatibility
+
+The proposal is fully backward compatible.
+
+Type evaluation functions are going to be most frequently useful
+in library stubs, where it is often important that multiple type
+checkers can parse the stub. In order to unblock usage of the new
+feature in stubs, type checker authors could simply ignore the
+body of evaluation functions and rely on the signature. This would
+still allow other type checkers to fully use the evaluation function.
 
 ## Possible extensions
 
