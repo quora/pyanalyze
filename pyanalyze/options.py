@@ -295,8 +295,8 @@ class Options:
     @classmethod
     def from_option_list(
         cls,
-        instances: Sequence[ConfigOption],
-        fallback: Config,
+        instances: Sequence[ConfigOption] = (),
+        fallback: Config = Config(),
         config_file_path: Optional[Path] = None,
     ) -> "Options":
         if config_file_path:
