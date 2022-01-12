@@ -553,7 +553,7 @@ class CheckForDuplicateValues(PyObjectSequenceOption[type]):
 
     @classmethod
     def get_value_from_fallback(cls, fallback: Config) -> Sequence[type]:
-        return []
+        return [enum.Enum]
 
 
 class AllowDuplicateValues(PyObjectSequenceOption[type]):
@@ -838,7 +838,10 @@ class ClassAttributeChecker:
             return
         # the attribute is in __annotations__, e.g. a dataclass
         if _has_annotation_for_attr(typ, attr_name) or attributes.get_attrs_attribute(
-            typ, attributes.AttrContext(Composite(TypedValue(typ)), attr_name)
+            typ,
+            attributes.AttrContext(
+                Composite(TypedValue(typ)), attr_name, visitor.options
+            ),
         ):
             return
 

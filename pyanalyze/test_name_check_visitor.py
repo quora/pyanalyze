@@ -210,10 +210,10 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
         self.assert_fails(
             ErrorCode.undefined_name,
             """
-from qcore.asserts import *
-def run():
-    print(not_in_qcore.asserts)
-""",
+            from qcore.asserts import *
+            def run():
+                print(not_in_qcore.asserts)
+            """,
         )
 
     @assert_fails(ErrorCode.duplicate_enum_member)
@@ -1408,57 +1408,6 @@ class TestIterationTarget(TestNameCheckVisitorBase):
                 assert_is_value(x, AnyValue(AnySource.error))
 
 
-class TestAddImports(TestNameCheckVisitorBase):
-    def test_top_level(self):
-        self.assert_is_changed(
-            """
-import sys
-
-def capybara():
-    return qcore.utime()
-""",
-            """
-import qcore
-import sys
-
-def capybara():
-    return qcore.utime()
-""",
-        )
-
-    def test_from(self):
-        self.assert_is_changed(
-            """
-from qcore.asserts import assert_eq
-
-def capybara():
-    assert_is(3, 4)
-""",
-            """
-from qcore.asserts import assert_eq, assert_is
-
-def capybara():
-    assert_is(3, 4)
-""",
-        )
-
-        self.assert_is_changed(
-            """
-import sys
-
-def capybara():
-    assert_is(3, 4)
-""",
-            """
-from qcore.asserts import assert_is
-import sys
-
-def capybara():
-    assert_is(3, 4)
-""",
-        )
-
-
 class TestYieldInComprehension(TestNameCheckVisitorBase):
     # this became a syntax error in 3.8
     @only_before((3, 8))
@@ -1466,9 +1415,9 @@ class TestYieldInComprehension(TestNameCheckVisitorBase):
         self.assert_fails(
             ErrorCode.yield_in_comprehension,
             """
-def capybara():
-    [(yield x) for x in []]
-""",
+            def capybara():
+                [(yield x) for x in []]
+            """,
         )
 
     @only_before((3, 8))
@@ -1476,9 +1425,9 @@ def capybara():
         self.assert_fails(
             ErrorCode.yield_in_comprehension,
             """
-def capybara():
-    {(yield x) for x in []}
-""",
+            def capybara():
+                {(yield x) for x in []}
+            """,
         )
 
     @only_before((3, 8))
@@ -1486,9 +1435,9 @@ def capybara():
         self.assert_fails(
             ErrorCode.yield_in_comprehension,
             """
-def capybara():
-    {(yield x): (yield y) for x in []}
-""",
+            def capybara():
+                {(yield x): (yield y) for x in []}
+            """,
         )
 
     @only_before((3, 8))
@@ -1496,9 +1445,9 @@ def capybara():
         self.assert_fails(
             ErrorCode.yield_in_comprehension,
             """
-def capybara():
-    [x for x in [] if (yield x)]
-""",
+            def capybara():
+                [x for x in [] if (yield x)]
+            """,
         )
 
     @assert_passes()
