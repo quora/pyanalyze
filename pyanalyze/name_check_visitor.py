@@ -56,7 +56,7 @@ from typing_extensions import Annotated
 import asynq
 import qcore
 
-from . import attributes, format_strings, node_visitor, importer, method_return_type
+from . import attributes, format_strings, node_visitor, importer
 from .annotations import (
     SyntheticEvaluator,
     is_instance_of_typing_name,
@@ -1910,8 +1910,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             assert False, return_set
         # if the return value was never set, the function returns None
         if not return_values:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                method_return_type.check_no_return(node, self, node.name)
             return FunctionResult(KnownNone, params, has_return, self.is_generator)
         # None is added to return_values if the function raises an error.
         return_values = [val for val in return_values if val is not None]
@@ -3181,16 +3179,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_Return(self, node: ast.Return) -> None:
         if node.value is None:
             value = KnownNone
-            if self.current_function_name is not None:
-                method_return_type.check_no_return(
-                    node, self, self.current_function_name
-                )
         else:
             value = self.visit(node.value)
-            if self.current_function_name is not None:
-                method_return_type.check_return_value(
-                    node, self, value, self.current_function_name
-                )
         if value is NO_RETURN_VALUE:
             return
         self.return_values.append(value)

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove the old method return type check. Use the new
+  `incompatible_override` check instead (#404)
 - Migrate remaining config options to new abstraction (#403)
 - Fix stub classes with references to themselves in their
   base classes, such as `os._ScandirIterator` in typeshed (#402)

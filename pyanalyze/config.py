@@ -13,17 +13,7 @@ import qcore
 from unittest import mock
 import asyncio
 from types import ModuleType
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Mapping,
-    Sequence,
-    Set,
-    TYPE_CHECKING,
-    Tuple,
-    Union,
-)
+from typing import Any, Callable, Dict, Sequence, Set, TYPE_CHECKING, Tuple, Union
 
 from . import value
 from .extensions import CustomCheck
@@ -256,15 +246,6 @@ class Config(object):
     # We ignore _async methdos in these modules.
     # asynq_checker.NonAsynqModules
     NON_ASYNQ_MODULES: Set[str] = {"multiprocessing"}
-
-    #
-    # Used by method_return_type.py
-    #
-
-    # A dictionary of {base class: {method name: expected return type}}
-    # Use this to ensure that all subclasses of a certain type maintain the same return type for
-    # their methods
-    METHOD_RETURN_TYPES: Mapping[type, Mapping[str, type]] = {}
 
     #
     # Used by ClassAttributeChecker
