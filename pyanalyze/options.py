@@ -11,6 +11,7 @@ import pathlib
 from typing import (
     Any,
     ClassVar,
+    Collection,
     Dict,
     Iterable,
     Mapping,
@@ -93,6 +94,7 @@ class ConfigOption(Generic[T]):
     value: T
     applicable_to: ModulePath = ()
     from_command_line: bool = False
+    priority: int = 0  # higher number = lower priority
 
     def __init_subclass__(cls) -> None:
         if hasattr(cls, "name"):
@@ -122,6 +124,7 @@ class ConfigOption(Generic[T]):
         """We sort with the most specific option first."""
         return (
             not self.from_command_line,  # command line options first
+            self.priority,  # lower priority number first
             -len(self.applicable_to),  # longest options first
         )
 
@@ -376,15 +379,30 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         cls.create_command_line_option(parser)
 
 
-def parse_config_file(path: Path) -> Iterable[ConfigOption]:
+def parse_config_file(
+    path: Path, *, priority: int = 0, seen_paths: Collection[Path] = frozenset()
+) -> Iterable[ConfigOption]:
+    try:
+        path = path.resolve(strict=True)
+    except FileNotFoundError:
+        raise InvalidConfigOption(f"Cannot open config file at {path}")
+    if path in seen_paths:
+        raise InvalidConfigOption("Recursive config inclusion detected")
     with path.open("rb") as f:
         data = tomli.load(f)
     data = data.get("tool", {}).get("pyanalyze", {})
-    yield from _parse_config_section(data, path=path)
+    yield from _parse_config_section(
+        data, path=path, priority=priority, seen_paths={path, *seen_paths}
+    )
 
 
 def _parse_config_section(
-    section: Mapping[str, Any], module_path: ModulePath = (), *, path: Path
+    section: Mapping[str, Any],
+    module_path: ModulePath = (),
+    *,
+    path: Path,
+    priority: int,
+    seen_paths: Collection[Path],
 ) -> Iterable[ConfigOption]:
     if "module" in section:
         if module_path == ():
@@ -397,7 +415,16 @@ def _parse_config_section(
                 raise InvalidConfigOption(
                     "Top-level configuration should not set module option"
                 )
+        elif key == "extend_config":
+            if not isinstance(value, str):
+                raise InvalidConfigOption("extend_config must be a string")
+            extended_path = path.parent / value
+            yield from parse_config_file(
+                extended_path, priority=priority + 1, seen_paths=seen_paths
+            )
         elif key == "overrides":
+            if module_path:
+                raise InvalidConfigOption("Nested section cannot set overrides")
             if not isinstance(value, (list, tuple)):
                 raise InvalidConfigOption("overrides section must be a list")
             for override in value:
@@ -408,7 +435,13 @@ def _parse_config_section(
                         "override section must set 'module' to a string"
                     )
                 override_path = tuple(override["module"].split("."))
-                yield from _parse_config_section(override, override_path, path=path)
+                yield from _parse_config_section(
+                    override,
+                    override_path,
+                    path=path,
+                    priority=priority,
+                    seen_paths=seen_paths,
+                )
         else:
             try:
                 option_cls = ConfigOption.registry[key]

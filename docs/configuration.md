@@ -38,6 +38,15 @@ Options:
     ...
 ```
 
+To extend another configuration file, use the `extend_config` key:
+
+```toml
+[tool.pyanalyze]
+extend_config = "../path/to/other/pyproject.toml"
+```
+
+Options set in the included config file have lower priority.
+
 Most configuration options can also be set on the command line.
 
 <!-- TODO figure out a way to dynamically include docs for each option -->
