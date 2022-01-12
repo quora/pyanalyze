@@ -264,7 +264,7 @@ class PyObjectSequenceOption(ConcatenatedOption[T]):
                     cls, "path to Python object", elt
                 ) from None
             used(obj)
-            final.append(elt)
+            final.append(obj)
         return final
 
     @classmethod
