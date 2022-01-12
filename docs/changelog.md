@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix stub classes with references to themselves in their
+  base classes, such as `os._ScandirIterator` in typeshed (#402)
 - Fix type narrowing on the `else` case of `issubclass()`
   (#401)
 - Fix indexing a list with an index typed as a
