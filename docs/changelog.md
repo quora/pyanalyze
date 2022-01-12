@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix type narrowing on the `else` case of `issubclass()`
+  (#401)
 - Fix indexing a list with an index typed as a
   `TypeVar` (#400)
 - Fix "This function should have an @asynq() decorator"

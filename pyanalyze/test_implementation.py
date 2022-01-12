@@ -1147,6 +1147,19 @@ class TestIssubclass(TestNameCheckVisitorBase):
                     ),
                 )
 
+    @assert_passes()
+    def test_negative_narrowing(self) -> None:
+        from typing import Type, Union
+
+        def capybara(x: Union[Type[str], Type[int]]) -> None:
+            assert_is_value(
+                x, SubclassValue(TypedValue(str)) | SubclassValue(TypedValue(int))
+            )
+            if issubclass(x, str):
+                assert_is_value(x, SubclassValue(TypedValue(str)))
+            else:
+                assert_is_value(x, SubclassValue(TypedValue(int)))
+
 
 class TestInferenceHelpers(TestNameCheckVisitorBase):
     @assert_passes()
