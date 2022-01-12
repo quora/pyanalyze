@@ -218,6 +218,7 @@ class Config(object):
     # Used by find_unused.py
     #
 
+    # unused
     def registered_values(self) -> Set[object]:
         """Returns a set of objects that are registered by various decorators.
 
@@ -226,6 +227,7 @@ class Config(object):
         """
         return set()
 
+    # shared_options.IgnoreUnused
     def should_ignore_unused(
         self, module: ModuleType, attribute: str, object: object
     ) -> bool:

@@ -4747,6 +4747,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if unused_finder is None:
             unused_finder = UnusedObjectFinder(
                 cls.config,
+                checker.options,
                 enabled=find_unused or checker.options.get_value_for(EnforceNoUnused),
                 print_output=False,
             )

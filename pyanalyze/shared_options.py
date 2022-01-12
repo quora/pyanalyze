@@ -4,13 +4,13 @@ Defines some concrete options that cannot easily be placed elsewhere.
 
 """
 from pathlib import Path
-from typing import Sequence
-
-from pyanalyze.value import VariableNameValue
+from typing import Sequence, Callable
+from types import ModuleType
 
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .options import PathSequenceOption, BooleanOption, PyObjectSequenceOption
+from .value import VariableNameValue
 
 
 class Paths(PathSequenceOption):
@@ -66,3 +66,21 @@ for _code in ErrorCode:
             "should_create_command_line_option": False,
         },
     )
+
+_IgnoreUnusedFunc = Callable[[ModuleType, str, object], bool]
+
+
+class IgnoreUnused(PyObjectSequenceOption[_IgnoreUnusedFunc]):
+    """If any of these functions returns True, we will exclude this
+    object from the unused object check.
+
+    The arguments are the module the object was found in, the attribute used to
+    access it, and the object itself.
+
+    """
+
+    name = "ignore_unused"
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_IgnoreUnusedFunc]:
+        return [fallback.should_ignore_unused]

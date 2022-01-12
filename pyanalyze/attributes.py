@@ -63,7 +63,6 @@ class AttrContext:
     def record_attr_read(self, obj: Any) -> None:
         pass
 
-
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         return AnyValue(AnySource.inference)
 
