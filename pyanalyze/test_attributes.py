@@ -250,6 +250,13 @@ class TestAttributes(TestNameCheckVisitorBase):
                 annotated_global, MultiValuedValue([TypedValue(str), KnownValue(None)])
             )
 
+    @assert_passes()
+    def test_unwrap_mvv(self):
+        def render_task(name: str):
+            if not (name or "").strip():
+                name = "x"
+            assert_is_value(name, TypedValue(str) | KnownValue("x"))
+
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
     @assert_passes()

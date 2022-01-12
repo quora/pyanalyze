@@ -25,6 +25,7 @@ from . import method_return_type
 from . import node_visitor
 from . import options
 from . import patma
+from . import predicates
 from . import reexport
 from . import safe
 from . import shared_options
@@ -60,3 +61,4 @@ used(suggested_type)
 used(options)
 used(shared_options)
 used(functions)
+used(predicates)

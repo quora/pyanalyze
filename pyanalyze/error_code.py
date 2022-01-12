@@ -6,6 +6,7 @@ Error codes used by test_scope.
 
 import enum
 from aenum import extend_enum
+import pyanalyze
 
 from .find_unused import used
 
@@ -218,4 +219,14 @@ def register_error_code(name: str, description: str) -> ErrorCode:
     extend_enum(ErrorCode, name, value)
     member = ErrorCode[name]
     ERROR_DESCRIPTION[member] = description
+    type(
+        name,
+        (pyanalyze.options.BooleanOption,),
+        {
+            "__doc__": description,
+            "name": name,
+            "default_value": True,
+            "should_create_command_line_option": False,
+        },
+    )
     return member

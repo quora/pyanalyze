@@ -272,14 +272,14 @@ def test_positional_only():
     )
     assert asc.get_argspec(Y.f) == Signature.make(
         [
-            SigParameter("self", ParameterKind.POSITIONAL_OR_KEYWORD),
+            SigParameter("self", ParameterKind.POSITIONAL_ONLY),
             SigParameter("_Y__x", ParameterKind.POSITIONAL_ONLY),
         ],
         callable=Y.f,
     )
     assert asc.get_argspec(Y.X.f) == Signature.make(
         [
-            SigParameter("self", ParameterKind.POSITIONAL_OR_KEYWORD),
+            SigParameter("self", ParameterKind.POSITIONAL_ONLY),
             SigParameter("_X__x", ParameterKind.POSITIONAL_ONLY),
             SigParameter("_Y__x", ParameterKind.POSITIONAL_OR_KEYWORD),
         ],

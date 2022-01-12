@@ -1620,6 +1620,31 @@ class TestParamSpec(TestNameCheckVisitorBase):
                 refined(), GenericValue(list, [AnyValue(AnySource.generic_argument)])
             )
 
+    @assert_passes()
+    def test_args_kwargs(self):
+        from typing import Callable, TypeVar
+        from typing_extensions import Concatenate, ParamSpec
+
+        P = ParamSpec("P")
+        R = TypeVar("R")
+
+        class Request:
+            pass
+
+        def with_request(f: Callable[Concatenate[Request, P], R]) -> Callable[P, R]:
+            def inner(*args: P.args, **kwargs: P.kwargs) -> R:
+                return f(Request(), *args, **kwargs)
+
+            return inner
+
+        def takes_int_str(request: Request, x: int, y: str) -> int:
+            return x + 7
+
+        def capybara():
+            func = with_request(takes_int_str)
+            func(1, "A")
+            func(1, 2)  # E: incompatible_argument
+
 
 class TestCallable(TestNameCheckVisitorBase):
     @assert_passes()

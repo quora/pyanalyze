@@ -900,6 +900,14 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(tpl[-2], TypedValue(str))
             assert_is_value(tpl[2], TypedValue(float))
 
+    @assert_passes()
+    def test_list_in_lambda(self):
+        from typing import List
+
+        def capybara(words: List[str]):
+            sorted_indexes = sorted(range(len(words)), key=lambda i: words[i])
+            return sorted_indexes
+
 
 class TestDictGetItem(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.unhashable_key)
@@ -1138,6 +1146,19 @@ class TestIssubclass(TestNameCheckVisitorBase):
                         [SubclassValue(TypedValue(int)), SubclassValue(TypedValue(str))]
                     ),
                 )
+
+    @assert_passes()
+    def test_negative_narrowing(self) -> None:
+        from typing import Type, Union
+
+        def capybara(x: Union[Type[str], Type[int]]) -> None:
+            assert_is_value(
+                x, SubclassValue(TypedValue(str)) | SubclassValue(TypedValue(int))
+            )
+            if issubclass(x, str):
+                assert_is_value(x, SubclassValue(TypedValue(str)))
+            else:
+                assert_is_value(x, SubclassValue(TypedValue(int)))
 
 
 class TestInferenceHelpers(TestNameCheckVisitorBase):

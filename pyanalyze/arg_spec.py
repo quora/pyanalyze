@@ -60,7 +60,17 @@ import qcore
 import inspect
 import sys
 from types import FunctionType, ModuleType
-from typing import Any, Callable, Iterator, Sequence, Generic, Mapping, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Iterator,
+    Sequence,
+    Generic,
+    Mapping,
+    Optional,
+    Tuple,
+    Union,
+)
 import typing_inspect
 from unittest import mock
 
@@ -352,11 +362,15 @@ class ArgSpecCache:
 
         parameters = []
         for i, parameter in enumerate(sig.parameters.values()):
-            parameters.append(
-                self._make_sig_parameter(
-                    parameter, func_globals, function_object, is_wrapped, i
-                )
+            param, make_everything_pos_only = self._make_sig_parameter(
+                parameter, func_globals, function_object, is_wrapped, i
             )
+            if make_everything_pos_only:
+                parameters = [
+                    replace(param, kind=ParameterKind.POSITIONAL_ONLY)
+                    for param in parameters
+                ]
+            parameters.append(param)
 
         return Signature.make(
             parameters,
@@ -376,7 +390,7 @@ class ArgSpecCache:
         function_object: Optional[object],
         is_wrapped: bool,
         index: int,
-    ) -> SigParameter:
+    ) -> Tuple[SigParameter, bool]:
         """Given an inspect.Parameter, returns a Parameter object."""
         if is_wrapped:
             typ = AnyValue(AnySource.inference)
@@ -395,9 +409,14 @@ class ArgSpecCache:
             )
         ):
             kind = ParameterKind.POSITIONAL_ONLY
+            make_everything_pos_only = True
         else:
             kind = ParameterKind(parameter.kind)
-        return SigParameter(parameter.name, kind, default=default, annotation=typ)
+            make_everything_pos_only = False
+        return (
+            SigParameter(parameter.name, kind, default=default, annotation=typ),
+            make_everything_pos_only,
+        )
 
     def _get_type_for_parameter(
         self,

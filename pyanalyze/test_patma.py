@@ -158,3 +158,55 @@ class TestPatma(TestNameCheckVisitorBase):
                         pass
             """
         )
+
+    @skip_before((3, 10))
+    def test_bool_narrowing(self):
+        self.assert_passes(
+            """
+            class X:
+                true = True
+
+            def capybara(b: bool):
+                match b:
+                    # Make sure we hit the MatchValue case, not MatchSingleton
+                    case X.true:
+                        assert_is_value(b, KnownValue(True))
+                    case _ as b2:
+                        assert_is_value(b, KnownValue(False))
+                        assert_is_value(b2, KnownValue(False))
+            """
+        )
+        self.assert_passes(
+            """
+            def capybara(b: bool):
+                match b:
+                    case True:
+                        assert_is_value(b, KnownValue(True))
+                    case _ as b2:
+                        assert_is_value(b, KnownValue(False))
+                        assert_is_value(b2, KnownValue(False))
+            """
+        )
+
+    @skip_before((3, 10))
+    def test_enum_narrowing(self):
+        self.assert_passes(
+            """
+            from enum import Enum
+
+            class Planet(Enum):
+                mercury = 1
+                venus = 2
+                earth = 3
+
+            def capybara(p: Planet):
+                match p:
+                    case Planet.mercury:
+                        assert_is_value(p, KnownValue(Planet.mercury))
+                    case Planet.venus:
+                        assert_is_value(p, KnownValue(Planet.venus))
+                    case _ as p2:
+                        assert_is_value(p2, KnownValue(Planet.earth))
+                        assert_is_value(p, KnownValue(Planet.earth))
+            """
+        )
