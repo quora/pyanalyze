@@ -30,9 +30,7 @@ import typing_inspect
 import qcore
 import ast
 import builtins
-import inspect
 from collections.abc import Callable, Iterable
-import textwrap
 from typing import (
     Any,
     Container,
@@ -59,7 +57,6 @@ from .extensions import (
     NoReturnGuard,
     ParameterTypeGuard,
     TypeGuard,
-    get_type_evaluation,
 )
 from .find_unused import used
 from .functions import FunctionDefNode

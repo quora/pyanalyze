@@ -36,8 +36,6 @@ from .stacked_scopes import (
 from .safe import all_of_type
 from .value import (
     NO_RETURN_VALUE,
-    AnySource,
-    AnyValue,
     CanAssign,
     CanAssignContext,
     CanAssignError,
