@@ -279,7 +279,11 @@ class _AttrContext(attributes.AttrContext):
         skip_unwrap: bool = False,
     ) -> None:
         super().__init__(
-            root_composite, attr, skip_mro=skip_mro, skip_unwrap=skip_unwrap
+            root_composite,
+            attr,
+            visitor.options,
+            skip_mro=skip_mro,
+            skip_unwrap=skip_unwrap,
         )
         self.node = node
         self.visitor = visitor
@@ -291,9 +295,6 @@ class _AttrContext(attributes.AttrContext):
     def record_attr_read(self, obj: type) -> None:
         if self.node is not None:
             self.visitor._record_type_attr_read(obj, self.attr, self.node)
-
-    def should_ignore_class_attribute(self, obj: object) -> bool:
-        return self.visitor.config.should_ignore_class_attribute(obj)
 
     def get_property_type_from_argspec(self, obj: object) -> Value:
         argspec = self.visitor.arg_spec_cache.get_argspec(obj)
