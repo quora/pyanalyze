@@ -15,7 +15,7 @@ import typeshed_client
 from typing import Collection, Container, Iterable, Optional, Sequence, Union
 
 from .config import Config
-from .value import AnySource, AnyValue, TypedValue, Value
+from .value import AnySource, AnyValue, SubclassValue, TypedDictValue, TypedValue, Value
 from .checker import Checker
 from .name_check_visitor import NameCheckVisitor
 
@@ -131,6 +131,7 @@ def _stubwalk(search_context: typeshed_client.SearchContext) -> Iterable[Error]:
                 (ast.FunctionDef, ast.AsyncFunctionDef, typeshed_client.OverloadedName),
             )
             fq_name = f"{module_name}.{name}"
+            val = finder.resolve_name(module_name, name)
             if is_function:
                 sig = finder.get_argspec_for_fully_qualified_name(fq_name, None)
                 if sig is None:
@@ -143,29 +144,34 @@ def _stubwalk(search_context: typeshed_client.SearchContext) -> Iterable[Error]:
                 else:
                     yield from _error_on_nested_any(sig, "Signature", fq_name, info)
             if isinstance(info.ast, ast.ClassDef):
-                bases = finder.get_bases_for_fq_name(fq_name)
-                if bases is None:
-                    yield Error(
-                        ErrorCode.unresolved_bases,
-                        "Cannot resolve bases",
-                        fq_name,
-                        info.ast,
-                    )
-                else:
-                    for base in bases:
-                        if not isinstance(base, TypedValue):
-                            yield Error(
-                                ErrorCode.unresolved_bases,
-                                "Cannot resolve one of the bases",
-                                fq_name,
-                                info.ast,
-                            )
-                        else:
-                            yield from _error_on_nested_any(base, "Base", fq_name, info)
+                if not (
+                    isinstance(val, SubclassValue)
+                    and isinstance(val.typ, TypedDictValue)
+                ):
+                    bases = finder.get_bases_for_fq_name(fq_name)
+                    if bases is None:
+                        yield Error(
+                            ErrorCode.unresolved_bases,
+                            "Cannot resolve bases",
+                            fq_name,
+                            info.ast,
+                        )
+                    else:
+                        for base in bases:
+                            if not isinstance(base, TypedValue):
+                                yield Error(
+                                    ErrorCode.unresolved_bases,
+                                    "Cannot resolve one of the bases",
+                                    fq_name,
+                                    info.ast,
+                                )
+                            else:
+                                yield from _error_on_nested_any(
+                                    base, "Base", fq_name, info
+                                )
                 # TODO:
                 # - Loop over all attributes and assert their values don't contain Any
                 # - Loop over all methods and check their signatures
-            val = finder.resolve_name(module_name, name)
             if val == AnyValue(AnySource.inference):
                 if is_function:
                     yield Error(
