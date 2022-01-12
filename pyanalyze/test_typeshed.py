@@ -236,6 +236,20 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 TypedValue(TextIO) | TypedValue(BinaryIO),
             )
 
+    @assert_passes()
+    def test_recursive_base(self):
+        from typing import Any, ContextManager
+
+        def capybara():
+            from _pyanalyze_tests.recursion import _ScandirIterator
+
+            def want_cm(cm: ContextManager[Any]) -> None:
+                pass
+
+            def f(x: _ScandirIterator):
+                want_cm(x)
+                len(x)  # E: incompatible_argument
+
 
 class Parent(Generic[T]):
     pass

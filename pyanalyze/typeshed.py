@@ -155,6 +155,9 @@ class TypeshedFinder:
     _attribute_cache: Dict[Tuple[str, str, bool], Value] = field(
         default_factory=dict, repr=False, init=False
     )
+    _active_infos: List[typeshed_client.resolver.ResolvedName] = field(
+        default_factory=list, repr=False, init=False
+    )
 
     @classmethod
     def make(cls, options: Options, *, verbose: bool = False) -> "TypeshedFinder":
@@ -858,7 +861,7 @@ class TypeshedFinder:
 
     def make_synthetic_type(self, module: str, info: typeshed_client.NameInfo) -> Value:
         fq_name = f"{module}.{info.name}"
-        bases = self.get_bases_for_fq_name(fq_name)
+        bases = self._get_bases_from_info(info, module)
         typ = TypedValue(fq_name)
         if bases is not None:
             if any(
@@ -907,6 +910,19 @@ class TypeshedFinder:
     def _value_from_info(
         self, info: typeshed_client.resolver.ResolvedName, module: str
     ) -> Value:
+        # This guard against infinite recursion if a type refers to itself
+        # (real-world example: os._ScandirIterator).
+        if info in self._active_infos:
+            return AnyValue(AnySource.inference)
+        self._active_infos.append(info)
+        try:
+            return self._value_from_info_inner(info, module)
+        finally:
+            self._active_infos.pop()
+
+    def _value_from_info_inner(
+        self, info: typeshed_client.resolver.ResolvedName, module: str
+    ) -> Value:
         if isinstance(info, typeshed_client.ImportedInfo):
             return self._value_from_info(info.info, ".".join(info.source_module))
         elif isinstance(info, typeshed_client.NameInfo):
@@ -943,7 +959,7 @@ class TypeshedFinder:
                         return val
                     if info.ast.value:
                         return self._parse_expr(info.ast.value, module)
-                elif isinstance(info.ast, ast.FunctionDef):
+                elif isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     sig = self._get_signature_from_info(info, None, fq_name, module)
                     if sig is not None:
                         return CallableValue(sig)
