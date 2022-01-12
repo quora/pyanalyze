@@ -68,11 +68,7 @@ from .boolability import Boolability, get_boolability
 from .checker import Checker
 from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
-<<<<<<< HEAD
-from .extensions import ParameterTypeGuard, overload, patch_typing_overload
-=======
-from .extensions import ParameterTypeGuard
->>>>>>> origin/master
+from .extensions import ParameterTypeGuard, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
 from .options import (
     ConfigOption,
