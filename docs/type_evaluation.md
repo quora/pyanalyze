@@ -691,10 +691,9 @@ The last option could look like this:
     def zip(strict: bool = False):
         if is_provided(strict) and sys.version_info < (3, 10):
             show_error(
-                added_in_py_version("strict", "3.10"), 
+                added_in_py_version("strict", "3.10"),
                 argument="strict"
             )
-
 
 ### Adding attributes
 
@@ -738,14 +737,15 @@ in pyanalyze:
 
 Currently unsupported features include:
 
-- pyanalyze should provide a way to register
-  an evaluation function for a runtime function,
-  to replace some impls.
 - Type compatibility for evaluated functions.
+- Overloaded evaluated functions.
 
 Areas that need more thought include:
 
-- Interaction with typevars
 - Interaction with overloads. It should be possible
   to register multiple evaluation functions for a
   function, treating them as overloads.
+- Interaction with `__init__` and self types. How does
+  an eval function set the self type of a function? Perhaps
+  we can have the return type have special meaning just for
+  `__init__` methods.
