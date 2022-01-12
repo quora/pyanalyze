@@ -173,10 +173,6 @@ class Config(object):
     }
     if asyncio is not None:
         SAFE_DECORATORS_FOR_NESTED_FUNCTIONS[asyncio.coroutine] = False
-    # when these undefined names are seen, we automatically suggest a correction
-    NAMES_TO_IMPORTS = {"qcore": None, "asynq": "asynq"}
-    for assert_helper in qcore.asserts.__all__:
-        NAMES_TO_IMPORTS[assert_helper] = "qcore.asserts"
 
     # attributes.TreatClassAttributeAsAny
     def should_ignore_class_attribute(self, cls_val: object) -> bool:
@@ -273,6 +269,7 @@ class Config(object):
     #
 
     # When these attributes are unused, they are not listed as such by the unused attribute finder
+    # name_check_visitor.IgnoredUnusedAttributes
     IGNORED_UNUSED_ATTRS: Set[str] = {
         # ABCs
         "_abc_cache",
@@ -293,12 +290,14 @@ class Config(object):
 
     # List of pairs of (class, set of attribute names). When these attribute names are seen as
     # unused on a child or base class of the class, they are not listed.
+    # name_check_visitor.IgnoredUnusedClassAttributes
     IGNORED_UNUSED_ATTRS_BY_CLASS: Sequence[Tuple[type, Set[str]]] = []
 
     # Used in the check for object attributes that are accessed but not set. In general, the check
     # will only alert about attributes that don't exist when it has visited all the base classes of
     # the class with the possibly missing attribute. However, these classes are never going to be
     # visited (since they're builtin), but they don't set any attributes that we rely on.
+    # name_check_visitor.IgnoredTypesForAttributeChecking
     IGNORED_TYPES_FOR_ATTRIBUTE_CHECKING: Set[type] = {object, abc.ABC}
 
     #
@@ -311,6 +310,7 @@ class Config(object):
         """Initialize any hardcoded argspecs."""
         return {}
 
+    # name_check_visitor.AllowDuplicateValues
     def should_check_class_for_duplicate_values(self, cls: type) -> bool:
         """Whether we should produce an error if this class contains duplicate values.
 

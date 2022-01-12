@@ -242,7 +242,7 @@ class PathSequenceOption(ConfigOption[Sequence[Path]]):
         )
 
 
-class PyObjectSequenceOption(ConfigOption[Sequence[T]]):
+class PyObjectSequenceOption(ConcatenatedOption[T]):
     """Represents a sequence of objects parsed as Python objects."""
 
     default_value: ClassVar[Sequence[T]] = ()

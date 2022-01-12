@@ -7,6 +7,7 @@ type inference. It is the central object that invokes other parts of
 the system.
 
 """
+import abc
 from argparse import ArgumentParser
 import ast
 import enum
@@ -77,13 +78,14 @@ from .options import (
     InvalidConfigOption,
     IntegerOption,
     Options,
+    PyObjectSequenceOption,
     StringSequenceOption,
     add_arguments,
 )
 from .patma import PatmaVisitor
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
-from .safe import safe_getattr, is_hashable, all_of_type
+from .safe import safe_getattr, is_hashable, all_of_type, safe_issubclass
 from .stacked_scopes import (
     EMPTY_ORIGIN,
     AbstractConstraint,
@@ -471,6 +473,127 @@ class IgnoredForIncompatibleOverride(StringSequenceOption):
     default_value = ["__init__", "__eq__", "__ne__"]
 
 
+class IgnoredUnusedAttributes(StringSequenceOption):
+    """When these attributes are unused, they are not listed as such by the unused attribute finder."""
+
+    name = "ignored_unused_attributes"
+    default_value = [
+        # ABCs
+        "_abc_cache",
+        "_abc_negative_cache",
+        "__abstractmethods__",
+        "_abc_negative_cache_version",
+        "_abc_registry",
+        # Python core
+        "__module__",
+        "__doc__",
+        "__init__",
+        "__dict__",
+        "__weakref__",
+        "__enter__",
+        "__exit__",
+        "__metaclass__",
+    ]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
+        return list(fallback.IGNORED_UNUSED_ATTRS)
+
+
+class IgnoredUnusedClassAttributes(ConcatenatedOption[Tuple[type, Set[str]]]):
+    """List of pairs of (class, set of attribute names). When these attribute names are seen as
+    unused on a child or base class of the class, they are not listed."""
+
+    name = "ignored_unused_class_attributes"
+    default_value = []
+    should_create_command_line_option = False  # too complicated
+
+    @classmethod
+    def parse(cls, data: object, source_path: Path) -> Sequence[Tuple[type, Set[str]]]:
+        if not isinstance(data, (list, tuple)):
+            raise InvalidConfigOption.from_parser(
+                cls, "sequence of (type, [attribute]) pairs", data
+            )
+        final = []
+        for elt in data:
+            if not isinstance(elt, (list, tuple)) or len(elt) != 2:
+                raise InvalidConfigOption.from_parser(
+                    cls, "sequence of (type, [attribute]) pairs", elt
+                )
+            typ, attrs = elt
+            try:
+                obj = qcore.object_from_string(typ)
+            except Exception:
+                raise InvalidConfigOption.from_parser(
+                    cls, "path to Python object", typ
+                ) from None
+            if not isinstance(attrs, (list, tuple)):
+                raise InvalidConfigOption.from_parser(
+                    cls, "sequence of attributes", attrs
+                )
+            for attr in attrs:
+                if not isinstance(attr, str):
+                    raise InvalidConfigOption.from_parser(cls, "attribute string", attr)
+            final.append((obj, set(attrs)))
+        return final
+
+    @classmethod
+    def get_value_from_fallback(
+        cls, fallback: Config
+    ) -> Sequence[Tuple[type, Set[str]]]:
+        return fallback.IGNORED_UNUSED_ATTRS_BY_CLASS
+
+
+class CheckForDuplicateValues(PyObjectSequenceOption[type]):
+    """For subclasses of these classes, we error if multiple attributes have the same
+    value. This is used for the duplicate_enum check."""
+
+    name = "check_for_duplicate_values"
+    default_value = [enum.Enum]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[type]:
+        return []
+
+
+class AllowDuplicateValues(PyObjectSequenceOption[type]):
+    """For subclasses of these classes, we do not error if multiple attributes have the same
+    value. This overrides CheckForDuplicateValues."""
+
+    name = "allow_duplicate_values"
+    default_value = []
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[type]:
+        return []
+
+
+def should_check_for_duplicate_values(cls: object, options: Options) -> bool:
+    if not isinstance(cls, type):
+        return False
+    positive_list = tuple(options.get_value_for(CheckForDuplicateValues))
+    if not safe_issubclass(cls, positive_list):
+        return False
+    negative_list = tuple(options.get_value_for(AllowDuplicateValues))
+    if safe_issubclass(cls, negative_list):
+        return False
+    return options.fallback.should_check_class_for_duplicate_values(cls)
+
+
+class IgnoredTypesForAttributeChecking(PyObjectSequenceOption[type]):
+    """Used in the check for object attributes that are accessed but not set. In general, the check
+    will only alert about attributes that don't exist when it has visited all the base classes of
+    the class with the possibly missing attribute. However, these classes are never going to be
+    visited (since they're builtin), but they don't set any attributes that we rely on."""
+
+    name = "ignored_types_for_attribute_checking"
+    default_value = [object, abc.ABC]
+
+    @classmethod
+    def get_value_from_fallback(cls, fallback: Config) -> Sequence[type]:
+        return list(fallback.IGNORED_TYPES_FOR_ATTRIBUTE_CHECKING)
+
+
 class ClassAttributeChecker:
     """Helper class to keep track of attributes that are read and set on instances."""
 
@@ -506,7 +629,7 @@ class ClassAttributeChecker:
         # Classes that we have examined the AST for
         self.classes_examined = {
             self.serialize_type(typ)
-            for typ in config.IGNORED_TYPES_FOR_ATTRIBUTE_CHECKING
+            for typ in self.options.get_value_for(IgnoredTypesForAttributeChecking)
         }
 
     def __enter__(self) -> Optional["ClassAttributeChecker"]:
@@ -685,14 +808,15 @@ class ClassAttributeChecker:
             attr_names_read = {attr_name for attr_name, _, _ in attrs_read}
             _add_attrs(self.unserialize_type(serialized), attr_names_read)
 
-        for typ, attrs in self.config.IGNORED_UNUSED_ATTRS_BY_CLASS:
+        for typ, attrs in self.options.get_value_for(IgnoredUnusedClassAttributes):
             _add_attrs(typ, attrs)
 
+        ignored = set(self.options.get_value_for(IgnoredUnusedAttributes))
         for typ, attrs_read in sorted(all_attrs_read.items(), key=self._cls_sort):
             if self.serialize_type(typ) not in self.classes_examined:
                 continue
             existing_attrs = set(typ.__dict__.keys())
-            for attr in existing_attrs - attrs_read - self.config.IGNORED_UNUSED_ATTRS:
+            for attr in existing_attrs - attrs_read - ignored:
                 # server calls will always show up as unused here
                 if safe_getattr(safe_getattr(typ, attr, None), "server_call", False):
                     continue
@@ -1376,7 +1500,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if suppress_errors or node.id in self.options.get_value_for(ExtraBuiltins):
                 self.log(logging.INFO, "ignoring undefined name", node.id)
             else:
-                self._maybe_show_missing_import_error(node)
                 self._show_error_if_checking(
                     error_node, f"Undefined name: {node.id}", ErrorCode.undefined_name
                 )
@@ -1411,64 +1534,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     return new_mvv, origin
         return value, origin
 
-    def _maybe_show_missing_import_error(self, node: ast.Name) -> None:
-        """Shows errors that suggest adding an import statement in the semi-right place.
-
-        This mostly exists to make refactorings that add imported names easier. A couple of
-        potential improvements:
-        - Currently it just adds new imports before the first existing one. It could be made
-          smarter.
-        - It doesn't know what to do if the file doesn't have any imports.
-        - The code adding more entries to a from ... import will fail if the existing node spans
-          multiple lines.
-
-        """
-        if not self._is_checking():
-            return
-        if node.id not in self.config.NAMES_TO_IMPORTS:
-            return
-        if node.id in self.imports_added:
-            return
-        self.imports_added.add(node.id)
-        target = self.config.NAMES_TO_IMPORTS[node.id]
-        if target is None or target not in self.import_name_to_node:
-            # add the import
-            try:
-                target_node = self._get_first_import_node()
-            except ValueError:
-                return  # no import nodes, you're on your own
-            lineno = target_node.lineno
-            if target is None:
-                new_line = f"import {node.id}\n"
-            else:
-                new_line = f"from {target} import {node.id}\n"
-            new_lines = [new_line, self._lines()[lineno - 1]]
-            self._show_error_if_checking(
-                target_node,
-                f"add an import for {node.id}",
-                error_code=ErrorCode.add_import,
-                replacement=node_visitor.Replacement([lineno], new_lines),
-            )
-        else:
-            existing = self.import_name_to_node[target]
-            if not isinstance(existing, ast.ImportFrom):
-                return
-            names = existing.names + [ast.alias(name=node.id, asname=None)]
-            names = sorted(names, key=lambda alias: alias.name)
-            existing.names = (
-                names  # so that when we add more names this one is maintained
-            )
-            new_node = ast.ImportFrom(
-                module=existing.module, names=names, level=existing.level
-            )
-            new_code = decompile(new_node)
-            self._show_error_if_checking(
-                existing,
-                f"add an import for {node.id}",
-                error_code=ErrorCode.add_import,
-                replacement=node_visitor.Replacement([existing.lineno], [new_code]),
-            )
-
     def _get_first_import_node(self) -> ast.stmt:
         return min(self.import_name_to_node.values(), key=lambda node: node.lineno)
 
@@ -1483,9 +1548,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     @contextlib.contextmanager
     def _set_current_class(self, current_class: type) -> Iterator[None]:
-        if isinstance(
-            current_class, type
-        ) and self.config.should_check_class_for_duplicate_values(current_class):
+        if should_check_for_duplicate_values(current_class, self.options):
             current_enum_members = {}
         else:
             current_enum_members = None
