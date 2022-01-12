@@ -31,6 +31,7 @@ class ErrorCode(enum.Enum):
     unresolved_type_in_signature = 5
     unused_allowlist_entry = 6
     unresolved_bases = 7
+    unresolved_module = 8
 
 
 DISABLED_BY_DEFAULT = {
@@ -53,7 +54,9 @@ class Error:
     code: ErrorCode
     message: str
     fully_qualified_name: str
-    node: Union[ast.AST, typeshed_client.OverloadedName, None] = None
+    node: Union[
+        ast.AST, typeshed_client.OverloadedName, typeshed_client.ImportedName, None
+    ] = None
 
     def display(self) -> str:
         heading = f"{self.fully_qualified_name}: {self.message} ({self.code.name})\n"
@@ -66,6 +69,11 @@ class Error:
                 for node in self.node.definitions
             ]
             heading += "".join(lines)
+        elif isinstance(self.node, typeshed_client.ImportedName):
+            heading += (
+                f"  imported from: {'.'.join(self.node.module_name)} with name"
+                f" {self.node.name}"
+            )
         return heading
 
 
@@ -110,6 +118,13 @@ def _stubwalk(search_context: typeshed_client.SearchContext) -> Iterable[Error]:
         if module_name in ("this", "antigravity"):
             continue  # please stop opening my browser
         names = typeshed_client.get_stub_names(module_name, search_context=resolver.ctx)
+        if names is None:
+            yield Error(
+                ErrorCode.unresolved_module,
+                f"Failed to find stub for module {module_name}",
+                module_name,
+            )
+            continue
         for name, info in names.items():
             is_function = isinstance(
                 info.ast,
