@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## Version 0.6.0 (January 12, 2022)
 
+Release highlights:
+- Support for configuration through `pyproject.toml`. The old
+  configuration mechanism will be removed in the next release.
+- Support for experimental new type evaluation mechanism, providing
+  a more powerful replacement for overloads.
+- Support for suggesting annotations for unannotated code.
+
+Full changelog:
 - Support generic type evaluators (#409)
 - Implement return annotation behavior for type evaluation
   functions (#408)
