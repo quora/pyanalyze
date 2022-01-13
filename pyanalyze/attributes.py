@@ -161,7 +161,10 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
     return result
 
 
-class TreatClassAttributeAsAny(PyObjectSequenceOption[Callable[[object], bool]]):
+_TCAA = Callable[[object], bool]
+
+
+class TreatClassAttributeAsAny(PyObjectSequenceOption[_TCAA]):
     """Allows treating certain class attributes as Any.
 
     Instances of this option are callables that take an object found among
@@ -170,6 +173,9 @@ class TreatClassAttributeAsAny(PyObjectSequenceOption[Callable[[object], bool]])
 
     """
 
+    default_value: Sequence[_TCAA] = [
+        lambda cls_val: cls_val is None or cls_val is NotImplemented
+    ]
     name = "treat_class_attribute_as_any"
 
     @classmethod
