@@ -10,8 +10,13 @@ from asynq import asynq, async_proxy, AsyncTask, ConstFuture, get_async_fn, resu
 from asynq.decorators import AsyncDecorator
 import qcore
 
+from .value import VariableNameValue
+
 ASYNQ_METHOD_NAME = "asynq"
 ASYNQ_METHOD_NAMES = ("asynq",)
+
+uid_vnv = VariableNameValue(["uid"])
+qid_vnv = VariableNameValue(["qid"])
 
 
 class CacheDecorator(AsyncDecorator):

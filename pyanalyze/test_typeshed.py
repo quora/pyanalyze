@@ -16,7 +16,7 @@ from urllib.error import HTTPError
 import urllib.parse
 
 from .extensions import evaluated
-from .test_config import TestConfig, TEST_OPTIONS
+from .test_config import TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .options import Options
@@ -274,9 +274,7 @@ class GenericChild(Parent[T]):
 
 class TestGetGenericBases:
     def setup(self) -> None:
-        arg_spec_cache = ArgSpecCache(
-            Options.from_option_list([], TestConfig()), TypeshedFinder()
-        )
+        arg_spec_cache = ArgSpecCache(Options.from_option_list(), TypeshedFinder())
         self.get_generic_bases = arg_spec_cache.get_generic_bases
 
     def test_runtime(self):

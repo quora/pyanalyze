@@ -14,7 +14,6 @@ import __future__
 
 import pyanalyze
 from .safe import safe_in
-from .config import Config
 from . import extensions
 
 T = TypeVar("T")
@@ -94,7 +93,6 @@ class UnusedObjectFinder:
 
     """
 
-    config: Optional[Config] = None
     options: Optional["pyanalyze.options.Options"] = None
     enabled: bool = False
     print_output: bool = True
@@ -113,9 +111,7 @@ class UnusedObjectFinder:
 
     def __post_init__(self) -> None:
         if self.options is None:
-            if self.config is None:
-                raise TypeError("either config or options must be given")
-            self.options = pyanalyze.options.Options.from_option_list([], self.config)
+            self.options = pyanalyze.options.Options.from_option_list()
 
     def __enter__(self) -> Optional["UnusedObjectFinder"]:
         if self.enabled:

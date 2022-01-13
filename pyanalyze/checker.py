@@ -7,24 +7,12 @@ import itertools
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
 import sys
-from typing import (
-    Callable,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
-    Dict,
-)
+from typing import Callable, Iterable, Iterator, List, Optional, Set, Tuple, Union, Dict
 
 from .options import Options, PyObjectSequenceOption
 from .node_visitor import Failure
 from .value import TypedValue, VariableNameValue
 from .arg_spec import ArgSpecCache
-from .config import Config
 from .reexport import ImplicitReexportTracker
 from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
 from .shared_options import VariableNameValues
@@ -52,14 +40,9 @@ class AdditionalBaseProviders(PyObjectSequenceOption[_BaseProvider]):
 
     name = "additional_base_providers"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_BaseProvider]:
-        return (fallback.get_additional_bases,)
-
 
 @dataclass
 class Checker:
-    config: Config = Config()
     raw_options: InitVar[Optional[Options]] = None
     options: Options = field(init=False)
     arg_spec_cache: ArgSpecCache = field(init=False)
@@ -76,7 +59,7 @@ class Checker:
 
     def __post_init__(self, raw_options: Optional[Options]) -> None:
         if raw_options is None:
-            self.options = Options.from_option_list([], self.config)
+            self.options = Options.from_option_list()
         else:
             self.options = raw_options
         self.ts_finder = TypeshedFinder.make(self.options)

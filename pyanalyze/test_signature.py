@@ -640,7 +640,7 @@ class TestCalls(TestNameCheckVisitorBase):
 
         def run():
             # This fails at runtime, but pyanalyze accepts it because of a special case
-            # in pyanalyze.test_config.TestConfig.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.
+            # in pyanalyze.test_config.get_constructor.
             Capybara(None, kwonly_arg="capybara")
 
     @assert_fails(ErrorCode.undefined_name)

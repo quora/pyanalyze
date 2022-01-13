@@ -15,7 +15,6 @@ from itertools import zip_longest
 from typing import Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
 from typing_extensions import Protocol
 
-from .config import Config
 from .error_code import ErrorCode
 from .extensions import overload, real_overload, evaluated
 from .options import Options, PyObjectSequenceOption
@@ -114,10 +113,6 @@ class AsynqDecorators(PyObjectSequenceOption[object]):
     default_value = [asynq.asynq]
     name = "asynq_decorators"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.ASYNQ_DECORATORS)
-
 
 class AsyncProxyDecorators(PyObjectSequenceOption[object]):
     """Decorators that are equivalent to asynq.async_proxy."""
@@ -125,20 +120,12 @@ class AsyncProxyDecorators(PyObjectSequenceOption[object]):
     default_value = [asynq.async_proxy]
     name = "async_proxy_decorators"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.ASYNC_PROXY_DECORATORS)
-
 
 class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
     """These decorators can safely be applied to nested functions."""
 
     name = "safe_decorators_for_nested_functions"
     default_value = [asynq.asynq, classmethod, staticmethod, asyncio.coroutine]
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS)
 
 
 def compute_function_info(

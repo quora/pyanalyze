@@ -50,7 +50,6 @@ database.run_query("SELECT answer, question FROM content")
 You want to detect when a call to `run_query()` contains syntactically invalid SQL or refers to a non-existent table or column. You could set that up with code like this:
 
 ```python
-import pyanalyze
 from pyanalyze.error_code import ErrorCode
 from pyanalyze.signature import CallContext, Signature, SigParameter
 from pyanalyze.value import KnownValue, TypedValue, AnyValue, AnySource, Value
@@ -82,20 +81,21 @@ def run_query_impl(ctx: CallContext) -> Value:
     return TypedValue(list)
 
 
-class Config(pyanalyze.config.Config):
-    def get_known_argspecs(self, arg_spec_cache):
-        return {
-            # This infers the parameter types and names from the function signature
-            run_query: arg_spec_cache.get_argspec(
-                run_query, impl=run_query_impl
-            ),
-            # You can also write the signature manually
-            run_query: Signature.make(
-                [SigParameter("sql", annotation=TypedValue(str))],
-                callable=run_query,
-                impl=run_query_impl,
-            ),
-        }
+# in pyproject.toml, set:
+# known_signatures = ["<module>.get_known_argspecs"]
+def get_known_argspecs(arg_spec_cache):
+    return {
+        # This infers the parameter types and names from the function signature
+        run_query: arg_spec_cache.get_argspec(
+            run_query, impl=run_query_impl
+        ),
+        # You can also write the signature manually
+        run_query: Signature.make(
+            [SigParameter("sql", annotation=TypedValue(str))],
+            callable=run_query,
+            impl=run_query_impl,
+        ),
+    }
 ```
 
 ### Displaying and checking the type of an expression
