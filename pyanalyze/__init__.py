@@ -30,7 +30,6 @@ from . import shared_options
 from . import signature
 from . import stacked_scopes
 from . import suggested_type
-from . import test_config
 from . import type_object
 from . import typeshed
 from . import tests
