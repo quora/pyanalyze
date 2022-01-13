@@ -91,8 +91,7 @@ def decorator(fn):
 
 
 def test_get_argspec():
-    config = ConfiguredNameCheckVisitor.config
-    checker = Checker(config)
+    checker = Checker()
     visitor = ConfiguredNameCheckVisitor(
         __file__, "", {}, fail_after_first=False, checker=checker
     )
@@ -262,7 +261,7 @@ def test_positional_only():
             def f(self, __x, _Y__x):
                 pass
 
-    asc = Checker(ConfiguredNameCheckVisitor.config).arg_spec_cache
+    asc = Checker().arg_spec_cache
     assert asc.get_argspec(f) == Signature.make(
         [
             SigParameter("__x", ParameterKind.POSITIONAL_ONLY),

@@ -11,9 +11,8 @@ from dataclasses import dataclass, field
 import qcore
 import inspect
 import types
-from typing import Iterator, Sequence, Any, Callable, Optional
+from typing import Iterator, Any, Callable, Optional
 
-from .config import Config
 from .error_code import ErrorCode
 from .functions import AsyncFunctionKind
 from .options import Options, PyObjectSequenceOption, StringSequenceOption
@@ -28,10 +27,6 @@ class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):
 
     name = "classes_checked_for_asynq"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[type]:
-        return list(fallback.BASE_CLASSES_CHECKED_FOR_ASYNQ)
-
 
 class NonAsynqModules(StringSequenceOption):
     """We ignore _async methods in these modules."""
@@ -39,20 +34,12 @@ class NonAsynqModules(StringSequenceOption):
     name = "non_asynq_modules"
     default_value = ["multiprocessing"]
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
-        return list(fallback.NON_ASYNQ_MODULES)
-
 
 class MethodsNotCheckedForAsynq(StringSequenceOption):
     """Async batching in these component methods isn't checked even when they exist on a class in
     ClassesCheckedForAsynq."""
 
     name = "methods_not_checked_for_asynq"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
-        return list(fallback.METHODS_NOT_CHECKED_FOR_ASYNQ)
 
 
 @dataclass

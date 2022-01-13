@@ -14,7 +14,7 @@ from .name_check_visitor import (
 )
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
-from .test_config import TEST_INSTANCES, TestConfig
+from .test_config import CONFIG_PATH
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -59,7 +59,7 @@ class ConfiguredNameCheckVisitor(NameCheckVisitor):
 
     """
 
-    config = TestConfig()
+    config_filename = str(CONFIG_PATH)
 
 
 class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
@@ -83,12 +83,10 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
         mod = _make_module(code_str)
         kwargs["settings"] = default_settings
-        kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs, TEST_INSTANCES)
+        kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
         new_code = ""
         with ClassAttributeChecker(
-            self.visitor_cls.config,
-            enabled=check_attributes,
-            options=kwargs["checker"].options,
+            enabled=check_attributes, options=kwargs["checker"].options
         ) as attribute_checker:
             visitor = self.visitor_cls(
                 mod.__name__,
@@ -159,7 +157,7 @@ def _make_module(code_str: str) -> types.ModuleType:
 
 def test_annotation():
     tree = ast.Call(ast.Name("int", ast.Load()), [], [])
-    checker = Checker(ConfiguredNameCheckVisitor.config)
+    checker = Checker()
     ConfiguredNameCheckVisitor(
         "<test input>", "int()", tree, module=ast, annotate=True, checker=checker
     ).check()

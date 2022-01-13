@@ -8,7 +8,6 @@ from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import CustomCheck, get_overloads, get_type_evaluations
 from .annotations import Context, RuntimeEvaluator, type_from_runtime
-from .config import Config
 from .find_unused import used
 from . import implementation
 from .safe import (
@@ -105,7 +104,7 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
         ):
             yield
     else:
-        options = Options.from_option_list([], Config())
+        options = Options.from_option_list()
         tsf = TypeshedFinder.make(options)
         argspec = ArgSpecCache(options, tsf).get_argspec(fn, impl=implementation_fn)
         if argspec is None:
@@ -175,10 +174,6 @@ class IgnoredCallees(PyObjectSequenceOption[object]):
     ]
     name = "ignored_callees"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return fallback.IGNORED_CALLEES
-
 
 class ClassesSafeToInstantiate(PyObjectSequenceOption[type]):
     """We will instantiate instances of these classes if we can infer the value of all of
@@ -196,10 +191,6 @@ class ClassesSafeToInstantiate(PyObjectSequenceOption[type]):
         tuple,
     ]
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[type]:
-        return fallback.CLASSES_SAFE_TO_INSTANTIATE
-
 
 class FunctionsSafeToCall(PyObjectSequenceOption[object]):
     """We will instantiate instances of these classes if we can infer the value of all of
@@ -208,10 +199,6 @@ class FunctionsSafeToCall(PyObjectSequenceOption[object]):
 
     name = "functions_safe_to_call"
     default_value = [sorted, asynq.asynq, make_weak]
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return fallback.FUNCTIONS_SAFE_TO_CALL
 
 
 _HookReturn = Union[None, ConcreteSignature, inspect.Signature, Callable[..., Any]]
@@ -228,10 +215,6 @@ class ConstructorHooks(PyObjectSequenceOption[_ConstructorHook]):
     """
 
     name = "constructor_hooks"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_ConstructorHook]:
-        return [fallback.get_constructor]
 
     @classmethod
     def get_constructor(cls, typ: type, options: Options) -> _HookReturn:
@@ -258,10 +241,6 @@ class KnownSignatures(PyObjectSequenceOption[_SigProvider]):
     name = "known_signatures"
     default_value = []
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_SigProvider]:
-        return [fallback.get_known_argspecs]
-
 
 _Unwrapper = Callable[[type], type]
 
@@ -283,10 +262,6 @@ class UnwrapClass(PyObjectSequenceOption[_Unwrapper]):
     name = "unwrap_class"
 
     @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_Unwrapper]:
-        return [fallback.unwrap_cls]
-
-    @classmethod
     def unwrap(cls, typ: type, options: Options) -> type:
         for unwrapper in options.get_value_for(cls):
             typ = unwrapper(typ)
@@ -305,7 +280,6 @@ class ArgSpecCache:
     ) -> None:
         self.vnv_provider = vnv_provider
         self.options = options
-        self.config = options.fallback
         self.ts_finder = ts_finder
         self.known_argspecs = {}
         self.generic_bases_cache = {}
@@ -316,10 +290,6 @@ class ArgSpecCache:
 
         for obj, argspec in default_argspecs.items():
             self.known_argspecs[obj] = argspec
-
-    def __reduce_ex__(self, proto: object) -> object:
-        # Don't pickle the actual argspecs, which are frequently unpicklable.
-        return self.__class__, (self.config,)
 
     def from_signature(
         self,

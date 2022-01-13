@@ -6,11 +6,10 @@ Functionality for dealing with implicit reexports.
 from ast import AST
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, Dict, List, Sequence, Set, Tuple
+from typing import Callable, Dict, List, Set, Tuple
 
 from .options import Options, PyObjectSequenceOption
 from .node_visitor import ErrorContext
-from .config import Config
 from .error_code import ErrorCode
 
 _ReexportConfigProvider = Callable[["ImplicitReexportTracker"], None]
@@ -22,12 +21,6 @@ class ReexportConfig(PyObjectSequenceOption[_ReexportConfigProvider]):
 
     name = "reexport_config"
     is_global = True
-
-    @classmethod
-    def get_value_from_fallback(
-        cls, fallback: Config
-    ) -> Sequence[_ReexportConfigProvider]:
-        return (fallback.configure_reexports,)
 
 
 @dataclass

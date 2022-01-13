@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Remove old configuration abstraction (#414)
+
 ## Version 0.6.0 (January 12, 2022)
 
 Release highlights:

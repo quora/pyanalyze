@@ -14,7 +14,6 @@ from . import arg_spec
 from . import asynq_checker
 from . import boolability
 from . import checker
-from . import config
 from . import error_code
 from . import extensions
 from . import find_unused

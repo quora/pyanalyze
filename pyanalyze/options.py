@@ -26,7 +26,6 @@ import qcore
 import tomli
 
 from .find_unused import used
-from .config import Config
 from .error_code import ErrorCode
 from .safe import safe_in
 
@@ -62,7 +61,6 @@ except ImportError:
 
 
 T = TypeVar("T")
-OptionT = TypeVar("OptionT", bound="ConfigOption")
 ModulePath = Tuple[str, ...]
 
 
@@ -101,6 +99,8 @@ class ConfigOption(Generic[T]):
             if cls.name in cls.registry:
                 raise ValueError(f"Duplicate option {cls.name}")
             cls.registry[cls.name] = cls
+            if not hasattr(cls, "default_value"):
+                raise ValueError(f"{cls} is missing a default value")
 
     @classmethod
     def parse(cls: "Type[ConfigOption[T]]", data: object, source_path: Path) -> T:
@@ -127,19 +127,6 @@ class ConfigOption(Generic[T]):
             self.priority,  # lower priority number first
             -len(self.applicable_to),  # longest options first
         )
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> T:
-        raise NotFound
-
-    @classmethod
-    def get_fallback_option(cls: Type[OptionT], fallback: Config) -> Optional[OptionT]:
-        try:
-            val = cls.get_value_from_fallback(fallback)
-        except NotFound:
-            return None
-        else:
-            return cls(val)
 
     @classmethod
     def create_command_line_option(cls, parser: argparse.ArgumentParser) -> None:
@@ -191,16 +178,17 @@ class ConcatenatedOption(ConfigOption[Sequence[T]]):
         instances: Sequence["ConcatenatedOption[T]"],
         module_path: ModulePath,
     ) -> Sequence[T]:
-        # TODO after we clean up the fallback logic, this should
-        # automatically incorporate the default value too.
         values = []
         for instance in instances:
             if instance.is_applicable_to(module_path):
                 values += instance.value
+        values += cls.default_value
         return values
 
 
 class StringSequenceOption(ConcatenatedOption[str]):
+    default_value: Sequence[str] = []
+
     @classmethod
     def parse(
         cls: "Type[StringSequenceOption]", data: object, source_path: Path
@@ -263,9 +251,7 @@ class PyObjectSequenceOption(ConcatenatedOption[T]):
             try:
                 obj = qcore.object_from_string(elt)
             except Exception:
-                raise InvalidConfigOption.from_parser(
-                    cls, "path to Python object", elt
-                ) from None
+                raise InvalidConfigOption.from_parser(cls, "path to Python object", elt)
             used(obj)
             final.append(obj)
         return final
@@ -289,14 +275,12 @@ class PyObjectSequenceOption(ConcatenatedOption[T]):
 @dataclass
 class Options:
     options: Mapping[str, Sequence[ConfigOption]]
-    fallback: Config
     module_path: ModulePath = ()
 
     @classmethod
     def from_option_list(
         cls,
         instances: Sequence[ConfigOption] = (),
-        fallback: Config = Config(),
         config_file_path: Optional[Path] = None,
     ) -> "Options":
         if config_file_path:
@@ -308,10 +292,10 @@ class Options:
             name: sorted(instances, key=lambda i: i.sort_key())
             for name, instances in by_name.items()
         }
-        return Options(options, fallback)
+        return Options(options)
 
     def for_module(self, module_path: ModulePath) -> "Options":
-        return Options(self.options, self.fallback, module_path)
+        return Options(self.options, module_path)
 
     def get_value_for(self, option: Type[ConfigOption[T]]) -> T:
         try:
@@ -320,12 +304,7 @@ class Options:
             return option.default_value
 
     def _get_value_for_no_default(self, option: Type[ConfigOption[T]]) -> T:
-        instances = self.options.get(option.name, ())
-        fallback = option.get_fallback_option(self.fallback)
-        if fallback is not None:
-            instances = [*instances, fallback]
-        else:
-            instances = [*instances, option(option.default_value)]
+        instances = [*self.options.get(option.name, ()), option(option.default_value)]
         return option.get_value_from_instances(instances, self.module_path)
 
     def is_error_code_enabled(self, code: ErrorCode) -> bool:
@@ -333,10 +312,6 @@ class Options:
         try:
             return self._get_value_for_no_default(option)
         except NotFound:
-            if code in self.fallback.ENABLED_ERRORS:
-                return True
-            if code in self.fallback.DISABLED_ERRORS:
-                return False
             return option.default_value
 
     def is_error_code_enabled_anywhere(self, code: ErrorCode) -> bool:
@@ -344,10 +319,6 @@ class Options:
         instances = self.options.get(option.name, ())
         if any(instance.value for instance in instances):
             return True
-        if code in self.fallback.ENABLED_ERRORS:
-            return True
-        if code in self.fallback.DISABLED_ERRORS:
-            return False
         return option.default_value
 
     def display(self) -> None:
@@ -367,7 +338,6 @@ class Options:
                     pieces.append("from config file")
                 suffix = f" ({', '.join(pieces)})"
                 print(f"{prefix}{instance.value}{suffix}")
-        print(f"Fallback: {self.fallback}")
         if self.module_path:
             print(f"For module: {'.'.join(self.module_path)}")
 

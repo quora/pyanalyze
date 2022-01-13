@@ -15,7 +15,6 @@ from typing import Any, Callable, Generic, Sequence, Tuple, Optional, Union
 
 
 from .annotations import type_from_annotations, type_from_runtime, Context
-from .config import Config
 from .options import Options, PyObjectSequenceOption
 from .safe import safe_isinstance, safe_issubclass
 from .signature import Signature, MaybeSignature
@@ -162,7 +161,10 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
     return result
 
 
-class TreatClassAttributeAsAny(PyObjectSequenceOption[Callable[[object], bool]]):
+_TCAA = Callable[[object], bool]
+
+
+class TreatClassAttributeAsAny(PyObjectSequenceOption[_TCAA]):
     """Allows treating certain class attributes as Any.
 
     Instances of this option are callables that take an object found among
@@ -171,18 +173,15 @@ class TreatClassAttributeAsAny(PyObjectSequenceOption[Callable[[object], bool]])
 
     """
 
+    default_value: Sequence[_TCAA] = [
+        lambda cls_val: cls_val is None or cls_val is NotImplemented
+    ]
     name = "treat_class_attribute_as_any"
 
     @classmethod
     def should_treat_as_any(cls, val: object, options: Options) -> bool:
         option_value = options.get_value_for(cls)
         return any(func(val) for func in option_value)
-
-    @classmethod
-    def get_value_from_fallback(
-        cls, fallback: Config
-    ) -> Sequence[Callable[[object], bool]]:
-        return (fallback.should_ignore_class_attribute,)
 
 
 def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:

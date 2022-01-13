@@ -167,9 +167,7 @@ def _annotate_module(
     """
     kwargs = visitor_cls.prepare_constructor_kwargs({})
     options = kwargs["checker"].options
-    with ClassAttributeChecker(
-        visitor_cls.config, enabled=True, options=options
-    ) as attribute_checker:
+    with ClassAttributeChecker(enabled=True, options=options) as attribute_checker:
         visitor = visitor_cls(
             filename,
             code_str,

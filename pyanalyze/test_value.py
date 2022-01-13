@@ -16,7 +16,6 @@ from .checker import Checker
 from .name_check_visitor import NameCheckVisitor
 from .signature import ELLIPSIS_PARAM, Signature
 from .stacked_scopes import Composite
-from .test_config import TestConfig
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -36,7 +35,7 @@ from .value import (
     unite_and_simplify,
 )
 
-_checker = Checker(TestConfig())
+_checker = Checker()
 CTX = NameCheckVisitor("", "", ast.parse(""), checker=_checker)
 
 
