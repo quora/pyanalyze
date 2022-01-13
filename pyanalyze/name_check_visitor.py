@@ -67,8 +67,7 @@ from .annotations import (
 from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass, IgnoredCallees
 from .boolability import Boolability, get_boolability
 from .checker import Checker
-from .config import Config
-from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
+from .error_code import ErrorCode,  ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
 from .options import (
@@ -542,15 +541,12 @@ class ClassAttributeChecker:
 
     def __init__(
         self,
-        config: Config = Config(),
+        *,
         enabled: bool = True,
         should_check_unused_attributes: bool = False,
         should_serialize: bool = False,
-        *,
-        options: Optional[Options] = None,
+        options: Options = Options.from_option_list(),
     ) -> None:
-        if options is None:
-            options = Options.from_option_list([], config)
         self.options = options
         # we might not have examined all parent classes when looking for attributes set
         # we dump them here. incase the callers want to extend coverage.
@@ -952,9 +948,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
-    config: ClassVar[
-        Config
-    ] = Config()  # subclasses may override this with a more specific config
     config_filename: ClassVar[Optional[str]] = None
     """Path (relative to this class's file) to a pyproject.toml config file."""
 
@@ -4577,30 +4570,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return parser
 
     @classmethod
-    def is_enabled_by_default(cls, code: ErrorCode) -> bool:
-        if code in DISABLED_BY_DEFAULT:
-            return code in cls.config.ENABLED_ERRORS
-        else:
-            return code not in cls.config.DISABLED_ERRORS
-
-    @classmethod
     def get_description_for_error_code(cls, error_code: ErrorCode) -> str:
         return ERROR_DESCRIPTION[error_code]
-
-    @classmethod
-    def get_default_modules(cls) -> Tuple[types.ModuleType, ...]:
-        if cls.config.DEFAULT_BASE_MODULE is None:
-            return ()
-        return (cls.config.DEFAULT_BASE_MODULE,)
 
     @classmethod
     def get_default_directories(
         cls, checker: Checker, **kwargs: Any
     ) -> Tuple[str, ...]:
         paths = checker.options.get_value_for(Paths)
-        if paths:
-            return tuple(str(path) for path in paths)
-        return cls.config.DEFAULT_DIRS
+        return tuple(str(path) for path in paths)
 
     @classmethod
     def _get_default_settings(cls) -> Optional[Dict[enum.Enum, bool]]:
@@ -4632,11 +4610,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if config_filename is not None:
                 module_path = Path(sys.modules[cls.__module__].__file__).parent
                 config_file = module_path / config_filename
-        options = Options.from_option_list(instances, cls.config, config_file)
+        options = Options.from_option_list(instances, config_file_path=config_file)
         if kwargs.pop("display_options", False):
             options.display()
             sys.exit(0)
-        kwargs.setdefault("checker", Checker(cls.config, options))
+        kwargs.setdefault("checker", Checker(raw_options=options))
         patch_typing_overload()
         return kwargs
 
@@ -4668,7 +4646,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         )
         if attribute_checker is None:
             inner_attribute_checker_obj = attribute_checker = ClassAttributeChecker(
-                cls.config,
                 enabled=attribute_checker_enabled,
                 should_check_unused_attributes=find_unused_attributes,
                 should_serialize=kwargs.get("parallel", False),
@@ -4678,7 +4655,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             inner_attribute_checker_obj = qcore.empty_context
         if unused_finder is None:
             unused_finder = UnusedObjectFinder(
-                cls.config,
                 checker.options,
                 enabled=find_unused or checker.options.get_value_for(EnforceNoUnused),
                 print_output=False,

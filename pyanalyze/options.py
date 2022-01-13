@@ -61,7 +61,6 @@ except ImportError:
 
 
 T = TypeVar("T")
-OptionT = TypeVar("OptionT", bound="ConfigOption")
 ModulePath = Tuple[str, ...]
 
 
@@ -100,6 +99,8 @@ class ConfigOption(Generic[T]):
             if cls.name in cls.registry:
                 raise ValueError(f"Duplicate option {cls.name}")
             cls.registry[cls.name] = cls
+            if not hasattr(cls, "default_value"):
+                raise ValueError(f"{cls} is missing a default value")
 
     @classmethod
     def parse(cls: "Type[ConfigOption[T]]", data: object, source_path: Path) -> T:
@@ -186,6 +187,8 @@ class ConcatenatedOption(ConfigOption[Sequence[T]]):
 
 
 class StringSequenceOption(ConcatenatedOption[str]):
+    default_value: Sequence[str] = []
+
     @classmethod
     def parse(
         cls: "Type[StringSequenceOption]", data: object, source_path: Path

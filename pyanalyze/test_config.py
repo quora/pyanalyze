@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .options import Options
 from .arg_spec import ArgSpecCache
+from .find_unused import used
 from .signature import (
     CallContext,
     ConcreteSignature,
@@ -36,6 +37,7 @@ def _custom_code_impl(ctx: CallContext) -> value.Value:
     return value.AnyValue(value.AnySource.error)
 
 
+@used  # in test.toml
 def get_constructor(cls: type) -> Optional[Signature]:
     """Return a constructor signature for this class.
 
@@ -60,6 +62,7 @@ def get_constructor(cls: type) -> Optional[Signature]:
     return None
 
 
+@used  # in test.toml
 def get_known_signatures(
     arg_spec_cache: ArgSpecCache,
 ) -> Dict[object, ConcreteSignature]:
@@ -100,6 +103,7 @@ def get_known_signatures(
     }
 
 
+@used  # in test.toml
 def unwrap_class(cls: type) -> type:
     """Does any application-specific unwrapping logic for wrapper classes."""
     if (

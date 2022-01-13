@@ -86,9 +86,7 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
         new_code = ""
         with ClassAttributeChecker(
-            self.visitor_cls.config,
-            enabled=check_attributes,
-            options=kwargs["checker"].options,
+            enabled=check_attributes, options=kwargs["checker"].options
         ) as attribute_checker:
             visitor = self.visitor_cls(
                 mod.__name__,
@@ -159,7 +157,7 @@ def _make_module(code_str: str) -> types.ModuleType:
 
 def test_annotation():
     tree = ast.Call(ast.Name("int", ast.Load()), [], [])
-    checker = Checker(ConfiguredNameCheckVisitor.config)
+    checker = Checker()
     ConfiguredNameCheckVisitor(
         "<test input>", "int()", tree, module=ast, annotate=True, checker=checker
     ).check()
