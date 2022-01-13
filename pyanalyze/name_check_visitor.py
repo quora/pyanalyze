@@ -67,7 +67,7 @@ from .annotations import (
 from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass, IgnoredCallees
 from .boolability import Boolability, get_boolability
 from .checker import Checker
-from .error_code import ErrorCode,  ERROR_DESCRIPTION
+from .error_code import ErrorCode, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
 from .options import (

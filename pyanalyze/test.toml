@@ -1,0 +1,8 @@
+[tool.pyanalyze]
+classes_checked_for_asynq = ["pyanalyze.tests.CheckedForAsynq"]
+methods_not_checked_for_asynq = ["not_checked"]
+variable_name_values = ["pyanalyze.tests.uid_vnv", "pyanalyze.tests.qid_vnv"]
+constructor_hooks = ["pyanalyze.test_config.get_constructor"]
+known_signatures = ["pyanalyze.test_config.get_known_signatures"]
+unwrap_class = ["pyanalyze.test_config.unwrap_class"]
+stub_path = ["./stubs"]

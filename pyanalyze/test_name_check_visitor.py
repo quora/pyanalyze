@@ -59,7 +59,7 @@ class ConfiguredNameCheckVisitor(NameCheckVisitor):
 
     """
 
-    config_file_path = str(CONFIG_PATH)
+    config_filename = str(CONFIG_PATH)
 
 
 class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):

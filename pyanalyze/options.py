@@ -251,9 +251,7 @@ class PyObjectSequenceOption(ConcatenatedOption[T]):
             try:
                 obj = qcore.object_from_string(elt)
             except Exception:
-                raise InvalidConfigOption.from_parser(
-                    cls, "path to Python object", elt
-                ) from None
+                raise InvalidConfigOption.from_parser(cls, "path to Python object", elt)
             used(obj)
             final.append(obj)
         return final

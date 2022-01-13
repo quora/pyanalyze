@@ -21,9 +21,6 @@ from .error_code import ErrorCode, register_error_code
 from . import tests
 from . import value
 
-CONFIG_PATH = Path(__file__).parent / "test.toml"
-TEST_OPTIONS = Options.from_option_list(config_file_path=CONFIG_PATH)
-
 register_error_code("internal_test", "Used in an internal test")
 
 
@@ -113,3 +110,7 @@ def unwrap_class(cls: type) -> type:
     ):
         return cls.base
     return cls
+
+
+CONFIG_PATH = Path(__file__).parent / "test.toml"
+TEST_OPTIONS = Options.from_option_list(config_file_path=CONFIG_PATH)
