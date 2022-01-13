@@ -121,14 +121,6 @@ class Config(object):
         mock.Mock,
     ]
 
-    # Use file-specific overrides instead
-    # In these files, we do not check for duplicate dictionary keys
-    IGNORED_FILES_FOR_DUPLICATE_DICT_KEYS = set()
-
-    # Use file-specific overrides instead
-    # In these files, strings with non-ASCII characters do not require explicit prefixes
-    IGNORED_FILES_FOR_EXPLICIT_STRING_LITERALS = set()
-
     # arg_spec.ClassesSafeToInstantiate
     # test_scope will instantiate instances of these classes if it can infer the value of all of
     # their arguments. This is useful mostly for classes that are commonly instantiated with static
