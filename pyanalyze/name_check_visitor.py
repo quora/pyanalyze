@@ -600,7 +600,7 @@ class ClassAttributeChecker:
 
     def __init__(
         self,
-        config: Config,
+        config: Config = Config(),
         enabled: bool = True,
         should_check_unused_attributes: bool = False,
         should_serialize: bool = False,
@@ -2566,11 +2566,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
                 continue
 
-            if (
-                already_exists
-                and os.path.basename(self.filename)
-                not in self.config.IGNORED_FILES_FOR_DUPLICATE_DICT_KEYS
-            ):
+            if already_exists:
                 self._show_error_if_checking(
                     key_node,
                     "Duplicate dictionary key %r" % (key,),
