@@ -341,14 +341,14 @@ class ComprehensionLengthInferenceLimit(IntegerOption):
     """If we iterate over something longer than this, we don't try to infer precise
     types for comprehensions. Increasing this can hurt performance."""
 
-    default_value = 100
+    default_value = 25
     name = "comprehension_length_inference_limit"
 
 
 class UnionSimplificationLimit(IntegerOption):
     """We may simplify unions with more than this many values."""
 
-    default_value = 25
+    default_value = 100
     name = "union_simplification_limit"
 
 
