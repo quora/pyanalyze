@@ -59,5 +59,8 @@ if __name__ == "__main__":
             "codemod",
             "tomli>=1.1.0",
         ],
+        # These are useful for unit tests of pyanalyze extensions
+        # outside the package.
+        package_data={"pyanalyze": ["test.toml", "stubs/*/*.pyi"]},
         **setup_kwargs,
     )
