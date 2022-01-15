@@ -294,66 +294,6 @@ def test_is_dot_asynq_function():
     assert not is_dot_asynq_function(l0cached_async_fn.dirty)
 
 
-class TestCoroutines(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_asyncio_coroutine(self):
-        import asyncio
-        from collections.abc import Awaitable
-
-        @asyncio.coroutine
-        def f():
-            yield from asyncio.sleep(3)
-            return 42
-
-        @asyncio.coroutine
-        def g():
-            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
-
-    @assert_passes()
-    def test_coroutine_from_typeshed(self):
-        import asyncio
-        import collections.abc
-
-        async def capybara():
-            assert_is_value(
-                asyncio.sleep(3),
-                GenericValue(
-                    collections.abc.Awaitable, [AnyValue(AnySource.unannotated)]
-                ),
-            )
-            return 42
-
-    @assert_passes()
-    def test_async_def_from_typeshed(self):
-        from asyncio.streams import open_connection, StreamReader, StreamWriter
-        from collections.abc import Awaitable
-
-        async def capybara():
-            # annotated as async def in typeshed
-            assert_is_value(
-                open_connection(),
-                GenericValue(
-                    Awaitable,
-                    [
-                        SequenceIncompleteValue(
-                            tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
-                        )
-                    ],
-                ),
-            )
-            return 42
-
-    @assert_passes()
-    def test_async_def(self):
-        from collections.abc import Awaitable
-
-        async def f():
-            return 42
-
-        async def g():
-            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
-
-
 class TestClassInstantiation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_union_with_impl(self):
