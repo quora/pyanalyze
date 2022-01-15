@@ -64,7 +64,18 @@ import qcore
 import inspect
 import warnings
 from types import FunctionType
-from typing import Sequence, TypeVar, cast, Dict, NewType, Callable, Optional, Union
+from typing import (
+    Sequence,
+    TypeVar,
+    cast,
+    Dict,
+    NewType,
+    Callable,
+    Optional,
+    Union,
+    Any,
+)
+from typing_extensions import Protocol
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
 
@@ -1097,6 +1108,11 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
+class SupportsLessThan(Protocol):
+    def __lt__(self, __other: Any) -> bool:
+        raise NotImplementedError
+
+
 def get_default_argspecs() -> Dict[object, Signature]:
     signatures = [
         # pyanalyze helpers
@@ -1489,7 +1505,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                     annotation=CallableValue(
                         Signature.make(
                             [SigParameter("arg", ParameterKind.POSITIONAL_ONLY)],
-                            return_annotation=TypedValue("_typeshed.SupportsLessThan"),
+                            return_annotation=TypedValue(SupportsLessThan),
                         )
                     ),
                     default=KnownValue(None),
