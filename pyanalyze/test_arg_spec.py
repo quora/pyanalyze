@@ -312,12 +312,14 @@ class TestCoroutines(TestNameCheckVisitorBase):
     @assert_passes()
     def test_coroutine_from_typeshed(self):
         import asyncio
+        import collections.abc
 
         async def capybara():
-            # annotated as def ... -> Future in typeshed
             assert_is_value(
                 asyncio.sleep(3),
-                GenericValue(asyncio.Future, [AnyValue(AnySource.unannotated)]),
+                GenericValue(
+                    collections.abc.Awaitable, [AnyValue(AnySource.unannotated)]
+                ),
             )
             return 42
 
