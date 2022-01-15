@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support PEP 673 (`typing_extensions.Self`) (#422)
 - Updates for compatibility with recent changes in typeshed (#421):
   - Fix override compatibility check for unknown callables 
   - Fix usage of removed type `_typeshed.SupportsLessThan`

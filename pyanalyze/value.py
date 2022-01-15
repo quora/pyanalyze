@@ -1468,6 +1468,10 @@ class ReferencingValue(Value):
         return f"<reference to {self.name}>"
 
 
+# Special TypeVar used to implement PEP 673 Self.
+SelfT = TypeVar("SelfT")
+
+
 @dataclass(frozen=True)
 class TypeVarValue(Value):
     """Value representing a ``typing.TypeVar`` or ``typing.ParamSpec``.
@@ -1561,6 +1565,13 @@ class TypeVarValue(Value):
             constraints = ", ".join(map(str, self.constraints))
             return f"{self.typevar} in ({constraints})"
         return str(self.typevar)
+
+
+SelfTVV = TypeVarValue(SelfT)
+
+
+def set_self(value: Value, self_value: Value) -> Value:
+    return value.substitute_typevars({SelfT: self_value})
 
 
 @dataclass

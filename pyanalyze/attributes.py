@@ -36,6 +36,7 @@ from .value import (
     SubclassValue,
     TypedValue,
     TypeVarValue,
+    set_self,
 )
 
 # these don't appear to be in the standard types module
@@ -115,7 +116,9 @@ def get_attribute(ctx: AttrContext) -> Value:
             if isinstance(root_value.typ.typ, str):
                 # TODO handle synthetic types
                 return AnyValue(AnySource.inference)
-            attribute_value = _get_attribute_from_subclass(root_value.typ.typ, ctx)
+            attribute_value = _get_attribute_from_subclass(
+                root_value.typ.typ, root_value.typ, ctx
+            )
         elif isinstance(root_value.typ, AnyValue):
             attribute_value = AnyValue(AnySource.from_another)
         else:
@@ -144,7 +147,9 @@ def may_have_dynamic_attributes(typ: type) -> bool:
     return False
 
 
-def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
+def _get_attribute_from_subclass(
+    typ: type, self_value: Value, ctx: AttrContext
+) -> Value:
     ctx.record_attr_read(typ)
 
     # First check values that are special in Python
@@ -157,6 +162,7 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
     result, _, should_unwrap = _get_attribute_from_mro(typ, ctx, on_class=True)
     if should_unwrap:
         result = _unwrap_value_from_subclass(result, ctx)
+    result = set_self(result, self_value)
     ctx.record_usage(typ, result)
     return result
 
@@ -223,7 +229,9 @@ def _get_attribute_from_synthetic_type(
     result, provider = ctx.get_attribute_from_typeshed_recursively(
         fq_name, on_class=False
     )
-    return _substitute_typevars(fq_name, generic_args, result, provider, ctx)
+    result = _substitute_typevars(fq_name, generic_args, result, provider, ctx)
+    result = set_self(result, ctx.root_value)
+    return result
 
 
 def _get_attribute_from_typed(
@@ -241,6 +249,7 @@ def _get_attribute_from_typed(
     if should_unwrap:
         result = _unwrap_value_from_typed(result, typ, ctx)
     ctx.record_usage(typ, result)
+    result = set_self(result, ctx.root_value)
     return result
 
 
@@ -337,6 +346,8 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
         return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
 
     result, _, _ = _get_attribute_from_mro(obj, ctx, on_class=True)
+    if safe_isinstance(obj, type):
+        result = set_self(result, TypedValue(obj))
     if isinstance(obj, (types.ModuleType, type)):
         ctx.record_usage(obj, result)
     else:
