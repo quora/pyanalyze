@@ -1,5 +1,13 @@
 # static analysis: ignore
-from .value import GenericValue, KnownValue, TypedValue, make_weak, AnyValue, AnySource
+from .value import (
+    GenericValue,
+    KnownValue,
+    TypedValue,
+    make_weak,
+    AnyValue,
+    AnySource,
+    SequenceIncompleteValue,
+)
 from .implementation import assert_is_value
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase

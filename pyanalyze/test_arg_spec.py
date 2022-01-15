@@ -21,7 +21,6 @@ from .value import (
     NewTypeValue,
     TypedValue,
     GenericValue,
-    SequenceIncompleteValue,
     assert_is_value,
 )
 
