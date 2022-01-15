@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Updates for compatibility with recent changes in typeshed (#421):
+  - Fix override compatibility check for unknown callables 
+  - Fix usage of removed type `_typeshed.SupportsLessThan`
 - Remove old configuration abstraction (#414)
 
 ## Version 0.6.0 (January 12, 2022)

@@ -346,29 +346,24 @@ class TestGetGenericBases:
             # Until 3.8 NamedTuple is actually a class.
             expected = {
                 time.struct_time: [],
-                "time._struct_time": [],
-                typing.NamedTuple: [],
-                # Ideally should be not Any, but we haven't implemented
-                # support for typeshed namedtuples.
-                tuple: [AnyValue(AnySource.explicit)],
-                collections.abc.Collection: [AnyValue(AnySource.explicit)],
-                collections.abc.Reversible: [AnyValue(AnySource.explicit)],
-                collections.abc.Iterable: [AnyValue(AnySource.explicit)],
-                collections.abc.Sequence: [AnyValue(AnySource.explicit)],
-                collections.abc.Container: [AnyValue(AnySource.explicit)],
+                "_typeshed.structseq": [AnyValue(AnySource.explicit) | TypedValue(int)],
+                tuple: [TypedValue(int)],
+                collections.abc.Collection: [TypedValue(int)],
+                collections.abc.Reversible: [TypedValue(int)],
+                collections.abc.Iterable: [TypedValue(int)],
+                collections.abc.Sequence: [TypedValue(int)],
+                collections.abc.Container: [TypedValue(int)],
             }
         else:
             expected = {
                 time.struct_time: [],
-                "time._struct_time": [],
-                # Ideally should be not Any, but we haven't implemented
-                # support for typeshed namedtuples.
-                tuple: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Collection: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Reversible: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Iterable: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Container: [AnyValue(AnySource.generic_argument)],
+                "_typeshed.structseq": [AnyValue(AnySource.explicit) | TypedValue(int)],
+                tuple: [TypedValue(int)],
+                collections.abc.Collection: [TypedValue(int)],
+                collections.abc.Reversible: [TypedValue(int)],
+                collections.abc.Iterable: [TypedValue(int)],
+                collections.abc.Sequence: [TypedValue(int)],
+                collections.abc.Container: [TypedValue(int)],
             }
         self.check(expected, time.struct_time)
 

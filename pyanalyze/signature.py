@@ -1248,7 +1248,15 @@ class Signature:
                 else:
                     return can_assign
             return CanAssignError("overloaded function is incompatible", errors)
-        if self.is_asynq and not other.is_asynq:
+        # Callable[..., Any] is compatible with an asynq callable too.
+        if (
+            self.is_asynq
+            and not other.is_asynq
+            and not any(
+                param.kind is ParameterKind.ELLIPSIS
+                for param in other.parameters.values()
+            )
+        ):
             return CanAssignError("callable is not asynq")
         if USE_CHECK_CALL_FOR_CAN_ASSIGN:
             return self.can_assign_through_check_call(other, ctx)
@@ -1673,9 +1681,7 @@ class Signature:
 
 
 ELLIPSIS_PARAM = SigParameter("...", ParameterKind.ELLIPSIS)
-ANY_SIGNATURE = Signature.make(
-    [ELLIPSIS_PARAM], AnyValue(AnySource.explicit), is_asynq=True
-)
+ANY_SIGNATURE = Signature.make([ELLIPSIS_PARAM], AnyValue(AnySource.explicit))
 """:class:`Signature` that should be compatible with any other
 :class:`Signature`."""
 
