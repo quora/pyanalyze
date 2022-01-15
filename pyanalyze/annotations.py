@@ -79,6 +79,7 @@ from .value import (
     ParamSpecArgsValue,
     ParamSpecKwargsValue,
     ParameterTypeGuardExtension,
+    SelfTVV,
     TypeGuardExtension,
     TypedValue,
     SequenceIncompleteValue,
@@ -427,6 +428,8 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return KnownValue(None)
     elif is_typing_name(val, "NoReturn"):
         return NO_RETURN_VALUE
+    elif is_typing_name(val, "Self"):
+        return SelfTVV
     elif val is typing.Any:
         return AnyValue(AnySource.explicit)
     elif hasattr(val, "__supertype__"):
