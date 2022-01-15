@@ -94,11 +94,11 @@ class TestMissingAwait(TestNameCheckVisitorBase):
 
         @asyncio.coroutine
         def f():
-            yield from asyncio.sleep(3)  # E: missing_await
+            yield from asyncio.sleep(3)
 
         @asyncio.coroutine
         def g():
-            f()
+            f()  # E: missing_await
 
     @assert_passes()
     def test_yield_from(self):
@@ -118,7 +118,7 @@ class TestMissingAwait(TestNameCheckVisitorBase):
 
         @asyncio.coroutine
         def f():
-            asyncio.sleep(3)  # E: missing_awaiit
+            asyncio.sleep(3)  # E: missing_await
 
     def test_add_yield_from(self):
         self.assert_is_changed(
