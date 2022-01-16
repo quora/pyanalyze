@@ -259,3 +259,29 @@ class TestArgSpec(TestNameCheckVisitorBase):
 
         async def g():
             assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
+
+
+class TestNoReturn(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing import NoReturn
+
+        async def noret() -> NoReturn:
+            raise NotImplementedError
+
+        async def capybara(cond) -> int:
+            if cond:
+                return 3
+            else:
+                await noret()
+
+        async def pacarana(cond) -> int:  # E: missing_return
+            if cond:
+                return 3
+            else:
+                x = noret()
+                print(x)
+
+        async def hutia(cond) -> int:  # E: missing_return
+            if cond:
+                return 3

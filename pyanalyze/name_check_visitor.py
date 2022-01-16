@@ -2993,7 +2993,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_Await(self, node: ast.Await) -> Value:
         composite = self.composite_from_node(node.value)
-        return self.unpack_awaitable(composite, node.value)
+        return_value = self.unpack_awaitable(composite, node.value)
+        if return_value is NO_RETURN_VALUE:
+            self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
+        return return_value
 
     def unpack_awaitable(self, composite: Composite, node: ast.AST) -> Value:
         tv_map = AwaitableValue.can_assign(composite.value, self)

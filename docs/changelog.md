@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Handle `NoReturn` in `async def` functions (#427)
 - Support PEP 673 (`typing_extensions.Self`) (#423)
 - Updates for compatibility with recent changes in typeshed (#421):
   - Fix override compatibility check for unknown callables 
