@@ -1109,7 +1109,7 @@ class FunctionScope(Scope):
         return self._resolve_origin(definers)
 
     @contextlib.contextmanager
-    def subscope(self) -> Iterable[SubScope]:
+    def subscope(self) -> Iterator[SubScope]:
         """Create a new subscope, to be used for conditional branches."""
         # Ignore LEAVES_SCOPE if it's already there, so that we type check code after the
         # assert False correctly. Without this, test_after_assert_false fails.
@@ -1127,7 +1127,7 @@ class FunctionScope(Scope):
             yield new_name_to_nodes
 
     @contextlib.contextmanager
-    def loop_scope(self) -> Iterable[SubScope]:
+    def loop_scope(self) -> Iterator[SubScope]:
         loop_scopes = []
         with self.subscope() as main_scope:
             loop_scopes.append(main_scope)
@@ -1276,7 +1276,7 @@ class StackedScopes:
         scope_type: ScopeType,
         scope_node: Node,
         scope_object: Optional[object] = None,
-    ) -> Iterable[None]:
+    ) -> Iterator[None]:
         """Context manager that adds a scope of this type to the top of the stack."""
         if scope_type is ScopeType.function_scope:
             scope = FunctionScope(
