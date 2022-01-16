@@ -1578,8 +1578,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 node, error_code=ErrorCode.missing_return_annotation
             )
 
+        computed_function = compute_value_of_function(info, self)
         if potential_function is None:
-            val = compute_value_of_function(info, self)
+            val = computed_function
         else:
             val = KnownValue(potential_function)
         if not info.is_overload and not info.is_evaluated:
