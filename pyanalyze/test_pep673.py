@@ -133,6 +133,19 @@ class TestPEP673(TestNameCheckVisitorBase):
             assert_is_value(c.set_value(3), GenericValue(Container, [TypedValue(int)]))
 
     @assert_passes()
+    def test_classvar(self):
+        from typing_extensions import Self
+        from typing import ClassVar, List
+
+        class Registry:
+            children: ClassVar[List[Self]]
+
+        def capybara():
+            assert_is_value(
+                Registry.children, GenericValue(list, [TypedValue(Registry)])
+            )
+
+    @assert_passes()
     def test_stub(self):
         def capybara():
             from _pyanalyze_tests.self import X, Y
