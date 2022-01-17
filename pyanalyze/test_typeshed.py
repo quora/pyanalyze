@@ -259,6 +259,45 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 want_cm(x)
                 len(x)  # E: incompatible_argument
 
+    @assert_passes()
+    def test_init_new(self):
+        def capybara():
+            from _pyanalyze_tests.initnew import (
+                my_enumerate,
+                simple,
+                overloadinit,
+                simplenew,
+                overloadnew,
+            )
+
+            simple()  # E: incompatible_call
+            simple("x")  # E: incompatible_argument
+            assert_is_value(simple(1), TypedValue("_pyanalyze_tests.initnew.simple"))
+
+            my_enumerate()  # E: incompatible_call
+            my_enumerate([1], start="x")  # E: incompatible_argument
+            assert_is_value(
+                my_enumerate([1]),
+                GenericValue("_pyanalyze_tests.initnew.my_enumerate", [KnownValue(1)]),
+            )
+
+            overloadinit()  # E: incompatible_call
+            assert_is_value(
+                overloadinit(1, "x", 2),
+                GenericValue("_pyanalyze_tests.initnew.overloadinit", [KnownValue(2)]),
+            )
+
+            simplenew()  # E: incompatible_call
+            assert_is_value(
+                simplenew(1), TypedValue("_pyanalyze_tests.initnew.simplenew")
+            )
+
+            overloadnew()  # E: incompatible_call
+            assert_is_value(
+                overloadnew(1, "x", 2),
+                GenericValue("_pyanalyze_tests.initnew.overloadnew", [KnownValue(2)]),
+            )
+
 
 class Parent(Generic[T]):
     pass

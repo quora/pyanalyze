@@ -17,14 +17,15 @@ from .annotations import (
 )
 from .error_code import ErrorCode
 from .extensions import overload, real_overload
-from .safe import is_typing_name
-from .stacked_scopes import uniq_chain
+from .safe import all_of_type, is_typing_name
+from .stacked_scopes import uniq_chain, Composite
 from .signature import (
     ConcreteSignature,
     OverloadedSignature,
     SigParameter,
     Signature,
     ParameterKind,
+    make_bound_method,
 )
 from .value import (
     AnySource,
@@ -175,8 +176,17 @@ class TypeshedFinder:
         print("%s: %r" % (message, obj))
 
     def get_argspec(
-        self, obj: object, *, allow_call: bool = False
+        self,
+        obj: object,
+        *,
+        allow_call: bool = False,
+        type_params: Sequence[Value] = (),
     ) -> Optional[ConcreteSignature]:
+        if isinstance(obj, str):
+            # Synthetic type
+            return self.get_argspec_for_fully_qualified_name(
+                obj, obj, type_params=type_params
+            )
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
@@ -215,16 +225,21 @@ class TypeshedFinder:
         if fq_name is None:
             return None
         return self.get_argspec_for_fully_qualified_name(
-            fq_name, obj, allow_call=allow_call
+            fq_name, obj, allow_call=allow_call, type_params=type_params
         )
 
     def get_argspec_for_fully_qualified_name(
-        self, fq_name: str, obj: object, *, allow_call: bool = False
+        self,
+        fq_name: str,
+        obj: object,
+        *,
+        allow_call: bool = False,
+        type_params: Sequence[Value] = (),
     ) -> Optional[ConcreteSignature]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         sig = self._get_signature_from_info(
-            info, obj, fq_name, mod, allow_call=allow_call
+            info, obj, fq_name, mod, allow_call=allow_call, type_params=type_params
         )
         return sig
 
@@ -420,32 +435,12 @@ class TypeshedFinder:
                 if info.child_nodes and attr in info.child_nodes:
                     child_info = info.child_nodes[attr]
                     if isinstance(child_info, typeshed_client.NameInfo):
-                        if isinstance(child_info.ast, ast.AnnAssign):
-                            return self._parse_type(
-                                child_info.ast.annotation,
-                                mod,
-                                is_typeddict=is_typeddict,
-                            )
-                        elif isinstance(child_info.ast, ast.FunctionDef):
-                            decorators = [
-                                self._parse_expr(decorator, mod)
-                                for decorator in child_info.ast.decorator_list
-                            ]
-                            if child_info.ast.returns and decorators == [
-                                KnownValue(property)
-                            ]:
-                                return self._parse_type(child_info.ast.returns, mod)
-                            sig = self._get_signature_from_func_def(
-                                child_info.ast, None, mod, autobind=not on_class
-                            )
-                            if sig is None:
-                                return AnyValue(AnySource.inference)
-                            else:
-                                return CallableValue(sig)
-                        elif isinstance(child_info.ast, ast.AsyncFunctionDef):
-                            return UNINITIALIZED_VALUE
-                        elif isinstance(child_info.ast, ast.Assign):
-                            return UNINITIALIZED_VALUE
+                        return self._get_value_from_child_info(
+                            child_info.ast,
+                            mod,
+                            is_typeddict=is_typeddict,
+                            on_class=on_class,
+                        )
                     assert False, repr(child_info)
                 return UNINITIALIZED_VALUE
             elif isinstance(info.ast, ast.Assign):
@@ -457,6 +452,47 @@ class TypeshedFinder:
             else:
                 return UNINITIALIZED_VALUE
         return UNINITIALIZED_VALUE
+
+    def _get_value_from_child_info(
+        self,
+        node: Union[ast.AST, typeshed_client.OverloadedName],
+        mod: str,
+        *,
+        is_typeddict: bool,
+        on_class: bool,
+    ) -> Value:
+        if isinstance(node, ast.AnnAssign):
+            return self._parse_type(node.annotation, mod, is_typeddict=is_typeddict)
+        elif isinstance(node, ast.FunctionDef):
+            decorators = [
+                self._parse_expr(decorator, mod) for decorator in node.decorator_list
+            ]
+            if node.returns and decorators == [KnownValue(property)]:
+                return self._parse_type(node.returns, mod)
+            sig = self._get_signature_from_func_def(
+                node, None, mod, autobind=not on_class
+            )
+            if sig is None:
+                return AnyValue(AnySource.inference)
+            else:
+                return CallableValue(sig)
+        elif isinstance(node, ast.AsyncFunctionDef):
+            return UNINITIALIZED_VALUE
+        elif isinstance(node, ast.Assign):
+            return UNINITIALIZED_VALUE
+        elif isinstance(node, typeshed_client.OverloadedName):
+            vals = [
+                self._get_value_from_child_info(
+                    subnode, mod, is_typeddict=is_typeddict, on_class=on_class
+                )
+                for subnode in node.definitions
+            ]
+            if all_of_type(vals, CallableValue):
+                sigs = [val.signature for val in vals]
+                if all_of_type(sigs, Signature):
+                    return CallableValue(OverloadedSignature(sigs))
+            return AnyValue(AnySource.inference)
+        assert False, repr(node)
 
     def _get_child_info(
         self, info: typeshed_client.resolver.ResolvedName, attr: str, mod: str
@@ -637,6 +673,7 @@ class TypeshedFinder:
         objclass: Optional[type] = None,
         *,
         allow_call: bool = False,
+        type_params: Sequence[Value] = (),
     ) -> Optional[ConcreteSignature]:
         if isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -659,6 +696,35 @@ class TypeshedFinder:
                         return None
                     sigs.append(sig)
                 return OverloadedSignature(sigs)
+            elif isinstance(info.ast, ast.ClassDef):
+                new_value, provider = self.get_attribute_recursively(
+                    fq_name, "__new__", on_class=True
+                )
+                sig = None
+                from_init = False
+                if new_value is UNINITIALIZED_VALUE or provider is object:
+                    init_value, provider = self.get_attribute_recursively(
+                        fq_name, "__init__", on_class=True
+                    )
+                    if isinstance(init_value, CallableValue):
+                        sig = init_value.signature
+                        from_init = True
+                elif isinstance(new_value, CallableValue):
+                    sig = new_value.signature
+                if sig is not None:
+                    if type_params:
+                        self_val = GenericValue(fq_name, type_params)
+                    else:
+                        self_val = TypedValue(fq_name)
+                    if from_init:
+                        sig = sig.replace_return_value(self_val)
+                    bound_sig = make_bound_method(sig, Composite(self_val))
+                    if bound_sig is None:
+                        return None
+                    sig = bound_sig.get_signature()
+                    return sig
+
+                return None
             else:
                 self.log("Ignoring unrecognized AST", (fq_name, info))
                 return None

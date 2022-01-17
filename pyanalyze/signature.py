@@ -91,7 +91,7 @@ from typing import (
     Tuple,
     TYPE_CHECKING,
 )
-from typing_extensions import Literal, Protocol
+from typing_extensions import Literal, Protocol, Self
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -1679,6 +1679,9 @@ class Signature:
     def has_return_value(self) -> bool:
         return self.has_return_annotation or self.evaluator is not None
 
+    def replace_return_value(self, return_value: Value) -> Self:
+        return replace(self, return_value=return_value)
+
 
 ELLIPSIS_PARAM = SigParameter("...", ParameterKind.ELLIPSIS)
 ANY_SIGNATURE = Signature.make([ELLIPSIS_PARAM], AnyValue(AnySource.explicit))
@@ -2094,6 +2097,11 @@ class OverloadedSignature:
 
     def has_return_value(self) -> bool:
         return all(sig.has_return_value() for sig in self.signatures)
+
+    def replace_return_value(self, return_value: Value) -> "OverloadedSignature":
+        return OverloadedSignature(
+            [sig.replace_return_value(return_value) for sig in self.signatures]
+        )
 
     @property
     def return_value(self) -> Value:

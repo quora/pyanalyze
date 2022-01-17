@@ -4434,17 +4434,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return bound_method.get_signature()
         elif isinstance(value, SubclassValue):
             if isinstance(value.typ, TypedValue):
-                if isinstance(value.typ.typ, type):
-                    if value.typ.typ is tuple:
-                        # Probably an unknown namedtuple
-                        return ANY_SIGNATURE
-                    argspec = self.arg_spec_cache.get_argspec(value.typ.typ)
-                    if argspec is None:
-                        return ANY_SIGNATURE
-                    return argspec
-                else:
-                    # TODO synthetic types
+                if value.typ.typ is tuple:
+                    # Probably an unknown namedtuple
                     return ANY_SIGNATURE
+                argspec = self.arg_spec_cache.get_argspec(value.typ.typ)
+                if argspec is None:
+                    return ANY_SIGNATURE
+                return argspec
             else:
                 # TODO generic SubclassValue
                 return ANY_SIGNATURE
