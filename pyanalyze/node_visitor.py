@@ -707,23 +707,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return error
 
     def _get_attribute_path(self, node: ast.AST) -> Optional[List[str]]:
-        """Gets the full path of an attribute lookup.
-
-        For example, the code string "a.model.question.Question" will resolve to the path
-        ['a', 'model', 'question', 'Question']. This is used for comparing such paths to
-        lists of functions that we treat specially.
-
-        """
-        if isinstance(node, ast.Name):
-            return [node.id]
-        elif isinstance(node, ast.Attribute):
-            root_value = self._get_attribute_path(node.value)
-            if root_value is None:
-                return None
-            root_value.append(node.attr)
-            return root_value
-        else:
-            return None
+        return analysis_lib.get_attribute_path(node)
 
     @classmethod
     def _run(

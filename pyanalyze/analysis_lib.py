@@ -128,3 +128,23 @@ def is_positional_only_arg_name(name: str, class_name: Optional[str] = None) -> 
         if name.startswith(prefix):
             name = name[len(prefix) :]
     return name.startswith("__") and not name.endswith("__")
+
+
+def get_attribute_path(node: ast.AST) -> Optional[List[str]]:
+    """Gets the full path of an attribute lookup.
+
+    For example, the code string "a.model.question.Question" will resolve to the path
+    ['a', 'model', 'question', 'Question']. This is used for comparing such paths to
+    lists of functions that we treat specially.
+
+    """
+    if isinstance(node, ast.Name):
+        return [node.id]
+    elif isinstance(node, ast.Attribute):
+        root_value = get_attribute_path(node.value)
+        if root_value is None:
+            return None
+        root_value.append(node.attr)
+        return root_value
+    else:
+        return None
