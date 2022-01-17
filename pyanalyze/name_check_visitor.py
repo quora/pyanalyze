@@ -57,6 +57,7 @@ import asynq
 import qcore
 
 from . import attributes, format_strings, node_visitor, importer
+from .analysis_lib import get_attribute_path
 from .annotations import (
     SyntheticEvaluator,
     is_instance_of_typing_name,
@@ -66,7 +67,7 @@ from .annotations import (
 )
 from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass, IgnoredCallees
 from .boolability import Boolability, get_boolability
-from .checker import Checker
+from .checker import Checker, CheckerAttrContext
 from .error_code import ErrorCode, ERROR_DESCRIPTION
 from .extensions import ParameterTypeGuard, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
@@ -114,13 +115,11 @@ from .stacked_scopes import (
 )
 from .signature import (
     ANY_SIGNATURE,
-    BoundMethodSignature,
     ConcreteSignature,
     MaybeSignature,
     OverloadedSignature,
     SigParameter,
     Signature,
-    make_bound_method,
     ARGS,
     KWARGS,
 )
@@ -148,13 +147,11 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
-    CallableValue,
     CanAssign,
     CanAssignError,
     ConstraintExtension,
     GenericBases,
     KVPair,
-    KnownValueWithTypeVars,
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
@@ -180,7 +177,7 @@ from .value import (
     concrete_values_from_iterable,
     unpack_values,
 )
-from pyanalyze import type_evaluation
+from . import type_evaluation
 
 try:
     from ast import NamedExpr
@@ -262,7 +259,7 @@ class _StarredValue(Value):
 
 
 @dataclass(init=False)
-class _AttrContext(attributes.AttrContext):
+class _AttrContext(CheckerAttrContext):
     visitor: "NameCheckVisitor"
     node: Optional[ast.AST]
     ignore_none: bool = False
@@ -285,6 +282,7 @@ class _AttrContext(attributes.AttrContext):
             visitor.options,
             skip_mro=skip_mro,
             skip_unwrap=skip_unwrap,
+            checker=visitor.checker,
         )
         self.node = node
         self.visitor = visitor
@@ -304,37 +302,13 @@ class _AttrContext(attributes.AttrContext):
                 return argspec.return_value
             # If we visited the property and inferred a return value,
             # use it.
-            try:
-                return self.visitor.get_local_return_value(argspec)
-            except KeyError:
-                pass
+            local = self.visitor.get_local_return_value(argspec)
+            if local is not None:
+                return local
         return AnyValue(AnySource.inference)
-
-    def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
-        typeshed_type = self.visitor.checker.ts_finder.get_attribute(
-            typ, self.attr, on_class=on_class
-        )
-        if (
-            typeshed_type is UNINITIALIZED_VALUE
-            and attributes.may_have_dynamic_attributes(typ)
-        ):
-            return AnyValue(AnySource.inference)
-        return typeshed_type
-
-    def get_attribute_from_typeshed_recursively(
-        self, fq_name: str, *, on_class: bool
-    ) -> Tuple[Value, object]:
-        return self.visitor.checker.ts_finder.get_attribute_recursively(
-            fq_name, self.attr, on_class=on_class
-        )
 
     def should_ignore_none_attributes(self) -> bool:
         return self.ignore_none
-
-    def get_generic_bases(
-        self, typ: Union[type, str], generic_args: Sequence[Value]
-    ) -> GenericBases:
-        return self.visitor.get_generic_bases(typ, generic_args)
 
 
 class ComprehensionLengthInferenceLimit(IntegerOption):
@@ -778,7 +752,7 @@ class ClassAttributeChecker:
         if _has_annotation_for_attr(typ, attr_name) or attributes.get_attrs_attribute(
             typ,
             attributes.AttrContext(
-                Composite(TypedValue(typ)), attr_name, visitor.options
+                Composite(TypedValue(typ)), attr_name, visitor.options, False, False
             ),
         ):
             return
@@ -1063,10 +1037,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._should_exclude_any = False
         self._fill_method_cache()
 
-    def get_local_return_value(self, sig: MaybeSignature) -> Value:
-        val, saved_sig = self._argspec_to_retval[id(sig)]
+    def get_local_return_value(self, sig: MaybeSignature) -> Optional[Value]:
+        val, saved_sig = self._argspec_to_retval.get(id(sig), (None, None))
         if sig is not saved_sig:
-            raise KeyError(sig)
+            return None
         return val
 
     def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
@@ -1101,8 +1075,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """Whether Any should be compatible only with itself."""
         return self._should_exclude_any
 
-    # The type for typ should be type, but that leads Cython to reject calls that pass
-    # an instance of ABCMeta.
     def get_generic_bases(
         self, typ: Union[type, str], generic_args: Sequence[Value] = ()
     ) -> GenericBases:
@@ -1111,14 +1083,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def get_signature(
         self, obj: object, is_asynq: bool = False
     ) -> Optional[ConcreteSignature]:
-        sig = self.arg_spec_cache.get_argspec(obj, is_asynq=is_asynq)
-        if isinstance(sig, Signature):
-            return sig
-        elif isinstance(sig, BoundMethodSignature):
-            return sig.get_signature()
-        elif isinstance(sig, OverloadedSignature):
-            return sig
-        return None
+        return self.checker.get_signature(obj, is_asynq=is_asynq)
 
     def __reduce_ex__(self, proto: object) -> object:
         # Only pickle the attributes needed to get error reporting working
@@ -1347,16 +1312,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
 
     def display_value(self, value: Value) -> str:
-        message = f"'{value!s}'"
-        if isinstance(value, KnownValue):
-            sig = self.arg_spec_cache.get_argspec(value.val)
-        elif isinstance(value, UnboundMethodValue):
-            sig = value.get_signature(self)
-        else:
-            sig = None
-        if sig is not None:
-            message += f", signature is {sig!s}"
-        return message
+        return self.checker.display_value(value)
 
     def _can_assign_to_base(self, base_value: Value, child_value: Value) -> CanAssign:
         if base_value is UNINITIALIZED_VALUE:
@@ -4166,7 +4122,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _should_ignore_val(self, node: ast.AST) -> bool:
         if node is not None:
-            path = self._get_attribute_path(node)
+            path = get_attribute_path(node)
             if path is not None:
                 ignored_paths = self.options.get_value_for(IgnoredPaths)
                 for ignored_path in ignored_paths:
@@ -4309,10 +4265,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.add_constraint(node, extension.constraint)
 
         if extended_argspec is not None and not extended_argspec.has_return_value():
-            try:
-                return_value = self.get_local_return_value(extended_argspec)
-            except KeyError:
-                pass
+            local = self.get_local_return_value(extended_argspec)
+            if local is not None:
+                return_value = local
 
         if allow_call and isinstance(callee_wrapped, KnownValue):
             arg_values = [arg.value for arg in args]
@@ -4367,87 +4322,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def signature_from_value(
         self, value: Value, node: Optional[ast.AST] = None
     ) -> MaybeSignature:
-        if isinstance(value, AnnotatedValue):
-            value = value.value
-        if isinstance(value, TypeVarValue):
-            value = value.get_fallback_value()
-        if isinstance(value, KnownValue):
-            argspec = self.arg_spec_cache.get_argspec(value.val)
-            if argspec is None:
-                method_object = self.get_attribute(
-                    Composite(value),
-                    "__call__",
-                    node,
-                    ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
-                )
-                if method_object is UNINITIALIZED_VALUE:
-                    return None
-                else:
-                    return ANY_SIGNATURE
-            if isinstance(value, KnownValueWithTypeVars):
-                return argspec.substitute_typevars(value.typevars)
-            return argspec
-        elif isinstance(value, UnboundMethodValue):
-            method = value.get_method()
-            if method is not None:
-                sig = self.arg_spec_cache.get_argspec(method)
-                if sig is None:
-                    # TODO return None here and figure out when the signature is missing
-                    return ANY_SIGNATURE
-                try:
-                    return_override = self.get_local_return_value(sig)
-                except KeyError:
-                    return_override = None
-                bound = make_bound_method(sig, value.composite, return_override)
-                if bound is not None and value.typevars is not None:
-                    bound = bound.substitute_typevars(value.typevars)
-                return bound
-            return None
-        elif isinstance(value, CallableValue):
-            return value.signature
-        elif isinstance(value, TypedValue):
-            typ = value.typ
-            if typ is collections.abc.Callable or typ is types.FunctionType:
-                return ANY_SIGNATURE
-            if isinstance(typ, str):
-                call_method = self.get_attribute(
-                    Composite(value),
-                    "__call__",
-                    ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
-                )
-                if call_method is UNINITIALIZED_VALUE:
-                    return None
-                return self.signature_from_value(call_method, node=node)
-            if getattr(typ.__call__, "__objclass__", None) is type and not issubclass(
-                typ, type
-            ):
-                return None
-            call_fn = typ.__call__
-            sig = self.arg_spec_cache.get_argspec(call_fn)
-            try:
-                return_override = self.get_local_return_value(sig)
-            except KeyError:
-                return_override = None
-            bound_method = make_bound_method(sig, Composite(value), return_override)
-            if bound_method is None:
-                return None
-            return bound_method.get_signature()
-        elif isinstance(value, SubclassValue):
-            if isinstance(value.typ, TypedValue):
-                if value.typ.typ is tuple:
-                    # Probably an unknown namedtuple
-                    return ANY_SIGNATURE
-                argspec = self.arg_spec_cache.get_argspec(value.typ.typ)
-                if argspec is None:
-                    return ANY_SIGNATURE
-                return argspec
-            else:
-                # TODO generic SubclassValue
-                return ANY_SIGNATURE
-        elif isinstance(value, AnyValue):
-            return ANY_SIGNATURE
-        else:
-            return None
+        def get_call_attribute(value: Value) -> Value:
+            return self.get_attribute(
+                Composite(value),
+                "__call__",
+                node,
+                ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
+            )
+
+        return self.checker.signature_from_value(
+            value,
+            get_return_override=self.get_local_return_value,
+            get_call_attribute=get_call_attribute,
+        )
 
     # Match statements
 

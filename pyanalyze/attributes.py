@@ -17,7 +17,7 @@ from typing import Any, Callable, Generic, Sequence, Tuple, Optional, Union
 from .annotations import type_from_annotations, type_from_runtime, Context
 from .options import Options, PyObjectSequenceOption
 from .safe import safe_isinstance, safe_issubclass
-from .signature import Signature, MaybeSignature
+from .signature import MaybeSignature
 from .stacked_scopes import Composite
 from .value import (
     AnnotatedValue,
@@ -50,8 +50,8 @@ class AttrContext:
     root_composite: Composite
     attr: str
     options: Options
-    skip_mro: bool = False
-    skip_unwrap: bool = False
+    skip_mro: bool
+    skip_unwrap: bool
 
     @property
     def root_value(self) -> Value:
@@ -77,7 +77,7 @@ class AttrContext:
     def should_ignore_none_attributes(self) -> bool:
         return False
 
-    def get_signature(self, obj: object) -> Optional[Signature]:
+    def get_signature(self, obj: object) -> MaybeSignature:
         return None
 
     def get_generic_bases(
