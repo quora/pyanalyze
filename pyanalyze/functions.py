@@ -66,10 +66,10 @@ class FunctionInfo:
     is_overload: bool  # typing.overload or pyanalyze.extensions.overload
     is_evaluated: bool  # @pyanalyze.extensions.evaluated
     is_abstractmethod: bool  # has @abstractmethod
-    # a list of pairs of (decorator function, applied decorator function). These are different
-    # for decorators that take arguments, like @asynq(): the first element will be the asynq
-    # function and the second will be the result of calling asynq().
-    decorators: List[Tuple[Value, Value]]
+    # a list of tuples of (decorator function, applied decorator function, AST node). These are
+    # different for decorators that take arguments, like @asynq(): the first element will be the
+    # asynq function and the second will be the result of calling asynq().
+    decorators: List[Tuple[Value, Value, ast.AST]]
     node: FunctionNode
     params: Sequence[ParamInfo]
     return_annotation: Optional[Value]
@@ -162,7 +162,7 @@ def compute_function_info(
                     # @async_proxy(pure=True) is a noop, so don't treat it specially
                     if not any(kw.arg == "pure" for kw in decorator.keywords):
                         async_kind = AsyncFunctionKind.async_proxy
-            decorators.append((callee, decorator_value))
+            decorators.append((callee, decorator_value, decorator))
         else:
             decorator_value = ctx.visit_expression(decorator)
             if decorator_value == KnownValue(classmethod):
@@ -179,7 +179,7 @@ def compute_function_info(
                 is_abstractmethod = True
             elif decorator_value == KnownValue(evaluated):
                 is_evaluated = True
-            decorators.append((decorator_value, decorator_value))
+            decorators.append((decorator_value, decorator_value, decorator))
     params = compute_parameters(
         node,
         enclosing_class,
@@ -323,7 +323,7 @@ def compute_value_of_function(
         has_return_annotation=info.return_annotation is not None,
     )
     val = CallableValue(sig, types.FunctionType)
-    for unapplied, decorator in reversed(info.decorators):
+    for unapplied, decorator, node in reversed(info.decorators):
         # Special case asynq.asynq until we can create the type automatically
         if unapplied == KnownValue(asynq.asynq) and isinstance(val, CallableValue):
             sig = replace(val.signature, is_asynq=True)
@@ -332,7 +332,5 @@ def compute_value_of_function(
         allow_call = isinstance(
             unapplied, KnownValue
         ) and SafeDecoratorsForNestedFunctions.contains(unapplied.val, ctx.options)
-        val = ctx.check_call(
-            info.node, decorator, [Composite(val)], allow_call=allow_call
-        )
+        val = ctx.check_call(node, decorator, [Composite(val)], allow_call=allow_call)
     return val

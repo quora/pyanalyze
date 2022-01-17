@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Type check function decorators (#428)
 - Handle `NoReturn` in `async def` functions (#427)
 - Support PEP 673 (`typing_extensions.Self`) (#423)
 - Updates for compatibility with recent changes in typeshed (#421):

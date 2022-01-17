@@ -164,3 +164,14 @@ class TestFunctionDefinitions(TestNameCheckVisitorBase):
 
             fun4 = lambda a, b, c: a if c else b
             assert_is_value(fun4(1, 2, 3), KnownValue(1) | KnownValue(2))
+
+
+class TestDecorators(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_applied(self) -> None:
+        def bad_deco(x: int) -> str:
+            return "x"
+
+        @bad_deco  # E: incompatible_argument
+        def capybara():
+            pass
