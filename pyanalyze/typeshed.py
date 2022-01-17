@@ -31,6 +31,7 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    CanAssignContext,
     SubclassValue,
     TypedDictValue,
     TypedValue,
@@ -95,6 +96,7 @@ IS_PRE_38: bool = sys.version_info < (3, 8)
 class _AnnotationContext(Context):
     finder: "TypeshedFinder"
     module: str
+    can_assign_ctx: CanAssignContext
 
     def show_error(
         self,
@@ -105,7 +107,7 @@ class _AnnotationContext(Context):
         self.finder.log(message, ())
 
     def get_name(self, node: ast.Name) -> Value:
-        return self.finder.resolve_name(self.module, node.id)
+        return self.finder.resolve_name(self.module, node.id, ctx=self.can_assign_ctx)
 
 
 class _DummyErrorContext:
@@ -181,11 +183,12 @@ class TypeshedFinder:
         *,
         allow_call: bool = False,
         type_params: Sequence[Value] = (),
+        ctx: CanAssignContext,
     ) -> Optional[ConcreteSignature]:
         if isinstance(obj, str):
             # Synthetic type
             return self.get_argspec_for_fully_qualified_name(
-                obj, obj, type_params=type_params
+                obj, obj, type_params=type_params, ctx=ctx
             )
         if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
             objclass = obj.__objclass__
@@ -194,7 +197,13 @@ class TypeshedFinder:
                 return None
             info = self._get_info_for_name(fq_name)
             sig = self._get_method_signature_from_info(
-                info, obj, fq_name, objclass.__module__, objclass, allow_call=allow_call
+                info,
+                obj,
+                fq_name,
+                objclass.__module__,
+                objclass,
+                allow_call=allow_call,
+                ctx=ctx,
             )
             return sig
 
@@ -217,7 +226,7 @@ class TypeshedFinder:
                     info, mod = maybe_info
                     fq_name = f"{parent_fqn}.{own_name}"
                     sig = self._get_signature_from_info(
-                        info, obj, fq_name, mod, allow_call=allow_call
+                        info, obj, fq_name, mod, allow_call=allow_call, ctx=ctx
                     )
                     return sig
 
@@ -225,7 +234,7 @@ class TypeshedFinder:
         if fq_name is None:
             return None
         return self.get_argspec_for_fully_qualified_name(
-            fq_name, obj, allow_call=allow_call, type_params=type_params
+            fq_name, obj, allow_call=allow_call, type_params=type_params, ctx=ctx
         )
 
     def get_argspec_for_fully_qualified_name(
@@ -235,11 +244,18 @@ class TypeshedFinder:
         *,
         allow_call: bool = False,
         type_params: Sequence[Value] = (),
+        ctx: CanAssignContext,
     ) -> Optional[ConcreteSignature]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         sig = self._get_signature_from_info(
-            info, obj, fq_name, mod, allow_call=allow_call, type_params=type_params
+            info,
+            obj,
+            fq_name,
+            mod,
+            allow_call=allow_call,
+            type_params=type_params,
+            ctx=ctx,
         )
         return sig
 
@@ -404,10 +420,10 @@ class TypeshedFinder:
         info = self._get_info_for_name(fq_name)
         return info is not None
 
-    def resolve_name(self, module: str, name: str) -> Value:
+    def resolve_name(self, module: str, name: str, ctx: CanAssignContext) -> Value:
         info = self._get_info_for_name(f"{module}.{name}")
         if info is not None:
-            return self._value_from_info(info, module)
+            return self._value_from_info(info, module, ctx=ctx)
         elif hasattr(builtins, name):
             val = getattr(builtins, name)
             if val is None or isinstance(val, type):
@@ -614,6 +630,7 @@ class TypeshedFinder:
         objclass: type,
         *,
         allow_call: bool = False,
+        ctx: CanAssignContext,
     ) -> Optional[ConcreteSignature]:
         if info is None:
             return None
@@ -625,13 +642,20 @@ class TypeshedFinder:
                 ".".join(info.source_module),
                 objclass,
                 allow_call=allow_call,
+                ctx=ctx,
             )
         elif isinstance(info, typeshed_client.NameInfo):
             # Note that this doesn't handle names inherited from base classes
             if info.child_nodes and obj.__name__ in info.child_nodes:
                 child_info = info.child_nodes[obj.__name__]
                 return self._get_signature_from_info(
-                    child_info, obj, fq_name, mod, objclass, allow_call=allow_call
+                    child_info,
+                    obj,
+                    fq_name,
+                    mod,
+                    objclass,
+                    allow_call=allow_call,
+                    ctx=ctx,
                 )
             else:
                 return None
@@ -674,11 +698,12 @@ class TypeshedFinder:
         *,
         allow_call: bool = False,
         type_params: Sequence[Value] = (),
+        ctx: CanAssignContext,
     ) -> Optional[ConcreteSignature]:
         if isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 return self._get_signature_from_func_def(
-                    info.ast, obj, mod, objclass, allow_call=allow_call
+                    info.ast, obj, mod, objclass, allow_call=allow_call, ctx=ctx
                 )
             elif isinstance(info.ast, typeshed_client.OverloadedName):
                 sigs = []
@@ -689,7 +714,7 @@ class TypeshedFinder:
                         )
                         return None
                     sig = self._get_signature_from_func_def(
-                        defn, obj, mod, objclass, allow_call=allow_call
+                        defn, obj, mod, objclass, allow_call=allow_call, ctx=ctx
                     )
                     if sig is None:
                         self.log("Could not get sig for overload member", (defn,))
@@ -721,7 +746,7 @@ class TypeshedFinder:
                     bound_sig = make_bound_method(sig, Composite(self_val))
                     if bound_sig is None:
                         return None
-                    sig = bound_sig.get_signature()
+                    sig = bound_sig.get_signature(ctx=ctx)
                     return sig
 
                 return None
@@ -736,6 +761,7 @@ class TypeshedFinder:
                 ".".join(info.source_module),
                 objclass,
                 allow_call=allow_call,
+                ctx=ctx,
             )
         elif info is None:
             return None
@@ -756,6 +782,7 @@ class TypeshedFinder:
         *,
         autobind: bool = False,
         allow_call: bool = False,
+        ctx: CanAssignContext,
     ) -> Optional[Signature]:
         is_classmethod = is_staticmethod = is_evaluated = False
         for decorator_ast in node.decorator_list:
@@ -829,9 +856,9 @@ class TypeshedFinder:
                 seen_non_positional = True
             cleaned_arguments.append(arg)
         if is_evaluated:
-            ctx = _AnnotationContext(self, mod)
+            anno_ctx = _AnnotationContext(self, mod, ctx)
             evaluator = SyntheticEvaluator(
-                node, return_value, _DummyErrorContext(), ctx
+                node, return_value, _DummyErrorContext(), anno_ctx
             )
         else:
             evaluator = None
@@ -864,11 +891,13 @@ class TypeshedFinder:
         default: Optional[ast.arg],
         module: str,
         kind: ParameterKind,
+        *,
         objclass: Optional[type] = None,
+        ctx: CanAssignContext,
     ) -> SigParameter:
         typ = AnyValue(AnySource.unannotated)
         if arg.annotation is not None:
-            typ = self._parse_type(arg.annotation, module)
+            typ = self._parse_type(arg.annotation, module, ctx)
         elif objclass is not None:
             bases = self.get_bases(objclass)
             if bases is None:
@@ -893,27 +922,32 @@ class TypeshedFinder:
         if default is None:
             return SigParameter(name, kind, annotation=typ)
         else:
-            default_value = self._parse_expr(default, module)
+            default_value = self._parse_expr(default, module, ctx)
             if default_value == KnownValue(...):
                 default_value = AnyValue(AnySource.unannotated)
             return SigParameter(name, kind, annotation=typ, default=default_value)
 
-    def _parse_expr(self, node: ast.AST, module: str) -> Value:
-        ctx = _AnnotationContext(finder=self, module=module)
-        return value_from_ast(node, ctx=ctx)
+    def _parse_expr(self, node: ast.AST, module: str, ctx: CanAssignContext) -> Value:
+        anno_ctx = _AnnotationContext(finder=self, module=module, can_assign_ctx=ctx)
+        return value_from_ast(node, ctx=anno_ctx)
 
     def _parse_type(
-        self, node: ast.AST, module: str, *, is_typeddict: bool = False
+        self,
+        node: ast.AST,
+        module: str,
+        *,
+        is_typeddict: bool = False,
+        ctx: CanAssignContext,
     ) -> Value:
-        val = self._parse_expr(node, module)
-        ctx = _AnnotationContext(finder=self, module=module)
-        typ = type_from_value(val, ctx=ctx, is_typeddict=is_typeddict)
+        val = self._parse_expr(node, module, ctx=ctx)
+        anno_ctx = _AnnotationContext(finder=self, module=module, can_assign_ctx=ctx)
+        typ = type_from_value(val, ctx=anno_ctx, is_typeddict=is_typeddict)
         if self.verbose and isinstance(typ, AnyValue):
             self.log("Got Any", (ast.dump(node), module))
         return typ
 
     def _parse_call_assignment(
-        self, info: typeshed_client.NameInfo, module: str
+        self, info: typeshed_client.NameInfo, module: str, ctx: CanAssignContext
     ) -> Value:
         try:
             __import__(module)
@@ -926,10 +960,12 @@ class TypeshedFinder:
             info.ast.value, ast.Call
         ):
             return AnyValue(AnySource.inference)
-        ctx = _AnnotationContext(finder=self, module=module)
-        return value_from_ast(info.ast.value, ctx=ctx)
+        anno_ctx = _AnnotationContext(finder=self, module=module, can_assign_ctx=ctx)
+        return value_from_ast(info.ast.value, ctx=anno_ctx)
 
-    def make_synthetic_type(self, module: str, info: typeshed_client.NameInfo) -> Value:
+    def make_synthetic_type(
+        self, module: str, info: typeshed_client.NameInfo, ctx: CanAssignContext
+    ) -> Value:
         fq_name = f"{module}.{info.name}"
         bases = self._get_bases_from_info(info, module)
         typ = TypedValue(fq_name)
@@ -939,17 +975,21 @@ class TypeshedFinder:
                 or isinstance(base, TypedDictValue)
                 for base in bases
             ):
-                typ = self._make_typeddict(module, info, bases)
+                typ = self._make_typeddict(module, info, bases, ctx)
         return SubclassValue(typ, exactly=True)
 
     def _make_typeddict(
-        self, module: str, info: typeshed_client.NameInfo, bases: Sequence[Value]
+        self,
+        module: str,
+        info: typeshed_client.NameInfo,
+        bases: Sequence[Value],
+        ctx: CanAssignContext,
     ) -> TypedDictValue:
         total = True
         if isinstance(info.ast, ast.ClassDef):
             for keyword in info.ast.keywords:
                 if keyword.arg == "total":
-                    val = self._parse_expr(keyword.value, module)
+                    val = self._parse_expr(keyword.value, module, ctx)
                     if isinstance(val, KnownValue) and isinstance(val.val, bool):
                         total = val.val
         attrs = self._get_all_attributes_from_info(info, module)
@@ -978,7 +1018,10 @@ class TypeshedFinder:
             return (total, field)
 
     def _value_from_info(
-        self, info: typeshed_client.resolver.ResolvedName, module: str
+        self,
+        info: typeshed_client.resolver.ResolvedName,
+        module: str,
+        ctx: CanAssignContext,
     ) -> Value:
         # This guard against infinite recursion if a type refers to itself
         # (real-world example: os._ScandirIterator).
@@ -986,22 +1029,27 @@ class TypeshedFinder:
             return AnyValue(AnySource.inference)
         self._active_infos.append(info)
         try:
-            return self._value_from_info_inner(info, module)
+            return self._value_from_info_inner(info, module, ctx)
         finally:
             self._active_infos.pop()
 
     def _value_from_info_inner(
-        self, info: typeshed_client.resolver.ResolvedName, module: str
+        self,
+        info: typeshed_client.resolver.ResolvedName,
+        module: str,
+        ctx: CanAssignContext,
     ) -> Value:
         if isinstance(info, typeshed_client.ImportedInfo):
-            return self._value_from_info(info.info, ".".join(info.source_module))
+            return self._value_from_info(
+                info.info, ".".join(info.source_module), ctx=ctx
+            )
         elif isinstance(info, typeshed_client.NameInfo):
             fq_name = f"{module}.{info.name}"
             if fq_name in _TYPING_ALIASES:
                 new_fq_name = _TYPING_ALIASES[fq_name]
                 info = self._get_info_for_name(new_fq_name)
                 return self._value_from_info(
-                    info, new_fq_name.rsplit(".", maxsplit=1)[0]
+                    info, new_fq_name.rsplit(".", maxsplit=1)[0], ctx=ctx
                 )
             elif IS_PRE_38:
                 if fq_name in ("typing.Protocol", "typing_extensions.Protocol"):
@@ -1013,7 +1061,7 @@ class TypeshedFinder:
                 if isinstance(info.ast.value, ast.Call):
                     value = self._parse_call_assignment(info, module)
                 else:
-                    value = self._parse_expr(info.ast.value, module)
+                    value = self._parse_expr(info.ast.value, module, ctx)
                 self._assignment_cache[key] = value
                 return value
             try:
@@ -1024,13 +1072,15 @@ class TypeshedFinder:
                 if isinstance(info.ast, ast.ClassDef):
                     return self.make_synthetic_type(module, info)
                 elif isinstance(info.ast, ast.AnnAssign):
-                    val = self._parse_type(info.ast.annotation, module)
+                    val = self._parse_type(info.ast.annotation, module, ctx=ctx)
                     if val != AnyValue(AnySource.incomplete_annotation):
                         return val
                     if info.ast.value:
-                        return self._parse_expr(info.ast.value, module)
+                        return self._parse_expr(info.ast.value, module, ctx)
                 elif isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    sig = self._get_signature_from_info(info, None, fq_name, module)
+                    sig = self._get_signature_from_info(
+                        info, None, fq_name, module, ctx=ctx
+                    )
                     if sig is not None:
                         return CallableValue(sig)
                 self.log("Unable to import", (module, info))

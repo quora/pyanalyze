@@ -1650,23 +1650,43 @@ class Signature:
         if render_pos_only_separator:
             yield "/"
 
-    def bind_self(self, *, preserve_impl: bool = False) -> Optional["Signature"]:
+    def bind_self(
+        self,
+        *,
+        preserve_impl: bool = False,
+        self_value: Optional[Value] = None,
+        ctx: CanAssignContext,
+    ) -> Optional["Signature"]:
         params = list(self.parameters.values())
         if not params:
             return None
         kind = params[0].kind
+        if self_value is not None:
+            tv_map = params[0].annotation.can_assign(self_value, ctx)
+            if isinstance(tv_map, CanAssignError):
+                return None
+        else:
+            tv_map = {}
         if kind is ParameterKind.ELLIPSIS:
-            new_params = {param.name: param for param in params}
+            new_params = params
         elif kind in (
             ParameterKind.POSITIONAL_ONLY,
             ParameterKind.POSITIONAL_OR_KEYWORD,
         ):
-            new_params = {param.name: param for param in params[1:]}
+            new_params = params[1:]
         else:
             return None
+        if tv_map:
+            new_params = {
+                param.name: param.substitute_typevars(tv_map) for param in params
+            }
+            return_value = self.return_value.substitute_typevars(tv_map)
+        else:
+            new_params = {param.name: param for param in params}
+            return_value = self.return_value
         return Signature(
             new_params,
-            self.return_value,
+            return_value,
             # We don't carry over the implementation function by default, because it
             # may not work when passed different arguments.
             impl=self.impl if preserve_impl else None,
@@ -2086,12 +2106,20 @@ class OverloadedSignature:
         )
 
     def bind_self(
-        self, *, preserve_impl: bool = False
-    ) -> Optional["OverloadedSignature"]:
+        self,
+        *,
+        preserve_impl: bool = False,
+        self_value: Optional[Value] = None,
+        ctx: CanAssignContext,
+    ) -> Optional["ConcreteSignature"]:
         bound_sigs = [
-            sig.bind_self(preserve_impl=preserve_impl) for sig in self.signatures
+            sig.bind_self(preserve_impl=preserve_impl, self_value=self_value, ctx=ctx)
+            for sig in self.signatures
         ]
-        if all_of_type(bound_sigs, Signature):
+        bound_sigs = [sig for sig in bound_sigs if isinstance(sig, Signature)]
+        if len(bound_sigs) == 1:
+            return bound_sigs[0]
+        elif bound_sigs:
             return OverloadedSignature(bound_sigs)
         return None
 
@@ -2161,9 +2189,11 @@ class BoundMethodSignature:
         return ret
 
     def get_signature(
-        self, *, preserve_impl: bool = False
+        self, *, preserve_impl: bool = False, ctx: CanAssignContext
     ) -> Optional[ConcreteSignature]:
-        return self.signature.bind_self(preserve_impl=preserve_impl)
+        return self.signature.bind_self(
+            preserve_impl=preserve_impl, self_value=self.self_composite.value, ctx=ctx
+        )
 
     def has_return_value(self) -> bool:
         if self.return_override is not None:

@@ -298,6 +298,11 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 GenericValue("_pyanalyze_tests.initnew.overloadnew", [KnownValue(2)]),
             )
 
+    @assert_passes()
+    def test_typeshed_constructors(self):
+        def capybara(x):
+            assert_is_value(int(x), TypedValue(int))
+
 
 class Parent(Generic[T]):
     pass
