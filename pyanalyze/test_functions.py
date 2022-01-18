@@ -175,3 +175,13 @@ class TestDecorators(TestNameCheckVisitorBase):
         @bad_deco  # E: incompatible_argument
         def capybara():
             pass
+
+    @skip_before((3, 7))
+    @assert_passes()
+    def test_asynccontextmanager(self):
+        from contextlib import asynccontextmanager
+        from typing import AsyncIterator
+
+        @asynccontextmanager
+        async def make_cm() -> AsyncIterator[None]:
+            yield
