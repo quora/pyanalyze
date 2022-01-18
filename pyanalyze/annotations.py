@@ -759,6 +759,10 @@ def _type_from_subscripted_value(
         return AnyValue(AnySource.error)
     elif typing_inspect.is_generic_type(root):
         origin = typing_inspect.get_origin(root)
+        if origin is None:
+            # On Python 3.9 at least, get_origin() of a class that inherits
+            # from Generic[T] is None.
+            origin = root
         origin = _maybe_get_extra(origin)
         return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
     elif isinstance(root, type):
