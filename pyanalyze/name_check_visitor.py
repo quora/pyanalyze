@@ -1324,10 +1324,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             child_sig = self.signature_from_value(child_value)
             if not isinstance(child_sig, (Signature, OverloadedSignature)):
                 return CanAssignError(f"{child_value} is not callable")
-            base_bound = base_sig.bind_self()
+            base_bound = base_sig.bind_self(ctx=self)
             if base_bound is None:
                 return {}
-            child_bound = child_sig.bind_self()
+            child_bound = child_sig.bind_self(ctx=self)
             if child_bound is None:
                 return CanAssignError(f"{child_value} is missing a 'self' argument")
             return base_bound.can_assign(child_bound, self)

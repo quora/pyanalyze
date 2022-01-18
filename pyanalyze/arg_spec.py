@@ -522,7 +522,6 @@ class ArgSpecCache:
             return sigs[0]
         return OverloadedSignature(sigs)
 
-    @qcore.debug.trace()
     def _uncached_get_argspec(
         self,
         obj: Any,

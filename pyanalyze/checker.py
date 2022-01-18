@@ -212,7 +212,7 @@ class Checker:
         if isinstance(sig, Signature):
             return sig
         elif isinstance(sig, BoundMethodSignature):
-            return sig.get_signature()
+            return sig.get_signature(ctx=self)
         elif isinstance(sig, OverloadedSignature):
             return sig
         return None
