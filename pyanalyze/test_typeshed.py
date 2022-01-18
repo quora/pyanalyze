@@ -21,9 +21,7 @@ from .extensions import evaluated
 from .test_config import TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .options import Options
 from .signature import SigParameter, Signature
-from .arg_spec import ArgSpecCache
 from .test_arg_spec import ClassWithCall
 from .typeshed import TypeshedFinder
 from .value import (
