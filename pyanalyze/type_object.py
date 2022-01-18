@@ -43,7 +43,7 @@ class TypeObject:
     protocol_members: Set[str] = field(default_factory=set)
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
-    _protocol_positive_cache: Dict[Union[type, str], TypeVarMap] = field(
+    _protocol_positive_cache: Dict[Value, TypeVarMap] = field(
         default_factory=dict, repr=False
     )
 
@@ -125,7 +125,7 @@ class TypeObject:
                 return CanAssignError(
                     f"Cannot assign super object {other_val} to protocol {self}"
                 )
-            tv_map = self._protocol_positive_cache.get(other.typ)
+            tv_map = self._protocol_positive_cache.get(other_val)
             if tv_map is not None:
                 return tv_map
             # This is a guard against infinite recursion if the Protocol is recursive
@@ -149,7 +149,7 @@ class TypeObject:
                         )
                     tv_maps.append(tv_map)
             result = unify_typevar_maps(tv_maps)
-            self._protocol_positive_cache[other.typ] = result
+            self._protocol_positive_cache[other_val] = result
             return result
 
     def is_instance(self, obj: object) -> bool:
