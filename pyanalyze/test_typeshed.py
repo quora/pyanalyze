@@ -311,6 +311,9 @@ class TestConstructors(TestNameCheckVisitorBase):
                 GenericValue(frozenset, [AnyValue(AnySource.generic_argument)]),
             )
 
+            assert_is_value(type("x"), TypedValue(type))
+            assert_is_value(type("x", (), {}), TypedValue(type))
+
 
 class Parent(Generic[T]):
     pass

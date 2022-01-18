@@ -732,6 +732,8 @@ class TypeshedFinder:
                         self_val = TypedValue(typ)
                     if from_init:
                         sig = sig.replace_return_value(self_val)
+                    else:
+                        self_val = SubclassValue(self_val)
                     bound_sig = make_bound_method(sig, Composite(self_val))
                     if bound_sig is None:
                         return None
