@@ -454,9 +454,15 @@ class ArgSpecCache:
         return AnyValue(AnySource.unannotated)
 
     def get_argspec(
-        self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
+        self,
+        obj: object,
+        impl: Optional[Impl] = None,
+        is_asynq: bool = False,
+        allow_synthetic_type: bool = False,
     ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
+        if safe_isinstance(obj, str) and not allow_synthetic_type:
+            return None
         return self._cached_get_argspec(
             obj, impl, is_asynq, in_overload_resolution=False
         )

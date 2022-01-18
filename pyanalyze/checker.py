@@ -50,12 +50,7 @@ from .value import (
 )
 from .arg_spec import ArgSpecCache, GenericBases
 from .reexport import ImplicitReexportTracker
-from .safe import (
-    is_instance_of_typing_name,
-    is_typing_name,
-    safe_getattr,
-    safe_isinstance,
-)
+from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
 from .shared_options import VariableNameValues
 from .signature import (
     ANY_SIGNATURE,
@@ -240,7 +235,7 @@ class Checker:
 
     def display_value(self, value: Value) -> str:
         message = f"'{value!s}'"
-        if isinstance(value, KnownValue) and not safe_isinstance(value.val, str):
+        if isinstance(value, KnownValue):
             sig = self.arg_spec_cache.get_argspec(value.val)
         elif isinstance(value, UnboundMethodValue):
             sig = value.get_signature(self)
@@ -345,7 +340,9 @@ class Checker:
                 if value.typ.typ is tuple:
                     # Probably an unknown namedtuple
                     return ANY_SIGNATURE
-                argspec = self.arg_spec_cache.get_argspec(value.typ.typ)
+                argspec = self.arg_spec_cache.get_argspec(
+                    value.typ.typ, allow_synthetic_type=True
+                )
                 if argspec is None:
                     return ANY_SIGNATURE
                 return argspec

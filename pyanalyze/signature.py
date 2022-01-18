@@ -519,6 +519,10 @@ class Signature:
         )
         self.validate()
 
+    def __hash__(self) -> int:
+        # hash by identity because the params dict is not hashable
+        return id(self)
+
     def validate(self) -> None:
         seen_kinds = set()
         seen_with_default = set()
