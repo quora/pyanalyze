@@ -2070,8 +2070,9 @@ class OverloadedSignature:
         clean_ret: Optional[CallReturn] = None,
     ) -> Value:
         if any_rets or union_and_any_rets:
+            deduped = {ret.return_value for ret in any_rets}
             if (
-                len(any_rets) == 1
+                len(deduped) == 1
                 and not union_rets
                 and not union_and_any_rets
                 and clean_ret is None
