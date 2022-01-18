@@ -288,6 +288,8 @@ class ArgSpecCache:
         self.known_argspecs = {}
         self.generic_bases_cache = {}
         self.default_context = AnnotationsContext(self)
+        self.safe_bases = tuple(self.options.get_value_for(ClassesSafeToInstantiate))
+
         default_argspecs = dict(self.DEFAULT_ARGSPECS)
         for provider in options.get_value_for(KnownSignatures):
             default_argspecs.update(provider(self))
@@ -592,7 +594,9 @@ class ArgSpecCache:
                     original_fn, impl, is_asynq, in_overload_resolution
                 )
 
-        allow_call = FunctionsSafeToCall.contains(obj, self.options)
+        allow_call = FunctionsSafeToCall.contains(obj, self.options) or (
+            safe_isinstance(obj, type) and safe_issubclass(obj, self.safe_bases)
+        )
         if safe_isinstance(obj, (type, str)):
             type_params = self.get_type_parameters(obj)
         else:
@@ -658,8 +662,6 @@ class ArgSpecCache:
                 return_type = (
                     AnyValue(AnySource.error) if should_ignore else TypedValue(obj)
                 )
-                safe = tuple(self.options.get_value_for(ClassesSafeToInstantiate))
-                allow_call = safe_issubclass(obj, safe)
                 if isinstance(override, inspect.Signature):
                     inspect_sig = override
                 else:

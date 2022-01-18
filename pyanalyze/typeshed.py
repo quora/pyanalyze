@@ -723,6 +723,16 @@ class TypeshedFinder:
                     sig = new_value.signature
                 if sig is not None:
                     if safe_isinstance(obj, type):
+                        if allow_call:
+                            if isinstance(sig, Signature):
+                                sig = replace(sig, allow_call=True, callable=obj)
+                            else:
+                                sig = OverloadedSignature(
+                                    [
+                                        replace(sig, allow_call=True, callable=obj)
+                                        for sig in sig.signatures
+                                    ]
+                                )
                         typ = obj
                     else:
                         typ = fq_name
