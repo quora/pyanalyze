@@ -37,6 +37,7 @@ from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
     AnyValue,
+    CanAssignContext,
     Extension,
     GenericBases,
     KVPair,
@@ -49,6 +50,7 @@ from .value import (
     extract_typevars,
     make_weak,
 )
+import pyanalyze
 
 import ast
 import asyncio
@@ -105,9 +107,8 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
         ):
             yield
     else:
-        options = Options.from_option_list()
-        tsf = TypeshedFinder.make(options)
-        argspec = ArgSpecCache(options, tsf).get_argspec(fn, impl=implementation_fn)
+        checker = pyanalyze.checker.Checker()
+        argspec = checker.arg_spec_cache.get_argspec(fn, impl=implementation_fn)
         if argspec is None:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
@@ -276,12 +277,14 @@ class ArgSpecCache:
         self,
         options: Options,
         ts_finder: TypeshedFinder,
+        ctx: CanAssignContext,
         *,
         vnv_provider: Callable[[str], Optional[Value]] = lambda _: None,
     ) -> None:
         self.vnv_provider = vnv_provider
         self.options = options
         self.ts_finder = ts_finder
+        self.ctx = ctx
         self.known_argspecs = {}
         self.generic_bases_cache = {}
         self.default_context = AnnotationsContext(self)
@@ -519,6 +522,7 @@ class ArgSpecCache:
             return sigs[0]
         return OverloadedSignature(sigs)
 
+    @qcore.debug.trace()
     def _uncached_get_argspec(
         self,
         obj: Any,
@@ -691,7 +695,7 @@ class ArgSpecCache:
             bound_sig = make_bound_method(signature, Composite(TypedValue(obj)))
             if bound_sig is None:
                 return None
-            sig = bound_sig.get_signature(preserve_impl=True)
+            sig = bound_sig.get_signature(preserve_impl=True, ctx=self.ctx)
             if sig is not None:
                 return sig
             return bound_sig

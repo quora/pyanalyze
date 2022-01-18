@@ -540,7 +540,7 @@ class UnboundMethodValue(Value):
         if signature is None:
             return None
         if isinstance(signature, pyanalyze.signature.BoundMethodSignature):
-            signature = signature.get_signature()
+            signature = signature.get_signature(ctx=ctx)
         if isinstance(signature, pyanalyze.signature.PropertyArgSpec):
             return None
         return signature
@@ -1199,7 +1199,7 @@ class CallableValue(TypedValue):
             if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
             if isinstance(signature, pyanalyze.signature.BoundMethodSignature):
-                signature = signature.get_signature()
+                signature = signature.get_signature(ctx=ctx)
             if isinstance(
                 signature,
                 (

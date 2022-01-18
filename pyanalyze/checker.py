@@ -109,10 +109,11 @@ class Checker:
             self.options = Options.from_option_list()
         else:
             self.options = raw_options
-        self.ts_finder = TypeshedFinder.make(self.options)
+        self.ts_finder = TypeshedFinder.make(self, self.options)
         self.arg_spec_cache = ArgSpecCache(
             self.options,
             self.ts_finder,
+            self,
             vnv_provider=self.maybe_get_variable_name_value,
         )
         self.reexport_tracker = ImplicitReexportTracker(self.options)
@@ -333,7 +334,7 @@ class Checker:
             bound_method = make_bound_method(sig, Composite(value), return_override)
             if bound_method is None:
                 return None
-            return bound_method.get_signature()
+            return bound_method.get_signature(ctx=self)
         elif isinstance(value, SubclassValue):
             if isinstance(value.typ, TypedValue):
                 if value.typ.typ is tuple:

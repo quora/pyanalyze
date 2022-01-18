@@ -1678,11 +1678,11 @@ class Signature:
             return None
         if tv_map:
             new_params = {
-                param.name: param.substitute_typevars(tv_map) for param in params
+                param.name: param.substitute_typevars(tv_map) for param in new_params
             }
             return_value = self.return_value.substitute_typevars(tv_map)
         else:
-            new_params = {param.name: param for param in params}
+            new_params = {param.name: param for param in new_params}
             return_value = self.return_value
         return Signature(
             new_params,

@@ -1,5 +1,6 @@
 # static analysis: ignore
 from qcore.testing import Anything
+import collections
 import collections.abc
 from collections.abc import MutableSequence, Sequence, Collection, Reversible, Set
 import contextlib
@@ -15,6 +16,7 @@ from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
 import urllib.parse
 
+from .checker import Checker
 from .extensions import evaluated
 from .test_config import TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -64,7 +66,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             x.update({})  # just check that this doesn't fail
 
     def test_get_bases(self):
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert [
             GenericValue(MutableSequence, (TypeVarValue(typevar=Anything),)),
             GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
@@ -97,7 +99,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             )
             (temp_dir / "VERSIONS").write_text("newt: 3.5\ntyping: 3.5\n")
             (temp_dir / "@python2").mkdir()
-            tsf = TypeshedFinder(verbose=True)
+            tsf = TypeshedFinder(Checker(), verbose=True)
             search_context = get_search_context(typeshed=temp_dir, search_path=[])
             tsf.resolver = Resolver(search_context)
 
@@ -143,12 +145,12 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             assert_is_value(s.count("x"), TypedValue(int))
 
     def test_has_stubs(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert tsf.has_stubs(object)
         assert not tsf.has_stubs(ClassWithCall)
 
     def test_get_attribute(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert UNINITIALIZED_VALUE is tsf.get_attribute(object, "nope", on_class=False)
         assert TypedValue(bool) == tsf.get_attribute(
             staticmethod, "__isabstractmethod__", on_class=False
@@ -190,14 +192,14 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             assert_is_value(explicitly_aliased_constant, TypedValue(int))
 
     def test_aliases(self):
-        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
+        tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.aliases"
         assert tsf.resolve_name(mod, "constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "aliased_constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "explicitly_aliased_constant") == TypedValue(int)
 
     def test_typeddict(self):
-        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
+        tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.typeddict"
 
         for name, expected in _EXPECTED_TYPED_DICTS.items():
@@ -216,7 +218,7 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 assert_is_value(inherited, _EXPECTED_TYPED_DICTS["Inherited"])
 
     def test_evaluated(self):
-        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
+        tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.evaluated"
         assert tsf.resolve_name(mod, "evaluated") == KnownValue(evaluated)
 
@@ -318,8 +320,8 @@ class GenericChild(Parent[T]):
 
 class TestGetGenericBases:
     def setup(self) -> None:
-        arg_spec_cache = ArgSpecCache(Options.from_option_list(), TypeshedFinder())
-        self.get_generic_bases = arg_spec_cache.get_generic_bases
+        checker = Checker()
+        self.get_generic_bases = checker.arg_spec_cache.get_generic_bases
 
     def test_runtime(self):
         assert {
@@ -558,17 +560,17 @@ class TestGetGenericBases:
 
 class TestAttribute:
     def test_basic(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert TypedValue(bool) == tsf.get_attribute(
             staticmethod, "__isabstractmethod__", on_class=False
         )
 
     def test_property(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert TypedValue(int) == tsf.get_attribute(int, "real", on_class=False)
 
     def test_http_error(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert True is tsf.has_attribute(HTTPError, "read")
 
 
