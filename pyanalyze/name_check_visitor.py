@@ -3171,8 +3171,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_Continue(self, node: ast.Continue) -> None:
         self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
 
-    def visit_For(self, node: ast.For) -> None:
-        iterated_value = self._member_value_of_iterator(node.iter)
+    def visit_For(self, node: Union[ast.For, ast.AsyncFor]) -> None:
+        iterated_value = self._member_value_of_iterator(
+            node.iter, is_async=isinstance(node, ast.AsyncFor)
+        )
         if self.options.get_value_for(ForLoopAlwaysEntered):
             always_entered = True
         elif isinstance(iterated_value, Value):
@@ -3208,6 +3210,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 with qcore.override(self, "being_assigned", iterated_value):
                     self.visit(node.target)
                 self._generic_visit_list(node.body)
+
+    visit_AsyncFor = visit_For
 
     def visit_While(self, node: ast.While) -> None:
         # see comments under For for discussion

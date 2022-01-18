@@ -285,3 +285,21 @@ class TestNoReturn(TestNameCheckVisitorBase):
         async def hutia(cond) -> int:  # E: missing_return
             if cond:
                 return 3
+
+
+class TestAsyncGenerator(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_async_gen(self):
+        import collections.abc
+        from typing import AsyncIterator
+
+        async def gen() -> AsyncIterator[int]:
+            yield 3
+
+        async def capybara() -> None:
+            assert_is_value(
+                gen(), GenericValue(collections.abc.AsyncIterator, [TypedValue(int)])
+            )
+            async for i in gen():
+                # TODO should be int
+                assert_is_value(i, AnyValue(AnySource.generic_argument))
