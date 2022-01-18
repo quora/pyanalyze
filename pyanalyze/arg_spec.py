@@ -6,7 +6,7 @@ Implementation of extended argument specifications used by test_scope.
 
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
-from .extensions import CustomCheck, get_overloads, get_type_evaluations
+from .extensions import CustomCheck, TypeGuard, get_overloads, get_type_evaluations
 from .annotations import Context, RuntimeEvaluator, type_from_runtime
 from .find_unused import used
 from . import implementation
@@ -604,6 +604,7 @@ class ArgSpecCache:
             return argspec
 
         if is_newtype(obj):
+            assert hasattr(obj, "__supertype__")
             return Signature.make(
                 [
                     SigParameter(
@@ -862,7 +863,7 @@ class ArgSpecCache:
         return typ.__bases__
 
 
-def _is_qcore_decorator(obj: object) -> bool:
+def _is_qcore_decorator(obj: object) -> TypeGuard[Any]:
     try:
         return (
             hasattr(obj, "is_decorator")

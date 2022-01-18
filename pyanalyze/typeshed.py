@@ -149,7 +149,7 @@ _TYPING_ALIASES = {
 
 @dataclass
 class TypeshedFinder:
-    ctx: CanAssignContext
+    ctx: CanAssignContext = field(repr=False)
     verbose: bool = True
     resolver: typeshed_client.Resolver = field(default_factory=typeshed_client.Resolver)
     _assignment_cache: Dict[Tuple[str, ast.AST], Value] = field(
@@ -264,7 +264,7 @@ class TypeshedFinder:
                 if typ is AbstractSet:
                     return [GenericValue(Collection, (TypeVarValue(T_co),))]
                 if typ is AbstractContextManager or typ is AbstractAsyncContextManager:
-                    return [GenericValue(Generic, (TypeVarValue(T_co),))]
+                    return [GenericValue(Protocol, (TypeVarValue(T_co),))]
                 if typ is Callable or typ is collections.abc.Callable:
                     return None
                 if typ is TypedDict:
@@ -281,7 +281,7 @@ class TypeshedFinder:
                 if fq_name == "collections.abc.Set":
                     return [GenericValue(Collection, (TypeVarValue(T_co),))]
                 elif fq_name == "contextlib.AbstractContextManager":
-                    return [GenericValue(Generic, (TypeVarValue(T_co),))]
+                    return [GenericValue(Protocol, (TypeVarValue(T_co),))]
                 elif fq_name in ("typing.Callable", "collections.abc.Callable"):
                     return None
                 elif is_typing_name(fq_name, "TypedDict"):
@@ -463,7 +463,9 @@ class TypeshedFinder:
 
     def _get_value_from_child_info(
         self,
-        node: Union[ast.AST, typeshed_client.OverloadedName],
+        node: Union[
+            ast.AST, typeshed_client.OverloadedName, typeshed_client.ImportedName
+        ],
         mod: str,
         *,
         is_typeddict: bool,
@@ -869,7 +871,7 @@ class TypeshedFinder:
     def _parse_param(
         self,
         arg: ast.arg,
-        default: Optional[ast.arg],
+        default: Optional[ast.AST],
         module: str,
         kind: ParameterKind,
         *,
