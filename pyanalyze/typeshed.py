@@ -17,7 +17,7 @@ from .annotations import (
 )
 from .error_code import ErrorCode
 from .extensions import overload, real_overload
-from .safe import all_of_type, is_typing_name
+from .safe import all_of_type, is_typing_name, safe_isinstance
 from .stacked_scopes import uniq_chain, Composite
 from .signature import (
     ConcreteSignature,
@@ -722,10 +722,14 @@ class TypeshedFinder:
                 elif isinstance(new_value, CallableValue):
                     sig = new_value.signature
                 if sig is not None:
-                    if type_params:
-                        self_val = GenericValue(fq_name, type_params)
+                    if safe_isinstance(obj, type):
+                        typ = obj
                     else:
-                        self_val = TypedValue(fq_name)
+                        typ = fq_name
+                    if type_params:
+                        self_val = GenericValue(typ, type_params)
+                    else:
+                        self_val = TypedValue(typ)
                     if from_init:
                         sig = sig.replace_return_value(self_val)
                     bound_sig = make_bound_method(sig, Composite(self_val))

@@ -261,6 +261,8 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 want_cm(x)
                 len(x)  # E: incompatible_argument
 
+
+class TestConstructors(TestNameCheckVisitorBase):
     @assert_passes()
     def test_init_new(self):
         def capybara():
@@ -304,6 +306,10 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     def test_typeshed_constructors(self):
         def capybara(x):
             assert_is_value(int(x), TypedValue(int))
+            assert_is_value(
+                frozenset(),
+                GenericValue(frozenset, [AnyValue(AnySource.generic_argument)]),
+            )
 
 
 class Parent(Generic[T]):
