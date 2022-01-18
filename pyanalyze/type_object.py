@@ -5,7 +5,7 @@ An object that represents a type.
 """
 from dataclasses import dataclass, field
 import inspect
-from typing import Container, Set, Sequence, Union
+from typing import Container, Dict, Set, Sequence, Union
 from unittest import mock
 
 from .safe import safe_isinstance, safe_issubclass, safe_in
@@ -15,6 +15,7 @@ from .value import (
     CanAssignContext,
     CanAssignError,
     KnownValue,
+    TypeVarMap,
     TypedValue,
     Value,
     stringify_object,
@@ -42,6 +43,9 @@ class TypeObject:
     protocol_members: Set[str] = field(default_factory=set)
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
+    _protocol_positive_cache: Dict[Union[type, str], TypeVarMap] = field(
+        default_factory=dict, repr=False
+    )
 
     def __post_init__(self) -> None:
         if isinstance(self.typ, str):
@@ -121,6 +125,9 @@ class TypeObject:
                 return CanAssignError(
                     f"Cannot assign super object {other_val} to protocol {self}"
                 )
+            tv_map = self._protocol_positive_cache.get(other.typ)
+            if tv_map is not None:
+                return tv_map
             # This is a guard against infinite recursion if the Protocol is recursive
             if ctx.can_assume_compatibility(self, other):
                 return {}
@@ -141,7 +148,9 @@ class TypeObject:
                             f"Value of protocol member {member!r} conflicts", [tv_map]
                         )
                     tv_maps.append(tv_map)
-            return unify_typevar_maps(tv_maps)
+            result = unify_typevar_maps(tv_maps)
+            self._protocol_positive_cache[other.typ] = result
+            return result
 
     def is_instance(self, obj: object) -> bool:
         """Whether obj is an instance of this type."""
