@@ -368,7 +368,10 @@ class ExternalType(metaclass=_ExternalTypeMeta):
         raise NotImplementedError("just here to fool typing._type_check")
 
 
-def reveal_type(value: object) -> None:
+_T = TypeVar("_T")
+
+
+def reveal_type(value: _T) -> _T:
     """Inspect the inferred type of an expression.
 
     Calling this function will make pyanalyze print out the argument's
@@ -383,8 +386,10 @@ def reveal_type(value: object) -> None:
         def f(x: int) -> None:
             reveal_type(x)  # Revealed type is "int"
 
+    At runtime this returns the argument unchanged.
+
     """
-    pass
+    return value
 
 
 _overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)

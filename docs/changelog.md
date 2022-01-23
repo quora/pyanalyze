@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `reveal_type()` and `dump_value()` now return their argument,
+  the anticipated behavior for `typing.reveal_type()` in Python
+  3.11 (#432)
 - Fix return type of async generator functions (#431)
 - Type check function decorators (#428)
 - Handle `NoReturn` in `async def` functions (#427)

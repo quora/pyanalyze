@@ -1174,6 +1174,16 @@ class TestInferenceHelpers(TestNameCheckVisitorBase):
             assert_is_value(1, KnownValue(2))  # E: inference_failure
             assert_is_value(1, val)  # E: inference_failure
 
+    @assert_passes()
+    def test_return_value(self) -> None:
+        from pyanalyze import dump_value, assert_is_value
+
+        def capybara():
+            x = dump_value(1)  # E: inference_failure
+            y = reveal_type(1)  # E: inference_failure
+            assert_is_value(x, KnownValue(1))
+            assert_is_value(y, KnownValue(1))
+
 
 class TestCallableGuards(TestNameCheckVisitorBase):
     @assert_passes()
