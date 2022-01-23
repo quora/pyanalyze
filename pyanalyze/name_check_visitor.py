@@ -1797,8 +1797,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         params: Sequence[SigParameter],
     ) -> FunctionResult:
         # Ignore generators for now.
-        if isinstance(return_set, AnyValue) or (
-            self.is_generator and info.async_kind is not AsyncFunctionKind.normal
+        if (
+            isinstance(return_set, AnyValue)
+            or return_set is NO_RETURN_VALUE
+            or (self.is_generator and info.async_kind is not AsyncFunctionKind.normal)
         ):
             has_return = True
         elif return_set is UNINITIALIZED_VALUE:

@@ -1466,7 +1466,7 @@ def _constrain_value(
     for constraint in constraints:
         values = list(constraint.apply_to_values(values))
     if not values:
-        return AnyValue(AnySource.unreachable)
+        return NO_RETURN_VALUE
     if simplification_limit is not None:
         return unite_and_simplify(*values, limit=simplification_limit)
     return unite_values(*values)
