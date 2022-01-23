@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add support for `assert_type()` (#433)
 - `reveal_type()` and `dump_value()` now return their argument,
   the anticipated behavior for `typing.reveal_type()` in Python
   3.11 (#432)

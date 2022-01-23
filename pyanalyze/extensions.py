@@ -392,6 +392,28 @@ def reveal_type(value: _T) -> _T:
     return value
 
 
+def assert_type(val: _T, typ: Any) -> _T:
+    """Assert the inferred static type of an expression.
+
+    When a static type checker encounters a call to this function,
+    it checks that the inferred type of `val` matches the `typ`
+    argument, and if it dooes not, it emits an error.
+
+    Example::
+
+        def f(x: int) -> None:
+            assert_type(x, int)  # ok
+            assert_type(x, str)  # error
+
+    This is useful for checking that the type checker interprets
+    a complicated set of type annotations in the way the user intended.
+
+    At runtime this returns the first argument unchanged.
+
+    """
+    return val
+
+
 _overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
 _type_evaluations: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
 
