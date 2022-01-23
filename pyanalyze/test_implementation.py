@@ -1184,6 +1184,17 @@ class TestInferenceHelpers(TestNameCheckVisitorBase):
             assert_is_value(x, KnownValue(1))
             assert_is_value(y, KnownValue(1))
 
+    @assert_passes()
+    def test_assert_type(self) -> None:
+        from pyanalyze.extensions import assert_type
+        from typing import Any
+
+        def capybara(x: int) -> None:
+            assert_type(x, int)
+            assert_type(x, "int")
+            assert_type(x, Any)  # E: inference_failure
+            assert_type(x, str)  # E: inference_failure
+
 
 class TestCallableGuards(TestNameCheckVisitorBase):
     @assert_passes()

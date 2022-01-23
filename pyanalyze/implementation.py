@@ -1,8 +1,6 @@
-import typing
-import typing_extensions
 from .annotations import type_from_value
 from .error_code import ErrorCode
-from .extensions import reveal_type
+from .extensions import assert_type, reveal_type
 from .format_strings import parse_format_string
 from .predicates import IsAssignablePredicate
 from .safe import safe_hasattr, safe_isinstance, safe_issubclass
@@ -52,6 +50,7 @@ from .value import (
     concrete_values_from_iterable,
     kv_pairs_from_mapping,
     make_weak,
+    unannotate,
     unite_values,
     flatten_values,
     replace_known_sequence_value,
@@ -66,6 +65,8 @@ import qcore
 import inspect
 import warnings
 from types import FunctionType
+import typing
+import typing_extensions
 from typing import (
     Sequence,
     TypeVar,
@@ -1042,6 +1043,20 @@ def _cast_impl(ctx: CallContext) -> Value:
     return type_from_value(typ, visitor=ctx.visitor, node=ctx.node)
 
 
+def _assert_type_impl(ctx: CallContext) -> Value:
+    # TODO maybe we should walk over the whole value and remove Annotated.
+    val = unannotate(ctx.vars["val"])
+    typ = ctx.vars["typ"]
+    expected_type = type_from_value(typ, visitor=ctx.visitor, node=ctx.node)
+    if val != expected_type:
+        ctx.show_error(
+            f"Type is {val} (expected {expected_type})",
+            error_code=ErrorCode.inference_failure,
+            arg="obj",
+        )
+    return val
+
+
 def _subclasses_impl(ctx: CallContext) -> Value:
     """Overridden because typeshed types make it (T) => List[T] instead."""
     self_obj = ctx.vars["self"]
@@ -1423,7 +1438,18 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=str.format,
         ),
         Signature.make(
-            [SigParameter("typ"), SigParameter("val")], callable=cast, impl=_cast_impl
+            [SigParameter("typ", _POS_ONLY), SigParameter("val", _POS_ONLY)],
+            callable=cast,
+            impl=_cast_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("val", _POS_ONLY, annotation=TypeVarValue(T)),
+                SigParameter("typ", _POS_ONLY),
+            ],
+            TypeVarValue(T),
+            callable=assert_type,
+            impl=_assert_type_impl,
         ),
         # workaround for https://github.com/python/typeshed/pull/3501
         Signature.make(
@@ -1564,6 +1590,22 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 TypeVarValue(T),
                 impl=_reveal_type_impl,
                 callable=reveal_type_func,
+            )
+            signatures.append(sig)
+        # Anticipating that this will be added to the stdlib
+        try:
+            assert_type_func = getattr(mod, "assert_type")
+        except AttributeError:
+            pass
+        else:
+            sig = Signature.make(
+                [
+                    SigParameter("val", _POS_ONLY, annotation=TypeVarValue(T)),
+                    SigParameter("typ", _POS_ONLY),
+                ],
+                TypeVarValue(T),
+                callable=assert_type_func,
+                impl=_assert_type_impl,
             )
             signatures.append(sig)
     return {sig.callable: sig for sig in signatures}
