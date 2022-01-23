@@ -1,6 +1,6 @@
 from .annotations import type_from_value
 from .error_code import ErrorCode
-from .extensions import assert_type, reveal_type
+from .extensions import assert_type, reveal_locals, reveal_type
 from .format_strings import parse_format_string
 from .predicates import IsAssignablePredicate
 from .safe import safe_hasattr, safe_isinstance, safe_issubclass
@@ -948,6 +948,24 @@ def _reveal_type_impl(ctx: CallContext) -> Value:
     return value
 
 
+def _reveal_locals_impl(ctx: CallContext) -> Value:
+    scope = ctx.visitor.scopes.current_scope()
+    if ctx.visitor._is_collecting():
+        for varname in scope.all_variables():
+            scope.get(varname, ctx.node, ctx.visitor.state)
+    else:
+        details = []
+        for varname in scope.all_variables():
+            val, _, _ = scope.get(varname, ctx.node, ctx.visitor.state)
+            details.append(CanAssignError(f"{varname}: {val}"))
+        ctx.show_error(
+            "Revealed local types are:",
+            ErrorCode.inference_failure,
+            detail=str(CanAssignError(children=details)),
+        )
+    return KnownValue(None)
+
+
 def _dump_value_impl(ctx: CallContext) -> Value:
     value = ctx.vars["value"]
     if ctx.visitor._is_checking():
@@ -1154,6 +1172,9 @@ def get_default_argspecs() -> Dict[object, Signature]:
             TypeVarValue(T),
             impl=_reveal_type_impl,
             callable=reveal_type,
+        ),
+        Signature.make(
+            [], KnownValue(None), impl=_reveal_locals_impl, callable=reveal_locals
         ),
         Signature.make(
             [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
@@ -1606,6 +1627,19 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 TypeVarValue(T),
                 callable=assert_type_func,
                 impl=_assert_type_impl,
+            )
+            signatures.append(sig)
+        # Anticipating that this will be added to the stdlib
+        try:
+            reveal_locals_func = getattr(mod, "reveal_locals")
+        except AttributeError:
+            pass
+        else:
+            sig = Signature.make(
+                [],
+                KnownValue(None),
+                callable=reveal_locals_func,
+                impl=_reveal_locals_impl,
             )
             signatures.append(sig)
     return {sig.callable: sig for sig in signatures}

@@ -121,6 +121,15 @@ class CompositeVariable:
     def extend_with(self, index: CompositeIndex) -> "CompositeVariable":
         return CompositeVariable(self.varname, (*self.attributes, index))
 
+    def __str__(self) -> str:
+        pieces = [self.varname]
+        for attr in self.attributes:
+            if isinstance(attr, str):
+                pieces.append(f".{attr}")
+            else:
+                pieces.append(f"[{attr.val!r}]")
+        return "".join(pieces)
+
 
 Varname = Union[str, CompositeVariable]
 
@@ -746,6 +755,9 @@ class Scope:
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         return self.variables.items()
 
+    def all_variables(self) -> Iterable[Varname]:
+        return self.variables
+
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.variables
 
@@ -1234,6 +1246,9 @@ class FunctionScope(Scope):
 
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         raise NotImplementedError
+
+    def all_variables(self) -> Iterable[Varname]:
+        yield from self.name_to_current_definition_nodes
 
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.name_to_all_definition_nodes

@@ -394,6 +394,18 @@ def reveal_type(value: _T) -> _T:
     return value
 
 
+def reveal_locals() -> None:
+    """Reveal the types of all local variables.
+
+    When the type checker encounters a call to this function,
+    it prints the type of all variables in the local scope.
+
+    This does nothing at runtime.
+
+    """
+    pass
+
+
 def assert_type(val: _T, typ: Any) -> _T:
     """Assert the inferred static type of an expression.
 

@@ -53,3 +53,15 @@ class TestAssertError(TestNameCheckVisitorBase):
 
             with assert_error():  # E: inference_failure
                 f(1)
+
+
+class TestRevealLocals(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self) -> None:
+        from pyanalyze.extensions import reveal_locals
+
+        def capybara(a: object, b: str) -> None:
+            c = 3
+            if b == "x":
+                reveal_locals()  # E: inference_failure
+            print(a, b, c)
