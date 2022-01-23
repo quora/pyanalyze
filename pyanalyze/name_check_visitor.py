@@ -69,7 +69,7 @@ from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass, IgnoredC
 from .boolability import Boolability, get_boolability
 from .checker import Checker, CheckerAttrContext
 from .error_code import ErrorCode, ERROR_DESCRIPTION
-from .extensions import ParameterTypeGuard, patch_typing_overload
+from .extensions import ParameterTypeGuard, assert_error, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
 from .options import (
     ConfigOption,
@@ -147,6 +147,7 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
+    AssertErrorExtension,
     CanAssign,
     CanAssignError,
     ConstraintExtension,
@@ -155,6 +156,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
+    annotate_value,
     flatten_values,
     is_union,
     kv_pairs_from_mapping,
@@ -3286,16 +3288,32 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return result
 
     def visit_With(self, node: ast.With) -> None:
-        for item in node.items:
-            self.visit_withitem(item)
+        contexts = [self.visit_withitem(item) for item in node.items]
+        if len(contexts) == 1:
+            context = contexts[0]
+            if isinstance(context, AnnotatedValue) and context.has_metadata_of_type(
+                AssertErrorExtension
+            ):
+                self._visit_assert_errors_block(node)
+                return
         self._generic_visit_list(node.body)
+
+    def _visit_assert_errors_block(self, node: ast.With) -> None:
+        with self.catch_errors() as caught:
+            self._generic_visit_list(node.body)
+        if not caught:
+            self._show_error_if_checking(
+                node,
+                "No errors found in assert_error() block",
+                error_code=ErrorCode.inference_failure,
+            )
 
     def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
         for item in node.items:
             self.visit_withitem(item, is_async=True)
         self._generic_visit_list(node.body)
 
-    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> None:
+    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> Value:
         context = self.visit(node.context_expr)
         if is_async:
             protocol = "typing.AsyncContextManager"
@@ -3316,6 +3334,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if node.optional_vars is not None:
             with qcore.override(self, "being_assigned", assigned):
                 self.visit(node.optional_vars)
+        return context
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
@@ -4178,6 +4197,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if caller is not None:
                     self.collector.record_call(caller, callee_val)
 
+        if (
+            isinstance(callee_wrapped, KnownValue)
+            and callee_wrapped.val is assert_error
+        ):
+            return annotate_value(return_value, [AssertErrorExtension()])
         return return_value
 
     def _can_perform_call(

@@ -9,6 +9,7 @@ be gracefully ignored by other type checkers.
 
 """
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import typing_extensions
 import pyanalyze
@@ -18,6 +19,7 @@ from typing import (
     Container,
     Dict,
     Iterable,
+    Iterator,
     Optional,
     Sequence,
     Tuple,
@@ -412,6 +414,22 @@ def assert_type(val: _T, typ: Any) -> _T:
 
     """
     return val
+
+
+@contextmanager
+def assert_error() -> Iterator[None]:
+    """Context manager that asserts that code produces a type checker error.
+
+    Example::
+
+        with assert_error():  # ok
+            1 + "x"
+
+        with assert_error():  # error: no error found in this block
+            1 + 1
+
+    """
+    yield
 
 
 _overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
