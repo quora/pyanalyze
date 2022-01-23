@@ -10,7 +10,11 @@ from typing import Optional
 
 from .safe import safe_issubclass
 from .value import (
+    NO_RETURN_VALUE,
+    AnnotatedValue,
+    AnyValue,
     KnownValue,
+    MultiValuedValue,
     TypedValue,
     Value,
     unite_values,
@@ -18,6 +22,16 @@ from .value import (
     is_overlapping,
     unannotate,
 )
+
+
+def is_universally_assignable(value: Value) -> bool:
+    if value is NO_RETURN_VALUE or isinstance(value, AnyValue):
+        return True
+    elif isinstance(value, AnnotatedValue):
+        return is_universally_assignable(value.value)
+    elif isinstance(value, MultiValuedValue):
+        return all(is_universally_assignable(subval) for subval in value.vals)
+    return False
 
 
 @dataclass
@@ -33,10 +47,16 @@ class IsAssignablePredicate:
         if positive:
             if not compatible:
                 return None
-            if value.is_assignable(self.pattern_value, self.ctx):
+            if self.pattern_value.is_assignable(value, self.ctx):
+                if is_universally_assignable(value):
+                    return self.pattern_value
+                return value
+            else:
                 return self.pattern_value
         elif not self.positive_only:
-            if compatible:
+            if self.pattern_value.is_assignable(
+                value, self.ctx
+            ) and not is_universally_assignable(value):
                 return None
         return value
 
