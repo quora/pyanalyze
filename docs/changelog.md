@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add support for `reveal_locals()` (#436)
 - Add support for `assert_error()` (#435)
 - Add support for `assert_type()` (#434)
 - `reveal_type()` and `dump_value()` now return their argument,
