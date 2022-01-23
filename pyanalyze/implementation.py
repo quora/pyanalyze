@@ -1,3 +1,5 @@
+import typing
+import typing_extensions
 from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import reveal_type
@@ -938,23 +940,23 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
 
 
 def _reveal_type_impl(ctx: CallContext) -> Value:
+    value = ctx.vars["value"]
     if ctx.visitor._is_checking():
-        value = ctx.vars["value"]
         message = f"Revealed type is {ctx.visitor.display_value(value)}"
         ctx.show_error(message, ErrorCode.inference_failure, arg="value")
-    return KnownValue(None)
+    return value
 
 
 def _dump_value_impl(ctx: CallContext) -> Value:
+    value = ctx.vars["value"]
     if ctx.visitor._is_checking():
-        value = ctx.vars["value"]
         message = f"Value is '{value!r}'"
         if isinstance(value, KnownValue):
             sig = ctx.visitor.arg_spec_cache.get_argspec(value.val)
             if sig is not None:
                 message += f", signature is {sig!r}"
         ctx.show_error(message, ErrorCode.inference_failure, arg="value")
-    return KnownValue(None)
+    return value
 
 
 def _str_format_impl(ctx: CallContext) -> Value:
@@ -1104,6 +1106,7 @@ _ENCODING_PARAMETER = SigParameter(
     "encoding", annotation=TypedValue(str), default=KnownValue("")
 )
 
+T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
 
@@ -1132,14 +1135,14 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=assert_is_value,
         ),
         Signature.make(
-            [SigParameter("value", _POS_ONLY)],
-            KnownValue(None),
+            [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
+            TypeVarValue(T),
             impl=_reveal_type_impl,
             callable=reveal_type,
         ),
         Signature.make(
-            [SigParameter("value", _POS_ONLY)],
-            KnownValue(None),
+            [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
+            TypeVarValue(T),
             impl=_dump_value_impl,
             callable=dump_value,
         ),
@@ -1549,4 +1552,18 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ),
         ),
     ]
+    for mod in typing, typing_extensions:
+        try:
+            reveal_type_func = getattr(mod, "reveal_type")
+        except AttributeError:
+            pass
+        else:
+            # Anticipating https://bugs.python.org/issue46414
+            sig = Signature.make(
+                [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
+                TypeVarValue(T),
+                impl=_reveal_type_impl,
+                callable=reveal_type_func,
+            )
+            signatures.append(sig)
     return {sig.callable: sig for sig in signatures}

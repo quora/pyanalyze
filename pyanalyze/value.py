@@ -301,16 +301,18 @@ def assert_is_value(obj: object, value: Value, *, skip_annotated: bool = False) 
     pass
 
 
-def dump_value(value: object) -> None:
+def dump_value(value: T) -> T:
     """Print out the :class:`Value` representation of its argument.
 
     Calling it will make pyanalyze print out an internal
-    representation of the argument's inferred value. Does nothing
-    at runtime. Use :func:`pyanalyze.extensions.reveal_type` for a
+    representation of the argument's inferred value. Use
+    :func:`pyanalyze.extensions.reveal_type` for a
     more user-friendly representation.
 
+    At runtime this returns the argument unchanged.
+
     """
-    pass
+    return value
 
 
 class AnySource(enum.Enum):
