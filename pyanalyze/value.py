@@ -1790,6 +1790,11 @@ class AlwaysPresentExtension(Extension):
 
 
 @dataclass(frozen=True)
+class AssertErrorExtension(Extension):
+    """Used for the implementation of :func:`pyanalyze.extensions.assert_error`."""
+
+
+@dataclass(frozen=True)
 class AnnotatedValue(Value):
     """Value representing a `PEP 593 <https://www.python.org/dev/peps/pep-0593/>`_ Annotated object.
 
