@@ -2037,6 +2037,12 @@ def unite_and_simplify(*values: Value, limit: int) -> Value:
     return unite_values(*simplified)
 
 
+def _is_unreachable(value: Value) -> bool:
+    if isinstance(value, AnnotatedValue):
+        return _is_unreachable(value.value)
+    return isinstance(value, AnyValue) and value.source is AnySource.unreachable
+
+
 def unite_values(*values: Value) -> Value:
     """Unite multiple values into a single :class:`Value`.
 
@@ -2050,6 +2056,7 @@ def unite_values(*values: Value) -> Value:
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
     unhashable_vals = []
+    saw_unreachable = False
     for value in values:
         if isinstance(value, MultiValuedValue):
             subvals = value.vals
@@ -2062,6 +2069,9 @@ def unite_values(*values: Value) -> Value:
         else:
             subvals = [value]
         for subval in subvals:
+            if _is_unreachable(subval):
+                saw_unreachable = True
+                continue
             try:
                 # Don't readd it to preserve original ordering.
                 if subval not in hashable_vals:
@@ -2071,6 +2081,8 @@ def unite_values(*values: Value) -> Value:
     existing = list(hashable_vals) + unhashable_vals
     num = len(existing)
     if num == 0:
+        if saw_unreachable:
+            return AnyValue(AnySource.unreachable)
         return NO_RETURN_VALUE
     if num == 1:
         return existing[0]
