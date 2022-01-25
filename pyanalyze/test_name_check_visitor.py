@@ -2377,7 +2377,9 @@ class TestWalrus(TestNameCheckVisitorBase):
         )
         self.assert_passes(
             """
-            def func(myvar: str, strset: set[str]):
+            from typing import Set
+
+            def func(myvar: str, strset: Set[str]) -> None:
                 if (encoder_type := myvar) and myvar in strset:
                     print(encoder_type)
             """
