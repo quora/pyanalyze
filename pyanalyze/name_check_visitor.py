@@ -2590,22 +2590,31 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # we set a negative constraint.
 
         is_and = isinstance(node.op, ast.And)
+        stack = contextlib.ExitStack()
+        scopes = []
         out_constraints = []
-        with self.scopes.subscope():
-            values = []
-            left = node.values[:-1]
-            for condition in left:
-                new_value, constraint = self.constraint_from_condition(condition)
-                out_constraints.append(constraint)
+        values = []
+        constraint = NULL_CONSTRAINT
+        with stack:
+            for i, condition in enumerate(node.values):
+                scope = stack.enter_context(self.scopes.subscope())
+                scopes.append(scope)
                 if is_and:
                     self.add_constraint(condition, constraint)
-                    values.append(constrain_value(new_value, FALSY_CONSTRAINT))
                 else:
                     self.add_constraint(condition, constraint.invert())
+
+                new_value, constraint = self.constraint_from_condition(condition)
+                out_constraints.append(constraint)
+
+                if i == len(node.values) - 1:
+                    values.append(new_value)
+                elif is_and:
+                    values.append(constrain_value(new_value, FALSY_CONSTRAINT))
+                else:
                     values.append(constrain_value(new_value, TRUTHY_CONSTRAINT))
-            right_value = self._visit_possible_constraint(node.values[-1])
-            values.append(right_value)
-            out_constraints.append(extract_constraints(right_value))
+
+        self.scopes.combine_subscopes(scopes)
         constraint_cls = AndConstraint if is_and else OrConstraint
         constraint = constraint_cls.make(reversed(out_constraints))
         return annotate_with_constraint(unite_values(*values), constraint)
