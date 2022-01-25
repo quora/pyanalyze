@@ -24,16 +24,13 @@ from typing import (
     Dict,
 )
 
-from pyanalyze.attributes import AttrContext, may_have_dynamic_attributes
-from pyanalyze.stacked_scopes import Composite
-
 from .options import Options, PyObjectSequenceOption
-from .attributes import get_attribute
+from .attributes import get_attribute, AttrContext
 from .node_visitor import Failure
+from .stacked_scopes import Composite
 from .value import (
     UNINITIALIZED_VALUE,
     AnnotatedValue,
-    AnySource,
     AnyValue,
     CallableValue,
     KnownValueWithTypeVars,
@@ -354,17 +351,27 @@ class Checker:
         else:
             return None
 
-    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
+    def get_attribute_from_value(
+        self, root_value: Value, attribute: str, *, prefer_typeshed: bool = False
+    ) -> Value:
         if isinstance(root_value, TypeVarValue):
             root_value = root_value.get_fallback_value()
         if is_union(root_value):
             results = [
-                self.get_attribute_from_value(subval, attribute)
+                self.get_attribute_from_value(
+                    subval, attribute, prefer_typeshed=prefer_typeshed
+                )
                 for subval in flatten_values(root_value)
             ]
             return unite_values(*results)
         ctx = CheckerAttrContext(
-            Composite(root_value), attribute, self.options, False, False, self
+            Composite(root_value),
+            attribute,
+            self.options,
+            skip_mro=False,
+            skip_unwrap=False,
+            prefer_typeshed=prefer_typeshed,
+            checker=self,
         )
         return get_attribute(ctx)
 
@@ -416,12 +423,7 @@ class CheckerAttrContext(AttrContext):
     checker: Checker
 
     def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
-        typeshed_type = self.checker.ts_finder.get_attribute(
-            typ, self.attr, on_class=on_class
-        )
-        if typeshed_type is UNINITIALIZED_VALUE and may_have_dynamic_attributes(typ):
-            return AnyValue(AnySource.inference)
-        return typeshed_type
+        return self.checker.ts_finder.get_attribute(typ, self.attr, on_class=on_class)
 
     def get_attribute_from_typeshed_recursively(
         self, fq_name: str, *, on_class: bool

@@ -277,6 +277,7 @@ class _AttrContext(CheckerAttrContext):
         ignore_none: bool = False,
         skip_mro: bool = False,
         skip_unwrap: bool = False,
+        prefer_typeshed: bool = False,
     ) -> None:
         super().__init__(
             root_composite,
@@ -284,6 +285,7 @@ class _AttrContext(CheckerAttrContext):
             visitor.options,
             skip_mro=skip_mro,
             skip_unwrap=skip_unwrap,
+            prefer_typeshed=prefer_typeshed,
             checker=visitor.checker,
         )
         self.node = node
@@ -754,7 +756,12 @@ class ClassAttributeChecker:
         if _has_annotation_for_attr(typ, attr_name) or attributes.get_attrs_attribute(
             typ,
             attributes.AttrContext(
-                Composite(TypedValue(typ)), attr_name, visitor.options, False, False
+                Composite(TypedValue(typ)),
+                attr_name,
+                visitor.options,
+                skip_unwrap=False,
+                skip_mro=False,
+                prefer_typeshed=False,
             ),
         ):
             return
@@ -4000,6 +4007,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         *,
         ignore_none: bool = False,
         use_fallback: bool = False,
+        prefer_typeshed: bool = False,
     ) -> Value:
         """Get an attribute of this value.
 
@@ -4034,15 +4042,24 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 results.append(subresult)
             return unite_values(*results)
         ctx = _AttrContext(
-            root_composite, attr, self, node=node, ignore_none=ignore_none
+            root_composite,
+            attr,
+            self,
+            node=node,
+            ignore_none=ignore_none,
+            prefer_typeshed=prefer_typeshed,
         )
         result = attributes.get_attribute(ctx)
         if result is UNINITIALIZED_VALUE and use_fallback and node is not None:
             return self._get_attribute_fallback(root_composite.value, attr, node)
         return result
 
-    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
-        return self.get_attribute(Composite(root_value), attribute)
+    def get_attribute_from_value(
+        self, root_value: Value, attribute: str, *, prefer_typeshed: bool = False
+    ) -> Value:
+        return self.get_attribute(
+            Composite(root_value), attribute, prefer_typeshed=prefer_typeshed
+        )
 
     def _get_attribute_fallback(
         self, root_value: Value, attr: str, node: ast.AST

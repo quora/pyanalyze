@@ -134,7 +134,9 @@ class TypeObject:
             with ctx.assume_compatibility(self, other):
                 tv_maps = []
                 for member in self.protocol_members:
-                    expected = ctx.get_attribute_from_value(self_val, member)
+                    expected = ctx.get_attribute_from_value(
+                        self_val, member, prefer_typeshed=True
+                    )
                     # For __call__, we check compatiiblity with the other object itself.
                     if member == "__call__":
                         actual = other_val

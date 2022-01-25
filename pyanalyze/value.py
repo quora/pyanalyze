@@ -213,7 +213,9 @@ class CanAssignContext(Protocol):
         """
         return None
 
-    def get_attribute_from_value(self, root_value: "Value", attribute: str) -> "Value":
+    def get_attribute_from_value(
+        self, root_value: "Value", attribute: str, *, prefer_typeshed: bool = False
+    ) -> "Value":
         return UNINITIALIZED_VALUE
 
     def can_assume_compatibility(
