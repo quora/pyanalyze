@@ -15,6 +15,7 @@ from .value import (
     AnyValue,
     KnownValue,
     MultiValuedValue,
+    SubclassValue,
     TypedValue,
     Value,
     unite_values,
@@ -24,19 +25,27 @@ from .value import (
 )
 
 
-def is_universally_assignable(value: Value) -> bool:
+def is_universally_assignable(value: Value, target_value: Value) -> bool:
     if value is NO_RETURN_VALUE or isinstance(value, AnyValue):
         return True
+    elif value == TypedValue(type) and isinstance(target_value, SubclassValue):
+        return True
     elif isinstance(value, AnnotatedValue):
-        return is_universally_assignable(value.value)
+        return is_universally_assignable(value.value, target_value)
     elif isinstance(value, MultiValuedValue):
-        return all(is_universally_assignable(subval) for subval in value.vals)
+        return all(
+            is_universally_assignable(subval, target_value) for subval in value.vals
+        )
     return False
 
 
 @dataclass
 class IsAssignablePredicate:
-    """Predicate that filters out values that are not assignable to pattern_value."""
+    """Predicate that filters out values that are not assignable to pattern_value.
+
+    This only works reliably for simple pattern_values, such as TypedValue.
+
+    """
 
     pattern_value: Value
     ctx: CanAssignContext
@@ -48,7 +57,7 @@ class IsAssignablePredicate:
             if not compatible:
                 return None
             if self.pattern_value.is_assignable(value, self.ctx):
-                if is_universally_assignable(value):
+                if is_universally_assignable(value, unannotate(self.pattern_value)):
                     return self.pattern_value
                 return value
             else:
@@ -56,7 +65,7 @@ class IsAssignablePredicate:
         elif not self.positive_only:
             if self.pattern_value.is_assignable(
                 value, self.ctx
-            ) and not is_universally_assignable(value):
+            ) and not is_universally_assignable(value, unannotate(self.pattern_value)):
                 return None
         return value
 
