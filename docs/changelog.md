@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Exclude `Any[unreachable]` from unified values (#439)
 - Add support for `reveal_locals()` (#436)
 - Add support for `assert_error()` (#435)
 - Add support for `assert_type()` (#434)

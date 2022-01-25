@@ -2037,6 +2037,12 @@ def unite_and_simplify(*values: Value, limit: int) -> Value:
     return unite_values(*simplified)
 
 
+def _is_unreachable(value: Value) -> bool:
+    if isinstance(value, AnnotatedValue):
+        return _is_unreachable(value.value)
+    return isinstance(value, AnyValue) and value.source is AnySource.unreachable
+
+
 def unite_values(*values: Value) -> Value:
     """Unite multiple values into a single :class:`Value`.
 
@@ -2062,6 +2068,8 @@ def unite_values(*values: Value) -> Value:
         else:
             subvals = [value]
         for subval in subvals:
+            if _is_unreachable(subval):
+                continue
             try:
                 # Don't readd it to preserve original ordering.
                 if subval not in hashable_vals:
