@@ -2361,6 +2361,41 @@ class TestWalrus(TestNameCheckVisitorBase):
         )
 
     @skip_before((3, 8))
+    def test_and(self):
+        self.assert_passes(
+            """
+            from typing import Optional
+
+            def opt() -> Optional[int]:
+                return None
+
+            def capybara(cond):
+                if (x := opt()) and cond:
+                    assert_is_value(x, TypedValue(int))
+                assert_is_value(x, TypedValue(int) | KnownValue(None))
+            """
+        )
+        self.assert_passes(
+            """
+            from typing import Set
+
+            def func(myvar: str, strset: Set[str]) -> None:
+                if (encoder_type := myvar) and myvar in strset:
+                    print(encoder_type)
+            """
+        )
+
+    @skip_before((3, 8))
+    def test_if_exp(self):
+        self.assert_passes(
+            """
+            def capybara(cond):
+                (x := 2) if cond else (x := 1)
+                assert_is_value(x, KnownValue(2) | KnownValue(1))
+            """
+        )
+
+    @skip_before((3, 8))
     def test_comprehension_scope(self):
         self.assert_passes(
             """

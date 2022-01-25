@@ -1053,7 +1053,7 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(y, KnownValue(True))
             else:
                 # no constraints from the inverse of an AND constraint
-                assert_is_value(x, AnyValue(AnySource.unannotated))
+                assert_is_value(x, KnownValue(True) | AnyValue(AnySource.unannotated))
                 assert_is_value(y, AnyValue(AnySource.unannotated))
 
         def kerodon(x):
@@ -1520,7 +1520,11 @@ class TestConstraints(TestNameCheckVisitorBase):
                     assert_is_value(
                         self.value,
                         MultiValuedValue(
-                            [AnyValue(AnySource.unannotated), KnownValue("")]
+                            [
+                                AnyValue(AnySource.unannotated),
+                                TypedValue(Foo),
+                                KnownValue(""),
+                            ]
                         ),
                     )
                 assert_is_value(
