@@ -2056,6 +2056,7 @@ def unite_values(*values: Value) -> Value:
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
     unhashable_vals = []
+    saw_unreachable = False
     for value in values:
         if isinstance(value, MultiValuedValue):
             subvals = value.vals
@@ -2069,6 +2070,7 @@ def unite_values(*values: Value) -> Value:
             subvals = [value]
         for subval in subvals:
             if _is_unreachable(subval):
+                saw_unreachable = True
                 continue
             try:
                 # Don't readd it to preserve original ordering.
@@ -2079,6 +2081,8 @@ def unite_values(*values: Value) -> Value:
     existing = list(hashable_vals) + unhashable_vals
     num = len(existing)
     if num == 0:
+        if saw_unreachable:
+            return AnyValue(AnySource.unreachable)
         return NO_RETURN_VALUE
     if num == 1:
         return existing[0]
