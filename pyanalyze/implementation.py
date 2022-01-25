@@ -129,12 +129,23 @@ def _issubclass_impl(ctx: CallContext) -> Value:
     return annotate_with_constraint(TypedValue(bool), constraint)
 
 
-def _isinstance_impl(ctx: CallContext) -> ImplReturn:
+def _isinstance_impl(ctx: CallContext) -> Value:
     class_or_tuple = ctx.vars["class_or_tuple"]
     varname = ctx.varname_for_arg("obj")
-    return ImplReturn(
-        TypedValue(bool), _constraint_from_isinstance(varname, class_or_tuple)
-    )
+    if varname is None or not isinstance(class_or_tuple, KnownValue):
+        return TypedValue(bool)
+    if isinstance(class_or_tuple.val, type):
+        narrowed_type = TypedValue(class_or_tuple.val)
+    elif isinstance(class_or_tuple.val, tuple) and all(
+        isinstance(elt, type) for elt in class_or_tuple.val
+    ):
+        vals = [TypedValue(elt) for elt in class_or_tuple.val]
+        narrowed_type = unite_values(*vals)
+    else:
+        return TypedValue(bool)
+    predicate = IsAssignablePredicate(narrowed_type, ctx.visitor, positive_only=False)
+    constraint = Constraint(varname, ConstraintType.predicate, True, predicate)
+    return annotate_with_constraint(TypedValue(bool), constraint)
 
 
 def _constraint_from_isinstance(
