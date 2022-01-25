@@ -2384,6 +2384,16 @@ class TestWalrus(TestNameCheckVisitorBase):
         )
 
     @skip_before((3, 8))
+    def test_if_exp(self):
+        self.assert_passes(
+            """
+            def capybara(cond):
+                (x := 2) if cond else (x := 1)
+                assert_is_value(x, KnownValue(2) | KnownValue(1))
+            """
+        )
+
+    @skip_before((3, 8))
     def test_comprehension_scope(self):
         self.assert_passes(
             """

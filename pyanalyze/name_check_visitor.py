@@ -2597,6 +2597,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         constraint = NULL_CONSTRAINT
         with stack:
             for i, condition in enumerate(node.values):
+                is_last = i == len(node.values) - 1
                 scope = stack.enter_context(self.scopes.subscope())
                 scopes.append(scope)
                 if is_and:
@@ -2604,10 +2605,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 else:
                     self.add_constraint(condition, constraint.invert())
 
-                new_value, constraint = self.constraint_from_condition(condition)
+                new_value, constraint = self.constraint_from_condition(
+                    condition, check_boolability=not is_last
+                )
                 out_constraints.append(constraint)
 
-                if i == len(node.values) - 1:
+                if is_last:
                     values.append(new_value)
                 elif is_and:
                     values.append(constrain_value(new_value, FALSY_CONSTRAINT))
@@ -3442,12 +3445,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_IfExp(self, node: ast.IfExp) -> Value:
         _, constraint = self.constraint_from_condition(node.test)
-        with self.scopes.subscope():
+        with self.scopes.subscope() as if_scope:
             self.add_constraint(node, constraint)
             then_val = self.visit(node.body)
-        with self.scopes.subscope():
+        with self.scopes.subscope() as else_scope:
             self.add_constraint(node, constraint.invert())
             else_val = self.visit(node.orelse)
+        self.scopes.combine_subscopes([if_scope, else_scope])
         return unite_values(then_val, else_val)
 
     def constraint_from_condition(
