@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix treatment of walrus operator in `and`, `or`, and `if/else`
+  expressions (#441)
 - Exclude `Any[unreachable]` from unified values (#439)
 - Add support for `reveal_locals()` (#436)
 - Add support for `assert_error()` (#435)
