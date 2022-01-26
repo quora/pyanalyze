@@ -5,6 +5,7 @@ from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -888,8 +889,8 @@ class TestConstraints(TestNameCheckVisitorBase):
                 if isinstance(x, B):
                     assert_is_value(x, TypedValue(B))
                     if isinstance(x, C):
-                        # Incompatible constraints result in Any.
-                        assert_is_value(x, AnyValue(AnySource.unreachable))
+                        # Incompatible constraints result in NoReturn.
+                        assert_is_value(x, NO_RETURN_VALUE)
             if isinstance(x, B):
                 assert_is_value(x, TypedValue(B))
                 if isinstance(x, A):
@@ -1646,6 +1647,19 @@ class TestComposite(TestNameCheckVisitorBase):
                     self.x = int(val)
                 x = self.x
                 assert_is_value(x, TypedValue(int))
+
+    @assert_passes()
+    def test_attribute_to_never(self):
+        from typing import Union
+
+        class TypedValue:
+            typ: Union[type, str]
+
+            def get_generic_args_for_type(self) -> object:
+                if isinstance(self.typ, super):
+                    return self.typ.__self_class__
+                else:
+                    assert False
 
     @assert_passes()
     def test_constraint(self):

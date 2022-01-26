@@ -1972,7 +1972,7 @@ class TestUnpacking(TestNameCheckVisitorBase):
             assert_is_value(s, SequenceIncompleteValue(list, []))
 
             for sprime in []:
-                assert_is_value(sprime, AnyValue(AnySource.unreachable))
+                assert_is_value(sprime, NO_RETURN_VALUE)
 
             for t, u in []:
                 assert_is_value(t, AnyValue(AnySource.unreachable))

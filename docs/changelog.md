@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Infer `NoReturn` instead of `Any` for unreachable code (#443)
 - Make `NoReturn` compatible with all other types (#442)
 - Fix treatment of walrus operator in `and`, `or`, and `if/else`
   expressions (#441)
