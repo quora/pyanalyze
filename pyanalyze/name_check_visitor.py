@@ -3092,11 +3092,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             value = KnownNone
         else:
             value = self.visit(node.value)
-        if value is NO_RETURN_VALUE:
-            return
         self.return_values.append(value)
         self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
-        if self.expected_return_value is NO_RETURN_VALUE:
+        if (
+            self.expected_return_value is NO_RETURN_VALUE
+            and value is not NO_RETURN_VALUE
+        ):
             self._show_error_if_checking(
                 node, error_code=ErrorCode.no_return_may_return
             )
@@ -3114,7 +3115,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     error_code=ErrorCode.incompatible_return_value,
                     detail=tv_map.display(),
                 )
-        if self.expected_return_value == KnownNone and value != KnownNone:
+        if (
+            self.expected_return_value == KnownNone
+            and value != KnownNone
+            and value is not NO_RETURN_VALUE
+        ):
             self._show_error_if_checking(
                 node,
                 "Function declared as returning None may not return a value",
