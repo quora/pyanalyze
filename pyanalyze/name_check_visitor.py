@@ -3910,7 +3910,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if vals:
                 return unite_values(*vals)
             else:
-                return UNINITIALIZED_VALUE
+                return NO_RETURN_VALUE
         return local_value
 
     def visit_Attribute(self, node: ast.Attribute) -> Value:

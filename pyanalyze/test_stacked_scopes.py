@@ -1648,6 +1648,19 @@ class TestComposite(TestNameCheckVisitorBase):
                 assert_is_value(x, TypedValue(int))
 
     @assert_passes()
+    def test_attribute_to_never(self):
+        from typing import Union
+
+        class TypedValue:
+            typ: Union[type, str]
+
+            def get_generic_args_for_type(self) -> object:
+                if isinstance(self.typ, super):
+                    return self.typ.__self_class__
+                else:
+                    assert False
+
+    @assert_passes()
     def test_constraint(self):
         class Capybara(object):
             def __init__(self, x):

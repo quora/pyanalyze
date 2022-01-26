@@ -1332,6 +1332,8 @@ class MultiValuedValue(Value):
         if isinstance(other, TypeVarValue):
             other = other.get_fallback_value()
         if is_union(other):
+            if other is NO_RETURN_VALUE:
+                return {}
             tv_maps = []
             for val in flatten_values(other):
                 tv_map = self.can_assign(val, ctx)
