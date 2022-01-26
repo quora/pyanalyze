@@ -9,6 +9,7 @@ be gracefully ignored by other type checkers.
 
 """
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import typing_extensions
 import pyanalyze
@@ -18,6 +19,7 @@ from typing import (
     Container,
     Dict,
     Iterable,
+    Iterator,
     Optional,
     Sequence,
     Tuple,
@@ -368,7 +370,10 @@ class ExternalType(metaclass=_ExternalTypeMeta):
         raise NotImplementedError("just here to fool typing._type_check")
 
 
-def reveal_type(value: object) -> None:
+_T = TypeVar("_T")
+
+
+def reveal_type(value: _T) -> _T:
     """Inspect the inferred type of an expression.
 
     Calling this function will make pyanalyze print out the argument's
@@ -383,8 +388,60 @@ def reveal_type(value: object) -> None:
         def f(x: int) -> None:
             reveal_type(x)  # Revealed type is "int"
 
+    At runtime this returns the argument unchanged.
+
+    """
+    return value
+
+
+def reveal_locals() -> None:
+    """Reveal the types of all local variables.
+
+    When the type checker encounters a call to this function,
+    it prints the type of all variables in the local scope.
+
+    This does nothing at runtime.
+
     """
     pass
+
+
+def assert_type(val: _T, typ: Any) -> _T:
+    """Assert the inferred static type of an expression.
+
+    When a static type checker encounters a call to this function,
+    it checks that the inferred type of `val` matches the `typ`
+    argument, and if it dooes not, it emits an error.
+
+    Example::
+
+        def f(x: int) -> None:
+            assert_type(x, int)  # ok
+            assert_type(x, str)  # error
+
+    This is useful for checking that the type checker interprets
+    a complicated set of type annotations in the way the user intended.
+
+    At runtime this returns the first argument unchanged.
+
+    """
+    return val
+
+
+@contextmanager
+def assert_error() -> Iterator[None]:
+    """Context manager that asserts that code produces a type checker error.
+
+    Example::
+
+        with assert_error():  # ok
+            1 + "x"
+
+        with assert_error():  # error: no error found in this block
+            1 + 1
+
+    """
+    yield
 
 
 _overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)

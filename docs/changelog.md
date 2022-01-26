@@ -3,6 +3,19 @@
 ## Unreleased
 
 - Support `__init__` and `__new__` signatures from typeshed (#429)
+- Infer `NoReturn` instead of `Any` for unreachable code (#443)
+- Make `NoReturn` compatible with all other types (#442)
+- Fix treatment of walrus operator in `and`, `or`, and `if/else`
+  expressions (#441)
+- Refactor `isinstance()` support (#440)
+- Exclude `Any[unreachable]` from unified values (#439)
+- Add support for `reveal_locals()` (#436)
+- Add support for `assert_error()` (#435)
+- Add support for `assert_type()` (#434)
+- `reveal_type()` and `dump_value()` now return their argument,
+  the anticipated behavior for `typing.reveal_type()` in Python
+  3.11 (#433)
+- Fix return type of async generator functions (#431)
 - Type check function decorators (#428)
 - Handle `NoReturn` in `async def` functions (#427)
 - Support PEP 673 (`typing_extensions.Self`) (#423)

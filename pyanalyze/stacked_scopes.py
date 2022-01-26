@@ -121,6 +121,15 @@ class CompositeVariable:
     def extend_with(self, index: CompositeIndex) -> "CompositeVariable":
         return CompositeVariable(self.varname, (*self.attributes, index))
 
+    def __str__(self) -> str:
+        pieces = [self.varname]
+        for attr in self.attributes:
+            if isinstance(attr, str):
+                pieces.append(f".{attr}")
+            else:
+                pieces.append(f"[{attr.val!r}]")
+        return "".join(pieces)
+
 
 Varname = Union[str, CompositeVariable]
 
@@ -359,7 +368,7 @@ class Constraint(AbstractConstraint):
                         yield TypedValue(self.value)
                     # TODO: Technically here we should infer an intersection type:
                     # a type that is a subclass of both types. In practice currently
-                    # _constrain_values() will eventually return AnyValue.
+                    # _constrain_value() will eventually return NoReturn.
                 else:
                     if not safe_issubclass(inner_value.typ, self.value):
                         yield value
@@ -745,6 +754,9 @@ class Scope:
 
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         return self.variables.items()
+
+    def all_variables(self) -> Iterable[Varname]:
+        return self.variables
 
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.variables
@@ -1235,6 +1247,9 @@ class FunctionScope(Scope):
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         raise NotImplementedError
 
+    def all_variables(self) -> Iterable[Varname]:
+        yield from self.name_to_current_definition_nodes
+
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.name_to_all_definition_nodes
 
@@ -1438,20 +1453,21 @@ def uniq_chain(iterables: Iterable[Iterable[T]]) -> List[T]:
 
 
 def _constrain_value(
-    values: Iterable[Value],
+    values: Sequence[Value],
     constraints: Iterable[Constraint],
     *,
     fallback_value: Optional[Value] = None,
     simplification_limit: Optional[int] = None,
 ) -> Value:
     # Flatten MultiValuedValue so that we can apply constraints.
-    values = [val for val_or_mvv in values for val in flatten_values(val_or_mvv)]
     if not values and fallback_value is not None:
         values = list(flatten_values(fallback_value))
+    else:
+        values = [val for val_or_mvv in values for val in flatten_values(val_or_mvv)]
     for constraint in constraints:
         values = list(constraint.apply_to_values(values))
     if not values:
-        return AnyValue(AnySource.unreachable)
+        return NO_RETURN_VALUE
     if simplification_limit is not None:
         return unite_and_simplify(*values, limit=simplification_limit)
     return unite_values(*values)

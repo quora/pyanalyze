@@ -1161,20 +1161,6 @@ class TestIssubclass(TestNameCheckVisitorBase):
                 assert_is_value(x, SubclassValue(TypedValue(int)))
 
 
-class TestInferenceHelpers(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test(self) -> None:
-        from pyanalyze import dump_value, assert_is_value
-        from pyanalyze.value import Value
-
-        def capybara(val: Value) -> None:
-            reveal_type(dump_value)  # E: inference_failure
-            dump_value(reveal_type)  # E: inference_failure
-            assert_is_value(1, KnownValue(1))
-            assert_is_value(1, KnownValue(2))  # E: inference_failure
-            assert_is_value(1, val)  # E: inference_failure
-
-
 class TestCallableGuards(TestNameCheckVisitorBase):
     @assert_passes()
     def test_callable(self):

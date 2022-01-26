@@ -69,7 +69,7 @@ from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass, IgnoredC
 from .boolability import Boolability, get_boolability
 from .checker import Checker, CheckerAttrContext
 from .error_code import ErrorCode, ERROR_DESCRIPTION
-from .extensions import ParameterTypeGuard, patch_typing_overload
+from .extensions import ParameterTypeGuard, assert_error, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
 from .options import (
     ConfigOption,
@@ -147,6 +147,7 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
+    AssertErrorExtension,
     CanAssign,
     CanAssignError,
     ConstraintExtension,
@@ -155,6 +156,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
+    annotate_value,
     flatten_values,
     is_union,
     kv_pairs_from_mapping,
@@ -935,6 +937,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     current_enum_members: Optional[Dict[object, str]]
     _name_node_to_statement: Optional[Dict[ast.AST, Optional[ast.AST]]]
     import_name_to_node: Dict[str, Union[ast.Import, ast.ImportFrom]]
+    expected_return_value: Optional[Value]
 
     def __init__(
         self,
@@ -1795,8 +1798,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         params: Sequence[SigParameter],
     ) -> FunctionResult:
         # Ignore generators for now.
-        if isinstance(return_set, AnyValue) or (
-            self.is_generator and info.async_kind is not AsyncFunctionKind.normal
+        if (
+            isinstance(return_set, AnyValue)
+            or return_set is NO_RETURN_VALUE
+            or (self.is_generator and info.async_kind is not AsyncFunctionKind.normal)
         ):
             has_return = True
         elif return_set is UNINITIALIZED_VALUE:
@@ -2588,22 +2593,34 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # we set a negative constraint.
 
         is_and = isinstance(node.op, ast.And)
+        stack = contextlib.ExitStack()
+        scopes = []
         out_constraints = []
-        with self.scopes.subscope():
-            values = []
-            left = node.values[:-1]
-            for condition in left:
-                new_value, constraint = self.constraint_from_condition(condition)
-                out_constraints.append(constraint)
+        values = []
+        constraint = NULL_CONSTRAINT
+        with stack:
+            for i, condition in enumerate(node.values):
+                is_last = i == len(node.values) - 1
+                scope = stack.enter_context(self.scopes.subscope())
+                scopes.append(scope)
                 if is_and:
                     self.add_constraint(condition, constraint)
-                    values.append(constrain_value(new_value, FALSY_CONSTRAINT))
                 else:
                     self.add_constraint(condition, constraint.invert())
+
+                new_value, constraint = self.constraint_from_condition(
+                    condition, check_boolability=not is_last
+                )
+                out_constraints.append(constraint)
+
+                if is_last:
+                    values.append(new_value)
+                elif is_and:
+                    values.append(constrain_value(new_value, FALSY_CONSTRAINT))
+                else:
                     values.append(constrain_value(new_value, TRUTHY_CONSTRAINT))
-            right_value = self._visit_possible_constraint(node.values[-1])
-            values.append(right_value)
-            out_constraints.append(extract_constraints(right_value))
+
+        self.scopes.combine_subscopes(scopes)
         constraint_cls = AndConstraint if is_and else OrConstraint
         constraint = constraint_cls.make(reversed(out_constraints))
         return annotate_with_constraint(unite_values(*values), constraint)
@@ -3075,11 +3092,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             value = KnownNone
         else:
             value = self.visit(node.value)
-        if value is NO_RETURN_VALUE:
-            return
         self.return_values.append(value)
         self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
-        if self.expected_return_value is NO_RETURN_VALUE:
+        if (
+            self.expected_return_value is NO_RETURN_VALUE
+            and value is not NO_RETURN_VALUE
+        ):
             self._show_error_if_checking(
                 node, error_code=ErrorCode.no_return_may_return
             )
@@ -3097,7 +3115,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     error_code=ErrorCode.incompatible_return_value,
                     detail=tv_map.display(),
                 )
-        if self.expected_return_value == KnownNone and value != KnownNone:
+        if (
+            self.expected_return_value == KnownNone
+            and value != KnownNone
+            and value is not NO_RETURN_VALUE
+        ):
             self._show_error_if_checking(
                 node,
                 "Function declared as returning None may not return a value",
@@ -3171,8 +3193,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_Continue(self, node: ast.Continue) -> None:
         self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
 
-    def visit_For(self, node: ast.For) -> None:
-        iterated_value = self._member_value_of_iterator(node.iter)
+    def visit_For(self, node: Union[ast.For, ast.AsyncFor]) -> None:
+        iterated_value = self._member_value_of_iterator(
+            node.iter, is_async=isinstance(node, ast.AsyncFor)
+        )
         if self.options.get_value_for(ForLoopAlwaysEntered):
             always_entered = True
         elif isinstance(iterated_value, Value):
@@ -3208,6 +3232,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 with qcore.override(self, "being_assigned", iterated_value):
                     self.visit(node.target)
                 self._generic_visit_list(node.body)
+
+    visit_AsyncFor = visit_For
 
     def visit_While(self, node: ast.While) -> None:
         # see comments under For for discussion
@@ -3282,16 +3308,32 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return result
 
     def visit_With(self, node: ast.With) -> None:
-        for item in node.items:
-            self.visit_withitem(item)
+        contexts = [self.visit_withitem(item) for item in node.items]
+        if len(contexts) == 1:
+            context = contexts[0]
+            if isinstance(context, AnnotatedValue) and context.has_metadata_of_type(
+                AssertErrorExtension
+            ):
+                self._visit_assert_errors_block(node)
+                return
         self._generic_visit_list(node.body)
+
+    def _visit_assert_errors_block(self, node: ast.With) -> None:
+        with self.catch_errors() as caught:
+            self._generic_visit_list(node.body)
+        if not caught:
+            self._show_error_if_checking(
+                node,
+                "No errors found in assert_error() block",
+                error_code=ErrorCode.inference_failure,
+            )
 
     def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
         for item in node.items:
             self.visit_withitem(item, is_async=True)
         self._generic_visit_list(node.body)
 
-    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> None:
+    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> Value:
         context = self.visit(node.context_expr)
         if is_async:
             protocol = "typing.AsyncContextManager"
@@ -3312,6 +3354,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if node.optional_vars is not None:
             with qcore.override(self, "being_assigned", assigned):
                 self.visit(node.optional_vars)
+        return context
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
@@ -3410,12 +3453,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_IfExp(self, node: ast.IfExp) -> Value:
         _, constraint = self.constraint_from_condition(node.test)
-        with self.scopes.subscope():
+        with self.scopes.subscope() as if_scope:
             self.add_constraint(node, constraint)
             then_val = self.visit(node.body)
-        with self.scopes.subscope():
+        with self.scopes.subscope() as else_scope:
             self.add_constraint(node, constraint.invert())
             else_val = self.visit(node.orelse)
+        self.scopes.combine_subscopes([if_scope, else_scope])
         return unite_values(then_val, else_val)
 
     def constraint_from_condition(
@@ -3871,7 +3915,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if vals:
                 return unite_values(*vals)
             else:
-                return UNINITIALIZED_VALUE
+                return NO_RETURN_VALUE
         return local_value
 
     def visit_Attribute(self, node: ast.Attribute) -> Value:
@@ -4174,6 +4218,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if caller is not None:
                     self.collector.record_call(caller, callee_val)
 
+        if (
+            isinstance(callee_wrapped, KnownValue)
+            and callee_wrapped.val is assert_error
+        ):
+            return annotate_value(return_value, [AssertErrorExtension()])
         return return_value
 
     def _can_perform_call(

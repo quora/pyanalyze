@@ -4,6 +4,7 @@ from asynq.futures import FutureBase
 from .boolability import Boolability, get_boolability
 from .stacked_scopes import Composite
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -114,6 +115,7 @@ def test_get_boolability() -> None:
     assert Boolability.value_always_false == get_boolability(
         KnownValue(False) | KnownValue("")
     )
+    assert Boolability.boolable == get_boolability(NO_RETURN_VALUE)
 
 
 class TestAssert(TestNameCheckVisitorBase):

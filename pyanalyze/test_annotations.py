@@ -1210,10 +1210,10 @@ class TestCustomCheck(TestNameCheckVisitorBase):
 
             lst = []
             for x in lst:
-                assert_is_value(x, AnyValue(AnySource.unreachable))
+                assert_is_value(x, MultiValuedValue([]))
                 shallow(x)
                 deep(x)
-                none_at_all(x)  # E: incompatible_argument
+                none_at_all(x)
 
     @assert_passes()
     def test_not_none(self) -> None:

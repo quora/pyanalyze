@@ -8,8 +8,6 @@ version = "0.6.0"
 package_data = ["test.toml", "stubs/*/*.pyi"]
 # Used in internal packaging system.
 if "SANTA_PACKAGE_VERSION" in os.environ:
-    version = f"{version}.{os.environ['SANTA_PACKAGE_VERSION']}"
-
     CYTHON_MODULES = ["name_check_visitor"]
     DATA_FILES = [f"{module}.pxd" for module in CYTHON_MODULES]
     EXTENSIONS = [

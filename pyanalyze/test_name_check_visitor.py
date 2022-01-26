@@ -658,31 +658,6 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             assert_is_value(x, KnownValue(3))
 
 
-class TestNoReturn(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_no_return(self):
-        from typing_extensions import NoReturn
-        from typing import Optional
-
-        def f() -> NoReturn:
-            raise Exception
-
-        def capybara(x: Optional[int]) -> None:
-            if x is None:
-                f()
-            assert_is_value(x, TypedValue(int))
-
-    @assert_fails(ErrorCode.incompatible_argument)
-    def test_no_return_parameter(self):
-        from typing_extensions import NoReturn
-
-        def assert_unreachable(x: NoReturn) -> None:
-            pass
-
-        def capybara():
-            assert_unreachable(1)
-
-
 class TestSubclassValue(TestNameCheckVisitorBase):
     # In 3.7 the behavior of Type[] changed.
     @only_before((3, 7))
@@ -1997,7 +1972,7 @@ class TestUnpacking(TestNameCheckVisitorBase):
             assert_is_value(s, SequenceIncompleteValue(list, []))
 
             for sprime in []:
-                assert_is_value(sprime, AnyValue(AnySource.unreachable))
+                assert_is_value(sprime, NO_RETURN_VALUE)
 
             for t, u in []:
                 assert_is_value(t, AnyValue(AnySource.unreachable))
@@ -2357,6 +2332,41 @@ class TestWalrus(TestNameCheckVisitorBase):
                 if (y := opt()) is not None:
                     assert_is_value(y, TypedValue(int))
                 assert_is_value(y, TypedValue(int) | KnownValue(None))
+            """
+        )
+
+    @skip_before((3, 8))
+    def test_and(self):
+        self.assert_passes(
+            """
+            from typing import Optional
+
+            def opt() -> Optional[int]:
+                return None
+
+            def capybara(cond):
+                if (x := opt()) and cond:
+                    assert_is_value(x, TypedValue(int))
+                assert_is_value(x, TypedValue(int) | KnownValue(None))
+            """
+        )
+        self.assert_passes(
+            """
+            from typing import Set
+
+            def func(myvar: str, strset: Set[str]) -> None:
+                if (encoder_type := myvar) and myvar in strset:
+                    print(encoder_type)
+            """
+        )
+
+    @skip_before((3, 8))
+    def test_if_exp(self):
+        self.assert_passes(
+            """
+            def capybara(cond):
+                (x := 2) if cond else (x := 1)
+                assert_is_value(x, KnownValue(2) | KnownValue(1))
             """
         )
 

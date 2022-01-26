@@ -165,6 +165,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     default_module: Optional[ModuleType] = None  # module to run on by default
     # whether to look at FILE_ENVIRON_KEY to find files to run on
     should_check_environ_for_files: bool = True
+    caught_errors: Optional[List[Dict[str, Any]]] = None
 
     _changes_for_fixer = collections.defaultdict(list)
 

@@ -85,6 +85,9 @@ class Value:
             ctx.record_any_used()
             return {}
         elif isinstance(other, MultiValuedValue):
+            # The bottom type is assignable to every other type.
+            if other is NO_RETURN_VALUE:
+                return {}
             tv_maps = []
             for val in other.vals:
                 tv_map = self.can_assign(val, ctx)
@@ -301,16 +304,18 @@ def assert_is_value(obj: object, value: Value, *, skip_annotated: bool = False) 
     pass
 
 
-def dump_value(value: object) -> None:
+def dump_value(value: T) -> T:
     """Print out the :class:`Value` representation of its argument.
 
     Calling it will make pyanalyze print out an internal
-    representation of the argument's inferred value. Does nothing
-    at runtime. Use :func:`pyanalyze.extensions.reveal_type` for a
+    representation of the argument's inferred value. Use
+    :func:`pyanalyze.extensions.reveal_type` for a
     more user-friendly representation.
 
+    At runtime this returns the argument unchanged.
+
     """
-    pass
+    return value
 
 
 class AnySource(enum.Enum):
@@ -1327,6 +1332,8 @@ class MultiValuedValue(Value):
         if isinstance(other, TypeVarValue):
             other = other.get_fallback_value()
         if is_union(other):
+            if other is NO_RETURN_VALUE:
+                return {}
             tv_maps = []
             for val in flatten_values(other):
                 tv_map = self.can_assign(val, ctx)
@@ -1788,6 +1795,11 @@ class AlwaysPresentExtension(Extension):
 
 
 @dataclass(frozen=True)
+class AssertErrorExtension(Extension):
+    """Used for the implementation of :func:`pyanalyze.extensions.assert_error`."""
+
+
+@dataclass(frozen=True)
 class AnnotatedValue(Value):
     """Value representing a `PEP 593 <https://www.python.org/dev/peps/pep-0593/>`_ Annotated object.
 
@@ -2030,6 +2042,12 @@ def unite_and_simplify(*values: Value, limit: int) -> Value:
     return unite_values(*simplified)
 
 
+def _is_unreachable(value: Value) -> bool:
+    if isinstance(value, AnnotatedValue):
+        return _is_unreachable(value.value)
+    return isinstance(value, AnyValue) and value.source is AnySource.unreachable
+
+
 def unite_values(*values: Value) -> Value:
     """Unite multiple values into a single :class:`Value`.
 
@@ -2043,6 +2061,7 @@ def unite_values(*values: Value) -> Value:
     # sets have unpredictable iteration order.
     hashable_vals = OrderedDict()
     unhashable_vals = []
+    saw_unreachable = False
     for value in values:
         if isinstance(value, MultiValuedValue):
             subvals = value.vals
@@ -2055,6 +2074,9 @@ def unite_values(*values: Value) -> Value:
         else:
             subvals = [value]
         for subval in subvals:
+            if _is_unreachable(subval):
+                saw_unreachable = True
+                continue
             try:
                 # Don't readd it to preserve original ordering.
                 if subval not in hashable_vals:
@@ -2064,6 +2086,8 @@ def unite_values(*values: Value) -> Value:
     existing = list(hashable_vals) + unhashable_vals
     num = len(existing)
     if num == 0:
+        if saw_unreachable:
+            return AnyValue(AnySource.unreachable)
         return NO_RETURN_VALUE
     if num == 1:
         return existing[0]
