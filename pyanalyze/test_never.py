@@ -35,3 +35,18 @@ class TestNoReturn(TestNameCheckVisitorBase):
 
         def takes_never(x: NoReturn):
             print(x)
+
+
+class TestAssertNever(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_if(self):
+        from pyanalyze.tests import assert_never
+        from typing import Union
+
+        def capybara(x: Union[int, str]) -> None:
+            if isinstance(x, int):
+                print("int")
+            elif isinstance(x, str):
+                print("str")
+            else:
+                assert_never(x)
