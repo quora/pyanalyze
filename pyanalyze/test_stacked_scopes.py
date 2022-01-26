@@ -5,6 +5,7 @@ from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -888,8 +889,8 @@ class TestConstraints(TestNameCheckVisitorBase):
                 if isinstance(x, B):
                     assert_is_value(x, TypedValue(B))
                     if isinstance(x, C):
-                        # Incompatible constraints result in Any.
-                        assert_is_value(x, AnyValue(AnySource.unreachable))
+                        # Incompatible constraints result in NoReturn.
+                        assert_is_value(x, NO_RETURN_VALUE)
             if isinstance(x, B):
                 assert_is_value(x, TypedValue(B))
                 if isinstance(x, A):
