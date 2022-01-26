@@ -27,9 +27,9 @@ class TestPatma(TestNameCheckVisitorBase):
             def capybara(x: int):
                 match x:
                     case None:  # E: impossible_pattern
-                        assert_is_value(x, AnyValue(AnySource.unreachable))
+                        assert_is_value(x, NO_RETURN_VALUE)
                     case "x":  # E: impossible_pattern
-                        assert_is_value(x, AnyValue(AnySource.unreachable))
+                        assert_is_value(x, NO_RETURN_VALUE)
                     case 3:
                         assert_is_value(x, KnownValue(3))
                     case _ if x == 4:
