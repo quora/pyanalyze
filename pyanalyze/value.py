@@ -85,6 +85,9 @@ class Value:
             ctx.record_any_used()
             return {}
         elif isinstance(other, MultiValuedValue):
+            # The bottom type is assignable to every other type.
+            if other is NO_RETURN_VALUE:
+                return {}
             tv_maps = []
             for val in other.vals:
                 tv_map = self.can_assign(val, ctx)
