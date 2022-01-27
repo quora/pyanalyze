@@ -50,3 +50,17 @@ class TestAssertNever(TestNameCheckVisitorBase):
                 print("str")
             else:
                 assert_never(x)
+
+
+class TestNeverCall(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_empty_list(self):
+        def callee(a: int):
+            pass
+
+        def capybara():
+            for args in []:
+                callee(*args)
+
+            for kwargs in []:
+                callee(**kwargs)
