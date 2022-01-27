@@ -11,7 +11,7 @@ from .test_name_check_visitor import (
 from .test_node_visitor import assert_passes
 from .signature import SigParameter, BoundMethodSignature, Signature, ParameterKind
 from .stacked_scopes import Composite
-from .arg_spec import ArgSpecCache, is_dot_asynq_function
+from .arg_spec import is_dot_asynq_function
 from .tests import l0cached_async_fn
 from .value import (
     AnySource,
@@ -98,7 +98,7 @@ def test_get_argspec():
 
     # test everything twice because calling qcore.get_original_fn has side effects
     for _ in range(2):
-        asc = ArgSpecCache(checker.options, checker.ts_finder)
+        asc = checker.arg_spec_cache
 
         # there's special logic for this in signature_from_value; TODO move that into
         # ExtendedArgSpec

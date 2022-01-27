@@ -789,15 +789,16 @@ class TypeshedFinder:
     ) -> Iterable[SigParameter]:
         for i, (arg, default) in enumerate(zip(args, defaults)):
             yield self._parse_param(
-                arg, default, module, kind, objclass if i == 0 else None
+                arg, default, module, kind, objclass=objclass if i == 0 else None
             )
 
     def _parse_param(
         self,
         arg: ast.arg,
-        default: Optional[ast.arg],
+        default: Optional[ast.AST],
         module: str,
         kind: ParameterKind,
+        *,
         objclass: Optional[type] = None,
     ) -> SigParameter:
         typ = AnyValue(AnySource.unannotated)

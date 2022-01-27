@@ -49,6 +49,7 @@ from .value import (
     extract_typevars,
     make_weak,
 )
+import pyanalyze
 
 import ast
 import asyncio
@@ -65,6 +66,7 @@ from typing import (
     Any,
     Callable,
     Iterator,
+    List,
     Sequence,
     Generic,
     Mapping,
@@ -104,9 +106,8 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
         ):
             yield
     else:
-        options = Options.from_option_list()
-        tsf = TypeshedFinder.make(options)
-        argspec = ArgSpecCache(options, tsf).get_argspec(fn, impl=implementation_fn)
+        checker = pyanalyze.checker.Checker()
+        argspec = checker.arg_spec_cache.get_argspec(fn, impl=implementation_fn)
         if argspec is None:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
@@ -749,8 +750,17 @@ class ArgSpecCache:
             # Python 2.
             return None
 
+    def get_type_parameters(self, typ: Union[type, str]) -> List[Value]:
+        bases = self.get_generic_bases(typ, substitute_typevars=False)
+        tv_map = bases.get(typ, {})
+        return [tv for tv in tv_map.values()]
+
     def get_generic_bases(
-        self, typ: Union[type, str], generic_args: Sequence[Value] = ()
+        self,
+        typ: Union[type, str],
+        generic_args: Sequence[Value] = (),
+        *,
+        substitute_typevars: bool = True,
     ) -> GenericBases:
         if (
             typ is Generic
@@ -766,14 +776,15 @@ class ArgSpecCache:
         if not my_typevars:
             return generic_bases
         tv_map = {}
-        for i, tv_value in enumerate(my_typevars.values()):
-            if not isinstance(tv_value, TypeVarValue):
-                continue
-            try:
-                value = generic_args[i]
-            except IndexError:
-                value = AnyValue(AnySource.generic_argument)
-            tv_map[tv_value.typevar] = value
+        if substitute_typevars:
+            for i, tv_value in enumerate(my_typevars.values()):
+                if not isinstance(tv_value, TypeVarValue):
+                    continue
+                try:
+                    value = generic_args[i]
+                except IndexError:
+                    value = AnyValue(AnySource.generic_argument)
+                tv_map[tv_value.typevar] = value
         return {
             base: {tv: value.substitute_typevars(tv_map) for tv, value in args.items()}
             for base, args in generic_bases.items()

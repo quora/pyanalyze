@@ -1103,7 +1103,7 @@ def _value_of_origin_args(
         return AnyValue(AnySource.error)
 
 
-def _maybe_typed_value(val: type) -> Value:
+def _maybe_typed_value(val: Union[type, str]) -> Value:
     if val is type(None):
         return KnownValue(None)
     return TypedValue(val)
