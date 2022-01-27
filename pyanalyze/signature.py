@@ -1730,6 +1730,11 @@ def preprocess_args(
         elif label is KWARGS:
             items = {}
             extra_values = []
+            if arg.value is NO_RETURN_VALUE:
+                new_value = GenericValue(dict, [TypedValue(str), NO_RETURN_VALUE])
+                processed_args.append((Composite(new_value), KWARGS))
+                continue
+
             # We union all the kwargs that may be provided by any union member, so that
             # we give an error if
             for subval in flatten_values(arg.value, unwrap_annotated=True):
