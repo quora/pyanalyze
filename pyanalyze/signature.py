@@ -2025,12 +2025,12 @@ class OverloadedSignature:
         union_rets: List[CallReturn] = []
         union_and_any_rets: List[CallReturn] = []
         sigs = [
-            (sig, bound_args)
+            sig
             for sig, bound_args in zip(self.signatures, bound_args_per_overload)
             if bound_args is not None
         ]
         last = len(sigs) - 1
-        for i, (sig, bound_args) in enumerate(sigs):
+        for i, sig in enumerate(sigs):
             with visitor.catch_errors() as caught_errors:
                 # We can't use check_call_with_bound_args here because we may
                 # rebind the arguments.
