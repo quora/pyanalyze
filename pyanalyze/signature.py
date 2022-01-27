@@ -1046,6 +1046,18 @@ class Signature:
         bound_args = self.bind_arguments(preprocessed, ctx)
         if bound_args is None:
             return self.get_default_return()
+        return self.check_call_with_bound_args(
+            preprocessed, bound_args, ctx, is_overload=is_overload
+        )
+
+    def check_call_with_bound_args(
+        self,
+        preprocessed: ActualArguments,
+        bound_args: BoundArgs,
+        ctx: CheckCallContext,
+        *,
+        is_overload: bool = False,
+    ) -> CallReturn:
         variables = {key: composite.value for key, (_, composite) in bound_args.items()}
 
         if self.callable is not None and ctx.visitor is not None:
@@ -1951,6 +1963,10 @@ class OverloadedSignature:
         Our behavior is closer to mypy. The general rule is to pick the first overload that matches
         and return an error otherwise, but there are two twists: ``Any`` and unions.
 
+        Before we do a full check, we first check only whether the argument names and
+        numbers match by calling :func:`Signature.bind_arguments` (a trick we picked up
+        from pyright). This makes for better error messages.
+
         If an overload matched only due to ``Any``, we continue looking for more overloads. If there
         are other matching overloads, we return ``Any`` (with
         ``AnySource.multiple_overload_matches``).
@@ -1984,13 +2000,40 @@ class OverloadedSignature:
         if actual_args is None:
             return AnyValue(AnySource.error)
 
+        # We first bind the arguments for each overload, to get the obvious errors
+        # out of the way first.
+        errors_per_overload = []
+        bound_args_per_overload = []
+        for sig in self.signatures:
+            with visitor.catch_errors() as caught_errors:
+                bound_args = sig.bind_arguments(actual_args, ctx)
+            bound_args_per_overload.append(bound_args)
+            errors_per_overload.append(caught_errors)
+
+        if not any(bound_args is not None for bound_args in bound_args_per_overload):
+            detail = self._make_detail(errors_per_overload)
+            visitor.show_error(
+                node,
+                "Cannot call overloaded function",
+                ErrorCode.incompatible_call,
+                detail=str(detail),
+            )
+            return AnyValue(AnySource.error)
+
         errors_per_overload = []
         any_rets: List[CallReturn] = []
         union_rets: List[CallReturn] = []
         union_and_any_rets: List[CallReturn] = []
-        last = len(self.signatures) - 1
-        for i, sig in enumerate(self.signatures):
+        sigs = [
+            sig
+            for sig, bound_args in zip(self.signatures, bound_args_per_overload)
+            if bound_args is not None
+        ]
+        last = len(sigs) - 1
+        for i, sig in enumerate(sigs):
             with visitor.catch_errors() as caught_errors:
+                # We can't use check_call_with_bound_args here because we may
+                # rebind the arguments.
                 ret = sig.check_call_preprocessed(
                     actual_args,
                     ctx,

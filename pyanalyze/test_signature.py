@@ -1050,7 +1050,7 @@ class TestOverload(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(overloaded(), TypedValue(int))
             assert_is_value(overloaded("x"), TypedValue(str))
-            overloaded(1)  # E: incompatible_call
+            overloaded(1)  # E: incompatible_argument
             overloaded("x", "y")  # E: incompatible_call
 
     @assert_passes()
@@ -1175,7 +1175,7 @@ class TestOverload(TestNameCheckVisitorBase):
             print("x", file=SupportsWrite(), flush=True)  # E: incompatible_argument
             print("x", file=SupportsWriteAndFlush(), flush=True)
             print("x", file=SupportsWriteAndFlush())
-            print("x", file="not a file")  # E: incompatible_call
+            print("x", file="not a file")  # E: incompatible_argument
 
         def pacarana(f: float):
             assert_is_value(f.__round__(), TypedValue(int))
@@ -1209,3 +1209,27 @@ class TestOverload(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(f(1), TypedValue(str))
             assert_is_value(f(""), TypedValue(int))
+
+    @assert_passes()
+    def test_bound_args_first(self):
+        from pyanalyze.extensions import overload
+
+        @overload
+        def f(x: int, y: str) -> None:
+            pass
+
+        @overload
+        def f(x: int) -> int:
+            pass
+
+        @overload
+        def f(x: str) -> str:
+            pass
+
+        def f(x: object, y: object = ...) -> object:
+            raise NotImplementedError
+
+        def capybara():
+            f(1.0)  # E: incompatible_argument
+            f(1, 1)  # E: incompatible_argument
+            f(1, 1, 1)  # E: incompatible_call
