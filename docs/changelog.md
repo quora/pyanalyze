@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Support `__init__` and `__new__` signatures from typeshed (#429)
+- Treat `NoReturn` like `Any` in `**kwargs` calls (#446)
+- Improve error messages for overloaded calls (#445)
 - Infer `NoReturn` instead of `Any` for unreachable code (#443)
 - Make `NoReturn` compatible with all other types (#442)
 - Fix treatment of walrus operator in `and`, `or`, and `if/else`
