@@ -491,7 +491,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                             description=change.error_str,
                         )
                     )
-                    offset += len(additions) - len(linenos)
+                    offset += len(additions or []) - len(linenos)
             if patches:
                 # poor man's version of https://github.com/facebook/codemod/pull/113
                 with qcore.override(builtins, "print", _flushing_print):
