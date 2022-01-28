@@ -132,6 +132,31 @@ class AsynqChecker:
                 return
             if self.should_perform_async_checks():
                 self._check_attribute_access_in_async(root_value, attr_name, node)
+            self._check_attribute_access_temp(root_value, attr_name, node)
+
+    def _check_attribute_access_temp(self, root_value, attr_name, node):
+        if isinstance(root_value, TypedValue):
+            if not (
+                hasattr(root_value.typ, attr_name)
+                and isinstance(getattr(root_value.typ, attr_name), property)
+            ):
+                return
+            async_names = ("get_" + attr_name, "is_" + attr_name)
+            for async_name in async_names:
+                if hasattr(root_value.typ, async_name) and asynq.is_async_fn(
+                    getattr(root_value.typ, async_name)
+                ):
+                    replacement_call = _stringify_async_fn(
+                        UnboundMethodValue(async_name, Composite(root_value), "asynq")
+                    )
+                    method_node = ast.Attribute(value=node.value, attr=async_name)
+                    kwargs = {"args": [], "keywords": []}
+                    replacement_node = ast.Call(func=method_node, **kwargs)
+                    self._show_impure_async_error(
+                        node,
+                        replacement_call=replacement_call,
+                        replacement_node=replacement_node,
+                    )
 
     def _check_attribute_access_in_async(
         self, root_value: Value, attr_name: str, node: ast.Attribute
