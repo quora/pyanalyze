@@ -474,6 +474,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             patches = []
             for filename in changes:
+                offset = 0
                 for change in changes[filename]:
                     linenos = sorted(change.linenos_to_delete)
                     additions = change.lines_to_add
@@ -483,13 +484,14 @@ class BaseNodeVisitor(ast.NodeVisitor):
                         start_lineno, end_lineno = linenos[0], linenos[0]
                     patches.append(
                         _PatchWithDescription(
-                            start_lineno - 1,
-                            end_lineno,
+                            start_lineno - 1 + offset,
+                            end_lineno + offset,
                             new_lines=additions,
                             path=filename,
                             description=change.error_str,
                         )
                     )
+                    offset += len(additions) - len(linenos)
             if patches:
                 # poor man's version of https://github.com/facebook/codemod/pull/113
                 with qcore.override(builtins, "print", _flushing_print):
