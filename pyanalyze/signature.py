@@ -519,6 +519,20 @@ class Signature:
         )
         self.validate()
 
+    def __hash__(self) -> int:
+        return hash(
+            (
+                tuple(self.parameters.items()),
+                self.return_value,
+                self.impl,
+                self.callable,
+                self.is_asynq,
+                self.has_return_annotation,
+                self.allow_call,
+                self.evaluator,
+            )
+        )
+
     def validate(self) -> None:
         seen_kinds = set()
         seen_with_default = set()
