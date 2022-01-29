@@ -377,7 +377,7 @@ CAN_HAVE_DEFAULT = {
 }
 
 
-@dataclass
+@dataclass(frozen=True)
 class SigParameter:
     """Represents a single parameter to a callable."""
 
@@ -411,7 +411,7 @@ class SigParameter:
     def __post_init__(self) -> None:
         # backward compatibility
         if self.default is EMPTY:
-            self.default = None
+            object.__setattr__(self, "default", None)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "SigParameter":
         return SigParameter(
@@ -518,6 +518,20 @@ class Signature:
             }
         )
         self.validate()
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                tuple(self.parameters.items()),
+                self.return_value,
+                self.impl,
+                self.callable,
+                self.is_asynq,
+                self.has_return_annotation,
+                self.allow_call,
+                self.evaluator,
+            )
+        )
 
     def validate(self) -> None:
         seen_kinds = set()

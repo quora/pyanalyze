@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Cache decisions about whether classes implement protocols (#450)
 - Fix application of multiple suggested changes per file
   when an earlier change has added or removed lines (#449)
 - Treat `NoReturn` like `Any` in `**kwargs` calls (#446)
