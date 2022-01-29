@@ -2057,10 +2057,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 module_name = parent_module_name + "." + node.module
             else:
                 module_name = parent_module_name
+        if module_name is None:
+            return
         module = sys.modules.get(module_name)
         if module is None:
-            if module_name is None:
-                return
             try:
                 module = __import__(module_name)
             except Exception:
