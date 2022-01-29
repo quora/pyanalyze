@@ -2127,7 +2127,9 @@ class OverloadedSignature:
         return clean_ret.return_value
 
     def _make_detail(
-        self, errors_per_overload: Sequence[Sequence[Dict[str, Any]]], sigs: Sequence[Signature]
+        self,
+        errors_per_overload: Sequence[Sequence[Dict[str, Any]]],
+        sigs: Sequence[Signature],
     ) -> CanAssignError:
         details = []
         for sig, errors in zip(sigs, errors_per_overload):
