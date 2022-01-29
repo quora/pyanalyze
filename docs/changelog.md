@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Support `__init__` and `__new__` signatures from typeshed (#429)
+- Fix application of multiple suggested changes per file
+  when an earlier change has added or removed lines (#449)
 - Treat `NoReturn` like `Any` in `**kwargs` calls (#446)
 - Improve error messages for overloaded calls (#445)
 - Infer `NoReturn` instead of `Any` for unreachable code (#443)
