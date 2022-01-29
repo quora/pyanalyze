@@ -377,7 +377,7 @@ CAN_HAVE_DEFAULT = {
 }
 
 
-@dataclass
+@dataclass(frozen=True)
 class SigParameter:
     """Represents a single parameter to a callable."""
 
@@ -411,7 +411,7 @@ class SigParameter:
     def __post_init__(self) -> None:
         # backward compatibility
         if self.default is EMPTY:
-            self.default = None
+            object.__setattr__(self, "default", None)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "SigParameter":
         return SigParameter(
