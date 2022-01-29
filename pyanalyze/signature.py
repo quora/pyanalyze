@@ -2030,7 +2030,7 @@ class OverloadedSignature:
             errors_per_overload.append(caught_errors)
 
         if not any(bound_args is not None for bound_args in bound_args_per_overload):
-            detail = self._make_detail(errors_per_overload)
+            detail = self._make_detail(errors_per_overload, self.signatures)
             visitor.show_error(
                 node,
                 "Cannot call overloaded function",
@@ -2095,7 +2095,7 @@ class OverloadedSignature:
             (error_code,) = codes
         else:
             error_code = ErrorCode.incompatible_call
-        detail = self._make_detail(errors_per_overload)
+        detail = self._make_detail(errors_per_overload, sigs)
         visitor.show_error(
             node, "Cannot call overloaded function", error_code, detail=str(detail)
         )
@@ -2127,10 +2127,12 @@ class OverloadedSignature:
         return clean_ret.return_value
 
     def _make_detail(
-        self, errors_per_overload: Sequence[Sequence[Dict[str, Any]]]
+        self,
+        errors_per_overload: Sequence[Sequence[Dict[str, Any]]],
+        sigs: Sequence[Signature],
     ) -> CanAssignError:
         details = []
-        for sig, errors in zip(self.signatures, errors_per_overload):
+        for sig, errors in zip(sigs, errors_per_overload):
             for error in errors:
                 inner = CanAssignError(
                     error["e"],
