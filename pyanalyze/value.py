@@ -2010,6 +2010,7 @@ def intersect_bounds_maps(bounds_maps: Sequence[BoundsMap]) -> BoundsMap:
         if len(bound_lists) > 1
         else next(iter(bound_lists))
         for tv, bound_lists in intermediate.items()
+        if all(tv in bounds_map for bounds_map in bounds_maps)
     }
 
 

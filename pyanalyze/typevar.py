@@ -5,8 +5,7 @@ TypeVar solver.
 """
 from typing import Iterable, Sequence, Tuple, Union
 
-from pyanalyze.safe import all_of_type
-
+from .safe import all_of_type
 from .value import (
     NO_RETURN_VALUE,
     AnySource,
@@ -17,6 +16,7 @@ from .value import (
     IsOneOf,
     LowerBound,
     OrBound,
+    TypeVarLike,
     TypeVarMap,
     UpperBound,
     Value,
@@ -30,9 +30,12 @@ TOP = AnyValue(AnySource.inference)
 
 
 def resolve_bounds_map(
-    bounds_map: BoundsMap, ctx: CanAssignContext
+    bounds_map: BoundsMap,
+    ctx: CanAssignContext,
+    *,
+    all_typevars: Iterable[TypeVarLike] = (),
 ) -> Tuple[TypeVarMap, Sequence[CanAssignError]]:
-    tv_map = {}
+    tv_map = {tv: AnyValue(AnySource.generic_argument) for tv in all_typevars}
     errors = []
     for tv, bounds in bounds_map.items():
         bounds = set(bounds)

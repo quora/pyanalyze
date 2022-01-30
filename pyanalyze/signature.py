@@ -1096,7 +1096,9 @@ class Signature:
                 else:
                     bounds_maps.append(bounds_map)
             typevar_values, errors = resolve_bounds_map(
-                unify_bounds_maps(bounds_maps), ctx.can_assign_ctx
+                unify_bounds_maps(bounds_maps),
+                ctx.can_assign_ctx,
+                all_typevars=self.all_typevars,
             )
             if errors:
                 self.show_call_error(
