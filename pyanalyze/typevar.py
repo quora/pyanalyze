@@ -7,7 +7,6 @@ from typing import Iterable, Sequence, Tuple, Union
 
 from .safe import all_of_type
 from .value import (
-    NO_RETURN_VALUE,
     AnySource,
     AnyValue,
     Bound,
