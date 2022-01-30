@@ -25,8 +25,8 @@ from .value import (
 )
 
 
-BOTTOM = NO_RETURN_VALUE
-TOP = AnyValue(AnySource.inference)
+BOTTOM = AnyValue(AnySource.generic_argument)
+TOP = AnyValue(AnySource.generic_argument)
 
 
 def resolve_bounds_map(
@@ -57,7 +57,7 @@ def solve(
     for bound in bounds:
         if isinstance(bound, LowerBound):
             # Ignore lower bounds to Any
-            if isinstance(bound.value, AnyValue):
+            if isinstance(bound.value, AnyValue) and bottom is not BOTTOM:
                 continue
             if bound.value.is_assignable(bottom, ctx):
                 # New bound is more specific. Adopt it.

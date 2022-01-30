@@ -1582,7 +1582,7 @@ def set_self(value: Value, self_value: Value) -> Value:
     return value.substitute_typevars({SelfT: self_value})
 
 
-@dataclass
+@dataclass(frozen=True)
 class ParamSpecArgsValue(Value):
     param_spec: ParamSpec
 
@@ -1590,7 +1590,7 @@ class ParamSpecArgsValue(Value):
         return f"{self.param_spec}.args"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ParamSpecKwargsValue(Value):
     param_spec: ParamSpec
 
