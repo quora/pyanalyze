@@ -38,7 +38,7 @@ def resolve_bounds_map(
     tv_map = {tv: AnyValue(AnySource.generic_argument) for tv in all_typevars}
     errors = []
     for tv, bounds in bounds_map.items():
-        bounds = set(bounds)
+        bounds = tuple(dict.fromkeys(bounds))
         solution = solve(bounds, ctx)
         if isinstance(solution, CanAssignError):
             errors.append(solution)
@@ -56,6 +56,9 @@ def solve(
 
     for bound in bounds:
         if isinstance(bound, LowerBound):
+            # Ignore lower bounds to Any
+            if isinstance(bound.value, AnyValue):
+                continue
             if bound.value.is_assignable(bottom, ctx):
                 # New bound is more specific. Adopt it.
                 bottom = bound.value

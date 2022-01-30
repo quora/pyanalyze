@@ -12,6 +12,7 @@ from .annotations import (
     Context,
     Pep655Value,
     SyntheticEvaluator,
+    make_type_var_value,
     type_from_value,
     value_from_ast,
 )
@@ -811,7 +812,16 @@ class TypeshedFinder:
             else:
                 typevars = uniq_chain(extract_typevars(base) for base in bases)
                 if typevars:
-                    typ = GenericValue(objclass, [TypeVarValue(tv) for tv in typevars])
+                    typ = GenericValue(
+                        objclass,
+                        [
+                            make_type_var_value(
+                                tv,
+                                _AnnotationContext(finder=self, module=tv.__module__),
+                            )
+                            for tv in typevars
+                        ],
+                    )
                 else:
                     typ = TypedValue(objclass)
 

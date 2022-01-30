@@ -175,3 +175,15 @@ class TestSolve(TestNameCheckVisitorBase):
 
         def capybara():
             assert_is_value(filterish(callable, 1), KnownValue(1))
+
+    @assert_passes()
+    def test_one_any(self):
+        from typing import TypeVar
+
+        T = TypeVar("T")
+
+        def sub(x: T, y: T) -> T:
+            return x
+
+        def capybara(unannotated):
+            assert_is_value(sub(1, unannotated), KnownValue(1))

@@ -444,17 +444,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             return AnyValue(AnySource.error)
     elif typing_inspect.is_typevar(val):
         tv = cast(TypeVar, val)
-        if tv.__bound__ is not None:
-            bound = _type_from_runtime(tv.__bound__, ctx)
-        else:
-            bound = None
-        if tv.__constraints__:
-            constraints = tuple(
-                _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
-            )
-        else:
-            constraints = ()
-        return TypeVarValue(tv, bound=bound, constraints=constraints)
+        return make_type_var_value(tv, ctx)
     elif is_instance_of_typing_name(val, "ParamSpec"):
         return TypeVarValue(val, is_paramspec=True)
     elif is_instance_of_typing_name(val, "ParamSpecArgs"):
@@ -537,6 +527,20 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             return TypedValue(tuple)
         ctx.show_error(f"Invalid type annotation {val}")
         return AnyValue(AnySource.error)
+
+
+def make_type_var_value(tv: TypeVar, ctx: Context) -> TypeVarValue:
+    if tv.__bound__ is not None:
+        bound = _type_from_runtime(tv.__bound__, ctx)
+    else:
+        bound = None
+    if tv.__constraints__:
+        constraints = tuple(
+            _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
+        )
+    else:
+        constraints = ()
+    return TypeVarValue(tv, bound=bound, constraints=constraints)
 
 
 def _callable_args_from_runtime(

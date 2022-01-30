@@ -2254,6 +2254,9 @@ class BoundMethodSignature:
             else None,
         )
 
+    def __str__(self) -> str:
+        return f"{self.signature} bound to {self.self_composite.value}"
+
 
 @dataclass(frozen=True)
 class PropertyArgSpec:
