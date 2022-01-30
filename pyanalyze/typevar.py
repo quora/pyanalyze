@@ -3,6 +3,7 @@
 TypeVar solver.
 
 """
+import qcore
 from typing import Iterable, Sequence, Tuple, Union
 
 from .safe import all_of_type
@@ -24,8 +25,8 @@ from .value import (
 )
 
 
-BOTTOM = AnyValue(AnySource.generic_argument)
-TOP = AnyValue(AnySource.generic_argument)
+BOTTOM = qcore.MarkerObject("<bottom>")
+TOP = qcore.MarkerObject("<top>")
 
 
 def resolve_bounds_map(
@@ -58,7 +59,7 @@ def solve(
             # Ignore lower bounds to Any
             if isinstance(bound.value, AnyValue) and bottom is not BOTTOM:
                 continue
-            if bound.value.is_assignable(bottom, ctx):
+            if bottom is BOTTOM or bound.value.is_assignable(bottom, ctx):
                 # New bound is more specific. Adopt it.
                 bottom = bound.value
             elif bottom.is_assignable(bound.value, ctx):
@@ -68,7 +69,7 @@ def solve(
                 # New bound is separate. We have to satisfy both.
                 bottom = unite_values(bottom, bound.value)
         elif isinstance(bound, UpperBound):
-            if top.is_assignable(bound.value, ctx):
+            if top is TOP or top.is_assignable(bound.value, ctx):
                 top = bound.value
             elif bound.value.is_assignable(top, ctx):
                 pass
@@ -83,7 +84,10 @@ def solve(
             assert False, f"unrecognized bound {bound}"
 
     if bottom is BOTTOM:
-        solution = top
+        if top is TOP:
+            solution = AnyValue(AnySource.generic_argument)
+        else:
+            solution = top
     elif top is TOP:
         solution = bottom
     else:
