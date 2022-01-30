@@ -1545,16 +1545,29 @@ class TypeVarValue(Value):
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if self == other:
             return {}
-        return {
-            self.typevar: [LowerBound(self.typevar, other), *self.get_inherent_bounds()]
-        }
+        if isinstance(other, TypeVarValue):
+            bounds = [*self.get_inherent_bounds(), *other.get_inherent_bounds()]
+        else:
+            bounds = [LowerBound(self.typevar, other), *self.get_inherent_bounds()]
+        return self.make_bounds_map(bounds, other, ctx)
 
     def can_be_assigned(self, left: Value, ctx: CanAssignContext) -> CanAssign:
         if left == self:
             return {}
-        return {
-            self.typevar: [UpperBound(self.typevar, left), *self.get_inherent_bounds()]
-        }
+        if isinstance(left, TypeVarValue):
+            bounds = [*self.get_inherent_bounds(), *left.get_inherent_bounds()]
+        else:
+            bounds = [UpperBound(self.typevar, left), *self.get_inherent_bounds()]
+        return self.make_bounds_map(bounds, left, ctx)
+
+    def make_bounds_map(
+        self, bounds: Sequence[Bound], other: Value, ctx: CanAssignContext
+    ) -> CanAssign:
+        bounds_map = {self.typevar: bounds}
+        _, errors = pyanalyze.typevar.resolve_bounds_map(bounds_map, ctx)
+        if errors:
+            return CanAssignError(f"Value of {self} cannot be {other}", list(errors))
+        return bounds_map
 
     def get_fallback_value(self) -> Value:
         if self.bound is not None:
