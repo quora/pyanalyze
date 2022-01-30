@@ -110,5 +110,8 @@ def solve(
             for option, can_assign in zip(options, can_assigns)
             if not isinstance(can_assign, CanAssignError)
         ]
-        return unite_values(*available)
+        if len(available) == 1:
+            return available[0]
+        # TODO consider returning unite_values(*available) here instead.
+        return AnyValue(AnySource.inference)
     return solution
