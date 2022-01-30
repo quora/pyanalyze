@@ -158,3 +158,20 @@ class TestTypeVar(TestNameCheckVisitorBase):
         def capybara(d: Dict[str, str], key: str) -> None:
             assert_is_value(dictget(d, key), TypedValue(str) | KnownValue(None))
             assert_is_value(dictget(d, key, 1), TypedValue(str) | KnownValue(1))
+
+
+class TestSolve(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_filter_like(self):
+        from typing import Callable, TypeVar
+
+        T = TypeVar("T")
+
+        def callable(o: object) -> bool:
+            return True
+
+        def filterish(func: Callable[[T], bool], data: T) -> T:
+            return data
+
+        def capybara():
+            assert_is_value(filterish(callable, 1), KnownValue(1))
