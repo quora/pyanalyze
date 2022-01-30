@@ -1183,6 +1183,15 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_is_value(overloaded1(x, y), KnownValue(2))
 
     @assert_passes()
+    def test_nested_class(self):
+        class Outer:
+            class Inner:
+                pass
+
+        def capybara():
+            assert_is_value(Outer.Inner(), TypedValue(Outer.Inner))
+
+    @assert_passes()
     def test_typeshed_overload(self):
         class SupportsWrite:
             def write(self, s: str) -> None:

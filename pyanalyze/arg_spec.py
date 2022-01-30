@@ -307,6 +307,7 @@ class ArgSpecCache:
         is_asynq: bool = False,
         returns: Optional[Value] = None,
         allow_call: bool = False,
+        is_constructor: bool = False,
     ) -> Signature:
         """Constructs a pyanalyze Signature from an inspect.Signature.
 
@@ -341,7 +342,12 @@ class ArgSpecCache:
         parameters = []
         for i, parameter in enumerate(sig.parameters.values()):
             param, make_everything_pos_only = self._make_sig_parameter(
-                parameter, func_globals, function_object, is_wrapped, i
+                parameter,
+                func_globals,
+                function_object,
+                is_wrapped,
+                i,
+                is_constructor=is_constructor,
             )
             if make_everything_pos_only:
                 parameters = [
@@ -368,13 +374,19 @@ class ArgSpecCache:
         function_object: Optional[object],
         is_wrapped: bool,
         index: int,
+        *,
+        is_constructor: bool,
     ) -> Tuple[SigParameter, bool]:
         """Given an inspect.Parameter, returns a Parameter object."""
         if is_wrapped:
             typ = AnyValue(AnySource.inference)
         else:
             typ = self._get_type_for_parameter(
-                parameter, func_globals, function_object, index
+                parameter,
+                func_globals,
+                function_object,
+                index,
+                is_constructor=is_constructor,
             )
         if parameter.default is inspect.Parameter.empty:
             default = None
@@ -402,6 +414,8 @@ class ArgSpecCache:
         func_globals: Optional[Mapping[str, object]],
         function_object: Optional[object],
         index: int,
+        *,
+        is_constructor: bool,
     ) -> Value:
         if parameter.annotation is not inspect.Parameter.empty:
             typ = type_from_runtime(
@@ -426,7 +440,11 @@ class ArgSpecCache:
                 and module_name in sys.modules
             ):
                 module = sys.modules[module_name]
-                *class_names, function_name = qualname.split(".")
+                if is_constructor:
+                    class_names = qualname.split(".")
+                    function_name = "__init__"
+                else:
+                    *class_names, function_name = qualname.split(".")
                 class_obj = module
                 for class_name in class_names:
                     class_obj = getattr(class_obj, class_name, None)
@@ -699,6 +717,7 @@ class ArgSpecCache:
                     impl=impl,
                     returns=return_type,
                     allow_call=allow_call,
+                    is_constructor=True,
                 )
             bound_sig = make_bound_method(signature, Composite(TypedValue(obj)))
             if bound_sig is None:
