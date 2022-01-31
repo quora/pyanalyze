@@ -20,11 +20,13 @@ from .stacked_scopes import (
     VarnameWithOrigin,
 )
 from .type_evaluation import ARGS, KWARGS, DEFAULT, UNKNOWN, Position
+from .typevar import resolve_bounds_map
 from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
     AsyncTaskIncompleteValue,
+    BoundsMap,
     CallableValue,
     CanAssignContext,
     ConstraintExtension,
@@ -33,6 +35,7 @@ from .value import (
     HasAttrGuardExtension,
     KVPair,
     KnownValue,
+    LowerBound,
     MultiValuedValue,
     NoReturnConstraintExtension,
     NoReturnGuardExtension,
@@ -54,10 +57,11 @@ from .value import (
     concrete_values_from_iterable,
     extract_typevars,
     flatten_values,
+    get_tv_map,
     replace_known_sequence_value,
     stringify_object,
     unannotate_value,
-    unify_typevar_maps,
+    unify_bounds_maps,
     unite_values,
     unannotate,
     NO_RETURN_VALUE,
@@ -65,7 +69,6 @@ from .value import (
 
 import ast
 import asynq
-from collections import defaultdict
 import collections.abc
 from dataclasses import dataclass, field, replace
 import enum
@@ -578,11 +581,11 @@ class Signature:
         ctx: CheckCallContext,
         typevar_map: Optional[TypeVarMap] = None,
         is_overload: bool = False,
-    ) -> Tuple[Optional[TypeVarMap], bool, Optional[Value]]:
+    ) -> Tuple[Optional[BoundsMap], bool, Optional[Value]]:
         """Check type compatibility for a single parameter.
 
         Returns a three-tuple:
-        - A TypeVarMap if the assignment succeeded, or None if there was an error.
+        - A BoundsMap if the assignment succeeded, or None if there was an error.
         - A bool indicating whether Any was used to succeed in the assignment.
         - A Value or None, used for union decomposition with overloads.
 
@@ -592,12 +595,12 @@ class Signature:
                 param_typ = param.annotation.substitute_typevars(typevar_map)
             else:
                 param_typ = param.annotation
-            tv_map, used_any = can_assign_and_used_any(
+            bounds_map, used_any = can_assign_and_used_any(
                 param_typ, composite.value, ctx.can_assign_ctx
             )
-            if isinstance(tv_map, CanAssignError):
+            if isinstance(bounds_map, CanAssignError):
                 if composite.value is param.default:
-                    tv_map = {}
+                    bounds_map = {}
                 else:
                     if is_overload:
                         triple = decompose_union(
@@ -610,10 +613,10 @@ class Signature:
                         f" {param_typ} but got {composite.value}",
                         code=ErrorCode.incompatible_argument,
                         node=composite.node if composite.node is not None else None,
-                        detail=str(tv_map),
+                        detail=str(bounds_map),
                     )
                     return None, False, None
-            return tv_map, used_any, None
+            return bounds_map, used_any, None
         return {}, False, None
 
     def _get_positional_parameter(self, index: int) -> Optional[SigParameter]:
@@ -1080,28 +1083,30 @@ class Signature:
         return_value = self.return_value
         typevar_values: TypeVarMap = {}
         if self.all_typevars:
-            tv_possible_values: Dict[TypeVar, List[Value]] = defaultdict(list)
+            bounds_maps = []
             for param_name in self.typevars_of_params:
                 if param_name == self._return_key:
                     continue
                 param = self.parameters[param_name]
-                tv_map, _, _ = self._check_param_type_compatibility(
+                bounds_map, _, _ = self._check_param_type_compatibility(
                     param, bound_args[param_name][1], ctx
                 )
-                if tv_map is None:
+                if bounds_map is None:
                     return self.get_default_return()
                 else:
-                    # For now, the first assignment wins.
-                    for typevar, value in tv_map.items():
-                        tv_possible_values[typevar].append(value)
-            typevar_values = {
-                typevar: unite_values(
-                    *tv_possible_values.get(
-                        typevar, [AnyValue(AnySource.generic_argument)]
-                    )
+                    bounds_maps.append(bounds_map)
+            typevar_values, errors = resolve_bounds_map(
+                unify_bounds_maps(bounds_maps),
+                ctx.can_assign_ctx,
+                all_typevars=self.all_typevars,
+            )
+            if errors:
+                self.show_call_error(
+                    "Cannot resolve type variables",
+                    ctx,
+                    detail=str(CanAssignError(children=list(errors))),
                 )
-                for typevar in self.all_typevars
-            }
+                return self.get_default_return()
             if self._return_key in self.typevars_of_params:
                 return_value = return_value.substitute_typevars(typevar_values)
 
@@ -1481,7 +1486,13 @@ class Signature:
                 ]
                 new_sig = Signature.make(remaining)
                 assert isinstance(my_annotation, TypeVarValue)
-                tv_maps.append({my_annotation.typevar: CallableValue(new_sig)})
+                tv_maps.append(
+                    {
+                        my_annotation.typevar: [
+                            LowerBound(my_annotation.typevar, CallableValue(new_sig))
+                        ]
+                    }
+                )
                 consumed_paramspec = True
             elif my_param.kind is ParameterKind.ELLIPSIS:
                 consumed_paramspec = True
@@ -1518,7 +1529,7 @@ class Signature:
                 else:
                     assert False, f"unhandled param {param}"
 
-        return unify_typevar_maps(tv_maps)
+        return unify_bounds_maps(tv_maps)
 
     def can_assign_through_check_call(
         self, other: "Signature", ctx: CanAssignContext
@@ -1907,7 +1918,7 @@ def _preprocess_kwargs_no_mvv(
     elif isinstance(value, DictIncompleteValue):
         return _preprocess_kwargs_kv_pairs(value.kv_pairs, ctx)
     else:
-        mapping_tv_map = MappingValue.can_assign(value, ctx.can_assign_ctx)
+        mapping_tv_map = get_tv_map(MappingValue, value, ctx.can_assign_ctx)
         if isinstance(mapping_tv_map, CanAssignError):
             ctx.on_error(f"{value} is not a mapping", detail=str(mapping_tv_map))
             return None
@@ -2053,7 +2064,7 @@ class OverloadedSignature:
             errors_per_overload.append(caught_errors)
 
         if not any(bound_args is not None for bound_args in bound_args_per_overload):
-            detail = self._make_detail(errors_per_overload)
+            detail = self._make_detail(errors_per_overload, self.signatures)
             visitor.show_error(
                 node,
                 "Cannot call overloaded function",
@@ -2118,7 +2129,7 @@ class OverloadedSignature:
             (error_code,) = codes
         else:
             error_code = ErrorCode.incompatible_call
-        detail = self._make_detail(errors_per_overload)
+        detail = self._make_detail(errors_per_overload, sigs)
         visitor.show_error(
             node, "Cannot call overloaded function", error_code, detail=str(detail)
         )
@@ -2151,10 +2162,12 @@ class OverloadedSignature:
         return clean_ret.return_value
 
     def _make_detail(
-        self, errors_per_overload: Sequence[Sequence[Dict[str, Any]]]
+        self,
+        errors_per_overload: Sequence[Sequence[Dict[str, Any]]],
+        sigs: Sequence[Signature],
     ) -> CanAssignError:
         details = []
-        for sig, errors in zip(self.signatures, errors_per_overload):
+        for sig, errors in zip(sigs, errors_per_overload):
             for error in errors:
                 inner = CanAssignError(
                     error["e"],
@@ -2217,15 +2230,15 @@ class OverloadedSignature:
         self, other: "ConcreteSignature", ctx: CanAssignContext
     ) -> CanAssign:
         # A signature can be assigned if it can be assigned to all the component signatures.
-        tv_maps = []
+        bounds_maps = []
         for sig in self.signatures:
             can_assign = sig.can_assign(other, ctx)
             if isinstance(can_assign, CanAssignError):
                 return CanAssignError(
                     f"{other} is incompatible with overload {sig}", [can_assign]
                 )
-            tv_maps.append(can_assign)
-        return unify_typevar_maps(tv_maps)
+            bounds_maps.append(can_assign)
+        return unify_bounds_maps(bounds_maps)
 
 
 ConcreteSignature = Union[Signature, OverloadedSignature]
@@ -2280,6 +2293,9 @@ class BoundMethodSignature:
             else None,
         )
 
+    def __str__(self) -> str:
+        return f"{self.signature} bound to {self.self_composite.value}"
+
 
 @dataclass(frozen=True)
 class PropertyArgSpec:
@@ -2333,8 +2349,8 @@ MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarVa
 
 def can_assign_var_positional(
     my_param: SigParameter, args_annotation: Value, idx: int, ctx: CanAssignContext
-) -> Union[List[TypeVarMap], CanAssignError]:
-    tv_maps = []
+) -> Union[List[BoundsMap], CanAssignError]:
+    bounds_maps = []
     my_annotation = my_param.get_annotation()
     if isinstance(args_annotation, SequenceIncompleteValue):
         length = len(args_annotation.members)
@@ -2344,83 +2360,83 @@ def can_assign_var_positional(
                 f" accepts {length} values"
             )
         their_annotation = args_annotation.members[idx]
-        tv_map = their_annotation.can_assign(my_annotation, ctx)
-        if isinstance(tv_map, CanAssignError):
+        can_assign = their_annotation.can_assign(my_annotation, ctx)
+        if isinstance(can_assign, CanAssignError):
             return CanAssignError(
                 f"type of parameter {my_param.name!r} is incompatible: *args[{idx}]"
                 " type is incompatible",
-                [tv_map],
+                [can_assign],
             )
-        tv_maps.append(tv_map)
+        bounds_maps.append(can_assign)
     else:
-        tv_map = IterableValue.can_assign(args_annotation, ctx)
+        tv_map = get_tv_map(IterableValue, args_annotation, ctx)
         if isinstance(tv_map, CanAssignError):
             return CanAssignError(
                 f"{args_annotation} is not an iterable type", [tv_map]
             )
         iterable_arg = tv_map.get(T, AnyValue(AnySource.generic_argument))
-        tv_map = iterable_arg.can_assign(my_annotation, ctx)
-        if isinstance(tv_map, CanAssignError):
+        bounds_map = iterable_arg.can_assign(my_annotation, ctx)
+        if isinstance(bounds_map, CanAssignError):
             return CanAssignError(
                 f"type of parameter {my_param.name!r} is incompatible: "
                 "*args type is incompatible",
-                [tv_map],
+                [bounds_map],
             )
-        tv_maps.append(tv_map)
-    return tv_maps
+        bounds_maps.append(bounds_map)
+    return bounds_maps
 
 
 def can_assign_var_keyword(
     my_param: SigParameter, kwargs_annotation: Value, ctx: CanAssignContext
-) -> Union[List[TypeVarMap], CanAssignError]:
+) -> Union[List[BoundsMap], CanAssignError]:
     my_annotation = my_param.get_annotation()
-    tv_maps = []
+    bounds_maps = []
     if isinstance(kwargs_annotation, TypedDictValue):
         if my_param.name not in kwargs_annotation.items:
             return CanAssignError(
                 f"parameter {my_param.name!r} is not accepted by {kwargs_annotation}"
             )
         their_annotation = kwargs_annotation.items[my_param.name][1]
-        tv_map = their_annotation.can_assign(my_annotation, ctx)
-        if isinstance(tv_map, CanAssignError):
+        can_assign = their_annotation.can_assign(my_annotation, ctx)
+        if isinstance(can_assign, CanAssignError):
             return CanAssignError(
                 f"type of parameter {my_param.name!r} is incompatible:"
                 f" *kwargs[{my_param.name!r}] type is incompatible",
-                [tv_map],
+                [can_assign],
             )
-        tv_maps.append(tv_map)
+        bounds_maps.append(can_assign)
     else:
-        mapping_tv_map = MappingValue.can_assign(kwargs_annotation, ctx)
+        mapping_tv_map = get_tv_map(MappingValue, kwargs_annotation, ctx)
         if isinstance(mapping_tv_map, CanAssignError):
             return CanAssignError(
                 f"{kwargs_annotation} is not a mapping type", [mapping_tv_map]
             )
         key_arg = mapping_tv_map.get(K, AnyValue(AnySource.generic_argument))
-        tv_map = key_arg.can_assign(KnownValue(my_param.name), ctx)
-        if isinstance(tv_map, CanAssignError):
+        can_assign = key_arg.can_assign(KnownValue(my_param.name), ctx)
+        if isinstance(can_assign, CanAssignError):
             return CanAssignError(
                 f"parameter {my_param.name!r} is not accepted by **kwargs type",
-                [tv_map],
+                [can_assign],
             )
-        tv_maps.append(tv_map)
+        bounds_maps.append(can_assign)
         value_arg = mapping_tv_map.get(V, AnyValue(AnySource.generic_argument))
-        tv_map = value_arg.can_assign(my_annotation, ctx)
-        if isinstance(tv_map, CanAssignError):
+        can_assign = value_arg.can_assign(my_annotation, ctx)
+        if isinstance(can_assign, CanAssignError):
             return CanAssignError(
                 f"type of parameter {my_param.name!r} is incompatible: **kwargs type"
                 " is incompatible",
-                [tv_map],
+                [can_assign],
             )
-        tv_maps.append(tv_map)
-    return tv_maps
+        bounds_maps.append(can_assign)
+    return bounds_maps
 
 
 def decompose_union(
     expected_type: Value, parent_value: Value, ctx: CanAssignContext
-) -> Optional[Tuple[TypeVarMap, bool, Value]]:
+) -> Optional[Tuple[BoundsMap, bool, Value]]:
     value = unannotate(parent_value)
     if isinstance(value, MultiValuedValue):
-        tv_maps = []
+        bounds_maps = []
         remaining_values = []
         union_used_any = False
         for val in value.vals:
@@ -2432,11 +2448,11 @@ def decompose_union(
             else:
                 if subval_used_any:
                     union_used_any = True
-                tv_maps.append(can_assign)
-        if tv_maps:
-            tv_map = unify_typevar_maps(tv_maps)
+                bounds_maps.append(can_assign)
+        if bounds_maps:
+            bounds_map = unify_bounds_maps(bounds_maps)
             assert (
                 remaining_values
             ), f"all union members matched between {expected_type} and {parent_value}"
-            return tv_map, union_used_any, unite_values(*remaining_values)
+            return bounds_map, union_used_any, unite_values(*remaining_values)
     return None

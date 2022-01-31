@@ -158,6 +158,7 @@ from .value import (
     NoReturnConstraintExtension,
     annotate_value,
     flatten_values,
+    get_tv_map,
     is_union,
     kv_pairs_from_mapping,
     make_weak,
@@ -2980,7 +2981,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return return_value
 
     def unpack_awaitable(self, composite: Composite, node: ast.AST) -> Value:
-        tv_map = AwaitableValue.can_assign(composite.value, self)
+        tv_map = get_tv_map(AwaitableValue, composite.value, self)
         if isinstance(tv_map, CanAssignError):
             return self._check_dunder_call(node, composite, "__await__", [])
         else:
@@ -3113,14 +3114,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             not (self.is_generator and self.async_kind == AsyncFunctionKind.non_async)
             and self.expected_return_value is not None
         ):
-            tv_map = self.expected_return_value.can_assign(value, self)
-            if isinstance(tv_map, CanAssignError):
+            can_assign = self.expected_return_value.can_assign(value, self)
+            if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     node,
                     f"Declared return type {self.expected_return_value} is incompatible"
                     f" with actual return type {value}",
                     error_code=ErrorCode.incompatible_return_value,
-                    detail=tv_map.display(),
+                    detail=can_assign.display(),
                 )
         if (
             self.expected_return_value == KnownNone
@@ -3347,7 +3348,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             protocol = "typing.ContextManager"
         val = GenericValue(protocol, [TypeVarValue(T)])
-        can_assign = val.can_assign(context, self)
+        can_assign = get_tv_map(val, context, self)
         if isinstance(can_assign, CanAssignError):
             self._show_error_if_checking(
                 node.context_expr,
@@ -3611,13 +3612,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if node.value:
             is_yield = isinstance(node.value, ast.Yield)
             value = self.visit(node.value)
-            tv_map = expected_type.can_assign(value, self)
-            if isinstance(tv_map, CanAssignError):
+            can_assign = expected_type.can_assign(value, self)
+            if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     node.value,
                     f"Incompatible assignment: expected {expected_type}, got {value}",
                     error_code=ErrorCode.incompatible_assignment,
-                    detail=tv_map.display(),
+                    detail=can_assign.display(),
                 )
 
             with qcore.override(

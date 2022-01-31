@@ -11,15 +11,15 @@ from unittest import mock
 from .safe import safe_isinstance, safe_issubclass, safe_in
 from .value import (
     UNINITIALIZED_VALUE,
+    BoundsMap,
     CanAssign,
     CanAssignContext,
     CanAssignError,
     KnownValue,
-    TypeVarMap,
     TypedValue,
     Value,
     stringify_object,
-    unify_typevar_maps,
+    unify_bounds_maps,
 )
 
 
@@ -43,7 +43,7 @@ class TypeObject:
     protocol_members: Set[str] = field(default_factory=set)
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
-    _protocol_positive_cache: Dict[Value, TypeVarMap] = field(
+    _protocol_positive_cache: Dict[Value, BoundsMap] = field(
         default_factory=dict, repr=False
     )
 
@@ -125,14 +125,14 @@ class TypeObject:
                 return CanAssignError(
                     f"Cannot assign super object {other_val} to protocol {self}"
                 )
-            tv_map = self._protocol_positive_cache.get(other_val)
-            if tv_map is not None:
-                return tv_map
+            bounds_map = self._protocol_positive_cache.get(other_val)
+            if bounds_map is not None:
+                return bounds_map
             # This is a guard against infinite recursion if the Protocol is recursive
             if ctx.can_assume_compatibility(self, other):
                 return {}
             with ctx.assume_compatibility(self, other):
-                tv_maps = []
+                bounds_maps = []
                 for member in self.protocol_members:
                     expected = ctx.get_attribute_from_value(
                         self_val, member, prefer_typeshed=True
@@ -144,13 +144,14 @@ class TypeObject:
                         actual = ctx.get_attribute_from_value(other_val, member)
                     if actual is UNINITIALIZED_VALUE:
                         return CanAssignError(f"{other} has no attribute {member!r}")
-                    tv_map = expected.can_assign(actual, ctx)
-                    if isinstance(tv_map, CanAssignError):
+                    can_assign = expected.can_assign(actual, ctx)
+                    if isinstance(can_assign, CanAssignError):
                         return CanAssignError(
-                            f"Value of protocol member {member!r} conflicts", [tv_map]
+                            f"Value of protocol member {member!r} conflicts",
+                            [can_assign],
                         )
-                    tv_maps.append(tv_map)
-            result = unify_typevar_maps(tv_maps)
+                    bounds_maps.append(can_assign)
+            result = unify_bounds_maps(bounds_maps)
             self._protocol_positive_cache[other_val] = result
             return result
 

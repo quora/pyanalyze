@@ -36,6 +36,7 @@ from .stacked_scopes import (
 from .safe import all_of_type
 from .value import (
     NO_RETURN_VALUE,
+    BoundsMap,
     CanAssign,
     CanAssignContext,
     CanAssignError,
@@ -45,8 +46,8 @@ from .value import (
     Value,
     flatten_values,
     unannotate,
+    unify_bounds_maps,
     unite_values,
-    unify_typevar_maps,
     TypeVarMap,
 )
 
@@ -790,10 +791,10 @@ class EvaluateVisitor(ast.NodeVisitor):
 
 def decompose_union(
     expected_type: Value, parent_value: Value, ctx: CanAssignContext, exclude_any: bool
-) -> Optional[Tuple[TypeVarMap, Value]]:
+) -> Optional[Tuple[BoundsMap, Value]]:
     value = unannotate(parent_value)
     if isinstance(value, MultiValuedValue):
-        tv_maps = []
+        bounds_maps = []
         remaining_values = []
         for val in value.vals:
             can_assign = can_assign_maybe_exclude_any(
@@ -802,13 +803,13 @@ def decompose_union(
             if isinstance(can_assign, CanAssignError):
                 remaining_values.append(val)
             else:
-                tv_maps.append(can_assign)
-        if tv_maps:
-            tv_map = unify_typevar_maps(tv_maps)
+                bounds_maps.append(can_assign)
+        if bounds_maps:
+            result = unify_bounds_maps(bounds_maps)
             assert (
                 remaining_values
             ), f"all union members matched between {expected_type} and {parent_value}"
-            return tv_map, unite_values(*remaining_values)
+            return result, unite_values(*remaining_values)
     return None
 
 
