@@ -19,9 +19,8 @@ these subclasses and some related utilities.
 
 """
 
-import collections
 import collections.abc
-from collections import OrderedDict, defaultdict, deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass, field, InitVar
 import enum
 import inspect
