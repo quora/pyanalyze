@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Treat Thrift enums as compatible with `int` (#455)
 - Fix treatment of `TypeVar` with bounds or constraints
   as callables (#454)
 - Improve `TypeVar` solution algorithm (#453)
