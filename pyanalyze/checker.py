@@ -37,6 +37,7 @@ from .value import (
     AnyValue,
     CallableValue,
     KnownValueWithTypeVars,
+    MultiValuedValue,
     SubclassValue,
     TypeVarValue,
     TypedValue,
@@ -352,6 +353,20 @@ class Checker:
                 return ANY_SIGNATURE
         elif isinstance(value, AnyValue):
             return ANY_SIGNATURE
+        elif isinstance(value, MultiValuedValue):
+            sigs = [
+                self.signature_from_value(
+                    subval,
+                    get_return_override=get_return_override,
+                    get_call_attribute=get_call_attribute,
+                )
+                for subval in value.vals
+            ]
+            if all(sig is not None for sig in sigs):
+                # TODO we can't return a Union if we get here
+                return ANY_SIGNATURE
+            else:
+                return None
         else:
             return None
 

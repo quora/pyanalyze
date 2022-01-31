@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix treatment of `TypeVar` with bounds or constraints
+  as callables (#454)
 - Improve `TypeVar` solution algorithm (#453)
 - Cache decisions about whether classes implement protocols (#450)
 - Fix application of multiple suggested changes per file
