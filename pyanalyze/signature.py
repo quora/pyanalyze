@@ -1699,7 +1699,7 @@ class Signature:
             return None
         kind = params[0].kind
         if self_value is not None:
-            tv_map = params[0].annotation.can_assign(self_value, ctx)
+            tv_map = get_tv_map(params[0].annotation, self_value, ctx)
             if isinstance(tv_map, CanAssignError):
                 return None
         else:
