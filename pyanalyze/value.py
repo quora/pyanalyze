@@ -1997,14 +1997,6 @@ def get_tv_map(
     return tv_map
 
 
-def unify_typevar_maps(tv_maps: Sequence[TypeVarMap]) -> TypeVarMap:
-    raw_map = defaultdict(list)
-    for tv_map in tv_maps:
-        for tv, value in tv_map.items():
-            raw_map[tv].append(value)
-    return {tv: unite_values(*values) for tv, values in raw_map.items()}
-
-
 def unify_bounds_maps(bounds_maps: Sequence[BoundsMap]) -> BoundsMap:
     result = {}
     for bounds_map in bounds_maps:
