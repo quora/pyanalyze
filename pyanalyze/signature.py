@@ -6,7 +6,6 @@ calls.
 
 """
 
-from pyanalyze.typevar import resolve_bounds_map
 from .type_evaluation import EvalContext, Evaluator
 from .error_code import ErrorCode
 from .safe import all_of_type
@@ -21,6 +20,7 @@ from .stacked_scopes import (
     VarnameWithOrigin,
 )
 from .type_evaluation import ARGS, KWARGS, DEFAULT, UNKNOWN, Position
+from .typevar import resolve_bounds_map
 from .value import (
     AnnotatedValue,
     AnySource,
