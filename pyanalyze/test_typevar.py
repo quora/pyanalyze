@@ -158,3 +158,75 @@ class TestTypeVar(TestNameCheckVisitorBase):
         def capybara(d: Dict[str, str], key: str) -> None:
             assert_is_value(dictget(d, key), TypedValue(str) | KnownValue(None))
             assert_is_value(dictget(d, key, 1), TypedValue(str) | KnownValue(1))
+
+
+class TestSolve(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_filter_like(self):
+        from typing import Callable, TypeVar
+
+        T = TypeVar("T")
+
+        def callable(o: object) -> bool:
+            return True
+
+        def filterish(func: Callable[[T], bool], data: T) -> T:
+            return data
+
+        def capybara():
+            assert_is_value(filterish(callable, 1), KnownValue(1))
+
+    @assert_passes()
+    def test_one_any(self):
+        from typing import TypeVar
+
+        T = TypeVar("T")
+
+        def sub(x: T, y: T) -> T:
+            return x
+
+        def capybara(unannotated):
+            assert_is_value(sub(1, unannotated), KnownValue(1))
+
+    @assert_passes()
+    def test_isinstance(self):
+        from typing import TypeVar
+
+        AnyStr = TypeVar("AnyStr", str, bytes)
+
+        class StrSub(str):
+            pass
+
+        def want_str(s: StrSub) -> None:
+            pass
+
+        def take_tv(t: AnyStr) -> AnyStr:
+            if isinstance(t, StrSub):
+                assert_is_value(t, TypedValue(StrSub))
+                return t
+            else:
+                return t
+
+    @assert_passes()
+    def test_tv_union(self):
+        from typing import TypeVar, Union
+
+        AnyStr = TypeVar("AnyStr", str, bytes)
+
+        def take_seq(seq: AnyStr) -> AnyStr:
+            return seq
+
+        def take_union(seq: Union[bytes, str]) -> None:
+            take_seq(seq)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_tv_sequence(self):
+        from typing import TypeVar, Sequence, Union
+
+        AnyStr = TypeVar("AnyStr", bound=Union[str, bytes])
+
+        def take_seq(seq: Sequence[AnyStr]) -> Sequence[AnyStr]:
+            return seq
+
+        def take_union(seq: Union[Sequence[bytes], Sequence[str]]) -> None:
+            take_seq(seq)

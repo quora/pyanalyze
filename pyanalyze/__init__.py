@@ -32,6 +32,7 @@ from . import stacked_scopes
 from . import suggested_type
 from . import type_object
 from . import typeshed
+from . import typevar
 from . import tests
 from . import value
 from .value import assert_is_value as assert_is_value, dump_value as dump_value
@@ -59,3 +60,4 @@ used(options)
 used(shared_options)
 used(functions)
 used(predicates)
+used(typevar)
