@@ -206,3 +206,27 @@ class TestSolve(TestNameCheckVisitorBase):
                 return t
             else:
                 return t
+
+    @assert_passes()
+    def test_tv_union(self):
+        from typing import TypeVar, Union
+
+        AnyStr = TypeVar("AnyStr", str, bytes)
+
+        def take_seq(seq: AnyStr) -> AnyStr:
+            return seq
+
+        def take_union(seq: Union[bytes, str]) -> None:
+            take_seq(seq)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_tv_sequence(self):
+        from typing import TypeVar, Sequence, Union
+
+        AnyStr = TypeVar("AnyStr", bound=Union[str, bytes])
+
+        def take_seq(seq: Sequence[AnyStr]) -> Sequence[AnyStr]:
+            return seq
+
+        def take_union(seq: Union[Sequence[bytes], Sequence[str]]) -> None:
+            take_seq(seq)
