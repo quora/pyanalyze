@@ -67,6 +67,8 @@ class TypeObject:
             self.base_classes.add(complex)
         if self.typ is float:
             self.base_classes.add(complex)
+        if self.is_thrift_enum:
+            self.base_classes.add(int)
 
     def is_assignable_to_type(self, typ: type) -> bool:
         for base in self.base_classes:
