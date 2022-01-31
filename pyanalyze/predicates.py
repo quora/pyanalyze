@@ -16,6 +16,7 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     SubclassValue,
+    TypeVarValue,
     TypedValue,
     Value,
     unite_values,
@@ -36,6 +37,8 @@ def is_universally_assignable(value: Value, target_value: Value) -> bool:
         return all(
             is_universally_assignable(subval, target_value) for subval in value.vals
         )
+    elif isinstance(value, TypeVarValue):
+        return True
     return False
 
 

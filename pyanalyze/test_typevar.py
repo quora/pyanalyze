@@ -187,3 +187,22 @@ class TestSolve(TestNameCheckVisitorBase):
 
         def capybara(unannotated):
             assert_is_value(sub(1, unannotated), KnownValue(1))
+
+    @assert_passes()
+    def test_isinstance(self):
+        from typing import TypeVar
+
+        AnyStr = TypeVar("AnyStr", str, bytes)
+
+        class StrSub(str):
+            pass
+
+        def want_str(s: StrSub) -> None:
+            pass
+
+        def take_tv(t: AnyStr) -> AnyStr:
+            if isinstance(t, StrSub):
+                assert_is_value(t, TypedValue(StrSub))
+                return t
+            else:
+                return t
