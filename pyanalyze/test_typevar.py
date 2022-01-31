@@ -230,3 +230,14 @@ class TestSolve(TestNameCheckVisitorBase):
 
         def take_union(seq: Union[Sequence[bytes], Sequence[str]]) -> None:
             take_seq(seq)
+
+    @assert_passes()
+    def test_call_with_value_restriction(self):
+        from typing import TypeVar, Callable, Union
+
+        CallableT = TypeVar("CallableT", Callable[..., str], Callable[..., int])
+        UnionT = TypeVar("UnionT", bound=Union[Callable[..., str], Callable[..., int]])
+
+        def capybara(c: CallableT, u: UnionT) -> None:
+            c(3)
+            u(3)
