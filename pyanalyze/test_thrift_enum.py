@@ -18,6 +18,9 @@ class TestThriftEnum(TestNameCheckVisitorBase):
         def want_enum(e: ThriftEnum):
             pass
 
+        def want_int(i: int):
+            pass
+
         def capybara(e: ThriftEnum):
             want_enum(e)
             want_enum(ThriftEnum.X)
@@ -26,6 +29,8 @@ class TestThriftEnum(TestNameCheckVisitorBase):
             want_enum(1)
             want_enum(42)  # E: incompatible_argument
             want_enum(str(e))  # E: incompatible_argument
+            want_int(e)
+            want_int(e.X)
 
     @assert_passes()
     def test_typevar(self):
