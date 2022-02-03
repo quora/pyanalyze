@@ -17,7 +17,7 @@ import builtins
 import collections
 import collections.abc
 import contextlib
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass
 from itertools import chain
 import logging
 import operator
@@ -85,7 +85,13 @@ from .options import (
 from .patma import PatmaVisitor
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
-from .safe import safe_getattr, is_hashable, all_of_type, safe_issubclass
+from .safe import (
+    safe_getattr,
+    is_hashable,
+    all_of_type,
+    safe_issubclass,
+    is_dataclass_type,
+)
 from .stacked_scopes import (
     EMPTY_ORIGIN,
     AbstractConstraint,
@@ -4114,7 +4120,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return True
         ts_finder = self.checker.ts_finder
         if (
-            (ts_finder.has_stubs(typ) or is_dataclass(typ))
+            (ts_finder.has_stubs(typ) or is_dataclass_type(typ))
             and not ts_finder.has_attribute(typ, "__getattr__")
             and not ts_finder.has_attribute(typ, "__getattribute__")
             and not attributes.may_have_dynamic_attributes(typ)
