@@ -180,22 +180,32 @@ def _assert_is_instance_impl(ctx: CallContext) -> ImplReturn:
     )
 
 
+def _record_attr_set(val: Value, name: str, ctx: CallContext) -> None:
+    if isinstance(val, MultiValuedValue):
+        for subval in val.vals:
+            _record_attr_set(subval, name, ctx)
+        return
+    elif isinstance(val, AnnotatedValue):
+        _record_attr_set(val.value, name, ctx)
+        return
+    elif isinstance(val, TypedValue):
+        typ = val.typ
+    elif isinstance(val, KnownValue):
+        typ = type(val.val)
+    else:
+        return
+    ctx.visitor._record_type_attr_set(
+        typ, name, ctx.node, AnyValue(AnySource.inference)
+    )
+
+
 def _hasattr_impl(ctx: CallContext) -> Value:
     obj = ctx.vars["object"]
     name = ctx.vars["name"]
     if not isinstance(name, KnownValue) or not isinstance(name.val, str):
         return TypedValue(bool)
-    for val in flatten_values(obj):
-        if isinstance(val, (TypedValue)):
-            typ = val.typ
-        elif isinstance(val, KnownValue):
-            typ = type(val.val)
-        else:
-            continue
-        # interpret a hasattr check as a sign that the object (somehow) has the attribute
-        ctx.visitor._record_type_attr_set(
-            typ, name.val, ctx.node, AnyValue(AnySource.inference)
-        )
+    # interpret a hasattr check as a sign that the object (somehow) has the attribute
+    _record_attr_set(obj, name.val, ctx)
 
     # if the value exists on the type or instance, hasattr should return True
     # don't interpret the opposite to mean it should return False, as the attribute may
