@@ -192,16 +192,16 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             capybara(known_ordered)
             capybara(bad_ordered)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name(self):
         def run():
-            print(undefined_variable)
+            print(undefined_variable)  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_undefined_attribute(self):
         def run():
             lst = []
-            print(lst.coruro)
+            print(lst.coruro)  # E: undefined_attribute
 
     def test_undefined_name_with_star_import(self):
         # can't use the decorator version because import * isn't allowed with nested functions
@@ -222,15 +222,15 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             a = 1
             b = 1
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name_in_return(self):
         def what_is_it():
-            return tucotuco
+            return tucotuco  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name_in_class_kwarg(self):
         def capybara():
-            class Capybara(metaclass=Hutia):
+            class Capybara(metaclass=Hutia):  # E: undefined_name
                 pass
 
     @assert_passes()
