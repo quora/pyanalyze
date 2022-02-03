@@ -484,12 +484,12 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
         def use_it():
             assert_is_value(capybara, KnownValue((0,)) | KnownValue(None))
 
-    @assert_passes()
+    @assert_fails(ErrorCode.unsupported_operation)
     def test_self_type_inference(self):
         class Capybara(object):
             def get(self, i):
                 assert_is_value(self, TypedValue(Capybara))
-                return self[i]  # E: unsupported_operation  # E: attribute_is_never_set
+                return self[i]
 
     @assert_passes()
     def test_self_is_subscriptable(self):
