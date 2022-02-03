@@ -427,7 +427,7 @@ class TypeshedFinder:
                                 mod,
                                 is_typeddict=is_typeddict,
                             )
-                        elif isinstance(child_info.ast, ast.FunctionDef):
+                        elif isinstance(child_info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
                             decorators = [
                                 self._parse_expr(decorator, mod)
                                 for decorator in child_info.ast.decorator_list
@@ -443,8 +443,6 @@ class TypeshedFinder:
                                 return AnyValue(AnySource.inference)
                             else:
                                 return CallableValue(sig)
-                        elif isinstance(child_info.ast, ast.AsyncFunctionDef):
-                            return UNINITIALIZED_VALUE
                         elif isinstance(child_info.ast, ast.Assign):
                             return UNINITIALIZED_VALUE
                     assert False, repr(child_info)
