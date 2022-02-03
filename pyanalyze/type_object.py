@@ -43,6 +43,7 @@ class TypeObject:
     protocol_members: Set[str] = field(default_factory=set)
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
+    artificial_bases: Set[type] = field(default_factory=set, init=False)
     _protocol_positive_cache: Dict[Value, BoundsMap] = field(
         default_factory=dict, repr=False
     )
@@ -63,12 +64,13 @@ class TypeObject:
         # As a special case, the Python type system treats int as
         # a subtype of float, and both int and float as subtypes of complex.
         if self.typ is int:
-            self.base_classes.add(float)
-            self.base_classes.add(complex)
+            self.artificial_bases.add(float)
+            self.artificial_bases.add(complex)
         if self.typ is float:
-            self.base_classes.add(complex)
+            self.artificial_bases.add(complex)
         if self.is_thrift_enum:
-            self.base_classes.add(int)
+            self.artificial_bases.add(int)
+        self.base_classes |= self.artificial_bases
 
     def is_assignable_to_type(self, typ: type) -> bool:
         for base in self.base_classes:
@@ -134,28 +136,41 @@ class TypeObject:
             if ctx.can_assume_compatibility(self, other):
                 return {}
             with ctx.assume_compatibility(self, other):
-                bounds_maps = []
-                for member in self.protocol_members:
-                    expected = ctx.get_attribute_from_value(
-                        self_val, member, prefer_typeshed=True
-                    )
-                    # For __call__, we check compatiiblity with the other object itself.
-                    if member == "__call__":
-                        actual = other_val
-                    else:
-                        actual = ctx.get_attribute_from_value(other_val, member)
-                    if actual is UNINITIALIZED_VALUE:
-                        return CanAssignError(f"{other} has no attribute {member!r}")
-                    can_assign = expected.can_assign(actual, ctx)
-                    if isinstance(can_assign, CanAssignError):
-                        return CanAssignError(
-                            f"Value of protocol member {member!r} conflicts",
-                            [can_assign],
+                result = self._is_compatible_with_protocol(self_val, other_val, ctx)
+                if isinstance(result, CanAssignError) and other.artificial_bases:
+                    for base in other.artificial_bases:
+                        subresult = self._is_compatible_with_protocol(
+                            self_val, TypedValue(base), ctx
                         )
-                    bounds_maps.append(can_assign)
-            result = unify_bounds_maps(bounds_maps)
-            self._protocol_positive_cache[other_val] = result
+                        if not isinstance(subresult, CanAssignError):
+                            result = subresult
+                            break
+            if not isinstance(result, CanAssignError):
+                self._protocol_positive_cache[other_val] = result
             return result
+
+    def _is_compatible_with_protocol(
+        self, self_val: Value, other_val: Value, ctx: CanAssignContext
+    ) -> CanAssign:
+        bounds_maps = []
+        for member in self.protocol_members:
+            expected = ctx.get_attribute_from_value(
+                self_val, member, prefer_typeshed=True
+            )
+            # For __call__, we check compatiiblity with the other object itself.
+            if member == "__call__":
+                actual = other_val
+            else:
+                actual = ctx.get_attribute_from_value(other_val, member)
+            if actual is UNINITIALIZED_VALUE:
+                return CanAssignError(f"{other_val} has no attribute {member!r}")
+            can_assign = expected.can_assign(actual, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"Value of protocol member {member!r} conflicts", [can_assign]
+                )
+            bounds_maps.append(can_assign)
+        return unify_bounds_maps(bounds_maps)
 
     def is_instance(self, obj: object) -> bool:
         """Whether obj is an instance of this type."""
