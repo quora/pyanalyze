@@ -427,7 +427,9 @@ class TypeshedFinder:
                                 mod,
                                 is_typeddict=is_typeddict,
                             )
-                        elif isinstance(child_info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        elif isinstance(
+                            child_info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)
+                        ):
                             decorators = [
                                 self._parse_expr(decorator, mod)
                                 for decorator in child_info.ast.decorator_list
