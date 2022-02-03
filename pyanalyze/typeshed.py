@@ -474,7 +474,7 @@ class TypeshedFinder:
     ) -> Value:
         if isinstance(node, ast.AnnAssign):
             return self._parse_type(node.annotation, mod, is_typeddict=is_typeddict)
-        elif isinstance(node, ast.FunctionDef):
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             decorators = [
                 self._parse_expr(decorator, mod) for decorator in node.decorator_list
             ]
@@ -487,8 +487,6 @@ class TypeshedFinder:
                 return AnyValue(AnySource.inference)
             else:
                 return CallableValue(sig)
-        elif isinstance(node, ast.AsyncFunctionDef):
-            return UNINITIALIZED_VALUE
         elif isinstance(node, ast.Assign):
             return UNINITIALIZED_VALUE
         elif isinstance(node, typeshed_client.OverloadedName):

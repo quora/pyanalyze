@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Support `__init__` and `__new__` signatures from typeshed (#429)
+- Fix handling of `async def` methods in stubs (#459)
 - Treat Thrift enums as compatible with protocols that
   `int` is compatible with (#457)
 - Assume that dataclasses have no dynamic attributes (#456)
