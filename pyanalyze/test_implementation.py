@@ -664,6 +664,37 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
+    def test_dict_get(self):
+        from typing_extensions import TypedDict, NotRequired
+        from typing import Dict, Sequence
+
+        class TD(TypedDict):
+            a: int
+            b: str
+            c: NotRequired[str]
+
+        def capybara(td: TD, s: str, d: Dict[str, int]):
+            assert_is_value(td.get("a"), TypedValue(int))
+            assert_is_value(td.get("c"), TypedValue(str) | KnownValue(None))
+            assert_is_value(td.get("c", 1), TypedValue(str) | KnownValue(1))
+            td.get(1)  # E: invalid_typeddict_key
+
+            known = {"a": "b"}
+            assert_is_value(known.get("a"), KnownValue("b") | KnownValue(None))
+            assert_is_value(known.get("b", 1), KnownValue(1))
+            assert_is_value(known.get(s), KnownValue("b") | KnownValue(None))
+
+            incomplete = {**td, "b": 1, "d": s}
+            assert_is_value(incomplete.get("a"), TypedValue(int) | KnownValue(None))
+            assert_is_value(incomplete.get("b"), KnownValue(1) | KnownValue(None))
+            assert_is_value(incomplete.get("d"), TypedValue(str) | KnownValue(None))
+            assert_is_value(incomplete.get("e"), KnownValue(None))
+
+            assert_is_value(d.get("x"), TypedValue(int) | KnownValue(None))
+            assert_is_value(d.get(s), TypedValue(int) | KnownValue(None))
+            d.get(1)  # E: incompatible_argument
+
+    @assert_passes()
     def test_setdefault(self):
         from typing_extensions import TypedDict
         from typing import Dict, Sequence
