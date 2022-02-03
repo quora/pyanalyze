@@ -666,7 +666,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_dict_get(self):
         from typing_extensions import TypedDict, NotRequired
-        from typing import Dict, Sequence
+        from typing import Dict
 
         class TD(TypedDict):
             a: int
