@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Assume that dataclasses have no dynamic attributes (#456)
 - Treat Thrift enums as compatible with `int` (#455)
 - Fix treatment of `TypeVar` with bounds or constraints
   as callables (#454)

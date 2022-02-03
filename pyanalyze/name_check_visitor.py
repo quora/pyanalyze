@@ -17,7 +17,7 @@ import builtins
 import collections
 import collections.abc
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 from itertools import chain
 import logging
 import operator
@@ -4114,7 +4114,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return True
         ts_finder = self.checker.ts_finder
         if (
-            ts_finder.has_stubs(typ)
+            (ts_finder.has_stubs(typ) or is_dataclass(typ))
             and not ts_finder.has_attribute(typ, "__getattr__")
             and not ts_finder.has_attribute(typ, "__getattribute__")
             and not attributes.may_have_dynamic_attributes(typ)
