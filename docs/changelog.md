@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add plugin providing a precise type for `dict.get` calls (#460)
 - Fix internal error when an `__eq__` method throws (#461)
 - Fix handling of `async def` methods in stubs (#459)
 - Treat Thrift enums as compatible with protocols that
