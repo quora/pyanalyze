@@ -192,16 +192,16 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             capybara(known_ordered)
             capybara(bad_ordered)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name(self):
         def run():
-            print(undefined_variable)
+            print(undefined_variable)  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_undefined_attribute(self):
         def run():
             lst = []
-            print(lst.coruro)
+            print(lst.coruro)  # E: undefined_attribute
 
     def test_undefined_name_with_star_import(self):
         # can't use the decorator version because import * isn't allowed with nested functions
@@ -214,23 +214,23 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             """,
         )
 
-    @assert_fails(ErrorCode.duplicate_enum_member)
+    @assert_passes()
     def test_duplicate_enum_member(self):
         import enum
 
         class Foo(enum.Enum):
             a = 1
-            b = 1
+            b = 1  # E: duplicate_enum_member
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name_in_return(self):
         def what_is_it():
-            return tucotuco
+            return tucotuco  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name_in_class_kwarg(self):
         def capybara():
-            class Capybara(metaclass=Hutia):
+            class Capybara(metaclass=Hutia):  # E: undefined_name
                 pass
 
     @assert_passes()
@@ -265,22 +265,22 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
 
             sphiggurus = coendou
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_class_scope_fails_wrong_order(self):
         def run():
             class Porcupine(object):
-                sphiggurus = coendou
+                sphiggurus = coendou  # E: undefined_name
 
                 def coendou(self):
                     return 1
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_class_scope_is_not_searched(self):
         class Porcupine(object):
             sphiggurus = 1
 
             def coendou(self):
-                return sphiggurus
+                return sphiggurus  # E: undefined_name
 
     @assert_passes()
     def test_getter_decorator(self):
@@ -340,10 +340,10 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
         def run():
             assert_is_value(fn, KnownValue(assert_eq))
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_builtin_attribute(self):
         def run():
-            print(True.hutia)
+            print(True.hutia)  # E: undefined_attribute
 
     @assert_passes()
     def test_module_reassignment(self):
@@ -354,15 +354,15 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
 
         _std_set()
 
-    @assert_fails(ErrorCode.not_callable)
+    @assert_passes()
     def test_display(self):
         def run():
-            print([1, 2]())
+            print([1, 2]())  # E: not_callable
 
-    @assert_fails(ErrorCode.unhashable_key)
+    @assert_passes()
     def test_list_in_set(self):
         def run():
-            print({[]})
+            print({[]})  # E: unhashable_key
 
     @assert_passes()
     def test_multiple_assignment_global(self):
@@ -386,29 +386,29 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             # TODO why isn't this an error?
             print({goes_in_set})
 
-    @assert_fails(ErrorCode.duplicate_dict_key)
+    @assert_passes()
     def test_duplicate_dict_key(self):
         def run():
-            print({"capybara": 1, "capybara": 2})
+            print({"capybara": 1, "capybara": 2})  # E: duplicate_dict_key
 
-    @assert_fails(ErrorCode.unhashable_key)
+    @assert_passes()
     def test_unhashable_dict_key(self):
         def run():
-            print({[]: 1})
+            print({[]: 1})  # E: unhashable_key
 
-    @assert_fails(ErrorCode.duplicate_dict_key)
+    @assert_passes()
     def test_inferred_duplicate_dict_key(self):
         key = "capybara"
 
         def run():
-            print({"capybara": 1, key: 1})
+            print({"capybara": 1, key: 1})  # E: duplicate_dict_key
 
-    @assert_fails(ErrorCode.unhashable_key)
+    @assert_passes()
     def test_inferred_unhashable_dict_key(self):
         key = []
 
         def run():
-            print({key: 1})
+            print({key: 1})  # E: unhashable_key
 
     @assert_passes()
     def test_nested_classes(self):
@@ -420,33 +420,33 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             def method(self, cap: Capybaras):
                 assert_is_value(cap, TypedValue(Caviids.Capybaras))
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_class_in_function(self):
         def get_capybaras(object):
             class Capybaras(object):
                 if False:
-                    print(neochoerus)
+                    print(neochoerus)  # E: undefined_name
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_cant_del_tuple(self):
         tpl = (1, 2, 3)
 
         def run():
-            del tpl[1]
+            del tpl[1]  # E: unsupported_operation
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_cant_del_generator(self):
         tpl = (x for x in (1, 2, 3))
 
         def run():
-            del tpl[1]
+            del tpl[1]  # E: unsupported_operation
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_cant_assign_tuple(self):
         tpl = (1, 2, 3)
 
         def run():
-            tpl[1] = 1
+            tpl[1] = 1  # E: unsupported_operation
 
     @assert_passes()
     def test_binop(self):
@@ -588,14 +588,14 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
                 item = None
             assert_is_value(item, KnownValue(None) | AnyValue(AnySource.unannotated))
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_bad_attribute_of_global(self):
         import os
 
         path = os.path
 
         def capybara():
-            print(path.joyn)
+            print(path.joyn)  # E: undefined_attribute
 
     @assert_passes()
     def test_double_assignment(self):
@@ -607,20 +607,20 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             answer = PropertyObject(aid)
             assert_is_value(answer, TypedValue(PropertyObject))
 
-    @assert_fails(ErrorCode.class_variable_redefinition)
+    @assert_passes()
     def test_duplicate_method(self):
         class Tucotuco(object):
             def __init__(self, fn):
                 pass
 
-            def __init__(self, an):
+            def __init__(self, an):  # E: class_variable_redefinition
                 pass
 
-    @assert_fails(ErrorCode.class_variable_redefinition)
+    @assert_passes()
     def test_duplicate_attribute(self):
         class Hutia:
             capromys = 1
-            capromys = 2
+            capromys = 2  # E: class_variable_redefinition
 
     @assert_passes()
     def test_duplicate_attribute_augassign(self):
@@ -639,15 +639,15 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             def fur(self, value):
                 pass
 
-    @assert_fails(ErrorCode.bad_global)
+    @assert_passes()
     def test_bad_global(self):
-        global x
+        global x  # E: bad_global
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_global(self):
         def fn():
             global x
-            return x
+            return x  # E: undefined_name
 
     @assert_passes()
     def test_global_value(self):
@@ -949,10 +949,10 @@ class TestYieldFrom(TestNameCheckVisitorBase):
     def capybara(x):
         yield from [1, 2]
 
-    @assert_fails(ErrorCode.bad_yield_from)
+    @assert_passes()
     def test_bad_yield_from(self):
         def capybara():
-            yield from 3
+            yield from 3  # E: bad_yield_from
 
 
 class TestClassAttributeChecker(TestNameCheckVisitorBase):
@@ -965,11 +965,11 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
             def other_method(self):
                 self.__mangled()
 
-    @assert_fails(ErrorCode.attribute_is_never_set)
+    @assert_passes()
     def test_never_set(self):
         class Capybara(object):
             def method(self):
-                return self.doesnt_exist
+                return self.doesnt_exist  # E: attribute_is_never_set
 
     @assert_passes()
     def test_exists_on_class(self):
@@ -981,12 +981,12 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
             def method(self):
                 return self.__class__.type()
 
-    @assert_fails(ErrorCode.attribute_is_never_set)
+    @assert_passes()
     def test_in_classmethod(self):
         class Capybara(object):
             @classmethod
             def do_stuff(cls):
-                return cls.stuff
+                return cls.stuff  # E: attribute_is_never_set
 
     @assert_passes()
     def test_getattribute_overridden(self):
@@ -1016,7 +1016,7 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
             def tree(self):
                 return self.this_attribute_does_not_exist
 
-    @assert_fails(ErrorCode.attribute_is_never_set)
+    @assert_passes()
     def test_cythonized_unexamined_base(self):
         import qcore
 
@@ -1024,7 +1024,7 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
         # attribute does not exist
         class Capybara(qcore.decorators.DecoratorBase):
             def tree(self):
-                return self.this_attribute_does_not_exist
+                return self.this_attribute_does_not_exist  # E: attribute_is_never_set
 
     @assert_passes()
     def test_setattr(self):
@@ -1147,29 +1147,29 @@ assert_eq(1, 1)
 
 
 class TestComprehensions(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_scoping_in_list_py3(self):
         def capybara(self):
             x = [a for a in (1, 2)]
-            return a, x
+            return a, x  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_scoping_in_set(self):
         def capybara(self):
             x = {a for a in (1, 2)}
-            return a, x
+            return a, x  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_scoping_in_generator(self):
         def capybara(self):
             x = (a for a in (1, 2))
-            return a, x
+            return a, x  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_scoping_in_dict(self):
         def capybara(self):
             x = {a: 3 for a in (1, 2)}
-            return a, x
+            return a, x  # E: undefined_name
 
     @assert_passes()
     def test_incomplete_value(self):
@@ -1200,12 +1200,12 @@ class TestComprehensions(TestNameCheckVisitorBase):
             tmp = str(oid)
             return [s for s in tmp]
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_comprehension_body_within_class(self):
         def capybara():
             class Capybara(object):
                 incisors = [1, 2]
-                canines = {incisors[0] for _ in incisors}
+                canines = {incisors[0] for _ in incisors}  # E: undefined_name
 
     @assert_passes()
     def test_comprehension_within_class(self):
@@ -2001,11 +2001,12 @@ class TestUnpacking(TestNameCheckVisitorBase):
 
 
 class TestUnusedIgnore(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.unused_ignore)
+    @assert_passes()
     def test_unused(self):
         def capybara(condition):
             x = 1
-            print(x)  # static analysis: ignore
+            print(x)  # static analysis: ignore[undefined_name]  # E: unused_ignore
+            print(x)  # static analysis: ignore  # E: unused_ignore  # E: bare_ignore
 
     @assert_passes()
     def test_used(self):
@@ -2025,24 +2026,24 @@ class TestMissingF(TestNameCheckVisitorBase):
             print("a{x}".format(x=x))
             func("translate {x}", x=x)
 
-    @assert_fails(ErrorCode.missing_f)
+    @assert_passes()
     def test_missing_f(self):
         def capybara():
             x = 3
-            return "x = {x}"
+            return "x = {x}"  # E: missing_f
 
     def test_autofix(self):
         self.assert_is_changed(
             """
-def capybara():
-    x = 3
-    return "x = {x}"
-""",
+            def capybara():
+                x = 3
+                return "x = {x}"
+            """,
             """
-def capybara():
-    x = 3
-    return f'x = {x}'
-""",
+            def capybara():
+                x = 3
+                return f'x = {x}'
+            """,
         )
 
 
@@ -2053,10 +2054,10 @@ class TestFStrings(TestNameCheckVisitorBase):
             y = f"{x} stuff"
             assert_is_value(y, TypedValue(str))
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name(self):
         def capybara():
-            return f"{x}"
+            return f"{x}"  # E: undefined_name
 
 
 class TestTypedDict(TestNameCheckVisitorBase):

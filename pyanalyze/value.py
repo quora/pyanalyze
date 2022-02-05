@@ -51,7 +51,7 @@ from typing_extensions import Literal, Protocol, ParamSpec
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
-from .safe import all_of_type, safe_issubclass, safe_isinstance
+from .safe import all_of_type, safe_equals, safe_issubclass, safe_isinstance
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
@@ -434,7 +434,7 @@ class KnownValue(Value):
         if isinstance(other, KnownValue):
             if self.val is other.val:
                 return {}
-            if self.val == other.val and type(self.val) is type(other.val):
+            if safe_equals(self.val, other.val) and type(self.val) is type(other.val):
                 return {}
         return super().can_assign(other, ctx)
 
@@ -442,7 +442,7 @@ class KnownValue(Value):
         return (
             isinstance(other, KnownValue)
             and type(self.val) is type(other.val)
-            and self.val == other.val
+            and safe_equals(self.val, other.val)
         )
 
     def __ne__(self, other: Value) -> bool:
