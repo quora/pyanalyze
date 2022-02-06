@@ -75,11 +75,12 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_generic(self):
-        from typing import List
+        from typing import List, Any
 
-        def capybara(x: List[int], y: List) -> None:
+        def capybara(x: List[int], y: List, z: List[Any]) -> None:
             assert_is_value(x, GenericValue(list, [TypedValue(int)]))
             assert_is_value(y, TypedValue(list))
+            assert_is_value(z, GenericValue(list, [AnyValue(AnySource.explicit)]))
 
     @assert_passes()
     def test_supports_int(self):
