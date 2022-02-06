@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix bug that led to some overloaded calls incorrectly
+  resolving to `Any` (#462)
 - Support `__init__` and `__new__` signatures from typeshed (#429)
 - Fix incorrect type inferred for indexing operations on
   subclasses of `list` and `tuple` (#461)
