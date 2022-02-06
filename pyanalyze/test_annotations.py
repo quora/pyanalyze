@@ -1621,7 +1621,7 @@ class TestParamSpec(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
-    def test_args_kwargs(self):
+    def test_paramspec_args_kwargs(self):
         from typing import Callable, TypeVar
         from typing_extensions import Concatenate, ParamSpec
 
