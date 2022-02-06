@@ -1078,6 +1078,8 @@ class TestDictGetItem(TestNameCheckVisitorBase):
             assert_is_value(nd[1], TypedValue(str))
             assert_is_value(rev[1], TypedValue(str))
 
+            dct[1]  # E: incompatible_argument
+
 
 class TestDictSetItem(TestNameCheckVisitorBase):
     @assert_passes()
