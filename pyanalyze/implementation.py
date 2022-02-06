@@ -408,8 +408,16 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                     return SequenceIncompleteValue.make_or_known(
                         list, self_value.members[key.val]
                     )
-                else:
+                elif self_value.typ in (list, tuple):
+                    # For generics of exactly list/tuple, return the self type.
                     return self_value
+                else:
+                    # slicing a subclass of list or tuple returns a list
+                    # or tuple, not a subclass (unless the subclass overrides
+                    # __getitem__, but then we wouldn't get here).
+                    # TODO return a more precise type if the class inherits
+                    # from a generic list/tuple.
+                    return TypedValue(typ)
             else:
                 ctx.show_error(f"Invalid {typ.__name__} key {key}")
                 return AnyValue(AnySource.error)
