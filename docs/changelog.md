@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Do not strip away generic parameters explicitly set to
+  `Any` (#467)
 - Fix bug that led to some overloaded calls incorrectly
   resolving to `Any` (#462)
 - Support `__init__` and `__new__` signatures from typeshed (#429)
