@@ -1082,6 +1082,7 @@ class TestDictGetItem(TestNameCheckVisitorBase):
             assert_is_value(rev[1], TypedValue(str))
 
             untyped[[]]  # E: unhashable_key
+            dct[1]  # E: incompatible_argument
 
 
 class TestDictSetItem(TestNameCheckVisitorBase):

@@ -544,6 +544,15 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
                 return AnyValue(AnySource.error)
             return val
         elif isinstance(self_value, TypedValue):
+            key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
+            can_assign = key_type.can_assign(key, ctx.visitor)
+            if isinstance(can_assign, CanAssignError):
+                ctx.show_error(
+                    f"Dictionary does not accept keys of type {key}",
+                    error_code=ErrorCode.incompatible_argument,
+                    detail=str(can_assign),
+                    arg="key",
+                )
             return self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
         else:
             return AnyValue(AnySource.inference)

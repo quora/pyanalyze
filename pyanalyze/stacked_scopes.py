@@ -947,8 +947,8 @@ class FunctionScope(Scope):
     name_to_current_definition_nodes: SubScope
     usage_to_definition_nodes: Dict[Tuple[Node, Varname], List[Node]]
     definition_node_to_value: Dict[Node, Value]
-    name_to_all_definition_nodes: Dict[str, Set[Node]]
-    name_to_composites: Dict[str, Set[CompositeVariable]]
+    name_to_all_definition_nodes: Dict[Varname, Set[Node]]
+    name_to_composites: Dict[Varname, Set[CompositeVariable]]
     referencing_value_vars: Dict[Varname, Value]
     accessed_from_special_nodes: Set[Varname]
     current_loop_scopes: List[SubScope]
