@@ -75,11 +75,12 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_generic(self):
-        from typing import List
+        from typing import List, Any
 
-        def capybara(x: List[int], y: List) -> None:
+        def capybara(x: List[int], y: List, z: List[Any]) -> None:
             assert_is_value(x, GenericValue(list, [TypedValue(int)]))
             assert_is_value(y, TypedValue(list))
+            assert_is_value(z, GenericValue(list, [AnyValue(AnySource.explicit)]))
 
     @assert_passes()
     def test_supports_int(self):
@@ -1621,7 +1622,7 @@ class TestParamSpec(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
-    def test_args_kwargs(self):
+    def test_paramspec_args_kwargs(self):
         from typing import Callable, TypeVar
         from typing_extensions import Concatenate, ParamSpec
 
@@ -1645,8 +1646,6 @@ class TestParamSpec(TestNameCheckVisitorBase):
             func(1, "A")
             func(1, 2)  # E: incompatible_argument
 
-
-class TestCallable(TestNameCheckVisitorBase):
     @assert_passes()
     def test_compatibility(self):
         from typing import Callable, TypeVar

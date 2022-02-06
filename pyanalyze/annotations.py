@@ -1069,8 +1069,6 @@ def _value_of_origin_args(
         origin = _maybe_get_extra(origin)
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
-            if all(isinstance(val, AnyValue) for val in args_vals):
-                return _maybe_typed_value(origin)
             return GenericValue(origin, args_vals)
         else:
             return _maybe_typed_value(origin)

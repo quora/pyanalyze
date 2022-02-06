@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Pick up the signature of `open()` from typeshed correctly (#463)
+- Do not strip away generic parameters explicitly set to
+  `Any` (#467)
 - Fix bug that led to some overloaded calls incorrectly
   resolving to `Any` (#462)
 - Support `__init__` and `__new__` signatures from typeshed (#429)
