@@ -293,3 +293,18 @@ class TestHasAttrExtension(TestNameCheckVisitorBase):
         def inty_capybara(x: Literal[1]) -> None:
             if has_int_attr(x, "inty"):
                 assert_is_value(x.inty, TypedValue(int))
+
+    @assert_passes()
+    def test_multi_hasattr(self):
+        from typing import Union
+
+        class A:
+            pass
+
+        class B:
+            pass
+
+        def capybara(x: Union[A, B]):
+            if hasattr(x, "a") and hasattr(x, "b"):
+                assert_is_value(x.a, AnyValue(AnySource.inference))
+                assert_is_value(x.b, AnyValue(AnySource.inference))

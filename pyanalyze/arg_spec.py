@@ -6,7 +6,7 @@ Implementation of extended argument specifications used by test_scope.
 
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
-from .extensions import CustomCheck, get_overloads, get_type_evaluations
+from .extensions import CustomCheck, TypeGuard, get_overloads, get_type_evaluations
 from .annotations import Context, RuntimeEvaluator, type_from_runtime
 from .find_unused import used
 from . import implementation
@@ -37,6 +37,7 @@ from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
     AnyValue,
+    CanAssignContext,
     Extension,
     GenericBases,
     KVPair,
@@ -276,15 +277,19 @@ class ArgSpecCache:
         self,
         options: Options,
         ts_finder: TypeshedFinder,
+        ctx: CanAssignContext,
         *,
         vnv_provider: Callable[[str], Optional[Value]] = lambda _: None,
     ) -> None:
         self.vnv_provider = vnv_provider
         self.options = options
         self.ts_finder = ts_finder
+        self.ctx = ctx
         self.known_argspecs = {}
         self.generic_bases_cache = {}
         self.default_context = AnnotationsContext(self)
+        self.safe_bases = tuple(self.options.get_value_for(ClassesSafeToInstantiate))
+
         default_argspecs = dict(self.DEFAULT_ARGSPECS)
         for provider in options.get_value_for(KnownSignatures):
             default_argspecs.update(provider(self))
@@ -302,6 +307,7 @@ class ArgSpecCache:
         is_asynq: bool = False,
         returns: Optional[Value] = None,
         allow_call: bool = False,
+        is_constructor: bool = False,
     ) -> Signature:
         """Constructs a pyanalyze Signature from an inspect.Signature.
 
@@ -336,7 +342,12 @@ class ArgSpecCache:
         parameters = []
         for i, parameter in enumerate(sig.parameters.values()):
             param, make_everything_pos_only = self._make_sig_parameter(
-                parameter, func_globals, function_object, is_wrapped, i
+                parameter,
+                func_globals,
+                function_object,
+                is_wrapped,
+                i,
+                is_constructor=is_constructor,
             )
             if make_everything_pos_only:
                 parameters = [
@@ -363,13 +374,19 @@ class ArgSpecCache:
         function_object: Optional[object],
         is_wrapped: bool,
         index: int,
+        *,
+        is_constructor: bool,
     ) -> Tuple[SigParameter, bool]:
         """Given an inspect.Parameter, returns a Parameter object."""
         if is_wrapped:
             typ = AnyValue(AnySource.inference)
         else:
             typ = self._get_type_for_parameter(
-                parameter, func_globals, function_object, index
+                parameter,
+                func_globals,
+                function_object,
+                index,
+                is_constructor=is_constructor,
             )
         if parameter.default is inspect.Parameter.empty:
             default = None
@@ -397,6 +414,8 @@ class ArgSpecCache:
         func_globals: Optional[Mapping[str, object]],
         function_object: Optional[object],
         index: int,
+        *,
+        is_constructor: bool,
     ) -> Value:
         if parameter.annotation is not inspect.Parameter.empty:
             typ = type_from_runtime(
@@ -421,7 +440,11 @@ class ArgSpecCache:
                 and module_name in sys.modules
             ):
                 module = sys.modules[module_name]
-                *class_names, function_name = qualname.split(".")
+                if is_constructor:
+                    class_names = qualname.split(".")
+                    function_name = "__init__"
+                else:
+                    *class_names, function_name = qualname.split(".")
                 class_obj = module
                 for class_name in class_names:
                     class_obj = getattr(class_obj, class_name, None)
@@ -449,9 +472,15 @@ class ArgSpecCache:
         return AnyValue(AnySource.unannotated)
 
     def get_argspec(
-        self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
+        self,
+        obj: object,
+        impl: Optional[Impl] = None,
+        is_asynq: bool = False,
+        allow_synthetic_type: bool = False,
     ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
+        if safe_isinstance(obj, str) and not allow_synthetic_type:
+            return None
         return self._cached_get_argspec(
             obj, impl, is_asynq, in_overload_resolution=False
         )
@@ -589,12 +618,21 @@ class ArgSpecCache:
                     original_fn, impl, is_asynq, in_overload_resolution
                 )
 
-        allow_call = FunctionsSafeToCall.contains(obj, self.options)
-        argspec = self.ts_finder.get_argspec(obj, allow_call=allow_call)
+        allow_call = FunctionsSafeToCall.contains(obj, self.options) or (
+            safe_isinstance(obj, type) and safe_issubclass(obj, self.safe_bases)
+        )
+        if safe_isinstance(obj, (type, str)):
+            type_params = self.get_type_parameters(obj)
+        else:
+            type_params = []
+        argspec = self.ts_finder.get_argspec(
+            obj, allow_call=allow_call, type_params=type_params
+        )
         if argspec is not None:
             return argspec
 
         if is_newtype(obj):
+            assert hasattr(obj, "__supertype__")
             return Signature.make(
                 [
                     SigParameter(
@@ -648,8 +686,6 @@ class ArgSpecCache:
                 return_type = (
                     AnyValue(AnySource.error) if should_ignore else TypedValue(obj)
                 )
-                safe = tuple(self.options.get_value_for(ClassesSafeToInstantiate))
-                allow_call = safe_issubclass(obj, safe)
                 if isinstance(override, inspect.Signature):
                     inspect_sig = override
                 else:
@@ -681,11 +717,12 @@ class ArgSpecCache:
                     impl=impl,
                     returns=return_type,
                     allow_call=allow_call,
+                    is_constructor=True,
                 )
             bound_sig = make_bound_method(signature, Composite(TypedValue(obj)))
             if bound_sig is None:
                 return None
-            sig = bound_sig.get_signature(preserve_impl=True)
+            sig = bound_sig.get_signature(preserve_impl=True, ctx=self.ctx)
             if sig is not None:
                 return sig
             return bound_sig
@@ -853,7 +890,7 @@ class ArgSpecCache:
         return typ.__bases__
 
 
-def _is_qcore_decorator(obj: object) -> bool:
+def _is_qcore_decorator(obj: object) -> TypeGuard[Any]:
     try:
         return (
             hasattr(obj, "is_decorator")

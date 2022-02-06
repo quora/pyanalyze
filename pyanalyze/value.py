@@ -215,7 +215,9 @@ class CanAssignContext(Protocol):
         """
         return None
 
-    def get_attribute_from_value(self, root_value: "Value", attribute: str) -> "Value":
+    def get_attribute_from_value(
+        self, root_value: "Value", attribute: str, *, prefer_typeshed: bool = False
+    ) -> "Value":
         return UNINITIALIZED_VALUE
 
     def can_assume_compatibility(
@@ -547,7 +549,7 @@ class UnboundMethodValue(Value):
         if signature is None:
             return None
         if isinstance(signature, pyanalyze.signature.BoundMethodSignature):
-            signature = signature.get_signature()
+            signature = signature.get_signature(ctx=ctx)
         if isinstance(signature, pyanalyze.signature.PropertyArgSpec):
             return None
         return signature
@@ -1208,7 +1210,7 @@ class CallableValue(TypedValue):
             if signature is None:
                 return CanAssignError(f"{other} is not a callable type")
             if isinstance(signature, pyanalyze.signature.BoundMethodSignature):
-                signature = signature.get_signature()
+                signature = signature.get_signature(ctx=ctx)
             if isinstance(
                 signature,
                 (

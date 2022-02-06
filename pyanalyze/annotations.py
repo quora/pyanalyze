@@ -767,8 +767,7 @@ def _type_from_subscripted_value(
             # On Python 3.9 at least, get_origin() of a class that inherits
             # from Generic[T] is None.
             origin = root
-        if getattr(origin, "__extra__", None) is not None:
-            origin = origin.__extra__
+        origin = _maybe_get_extra(origin)
         return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
     elif isinstance(root, type):
         return GenericValue(root, [_type_from_value(elt, ctx) for elt in members])
@@ -780,6 +779,22 @@ def _type_from_subscripted_value(
             return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
         ctx.show_error(f"Unrecognized subscripted annotation: {root}")
         return AnyValue(AnySource.error)
+
+
+def _maybe_get_extra(origin: type) -> Union[type, str]:
+    # ContextManager is defined oddly and we lose the Protocol if we don't use
+    # synthetic types.
+    if origin is typing.ContextManager:
+        return "typing.ContextManager"
+    elif origin is typing.AsyncContextManager:
+        return "typing.AsyncContextManager"
+    else:
+        # turn typing.List into list in some Python versions
+        # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
+        extra_origin = getattr(origin, "__extra__", None)
+        if extra_origin is not None:
+            return extra_origin
+        return origin
 
 
 class _DefaultContext(Context):
@@ -1051,11 +1066,7 @@ def _value_of_origin_args(
             ctx,
         )
     elif isinstance(origin, type):
-        # turn typing.List into list in some Python versions
-        # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
-        extra_origin = getattr(origin, "__extra__", None)
-        if extra_origin is not None:
-            origin = extra_origin
+        origin = _maybe_get_extra(origin)
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
             if all(isinstance(val, AnyValue) for val in args_vals):

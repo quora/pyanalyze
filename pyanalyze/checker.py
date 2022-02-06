@@ -24,16 +24,13 @@ from typing import (
     Dict,
 )
 
-from pyanalyze.attributes import AttrContext, may_have_dynamic_attributes
-from pyanalyze.stacked_scopes import Composite
-
 from .options import Options, PyObjectSequenceOption
-from .attributes import get_attribute
+from .attributes import get_attribute, AttrContext
 from .node_visitor import Failure
+from .stacked_scopes import Composite
 from .value import (
     UNINITIALIZED_VALUE,
     AnnotatedValue,
-    AnySource,
     AnyValue,
     CallableValue,
     KnownValueWithTypeVars,
@@ -110,10 +107,11 @@ class Checker:
             self.options = Options.from_option_list()
         else:
             self.options = raw_options
-        self.ts_finder = TypeshedFinder.make(self.options)
+        self.ts_finder = TypeshedFinder.make(self, self.options)
         self.arg_spec_cache = ArgSpecCache(
             self.options,
             self.ts_finder,
+            self,
             vnv_provider=self.maybe_get_variable_name_value,
         )
         self.reexport_tracker = ImplicitReexportTracker(self.options)
@@ -212,7 +210,7 @@ class Checker:
         if isinstance(sig, Signature):
             return sig
         elif isinstance(sig, BoundMethodSignature):
-            return sig.get_signature()
+            return sig.get_signature(ctx=self)
         elif isinstance(sig, OverloadedSignature):
             return sig
         return None
@@ -334,20 +332,18 @@ class Checker:
             bound_method = make_bound_method(sig, Composite(value), return_override)
             if bound_method is None:
                 return None
-            return bound_method.get_signature()
+            return bound_method.get_signature(ctx=self)
         elif isinstance(value, SubclassValue):
             if isinstance(value.typ, TypedValue):
-                if isinstance(value.typ.typ, type):
-                    if value.typ.typ is tuple:
-                        # Probably an unknown namedtuple
-                        return ANY_SIGNATURE
-                    argspec = self.arg_spec_cache.get_argspec(value.typ.typ)
-                    if argspec is None:
-                        return ANY_SIGNATURE
-                    return argspec
-                else:
-                    # TODO synthetic types
+                if value.typ.typ is tuple:
+                    # Probably an unknown namedtuple
                     return ANY_SIGNATURE
+                argspec = self.arg_spec_cache.get_argspec(
+                    value.typ.typ, allow_synthetic_type=True
+                )
+                if argspec is None:
+                    return ANY_SIGNATURE
+                return argspec
             else:
                 # TODO generic SubclassValue
                 return ANY_SIGNATURE
@@ -370,17 +366,27 @@ class Checker:
         else:
             return None
 
-    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
+    def get_attribute_from_value(
+        self, root_value: Value, attribute: str, *, prefer_typeshed: bool = False
+    ) -> Value:
         if isinstance(root_value, TypeVarValue):
             root_value = root_value.get_fallback_value()
         if is_union(root_value):
             results = [
-                self.get_attribute_from_value(subval, attribute)
+                self.get_attribute_from_value(
+                    subval, attribute, prefer_typeshed=prefer_typeshed
+                )
                 for subval in flatten_values(root_value)
             ]
             return unite_values(*results)
         ctx = CheckerAttrContext(
-            Composite(root_value), attribute, self.options, False, False, self
+            Composite(root_value),
+            attribute,
+            self.options,
+            skip_mro=False,
+            skip_unwrap=False,
+            prefer_typeshed=prefer_typeshed,
+            checker=self,
         )
         return get_attribute(ctx)
 
@@ -432,12 +438,7 @@ class CheckerAttrContext(AttrContext):
     checker: Checker
 
     def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
-        typeshed_type = self.checker.ts_finder.get_attribute(
-            typ, self.attr, on_class=on_class
-        )
-        if typeshed_type is UNINITIALIZED_VALUE and may_have_dynamic_attributes(typ):
-            return AnyValue(AnySource.inference)
-        return typeshed_type
+        return self.checker.ts_finder.get_attribute(typ, self.attr, on_class=on_class)
 
     def get_attribute_from_typeshed_recursively(
         self, fq_name: str, *, on_class: bool

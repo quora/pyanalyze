@@ -52,6 +52,7 @@ class AttrContext:
     options: Options
     skip_mro: bool
     skip_unwrap: bool
+    prefer_typeshed: bool
 
     @property
     def root_value(self) -> Value:
@@ -438,6 +439,14 @@ def _get_attribute_from_mro(
                 continue
             if ctx.skip_mro and base_cls is not typ:
                 continue
+
+            if ctx.prefer_typeshed:
+                typeshed_type = ctx.get_attribute_from_typeshed(
+                    base_cls, on_class=on_class or ctx.skip_unwrap
+                )
+                if typeshed_type is not UNINITIALIZED_VALUE:
+                    return typeshed_type, base_cls, False
+
             try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.
@@ -459,11 +468,12 @@ def _get_attribute_from_mro(
             except Exception:
                 pass
 
-            typeshed_type = ctx.get_attribute_from_typeshed(
-                base_cls, on_class=on_class or ctx.skip_unwrap
-            )
-            if typeshed_type is not UNINITIALIZED_VALUE:
-                return typeshed_type, base_cls, False
+            if not ctx.prefer_typeshed:
+                typeshed_type = ctx.get_attribute_from_typeshed(
+                    base_cls, on_class=on_class or ctx.skip_unwrap
+                )
+                if typeshed_type is not UNINITIALIZED_VALUE:
+                    return typeshed_type, base_cls, False
 
     attrs_type = get_attrs_attribute(typ, ctx)
     if attrs_type is not None:
