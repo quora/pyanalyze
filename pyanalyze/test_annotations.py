@@ -1645,8 +1645,6 @@ class TestParamSpec(TestNameCheckVisitorBase):
             func(1, "A")
             func(1, 2)  # E: incompatible_argument
 
-
-class TestCallable(TestNameCheckVisitorBase):
     @assert_passes()
     def test_compatibility(self):
         from typing import Callable, TypeVar
