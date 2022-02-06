@@ -2173,7 +2173,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             f.flush()
             f.seek(0)
             try:
-                pseudo_module = importer.import_module(pseudo_module_name, f.name)
+                pseudo_module = importer.import_module(pseudo_module_name, Path(f.name))
             except Exception:
                 # sets the name of the imported module to Any so we don't get further
                 # errors
