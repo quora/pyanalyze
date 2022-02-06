@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix incorrect type inferred for indexing operations on
+  subclasses of `list` and `tuple` (#461)
 - Add plugin providing a precise type for `dict.get` calls (#460)
 - Fix internal error when an `__eq__` method throws (#461)
 - Fix handling of `async def` methods in stubs (#459)
