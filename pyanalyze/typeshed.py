@@ -1067,7 +1067,14 @@ class TypeshedFinder:
                         return val
                     if info.ast.value:
                         return self._parse_expr(info.ast.value, module)
-                elif isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                elif isinstance(
+                    info.ast,
+                    (
+                        ast.FunctionDef,
+                        ast.AsyncFunctionDef,
+                        typeshed_client.OverloadedName,
+                    ),
+                ):
                     sig = self._get_signature_from_info(info, None, fq_name, module)
                     if sig is not None:
                         return CallableValue(sig)

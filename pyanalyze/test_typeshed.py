@@ -21,10 +21,11 @@ from .extensions import evaluated
 from .test_config import TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .signature import SigParameter, Signature
+from .signature import OverloadedSignature, SigParameter, Signature
 from .test_arg_spec import ClassWithCall
 from .typeshed import TypeshedFinder
 from .value import (
+    CallableValue,
     SubclassValue,
     TypedDictValue,
     assert_is_value,
@@ -195,6 +196,13 @@ class TestBundledStubs(TestNameCheckVisitorBase):
         assert tsf.resolve_name(mod, "constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "aliased_constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "explicitly_aliased_constant") == TypedValue(int)
+
+    def test_overloaded(self):
+        tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
+        mod = "_pyanalyze_tests.overloaded"
+        val = tsf.resolve_name(mod, "func")
+        assert isinstance(val, CallableValue)
+        assert isinstance(val.signature, OverloadedSignature)
 
     def test_typeddict(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
