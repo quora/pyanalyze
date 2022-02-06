@@ -383,8 +383,7 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             else:
                 goes_in_set = "capybara"
             assert_is_value(goes_in_set, KnownValue([]) | KnownValue("capybara"))
-            # TODO why isn't this an error?
-            print({goes_in_set})
+            print({goes_in_set})  # E: unhashable_key
 
     @assert_passes()
     def test_duplicate_dict_key(self):
@@ -1213,6 +1212,22 @@ class TestComprehensions(TestNameCheckVisitorBase):
             incisors = [1, 2]
             canines = {i + 1 for i in incisors}
 
+    @assert_passes()
+    def test_hashability(self):
+        def capybara(it):
+            x = {set() for _ in it}  # E: unhashable_key
+            assert_is_value(
+                x, make_weak(GenericValue(set, [AnyValue(AnySource.error)]))
+            )
+
+            y = {set(): 3 for _ in it}  # E: unhashable_key
+            assert_is_value(
+                y,
+                make_weak(
+                    GenericValue(dict, [AnyValue(AnySource.error), KnownValue(3)])
+                ),
+            )
+
 
 class TestIterationTarget(TestNameCheckVisitorBase):
     @assert_passes()
@@ -1316,7 +1331,9 @@ class TestIterationTarget(TestNameCheckVisitorBase):
 
             lst3 = [i + j * 10 for i in range(2) for j in range(3)]
             # TODO: should be list[int] instead
-            assert_is_value(lst3, TypedValue(list))
+            assert_is_value(
+                lst3, make_weak(GenericValue(list, [AnyValue(AnySource.inference)]))
+            )
 
     @assert_passes()
     def test_dict_comprehension(self):

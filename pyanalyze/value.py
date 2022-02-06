@@ -2261,6 +2261,35 @@ def kv_pairs_from_mapping(
         return [KVPair(key_type, value_type, is_many=True)]
 
 
+class HashableProto(Protocol):
+    def __hash__(self) -> int:
+        raise NotImplementedError
+
+
+HashableProtoValue = TypedValue(HashableProto)
+
+
+def check_hashability(value: Value, ctx: CanAssignContext) -> Optional[CanAssignError]:
+    """Check whether a value is hashable.
+
+    Return None if it is hashable, otherwise a CanAssignError.
+
+    """
+    if isinstance(value, KnownValue):
+        try:
+            hash(value.val)
+        except Exception as e:
+            return CanAssignError(
+                f"{value.val!r} is not hashable", children=[CanAssignError(repr(e))]
+            )
+        else:
+            return None
+    can_assign = HashableProtoValue.can_assign(value, ctx)
+    if isinstance(can_assign, CanAssignError):
+        return can_assign
+    return None
+
+
 def unpack_values(
     value: Value,
     ctx: CanAssignContext,

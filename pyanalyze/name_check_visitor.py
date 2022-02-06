@@ -163,6 +163,7 @@ from .value import (
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
     annotate_value,
+    check_hashability,
     flatten_values,
     get_tv_map,
     is_union,
@@ -2337,6 +2338,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             with qcore.override(self, "in_comprehension_body", True):
                 key_value = self.visit(node.key)
                 value_value = self.visit(node.value)
+
+                hashability = check_hashability(key_value, self)
+                if isinstance(hashability, CanAssignError):
+                    self._show_error_if_checking(
+                        node.key,
+                        "Dictionary key is not hashable",
+                        ErrorCode.unhashable_key,
+                        detail=str(hashability),
+                    )
+                    key_value = AnyValue(AnySource.error)
             if isinstance(key_value, AnyValue) and isinstance(value_value, AnyValue):
                 return TypedValue(dict)
             else:
@@ -2344,14 +2355,21 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         with qcore.override(self, "in_comprehension_body", True):
             member_value = self.visit(node.elt)
-        if isinstance(member_value, AnyValue):
-            return TypedValue(typ)
-        else:
-            if typ is types.GeneratorType:
-                return GenericValue(
-                    typ, [member_value, KnownValue(None), KnownValue(None)]
-                )
-            return make_weak(GenericValue(typ, [member_value]))
+
+            if typ is set:
+                hashability = check_hashability(member_value, self)
+                if isinstance(hashability, CanAssignError):
+                    self._show_error_if_checking(
+                        node.elt,
+                        "Set member is not hashable",
+                        ErrorCode.unhashable_key,
+                        detail=str(hashability),
+                    )
+                    member_value = AnyValue(AnySource.error)
+
+        if typ is types.GeneratorType:
+            return GenericValue(typ, [member_value, KnownValue(None), KnownValue(None)])
+        return make_weak(GenericValue(typ, [member_value]))
 
     # Literals and displays
 
@@ -2456,6 +2474,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 all_pairs += new_pairs
                 continue
             key_val = self.visit(key_node)
+
+            hashability = check_hashability(key_val, self)
+            if isinstance(hashability, CanAssignError):
+                self._show_error_if_checking(
+                    key_node,
+                    "Dictionary key is not hashable",
+                    ErrorCode.unhashable_key,
+                    detail=str(hashability),
+                )
+
             all_pairs.append(KVPair(key_val, value_val))
             if not isinstance(key_val, KnownValue) or not isinstance(
                 value_val, KnownValue
@@ -2471,9 +2499,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             try:
                 already_exists = key in ret
             except TypeError as e:
-                self._show_error_if_checking(
-                    key_node, repr(e), ErrorCode.unhashable_key
-                )
                 continue
 
             if already_exists:
@@ -2548,18 +2573,36 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self, node: Union[ast.Set, ast.List, ast.Tuple], typ: type
     ) -> Value:
         elts = [self.visit(elt) for elt in node.elts]
-        return self._maybe_make_sequence(typ, elts, node)
+        return self._maybe_make_sequence(typ, elts, node, elt_nodes=node.elts)
 
     def _maybe_make_sequence(
-        self, typ: type, elts: Sequence[Value], node: ast.AST
+        self,
+        typ: type,
+        elts: Sequence[Value],
+        node: ast.AST,
+        elt_nodes: Optional[Sequence[ast.AST]] = None,
     ) -> Value:
+        if typ is set:
+            for i, elt in enumerate(elts):
+                hashability = check_hashability(elt, self)
+                if isinstance(hashability, CanAssignError):
+                    if elt_nodes:
+                        error_node = elt_nodes[i]
+                    else:
+                        error_node = node
+                    self._show_error_if_checking(
+                        error_node,
+                        "Set element is not hashable",
+                        ErrorCode.unhashable_key,
+                        detail=str(hashability),
+                    )
+
         if all_of_type(elts, KnownValue):
             vals = [elt.val for elt in elts]
             try:
                 obj = typ(vals)
-            except TypeError as e:
+            except TypeError:
                 # probably an unhashable type being included in a set
-                self._show_error_if_checking(node, repr(e), ErrorCode.unhashable_key)
                 return TypedValue(typ)
             return KnownValue(obj)
         else:
