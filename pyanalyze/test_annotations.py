@@ -1621,7 +1621,7 @@ class TestParamSpec(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
-    def test_args_kwargs(self):
+    def test_paramspec_args_kwargs(self):
         from typing import Callable, TypeVar
         from typing_extensions import Concatenate, ParamSpec
 
@@ -1645,8 +1645,6 @@ class TestParamSpec(TestNameCheckVisitorBase):
             func(1, "A")
             func(1, 2)  # E: incompatible_argument
 
-
-class TestCallable(TestNameCheckVisitorBase):
     @assert_passes()
     def test_compatibility(self):
         from typing import Callable, TypeVar
