@@ -879,6 +879,7 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(tpl[0], TypedValue(int))
             assert_is_value(tpl[-1], TypedValue(int))
             assert_is_value(tpl[:1], GenericValue(tuple, [TypedValue(int)]))
+            assert_is_value(tpl[:], GenericValue(tuple, [TypedValue(int)]))
             assert_is_value(tpl[i], TypedValue(int))
             assert_is_value(tpl[s], GenericValue(tuple, [TypedValue(int)]))
             assert_is_value(tpl[unannotated], AnyValue(AnySource.from_another))
@@ -938,6 +939,26 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
         def capybara(words: List[str]):
             sorted_indexes = sorted(range(len(words)), key=lambda i: words[i])
             return sorted_indexes
+
+    @assert_passes()
+    def test_subclasses(self):
+        import time
+
+        class MyList(list):
+            pass
+
+        class MyTuple(tuple):
+            pass
+
+        def capybara(t: time.struct_time, ml: MyList, mt: MyTuple):
+            assert_is_value(t[0], TypedValue(int))
+            assert_is_value(t[:], TypedValue(tuple))
+            assert_is_value(t[:6], TypedValue(tuple))
+
+            assert_is_value(ml[0], AnyValue(AnySource.generic_argument))
+            assert_is_value(ml[:], TypedValue(list))
+            assert_is_value(mt[0], AnyValue(AnySource.generic_argument))
+            assert_is_value(mt[:], TypedValue(tuple))
 
 
 class TestDictGetItem(TestNameCheckVisitorBase):
