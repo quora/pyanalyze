@@ -1110,3 +1110,14 @@ class TestOverload(TestNameCheckVisitorBase):
             f(1.0)  # E: incompatible_argument
             f(1, 1)  # E: incompatible_argument
             f(1, 1, 1)  # E: incompatible_call
+
+    @assert_passes()
+    def test_ellipsis_default(self):
+        from pyanalyze.extensions import assert_type
+
+        def wrapper():
+            from _pyanalyze_tests.overloaded import func
+
+            assert_type(func(1), int)
+            assert_type(func(1, 1), int)
+            assert_type(func("x"), float)

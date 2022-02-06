@@ -651,9 +651,6 @@ class TypeshedFinder:
     def _get_fq_name(self, obj: Any) -> Optional[str]:
         if obj is GeneratorType:
             return "typing.Generator"
-        # It claims to be io.open, but typeshed puts it in builtins
-        if obj is open:
-            return "builtins.open"
         if IS_PRE_38:
             if obj is Sized:
                 return "typing.Sized"
@@ -1067,7 +1064,14 @@ class TypeshedFinder:
                         return val
                     if info.ast.value:
                         return self._parse_expr(info.ast.value, module)
-                elif isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                elif isinstance(
+                    info.ast,
+                    (
+                        ast.FunctionDef,
+                        ast.AsyncFunctionDef,
+                        typeshed_client.OverloadedName,
+                    ),
+                ):
                     sig = self._get_signature_from_info(info, None, fq_name, module)
                     if sig is not None:
                         return CallableValue(sig)
