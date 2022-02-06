@@ -598,6 +598,8 @@ class Signature:
             bounds_map, used_any = can_assign_and_used_any(
                 param_typ, composite.value, ctx.can_assign_ctx
             )
+            if composite.value is param.default:
+                used_any = False
             if isinstance(bounds_map, CanAssignError):
                 if composite.value is param.default:
                     bounds_map = {}

@@ -608,3 +608,19 @@ class TestParamSpec(TestNameCheckVisitorBase):
                 GenericValue(contextlib._GeneratorContextManager, [TypedValue(str)]),
             )
             wrapped("x")  # E: incompatible_argument
+
+
+class TestOpen(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        import io
+        from typing import BinaryIO, IO, Any
+        from pyanalyze.extensions import assert_type
+
+        def capybara(buffering: int, mode: str):
+            assert_type(open("x"), io.TextIOWrapper)
+            assert_type(open("x", "r"), io.TextIOWrapper)
+            assert_type(open("x", "rb"), io.BufferedReader)
+            assert_type(open("x", "rb", buffering=0), io.FileIO)
+            assert_type(open("x", "rb", buffering=buffering), BinaryIO)
+            assert_type(open("x", mode, buffering=buffering), IO[Any])
