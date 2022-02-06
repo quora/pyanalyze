@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Pick up the signature of `open()` from typeshed correctly (#463)
 - Do not strip away generic parameters explicitly set to
   `Any` (#467)
 - Fix bug that led to some overloaded calls incorrectly
