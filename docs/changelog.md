@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Optimize type compatibility checks on large unions (#469)
 - Detect incorrect key types passed to `dict.__getitem__` (#468)
 - Pick up the signature of `open()` from typeshed correctly (#463)
 - Do not strip away generic parameters explicitly set to
