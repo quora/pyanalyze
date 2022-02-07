@@ -2582,23 +2582,64 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         node: ast.AST,
         elt_nodes: Optional[Sequence[ast.AST]] = None,
     ) -> Value:
-        if typ is set:
-            for i, elt in enumerate(elts):
-                hashability = check_hashability(elt, self)
-                if isinstance(hashability, CanAssignError):
-                    if elt_nodes:
-                        error_node = elt_nodes[i]
-                    else:
-                        error_node = node
-                    self._show_error_if_checking(
-                        error_node,
-                        "Set element is not hashable",
-                        ErrorCode.unhashable_key,
-                        detail=str(hashability),
+        values = []
+        has_unknown_value = False
+        for i, elt in enumerate(elts):
+            if isinstance(elt, _StarredValue):
+                vals = concrete_values_from_iterable(elt.value, self)
+                if isinstance(vals, CanAssignError):
+                    self.show_error(
+                        elt.node,
+                        f"{elt.value} is not iterable",
+                        ErrorCode.unsupported_operation,
+                        detail=str(vals),
                     )
+                    new_vals = [AnyValue(AnySource.error)]
+                    has_unknown_value = True
+                elif isinstance(vals, Value):
+                    # single value
+                    has_unknown_value = True
+                    new_vals = [vals]
+                else:
+                    new_vals = vals
+                if typ is set:
+                    for val in new_vals:
+                        hashability = check_hashability(val, self)
+                        if isinstance(hashability, CanAssignError):
+                            if elt_nodes:
+                                error_node = elt_nodes[i]
+                            else:
+                                error_node = node
+                            self._show_error_if_checking(
+                                error_node,
+                                "Set element is not hashable",
+                                ErrorCode.unhashable_key,
+                                detail=str(hashability),
+                            )
 
-        if all_of_type(elts, KnownValue):
-            vals = [elt.val for elt in elts]
+                values += new_vals
+            else:
+                if typ is set:
+                    hashability = check_hashability(elt, self)
+                    if isinstance(hashability, CanAssignError):
+                        if elt_nodes:
+                            error_node = elt_nodes[i]
+                        else:
+                            error_node = node
+                        self._show_error_if_checking(
+                            error_node,
+                            "Set element is not hashable",
+                            ErrorCode.unhashable_key,
+                            detail=str(hashability),
+                        )
+                values.append(elt)
+        if has_unknown_value:
+            arg = unite_and_simplify(
+                *values, limit=self.options.get_value_for(UnionSimplificationLimit)
+            )
+            return make_weak(GenericValue(typ, [arg]))
+        elif all_of_type(values, KnownValue):
+            vals = [elt.val for elt in values]
             try:
                 obj = typ(vals)
             except TypeError:
@@ -2606,35 +2647,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 return TypedValue(typ)
             return KnownValue(obj)
         else:
-            values = []
-            has_unknown_value = False
-            for elt in elts:
-                if isinstance(elt, _StarredValue):
-                    vals = concrete_values_from_iterable(elt.value, self)
-                    if isinstance(vals, CanAssignError):
-                        self.show_error(
-                            elt.node,
-                            f"{elt.value} is not iterable",
-                            ErrorCode.unsupported_operation,
-                            detail=str(vals),
-                        )
-                        values.append(AnyValue(AnySource.error))
-                        has_unknown_value = True
-                    elif isinstance(vals, Value):
-                        # single value
-                        has_unknown_value = True
-                        values.append(vals)
-                    else:
-                        values += vals
-                else:
-                    values.append(elt)
-            if has_unknown_value:
-                arg = unite_and_simplify(
-                    *values, limit=self.options.get_value_for(UnionSimplificationLimit)
-                )
-                return make_weak(GenericValue(typ, [arg]))
-            else:
-                return SequenceIncompleteValue(typ, values)
+            return SequenceIncompleteValue(typ, values)
 
     # Operations
 

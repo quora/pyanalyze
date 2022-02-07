@@ -360,9 +360,12 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             print([1, 2]())  # E: not_callable
 
     @assert_passes()
-    def test_list_in_set(self):
+    def test_set_display(self):
         def run():
             print({[]})  # E: unhashable_key
+
+            print({*[1, 2, 3], "a", "b"})
+            print({*[{}], "a", "b"})  # E: unhashable_key
 
     @assert_passes()
     def test_multiple_assignment_global(self):
