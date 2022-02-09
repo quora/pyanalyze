@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `inferred_any`, an extremely noisy error code
+  that triggers whenever the type checker infers something as `Any` (#471)
 - Optimize type compatibility checks on large unions (#469)
 - Detect incorrect key types passed to `dict.__getitem__` (#468)
 - Pick up the signature of `open()` from typeshed correctly (#463)
