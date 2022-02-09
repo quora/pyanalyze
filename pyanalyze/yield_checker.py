@@ -27,7 +27,6 @@ from typing import (
     List,
     Optional,
     Sequence,
-    TYPE_CHECKING,
     Tuple,
 )
 
@@ -37,6 +36,7 @@ from .functions import FunctionNode
 from .value import Value, KnownValue, UnboundMethodValue, UNINITIALIZED_VALUE
 from .analysis_lib import get_indentation, get_line_range_for_node
 from .node_visitor import Replacement
+from .stacked_scopes import VisitorState
 
 import pyanalyze
 
@@ -299,7 +299,7 @@ class YieldChecker:
                 self.show_unnecessary_yield_error(unused, node, current_statement)
 
     def _check_for_duplicate_yields(
-        self, node: ast.Yield, current_statement: ast.stmt
+        self, node: ast.Yield, current_statement: ast.AST
     ) -> None:
         if not isinstance(node.value, ast.Tuple) or len(node.value.elts) < 2:
             return
@@ -612,7 +612,9 @@ class YieldChecker:
         def is_available(name: str) -> bool:
             if name in self.used_varnames:
                 return False
-            value = self.visitor.scopes.get(name, node=None, state=None)
+            value = self.visitor.scopes.get(
+                name, node=None, state=VisitorState.check_names
+            )
             return value is UNINITIALIZED_VALUE
 
         varname = VarnameGenerator(is_available).get(node)
