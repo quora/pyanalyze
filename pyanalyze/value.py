@@ -1453,7 +1453,7 @@ class MultiValuedValue(Value):
 
     def __str__(self) -> str:
         if not self.vals:
-            return "NoReturn"
+            return "Never"
         literals: List[KnownValue] = []
         has_none = False
         others: List[Value] = []
@@ -1490,7 +1490,7 @@ class MultiValuedValue(Value):
 
 
 NO_RETURN_VALUE = MultiValuedValue([])
-"""The empty union, equivalent to ``typing.NoReturn``."""
+"""The empty union, equivalent to ``typing.Never``."""
 
 
 @dataclass(frozen=True)
