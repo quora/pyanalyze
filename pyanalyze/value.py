@@ -382,6 +382,26 @@ In the future, this should be replaced with instances of
 
 
 @dataclass(frozen=True)
+class VoidValue(Value):
+    """Dummy Value used as the inferred type of AST nodes that
+    do not represent expressions.
+
+    This is useful so that we can infer a Value for every AST node,
+    but notice if we unexpectedly use it like an actual value.
+
+    """
+
+    def __str__(self) -> str:
+        return "(void)"
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        return CanAssignError("Cannot assign to void")
+
+
+VOID = VoidValue()
+
+
+@dataclass(frozen=True)
 class UninitializedValue(Value):
     """Value for variables that have not been initialized.
 
