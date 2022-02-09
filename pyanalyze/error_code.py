@@ -92,6 +92,7 @@ class ErrorCode(enum.Enum):
     impossible_pattern = 74
     bad_match = 75
     bad_evaluator = 76
+    implicit_any = 77
 
 
 # Allow testing unannotated functions without too much fuss
@@ -100,6 +101,7 @@ DISABLED_IN_TESTS = {
     ErrorCode.missing_parameter_annotation,
     ErrorCode.suggested_return_type,
     ErrorCode.suggested_parameter_type,
+    ErrorCode.implicit_any,
 }
 
 
@@ -209,6 +211,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.impossible_pattern: "Pattern can never match",
     ErrorCode.bad_match: "Invalid type in match statement",
     ErrorCode.bad_evaluator: "Invalid code in type evaluator",
+    ErrorCode.implicit_any: "Value is inferred as Any",
 }
 
 
