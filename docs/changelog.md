@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix bug affecting type compatibility between
+  generics and literals (#473)
 - Add support for `typing.Never` and `typing_extensions.Never` (#472)
 - Add `inferred_any`, an extremely noisy error code
   that triggers whenever the type checker infers something as `Any` (#471)

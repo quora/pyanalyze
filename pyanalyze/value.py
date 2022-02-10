@@ -623,9 +623,11 @@ class TypedValue(Value):
             # enums, but they are ints at runtime.
             return self.can_assign_thrift_enum(other, ctx)
         elif isinstance(other, KnownValue):
-            if self_tobj.is_instance(other.val):
-                return {}
-            return self_tobj.can_assign(self, other, ctx)
+            can_assign = self_tobj.can_assign(self, other, ctx)
+            if isinstance(can_assign, CanAssignError):
+                if self_tobj.is_instance(other.val):
+                    return {}
+            return can_assign
         elif isinstance(other, TypedValue):
             return self_tobj.can_assign(self, other, ctx)
         elif isinstance(other, SubclassValue):
@@ -782,6 +784,7 @@ class GenericValue(TypedValue):
         return f"{stringify_object(self.typ)}[{args_str}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        original_other = other
         other = replace_known_sequence_value(other)
         if isinstance(other, KnownValue):
             other = TypedValue(type(other.val))
@@ -790,7 +793,7 @@ class GenericValue(TypedValue):
             # If we don't think it's a generic base, try super;
             # runtime isinstance() may disagree.
             if generic_args is None or len(self.args) != len(generic_args):
-                return super().can_assign(other, ctx)
+                return super().can_assign(original_other, ctx)
             bounds_maps = []
             for i, (my_arg, their_arg) in enumerate(zip(self.args, generic_args)):
                 can_assign = my_arg.can_assign(their_arg, ctx)
@@ -801,7 +804,7 @@ class GenericValue(TypedValue):
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_bounds_maps(bounds_maps)
 
-        return super().can_assign(other, ctx)
+        return super().can_assign(original_other, ctx)
 
     def maybe_specify_error(
         self, i: int, other: Value, error: CanAssignError, ctx: CanAssignContext
