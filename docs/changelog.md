@@ -14,7 +14,7 @@
   `Any` (#467)
 - Fix bug that led to some overloaded calls incorrectly
   resolving to `Any` (#462)
-- Support `__init__` and `__new__` signatures from typeshed (#429)
+- Support `__init__` and `__new__` signatures from typeshed (#430)
 - Fix incorrect type inferred for indexing operations on
   subclasses of `list` and `tuple` (#461)
 - Add plugin providing a precise type for `dict.get` calls (#460)
