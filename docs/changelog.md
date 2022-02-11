@@ -3,13 +3,19 @@
 ## Unreleased
 
 - Detect unhashable dict keys and set members in more places (#469)
+- Fix bug affecting type compatibility between
+  generics and literals (#474)
+- Add support for `typing.Never` and `typing_extensions.Never` (#472)
+- Add `inferred_any`, an extremely noisy error code
+  that triggers whenever the type checker infers something as `Any` (#471)
+- Optimize type compatibility checks on large unions (#469)
 - Detect incorrect key types passed to `dict.__getitem__` (#468)
 - Pick up the signature of `open()` from typeshed correctly (#463)
 - Do not strip away generic parameters explicitly set to
   `Any` (#467)
 - Fix bug that led to some overloaded calls incorrectly
   resolving to `Any` (#462)
-- Support `__init__` and `__new__` signatures from typeshed (#429)
+- Support `__init__` and `__new__` signatures from typeshed (#430)
 - Fix incorrect type inferred for indexing operations on
   subclasses of `list` and `tuple` (#461)
 - Add plugin providing a precise type for `dict.get` calls (#460)

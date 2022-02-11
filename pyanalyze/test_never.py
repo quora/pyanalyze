@@ -1,8 +1,28 @@
 # static analysis: ignore
-from .value import TypedValue
+from .value import NO_RETURN_VALUE, TypedValue
 from .implementation import assert_is_value
-from .test_node_visitor import assert_passes
+from .test_node_visitor import assert_passes, skip_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
+
+
+class TestAnnotations(TestNameCheckVisitorBase):
+    # TODO test typing_extensions.Never when it exists
+    @skip_before((3, 11))
+    @assert_passes()
+    def test_never(self):
+        from typing import Never
+
+        def capybara(n: Never, o: "Never"):
+            assert_is_value(n, NO_RETURN_VALUE)
+            assert_is_value(o, NO_RETURN_VALUE)
+
+    @assert_passes()
+    def test_typing_noreturn(self):
+        from typing import NoReturn
+
+        def capybara(n: NoReturn, o: "NoReturn"):
+            assert_is_value(n, NO_RETURN_VALUE)
+            assert_is_value(o, NO_RETURN_VALUE)
 
 
 class TestNoReturn(TestNameCheckVisitorBase):

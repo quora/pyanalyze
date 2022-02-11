@@ -382,6 +382,26 @@ In the future, this should be replaced with instances of
 
 
 @dataclass(frozen=True)
+class VoidValue(Value):
+    """Dummy Value used as the inferred type of AST nodes that
+    do not represent expressions.
+
+    This is useful so that we can infer a Value for every AST node,
+    but notice if we unexpectedly use it like an actual value.
+
+    """
+
+    def __str__(self) -> str:
+        return "(void)"
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        return CanAssignError("Cannot assign to void")
+
+
+VOID = VoidValue()
+
+
+@dataclass(frozen=True)
 class UninitializedValue(Value):
     """Value for variables that have not been initialized.
 
@@ -603,9 +623,11 @@ class TypedValue(Value):
             # enums, but they are ints at runtime.
             return self.can_assign_thrift_enum(other, ctx)
         elif isinstance(other, KnownValue):
-            if self_tobj.is_instance(other.val):
-                return {}
-            return self_tobj.can_assign(self, other, ctx)
+            can_assign = self_tobj.can_assign(self, other, ctx)
+            if isinstance(can_assign, CanAssignError):
+                if self_tobj.is_instance(other.val):
+                    return {}
+            return can_assign
         elif isinstance(other, TypedValue):
             return self_tobj.can_assign(self, other, ctx)
         elif isinstance(other, SubclassValue):
@@ -762,6 +784,7 @@ class GenericValue(TypedValue):
         return f"{stringify_object(self.typ)}[{args_str}]"
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        original_other = other
         other = replace_known_sequence_value(other)
         if isinstance(other, KnownValue):
             other = TypedValue(type(other.val))
@@ -770,7 +793,7 @@ class GenericValue(TypedValue):
             # If we don't think it's a generic base, try super;
             # runtime isinstance() may disagree.
             if generic_args is None or len(self.args) != len(generic_args):
-                return super().can_assign(other, ctx)
+                return super().can_assign(original_other, ctx)
             bounds_maps = []
             for i, (my_arg, their_arg) in enumerate(zip(self.args, generic_args)):
                 can_assign = my_arg.can_assign(their_arg, ctx)
@@ -781,7 +804,7 @@ class GenericValue(TypedValue):
                 return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_bounds_maps(bounds_maps)
 
-        return super().can_assign(other, ctx)
+        return super().can_assign(original_other, ctx)
 
     def maybe_specify_error(
         self, i: int, other: Value, error: CanAssignError, ctx: CanAssignContext
@@ -1323,6 +1346,9 @@ class MultiValuedValue(Value):
     raw_vals: InitVar[Iterable[Value]]
     vals: Tuple[Value, ...] = field(init=False)
     """The underlying values of the union."""
+    _known_subvals: Optional[Tuple[Set[Tuple[object, type]], Sequence[Value]]] = field(
+        init=False, repr=False, hash=False, compare=False
+    )
 
     def __post_init__(self, raw_vals: Iterable[Value]) -> None:
         object.__setattr__(
@@ -1330,9 +1356,33 @@ class MultiValuedValue(Value):
             "vals",
             tuple(chain.from_iterable(flatten_values(val) for val in raw_vals)),
         )
+        object.__setattr__(self, "_known_subvals", self._get_known_subvals())
+
+    def _get_known_subvals(
+        self,
+    ) -> Optional[Tuple[Set[Tuple[object, type]], Sequence[Value]]]:
+        # Not worth it for small unions
+        if len(self.vals) < 10:
+            return None
+        # Optimization for comparing Unions containing large unions of literals.
+        try:
+            # Include the type to avoid e.g. 1 and True matching
+            known_values = {
+                (subval.val, type(subval.val))
+                for subval in self.vals
+                if isinstance(subval, KnownValue)
+            }
+        except TypeError:
+            return None  # not hashable
+        else:
+            # Make remaining check not consider the KnownValues again
+            remaining_vals = [
+                subval for subval in self.vals if not isinstance(subval, KnownValue)
+            ]
+            return known_values, remaining_vals
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
-        if not self.vals:
+        if not self.vals or not typevars:
             return self
         return MultiValuedValue(
             [val.substitute_typevars(typevars) for val in self.vals]
@@ -1359,35 +1409,15 @@ class MultiValuedValue(Value):
             return {}
         else:
             my_vals = self.vals
-            # Optimization for large unions of literals. We could perhaps cache this set,
-            # but that's more complicated. Empirically this is already much faster.
-            # The number 20 is arbitrary. I noticed the bottleneck in production on a
-            # Union with nearly 500 values.
-            if isinstance(other, KnownValue) and len(my_vals) > 20:
+            if isinstance(other, KnownValue) and self._known_subvals is not None:
+                known_values, my_vals = self._known_subvals
                 try:
-                    # Include the type to avoid e.g. 1 and True matching
-                    known_values = {
-                        (subval.val, type(subval.val))
-                        for subval in my_vals
-                        if isinstance(subval, KnownValue)
-                    }
+                    is_present = (other.val, type(other.val)) in known_values
                 except TypeError:
                     pass  # not hashable
                 else:
-                    try:
-                        is_present = (other.val, type(other.val)) in known_values
-                    except TypeError:
-                        pass  # not hashable
-                    else:
-                        if is_present:
-                            return {}
-                        else:
-                            # Make remaining check not consider the KnownValues again
-                            my_vals = [
-                                subval
-                                for subval in my_vals
-                                if not isinstance(subval, KnownValue)
-                            ]
+                    if is_present:
+                        return {}
 
             bounds_maps = []
             errors = []
@@ -1426,7 +1456,7 @@ class MultiValuedValue(Value):
 
     def __str__(self) -> str:
         if not self.vals:
-            return "NoReturn"
+            return "Never"
         literals: List[KnownValue] = []
         has_none = False
         others: List[Value] = []
@@ -1463,7 +1493,7 @@ class MultiValuedValue(Value):
 
 
 NO_RETURN_VALUE = MultiValuedValue([])
-"""The empty union, equivalent to ``typing.NoReturn``."""
+"""The empty union, equivalent to ``typing.Never``."""
 
 
 @dataclass(frozen=True)

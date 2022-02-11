@@ -426,7 +426,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return _maybe_typed_value(val)
     elif val is None:
         return KnownValue(None)
-    elif is_typing_name(val, "NoReturn"):
+    elif is_typing_name(val, "NoReturn") or is_typing_name(val, "Never"):
         return NO_RETURN_VALUE
     elif is_typing_name(val, "Self"):
         return SelfTVV

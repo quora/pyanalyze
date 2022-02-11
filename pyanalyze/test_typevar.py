@@ -241,3 +241,15 @@ class TestSolve(TestNameCheckVisitorBase):
         def capybara(c: CallableT, u: UnionT) -> None:
             c(3)
             u(3)
+
+    @assert_passes()
+    def test_min_enum(self):
+        import enum
+
+        class E(enum.IntEnum):
+            a = 1
+            b = 2
+
+        def capybara():
+            m = min(E)
+            assert_is_value(m, TypedValue(E))

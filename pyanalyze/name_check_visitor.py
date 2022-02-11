@@ -149,6 +149,7 @@ from .functions import (
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
 from .value import (
+    VOID,
     AlwaysPresentExtension,
     AnnotatedValue,
     AnySource,
@@ -953,6 +954,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     _name_node_to_statement: Optional[Dict[ast.AST, Optional[ast.AST]]]
     import_name_to_node: Dict[str, Union[ast.Import, ast.ImportFrom]]
     expected_return_value: Optional[Value]
+    error_for_implicit_any: bool
 
     def __init__(
         self,
@@ -1043,6 +1045,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.imports_added = set()
         self.future_imports = set()  # active future imports in this file
         self.return_values = []
+        self.error_for_implicit_any = self.options.is_error_code_enabled(
+            ErrorCode.implicit_any
+        )
 
         self._name_node_to_statement = None
         # Cache the return values of functions within this file, so that we can use them to
@@ -1216,9 +1221,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         finally:
             self.node_context.contexts.pop()
         if ret is None:
-            ret = AnyValue(AnySource.inference)
+            ret = VOID
         if self.annotate:
             node.inferred_value = ret
+        if self.error_for_implicit_any:
+            for val in ret.walk_values():
+                if isinstance(val, AnyValue) and val.source is not AnySource.explicit:
+                    self._show_error_if_checking(
+                        node,
+                        f"Inferred value contains Any: {ret}",
+                        ErrorCode.implicit_any,
+                    )
         return ret
 
     def generic_visit(self, node: ast.AST) -> None:
