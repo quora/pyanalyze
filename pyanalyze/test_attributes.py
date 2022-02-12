@@ -257,6 +257,18 @@ class TestAttributes(TestNameCheckVisitorBase):
                 name = "x"
             assert_is_value(name, TypedValue(str) | KnownValue("x"))
 
+    @assert_passes()
+    def test_raising_prop(self):
+        class HasProp:
+            @property
+            def does_it_really(self) -> int:
+                raise Exception("fooled you")
+
+        has_prop = HasProp()
+
+        def capybara():
+            assert_is_value(has_prop.does_it_really, AnyValue(AnySource.inference))
+
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
     @assert_passes()

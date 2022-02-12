@@ -448,11 +448,15 @@ def _get_attribute_from_mro(
                     return typeshed_type, base_cls, False
 
             try:
+                base_dict = base_cls.__dict__
+            except Exception:
+                continue
+
+            try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.
-                annotations = base_cls.__dict__["__annotations__"]
+                annotations = base_dict["__annotations__"]
             except Exception:
-                # no __annotations__, or it's not a dict, or the attr isn't there
                 pass
             else:
                 attr_type = type_from_annotations(
@@ -460,13 +464,19 @@ def _get_attribute_from_mro(
                 )
                 if attr_type is not None:
                     return (attr_type, base_cls, False)
+
             try:
                 # Make sure we use only the object from this class, but do invoke
                 # the descriptor protocol with getattr.
-                base_cls.__dict__[ctx.attr]
-                return KnownValue(getattr(typ, ctx.attr)), base_cls, True
+                base_dict[ctx.attr]
             except Exception:
                 pass
+            else:
+                try:
+                    val = KnownValue(getattr(typ, ctx.attr))
+                except Exception:
+                    val = AnyValue(AnySource.inference)
+                return val, base_cls, True
 
             if not ctx.prefer_typeshed:
                 typeshed_type = ctx.get_attribute_from_typeshed(
@@ -483,8 +493,11 @@ def _get_attribute_from_mro(
         # Even if we didn't find it any __dict__, maybe getattr() finds it directly.
         try:
             return KnownValue(getattr(typ, ctx.attr)), typ, True
-        except Exception:
+        except AttributeError:
             pass
+        except Exception:
+            # It exists, but has a broken __getattr__ or something
+            return AnyValue(AnySource.inference), typ, True
 
     return UNINITIALIZED_VALUE, object, False
 

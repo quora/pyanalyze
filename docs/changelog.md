@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Do not treat attributes that raise an exception on access
+  as nonexistent (#481)
 - Improve detection of unhashable dict keys and set members (#469)
 - The `in` and `not in` operators always return 
   booleans (#480)
