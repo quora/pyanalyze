@@ -474,6 +474,19 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             assert_is_value(x, TypedValue(int))
 
     @assert_passes()
+    def test_binop_notimplemented(self):
+        from pyanalyze.extensions import assert_type
+
+        class Capybara:
+            def __add__(self, x: str) -> bool:
+                if not isinstance(x, str):
+                    return NotImplemented
+                return len(x) > 3
+
+        def pacarana():
+            assert_type(Capybara() + "x", bool)
+
+    @assert_passes()
     def test_global_sets_value(self):
         capybara = None
 
