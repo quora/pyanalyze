@@ -11,6 +11,7 @@ import abc
 from argparse import ArgumentParser
 import ast
 import enum
+import itertools
 from ast_decompiler import decompile
 import asyncio
 import builtins
@@ -222,6 +223,26 @@ BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.BitAnd: ("bitwise AND", "__and__", "__iand__", "__rand__"),
     ast.FloorDiv: ("floor division", "__floordiv__", "__ifloordiv__", "__rfloordiv__"),
     ast.MatMult: ("matrix multiplication", "__matmul__", "__imatmul__", "__rmatmul__"),
+}
+
+# Certain special methods are expected to return NotImplemented if they
+# can't handle a particular argument, so that the interpreter can
+# try some other call. To support thiis, such methods are allowed to
+# return NotImplemented, even if their return annotation says otherwise.
+# This is pieced together from the CPython source code, including:
+# - Methods defined as SLOT1BIN in Objects/typeobject.c
+# - Objects/abstract.c also does the binops
+# - Rich comparison in object.c and typeobject.c
+METHODS_ALLOWING_NOTIMPLEMENTED = {
+    *itertools.chain.from_iterable(BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD.values()),
+    "__eq__",
+    "__ne__",
+    "__lt__",
+    "__le__",
+    "__gt__",
+    "__ge__",
+    "__length_hint__",  # Objects/abstract.c
+    "__subclasshook__",  # Modules/_abc.c
 }
 
 UNARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
@@ -1573,6 +1594,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if not info.is_overload and not info.is_evaluated:
             self._set_name_in_scope(node.name, node, val)
 
+        if (
+            node.name in METHODS_ALLOWING_NOTIMPLEMENTED
+            and info.return_annotation is not None
+        ):
+            expected_return = info.return_annotation | KnownValue(NotImplemented)
+        else:
+            expected_return = info.return_annotation
+
         with self.asynq_checker.set_func_name(
             node.name, async_kind=info.async_kind, is_classmethod=info.is_classmethod
         ), qcore.override(self, "yield_checker", YieldChecker(self)), qcore.override(
@@ -1582,7 +1611,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         ), qcore.override(
             self, "current_function", potential_function
         ), qcore.override(
-            self, "expected_return_value", info.return_annotation
+            self, "expected_return_value", expected_return
         ):
             result = self._visit_function_body(info)
 
@@ -2754,7 +2783,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         else:
             constraint = NULL_CONSTRAINT
-        if isinstance(op, (ast.Is, ast.IsNot)):
+        # is, is not, in, and not in always return a boolean, but the other
+        # comparisons may return arbitrary objects. We should get the
+        # return value out of the dunder methods, but we don't do that yet.
+        if isinstance(op, (ast.Is, ast.IsNot, ast.In, ast.NotIn)):
             val = TypedValue(bool)
         else:
             val = AnyValue(AnySource.inference)

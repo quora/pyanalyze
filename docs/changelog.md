@@ -3,6 +3,10 @@
 ## Unreleased
 
 - Improve detection of unhashable dict keys and set members (#469)
+- The `in` and `not in` operators always return 
+  booleans (#480)
+- Allow `NotImplemented` to be returned from special
+  methods that support it (#479)
 - Fix bug affecting type compatibility between
   generics and literals (#474)
 - Add support for `typing.Never` and `typing_extensions.Never` (#472)
