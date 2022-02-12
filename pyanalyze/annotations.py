@@ -30,7 +30,7 @@ import typing_inspect
 import qcore
 import ast
 import builtins
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Hashable
 from typing import (
     Any,
     Container,
@@ -91,6 +91,7 @@ from .value import (
     TypedDictValue,
     NewTypeValue,
     TypeVarValue,
+    _HashableValue,
 )
 
 if TYPE_CHECKING:
@@ -1119,6 +1120,8 @@ def _value_of_origin_args(
 def _maybe_typed_value(val: Union[type, str]) -> Value:
     if val is type(None):
         return KnownValue(None)
+    elif val is Hashable:
+        return _HashableValue(val)
     return TypedValue(val)
 
 
