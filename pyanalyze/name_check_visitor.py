@@ -2727,7 +2727,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         else:
             constraint = NULL_CONSTRAINT
-        if isinstance(op, (ast.Is, ast.IsNot)):
+        # is, is not, in, and not in always return a boolean, but the other
+        # comparisons may return arbitrary objects. We should get the
+        # return value out of the dunder methods, but we don't do that yet.
+        if isinstance(op, (ast.Is, ast.IsNot, ast.In, ast.NotIn)):
             val = TypedValue(bool)
         else:
             val = AnyValue(AnySource.inference)

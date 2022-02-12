@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The `in` and `not in` operators always return 
+  booleans (#480)
 - Allow `NotImplemented` to be returned from special
   methods that support it (#479)
 - Fix bug affecting type compatibility between
