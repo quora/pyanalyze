@@ -1,6 +1,13 @@
 # static analysis: ignore
 from .implementation import assert_is_value
-from .value import AnySource, AnyValue, KnownValue, MultiValuedValue, TypedValue
+from .value import (
+    AnySource,
+    AnyValue,
+    KnownValue,
+    MultiValuedValue,
+    TypedValue,
+    AnnotatedValue,
+)
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_fails, assert_passes, skip_before
 from .error_code import ErrorCode
@@ -253,3 +260,19 @@ class TestSolve(TestNameCheckVisitorBase):
         def capybara():
             m = min(E)
             assert_is_value(m, TypedValue(E))
+
+
+class TestAnnotated(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_preserve(self):
+        from typing_extensions import Annotated
+        from typing import TypeVar
+
+        T = TypeVar("T")
+
+        def f(x: T) -> T:
+            return x
+
+        def caller(x: Annotated[int, 42]):
+            assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue(42)]))
+            assert_is_value(f(x), AnnotatedValue(TypedValue(int), [KnownValue(42)]))
