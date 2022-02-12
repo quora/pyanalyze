@@ -109,8 +109,8 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
         from asynq import asynq, ConstFuture
 
         @asynq()
-        def bad_async_fn():
-            return ConstFuture(3)  # E: task_needs_yield
+        def bad_async_fn():  # E: task_needs_yield
+            return ConstFuture(3)
 
     @assert_passes()
     def test_async(self):
@@ -121,8 +121,8 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
             pass
 
         @asynq()
-        def bad_async_fn():
-            return async_fn.asynq()  # E: task_needs_yield
+        def bad_async_fn():  # E: task_needs_yield
+            return async_fn.asynq()
 
     @assert_passes()
     def test_not_yielded(self):
@@ -130,8 +130,8 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
         from pyanalyze.tests import async_fn
 
         @asynq()
-        def capybara(oid):
-            return async_fn.asynq(oid)  # E: task_needs_yield
+        def capybara(oid):  # E: task_needs_yield
+            return async_fn.asynq(oid)
 
     def test_not_yielded_replacement(self):
         self.assert_is_changed(
