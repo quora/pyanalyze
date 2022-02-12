@@ -166,19 +166,6 @@ def test_annotation():
 
 class TestNameCheckVisitor(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_list_return(self):
-        from typing import List
-
-        class A:
-            pass
-
-        def func() -> List[A]:
-            return [A]  # E: incompatible_return_value
-
-        def func() -> A:
-            return A  # E: incompatible_return_value
-
-    @assert_passes()
     def test_known_ordered(self):
         from typing_extensions import OrderedDict
 
@@ -703,51 +690,6 @@ class TestSubclassValue(TestNameCheckVisitorBase):
 
 class TestReturn(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_type_inference(self):
-        from asynq import asynq, async_proxy, AsyncTask, ConstFuture, FutureBase
-
-        def returns_3():
-            return 3
-
-        @asynq(pure=True)
-        def pure_async_fn():
-            return 4
-
-        @asynq()
-        def async_fn():
-            return 3
-
-        class WithAProperty(object):
-            @property
-            def this_is_one(self):
-                return str(5)
-
-        @async_proxy(pure=True)
-        def pure_async_proxy(oid):
-            return ConstFuture(oid)
-
-        @async_proxy()
-        def impure_async_proxy():
-            return ConstFuture(3)
-
-        def capybara(oid):
-            assert_is_value(returns_3(), KnownValue(3))
-            assert_is_value(
-                pure_async_fn(), AsyncTaskIncompleteValue(AsyncTask, KnownValue(4))
-            )
-            assert_is_value(async_fn(), KnownValue(3))
-            assert_is_value(
-                async_fn.asynq(), AsyncTaskIncompleteValue(AsyncTask, KnownValue(3))
-            )
-            assert_is_value(WithAProperty().this_is_one, TypedValue(str))
-            assert_is_value(pure_async_proxy(oid), AnyValue(AnySource.unannotated))
-            assert_is_value(impure_async_proxy(), AnyValue(AnySource.unannotated))
-            assert_is_value(
-                impure_async_proxy.asynq(),
-                AsyncTaskIncompleteValue(FutureBase, AnyValue(AnySource.unannotated)),
-            )
-
-    @assert_passes()
     def test_missing_return(self):
         from abc import abstractmethod
         from typing_extensions import NoReturn
@@ -777,91 +719,18 @@ class TestReturn(TestNameCheckVisitorBase):
         def no_return_returns() -> NoReturn:
             return 42  # E: no_return_may_return
 
-    # Can't use assert_passes for those two because the location of the error
-    # changes between 3.7 and 3.8. Maybe we should hack the error code to
-    # always show the error for a function on the def line, not the decorator line.
-    @assert_fails(ErrorCode.missing_return)
-    def test_asynq_missing_return(self):
-        from asynq import asynq
-
-        @asynq()  # E: missing_return
-        def f() -> int:
-            yield f.asynq()
-
-    @assert_fails(ErrorCode.missing_return)
-    def test_asynq_missing_branch(self):
-        from asynq import asynq
-
-        @asynq()  # E: missing_return
-        def capybara(cond: bool) -> int:
-            if cond:
-                return 3
-            yield capybara.asynq(False)
-
-
-class TestUnwrapYield(TestNameCheckVisitorBase):
     @assert_passes()
-    def test(self):
-        from asynq import asynq
-        from typing import Sequence
-        from typing_extensions import Literal
+    def test_list_return(self):
+        from typing import List
 
-        @asynq()
-        def async_fn(n):
-            return "async_fn"
+        class A:
+            pass
 
-        @asynq()
-        def square(n):
-            return int(n * n)
+        def func() -> List[A]:
+            return [A]  # E: incompatible_return_value
 
-        class Capybara(object):
-            @asynq()
-            def async_method(self):
-                return "capybara"
-
-        @asynq()
-        def caller(ints: Sequence[Literal[0, 1, 2]]):
-            val1 = yield async_fn.asynq(1)
-            assert_is_value(val1, KnownValue("async_fn"))
-            val2 = yield square.asynq(3)
-            assert_is_value(val2, TypedValue(int))
-
-            val3, val4 = yield async_fn.asynq(1), async_fn.asynq(2)
-            assert_is_value(val3, KnownValue("async_fn"))
-            assert_is_value(val4, KnownValue("async_fn"))
-
-            val5 = yield Capybara().async_method.asynq()
-            assert_is_value(val5, KnownValue("capybara"))
-
-            vals1 = yield [square.asynq(1), square.asynq(2), square.asynq(3)]
-            assert_is_value(
-                vals1,
-                SequenceIncompleteValue(
-                    list, [TypedValue(int), TypedValue(int), TypedValue(int)]
-                ),
-            )
-
-            vals2 = yield [square.asynq(i) for i in ints]
-            for val in vals2:
-                assert_is_value(val, TypedValue(int))
-
-            vals3 = yield {1: square.asynq(1)}
-            assert_is_value(
-                vals3,
-                DictIncompleteValue(dict, [KVPair(KnownValue(1), TypedValue(int))]),
-            )
-
-            vals4 = yield {i: square.asynq(i) for i in ints}
-            assert_is_value(
-                vals4,
-                GenericValue(
-                    dict,
-                    [
-                        MultiValuedValue([KnownValue(0), KnownValue(1), KnownValue(2)]),
-                        TypedValue(int),
-                    ],
-                ),
-            )
+        def func() -> A:
+            return A  # E: incompatible_return_value
 
 
 class TestYieldFrom(TestNameCheckVisitorBase):
@@ -1493,69 +1362,6 @@ class TestSubscripting(TestNameCheckVisitorBase):
             return [r["pk"] for r in [*min_pks, *max_pks]]
 
 
-class TestPython3Compatibility(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_bytes_and_text(self):
-        def capybara():
-            return b"foo" + "bar"  # E: unsupported_operation
-
-    @assert_passes()
-    def test_text_and_bytes(self):
-        def capybara():
-            return "foo" + b"bar"  # E: unsupported_operation
-
-
-class TestTaskNeedsYield(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.task_needs_yield)
-    def test_constfuture(self):
-        from asynq import asynq, ConstFuture
-
-        @asynq()
-        def bad_async_fn():
-            return ConstFuture(3)
-
-    @assert_fails(ErrorCode.task_needs_yield)
-    def test_async(self):
-        from asynq import asynq
-
-        @asynq()
-        def async_fn():
-            pass
-
-        @asynq()
-        def bad_async_fn():
-            return async_fn.asynq()
-
-    @assert_fails(ErrorCode.task_needs_yield)
-    def test_not_yielded(self):
-        from asynq import asynq
-        from pyanalyze.tests import async_fn
-
-        @asynq()
-        def capybara(oid):
-            return async_fn.asynq(oid)
-
-    def test_not_yielded_replacement(self):
-        self.assert_is_changed(
-            """
-from asynq import asynq
-from pyanalyze.tests import async_fn
-
-@asynq()
-def capybara(oid):
-    async_fn.asynq(oid)
-""",
-            """
-from asynq import asynq
-from pyanalyze.tests import async_fn
-
-@asynq()
-def capybara(oid):
-    yield async_fn.asynq(oid)
-""",
-        )
-
-
 class TestNonlocal(TestNameCheckVisitorBase):
     @assert_passes()
     def test_nonlocal(self):
@@ -1642,27 +1448,6 @@ def test_get_task_cls():
     assert AsyncTask is _get_task_cls(autogenerated)
     assert AsyncTask is _get_task_cls(l0cached_async_fn)
     assert AsyncTask is _get_task_cls(PropertyObject(1).l0cached_async_method)
-
-
-class TestBadAsyncYield(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_const_future(self):
-        from asynq import asynq, ConstFuture, FutureBase
-
-        @asynq()
-        def capybara(condition):
-            yield FutureBase()
-            val = yield ConstFuture(3)
-            assert_is_value(val, KnownValue(3))
-            val2 = yield None
-            assert_is_value(val2, KnownValue(None))
-
-            if condition:
-                task = ConstFuture(4)
-            else:
-                task = capybara.asynq(True)
-            val3 = yield task
-            assert_is_value(val3, KnownValue(4) | AnyValue(AnySource.inference))
 
 
 class TestUnpacking(TestNameCheckVisitorBase):
