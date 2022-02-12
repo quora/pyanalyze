@@ -104,15 +104,15 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
 
 
 class TestTaskNeedsYield(TestNameCheckVisitorBase):
-    @assert_passes()
+    @assert_fails(ErrorCode.task_needs_yield)
     def test_constfuture(self):
         from asynq import asynq, ConstFuture
 
         @asynq()
-        def bad_async_fn():  # E: task_needs_yield
+        def bad_async_fn():
             return ConstFuture(3)
 
-    @assert_passes()
+    @assert_fails(ErrorCode.task_needs_yield)
     def test_async(self):
         from asynq import asynq
 
@@ -121,16 +121,16 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
             pass
 
         @asynq()
-        def bad_async_fn():  # E: task_needs_yield
+        def bad_async_fn():
             return async_fn.asynq()
 
-    @assert_passes()
+    @assert_fails(ErrorCode.task_needs_yield)
     def test_not_yielded(self):
         from asynq import asynq
         from pyanalyze.tests import async_fn
 
         @asynq()
-        def capybara(oid):  # E: task_needs_yield
+        def capybara(oid):
             return async_fn.asynq(oid)
 
     def test_not_yielded_replacement(self):
