@@ -195,13 +195,13 @@ class TestAnnotations(TestNameCheckVisitorBase):
             def static(x: "Caviidae"):
                 assert_is_value(x, TypedValue(Caviidae))
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_incompatible_annotations(self):
         def capybara(x: int) -> None:
             pass
 
         def kerodon():
-            capybara("not an int")
+            capybara("not an int")  # E: incompatible_argument
 
     @assert_passes()
     def test_incompatible_return_value(self):
@@ -249,9 +249,9 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def g():
             pass
 
-    @assert_fails(ErrorCode.incompatible_default)
+    @assert_passes()
     def test_incompatible_default(self):
-        def capybara(x: int = None) -> None:
+        def capybara(x: int = None) -> None:  # E: incompatible_default
             pass
 
     @assert_passes()
@@ -306,10 +306,10 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(y, AnyValue(AnySource.unannotated))
             assert_is_value(x, TypedValue(int))
 
-    @assert_fails(ErrorCode.incompatible_assignment)
+    @assert_passes()
     def test_incompatible_annassign(self):
         def capybara(y: str):
-            x: int = y
+            x: int = y  # E: incompatible_assignment
 
     @assert_passes()
     def test_typing_tuples(self):
@@ -456,13 +456,13 @@ class TestAnnotations(TestNameCheckVisitorBase):
     def test_future_annotations(self):
         self.assert_passes(
             """
-from __future__ import annotations
-from typing import List
+            from __future__ import annotations
+            from typing import List
 
-def f(x: int, y: List[str]):
-    assert_is_value(x, TypedValue(int))
-    assert_is_value(y, GenericValue(list, [TypedValue(str)]))
-"""
+            def f(x: int, y: List[str]):
+                assert_is_value(x, TypedValue(int))
+                assert_is_value(y, GenericValue(list, [TypedValue(str)]))
+            """
         )
 
     @assert_passes()
@@ -557,7 +557,7 @@ def f(x: int, y: List[str]):
             )
 
     @skip_before((3, 8))
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_initvar(self):
         from dataclasses import dataclass, InitVar
 
@@ -566,7 +566,7 @@ def f(x: int, y: List[str]):
             x: InitVar[str]
 
         def f():
-            Capybara(x=3)
+            Capybara(x=3)  # E: incompatible_argument
 
     @assert_passes()
     def test_classvar(self):

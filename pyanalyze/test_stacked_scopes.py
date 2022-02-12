@@ -629,13 +629,13 @@ class TestUnusedVariableComprehension(TestNameCheckVisitorBase):
     def test_replacement(self):
         self.assert_is_changed(
             """
-def capybara():
-    return [None for i in range(10)]
-""",
+            def capybara():
+                return [None for i in range(10)]
+            """,
             """
-def capybara():
-    return [None for _ in range(10)]
-""",
+            def capybara():
+                return [None for _ in range(10)]
+            """,
         )
 
 

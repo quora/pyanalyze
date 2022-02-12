@@ -875,22 +875,6 @@ class TestAllowCall(TestNameCheckVisitorBase):
             s.encode("not an encoding")  # E: incompatible_call
 
 
-class TestAnnotated(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_preserve(self):
-        from typing_extensions import Annotated
-        from typing import TypeVar
-
-        T = TypeVar("T")
-
-        def f(x: T) -> T:
-            return x
-
-        def caller(x: Annotated[int, 42]):
-            assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue(42)]))
-            assert_is_value(f(x), AnnotatedValue(TypedValue(int), [KnownValue(42)]))
-
-
 class TestOverload(TestNameCheckVisitorBase):
     @assert_passes()
     def test_overloaded_impl(self):

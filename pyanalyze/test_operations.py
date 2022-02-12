@@ -191,3 +191,15 @@ class TestCompare(TestNameCheckVisitorBase):
             if 1 < i < 3 != x:
                 assert_is_value(i, KnownValue(2))
                 assert_is_value(x, KnownValue(4))
+
+
+class TestAdd(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_bytes_and_text(self):
+        def capybara():
+            return b"foo" + "bar"  # E: unsupported_operation
+
+    @assert_passes()
+    def test_text_and_bytes(self):
+        def capybara():
+            return "foo" + b"bar"  # E: unsupported_operation
