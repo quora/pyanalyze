@@ -1084,6 +1084,14 @@ class TestDictGetItem(TestNameCheckVisitorBase):
             untyped[[]]  # E: unhashable_key
             dct[1]  # E: incompatible_argument
 
+    @assert_passes()
+    def test_type_as_key(self):
+        from typing import Type
+
+        def capybara(d: dict, t: Type[int]):
+            d[int]
+            d[t]
+
 
 class TestDictSetItem(TestNameCheckVisitorBase):
     @assert_passes()

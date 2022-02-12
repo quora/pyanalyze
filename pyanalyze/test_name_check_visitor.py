@@ -1906,12 +1906,7 @@ class TestUnpacking(TestNameCheckVisitorBase):
             )
 
             z = [1, *(2, 3)]
-            assert_is_value(
-                z,
-                SequenceIncompleteValue(
-                    list, [KnownValue(1), KnownValue(2), KnownValue(3)]
-                ),
-            )
+            assert_is_value(z, KnownValue([1, 2, 3]))
 
     @assert_passes()
     def test_not_iterable(self):

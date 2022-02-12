@@ -87,7 +87,10 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
             )
             ints = [i async for i in x]
             # TODO should be list[int] but we lose the type argument somewhere
-            assert_is_value(ints, TypedValue(list))
+            assert_is_value(
+                ints,
+                make_weak(GenericValue(list, [AnyValue(AnySource.generic_argument)])),
+            )
 
     @assert_passes()
     def test_bad_async_comprehension(self):

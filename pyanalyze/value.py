@@ -631,12 +631,8 @@ class TypedValue(Value):
         elif isinstance(other, TypedValue):
             return self_tobj.can_assign(self, other, ctx)
         elif isinstance(other, SubclassValue):
-            if (
-                isinstance(other.typ, TypedValue)
-                and isinstance(self.typ, type)
-                and safe_isinstance(other.typ.typ, self.typ)
-            ):
-                return {}
+            if isinstance(other.typ, TypedValue):
+                return self_tobj.can_assign(self, other, ctx)
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):
                 return {}
         elif isinstance(other, UnboundMethodValue):
@@ -1269,6 +1265,14 @@ class SubclassValue(Value):
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return self.make(self.typ.substitute_typevars(typevars), exactly=self.exactly)
+
+    def get_type_object(
+        self, ctx: CanAssignContext
+    ) -> "pyanalyze.type_object.TypeObject":
+        if isinstance(self.typ, TypedValue) and safe_isinstance(self.typ.typ, type):
+            return ctx.make_type_object(type(self.typ.typ))
+        # TODO synthetic types
+        return pyanalyze.type_object.TypeObject(object)
 
     def walk_values(self) -> Iterable["Value"]:
         yield self

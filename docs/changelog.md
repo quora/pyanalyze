@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Detect unhashable dict keys and set members in more places (#469)
+- Improve detection of unhashable dict keys and set members (#469)
 - Fix bug affecting type compatibility between
   generics and literals (#474)
 - Add support for `typing.Never` and `typing_extensions.Never` (#472)
