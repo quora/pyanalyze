@@ -2300,7 +2300,28 @@ class HashableProto(Protocol):
         raise NotImplementedError
 
 
-HashableProtoValue = TypedValue(HashableProto)
+class _HashableValue(TypedValue):
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        # Protocol doesn't deal well with type.__hash__ at the moment, so to make
+        # sure types are recognized as hashable, we use this custom object.
+        if isinstance(other, SubclassValue):
+            return {}
+        elif isinstance(other, TypedValue) and other.typ is type:
+            return {}
+        # And that means we also get to use this more direct check for KnownValue
+        elif isinstance(other, KnownValue):
+            try:
+                hash(other.val)
+            except Exception as e:
+                return CanAssignError(
+                    f"{other.val!r} is not hashable", children=[CanAssignError(repr(e))]
+                )
+            else:
+                return {}
+        return super().can_assign(other, ctx)
+
+
+HashableProtoValue = _HashableValue(HashableProto)
 
 
 def check_hashability(value: Value, ctx: CanAssignContext) -> Optional[CanAssignError]:
@@ -2309,15 +2330,6 @@ def check_hashability(value: Value, ctx: CanAssignContext) -> Optional[CanAssign
     Return None if it is hashable, otherwise a CanAssignError.
 
     """
-    if isinstance(value, KnownValue):
-        try:
-            hash(value.val)
-        except Exception as e:
-            return CanAssignError(
-                f"{value.val!r} is not hashable", children=[CanAssignError(repr(e))]
-            )
-        else:
-            return None
     can_assign = HashableProtoValue.can_assign(value, ctx)
     if isinstance(can_assign, CanAssignError):
         return can_assign
