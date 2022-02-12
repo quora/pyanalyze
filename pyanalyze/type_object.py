@@ -16,6 +16,7 @@ from .value import (
     CanAssignContext,
     CanAssignError,
     KnownValue,
+    SubclassValue,
     TypedValue,
     Value,
     stringify_object,
@@ -96,7 +97,7 @@ class TypeObject:
     def can_assign(
         self,
         self_val: Value,
-        other_val: Union[KnownValue, TypedValue],
+        other_val: Union[KnownValue, TypedValue, SubclassValue],
         ctx: CanAssignContext,
     ) -> CanAssign:
         other = other_val.get_type_object(ctx)
@@ -157,18 +158,22 @@ class TypeObject:
             expected = ctx.get_attribute_from_value(
                 self_val, member, prefer_typeshed=True
             )
-            # For __call__, we check compatiiblity with the other object itself.
+            # For __call__, we check compatibility with the other object itself.
             if member == "__call__":
                 actual = other_val
             else:
                 actual = ctx.get_attribute_from_value(other_val, member)
             if actual is UNINITIALIZED_VALUE:
-                return CanAssignError(f"{other_val} has no attribute {member!r}")
-            can_assign = expected.can_assign(actual, ctx)
+                can_assign = CanAssignError(f"{other_val} has no attribute {member!r}")
+            else:
+                can_assign = expected.can_assign(actual, ctx)
+                if isinstance(can_assign, CanAssignError):
+                    can_assign = CanAssignError(
+                        f"Value of protocol member {member!r} conflicts", [can_assign]
+                    )
+
             if isinstance(can_assign, CanAssignError):
-                return CanAssignError(
-                    f"Value of protocol member {member!r} conflicts", [can_assign]
-                )
+                return can_assign
             bounds_maps.append(can_assign)
         return unify_bounds_maps(bounds_maps)
 

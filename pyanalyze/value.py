@@ -631,12 +631,8 @@ class TypedValue(Value):
         elif isinstance(other, TypedValue):
             return self_tobj.can_assign(self, other, ctx)
         elif isinstance(other, SubclassValue):
-            if (
-                isinstance(other.typ, TypedValue)
-                and isinstance(self.typ, type)
-                and safe_isinstance(other.typ.typ, self.typ)
-            ):
-                return {}
+            if isinstance(other.typ, TypedValue):
+                return self_tobj.can_assign(self, other, ctx)
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):
                 return {}
         elif isinstance(other, UnboundMethodValue):
@@ -1269,6 +1265,14 @@ class SubclassValue(Value):
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return self.make(self.typ.substitute_typevars(typevars), exactly=self.exactly)
+
+    def get_type_object(
+        self, ctx: CanAssignContext
+    ) -> "pyanalyze.type_object.TypeObject":
+        if isinstance(self.typ, TypedValue) and safe_isinstance(self.typ.typ, type):
+            return ctx.make_type_object(type(self.typ.typ))
+        # TODO synthetic types
+        return pyanalyze.type_object.TypeObject(object)
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -2289,6 +2293,47 @@ def kv_pairs_from_mapping(
         key_type = can_assign.get(K, AnyValue(AnySource.generic_argument))
         value_type = can_assign.get(V, AnyValue(AnySource.generic_argument))
         return [KVPair(key_type, value_type, is_many=True)]
+
+
+class HashableProto(Protocol):
+    def __hash__(self) -> int:
+        raise NotImplementedError
+
+
+class _HashableValue(TypedValue):
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        # Protocol doesn't deal well with type.__hash__ at the moment, so to make
+        # sure types are recognized as hashable, we use this custom object.
+        if isinstance(other, SubclassValue):
+            return {}
+        elif isinstance(other, TypedValue) and other.typ is type:
+            return {}
+        # And that means we also get to use this more direct check for KnownValue
+        elif isinstance(other, KnownValue):
+            try:
+                hash(other.val)
+            except Exception as e:
+                return CanAssignError(
+                    f"{other.val!r} is not hashable", children=[CanAssignError(repr(e))]
+                )
+            else:
+                return {}
+        return super().can_assign(other, ctx)
+
+
+HashableProtoValue = _HashableValue(HashableProto)
+
+
+def check_hashability(value: Value, ctx: CanAssignContext) -> Optional[CanAssignError]:
+    """Check whether a value is hashable.
+
+    Return None if it is hashable, otherwise a CanAssignError.
+
+    """
+    can_assign = HashableProtoValue.can_assign(value, ctx)
+    if isinstance(can_assign, CanAssignError):
+        return can_assign
+    return None
 
 
 def unpack_values(

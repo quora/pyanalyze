@@ -673,7 +673,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             b: str
             c: NotRequired[str]
 
-        def capybara(td: TD, s: str, d: Dict[str, int]):
+        def capybara(td: TD, s: str, d: Dict[str, int], untyped: dict):
             assert_is_value(td.get("a"), TypedValue(int))
             assert_is_value(td.get("c"), TypedValue(str) | KnownValue(None))
             assert_is_value(td.get("c", 1), TypedValue(str) | KnownValue(1))
@@ -693,6 +693,8 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(d.get("x"), TypedValue(int) | KnownValue(None))
             assert_is_value(d.get(s), TypedValue(int) | KnownValue(None))
             d.get(1)  # E: incompatible_argument
+
+            untyped.get([])  # E: unhashable_key
 
     @assert_passes()
     def test_setdefault(self):
@@ -1069,6 +1071,7 @@ class TestDictGetItem(TestNameCheckVisitorBase):
             dct: Dict[str, int],
             rev: ReversedDict[str, int],
             nd: NormalDict[int, str],
+            untyped: dict,
         ):
             d = {1: 2}
             assert_is_value(d[1], KnownValue(2))
@@ -1078,7 +1081,16 @@ class TestDictGetItem(TestNameCheckVisitorBase):
             assert_is_value(nd[1], TypedValue(str))
             assert_is_value(rev[1], TypedValue(str))
 
+            untyped[[]]  # E: unhashable_key
             dct[1]  # E: incompatible_argument
+
+    @assert_passes()
+    def test_type_as_key(self):
+        from typing import Type
+
+        def capybara(d: dict, t: Type[int]):
+            d[int]
+            d[t]
 
 
 class TestDictSetItem(TestNameCheckVisitorBase):
@@ -1148,9 +1160,11 @@ class TestDictSetItem(TestNameCheckVisitorBase):
     def test_bad_key_type(self):
         from typing import Dict
 
-        def capybara() -> None:
+        def capybara(untyped: dict) -> None:
             dct: Dict[str, int] = {}
             dct[1] = 1  # E: incompatible_argument
+
+            untyped[[]] = 1  # E: unhashable_key
 
     @assert_passes()
     def test_bad_value_type(self):

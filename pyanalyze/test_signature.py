@@ -11,6 +11,7 @@ from .value import (
     SequenceIncompleteValue,
     TypedDictValue,
     TypedValue,
+    make_weak,
 )
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -495,7 +496,10 @@ class TestCalls(TestNameCheckVisitorBase):
     def test_typ_call(self):
         def run(elts):
             lst = [x for x in elts]
-            assert_is_value(lst, TypedValue(list))
+            assert_is_value(
+                lst,
+                make_weak(GenericValue(list, [AnyValue(AnySource.generic_argument)])),
+            )
             lst()
 
     @assert_passes()

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Improve detection of unhashable dict keys and set members (#469)
 - The `in` and `not in` operators always return 
   booleans (#480)
 - Allow `NotImplemented` to be returned from special

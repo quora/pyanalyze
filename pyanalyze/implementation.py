@@ -47,6 +47,7 @@ from .value import (
     KNOWN_MUTABLE_TYPES,
     Value,
     WeakExtension,
+    check_hashability,
     concrete_values_from_iterable,
     kv_pairs_from_mapping,
     make_weak,
@@ -474,9 +475,25 @@ def _typeddict_setitem(
             )
 
 
+def _check_dict_key_hashability(key: Value, ctx: CallContext, arg: str) -> bool:
+    hashability = check_hashability(key, ctx.visitor)
+    if isinstance(hashability, CanAssignError):
+        ctx.show_error(
+            "Dictionary key is not hashable",
+            ErrorCode.unhashable_key,
+            arg=arg,
+            detail=str(hashability),
+        )
+        return False
+    return True
+
+
 def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
     varname = ctx.varname_for_arg("self")
-    pair = KVPair(ctx.vars["k"], ctx.vars["v"])
+    key = ctx.vars["k"]
+    if not _check_dict_key_hashability(key, ctx, "k"):
+        return ImplReturn(KnownValue(None))
+    pair = KVPair(key, ctx.vars["v"])
     return _add_pairs_to_dict(ctx.vars["self"], [pair], ctx, varname)
 
 
@@ -485,16 +502,8 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
         self_value = ctx.vars["self"]
         if isinstance(self_value, AnnotatedValue):
             self_value = self_value.value
-        if isinstance(key, KnownValue):
-            try:
-                hash(key.val)
-            except Exception:
-                ctx.show_error(
-                    f"Dictionary key {key} is not hashable",
-                    ErrorCode.unhashable_key,
-                    arg="k",
-                )
-                return AnyValue(AnySource.error)
+        if not _check_dict_key_hashability(key, ctx, "k"):
+            return AnyValue(AnySource.error)
         if isinstance(self_value, KnownValue):
             if isinstance(key, KnownValue):
                 try:
@@ -558,16 +567,8 @@ def _dict_get_impl(ctx: CallContext) -> ImplReturn:
         self_value = ctx.vars["self"]
         if isinstance(self_value, AnnotatedValue):
             self_value = self_value.value
-        if isinstance(key, KnownValue):
-            try:
-                hash(key.val)
-            except Exception:
-                ctx.show_error(
-                    f"Dictionary key {key} is not hashable",
-                    ErrorCode.unhashable_key,
-                    arg="k",
-                )
-                return AnyValue(AnySource.error)
+        if not _check_dict_key_hashability(key, ctx, "k"):
+            return AnyValue(AnySource.error)
         if isinstance(self_value, KnownValue):
             if isinstance(key, KnownValue):
                 try:
@@ -632,16 +633,8 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
     self_value = replace_known_sequence_value(ctx.vars["self"])
 
-    if isinstance(key, KnownValue):
-        try:
-            hash(key.val)
-        except Exception:
-            ctx.show_error(
-                f"Dictionary key {key} is not hashable",
-                ErrorCode.unhashable_key,
-                arg="key",
-            )
-            return ImplReturn(AnyValue(AnySource.error))
+    if not _check_dict_key_hashability(key, ctx, "key"):
+        return ImplReturn(AnyValue(AnySource.error))
 
     if isinstance(self_value, TypedDictValue):
         if not TypedValue(str).is_assignable(key, ctx.visitor):
