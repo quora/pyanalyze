@@ -1,6 +1,6 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import skip_before, assert_passes, assert_fails
+from .test_node_visitor import skip_before, assert_passes
 from .implementation import assert_is_value
 from .error_code import ErrorCode
 from .value import (
@@ -437,10 +437,10 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(capybara(x), GenericValue(list, [TypedValue(str)]))
             return []
 
-    @assert_fails(ErrorCode.incompatible_return_value)
+    @assert_passes()
     def test_forward_ref_incompatible(self):
         def f() -> "int":
-            return ""
+            return ""  # E: incompatible_return_value
 
     @assert_passes()
     def test_pattern(self):
@@ -768,7 +768,7 @@ class TestCallable(TestNameCheckVisitorBase):
             g(nested)
             g(decorated)
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_callable(self):
         from typing import Callable
 
@@ -779,7 +779,7 @@ class TestCallable(TestNameCheckVisitorBase):
             return 0
 
         def capybara() -> None:
-            takes_callable(wrong_callable)
+            takes_callable(wrong_callable)  # E: incompatible_argument
 
     @assert_passes()
     def test_known_value_error(self):
