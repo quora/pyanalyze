@@ -194,9 +194,9 @@ class VeryStrictVisitor(BaseNodeVisitor):
 class TestVeryStrictVisitor(BaseNodeVisitorTester):
     visitor_cls = VeryStrictVisitor
 
-    @assert_fails(ErrorCode.no_strings)
+    @assert_passes()
     def test_fails(self):
-        "string"
+        "string"  # E: no_strings
 
     @assert_passes()
     def test_succeeds(self):
@@ -251,10 +251,10 @@ h.translate('{foo')  # line 5
         # static analysis: ignore[no_strings]
         print("string")
 
-    @assert_fails(ErrorCode.no_dicts)
+    @assert_passes()
     def test_no_dicts(self):
         # make sure a different error code does not get picked up
-        {}  # static analysis: ignore[no_strings]
+        {}  # static analysis: ignore[no_strings]  # E: no_dicts
 
     @assert_passes()
     def test_custom_ignore_comment(self):

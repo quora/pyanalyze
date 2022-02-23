@@ -599,12 +599,12 @@ class TestCalls(TestNameCheckVisitorBase):
     @assert_passes()
     def test_known_argspec(self):
         def run():
-            getattr(False, 42)  # E: incompatible_argument  E: incompatible_argument
+            getattr(False, 42)  # E: incompatible_argument  # E: incompatible_argument
 
     @assert_passes()
     def test_wrong_getattr_args(self):
         def run(attr):
-            getattr(False, int(attr))  # E: incompatible_argument  E: incompatible_argument
+            getattr(False, int(attr))  # E: incompatible_argument  # E: incompatible_argument
 
     @assert_passes()
     def test_kwonly_args(self):

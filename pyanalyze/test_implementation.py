@@ -1,6 +1,6 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes
+from .test_node_visitor import assert_passes
 from .error_code import ErrorCode
 
 from .value import (
@@ -42,7 +42,7 @@ class TestSuperCall(TestNameCheckVisitorBase):
             def __init__(self, a, b):
                 super().__init__()
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_super_no_args_wrong_args(self):
         class Gaudeamus:
             def eat(self):
@@ -50,9 +50,9 @@ class TestSuperCall(TestNameCheckVisitorBase):
 
         class Canaanimys(Gaudeamus):
             def eat(self, grass=None):
-                super(Canaanimys, self).eat(grass)
+                super(Canaanimys, self).eat(grass)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_super_no_args_wrong_args_classmethod(self):
         class Gaudeamus:
             @classmethod
@@ -62,28 +62,28 @@ class TestSuperCall(TestNameCheckVisitorBase):
         class Canaanimys(Gaudeamus):
             @classmethod
             def eat(cls, grass):
-                super().eat(grass)
+                super().eat(grass)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.bad_super_call)
+    @assert_passes()
     def test_super_no_args_in_comprehension(self):
         class Canaanimys:
             def __init__(self, a, b):
-                self.x = [super().__init__() for _ in range(1)]
+                self.x = [super().__init__() for _ in range(1)]  # E: bad_super_call
 
-    @assert_fails(ErrorCode.bad_super_call)
+    @assert_passes()
     def test_super_no_args_in_gen_exp(self):
         class Canaanimys:
             def __init__(self, a, b):
-                self.x = (super().__init__() for _ in range(1))
+                self.x = (super().__init__() for _ in range(1))  # E: bad_super_call
 
-    @assert_fails(ErrorCode.bad_super_call)
+    @assert_passes()
     def test_super_no_args_in_nested_function(self):
         class Canaanimys:
             def __init__(self, a, b):
                 def nested():
                     self.x = super().__init__()
 
-                nested()
+                nested()  # E: bad_super_call
 
     @assert_passes()
     def test_super_init_subclass(self):
@@ -100,16 +100,16 @@ class TestSuperCall(TestNameCheckVisitorBase):
             def non_async_method(self):
                 super(Tainotherium.base, self).non_async_method()
 
-    @assert_fails(ErrorCode.bad_super_call)
+    @assert_passes()
     def test_bad_super_call(self):
         from pyanalyze.tests import wrap, PropertyObject
 
         @wrap
         class Tainotherium2(PropertyObject):
             def non_async_method(self):
-                super(Tainotherium2, self).non_async_method()
+                super(Tainotherium2, self).non_async_method()  # E: bad_super_call
 
-    @assert_fails(ErrorCode.bad_super_call)
+    @assert_passes()
     def test_first_arg_is_base(self):
         class Base1(object):
             def method(self):
@@ -121,9 +121,9 @@ class TestSuperCall(TestNameCheckVisitorBase):
 
         class Child(Base2):
             def method(self):
-                super(Base2, self).method()
+                super(Base2, self).method()  # E: bad_super_call
 
-    @assert_fails(ErrorCode.bad_super_call)
+    @assert_passes()
     def test_bad_super_call_classmethod(self):
         from pyanalyze.tests import wrap, PropertyObject
 
@@ -131,9 +131,9 @@ class TestSuperCall(TestNameCheckVisitorBase):
         class Tainotherium3(PropertyObject):
             @classmethod
             def no_args_classmethod(cls):
-                super(Tainotherium3, cls).no_args_classmethod()
+                super(Tainotherium3, cls).no_args_classmethod()  # E: bad_super_call
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_super_attribute(self):
         class MotherCapybara(object):
             def __init__(self, grass):
@@ -141,9 +141,9 @@ class TestSuperCall(TestNameCheckVisitorBase):
 
         class ChildCapybara(MotherCapybara):
             def __init__(self):
-                super(ChildCapybara, self).__init__()
+                super(ChildCapybara, self).__init__()  # E: incompatible_call
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_undefined_super_attribute(self):
         class MotherCapybara(object):
             pass
@@ -151,7 +151,7 @@ class TestSuperCall(TestNameCheckVisitorBase):
         class ChildCapybara(MotherCapybara):
             @classmethod
             def toggle(cls):
-                super(ChildCapybara, cls).toggle()
+                super(ChildCapybara, cls).toggle()  # E: undefined_attribute
 
     @assert_passes()
     def test_metaclass(self):
@@ -275,15 +275,15 @@ class TestEncodeDecode(TestNameCheckVisitorBase):
             assert_is_value(s.encode("utf-8"), TypedValue(bytes))
             assert_is_value(b.decode("utf-8"), TypedValue(str))
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_encode_wrong_type(self):
         def capybara():
-            "".encode(42)
+            "".encode(42)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_decode_wrong_type(self):
         def capybara():
-            b"".decode(42)
+            b"".decode(42)  # E: incompatible_argument
 
 
 class TestLen(TestNameCheckVisitorBase):
@@ -310,10 +310,10 @@ class TestLen(TestNameCheckVisitorBase):
             else:
                 assert_is_value(lst, KnownValue(()))
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_type(self):
         def capybara():
-            len(3)
+            len(3)  # E: incompatible_argument
 
 
 class TestCast(TestNameCheckVisitorBase):
@@ -373,21 +373,21 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.append(3)
             assert_is_value(lst, KnownValue(["x", 3]))
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_list_append_pos_only(self):
         from typing import List
 
         def capybara(lst: List[int]) -> None:
-            lst.append(object=42)
+            lst.append(object=42)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_list_append_wrong_type(self):
         from typing import List
 
         def capybara():
             lst: List[str] = ["x"]
             assert_is_value(lst, GenericValue(list, [TypedValue(str)]))
-            lst.append(1)
+            lst.append(1)  # E: incompatible_argument
 
     @assert_passes()
     def test_set_add(self):
@@ -964,13 +964,13 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
 
 
 class TestDictGetItem(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.unhashable_key)
+    @assert_passes()
     def test_unhashable(self):
         def capybara():
             d = {}
-            d[{}]
+            d[{}]  # E: unhashable_key
 
-    @assert_fails(ErrorCode.invalid_typeddict_key)
+    @assert_passes()
     def test_invalid_typeddict_key(self):
         from typing_extensions import TypedDict
 
@@ -978,7 +978,7 @@ class TestDictGetItem(TestNameCheckVisitorBase):
             a: int
 
         def capybara(td: TD):
-            td[1]
+            td[1]  # E: invalid_typeddict_key
 
     @assert_passes()
     def test_incomplete_value(self):
