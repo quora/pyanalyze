@@ -453,7 +453,7 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
         class Capybara(object):
             def get(self, i):
                 assert_is_value(self, TypedValue(Capybara))
-                return self[i]  # E: unsupported_operation  # E: attribute_is_never_set
+                return self[i]  # E: unsupported_operation
 
     @assert_passes()
     def test_self_is_subscriptable(self):
