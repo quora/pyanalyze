@@ -148,11 +148,10 @@ You can add an error code, like `# static analysis: ignore[undefined_name]`, to 
 
 Pyanalyze supports Python 3.6 through 3.10. Because it imports the code it checks, you have to run it using the same version of Python you use to run your code.
 
-## Developing pyanalyze
+## Contributing
 
-Pyanalyze has hundreds of unit tests that check its behavior. To run them, you can just run `pytest` in the project directory.
-
-The code is formatted using [Black](https://github.com/psf/black).
+We welcome your contributions. See [CONTRIBUTING.md](https://github.com/quora/pyanalyze/blob/master/CONTRIBUTING.md)
+for how to get started.
 
 ## Documentation
 
