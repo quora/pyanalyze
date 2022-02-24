@@ -104,15 +104,17 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
 
 
 class TestTaskNeedsYield(TestNameCheckVisitorBase):
-    @assert_passes()
+    # couldn't change assert_fails to assert_passes for
+    # constfuture, async, and yielded because changes between Python 3.7 and 3.8
+    @assert_fails(ErrorCode.task_needs_yield)
     def test_constfuture(self):
         from asynq import asynq, ConstFuture
 
-        @asynq()  # E: task_needs_yield
+        @asynq()
         def bad_async_fn():
             return ConstFuture(3)
 
-    @assert_passes()
+    @assert_fails(ErrorCode.task_needs_yield)
     def test_async(self):
         from asynq import asynq
 
@@ -120,16 +122,16 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
         def async_fn():
             pass
 
-        @asynq()  # E: task_needs_yield
+        @asynq()
         def bad_async_fn():
             return async_fn.asynq()
 
-    @assert_passes()
+    @assert_fails(ErrorCode.task_needs_yield)
     def test_not_yielded(self):
         from asynq import asynq
         from pyanalyze.tests import async_fn
 
-        @asynq()  # E: task_needs_yield
+        @asynq()
         def capybara(oid):
             return async_fn.asynq(oid)
 
