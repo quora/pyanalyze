@@ -16,7 +16,6 @@ from .value import (
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes, skip_before
-from .error_code import ErrorCode
 from .signature import (
     ELLIPSIS_PARAM,
     ConcreteSignature,
@@ -599,12 +598,12 @@ class TestCalls(TestNameCheckVisitorBase):
     @assert_passes()
     def test_known_argspec(self):
         def run():
-            getattr(False, 42)  # E: incompatible_argument  # E: incompatible_argument
+            getattr(False, 42)  # E: incompatible_argument
 
     @assert_passes()
     def test_wrong_getattr_args(self):
         def run(attr):
-            getattr(False, int(attr))  # E: incompatible_argument  # E: incompatible_argument
+            getattr(False, int(attr))  # E: incompatible_argument
 
     @assert_passes()
     def test_kwonly_args(self):
@@ -680,12 +679,12 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_undefined_args(self):
-        def fn():
+        def fn(*args):
             return fn(*x)  # E: undefined_name
 
     @assert_passes()
     def test_undefined_kwargs(self):
-        def fn():
+        def fn(**kwargs):
             return fn(**x)  # E: undefined_name
 
     @assert_passes()

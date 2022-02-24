@@ -10,7 +10,6 @@ from .value import (
 )
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes, skip_before
-from .error_code import ErrorCode
 
 
 class TestTypeVar(TestNameCheckVisitorBase):

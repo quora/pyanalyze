@@ -218,10 +218,19 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             from pyanalyze.test_typeshed import _EXPECTED_TYPED_DICTS
 
             def nested(td1: TD1, td2: TD2, pep655: PEP655, inherited: Inherited):
-                assert_is_value(td1, _EXPECTED_TYPED_DICTS["TD1"])
-                assert_is_value(td2, _EXPECTED_TYPED_DICTS["TD2"])
-                assert_is_value(pep655, _EXPECTED_TYPED_DICTS["PEP655"])
-                assert_is_value(inherited, _EXPECTED_TYPED_DICTS["Inherited"])
+                assert_is_value(
+                    td1, _EXPECTED_TYPED_DICTS["TD1"]  # E: inference_failure
+                )
+                assert_is_value(
+                    td2, _EXPECTED_TYPED_DICTS["TD2"]  # E: inference_failure
+                )
+                assert_is_value(
+                    pep655, _EXPECTED_TYPED_DICTS["PEP655"]  # E: inference_failure
+                )
+                assert_is_value(
+                    inherited,
+                    _EXPECTED_TYPED_DICTS["Inherited"],  # E: inference_failure
+                )
 
     def test_evaluated(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)

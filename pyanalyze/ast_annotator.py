@@ -109,7 +109,7 @@ def annotate_file(
             traceback.print_exc()
         mod = None
 
-    with open(filename) as f:
+    with open(filename, encoding="utf-8") as f:
         code = f.read()
     tree = ast.parse(code)
     _annotate_module(filename, mod, tree, code, visitor_cls, show_errors=show_errors)

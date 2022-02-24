@@ -453,7 +453,7 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
         class Capybara(object):
             def get(self, i):
                 assert_is_value(self, TypedValue(Capybara))
-                return self[i]  # E: unsupported_operation
+                return self[i]  # E: unsupported_operation  # E: attribute_is_never_set
 
     @assert_passes()
     def test_self_is_subscriptable(self):
@@ -929,7 +929,9 @@ class TestImports(TestNameCheckVisitorBase):
         def capybara(foo):
             import qcore
 
-            assert_is_value(qcore.utime, KnownValue(_qcore.utime))
+            assert_is_value(  # E: inference_failure
+                qcore.utime, KnownValue(_qcore.utime)
+            )
 
     @assert_passes()
     def test_local_import_from(self):

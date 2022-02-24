@@ -1,5 +1,4 @@
 # static analysis: ignore
-from .error_code import ErrorCode
 from .asynq_checker import (
     is_impure_async_fn,
     _stringify_async_fn,
@@ -81,8 +80,8 @@ class TestImpureAsyncCalls(TestNameCheckVisitorBase):
                 self.uid = uid
 
             def tree(self):
-                log = PropertyObject.async_staticmethod()
-                return str(log)  # E: impure_async_call
+                log = PropertyObject.async_staticmethod()  # E: impure_async_call
+                return str(log)
 
     @assert_passes()
     def test_impure_async_property_access(self):

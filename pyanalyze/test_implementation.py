@@ -1,7 +1,6 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .error_code import ErrorCode
 
 from .value import (
     AnnotatedValue,
@@ -81,9 +80,9 @@ class TestSuperCall(TestNameCheckVisitorBase):
         class Canaanimys:
             def __init__(self, a, b):
                 def nested():
-                    self.x = super().__init__()
+                    self.x = super().__init__()  # E: bad_super_call
 
-                nested()  # E: bad_super_call
+                nested()
 
     @assert_passes()
     def test_super_init_subclass(self):
@@ -278,12 +277,12 @@ class TestEncodeDecode(TestNameCheckVisitorBase):
     @assert_passes()
     def test_encode_wrong_type(self):
         def capybara():
-            "".encode(42)  # E: incompatible_argument
+            "".encode(42)  # E: incompatible_call  # E: incompatible_argument
 
     @assert_passes()
     def test_decode_wrong_type(self):
         def capybara():
-            b"".decode(42)  # E: incompatible_argument
+            b"".decode(42)  # E: incompatible_call  # E: incompatible_argument
 
 
 class TestLen(TestNameCheckVisitorBase):

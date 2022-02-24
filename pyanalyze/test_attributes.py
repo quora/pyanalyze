@@ -1,6 +1,5 @@
 # static analysis: ignore
 from typing import Dict, Union
-from .error_code import ErrorCode
 from .value import (
     AnySource,
     AnyValue,
