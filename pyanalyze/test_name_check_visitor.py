@@ -929,9 +929,7 @@ class TestImports(TestNameCheckVisitorBase):
         def capybara(foo):
             import qcore
 
-            assert_is_value(  # E: inference_failure
-                qcore.utime, KnownValue(_qcore.utime)
-            )
+            assert_is_value(qcore.utime, KnownValue(_qcore.utime))
 
     @assert_passes()
     def test_local_import_from(self):
