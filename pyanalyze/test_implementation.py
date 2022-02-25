@@ -277,6 +277,7 @@ class TestEncodeDecode(TestNameCheckVisitorBase):
     @assert_passes()
     def test_encode_wrong_type(self):
         def capybara():
+            # TODO this should produce only one error
             "".encode(42)  # E: incompatible_call  # E: incompatible_argument
 
     @assert_passes()
