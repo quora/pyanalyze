@@ -1,6 +1,5 @@
 # static analysis: ignore
 from typing import Dict, Union
-from .error_code import ErrorCode
 from .value import (
     AnySource,
     AnyValue,
@@ -10,7 +9,7 @@ from .value import (
     TypedValue,
     assert_is_value,
 )
-from .test_node_visitor import assert_passes, assert_fails
+from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
 
 _global_dict: Dict[Union[int, str], float] = {}
@@ -170,29 +169,29 @@ class TestAttributes(TestNameCheckVisitorBase):
                 x.attr, MultiValuedValue([TypedValue(int), TypedValue(str)])
             )
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_optional_operation(self):
         from typing import Optional
 
         def capybara(x: Optional[str]):
-            print(x[1:])
+            print(x[1:])  # E: unsupported_operation
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_optional(self):
         from typing import Optional
 
         def capybara(x: Optional[str]):
-            x.split()
+            x.split()  # E: undefined_attribute
 
     @assert_passes()
     def test_typeshed(self):
         def capybara(c: staticmethod):
             assert_is_value(c.__isabstractmethod__, TypedValue(bool))
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_no_attribute_for_typeshed_class():
         def capybara(c: staticmethod):
-            c.no_such_attribute
+            c.no_such_attribute  # E: undefined_attribute
 
     @assert_passes()
     def test_typeshed_getattr(self):

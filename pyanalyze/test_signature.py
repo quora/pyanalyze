@@ -15,8 +15,7 @@ from .value import (
 )
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes, skip_before
-from .error_code import ErrorCode
+from .test_node_visitor import assert_passes, skip_before
 from .signature import (
     ELLIPSIS_PARAM,
     ConcreteSignature,
@@ -482,7 +481,7 @@ class TestCalls(TestNameCheckVisitorBase):
             def tucotuco(self):
                 self.hutia()
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_staticmethod_bad_arg(self):
         class Capybara(object):
             @staticmethod
@@ -490,9 +489,9 @@ class TestCalls(TestNameCheckVisitorBase):
                 pass
 
             def tucotuco(self):
-                self.hutia(1)
+                self.hutia(1)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.not_callable)
+    @assert_passes()
     def test_typ_call(self):
         def run(elts):
             lst = [x for x in elts]
@@ -500,7 +499,7 @@ class TestCalls(TestNameCheckVisitorBase):
                 lst,
                 make_weak(GenericValue(list, [AnyValue(AnySource.generic_argument)])),
             )
-            lst()
+            lst()  # E: not_callable
 
     @assert_passes()
     def test_override__call__(self):
@@ -513,16 +512,16 @@ class TestCalls(TestNameCheckVisitorBase):
             assert_is_value(obj, TypedValue(WithCall))
             assert_is_value(obj(x), AnyValue(AnySource.unannotated))
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_unbound_method(self):
         class Capybara(object):
             def hutia(self, x=None):
                 pass
 
             def tucotuco(self):
-                self.hutia(y=2)
+                self.hutia(y=2)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_method_is_attribute(self):
         class Capybara(object):
             def __init__(self):
@@ -532,7 +531,7 @@ class TestCalls(TestNameCheckVisitorBase):
                 return []
 
             def hutia(self):
-                self.tabs.append("hutia")
+                self.tabs.append("hutia")  # E: undefined_attribute
 
     @assert_passes()
     def test_type_inference_for_type_call(self):
@@ -547,29 +546,29 @@ class TestCalls(TestNameCheckVisitorBase):
         def run():
             takes_kwonly_argument(1, kwonly_arg=True)
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_missing_kwonly_arg(self):
         from pyanalyze.tests import takes_kwonly_argument
 
         def run():
-            takes_kwonly_argument(1)
+            takes_kwonly_argument(1)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_type_kwonly_arg(self):
         from pyanalyze.tests import takes_kwonly_argument
 
         def run():
-            takes_kwonly_argument(1, kwonly_arg="capybara")
+            takes_kwonly_argument(1, kwonly_arg="capybara")  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_variable_name_value(self):
         def fn(qid):
             pass
 
         def capybara(uid):
-            fn(uid)
+            fn(uid)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_variable_name_value_in_attr(self):
         def fn(qid):
             pass
@@ -579,15 +578,15 @@ class TestCalls(TestNameCheckVisitorBase):
                 self.uid = uid
 
             def get_it(self):
-                return fn(self.uid)
+                return fn(self.uid)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_variable_name_value_in_subscript(self):
         def fn(qid):
             pass
 
         def render_item(self, item):
-            return fn(item["uid"])
+            return fn(item["uid"])  # E: incompatible_argument
 
     @assert_passes()
     def test_kwargs(self):
@@ -596,15 +595,15 @@ class TestCalls(TestNameCheckVisitorBase):
 
         fn(uid=3)
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_known_argspec(self):
         def run():
-            getattr(False, 42)
+            getattr(False, 42)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_getattr_args(self):
         def run(attr):
-            getattr(False, int(attr))
+            getattr(False, int(attr))  # E: incompatible_argument
 
     @assert_passes()
     def test_kwonly_args(self):
@@ -613,7 +612,7 @@ class TestCalls(TestNameCheckVisitorBase):
         def capybara():
             return KeywordOnlyArguments(kwonly_arg="hydrochoerus")
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_kwonly_args_bad_kwarg(self):
         from pyanalyze.tests import KeywordOnlyArguments
 
@@ -622,7 +621,7 @@ class TestCalls(TestNameCheckVisitorBase):
                 pass
 
         def run():
-            Capybara(bad_kwarg="1")
+            Capybara(bad_kwarg="1")  # E: incompatible_call
 
     @assert_passes()
     def test_hasattr(self):
@@ -654,7 +653,7 @@ class TestCalls(TestNameCheckVisitorBase):
             val = hasattr(o, "__qualname__")
             assert_is_value(val, inferred)
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_keyword_only_args(self):
         from pyanalyze.tests import KeywordOnlyArguments
 
@@ -663,7 +662,7 @@ class TestCalls(TestNameCheckVisitorBase):
                 pass
 
         def run():
-            Capybara(hydrochoerus=None)
+            Capybara(hydrochoerus=None)  # E: incompatible_call
 
     @assert_passes()
     def test_correct_keyword_only_args(self):
@@ -678,15 +677,15 @@ class TestCalls(TestNameCheckVisitorBase):
             # in pyanalyze.test_config.get_constructor.
             Capybara(None, kwonly_arg="capybara")
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_args(self):
-        def fn():
-            return fn(*x)
+        def fn(*args):
+            return fn(*x)  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_kwargs(self):
-        def fn():
-            return fn(**x)
+        def fn(**kwargs):
+            return fn(**x)  # E: undefined_name
 
     @assert_passes()
     def test_set__name__(self):

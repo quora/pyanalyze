@@ -104,6 +104,8 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
 
 
 class TestTaskNeedsYield(TestNameCheckVisitorBase):
+    # couldn't change assert_fails to assert_passes for
+    # constfuture, async, and yielded because changes between Python 3.7 and 3.8
     @assert_fails(ErrorCode.task_needs_yield)
     def test_constfuture(self):
         from asynq import asynq, ConstFuture

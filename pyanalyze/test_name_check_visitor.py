@@ -448,6 +448,7 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
         def use_it():
             assert_is_value(capybara, KnownValue((0,)) | KnownValue(None))
 
+    # can't change to assert_passes because it changes between Python 3.6 to 3.7
     @assert_fails(ErrorCode.unsupported_operation)
     def test_self_type_inference(self):
         class Capybara(object):
@@ -1055,16 +1056,16 @@ class TestIterationTarget(TestNameCheckVisitorBase):
                     ),
                 )
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_known_not_iterable(self):
         def capybara():
-            for _ in 3:
+            for _ in 3:  # E: unsupported_operation
                 pass
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_typed_not_iterable(self):
         def capybara(x):
-            for _ in int(x):
+            for _ in int(x):  # E: unsupported_operation
                 pass
 
     @assert_passes()
