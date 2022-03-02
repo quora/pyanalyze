@@ -13,6 +13,7 @@ from . import implementation
 from .safe import (
     all_of_type,
     is_newtype,
+    safe_equals,
     safe_hasattr,
     safe_issubclass,
     is_typing_name,
@@ -58,6 +59,7 @@ import asynq
 from collections.abc import Awaitable
 import contextlib
 from dataclasses import dataclass, replace
+import enum
 import qcore
 import inspect
 import sys
@@ -80,6 +82,8 @@ from unittest import mock
 
 # types.MethodWrapperType in 3.7+
 MethodWrapperType = type(object().__str__)
+
+_ENUM_CALL = enum.Enum.__call__
 
 
 @used  # exposed as an API
@@ -572,7 +576,7 @@ class ArgSpecCache:
                 if evaluator_sig is not None:
                     return evaluator_sig
 
-        if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
+        if isinstance(obj, tuple):
             return None  # lost cause
 
         # Cythonized methods, e.g. fn.asynq
@@ -617,6 +621,16 @@ class ArgSpecCache:
                 return self._cached_get_argspec(
                     original_fn, impl, is_asynq, in_overload_resolution
                 )
+
+        # Special case for EnumMeta.__call__. Ideally this should be generalized.
+        if (
+            safe_isinstance(obj, type)
+            and safe_issubclass(obj, enum.Enum)
+            and safe_equals(obj.__call__, _ENUM_CALL)
+        ):
+            return self._cached_get_argspec(
+                _ENUM_CALL, impl, is_asynq, in_overload_resolution
+            )
 
         allow_call = FunctionsSafeToCall.contains(obj, self.options) or (
             safe_isinstance(obj, type) and safe_issubclass(obj, self.safe_bases)

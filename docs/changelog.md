@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Infer callable signatures for objects with a
+  `__getattr__` method (#485)
 - Do not treat attributes that raise an exception on access
   as nonexistent (#481)
 - Improve detection of unhashable dict keys and set members (#469)
