@@ -647,7 +647,7 @@ class ArgSpecCache:
         if argspec is not None:
             return argspec
 
-        if is_typeddict(obj):
+        if is_typeddict(obj) and not is_typing_name(obj, "TypedDict"):
             td_type = type_from_runtime(obj)
             if isinstance(td_type, TypedDictValue):
                 params = [
