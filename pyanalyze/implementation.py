@@ -3,7 +3,7 @@ from .error_code import ErrorCode
 from .extensions import assert_type, reveal_locals, reveal_type
 from .format_strings import parse_format_string
 from .predicates import IsAssignablePredicate
-from .safe import hasattr_static, safe_hasattr, safe_isinstance, safe_issubclass
+from .safe import hasattr_static, safe_isinstance, safe_issubclass
 from .stacked_scopes import (
     NULL_CONSTRAINT,
     AbstractConstraint,
