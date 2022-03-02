@@ -12,9 +12,9 @@ from .find_unused import used
 from . import implementation
 from .safe import (
     all_of_type,
+    hasattr_static,
     is_newtype,
     safe_equals,
-    safe_hasattr,
     safe_issubclass,
     is_typing_name,
     safe_isinstance,
@@ -327,7 +327,7 @@ class ArgSpecCache:
         # because @functools.wraps copies the __annotations__ of the wrapped function. We
         # don't want that, because the wrapper may have changed the return type.
         # This caused problems with @contextlib.contextmanager.
-        is_wrapped = safe_hasattr(function_object, "__wrapped__")
+        is_wrapped = hasattr_static(function_object, "__wrapped__")
 
         if returns is not None:
             has_return_annotation = True
@@ -608,8 +608,8 @@ class ArgSpecCache:
             )
             return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
 
-        if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
-            is_asynq = is_asynq or hasattr(obj, "asynq")
+        if hasattr_static(obj, "fn") or hasattr_static(obj, "original_fn"):
+            is_asynq = is_asynq or hasattr_static(obj, "asynq")
             # many decorators put the original function in the .fn attribute
             try:
                 original_fn = qcore.get_original_fn(obj)
@@ -662,7 +662,7 @@ class ArgSpecCache:
             )
 
         if inspect.isfunction(obj):
-            if hasattr(obj, "inner"):
+            if hasattr_static(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
                 return self._cached_get_argspec(
                     obj.inner, impl, is_asynq, in_overload_resolution
@@ -759,7 +759,7 @@ class ArgSpecCache:
                 return self.from_signature(inspect_sig, function_object=obj)
             return self._make_any_sig(obj)
 
-        if hasattr(obj, "__call__"):
+        if hasattr_static(obj, "__call__"):
             # we could get an argspec here in some cases, but it's impossible to figure out
             # the argspec for some builtin methods (e.g., dict.__init__), and no way to detect
             # these with inspect, so just give up.
@@ -907,9 +907,9 @@ class ArgSpecCache:
 def _is_qcore_decorator(obj: object) -> TypeGuard[Any]:
     try:
         return (
-            hasattr(obj, "is_decorator")
+            hasattr_static(obj, "is_decorator")
             and obj.is_decorator()
-            and hasattr(obj, "decorator")
+            and hasattr_static(obj, "decorator")
         )
     except Exception:
         # black.Line has an is_decorator attribute but it is not a method
@@ -917,7 +917,7 @@ def _is_qcore_decorator(obj: object) -> TypeGuard[Any]:
 
 
 def _get_class_name(obj: object) -> Optional[str]:
-    if hasattr(obj, "__qualname__"):
+    if hasattr_static(obj, "__qualname__"):
         pieces = obj.__qualname__.split(".")
         if len(pieces) >= 2:
             return pieces[-2]
