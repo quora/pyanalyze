@@ -3,7 +3,7 @@ from .error_code import ErrorCode
 from .extensions import assert_type, reveal_locals, reveal_type
 from .format_strings import parse_format_string
 from .predicates import IsAssignablePredicate
-from .safe import safe_hasattr, safe_isinstance, safe_issubclass
+from .safe import hasattr_static, safe_isinstance, safe_issubclass
 from .stacked_scopes import (
     NULL_CONSTRAINT,
     AbstractConstraint,
@@ -215,7 +215,7 @@ def _hasattr_impl(ctx: CallContext) -> Value:
         name.val, ctx.visitor
     ):
         return_value = KnownValue(True)
-    elif isinstance(obj, KnownValue) and safe_hasattr(obj.val, name.val):
+    elif isinstance(obj, KnownValue) and hasattr_static(obj.val, name.val):
         return_value = KnownValue(True)
     else:
         return_value = TypedValue(bool)
@@ -1348,6 +1348,14 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_hasattr_impl,
             callable=hasattr,
+        ),
+        Signature.make(
+            [
+                SigParameter("object", _POS_ONLY),
+                SigParameter("name", _POS_ONLY, annotation=TypedValue(str)),
+            ],
+            impl=_hasattr_impl,
+            callable=hasattr_static,
         ),
         Signature.make(
             [
