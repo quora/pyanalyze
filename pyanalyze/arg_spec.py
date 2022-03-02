@@ -42,6 +42,7 @@ from .value import (
     Extension,
     GenericBases,
     KVPair,
+    TypedDictValue,
     TypedValue,
     GenericValue,
     NewTypeValue,
@@ -77,6 +78,7 @@ from typing import (
     Tuple,
     Union,
 )
+from typing_extensions import is_typeddict
 import typing_inspect
 from unittest import mock
 
@@ -644,6 +646,20 @@ class ArgSpecCache:
         )
         if argspec is not None:
             return argspec
+
+        if is_typeddict(obj):
+            td_type = type_from_runtime(obj)
+            if isinstance(td_type, TypedDictValue):
+                params = [
+                    SigParameter(
+                        key,
+                        ParameterKind.KEYWORD_ONLY,
+                        default=None if required else KnownValue(...),
+                        annotation=value,
+                    )
+                    for key, (required, value) in td_type.items.items()
+                ]
+                return Signature.make(params, td_type)
 
         if is_newtype(obj):
             assert hasattr(obj, "__supertype__")
