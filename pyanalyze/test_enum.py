@@ -30,3 +30,22 @@ class TestEnum(TestNameCheckVisitorBase):
             # This should be an error, but the typeshed
             # stubs are too lenient.
             assert_is_value(X(None), TypedValue(X))
+
+    @assert_passes()
+    def test_iteration(self):
+        from enum import Enum, IntEnum
+        from typing import Type
+
+        class X(Enum):
+            a = 1
+            b = 2
+
+        def capybara(enum_t: Type[Enum], int_enum_t: Type[IntEnum]):
+            for x in X:
+                assert_is_value(x, TypedValue(X))
+
+            for et in enum_t:
+                assert_is_value(et, TypedValue(Enum))
+
+            for iet in int_enum_t:
+                assert_is_value(iet, TypedValue(IntEnum))
