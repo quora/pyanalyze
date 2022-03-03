@@ -49,3 +49,11 @@ class TestEnum(TestNameCheckVisitorBase):
 
             for iet in int_enum_t:
                 assert_is_value(iet, TypedValue(IntEnum))
+
+    @assert_passes()
+    def test_duplicate_enum_member(self):
+        import enum
+
+        class Foo(enum.Enum):
+            a = 1
+            b = 1  # E: duplicate_enum_member
