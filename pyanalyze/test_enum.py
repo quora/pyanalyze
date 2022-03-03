@@ -40,7 +40,12 @@ class TestEnum(TestNameCheckVisitorBase):
             a = 1
             b = 2
 
-        def capybara(enum_t: Type[Enum], int_enum_t: Type[IntEnum]):
+        class MySubclass(str, Enum):
+            pass
+
+        def capybara(
+            enum_t: Type[Enum], int_enum_t: Type[IntEnum], subclass_t: Type[MySubclass]
+        ):
             for x in X:
                 assert_is_value(x, TypedValue(X))
 
@@ -49,6 +54,9 @@ class TestEnum(TestNameCheckVisitorBase):
 
             for iet in int_enum_t:
                 assert_is_value(iet, TypedValue(IntEnum))
+
+            for st in subclass_t:
+                assert_is_value(st, TypedValue(MySubclass))
 
     @assert_passes()
     def test_duplicate_enum_member(self):
