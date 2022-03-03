@@ -42,6 +42,7 @@ from .value import (
     Extension,
     GenericBases,
     KVPair,
+    SubclassValue,
     TypedDictValue,
     TypedValue,
     GenericValue,
@@ -65,7 +66,7 @@ import qcore
 import inspect
 import sys
 import textwrap
-from types import FunctionType, ModuleType
+from types import FunctionType, ModuleType, MethodType
 from typing import (
     Any,
     Callable,
@@ -85,7 +86,7 @@ from unittest import mock
 # types.MethodWrapperType in 3.7+
 MethodWrapperType = type(object().__str__)
 
-_ENUM_CALL = enum.Enum.__call__
+_ENUM_CALL = enum.Enum.__call__.__func__
 
 
 @used  # exposed as an API
@@ -628,11 +629,21 @@ class ArgSpecCache:
         if (
             safe_isinstance(obj, type)
             and safe_issubclass(obj, enum.Enum)
-            and safe_equals(obj.__call__, _ENUM_CALL)
+            and safe_isinstance(obj.__call__, MethodType)
+            and safe_equals(obj.__call__.__func__, _ENUM_CALL)
         ):
-            return self._cached_get_argspec(
+            signature = self._cached_get_argspec(
                 _ENUM_CALL, impl, is_asynq, in_overload_resolution
             )
+            bound_sig = make_bound_method(
+                signature, Composite(SubclassValue(TypedValue(obj)))
+            )
+            if bound_sig is None:
+                return None
+            sig = bound_sig.get_signature(preserve_impl=True, ctx=self.ctx)
+            if sig is not None:
+                return sig
+            return bound_sig
 
         allow_call = FunctionsSafeToCall.contains(obj, self.options) or (
             safe_isinstance(obj, type) and safe_issubclass(obj, self.safe_bases)
