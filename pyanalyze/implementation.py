@@ -24,6 +24,7 @@ from .signature import (
     ParameterKind,
 )
 from .value import (
+    NO_RETURN_VALUE,
     UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
@@ -98,8 +99,11 @@ def flatten_unions(
     unwrap_annotated: bool = False,
 ) -> ImplReturn:
     value_lists = [
-        flatten_values(val, unwrap_annotated=unwrap_annotated) for val in values
+        list(flatten_values(val, unwrap_annotated=unwrap_annotated)) for val in values
     ]
+    # If the lists are empty, we end up inferring Never as the return type, which
+    # generally isn't right.
+    value_lists = [lst if lst else [NO_RETURN_VALUE] for lst in value_lists]
     results = [
         clean_up_implementation_fn_return(callable(*vals))
         for vals in product(*value_lists)

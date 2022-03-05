@@ -3,6 +3,7 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -518,6 +519,18 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
             lst += [x]
             assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
+
+    @assert_passes()
+    def test_list_iadd_never(self):
+        def render_feedback_text():
+            z = []
+
+            detail_text = None
+            if detail_text:
+                assert_is_value(detail_text, NO_RETURN_VALUE)
+                z += detail_text
+
+            return z
 
     @assert_passes()
     def test_weak_value(self):
