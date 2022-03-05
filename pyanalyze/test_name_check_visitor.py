@@ -202,14 +202,6 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
         )
 
     @assert_passes()
-    def test_duplicate_enum_member(self):
-        import enum
-
-        class Foo(enum.Enum):
-            a = 1
-            b = 1  # E: duplicate_enum_member
-
-    @assert_passes()
     def test_undefined_name_in_return(self):
         def what_is_it():
             return tucotuco  # E: undefined_name
