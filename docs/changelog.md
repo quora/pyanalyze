@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix type narrowing in else branch if constraint is stored in a
+  variable (#491)
 - Fix incorrectly inferred `Never` return type for some function
   implementations (#490)
 - Infer precise call signatures for `TypedDict` types (#487)

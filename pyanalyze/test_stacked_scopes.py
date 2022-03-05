@@ -1775,4 +1775,17 @@ class TestInvalidation(TestNameCheckVisitorBase):
                     assert_is_value(key, TypedValue(int))
                     data = [ids, data[key]]
                 else:
+                    assert_is_value(key, KnownValue(None))
                     data = [ids]
+
+    @assert_passes()
+    def test_else(self) -> None:
+        from typing import Optional
+
+        def capybara(key: Optional[int]):
+            has_bias = key is not None
+            assert_is_value(key, TypedValue(int) | KnownValue(None))
+            if has_bias:
+                assert_is_value(key, TypedValue(int))
+            else:
+                assert_is_value(key, KnownValue(None))
