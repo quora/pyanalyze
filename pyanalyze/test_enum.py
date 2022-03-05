@@ -1,6 +1,6 @@
 # static analysis: ignore
 from .implementation import assert_is_value
-from .value import KnownValue, SubclassValue, TypedValue
+from .value import AnySource, AnyValue, KnownValue, SubclassValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 
@@ -87,3 +87,9 @@ class TestNarrowing(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(X.a))
             else:
                 assert_is_value(x, KnownValue(X.b))
+
+        def whatever(x):
+            if x == X.a:
+                assert_is_value(x, KnownValue(X.a))
+                return
+            assert_is_value(x, AnyValue(AnySource.unannotated))
