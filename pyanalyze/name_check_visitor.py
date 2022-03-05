@@ -98,6 +98,7 @@ from .stacked_scopes import (
     AbstractConstraint,
     Composite,
     CompositeIndex,
+    EquivalentConstraint,
     FunctionScope,
     Varname,
     Constraint,
@@ -3296,7 +3297,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 constraint = Constraint(
                     composite.varname, ConstraintType.is_truthy, True, None
                 )
-                return annotate_with_constraint(composite.value, constraint)
+                existing = extract_constraints(composite.value)
+                new_value, _ = unannotate_value(composite.value, ConstraintExtension)
+                return annotate_with_constraint(
+                    new_value, EquivalentConstraint.make([constraint, existing])
+                )
             else:
                 return composite.value
         else:
