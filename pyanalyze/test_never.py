@@ -6,7 +6,14 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 
 
 class TestAnnotations(TestNameCheckVisitorBase):
-    # TODO test typing_extensions.Never when it exists
+    @assert_passes()
+    def test_te_never(self):
+        from typing_extensions import Never
+
+        def capybara(n: Never, o: "Never"):
+            assert_is_value(n, NO_RETURN_VALUE)
+            assert_is_value(o, NO_RETURN_VALUE)
+
     @skip_before((3, 11))
     @assert_passes()
     def test_never(self):

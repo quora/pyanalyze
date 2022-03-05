@@ -84,6 +84,7 @@ from .options import (
     add_arguments,
 )
 from .patma import PatmaVisitor
+from .predicates import EqualsPredicate
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
 from .safe import (
@@ -2800,32 +2801,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if varname is None:
             return NULL_CONSTRAINT
         if isinstance(op, (ast.Is, ast.IsNot)):
+            predicate = EqualsPredicate(other_val, self, use_is=True)
             positive = isinstance(op, ast.Is)
-            return Constraint(varname, ConstraintType.is_value, positive, other_val)
+            return Constraint(varname, ConstraintType.predicate, positive, predicate)
         elif isinstance(op, (ast.Eq, ast.NotEq)):
-
-            def predicate_func(value: Value, positive: bool) -> Optional[Value]:
-                op = operator.eq if positive else operator.ne
-                if isinstance(value, KnownValue):
-                    try:
-                        result = op(value.val, other_val)
-                    except Exception:
-                        pass
-                    else:
-                        if not result:
-                            return None
-                elif positive:
-                    known_other = KnownValue(other_val)
-                    if value.is_assignable(known_other, self):
-                        return known_other
-                    else:
-                        return None
-                return value
-
+            predicate = EqualsPredicate(other_val, self)
             positive = isinstance(op, ast.Eq)
-            return Constraint(
-                varname, ConstraintType.predicate, positive, predicate_func
-            )
+            return Constraint(varname, ConstraintType.predicate, positive, predicate)
         elif isinstance(op, (ast.In, ast.NotIn)) and is_right:
 
             def predicate_func(value: Value, positive: bool) -> Optional[Value]:
