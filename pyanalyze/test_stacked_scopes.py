@@ -822,6 +822,15 @@ class TestConstraints(TestNameCheckVisitorBase):
             assert_is_value(y, KnownValue(True))
 
     @assert_passes()
+    def test_bool_narrowing(self):
+        def capybara(x: bool):
+            assert_is_value(x, TypedValue(bool))
+            if x is True:
+                assert_is_value(x, KnownValue(True))
+            else:
+                assert_is_value(x, KnownValue(False))
+
+    @assert_passes()
     def test_assert_falsy(self):
         def capybara(x):
             if x:
