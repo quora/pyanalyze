@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Fix incorrectly inferred `Never` return type for some function
-  implementations (#489)
+  implementations (#490)
 - Infer precise call signatures for `TypedDict` types (#487)
 - Add mechanism to prevent crashes on objects
   with unusual `__getattr__` methods (#486)
