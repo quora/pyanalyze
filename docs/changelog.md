@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove support for detecting properties that represent
+  synchronous equivalents of asynq methods (#493)
 - Enable exhaustive checking of enums and booleans (#492)
 - Fix type narrowing in else branch if constraint is stored in a
   variable (#491)

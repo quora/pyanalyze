@@ -17,7 +17,6 @@ from .error_code import ErrorCode
 from .functions import AsyncFunctionKind
 from .options import Options, PyObjectSequenceOption, StringSequenceOption
 from .safe import safe_getattr, safe_hasattr
-from .stacked_scopes import Composite
 from .value import AnnotatedValue, Value, KnownValue, TypedValue, UnboundMethodValue
 
 
@@ -120,46 +119,6 @@ class AsynqChecker:
                 % (_stringify_obj(inner_type), value.attr_name),
                 replacement_node=replacement_node,
             )
-
-    def record_attribute_access(
-        self, root_value: Value, attr_name: str, node: ast.Attribute
-    ) -> None:
-        """Records that the given attribute of root_value was accessed."""
-        if isinstance(root_value, TypedValue):
-            if hasattr(root_value.typ, attr_name) and callable(
-                getattr(root_value.typ, attr_name)
-            ):
-                return
-            if self.should_perform_async_checks():
-                self._check_attribute_access_in_async(root_value, attr_name, node)
-
-    def _check_attribute_access_in_async(
-        self, root_value: Value, attr_name: str, node: ast.Attribute
-    ) -> None:
-        if isinstance(root_value, TypedValue):
-            if not (
-                hasattr(root_value.typ, attr_name)
-                and isinstance(getattr(root_value.typ, attr_name), property)
-            ):
-                return
-            async_names = ("get_" + attr_name, "is_" + attr_name)
-            for async_name in async_names:
-                if hasattr(root_value.typ, async_name) and asynq.is_async_fn(
-                    getattr(root_value.typ, async_name)
-                ):
-                    replacement_call = _stringify_async_fn(
-                        UnboundMethodValue(async_name, Composite(root_value), "asynq")
-                    )
-                    method_node = ast.Attribute(value=node.value, attr=async_name)
-                    func_node = ast.Attribute(value=method_node, attr="asynq")
-                    kwargs = {"args": [], "keywords": []}
-                    call_node = ast.Call(func=func_node, **kwargs)
-                    replacement_node = ast.Yield(value=call_node)
-                    self._show_impure_async_error(
-                        node,
-                        replacement_call=replacement_call,
-                        replacement_node=replacement_node,
-                    )
 
     def should_perform_async_checks(self) -> bool:
         if self.current_async_kind in (
