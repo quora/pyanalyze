@@ -4060,9 +4060,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):
             if self._is_checking():
-                self.asynq_checker.record_attribute_access(
-                    root_composite.value, node.attr, node
-                )
                 if (
                     isinstance(root_composite.value, KnownValue)
                     and isinstance(root_composite.value.val, types.ModuleType)
