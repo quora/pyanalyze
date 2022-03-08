@@ -116,6 +116,8 @@ CONTEXT_MANAGER_TYPES = (typing.ContextManager, contextlib.AbstractContextManage
 if sys.version_info >= (3, 7):
     ASYNC_CONTEXT_MANAGER_TYPES = (
         typing.AsyncContextManager,
+        # Doesn't exist on 3.6
+        # static analysis: ignore[undefined_attribute]
         contextlib.AbstractAsyncContextManager,
     )
 else:
