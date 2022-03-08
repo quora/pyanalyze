@@ -1144,7 +1144,7 @@ class FunctionScope(Scope):
         with self.subscope() as main_scope:
             loop_scopes.append(main_scope)
             with qcore.override(self, "current_loop_scopes", loop_scopes):
-                yield main_scope
+                yield loop_scopes
         self.combine_subscopes(
             [
                 {name: values for name, values in scope.items() if name != LEAVES_LOOP}
