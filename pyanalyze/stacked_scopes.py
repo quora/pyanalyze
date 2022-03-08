@@ -1434,7 +1434,7 @@ class StackedScopes:
         """Creates a new subscope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].subscope()
 
-    def loop_scope(self) -> ContextManager[None]:
+    def loop_scope(self) -> ContextManager[SubScope]:
         """Creates a new loop scope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].loop_scope()
 
