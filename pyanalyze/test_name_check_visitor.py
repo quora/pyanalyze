@@ -1655,6 +1655,19 @@ class TestUnusedIgnore(TestNameCheckVisitorBase):
             print(x)  # static analysis: ignore[undefined_name]
 
 
+class TestNestedLoop(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        def capybara(x: int):
+            v = 1
+            while x < 2:
+                while True:
+                    if x == 0:
+                        assert_is_value(v, KnownValue(1) | KnownValue(2))
+                        break
+                v = 2
+
+
 class TestMissingF(TestNameCheckVisitorBase):
     @assert_passes()
     def test_no_error(self):

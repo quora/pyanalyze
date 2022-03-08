@@ -3349,7 +3349,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             Boolability.type_always_true,
         )
         with self.scopes.subscope() as body_scope:
-            with self.scopes.loop_scope() as loop_scope:
+            with self.scopes.loop_scope() as loop_scopes:
                 # The "node" argument need not be an AST node but must be unique.
                 self.add_constraint((node, 1), constraint)
                 self._generic_visit_list(node.body)
@@ -3363,7 +3363,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self.add_constraint((node, 2), constraint)
                 self._generic_visit_list(node.body)
 
-        if always_entered and LEAVES_LOOP not in loop_scope:
+        if always_entered and all(LEAVES_LOOP not in scope for scope in loop_scopes):
             # This means the code following the loop is unreachable.
             self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
 

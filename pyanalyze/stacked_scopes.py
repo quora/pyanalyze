@@ -1175,12 +1175,12 @@ class FunctionScope(Scope):
             yield new_name_to_nodes
 
     @contextlib.contextmanager
-    def loop_scope(self) -> Iterator[SubScope]:
+    def loop_scope(self) -> Iterator[List[SubScope]]:
         loop_scopes = []
         with self.subscope() as main_scope:
             loop_scopes.append(main_scope)
             with qcore.override(self, "current_loop_scopes", loop_scopes):
-                yield main_scope
+                yield loop_scopes
         self.combine_subscopes(
             [
                 {name: values for name, values in scope.items() if name != LEAVES_LOOP}
@@ -1434,7 +1434,7 @@ class StackedScopes:
         """Creates a new subscope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].subscope()
 
-    def loop_scope(self) -> ContextManager[None]:
+    def loop_scope(self) -> ContextManager[List[SubScope]]:
         """Creates a new loop scope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].loop_scope()
 

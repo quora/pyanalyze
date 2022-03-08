@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix bug where code after a `while` loop is considered
+  unreachable if all `break` statements are inside of `if`
+  statements (#494)
 - Remove support for detecting properties that represent
   synchronous equivalents of asynq methods (#493)
 - Enable exhaustive checking of enums and booleans (#492)
