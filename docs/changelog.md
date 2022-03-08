@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix bug where code after a `while` loop is considered
+  unreachable if all `break` statements are inside of `if`
+  statements (#482)
 - Do not treat attributes that raise an exception on access
   as nonexistent (#481)
 - Improve detection of unhashable dict keys and set members (#469)

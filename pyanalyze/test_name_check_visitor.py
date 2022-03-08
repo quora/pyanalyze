@@ -1671,9 +1671,7 @@ class TestNestedLoop(TestNameCheckVisitorBase):
             while x < 2:
                 while True:
                     if x == 0:
-                        assert_is_value(
-                            v, MultiValuedValue([KnownValue(1), KnownValue(2)])
-                        )
+                        assert_is_value(v, KnownValue(1) | KnownValue(2))
                         break
                 v = 2
 

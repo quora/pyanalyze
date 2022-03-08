@@ -1139,7 +1139,7 @@ class FunctionScope(Scope):
             yield new_name_to_nodes
 
     @contextlib.contextmanager
-    def loop_scope(self) -> Iterator[SubScope]:
+    def loop_scope(self) -> Iterator[List[SubScope]]:
         loop_scopes = []
         with self.subscope() as main_scope:
             loop_scopes.append(main_scope)
