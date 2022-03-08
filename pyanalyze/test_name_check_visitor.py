@@ -2035,3 +2035,72 @@ class TestUnion(TestNameCheckVisitorBase):
             assert_is_value(x, TypedValue(str) | KnownValue(None))
             assert_is_value(y, TypedValue(str) | KnownValue(None))
             return x or y
+
+
+class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing import Optional, Type, ContextManager, Iterator
+        from types import TracebackType
+        import contextlib
+
+        class SuppressException:
+            def __enter__(self):
+                pass
+
+            def __exit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> bool:
+                return isinstance(exn, Exception)
+
+        class EmptyContext(object):
+            def __enter__(self):
+                pass
+
+            def __exit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> None:
+                pass
+
+        def empty_context_manager() -> ContextManager[None]:
+            return EmptyContext()
+
+        @contextlib.contextmanager
+        def contextlib_manager() -> Iterator[None]:
+            yield
+
+        def capybara():
+            a = 2
+            with SuppressException():
+                a = 3
+            assert_is_value(a, KnownValue(2) | KnownValue(3))
+
+        def pacarana():
+            a = 2  # static analysis: ignore[unused_variable]
+            with EmptyContext():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_context_manager():
+            a = 2  # static analysis: ignore[unused_variable]
+            with empty_context_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_builtin_function():
+            a = 2  # static analysis: ignore[unused_variable]
+            with open("test_file.txt"):
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_contextlib_manager():
+            a = 2  # static analysis: ignore[unused_variable]
+            with contextlib_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))

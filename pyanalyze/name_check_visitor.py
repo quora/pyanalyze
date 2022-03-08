@@ -51,6 +51,7 @@ from typing import (
     Type,
     TypeVar,
     Container,
+    Protocol,
 )
 from typing_extensions import Annotated
 
@@ -205,6 +206,7 @@ except ImportError:
     Match = Any
 
 T = TypeVar("T")
+U = TypeVar("U")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
 ExceptionValue = TypedValue(BaseException) | SubclassValue(TypedValue(BaseException))
@@ -274,6 +276,19 @@ COMPARATOR_TO_OPERATOR = {
     ast.In: (_in, _not_in),
     ast.NotIn: (_not_in, _in),
 }
+
+
+class CustomContextManager(Protocol[T, U]):
+    def __enter__(self) -> T:
+        raise NotImplementedError
+
+    def __exit__(
+        self,
+        _exc_type: Optional[Type[BaseException]],
+        _exc_value: Optional[BaseException],
+        __traceback: Optional[types.TracebackType],
+    ) -> U:
+        raise NotImplementedError
 
 
 @dataclass
@@ -2213,6 +2228,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     private=not force_public,
                 )
 
+        pseudo_module = None
         with tempfile.NamedTemporaryFile(suffix=".py") as f:
             f.write(source_code.encode("utf-8"))
             f.flush()
@@ -2233,6 +2249,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if pseudo_module_name in sys.modules:
                     del sys.modules[pseudo_module_name]
 
+        assert pseudo_module
         for name, value in pseudo_module.__dict__.items():
             if name.startswith("__") or (
                 hasattr(builtins, name) and value == getattr(builtins, name)
@@ -3410,14 +3427,27 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return result
 
     def visit_With(self, node: ast.With) -> None:
-        contexts = [self.visit_withitem(item) for item in node.items]
-        if len(contexts) == 1:
-            context = contexts[0]
+        results = [self.visit_withitem(item) for item in node.items]
+        if len(results) == 1:
+            context, _ = results[0]
             if isinstance(context, AnnotatedValue) and context.has_metadata_of_type(
                 AssertErrorExtension
             ):
                 self._visit_assert_errors_block(node)
                 return
+
+        can_suppress = any(can_suppress for _, can_suppress in results)
+
+        if can_suppress:
+            with self.scopes.subscope() as body_scope:
+                self._generic_visit_list(node.body)
+
+            # assume nothing ran if an exception was suppressed
+            with self.scopes.subscope() as dummy_subscope:
+                pass
+
+            self.scopes.combine_subscopes([body_scope, dummy_subscope])
+            return
         self._generic_visit_list(node.body)
 
     def _visit_assert_errors_block(self, node: ast.With) -> None:
@@ -3435,13 +3465,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.visit_withitem(item, is_async=True)
         self._generic_visit_list(node.body)
 
-    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> Value:
+    def visit_withitem(
+        self, node: ast.withitem, is_async: bool = False
+    ) -> Tuple[Value, bool]:
         context = self.visit(node.context_expr)
         if is_async:
             protocol = "typing.AsyncContextManager"
         else:
-            protocol = "typing.ContextManager"
-        val = GenericValue(protocol, [TypeVarValue(T)])
+            protocol = CustomContextManager
+        val = GenericValue(protocol, [TypeVarValue(T), TypeVarValue(U)])
         can_assign = get_tv_map(val, context, self)
         if isinstance(can_assign, CanAssignError):
             self._show_error_if_checking(
@@ -3451,12 +3483,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 error_code=ErrorCode.invalid_context_manager,
             )
             assigned = AnyValue(AnySource.error)
+            can_suppress = False
         else:
             assigned = can_assign.get(T, AnyValue(AnySource.generic_argument))
+            exit_assigned = can_assign.get(U, AnyValue(AnySource.generic_argument))
+            exit_boolability = get_boolability(exit_assigned)
+            can_suppress = not exit_boolability.is_safely_false()
+            if isinstance(exit_assigned, AnyValue):
+                # cannot easily infer what the context manager will do,
+                # assume it does not suppress exceptions.
+                can_suppress = False
         if node.optional_vars is not None:
             with qcore.override(self, "being_assigned", assigned):
                 self.visit(node.optional_vars)
-        return context
+        return (context, can_suppress)
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
