@@ -4,7 +4,19 @@
 
 - Fix bug where code after a `while` loop is considered
   unreachable if all `break` statements are inside of `if`
-  statements (#482)
+  statements (#494)
+- Remove support for detecting properties that represent
+  synchronous equivalents of asynq methods (#493)
+- Enable exhaustive checking of enums and booleans (#492)
+- Fix type narrowing in else branch if constraint is stored in a
+  variable (#491)
+- Fix incorrectly inferred `Never` return type for some function
+  implementations (#490)
+- Infer precise call signatures for `TypedDict` types (#487)
+- Add mechanism to prevent crashes on objects
+  with unusual `__getattr__` methods (#486)
+- Infer callable signatures for objects with a
+  `__getattr__` method (#485, #488)
 - Do not treat attributes that raise an exception on access
   as nonexistent (#481)
 - Improve detection of unhashable dict keys and set members (#469)

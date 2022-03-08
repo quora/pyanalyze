@@ -822,6 +822,15 @@ class TestConstraints(TestNameCheckVisitorBase):
             assert_is_value(y, KnownValue(True))
 
     @assert_passes()
+    def test_bool_narrowing(self):
+        def capybara(x: bool):
+            assert_is_value(x, TypedValue(bool))
+            if x is True:
+                assert_is_value(x, KnownValue(True))
+            else:
+                assert_is_value(x, KnownValue(False))
+
+    @assert_passes()
     def test_assert_falsy(self):
         def capybara(x):
             if x:
@@ -1775,4 +1784,17 @@ class TestInvalidation(TestNameCheckVisitorBase):
                     assert_is_value(key, TypedValue(int))
                     data = [ids, data[key]]
                 else:
+                    assert_is_value(key, KnownValue(None))
                     data = [ids]
+
+    @assert_passes()
+    def test_else(self) -> None:
+        from typing import Optional
+
+        def capybara(key: Optional[int]):
+            has_bias = key is not None
+            assert_is_value(key, TypedValue(int) | KnownValue(None))
+            if has_bias:
+                assert_is_value(key, TypedValue(int))
+            else:
+                assert_is_value(key, KnownValue(None))

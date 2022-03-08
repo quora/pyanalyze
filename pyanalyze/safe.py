@@ -28,6 +28,16 @@ except ImportError:
 T = TypeVar("T")
 
 
+def hasattr_static(object: object, name: str) -> bool:
+    """Similar to ``inspect.getattr_static()``."""
+    try:
+        inspect.getattr_static(object, name)
+    except AttributeError:
+        return False
+    else:
+        return True
+
+
 def safe_hasattr(item: object, member: str) -> bool:
     """Safe version of ``hasattr()``."""
     try:

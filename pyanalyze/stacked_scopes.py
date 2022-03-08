@@ -524,6 +524,42 @@ class PredicateProvider(AbstractConstraint):
 
 
 @dataclass(frozen=True)
+class EquivalentConstraint(AbstractConstraint):
+    """Represents multiple constraints that are either all true or all false."""
+
+    constraints: Tuple[AbstractConstraint, ...]
+
+    def apply(self) -> Iterable["Constraint"]:
+        for cons in self.constraints:
+            yield from cons.apply()
+
+    def invert(self) -> "EquivalentConstraint":
+        # ~(A == B) -> ~A == ~B
+        return EquivalentConstraint(tuple([cons.invert() for cons in self.constraints]))
+
+    @classmethod
+    def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
+        processed = {}
+        for cons in constraints:
+            if isinstance(cons, EquivalentConstraint):
+                for subcons in cons.constraints:
+                    processed[id(subcons)] = subcons
+                continue
+            processed[id(cons)] = cons
+
+        final = list(processed.values())
+
+        if len(final) == 1:
+            (cons,) = final
+            return cons
+        return cls(tuple(final))
+
+    def __str__(self) -> str:
+        children = " == ".join(map(str, self.constraints))
+        return f"({children})"
+
+
+@dataclass(frozen=True)
 class AndConstraint(AbstractConstraint):
     """Represents the AND of two constraints."""
 

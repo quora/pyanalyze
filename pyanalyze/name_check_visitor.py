@@ -84,6 +84,7 @@ from .options import (
     add_arguments,
 )
 from .patma import PatmaVisitor
+from .predicates import EqualsPredicate
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
 from .safe import (
@@ -98,6 +99,7 @@ from .stacked_scopes import (
     AbstractConstraint,
     Composite,
     CompositeIndex,
+    EquivalentConstraint,
     FunctionScope,
     Varname,
     Constraint,
@@ -2799,32 +2801,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if varname is None:
             return NULL_CONSTRAINT
         if isinstance(op, (ast.Is, ast.IsNot)):
+            predicate = EqualsPredicate(other_val, self, use_is=True)
             positive = isinstance(op, ast.Is)
-            return Constraint(varname, ConstraintType.is_value, positive, other_val)
+            return Constraint(varname, ConstraintType.predicate, positive, predicate)
         elif isinstance(op, (ast.Eq, ast.NotEq)):
-
-            def predicate_func(value: Value, positive: bool) -> Optional[Value]:
-                op = operator.eq if positive else operator.ne
-                if isinstance(value, KnownValue):
-                    try:
-                        result = op(value.val, other_val)
-                    except Exception:
-                        pass
-                    else:
-                        if not result:
-                            return None
-                elif positive:
-                    known_other = KnownValue(other_val)
-                    if value.is_assignable(known_other, self):
-                        return known_other
-                    else:
-                        return None
-                return value
-
+            predicate = EqualsPredicate(other_val, self)
             positive = isinstance(op, ast.Eq)
-            return Constraint(
-                varname, ConstraintType.predicate, positive, predicate_func
-            )
+            return Constraint(varname, ConstraintType.predicate, positive, predicate)
         elif isinstance(op, (ast.In, ast.NotIn)) and is_right:
 
             def predicate_func(value: Value, positive: bool) -> Optional[Value]:
@@ -3296,7 +3279,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 constraint = Constraint(
                     composite.varname, ConstraintType.is_truthy, True, None
                 )
-                return annotate_with_constraint(composite.value, constraint)
+                existing = extract_constraints(composite.value)
+                new_value, _ = unannotate_value(composite.value, ConstraintExtension)
+                return annotate_with_constraint(
+                    new_value, EquivalentConstraint.make([constraint, existing])
+                )
             else:
                 return composite.value
         else:
@@ -4073,9 +4060,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):
             if self._is_checking():
-                self.asynq_checker.record_attribute_access(
-                    root_composite.value, node.attr, node
-                )
                 if (
                     isinstance(root_composite.value, KnownValue)
                     and isinstance(root_composite.value.val, types.ModuleType)

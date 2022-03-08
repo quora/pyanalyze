@@ -2242,6 +2242,15 @@ def concrete_values_from_iterable(
         getitem_tv_map = get_tv_map(GetItemProtoValue, value, ctx)
         if not isinstance(getitem_tv_map, CanAssignError):
             val = getitem_tv_map.get(T, AnyValue(AnySource.generic_argument))
+        # Hack to support iteration over StrEnum. A better solution would have to
+        # handle descriptors better in attribute assignment and Protocol compatibility.
+        elif (
+            isinstance(value, SubclassValue)
+            and isinstance(value.typ, TypedValue)
+            and isinstance(value.typ.typ, type)
+            and safe_issubclass(value.typ.typ, enum.Enum)
+        ):
+            return value.typ
         else:
             # We return the error from the __iter__ check because the __getitem__
             # check is more arcane.

@@ -84,16 +84,6 @@ class TestImpureAsyncCalls(TestNameCheckVisitorBase):
                 return str(log)
 
     @assert_passes()
-    def test_impure_async_property_access(self):
-        from pyanalyze.tests import PropertyObject
-        from asynq import asynq
-
-        @asynq()
-        def get_capybara(qid):
-            po = PropertyObject(qid)
-            return po.prop_with_get  # E: impure_async_call
-
-    @assert_passes()
     def test_async_property_access(self):
         from pyanalyze.tests import PropertyObject
         from asynq import asynq, result
@@ -207,18 +197,6 @@ def capybara():
                 z = []
                 z += self.render_stuff()  # E: impure_async_call
                 return z
-
-    @assert_passes()
-    def test_impure_async_for_attributes(self):
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
-
-        class Capybara(CheckedForAsynq):
-            def init(self, qid):
-                self.qid = qid
-
-            def tree(self):
-                PropertyObject(self.qid).prop_with_get  # E: impure_async_call
-                return []
 
     @assert_passes()
     def test_pure_async_for_attributes(self):

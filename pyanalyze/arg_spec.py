@@ -12,8 +12,9 @@ from .find_unused import used
 from . import implementation
 from .safe import (
     all_of_type,
+    hasattr_static,
     is_newtype,
-    safe_hasattr,
+    safe_equals,
     safe_issubclass,
     is_typing_name,
     safe_isinstance,
@@ -41,6 +42,8 @@ from .value import (
     Extension,
     GenericBases,
     KVPair,
+    SubclassValue,
+    TypedDictValue,
     TypedValue,
     GenericValue,
     NewTypeValue,
@@ -58,11 +61,12 @@ import asynq
 from collections.abc import Awaitable
 import contextlib
 from dataclasses import dataclass, replace
+import enum
 import qcore
 import inspect
 import sys
 import textwrap
-from types import FunctionType, ModuleType
+from types import FunctionType, ModuleType, MethodType
 from typing import (
     Any,
     Callable,
@@ -75,11 +79,14 @@ from typing import (
     Tuple,
     Union,
 )
+from typing_extensions import is_typeddict
 import typing_inspect
 from unittest import mock
 
 # types.MethodWrapperType in 3.7+
 MethodWrapperType = type(object().__str__)
+
+_ENUM_CALL = enum.Enum.__call__.__func__
 
 
 @used  # exposed as an API
@@ -323,7 +330,7 @@ class ArgSpecCache:
         # because @functools.wraps copies the __annotations__ of the wrapped function. We
         # don't want that, because the wrapper may have changed the return type.
         # This caused problems with @contextlib.contextmanager.
-        is_wrapped = safe_hasattr(function_object, "__wrapped__")
+        is_wrapped = hasattr_static(function_object, "__wrapped__")
 
         if returns is not None:
             has_return_annotation = True
@@ -572,7 +579,7 @@ class ArgSpecCache:
                 if evaluator_sig is not None:
                     return evaluator_sig
 
-        if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
+        if isinstance(obj, tuple):
             return None  # lost cause
 
         # Cythonized methods, e.g. fn.asynq
@@ -604,8 +611,8 @@ class ArgSpecCache:
             )
             return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
 
-        if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
-            is_asynq = is_asynq or hasattr(obj, "asynq")
+        if hasattr_static(obj, "fn") or hasattr_static(obj, "original_fn"):
+            is_asynq = is_asynq or hasattr_static(obj, "asynq")
             # many decorators put the original function in the .fn attribute
             try:
                 original_fn = qcore.get_original_fn(obj)
@@ -617,6 +624,26 @@ class ArgSpecCache:
                 return self._cached_get_argspec(
                     original_fn, impl, is_asynq, in_overload_resolution
                 )
+
+        # Special case for EnumMeta.__call__. Ideally this should be generalized.
+        if (
+            safe_isinstance(obj, type)
+            and safe_issubclass(obj, enum.Enum)
+            and safe_isinstance(obj.__call__, MethodType)
+            and safe_equals(obj.__call__.__func__, _ENUM_CALL)
+        ):
+            signature = self._cached_get_argspec(
+                _ENUM_CALL, impl, is_asynq, in_overload_resolution
+            )
+            bound_sig = make_bound_method(
+                signature, Composite(SubclassValue(TypedValue(obj)))
+            )
+            if bound_sig is None:
+                return None
+            sig = bound_sig.get_signature(preserve_impl=True, ctx=self.ctx)
+            if sig is not None:
+                return sig
+            return bound_sig
 
         allow_call = FunctionsSafeToCall.contains(obj, self.options) or (
             safe_isinstance(obj, type) and safe_issubclass(obj, self.safe_bases)
@@ -630,6 +657,20 @@ class ArgSpecCache:
         )
         if argspec is not None:
             return argspec
+
+        if is_typeddict(obj) and not is_typing_name(obj, "TypedDict"):
+            td_type = type_from_runtime(obj)
+            if isinstance(td_type, TypedDictValue):
+                params = [
+                    SigParameter(
+                        key,
+                        ParameterKind.KEYWORD_ONLY,
+                        default=None if required else KnownValue(...),
+                        annotation=value,
+                    )
+                    for key, (required, value) in td_type.items.items()
+                ]
+                return Signature.make(params, td_type)
 
         if is_newtype(obj):
             assert hasattr(obj, "__supertype__")
@@ -648,7 +689,7 @@ class ArgSpecCache:
             )
 
         if inspect.isfunction(obj):
-            if hasattr(obj, "inner"):
+            if hasattr_static(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
                 return self._cached_get_argspec(
                     obj.inner, impl, is_asynq, in_overload_resolution
@@ -745,7 +786,7 @@ class ArgSpecCache:
                 return self.from_signature(inspect_sig, function_object=obj)
             return self._make_any_sig(obj)
 
-        if hasattr(obj, "__call__"):
+        if hasattr_static(obj, "__call__"):
             # we could get an argspec here in some cases, but it's impossible to figure out
             # the argspec for some builtin methods (e.g., dict.__init__), and no way to detect
             # these with inspect, so just give up.
@@ -893,9 +934,9 @@ class ArgSpecCache:
 def _is_qcore_decorator(obj: object) -> TypeGuard[Any]:
     try:
         return (
-            hasattr(obj, "is_decorator")
+            hasattr_static(obj, "is_decorator")
             and obj.is_decorator()
-            and hasattr(obj, "decorator")
+            and hasattr_static(obj, "decorator")
         )
     except Exception:
         # black.Line has an is_decorator attribute but it is not a method
@@ -903,7 +944,7 @@ def _is_qcore_decorator(obj: object) -> TypeGuard[Any]:
 
 
 def _get_class_name(obj: object) -> Optional[str]:
-    if hasattr(obj, "__qualname__"):
+    if hasattr_static(obj, "__qualname__"):
         pieces = obj.__qualname__.split(".")
         if len(pieces) >= 2:
             return pieces[-2]

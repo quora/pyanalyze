@@ -18,7 +18,7 @@ from .annotations import (
 )
 from .error_code import ErrorCode
 from .extensions import overload, real_overload
-from .safe import all_of_type, is_typing_name, safe_isinstance
+from .safe import all_of_type, hasattr_static, is_typing_name, safe_isinstance
 from .stacked_scopes import uniq_chain, Composite
 from .signature import (
     ConcreteSignature,
@@ -196,7 +196,7 @@ class TypeshedFinder:
             return self.get_argspec_for_fully_qualified_name(
                 obj, obj, type_params=type_params
             )
-        if inspect.ismethoddescriptor(obj) and hasattr(obj, "__objclass__"):
+        if inspect.ismethoddescriptor(obj) and hasattr_static(obj, "__objclass__"):
             objclass = obj.__objclass__
             fq_name = self._get_fq_name(objclass)
             if fq_name is None:
@@ -211,9 +211,10 @@ class TypeshedFinder:
             self.log("Ignoring method", obj)
             return None
         if (
-            hasattr(obj, "__qualname__")
-            and hasattr(obj, "__name__")
-            and hasattr(obj, "__module__")
+            hasattr_static(obj, "__qualname__")
+            and hasattr_static(obj, "__name__")
+            and hasattr_static(obj, "__module__")
+            and isinstance(obj.__qualname__, str)
             and obj.__qualname__ != obj.__name__
             and "." in obj.__qualname__
         ):

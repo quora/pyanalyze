@@ -1,7 +1,8 @@
 # static analysis: ignore
+from dataclasses import dataclass
 from asynq import asynq
 import functools
-from typing import TypeVar, NewType
+from typing import List, TypeVar, NewType
 
 from .checker import Checker
 from .test_name_check_visitor import (
@@ -89,6 +90,14 @@ def decorator(fn):
     return wrapper
 
 
+@dataclass
+class AllTheAttrs:
+    x: List[str]
+
+    def __getattr__(self, attr: str) -> "AllTheAttrs":
+        return AllTheAttrs([*self.x, attr])
+
+
 def test_get_argspec():
     checker = Checker()
     visitor = ConfiguredNameCheckVisitor(
@@ -105,6 +114,9 @@ def test_get_argspec():
         assert Signature.make(
             [SigParameter("arg")], callable=ClassWithCall.__call__
         ) == visitor.signature_from_value(cwc_typed)
+
+        ata = AllTheAttrs([])
+        assert asc.get_argspec(ata) is None
 
         assert BoundMethodSignature(
             Signature.make(
