@@ -156,6 +156,20 @@ class TestAnnotations(TestNameCheckVisitorBase):
             yield 3
 
     @assert_passes()
+    def test_contextmanager_class(self):
+        from typing import ContextManager
+
+        def f() -> ContextManager[int]:
+            raise NotImplementedError
+
+        def capybara():
+            assert_is_value(
+                f(), GenericValue("typing.ContextManager", [TypedValue(int)])
+            )
+            with f() as x:
+                assert_is_value(x, TypedValue(int))
+
+    @assert_passes()
     def test_none_annotations(self):
         def mara() -> None:
             pass

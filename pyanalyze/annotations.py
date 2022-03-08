@@ -23,6 +23,7 @@ These functions all use :class:`Context` objects to resolve names and
 show errors.
 
 """
+import contextlib
 from dataclasses import dataclass, InitVar, field
 import typing
 
@@ -31,6 +32,7 @@ import qcore
 import ast
 import builtins
 from collections.abc import Callable, Iterable, Hashable
+import sys
 from typing import (
     Any,
     Container,
@@ -108,6 +110,18 @@ except ImportError:
 
     def get_args(obj: object) -> Tuple[Any, ...]:
         return ()
+
+
+CONTEXT_MANAGER_TYPES = (typing.ContextManager, contextlib.AbstractContextManager)
+if sys.version_info >= (3, 7):
+    ASYNC_CONTEXT_MANAGER_TYPES = (
+        typing.AsyncContextManager,
+        # Doesn't exist on 3.6
+        # static analysis: ignore[undefined_attribute]
+        contextlib.AbstractAsyncContextManager,
+    )
+else:
+    ASYNC_CONTEXT_MANAGER_TYPES = (typing.AsyncContextManager,)
 
 
 @dataclass
@@ -785,9 +799,9 @@ def _type_from_subscripted_value(
 def _maybe_get_extra(origin: type) -> Union[type, str]:
     # ContextManager is defined oddly and we lose the Protocol if we don't use
     # synthetic types.
-    if origin is typing.ContextManager:
+    if any(origin is cls for cls in CONTEXT_MANAGER_TYPES):
         return "typing.ContextManager"
-    elif origin is typing.AsyncContextManager:
+    elif any(origin is cls for cls in ASYNC_CONTEXT_MANAGER_TYPES):
         return "typing.AsyncContextManager"
     else:
         # turn typing.List into list in some Python versions

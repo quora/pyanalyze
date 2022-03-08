@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix type inference for `with` assignment targets on
+  Python 3.7 and higher (#495)
 - Fix bug where code after a `while` loop is considered
   unreachable if all `break` statements are inside of `if`
   statements (#494)
