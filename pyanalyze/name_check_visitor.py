@@ -3439,28 +3439,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return result
 
     def visit_With(self, node: ast.With) -> None:
-        results = [self.visit_withitem(item) for item in node.items]
-        if len(results) == 1:
-            context, _ = results[0]
+        if len(node.items) == 1:
+            with self.scopes.subscope():
+                context = self.visit(node.items[0].context_expr)
             if isinstance(context, AnnotatedValue) and context.has_metadata_of_type(
                 AssertErrorExtension
             ):
                 self._visit_assert_errors_block(node)
                 return
 
-        can_suppress = any(can_suppress for _, can_suppress in results)
-
-        if can_suppress:
-            with self.scopes.subscope() as body_scope:
-                self._generic_visit_list(node.body)
-
-            # assume nothing ran if an exception was suppressed
-            with self.scopes.subscope() as dummy_subscope:
-                pass
-
-            self.scopes.combine_subscopes([body_scope, dummy_subscope])
-            return
-        self._generic_visit_list(node.body)
+        self.visit_single_cm(node.items, node.body, False)
 
     def _visit_assert_errors_block(self, node: ast.With) -> None:
         with self.catch_errors() as caught:
@@ -3473,23 +3461,29 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
 
     def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
-        results = [self.visit_withitem(item, is_async=True) for item in node.items]
-        can_suppress = any(can_suppress for _, can_suppress in results)
-        if can_suppress:
-            with self.scopes.subscope() as body_scope:
-                self._generic_visit_list(node.body)
+        self.visit_single_cm(node.items, node.body, True)
 
-            # assume nothing ran if an exception was suppressed
+    def visit_single_cm(
+        self, items: List[ast.withitem], body: Iterable[ast.AST], is_async: bool = False
+    ) -> None:
+        if len(items) == 0:
+            self._generic_visit_list(body)
+            return
+        first_item = items[0]
+        can_suppress = self.visit_withitem(first_item, is_async)
+        with self.scopes.subscope() as rest_scope:
+            # get scope for visiting remaining CMs + Body
+            self.visit_single_cm(items[1:], body, is_async)
+        if can_suppress:
+            # If an exception was suppressed, assume no other CMs
+            # or any code in the body was executed.
             with self.scopes.subscope() as dummy_subscope:
                 pass
+            self.scopes.combine_subscopes([rest_scope, dummy_subscope])
+        else:
+            self.scopes.combine_subscopes([rest_scope])
 
-            self.scopes.combine_subscopes([body_scope, dummy_subscope])
-            return
-        self._generic_visit_list(node.body)
-
-    def visit_withitem(
-        self, node: ast.withitem, is_async: bool = False
-    ) -> Tuple[Value, bool]:
+    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> bool:
         context = self.visit(node.context_expr)
         if is_async:
             protocol = AsyncCustomContextManager
@@ -3513,7 +3507,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             can_suppress = not exit_boolability.is_safely_false()
             if isinstance(exit_assigned, AnyValue) or (
                 isinstance(context, TypedValue)
-                and context.typ == "typing.ContextManager"
+                and context.typ
+                in ["typing.ContextManager", "typing.AsyncContextManager"]
             ):
                 # cannot easily infer what the context manager will do,
                 # assume it does not suppress exceptions.
@@ -3521,7 +3516,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if node.optional_vars is not None:
             with qcore.override(self, "being_assigned", assigned):
                 self.visit(node.optional_vars)
-        return (context, can_suppress)
+        return can_suppress
 
     def visit_try_except(self, node: ast.Try) -> List[SubScope]:
         # reset yield checks between branches to avoid incorrect errors when we yield both in the
