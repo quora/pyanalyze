@@ -51,9 +51,8 @@ from typing import (
     Type,
     TypeVar,
     Container,
-    Protocol,
 )
-from typing_extensions import Annotated
+from typing_extensions import Annotated, Protocol
 
 import asynq
 import qcore
@@ -284,8 +283,21 @@ class CustomContextManager(Protocol[T, U]):
 
     def __exit__(
         self,
-        _exc_type: Optional[Type[BaseException]],
-        _exc_value: Optional[BaseException],
+        __exc_type: Optional[Type[BaseException]],
+        __exc_value: Optional[BaseException],
+        __traceback: Optional[types.TracebackType],
+    ) -> U:
+        raise NotImplementedError
+
+
+class AsyncCustomContextManager(Protocol[T, U]):
+    async def __aenter__(self) -> T:
+        raise NotImplementedError
+
+    async def __aexit__(
+        self,
+        __exc_type: Optional[Type[BaseException]],
+        __exc_value: Optional[BaseException],
         __traceback: Optional[types.TracebackType],
     ) -> U:
         raise NotImplementedError
@@ -3461,8 +3473,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
 
     def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
-        for item in node.items:
-            self.visit_withitem(item, is_async=True)
+        results = [self.visit_withitem(item, is_async=True) for item in node.items]
+        can_suppress = any(can_suppress for _, can_suppress in results)
+        if can_suppress:
+            with self.scopes.subscope() as body_scope:
+                self._generic_visit_list(node.body)
+
+            # assume nothing ran if an exception was suppressed
+            with self.scopes.subscope() as dummy_subscope:
+                pass
+
+            self.scopes.combine_subscopes([body_scope, dummy_subscope])
+            return
         self._generic_visit_list(node.body)
 
     def visit_withitem(
@@ -3470,7 +3492,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     ) -> Tuple[Value, bool]:
         context = self.visit(node.context_expr)
         if is_async:
-            protocol = "typing.AsyncContextManager"
+            protocol = AsyncCustomContextManager
         else:
             protocol = CustomContextManager
         val = GenericValue(protocol, [TypeVarValue(T), TypeVarValue(U)])
@@ -3489,7 +3511,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             exit_assigned = can_assign.get(U, AnyValue(AnySource.generic_argument))
             exit_boolability = get_boolability(exit_assigned)
             can_suppress = not exit_boolability.is_safely_false()
-            if isinstance(exit_assigned, AnyValue):
+            if (
+                isinstance(exit_assigned, AnyValue)
+                or context.typ == "typing.ContextManager"
+            ):
                 # cannot easily infer what the context manager will do,
                 # assume it does not suppress exceptions.
                 can_suppress = False

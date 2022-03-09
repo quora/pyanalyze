@@ -2068,22 +2068,58 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
             ) -> None:
                 pass
 
+        class AsyncSuppressException(object):
+            async def __aenter__(self):
+                pass
+
+            async def __aexit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> bool:
+                return isinstance(exn, Exception)
+
+        class AsyncEmptyContext(object):
+            async def __aenter__(self):
+                pass
+
+            async def __aexit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> None:
+                pass
+
         def empty_context_manager() -> ContextManager[None]:
             return EmptyContext()
 
         @contextlib.contextmanager
-        def contextlib_manager() -> Iterator[None]:
+        def empty_contextlib_manager() -> Iterator[None]:
             yield
 
-        def capybara():
+        def use_suppress_exception():
             a = 2
             with SuppressException():
                 a = 3
             assert_is_value(a, KnownValue(2) | KnownValue(3))
 
-        def pacarana():
+        async def use_async_suppress_exception():
+            a = 2
+            async with AsyncSuppressException():
+                a = 3
+            assert_is_value(a, KnownValue(2) | KnownValue(3))
+
+        def use_empty_context():
             a = 2  # static analysis: ignore[unused_variable]
             with EmptyContext():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        async def use_async_empty_context():
+            a = 2  # static analysis: ignore[unused_variable]
+            async with AsyncEmptyContext():
                 a = 3
             assert_is_value(a, KnownValue(3))
 
@@ -2101,6 +2137,6 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
 
         def use_contextlib_manager():
             a = 2  # static analysis: ignore[unused_variable]
-            with contextlib_manager():
+            with empty_contextlib_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))

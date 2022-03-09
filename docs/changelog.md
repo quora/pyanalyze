@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support context managers that may suppress exceptions (#496)
 - Fix type inference for `with` assignment targets on
   Python 3.7 and higher (#495)
 - Fix bug where code after a `while` loop is considered
