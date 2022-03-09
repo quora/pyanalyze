@@ -2118,9 +2118,8 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_async(self):
-        from typing import Optional, Type, AsyncContextManager, AsyncIterator
+        from typing import Optional, Type, AsyncContextManager
         from types import TracebackType
-        import contextlib
 
         class AsyncSuppressException(object):
             async def __aenter__(self) -> None:
@@ -2149,10 +2148,6 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
         def async_empty_context_manager() -> AsyncContextManager[None]:
             return AsyncEmptyContext()
 
-        @contextlib.asynccontextmanager
-        async def async_empty_contextlib_manager() -> AsyncIterator[None]:
-            yield
-
         async def use_async_suppress_exception():
             a = 2
             async with AsyncSuppressException():
@@ -2171,12 +2166,6 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
                 a = 3
             assert_is_value(a, KnownValue(3))
 
-        async def use_async_contextlib_manager():
-            a = 2  # static analysis: ignore[unused_variable]
-            async with async_empty_contextlib_manager():
-                a = 3
-            assert_is_value(a, KnownValue(3))
-
         async def use_async_nested_contexts():
             b = 2
             async with AsyncSuppressException(), AsyncEmptyContext() as b:
@@ -2187,3 +2176,18 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
             async with AsyncEmptyContext() as c, AsyncSuppressException():
                 assert_is_value(c, KnownValue(None))
             assert_is_value(c, KnownValue(None))
+
+    @skip_before((3, 7))
+    def test_async_contextlib_manager(self):
+        import contextlib
+        from typing import AsyncIterator
+
+        @contextlib.asynccontextmanager
+        async def async_empty_contextlib_manager() -> AsyncIterator[None]:
+            yield
+
+        async def use_async_contextlib_manager():
+            a = 2  # static analysis: ignore[unused_variable]
+            async with async_empty_contextlib_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))
