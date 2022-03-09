@@ -3511,9 +3511,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             exit_assigned = can_assign.get(U, AnyValue(AnySource.generic_argument))
             exit_boolability = get_boolability(exit_assigned)
             can_suppress = not exit_boolability.is_safely_false()
-            if (
-                isinstance(exit_assigned, AnyValue)
-                or context.typ == "typing.ContextManager"
+            if isinstance(exit_assigned, AnyValue) or (
+                isinstance(context, TypedValue)
+                and context.typ == "typing.ContextManager"
             ):
                 # cannot easily infer what the context manager will do,
                 # assume it does not suppress exceptions.
