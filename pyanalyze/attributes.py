@@ -245,6 +245,7 @@ def _get_attribute_from_typed(
         return KnownValue(typ)
     elif ctx.attr == "__dict__":
         return TypedValue(dict)
+
     result, provider, should_unwrap = _get_attribute_from_mro(typ, ctx, on_class=False)
     result = _substitute_typevars(typ, generic_args, result, provider, ctx)
     if should_unwrap:

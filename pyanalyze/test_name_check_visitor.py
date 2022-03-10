@@ -2035,3 +2035,159 @@ class TestUnion(TestNameCheckVisitorBase):
             assert_is_value(x, TypedValue(str) | KnownValue(None))
             assert_is_value(y, TypedValue(str) | KnownValue(None))
             return x or y
+
+
+class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_sync(self):
+        from typing import Optional, Type, ContextManager, Iterator
+        from types import TracebackType
+        import contextlib
+
+        class SuppressException:
+            def __enter__(self) -> None:
+                pass
+
+            def __exit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> bool:
+                return isinstance(exn, Exception)
+
+        class EmptyContext(object):
+            def __enter__(self) -> None:
+                pass
+
+            def __exit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> None:
+                pass
+
+        def empty_context_manager() -> ContextManager[None]:
+            return EmptyContext()
+
+        @contextlib.contextmanager
+        def empty_contextlib_manager() -> Iterator[None]:
+            yield
+
+        def use_suppress_exception():
+            a = 2
+            with SuppressException():
+                a = 3
+            assert_is_value(a, KnownValue(2) | KnownValue(3))
+
+        def use_empty_context():
+            a = 2  # static analysis: ignore[unused_variable]
+            with EmptyContext():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_context_manager():
+            a = 2  # static analysis: ignore[unused_variable]
+            with empty_context_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_builtin_function():
+            a = 2  # static analysis: ignore[unused_variable]
+            with open("test_file.txt"):
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_contextlib_manager():
+            a = 2  # static analysis: ignore[unused_variable]
+            with empty_contextlib_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_nested_contexts():
+            b = 2
+            with SuppressException(), EmptyContext() as b:
+                assert_is_value(b, KnownValue(None))
+            assert_is_value(b, KnownValue(2) | KnownValue(None))
+
+            c = 2  # static analysis: ignore[unused_variable]
+            with EmptyContext() as c, SuppressException():
+                assert_is_value(c, KnownValue(None))
+            assert_is_value(c, KnownValue(None))
+
+    @assert_passes()
+    def test_async(self):
+        from typing import Optional, Type, AsyncContextManager
+        from types import TracebackType
+
+        class AsyncSuppressException(object):
+            async def __aenter__(self) -> None:
+                pass
+
+            async def __aexit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> bool:
+                return isinstance(exn, Exception)
+
+        class AsyncEmptyContext(object):
+            async def __aenter__(self) -> None:
+                pass
+
+            async def __aexit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> None:
+                pass
+
+        def async_empty_context_manager() -> AsyncContextManager[None]:
+            return AsyncEmptyContext()
+
+        async def use_async_suppress_exception():
+            a = 2
+            async with AsyncSuppressException():
+                a = 3
+            assert_is_value(a, KnownValue(2) | KnownValue(3))
+
+        async def use_async_empty_context():
+            a = 2  # static analysis: ignore[unused_variable]
+            async with AsyncEmptyContext():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        async def use_async_context_manager():
+            a = 2  # static analysis: ignore[unused_variable]
+            async with async_empty_context_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        async def use_async_nested_contexts():
+            b = 2
+            async with AsyncSuppressException(), AsyncEmptyContext() as b:
+                assert_is_value(b, KnownValue(None))
+            assert_is_value(b, KnownValue(2) | KnownValue(None))
+
+            c = 2  # static analysis: ignore[unused_variable]
+            async with AsyncEmptyContext() as c, AsyncSuppressException():
+                assert_is_value(c, KnownValue(None))
+            assert_is_value(c, KnownValue(None))
+
+    @skip_before((3, 7))
+    def test_async_contextlib_manager(self):
+        import contextlib
+        from typing import AsyncIterator
+
+        @contextlib.asynccontextmanager
+        async def async_empty_contextlib_manager() -> AsyncIterator[None]:
+            yield
+
+        async def use_async_contextlib_manager():
+            a = 2  # static analysis: ignore[unused_variable]
+            async with async_empty_contextlib_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))

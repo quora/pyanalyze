@@ -259,8 +259,8 @@ class PatmaVisitor(ast.NodeVisitor):
                 )
             ]
         kv_pairs = list(reversed(kv_pairs))
-        optional_pairs = set()
-        removed_pairs = set()
+        optional_pairs: Set[KVPair] = set()
+        removed_pairs: Set[KVPair] = set()
         for key, pattern in zip(node.keys, node.patterns):
             key_val = self.visitor.visit(key)
             value, new_optional_pairs, new_removed_pairs = get_value_from_kv_pairs(
