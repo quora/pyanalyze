@@ -3448,7 +3448,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self._visit_assert_errors_block(node)
                 return
 
-        self.visit_single_cm(node.items, node.body, False)
+        self.visit_single_cm(node.items, node.body, is_async=False)
 
     def _visit_assert_errors_block(self, node: ast.With) -> None:
         with self.catch_errors() as caught:
@@ -3461,10 +3461,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
 
     def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
-        self.visit_single_cm(node.items, node.body, True)
+        self.visit_single_cm(node.items, node.body, is_async=True)
 
     def visit_single_cm(
-        self, items: List[ast.withitem], body: Iterable[ast.AST], is_async: bool = False
+        self, items: List[ast.withitem], body: Iterable[ast.AST], *, is_async: bool = False
     ) -> None:
         if len(items) == 0:
             self._generic_visit_list(body)
