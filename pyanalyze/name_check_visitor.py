@@ -3464,7 +3464,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.visit_single_cm(node.items, node.body, is_async=True)
 
     def visit_single_cm(
-        self, items: List[ast.withitem], body: Iterable[ast.AST], *, is_async: bool = False
+        self,
+        items: List[ast.withitem],
+        body: Iterable[ast.AST],
+        *,
+        is_async: bool = False,
     ) -> None:
         if len(items) == 0:
             self._generic_visit_list(body)
@@ -3473,7 +3477,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         can_suppress = self.visit_withitem(first_item, is_async)
         with self.scopes.subscope() as rest_scope:
             # get scope for visiting remaining CMs + Body
-            self.visit_single_cm(items[1:], body, is_async)
+            self.visit_single_cm(items[1:], body, is_async=is_async)
         if can_suppress:
             # If an exception was suppressed, assume no other CMs
             # or any code in the body was executed.
