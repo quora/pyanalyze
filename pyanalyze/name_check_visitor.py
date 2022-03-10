@@ -2240,7 +2240,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     private=not force_public,
                 )
 
-        pseudo_module = None
         with tempfile.NamedTemporaryFile(suffix=".py") as f:
             f.write(source_code.encode("utf-8"))
             f.flush()
@@ -2261,7 +2260,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if pseudo_module_name in sys.modules:
                     del sys.modules[pseudo_module_name]
 
-        assert pseudo_module
         for name, value in pseudo_module.__dict__.items():
             if name.startswith("__") or (
                 hasattr(builtins, name) and value == getattr(builtins, name)
