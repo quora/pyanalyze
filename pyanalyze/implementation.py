@@ -69,18 +69,7 @@ import warnings
 from types import FunctionType
 import typing
 import typing_extensions
-from typing import (
-    Sequence,
-    TypeVar,
-    cast,
-    Dict,
-    NewType,
-    Callable,
-    Optional,
-    Union,
-    Any,
-)
-from typing_extensions import Protocol
+from typing import Sequence, TypeVar, cast, Dict, NewType, Callable, Optional, Union
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
 
@@ -1267,11 +1256,6 @@ _ENCODING_PARAMETER = SigParameter(
 T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
-
-
-class SupportsLessThan(Protocol):
-    def __lt__(self, __other: Any) -> bool:
-        raise NotImplementedError
 
 
 def get_default_argspecs() -> Dict[object, Signature]:
