@@ -1214,7 +1214,7 @@ class TestConstraints(TestNameCheckVisitorBase):
             if y is True:
                 assert_is_value(y, KnownValue(True))
                 y = bool(x)
-                assert_is_value(y, TypedValue(bool))
+                assert_is_value(y, TypedValue(bool), skip_annotated=True)
 
     @assert_passes()
     def test_constraint_on_arg_type(self):
