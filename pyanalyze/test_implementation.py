@@ -319,9 +319,10 @@ class TestLen(TestNameCheckVisitorBase):
 
 class TestBool(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_no_arg(self):
-        def capybara():
+    def test_return_value(self):
+        def capybara(x):
             assert_is_value(bool(), KnownValue(False))
+            assert_is_value(bool(x + 1), TypedValue(bool))
 
     @assert_passes()
     def test_constraint(self):
