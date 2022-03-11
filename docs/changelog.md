@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Remove special-cased signatured for `sorted()` (#498)
 - Support type narrowing on `bool()` calls (#497)
 - Support context managers that may suppress exceptions (#496)
 - Fix type inference for `with` assignment targets on
