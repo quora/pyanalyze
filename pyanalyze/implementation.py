@@ -1244,6 +1244,21 @@ def _len_impl(ctx: CallContext) -> ImplReturn:
     return ImplReturn(len_of_value(ctx.vars["obj"]), constraint)
 
 
+def _bool_impl(ctx: CallContext) -> Value:
+    if ctx.vars["o"] is _NO_ARG_SENTINEL:
+        return KnownValue(False)
+
+    # Maybe we should check boolability here too? But it seems fair to
+    # believe the author if they explicitly wrote bool().
+    varname = ctx.varname_for_arg("o")
+    if varname is None:
+        return TypedValue(bool)
+    constraint = Constraint(
+        varname, ConstraintType.is_truthy, positive=True, value=None
+    )
+    return annotate_with_constraint(TypedValue(bool), constraint)
+
+
 _POS_ONLY = ParameterKind.POSITIONAL_ONLY
 _ENCODING_PARAMETER = SigParameter(
     "encoding", annotation=TypedValue(str), default=KnownValue("")
@@ -1661,6 +1676,15 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=len,
             impl=_len_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter(
+                    "o", ParameterKind.POSITIONAL_ONLY, default=_NO_ARG_SENTINEL
+                )
+            ],
+            callable=bool,
+            impl=_bool_impl,
         ),
         # The overloaded annotation in typeshed causes a couple of problems:
         # - sorted(Sequence[A] | Sequence[B]) turns into List[A | B] instead of List[A] | List[B]

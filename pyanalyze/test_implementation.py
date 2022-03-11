@@ -317,6 +317,23 @@ class TestLen(TestNameCheckVisitorBase):
             len(3)  # E: incompatible_argument
 
 
+class TestBool(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_no_arg(self):
+        def capybara():
+            assert_is_value(bool(), KnownValue(False))
+
+    @assert_passes()
+    def test_constraint(self):
+        from typing import Optional
+
+        def capybara(x: Optional[int]):
+            if bool(x):
+                assert_is_value(x, TypedValue(int))
+            else:
+                assert_is_value(x, TypedValue(int) | KnownValue(None))
+
+
 class TestCast(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
