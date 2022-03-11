@@ -128,6 +128,8 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         from typing import Dict
 
         def capybara(x: Dict[int, str]):
+            reveal_type(x.items)
+            reveal_type(x.items().__iter__())
             assert_is_value(
                 {k: v for k, v in x.items()},
                 make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),
