@@ -211,6 +211,19 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
             assert_is_value(tuple(str(x)), GenericValue(tuple, [TypedValue(str)]))
 
     @assert_passes()
+    def test_union(self):
+        from typing import Sequence, Union
+        from typing_extensions import Never
+
+        def capybara(x: Union[Sequence[int], Sequence[str]], never: Never):
+            assert_is_value(
+                tuple(x),
+                GenericValue(tuple, [TypedValue(int)])
+                | GenericValue(tuple, [TypedValue(str)]),
+            )
+            assert_is_value(tuple(never), GenericValue(tuple, [NO_RETURN_VALUE]))
+
+    @assert_passes()
     def test_not_iterable(self):
         def capybara(x):
             tuple(3)  # E: unsupported_operation

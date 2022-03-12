@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improve type inference for calls to `set()`, `list()`, and
+  `tuple()` with union arguments (#500)
 - Remove special-cased signatured for `sorted()` (#498)
 - Support type narrowing on `bool()` calls (#497)
 - Support context managers that may suppress exceptions (#496)
