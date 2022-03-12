@@ -2274,6 +2274,7 @@ class CustomMapping(Protocol[K, V]):
     def __getitem__(self, __key: K) -> V:
         raise NotImplementedError
 
+
 MappingValue = GenericValue(CustomMapping, [TypeVarValue(K), TypeVarValue(V)])
 
 
