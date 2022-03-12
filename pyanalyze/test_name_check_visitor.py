@@ -1519,6 +1519,25 @@ class TestUnpacking(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
+    def test_minimal_mapping(self):
+        from typing import List
+
+        class MyMapping:
+            def keys(self) -> List[bool]:
+                raise NotImplementedError
+
+            def __getitem__(self, key: bool) -> float:
+                raise NotImplementedError
+
+        def capybara(m: MyMapping):
+            assert_is_value(
+                {**m},
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(bool), TypedValue(float), is_many=True)]
+                ),
+            )
+
+    @assert_passes()
     def test_iterable_unpacking(self):
         def capybara(x):
             degu = (1, *x)
