@@ -2275,7 +2275,10 @@ class CustomMapping(Protocol[K, V]):
         raise NotImplementedError
 
 
-MappingValue = GenericValue(CustomMapping, [TypeVarValue(K), TypeVarValue(V)])
+NominalMappingValue = GenericValue(
+    collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)]
+)
+ProtocolMappingValue = GenericValue(CustomMapping, [TypeVarValue(K), TypeVarValue(V)])
 
 
 def kv_pairs_from_mapping(
@@ -2307,9 +2310,14 @@ def kv_pairs_from_mapping(
             for key, (required, value) in value_val.items.items()
         ]
     else:
-        can_assign = get_tv_map(MappingValue, value_val, ctx)
+        # Ideally we should only need to check ProtocolMappingValue, but if
+        # we do that we can't infer the right types for dict, so try the
+        # nominal Mapping first.
+        can_assign = get_tv_map(NominalMappingValue, value_val, ctx)
         if isinstance(can_assign, CanAssignError):
-            return can_assign
+            can_assign = get_tv_map(ProtocolMappingValue, value_val, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return can_assign
         key_type = can_assign.get(K, AnyValue(AnySource.generic_argument))
         value_type = can_assign.get(V, AnyValue(AnySource.generic_argument))
         return [KVPair(key_type, value_type, is_many=True)]
