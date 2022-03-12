@@ -2262,9 +2262,19 @@ def concrete_values_from_iterable(
 
 K = TypeVar("K")
 V = TypeVar("V")
-MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
 
 EMPTY_DICTS = (KnownValue({}), DictIncompleteValue(dict, []))
+
+
+# This is all the runtime requires in places like {**k}
+class CustomMapping(Protocol[K, V]):
+    def keys(self) -> Iterable[K]:
+        raise NotImplementedError
+
+    def __getitem__(self, __key: K) -> V:
+        raise NotImplementedError
+
+MappingValue = GenericValue(CustomMapping, [TypeVarValue(K), TypeVarValue(V)])
 
 
 def kv_pairs_from_mapping(

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Support mappings that do not inherit from `collections.abc.Mapping`
+  (#501)
 - Improve type inference for calls to `set()`, `list()`, and
   `tuple()` with union arguments (#500)
 - Remove special-cased signatured for `sorted()` (#498)
