@@ -1171,7 +1171,7 @@ class FunctionScope(Scope):
         """A suppressing subscope is a subscope that may suppress exceptions
         inside of it.
 
-        This is used to implement try and with blocks. After code like this:
+        This is used to implement try and with blocks. After code like this::
 
             x = 1
             try:
