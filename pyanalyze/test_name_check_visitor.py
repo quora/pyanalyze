@@ -1520,6 +1520,25 @@ class TestUnpacking(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
+    def test_minimal_mapping(self):
+        from typing import List
+
+        class MyMapping:
+            def keys(self) -> List[bool]:
+                raise NotImplementedError
+
+            def __getitem__(self, key: bool) -> float:
+                raise NotImplementedError
+
+        def capybara(m: MyMapping):
+            assert_is_value(
+                {**m},
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(bool), TypedValue(float), is_many=True)]
+                ),
+            )
+
+    @assert_passes()
     def test_iterable_unpacking(self):
         def capybara(x):
             degu = (1, *x)
@@ -2082,26 +2101,34 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
                 a = 3
             assert_is_value(a, KnownValue(2) | KnownValue(3))
 
-        def use_empty_context():
-            a = 2  # static analysis: ignore[unused_variable]
-            with EmptyContext():
+        def use_suppress_exception_multi_assignment():
+            a = 2
+            with SuppressException():
                 a = 3
-            assert_is_value(a, KnownValue(3))
+                a = 4
+            assert_is_value(a, KnownValue(2) | KnownValue(3) | KnownValue(4))
+
+        def use_empty_context():
+            a = 2  # E: unused_variable
+            with EmptyContext():
+                a = 3  # E: unused_variable
+                a = 4
+            assert_is_value(a, KnownValue(4))
 
         def use_context_manager():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             with empty_context_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))
 
         def use_builtin_function():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             with open("test_file.txt"):
                 a = 3
             assert_is_value(a, KnownValue(3))
 
         def use_contextlib_manager():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             with empty_contextlib_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))
@@ -2112,10 +2139,37 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
                 assert_is_value(b, KnownValue(None))
             assert_is_value(b, KnownValue(2) | KnownValue(None))
 
-            c = 2  # static analysis: ignore[unused_variable]
+            c = 2  # E: unused_variable
             with EmptyContext() as c, SuppressException():
                 assert_is_value(c, KnownValue(None))
             assert_is_value(c, KnownValue(None))
+
+    @assert_passes()
+    def test_possibly_undefined_with_leaves_scope(self):
+        from typing import Optional, Type
+        from types import TracebackType
+
+        class SuppressException:
+            def __enter__(self) -> None:
+                pass
+
+            def __exit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> bool:
+                return isinstance(exn, Exception)
+
+        def use_suppress_with_nested_block():
+            with SuppressException():
+                a = 4
+                try:
+                    b = 3
+                except Exception:
+                    return
+            print(a)  # E: possibly_undefined_name
+            print(b)  # E: possibly_undefined_name
 
     @assert_passes()
     def test_async(self):
@@ -2156,13 +2210,13 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
             assert_is_value(a, KnownValue(2) | KnownValue(3))
 
         async def use_async_empty_context():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             async with AsyncEmptyContext():
                 a = 3
             assert_is_value(a, KnownValue(3))
 
         async def use_async_context_manager():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             async with async_empty_context_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))
@@ -2173,7 +2227,7 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
                 assert_is_value(b, KnownValue(None))
             assert_is_value(b, KnownValue(2) | KnownValue(None))
 
-            c = 2  # static analysis: ignore[unused_variable]
+            c = 2  # E: unused_variable
             async with AsyncEmptyContext() as c, AsyncSuppressException():
                 assert_is_value(c, KnownValue(None))
             assert_is_value(c, KnownValue(None))
@@ -2188,7 +2242,7 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
             yield
 
         async def use_async_contextlib_manager():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             async with async_empty_contextlib_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))

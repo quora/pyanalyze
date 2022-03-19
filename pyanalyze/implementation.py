@@ -305,35 +305,39 @@ def _super_impl(ctx: CallContext) -> Value:
         return KnownValue(super_val)
 
 
-def _tuple_impl(ctx: CallContext) -> Value:
+def _tuple_impl(ctx: CallContext) -> ImplReturn:
     return _sequence_impl(tuple, ctx)
 
 
-def _list_impl(ctx: CallContext) -> Value:
+def _list_impl(ctx: CallContext) -> ImplReturn:
     return _sequence_impl(list, ctx)
 
 
-def _set_impl(ctx: CallContext) -> Value:
+def _set_impl(ctx: CallContext) -> ImplReturn:
     return _sequence_impl(set, ctx)
 
 
-def _sequence_impl(typ: type, ctx: CallContext) -> Value:
+def _sequence_impl(typ: type, ctx: CallContext) -> ImplReturn:
     iterable = ctx.vars["iterable"]
     if iterable is _NO_ARG_SENTINEL:
-        return KnownValue(typ())
-    cvi = concrete_values_from_iterable(iterable, ctx.visitor)
-    if isinstance(cvi, CanAssignError):
-        ctx.show_error(
-            f"{iterable} is not iterable",
-            ErrorCode.unsupported_operation,
-            arg="iterable",
-            detail=str(cvi),
-        )
-        return TypedValue(typ)
-    elif isinstance(cvi, Value):
-        return GenericValue(typ, [cvi])
-    else:
-        return SequenceIncompleteValue.make_or_known(typ, cvi)
+        return ImplReturn(KnownValue(typ()))
+
+    def inner(iterable: Value) -> Value:
+        cvi = concrete_values_from_iterable(iterable, ctx.visitor)
+        if isinstance(cvi, CanAssignError):
+            ctx.show_error(
+                f"{iterable} is not iterable",
+                ErrorCode.unsupported_operation,
+                arg="iterable",
+                detail=str(cvi),
+            )
+            return TypedValue(typ)
+        elif isinstance(cvi, Value):
+            return GenericValue(typ, [cvi])
+        else:
+            return SequenceIncompleteValue.make_or_known(typ, cvi)
+
+    return flatten_unions(inner, iterable)
 
 
 def _list_append_impl(ctx: CallContext) -> ImplReturn:

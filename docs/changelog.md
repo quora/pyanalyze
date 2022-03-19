@@ -4,6 +4,12 @@
 
 - Remove a number of unnecessary special-cased signatures
   (#499)
+- Correctly track assignments of variables inside `try` blocks
+  and inside `with` blocks that may suppress exceptions (#504)
+- Support mappings that do not inherit from `collections.abc.Mapping`
+  (#501)
+- Improve type inference for calls to `set()`, `list()`, and
+  `tuple()` with union arguments (#500)
 - Remove special-cased signatured for `sorted()` (#498)
 - Support type narrowing on `bool()` calls (#497)
 - Support context managers that may suppress exceptions (#496)

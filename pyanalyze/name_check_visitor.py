@@ -3473,17 +3473,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return
         first_item = items[0]
         can_suppress = self.visit_withitem(first_item, is_async)
-        with self.scopes.subscope() as rest_scope:
-            # get scope for visiting remaining CMs + Body
-            self.visit_single_cm(items[1:], body, is_async=is_async)
         if can_suppress:
-            # If an exception was suppressed, assume no other CMs
-            # or any code in the body was executed.
-            with self.scopes.subscope() as dummy_subscope:
-                pass
-            self.scopes.combine_subscopes([rest_scope, dummy_subscope])
+            with self.scopes.suppressing_subscope():
+                self.visit_single_cm(items[1:], body, is_async=is_async)
         else:
-            self.scopes.combine_subscopes([rest_scope])
+            self.visit_single_cm(items[1:], body, is_async=is_async)
 
     def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> bool:
         context = self.visit(node.context_expr)
@@ -3520,48 +3514,50 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self.visit(node.optional_vars)
         return can_suppress
 
-    def visit_try_except(self, node: ast.Try) -> List[SubScope]:
-        # reset yield checks between branches to avoid incorrect errors when we yield both in the
-        # try and the except block
+    def visit_try_except(self, node: ast.Try) -> None:
         with self.scopes.subscope():
-            with self.scopes.subscope() as try_scope:
-                self._generic_visit_list(node.body)
-                self.yield_checker.reset_yield_checks()
-                self._generic_visit_list(node.orelse)
-            with self.scopes.subscope() as dummy_subscope:
+            with self.scopes.subscope() as dummy_scope:
                 pass
-            self.scopes.combine_subscopes([try_scope, dummy_subscope])
+
+            with self.scopes.subscope() as failure_scope:
+                with self.scopes.suppressing_subscope() as success_scope:
+                    self._generic_visit_list(node.body)
+
+            with self.scopes.subscope() as else_scope:
+                self.yield_checker.reset_yield_checks()
+                self.scopes.combine_subscopes([success_scope])
+                self._generic_visit_list(node.orelse)
 
             except_scopes = []
             for handler in node.handlers:
                 with self.scopes.subscope() as except_scope:
                     except_scopes.append(except_scope)
+                    # reset yield checks between branches to avoid incorrect errors when we yield
+                    # both in the try and the except block
                     self.yield_checker.reset_yield_checks()
+                    self.scopes.combine_subscopes([dummy_scope, failure_scope])
                     self.visit(handler)
 
-        return [try_scope] + except_scopes
+        self.scopes.combine_subscopes([else_scope, *except_scopes])
 
     def visit_Try(self, node: ast.Try) -> None:
         # py3 combines the Try and Try/Finally nodes
         if node.finalbody:
-            subscopes = self.visit_try_except(node)
+            with self.scopes.subscope() as failure_scope:
+                with self.scopes.suppressing_subscope() as success_scope:
+                    self.visit_try_except(node)
 
-            # For the case where nothing in the try-except block is executed
+            # If the try block fails
             with self.scopes.subscope():
-                self._generic_visit_list(node.finalbody)
-
-            # For the case where something in the try-except exits the scope
-            with self.scopes.subscope():
-                self.scopes.combine_subscopes(subscopes, ignore_leaves_scope=True)
+                self.scopes.combine_subscopes([failure_scope])
                 self._generic_visit_list(node.finalbody)
 
             # For the case where execution continues after the try-finally
-            self.scopes.combine_subscopes(subscopes)
+            self.scopes.combine_subscopes([success_scope])
             self._generic_visit_list(node.finalbody)
         else:
             # Life is much simpler without finally
-            subscopes = self.visit_try_except(node)
-            self.scopes.combine_subscopes(subscopes)
+            self.visit_try_except(node)
         self.yield_checker.reset_yield_checks()
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
