@@ -1168,6 +1168,26 @@ class FunctionScope(Scope):
 
     @contextlib.contextmanager
     def suppressing_subscope(self) -> Iterator[SubScope]:
+        """A suppressing subscope is a subscope that may suppress exceptions
+        inside of it.
+
+        This is used to implement try and with blocks. After code like this:
+
+            x = 1
+            try:
+                x = 2
+                x = 3
+            except Exception:
+                pass
+
+        The value of `x` may be any of 1, 2, and 3, depending on whether and
+        where an exception was thrown.
+
+        To implement this, we keep track of all assignments inside the block
+        and give them effect, so that after the suppressing subscope ends,
+        each variable's definition nodes include all of these assignments.
+
+        """
         old_defn_nodes = self.get_all_definition_nodes()
         with self.subscope() as inner_scope:
             yield inner_scope
