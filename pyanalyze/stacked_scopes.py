@@ -797,8 +797,9 @@ class Scope:
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.variables
 
-    def get_all_definition_nodes(self) -> Dict[Varname, Set[Node]]:
-        return {}
+    @contextlib.contextmanager
+    def suppressing_subscope(self) -> Iterator[SubScope]:
+        yield {}
 
     # no real subscopes in non-function scopes, just dummy implementations
     @contextlib.contextmanager
@@ -1166,6 +1167,29 @@ class FunctionScope(Scope):
         }
 
     @contextlib.contextmanager
+    def suppressing_subscope(self) -> Iterator[SubScope]:
+        old_defn_nodes = self.get_all_definition_nodes()
+        with self.subscope() as inner_scope:
+            yield inner_scope
+        new_defn_nodes = self.get_all_definition_nodes()
+        rest_scope = {
+            key: list(nodes - old_defn_nodes.get(key, set()))
+            for key, nodes in new_defn_nodes.items()
+            if key != LEAVES_SCOPE
+        }
+        rest_scope = {key: nodes for key, nodes in rest_scope.items() if nodes}
+        # If an exception was suppressed, assume no other CMs
+        # or any code in the body was executed.
+        with self.subscope() as dummy_subscope:
+            pass
+        all_keys = set(rest_scope) | set(dummy_subscope)
+        new_scope = {
+            key: [*dummy_subscope.get(key, []), *rest_scope.get(key, [])]
+            for key in all_keys
+        }
+        self.combine_subscopes([dummy_subscope, new_scope])
+
+    @contextlib.contextmanager
     def subscope(self) -> Iterator[SubScope]:
         """Create a new subscope, to be used for conditional branches."""
         # Ignore LEAVES_SCOPE if it's already there, so that we type check code after the
@@ -1439,9 +1463,8 @@ class StackedScopes:
         """
         self.scopes[-1].set(varname, value, node, state)
 
-    def get_all_definition_nodes(self) -> Dict[Varname, Set[Node]]:
-        """Return a copy of name_to_all_definition_nodes."""
-        return self.scopes[-1].get_all_definition_nodes()
+    def suppressing_subscope(self) -> ContextManager[SubScope]:
+        return self.scopes[-1].suppressing_subscope()
 
     def subscope(self) -> ContextManager[SubScope]:
         """Creates a new subscope (see the :class:`FunctionScope` docstring)."""

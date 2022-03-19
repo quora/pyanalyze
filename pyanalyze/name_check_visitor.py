@@ -3474,27 +3474,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         first_item = items[0]
         can_suppress = self.visit_withitem(first_item, is_async)
         if can_suppress:
-            old_defn_nodes = self.scopes.get_all_definition_nodes()
-            with self.scopes.subscope() as rest_scope:
-                # get scope for visiting remaining CMs + Body
+            with self.scopes.suppressing_subscope():
                 self.visit_single_cm(items[1:], body, is_async=is_async)
-            new_defn_nodes = self.scopes.get_all_definition_nodes()
-            rest_scope = {
-                key: list(nodes - old_defn_nodes.get(key, set()))
-                for key, nodes in new_defn_nodes.items()
-                if key != LEAVES_SCOPE
-            }
-            rest_scope = {key: nodes for key, nodes in rest_scope.items() if nodes}
-            # If an exception was suppressed, assume no other CMs
-            # or any code in the body was executed.
-            with self.scopes.subscope() as dummy_subscope:
-                pass
-            all_keys = set(rest_scope) | set(dummy_subscope)
-            new_scope = {
-                key: [*dummy_subscope.get(key, []), *rest_scope.get(key, [])]
-                for key in all_keys
-            }
-            self.scopes.combine_subscopes([dummy_subscope, new_scope])
         else:
             self.visit_single_cm(items[1:], body, is_async=is_async)
 
