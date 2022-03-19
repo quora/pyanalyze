@@ -2100,26 +2100,34 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
                 a = 3
             assert_is_value(a, KnownValue(2) | KnownValue(3))
 
-        def use_empty_context():
-            a = 2  # static analysis: ignore[unused_variable]
-            with EmptyContext():
+        def use_suppress_exception_multi_assignment():
+            a = 2
+            with SuppressException():
                 a = 3
-            assert_is_value(a, KnownValue(3))
+                a = 4
+            assert_is_value(a, KnownValue(2) | KnownValue(3) | KnownValue(4))
+
+        def use_empty_context():
+            a = 2  # E: unused_variable
+            with EmptyContext():
+                a = 3  # E: unused_variable
+                a = 4
+            assert_is_value(a, KnownValue(4))
 
         def use_context_manager():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             with empty_context_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))
 
         def use_builtin_function():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             with open("test_file.txt"):
                 a = 3
             assert_is_value(a, KnownValue(3))
 
         def use_contextlib_manager():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             with empty_contextlib_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))
@@ -2130,7 +2138,7 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
                 assert_is_value(b, KnownValue(None))
             assert_is_value(b, KnownValue(2) | KnownValue(None))
 
-            c = 2  # static analysis: ignore[unused_variable]
+            c = 2  # E: unused_variable
             with EmptyContext() as c, SuppressException():
                 assert_is_value(c, KnownValue(None))
             assert_is_value(c, KnownValue(None))
@@ -2174,13 +2182,13 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
             assert_is_value(a, KnownValue(2) | KnownValue(3))
 
         async def use_async_empty_context():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             async with AsyncEmptyContext():
                 a = 3
             assert_is_value(a, KnownValue(3))
 
         async def use_async_context_manager():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             async with async_empty_context_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))
@@ -2191,7 +2199,7 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
                 assert_is_value(b, KnownValue(None))
             assert_is_value(b, KnownValue(2) | KnownValue(None))
 
-            c = 2  # static analysis: ignore[unused_variable]
+            c = 2  # E: unused_variable
             async with AsyncEmptyContext() as c, AsyncSuppressException():
                 assert_is_value(c, KnownValue(None))
             assert_is_value(c, KnownValue(None))
@@ -2206,7 +2214,7 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
             yield
 
         async def use_async_contextlib_manager():
-            a = 2  # static analysis: ignore[unused_variable]
+            a = 2  # E: unused_variable
             async with async_empty_contextlib_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))

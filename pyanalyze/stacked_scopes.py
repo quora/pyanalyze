@@ -797,6 +797,9 @@ class Scope:
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.variables
 
+    def get_all_definition_nodes(self) -> Dict[Varname, Set[Node]]:
+        return {}
+
     # no real subscopes in non-function scopes, just dummy implementations
     @contextlib.contextmanager
     def subscope(self) -> Iterator[None]:
@@ -1156,6 +1159,12 @@ class FunctionScope(Scope):
                 return EMPTY_ORIGIN
         return self._resolve_origin(definers)
 
+    def get_all_definition_nodes(self) -> Dict[Varname, Set[Node]]:
+        """Return a copy of name_to_all_definition_nodes."""
+        return {
+            key: set(nodes) for key, nodes in self.name_to_all_definition_nodes.items()
+        }
+
     @contextlib.contextmanager
     def subscope(self) -> Iterator[SubScope]:
         """Create a new subscope, to be used for conditional branches."""
@@ -1429,6 +1438,10 @@ class StackedScopes:
 
         """
         self.scopes[-1].set(varname, value, node, state)
+
+    def get_all_definition_nodes(self) -> Dict[Varname, Set[Node]]:
+        """Return a copy of name_to_all_definition_nodes."""
+        return self.scopes[-1].get_all_definition_nodes()
 
     def subscope(self) -> ContextManager[SubScope]:
         """Creates a new subscope (see the :class:`FunctionScope` docstring)."""

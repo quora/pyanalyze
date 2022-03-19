@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Correctly track assignments of variables inside `with` blocks
+  that may suppress exceptions (#504)
 - Support mappings that do not inherit from `collections.abc.Mapping`
   (#501)
 - Improve type inference for calls to `set()`, `list()`, and
