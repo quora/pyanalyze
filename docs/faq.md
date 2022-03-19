@@ -48,25 +48,25 @@ However, this approach also has some disadvantages:
 
 - It is difficult to engineer an incremental mode, because that would require reloading
   imported modules. At Quora, we run pyanalyze locally on changed files only, which is
-  much faster than running it on the entire codebase but does not catch issues where a 
+  much faster than running it on the entire codebase but does not catch issues where a
   change breaks type checking in an upstream module.
 - Scripts that do work on import cannot be usefully checked; you must guard execution
   with `if __name__ == "__main__":`.
 - Undefined attributes on instances of user-defined classes cannot be detected with full
-  confidence, because the class object does not provide a good way to find out which 
+  confidence, because the class object does not provide a good way to find out which
   attributes are created in the `__init__` method. Currently, pyanalyze works around this
   by deferring detection of undefined attributes until the entire codebase has been checked,
   but this is fragile and not always reliable.
 - The implementation of `@typing.overload` does not provide a way to access the overloads
   at runtime, so there is no obvious way to support overloaded functions at runtime.
-  (Note that although there is no technical blocker for supporting overloads in stub files, 
+  (Note that although there is no technical blocker for supporting overloads in stub files,
   pyanalyze does not support overloads in stubs yet either.)
 
 ## When should I use pyanalyze?
 
-If you have a complex Python codebase and want to make sure it stays maintainable and 
+If you have a complex Python codebase and want to make sure it stays maintainable and
 stable, using a type checker is a great option. There are several options for type
-checking Python code (listed in 
+checking Python code (listed in
 [the typing documentation](https://typing.readthedocs.io/en/latest/)). Unique advantages
 of pyanalyze include:
 
@@ -76,12 +76,12 @@ of pyanalyze include:
   finding missing `await` statements, detecting possibly undefined names, and warning
   about conditions on objects of suspicious types.
 - Type system extensions such as `CustomCheck`, `ParameterTypeGuard`, and `ExternalType`.
-- Strong support for checking code that uses the [asynq](https://github.com/quora/asynq) 
+- Strong support for checking code that uses the [asynq](https://github.com/quora/asynq)
   framework.
 
 ## What is the history of pyanalyze?
 
-[//]: # (First commit is 6d671398f9de24ee8cc1baccadfed2420cba765c)
+[//]: # "First commit is 6d671398f9de24ee8cc1baccadfed2420cba765c"
 
 The first incarnation of pyanalyze dates back to July 2015 and merely detected undefined
 names. It was soon extended to detect incompatible function calls, find unused
@@ -92,7 +92,7 @@ For context, pytype was started in March 2015 and mypy in 2012. PEP 484 was acce
 The initial version was closely tied to
 Quora's internal code structure, but in June 2017 it was split off into its own internal
 package, now named pyanalyze. By then, it had strong support for `asynq` and supported
-customization through implementation functions. After Quora moved to Python 3, pyanalyze 
+customization through implementation functions. After Quora moved to Python 3, pyanalyze
 gained support for parsing type annotations and
 its typing support moved closer to the standard type system.
 

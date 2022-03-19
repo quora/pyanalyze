@@ -5,6 +5,7 @@ from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -309,16 +310,34 @@ class TestTry(TestNameCheckVisitorBase):
     @assert_passes()
     def test_else(self):
         def capybara():
+            x = 1
             try:
+                x = 2
                 x = 3
                 assert_is_value(x, KnownValue(3))
             except NameError:
+                assert_is_value(x, KnownValue(1) | KnownValue(2) | KnownValue(3))
                 x = 4
                 assert_is_value(x, KnownValue(4))
             else:
+                assert_is_value(x, KnownValue(3))
                 x = 5
                 assert_is_value(x, KnownValue(5))
-            assert_is_value(x, MultiValuedValue([KnownValue(5), KnownValue(4)]))
+            assert_is_value(x, KnownValue(5) | KnownValue(4))
+
+    @assert_passes()
+    def test_multiple_assignment(self):
+        def capybara():
+            x = 1
+            try:
+                x = 2
+                x = 3
+                assert_is_value(x, KnownValue(3))
+            except NameError:
+                assert_is_value(x, KnownValue(1) | KnownValue(2) | KnownValue(3))
+            else:
+                assert_is_value(x, KnownValue(3))
+            assert_is_value(x, KnownValue(1) | KnownValue(2) | KnownValue(3))
 
     @assert_passes()
     def test_finally(self):
@@ -628,13 +647,13 @@ class TestUnusedVariableComprehension(TestNameCheckVisitorBase):
     def test_replacement(self):
         self.assert_is_changed(
             """
-def capybara():
-    return [None for i in range(10)]
-""",
+            def capybara():
+                return [None for i in range(10)]
+            """,
             """
-def capybara():
-    return [None for _ in range(10)]
-""",
+            def capybara():
+                return [None for _ in range(10)]
+            """,
         )
 
 
@@ -821,6 +840,15 @@ class TestConstraints(TestNameCheckVisitorBase):
             assert_is_value(y, KnownValue(True))
 
     @assert_passes()
+    def test_bool_narrowing(self):
+        def capybara(x: bool):
+            assert_is_value(x, TypedValue(bool))
+            if x is True:
+                assert_is_value(x, KnownValue(True))
+            else:
+                assert_is_value(x, KnownValue(False))
+
+    @assert_passes()
     def test_assert_falsy(self):
         def capybara(x):
             if x:
@@ -888,8 +916,8 @@ class TestConstraints(TestNameCheckVisitorBase):
                 if isinstance(x, B):
                     assert_is_value(x, TypedValue(B))
                     if isinstance(x, C):
-                        # Incompatible constraints result in Any.
-                        assert_is_value(x, AnyValue(AnySource.unreachable))
+                        # Incompatible constraints result in NoReturn.
+                        assert_is_value(x, NO_RETURN_VALUE)
             if isinstance(x, B):
                 assert_is_value(x, TypedValue(B))
                 if isinstance(x, A):
@@ -1053,7 +1081,7 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(y, KnownValue(True))
             else:
                 # no constraints from the inverse of an AND constraint
-                assert_is_value(x, AnyValue(AnySource.unannotated))
+                assert_is_value(x, KnownValue(True) | AnyValue(AnySource.unannotated))
                 assert_is_value(y, AnyValue(AnySource.unannotated))
 
         def kerodon(x):
@@ -1204,7 +1232,7 @@ class TestConstraints(TestNameCheckVisitorBase):
             if y is True:
                 assert_is_value(y, KnownValue(True))
                 y = bool(x)
-                assert_is_value(y, TypedValue(bool))
+                assert_is_value(y, TypedValue(bool), skip_annotated=True)
 
     @assert_passes()
     def test_constraint_on_arg_type(self):
@@ -1520,7 +1548,11 @@ class TestConstraints(TestNameCheckVisitorBase):
                     assert_is_value(
                         self.value,
                         MultiValuedValue(
-                            [AnyValue(AnySource.unannotated), KnownValue("")]
+                            [
+                                AnyValue(AnySource.unannotated),
+                                TypedValue(Foo),
+                                KnownValue(""),
+                            ]
                         ),
                     )
                 assert_is_value(
@@ -1644,6 +1676,19 @@ class TestComposite(TestNameCheckVisitorBase):
                 assert_is_value(x, TypedValue(int))
 
     @assert_passes()
+    def test_attribute_to_never(self):
+        from typing import Union
+
+        class TypedValue:
+            typ: Union[type, str]
+
+            def get_generic_args_for_type(self) -> object:
+                if isinstance(self.typ, super):
+                    return self.typ.__self_class__
+                else:
+                    assert False
+
+    @assert_passes()
     def test_constraint(self):
         class Capybara(object):
             def __init__(self, x):
@@ -1757,4 +1802,17 @@ class TestInvalidation(TestNameCheckVisitorBase):
                     assert_is_value(key, TypedValue(int))
                     data = [ids, data[key]]
                 else:
+                    assert_is_value(key, KnownValue(None))
                     data = [ids]
+
+    @assert_passes()
+    def test_else(self) -> None:
+        from typing import Optional
+
+        def capybara(key: Optional[int]):
+            has_bias = key is not None
+            assert_is_value(key, TypedValue(int) | KnownValue(None))
+            if has_bias:
+                assert_is_value(key, TypedValue(int))
+            else:
+                assert_is_value(key, KnownValue(None))

@@ -5,3 +5,4 @@ pyanalyze/*.c
 build/
 *.code-workspace
 .vscode/
+.venv

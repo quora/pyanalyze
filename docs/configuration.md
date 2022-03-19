@@ -22,8 +22,8 @@ duplicate_dict_key = true
 
 It is recommended to always set the following configuration options:
 
-* *paths*: A list of paths (relative to the location of the `pyproject.toml` file) that pyanalyze should check by default.
-* *import_paths*: A list of paths (also relative to the configuration file) that pyanalyze should use as roots when trying to import files it is checking. If this is not set, pyanalyze will use entries from `sys.path`, which may produce unexpected results.
+- _paths_: A list of paths (relative to the location of the `pyproject.toml` file) that pyanalyze should check by default.
+- _import_paths_: A list of paths (also relative to the configuration file) that pyanalyze should use as roots when trying to import files it is checking. If this is not set, pyanalyze will use entries from `sys.path`, which may produce unexpected results.
 
 Other supported configuration options are listed below.
 
@@ -38,6 +38,16 @@ Options:
     ...
 ```
 
-Most configuration options can also be set on the command line.
+To extend another configuration file, use the `extend_config` key:
+
+```toml
+[tool.pyanalyze]
+extend_config = "../path/to/other/pyproject.toml"
+```
+
+Options set in the included config file have lower priority.
+
+Most configuration options can also be set on the command line. Run
+`pyanalyze --help` to see these options.
 
 <!-- TODO figure out a way to dynamically include docs for each option -->

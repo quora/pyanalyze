@@ -37,6 +37,13 @@ Type evaluation functions can replace most complex overloads
 with simpler, more readable code. They solve a number of
 problems:
 
+- Type evaluation functions provide ways to implement
+  several type system features that have been previously
+  requested, including:
+  - Marking a function, parameter, or parameter type as
+    deprecated.
+  - Accepting `Sequence[str]` but not `str`.
+  - Checking whether two generic arguments are overlapping
 - Error messages involving overloads are often hard to read.
   Type evaluation functions enable the author of a function
   to provide custom error messages that clearly point out
@@ -48,12 +55,6 @@ problems:
 - The precise behavior of overloads is not specified and
   varies across type checkers. The behavior of type
   evaluation functions is more precisely specified.
-- Type evaluation functions provide ways to implement
-  several type system features that have been previously
-  requested, including:
-  - Marking a function, parameter, or parameter type as
-    deprecated.
-  - Accepting `Sequence[str]` but not `str`.
 
 ## Specification
 
@@ -338,7 +339,7 @@ Examples:
 
     @evaluated
     def length_or_none(s: str | None = None):
-        if is_of_type(s, str):
+        if is_of_type(s, str, exclude_any=False):
             return int
         else:
             return None
@@ -352,9 +353,9 @@ Examples:
 
     @evaluated
     def length_or_none2(s: str | None):
-        if is_of_type(s, str, exclude_any=True):
+        if is_of_type(s, str):
             return int
-        elif is_of_type(s, None, exclude_any=True):
+        elif is_of_type(s, None):
             return None
         else:
             return Any
@@ -366,9 +367,9 @@ Examples:
 
     @evaluated
     def nested_any(s: Sequence[Any]):
-        if is_of_type(s, str, exclude_any=True):
+        if is_of_type(s, str):
             show_error("error")
-        elif is_of_type(s, Sequence[str], exclude_any=True):
+        elif is_of_type(s, Sequence[str]):
             return str
         else:
             return int
@@ -403,6 +404,31 @@ For example:
     union: int | str
     reveal_type(switch_types(union))  # int | str
 
+### Generic evaluators
+
+If any type variables appear in the parameters of the type evaluation
+function, the type checker should first solve those and use the solution
+in the body of the function:
+
+    @evaluated
+    def identity(x: T):
+        return T
+
+    reveal_type(evaluated(int()))  # int
+
+As a result, `is_of_type()` checks that use a type variable work:
+
+    @evaluated
+    def safe_upcast(typ: Type[T1], value: object):
+        if is_of_type(value, T1):
+            return T1
+        show_error("unsafe cast")
+        return Any
+
+    reveal_type(safe_upcast(object, 1))  # object
+    reveal_type(safe_upcast(int, 1))  # int
+    safe_upcast(str, 1)  # error
+
 ### Type compatibility
 
 The type of an evaluated function is compatible with a
@@ -426,6 +452,31 @@ Examples:
     _: Callable[[str | None], Path] = maybe_path  # error
     _: Callable[[str], Path | None] = maybe_path  # ok
     _: Callable[[Literal["x"]], Path] = maybe_path  # ok
+
+### Runtime behavior
+
+At runtime, the `@evaluated` decorator returns a dummy function
+that throws an error when called, similar to `@overload`. In
+order to support dynamic type checkers, it also stores the
+original function, keyed by its fully qualified name.
+
+A helper function is provided to retrieve all registered
+evaluation functions for a given fully qualified name:
+
+    def get_type_evaluations(
+        fully_qualified_name: str
+    ) -> Sequence[Callable[..., Any]]: ...
+
+For example, if method `B.c` in module `a` has an evaluation function,
+`get_type_evaluations("a.B.c")` will retrieve it.
+
+Dummy implementations are provided for the various helper
+functions (`is_provided()`, `is_positional()`, `is_keyword()`,
+`is_of_type()`, and `show_error()`). These throw an error
+if called at runtime.
+
+The `reveal_type()` function has a runtime implementation
+that simply returns its argument.
 
 ## Discussion
 
@@ -587,6 +638,39 @@ This is how it could be implemented using `@evaluated`:
             show_error("start is a positional-only argument in Python <3.8", argument=start)
         return _T | _S
 
+### Generic evaluators
+
+The specification for generic evaluators allows creating an evaluator
+that checks whether two types have any overlap:
+
+    T1 = TypeVar("T1")
+    T2 = TypeVar("T2")
+
+    @evaluated
+    def safe_contains(elt: T1, container: Container[T2]) -> bool:
+        if not is_of_type(elt, T2) and not is_of_type(container, Container[T1]):
+            show_error("Element cannot be a member of container")
+
+    lst: List[int]
+    safe_contains("x", lst)  # error
+    safe_contains(True, lst)  # ok (bool is a subclass of int)
+    safe_contains(object(), lst)  # ok (List[int] is a subclass of Container[object])
+
+Thus, type evaluation provides a way to implement checks similar to mypy's
+[strict equality](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict-equality)
+flag directly in stubs.
+
+## Compatibility
+
+The proposal is fully backward compatible.
+
+Type evaluation functions are going to be most frequently useful
+in library stubs, where it is often important that multiple type
+checkers can parse the stub. In order to unblock usage of the new
+feature in stubs, type checker authors could simply ignore the
+body of evaluation functions and rely on the signature. This would
+still allow other type checkers to fully use the evaluation function.
+
 ## Possible extensions
 
 The following features may be useful, but are deferred
@@ -643,10 +727,9 @@ The last option could look like this:
     def zip(strict: bool = False):
         if is_provided(strict) and sys.version_info < (3, 10):
             show_error(
-                added_in_py_version("strict", "3.10"), 
+                added_in_py_version("strict", "3.10"),
                 argument="strict"
             )
-
 
 ### Adding attributes
 
@@ -690,17 +773,15 @@ in pyanalyze:
 
 Currently unsupported features include:
 
-- Usage in stubs
-- pyanalyze should provide a way to register
-  an evaluation function for a runtime function,
-  to replace some impls.
 - Type compatibility for evaluated functions.
-- Implementation of the desired behavior for
-  return annotations
+- Overloaded evaluated functions.
 
 Areas that need more thought include:
 
-- Interaction with typevars
 - Interaction with overloads. It should be possible
   to register multiple evaluation functions for a
   function, treating them as overloads.
+- Interaction with `__init__` and self types. How does
+  an eval function set the self type of a function? Perhaps
+  we can have the return type have special meaning just for
+  `__init__` methods.

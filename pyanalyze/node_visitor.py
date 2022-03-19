@@ -165,6 +165,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     default_module: Optional[ModuleType] = None  # module to run on by default
     # whether to look at FILE_ENVIRON_KEY to find files to run on
     should_check_environ_for_files: bool = True
+    caught_errors: Optional[List[Dict[str, Any]]] = None
 
     _changes_for_fixer = collections.defaultdict(list)
 
@@ -473,6 +474,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         else:
             patches = []
             for filename in changes:
+                offset = 0
                 for change in changes[filename]:
                     linenos = sorted(change.linenos_to_delete)
                     additions = change.lines_to_add
@@ -482,13 +484,14 @@ class BaseNodeVisitor(ast.NodeVisitor):
                         start_lineno, end_lineno = linenos[0], linenos[0]
                     patches.append(
                         _PatchWithDescription(
-                            start_lineno - 1,
-                            end_lineno,
+                            start_lineno - 1 + offset,
+                            end_lineno + offset,
                             new_lines=additions,
                             path=filename,
                             description=change.error_str,
                         )
                     )
+                    offset += len(additions or []) - len(linenos)
             if patches:
                 # poor man's version of https://github.com/facebook/codemod/pull/113
                 with qcore.override(builtins, "print", _flushing_print):
@@ -707,23 +710,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return error
 
     def _get_attribute_path(self, node: ast.AST) -> Optional[List[str]]:
-        """Gets the full path of an attribute lookup.
-
-        For example, the code string "a.model.question.Question" will resolve to the path
-        ['a', 'model', 'question', 'Question']. This is used for comparing such paths to
-        lists of functions that we treat specially.
-
-        """
-        if isinstance(node, ast.Name):
-            return [node.id]
-        elif isinstance(node, ast.Attribute):
-            root_value = self._get_attribute_path(node.value)
-            if root_value is None:
-                return None
-            root_value.append(node.attr)
-            return root_value
-        else:
-            return None
+        return analysis_lib.get_attribute_path(node)
 
     @classmethod
     def _run(

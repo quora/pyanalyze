@@ -2,6 +2,109 @@
 
 ## Unreleased
 
+- Correctly track assignments of variables inside `try` blocks
+  and inside `with` blocks that may suppress exceptions (#504)
+- Support mappings that do not inherit from `collections.abc.Mapping`
+  (#501)
+- Improve type inference for calls to `set()`, `list()`, and
+  `tuple()` with union arguments (#500)
+- Remove special-cased signatured for `sorted()` (#498)
+- Support type narrowing on `bool()` calls (#497)
+- Support context managers that may suppress exceptions (#496)
+- Fix type inference for `with` assignment targets on
+  Python 3.7 and higher (#495)
+- Fix bug where code after a `while` loop is considered
+  unreachable if all `break` statements are inside of `if`
+  statements (#494)
+- Remove support for detecting properties that represent
+  synchronous equivalents of asynq methods (#493)
+- Enable exhaustive checking of enums and booleans (#492)
+- Fix type narrowing in else branch if constraint is stored in a
+  variable (#491)
+- Fix incorrectly inferred `Never` return type for some function
+  implementations (#490)
+- Infer precise call signatures for `TypedDict` types (#487)
+- Add mechanism to prevent crashes on objects
+  with unusual `__getattr__` methods (#486)
+- Infer callable signatures for objects with a
+  `__getattr__` method (#485, #488)
+- Do not treat attributes that raise an exception on access
+  as nonexistent (#481)
+- Improve detection of unhashable dict keys and set members (#469)
+- The `in` and `not in` operators always return 
+  booleans (#480)
+- Allow `NotImplemented` to be returned from special
+  methods that support it (#479)
+- Fix bug affecting type compatibility between
+  generics and literals (#474)
+- Add support for `typing.Never` and `typing_extensions.Never` (#472)
+- Add `inferred_any`, an extremely noisy error code
+  that triggers whenever the type checker infers something as `Any` (#471)
+- Optimize type compatibility checks on large unions (#469)
+- Detect incorrect key types passed to `dict.__getitem__` (#468)
+- Pick up the signature of `open()` from typeshed correctly (#463)
+- Do not strip away generic parameters explicitly set to
+  `Any` (#467)
+- Fix bug that led to some overloaded calls incorrectly
+  resolving to `Any` (#462)
+- Support `__init__` and `__new__` signatures from typeshed (#430)
+- Fix incorrect type inferred for indexing operations on
+  subclasses of `list` and `tuple` (#461)
+- Add plugin providing a precise type for `dict.get` calls (#460)
+- Fix internal error when an `__eq__` method throws (#461)
+- Fix handling of `async def` methods in stubs (#459)
+- Treat Thrift enums as compatible with protocols that
+  `int` is compatible with (#457)
+- Assume that dataclasses have no dynamic attributes (#456)
+- Treat Thrift enums as compatible with `int` (#455)
+- Fix treatment of `TypeVar` with bounds or constraints
+  as callables (#454)
+- Improve `TypeVar` solution algorithm (#453)
+- Cache decisions about whether classes implement protocols (#450)
+- Fix application of multiple suggested changes per file
+  when an earlier change has added or removed lines (#449)
+- Treat `NoReturn` like `Any` in `**kwargs` calls (#446)
+- Improve error messages for overloaded calls (#445)
+- Infer `NoReturn` instead of `Any` for unreachable code (#443)
+- Make `NoReturn` compatible with all other types (#442)
+- Fix treatment of walrus operator in `and`, `or`, and `if/else`
+  expressions (#441)
+- Refactor `isinstance()` support (#440)
+- Exclude `Any[unreachable]` from unified values (#439)
+- Add support for `reveal_locals()` (#436)
+- Add support for `assert_error()` (#435)
+- Add support for `assert_type()` (#434)
+- `reveal_type()` and `dump_value()` now return their argument,
+  the anticipated behavior for `typing.reveal_type()` in Python
+  3.11 (#433)
+- Fix return type of async generator functions (#431)
+- Type check function decorators (#428)
+- Handle `NoReturn` in `async def` functions (#427)
+- Support PEP 673 (`typing_extensions.Self`) (#423)
+- Updates for compatibility with recent changes in typeshed (#421):
+  - Fix override compatibility check for unknown callables 
+  - Fix usage of removed type `_typeshed.SupportsLessThan`
+- Remove old configuration abstraction (#414)
+
+## Version 0.6.0 (January 12, 2022)
+
+Release highlights:
+- Support for configuration through `pyproject.toml`. The old
+  configuration mechanism will be removed in the next release.
+- Support for experimental new type evaluation mechanism, providing
+  a more powerful replacement for overloads.
+- Support for suggesting annotations for unannotated code.
+
+Full changelog:
+- Support generic type evaluators (#409)
+- Implement return annotation behavior for type evaluation
+  functions (#408)
+- Support `extend_config` option in `pyproject.toml` (#407)
+- Remove the old method return type check. Use the new
+  `incompatible_override` check instead (#404)
+- Migrate remaining config options to new abstraction (#403)
+- Fix stub classes with references to themselves in their
+  base classes, such as `os._ScandirIterator` in typeshed (#402)
 - Fix type narrowing on the `else` case of `issubclass()`
   (#401)
 - Fix indexing a list with an index typed as a
@@ -41,7 +144,7 @@
 - Support the Python 3.10 `match` statement (#376)
 - Support the walrus (`:=`) operator (#375)
 - Initial support for proposed new "type evaluation"
-  mechanism (#374, #379, #384)
+  mechanism (#374, #379, #384, #410)
 - Create command-line options for each config option (#373)
 - Overhaul treatment of function definitions (#372)
   - Support positional-only arguments
@@ -161,7 +264,7 @@
 - Add `pyanalyze.extensions.CustomCheck`
 - Add `pyanalyze.extensions.ExternalType`
 - If you have code dealing with `Value` objects, note that there are several changes:
-  - The `UnresolvedValue` class was renamed to `AnyValue`. 
+  - The `UnresolvedValue` class was renamed to `AnyValue`.
   - `value is UNRESOLVED_VALUE` will no longer be reliable. Use `isinstance(value, AnyValue)` instead.
   - `TypedDictValue` now stores whether each key is required or not in its `items` dictionary.
   - `UnboundMethodValue` now stores a `Composite` object instead of a `Value` object, and has a new

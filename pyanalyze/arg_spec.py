@@ -6,18 +6,19 @@ Implementation of extended argument specifications used by test_scope.
 
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
-from .extensions import CustomCheck, get_overloads
+from .extensions import CustomCheck, TypeGuard, get_overloads, get_type_evaluations
 from .annotations import Context, RuntimeEvaluator, type_from_runtime
-from .config import Config
 from .find_unused import used
 from . import implementation
 from .safe import (
     all_of_type,
+    hasattr_static,
     is_newtype,
-    safe_hasattr,
+    safe_equals,
     safe_issubclass,
     is_typing_name,
     safe_isinstance,
+    get_fully_qualified_name,
 )
 from .stacked_scopes import Composite, uniq_chain
 from .signature import (
@@ -37,9 +38,12 @@ from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
     AnyValue,
+    CanAssignContext,
     Extension,
     GenericBases,
     KVPair,
+    SubclassValue,
+    TypedDictValue,
     TypedValue,
     GenericValue,
     NewTypeValue,
@@ -49,6 +53,7 @@ from .value import (
     extract_typevars,
     make_weak,
 )
+import pyanalyze
 
 import ast
 import asyncio
@@ -56,14 +61,17 @@ import asynq
 from collections.abc import Awaitable
 import contextlib
 from dataclasses import dataclass, replace
+import enum
 import qcore
 import inspect
 import sys
-from types import FunctionType, ModuleType
+import textwrap
+from types import FunctionType, ModuleType, MethodType
 from typing import (
     Any,
     Callable,
     Iterator,
+    List,
     Sequence,
     Generic,
     Mapping,
@@ -71,11 +79,14 @@ from typing import (
     Tuple,
     Union,
 )
+from typing_extensions import is_typeddict
 import typing_inspect
 from unittest import mock
 
 # types.MethodWrapperType in 3.7+
 MethodWrapperType = type(object().__str__)
+
+_ENUM_CALL = enum.Enum.__call__.__func__
 
 
 @used  # exposed as an API
@@ -103,9 +114,8 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
         ):
             yield
     else:
-        options = Options.from_option_list([], Config())
-        tsf = TypeshedFinder.make(options)
-        argspec = ArgSpecCache(options, tsf).get_argspec(fn, impl=implementation_fn)
+        checker = pyanalyze.checker.Checker()
+        argspec = checker.arg_spec_cache.get_argspec(fn, impl=implementation_fn)
         if argspec is None:
             # builtin or something, just use a generic argspec
             argspec = Signature.make(
@@ -173,10 +183,6 @@ class IgnoredCallees(PyObjectSequenceOption[object]):
     ]
     name = "ignored_callees"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return fallback.IGNORED_CALLEES
-
 
 class ClassesSafeToInstantiate(PyObjectSequenceOption[type]):
     """We will instantiate instances of these classes if we can infer the value of all of
@@ -194,10 +200,6 @@ class ClassesSafeToInstantiate(PyObjectSequenceOption[type]):
         tuple,
     ]
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[type]:
-        return fallback.CLASSES_SAFE_TO_INSTANTIATE
-
 
 class FunctionsSafeToCall(PyObjectSequenceOption[object]):
     """We will instantiate instances of these classes if we can infer the value of all of
@@ -206,10 +208,6 @@ class FunctionsSafeToCall(PyObjectSequenceOption[object]):
 
     name = "functions_safe_to_call"
     default_value = [sorted, asynq.asynq, make_weak]
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return fallback.FUNCTIONS_SAFE_TO_CALL
 
 
 _HookReturn = Union[None, ConcreteSignature, inspect.Signature, Callable[..., Any]]
@@ -226,10 +224,6 @@ class ConstructorHooks(PyObjectSequenceOption[_ConstructorHook]):
     """
 
     name = "constructor_hooks"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_ConstructorHook]:
-        return [fallback.get_constructor]
 
     @classmethod
     def get_constructor(cls, typ: type, options: Options) -> _HookReturn:
@@ -256,10 +250,6 @@ class KnownSignatures(PyObjectSequenceOption[_SigProvider]):
     name = "known_signatures"
     default_value = []
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_SigProvider]:
-        return [fallback.get_known_argspecs]
-
 
 _Unwrapper = Callable[[type], type]
 
@@ -281,10 +271,6 @@ class UnwrapClass(PyObjectSequenceOption[_Unwrapper]):
     name = "unwrap_class"
 
     @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_Unwrapper]:
-        return [fallback.unwrap_cls]
-
-    @classmethod
     def unwrap(cls, typ: type, options: Options) -> type:
         for unwrapper in options.get_value_for(cls):
             typ = unwrapper(typ)
@@ -298,26 +284,25 @@ class ArgSpecCache:
         self,
         options: Options,
         ts_finder: TypeshedFinder,
+        ctx: CanAssignContext,
         *,
         vnv_provider: Callable[[str], Optional[Value]] = lambda _: None,
     ) -> None:
         self.vnv_provider = vnv_provider
         self.options = options
-        self.config = options.fallback
         self.ts_finder = ts_finder
+        self.ctx = ctx
         self.known_argspecs = {}
         self.generic_bases_cache = {}
         self.default_context = AnnotationsContext(self)
+        self.safe_bases = tuple(self.options.get_value_for(ClassesSafeToInstantiate))
+
         default_argspecs = dict(self.DEFAULT_ARGSPECS)
         for provider in options.get_value_for(KnownSignatures):
             default_argspecs.update(provider(self))
 
         for obj, argspec in default_argspecs.items():
             self.known_argspecs[obj] = argspec
-
-    def __reduce_ex__(self, proto: object) -> object:
-        # Don't pickle the actual argspecs, which are frequently unpicklable.
-        return self.__class__, (self.config,)
 
     def from_signature(
         self,
@@ -329,6 +314,7 @@ class ArgSpecCache:
         is_asynq: bool = False,
         returns: Optional[Value] = None,
         allow_call: bool = False,
+        is_constructor: bool = False,
     ) -> Signature:
         """Constructs a pyanalyze Signature from an inspect.Signature.
 
@@ -344,7 +330,7 @@ class ArgSpecCache:
         # because @functools.wraps copies the __annotations__ of the wrapped function. We
         # don't want that, because the wrapper may have changed the return type.
         # This caused problems with @contextlib.contextmanager.
-        is_wrapped = safe_hasattr(function_object, "__wrapped__")
+        is_wrapped = hasattr_static(function_object, "__wrapped__")
 
         if returns is not None:
             has_return_annotation = True
@@ -363,7 +349,12 @@ class ArgSpecCache:
         parameters = []
         for i, parameter in enumerate(sig.parameters.values()):
             param, make_everything_pos_only = self._make_sig_parameter(
-                parameter, func_globals, function_object, is_wrapped, i
+                parameter,
+                func_globals,
+                function_object,
+                is_wrapped,
+                i,
+                is_constructor=is_constructor,
             )
             if make_everything_pos_only:
                 parameters = [
@@ -390,13 +381,19 @@ class ArgSpecCache:
         function_object: Optional[object],
         is_wrapped: bool,
         index: int,
+        *,
+        is_constructor: bool,
     ) -> Tuple[SigParameter, bool]:
         """Given an inspect.Parameter, returns a Parameter object."""
         if is_wrapped:
             typ = AnyValue(AnySource.inference)
         else:
             typ = self._get_type_for_parameter(
-                parameter, func_globals, function_object, index
+                parameter,
+                func_globals,
+                function_object,
+                index,
+                is_constructor=is_constructor,
             )
         if parameter.default is inspect.Parameter.empty:
             default = None
@@ -424,6 +421,8 @@ class ArgSpecCache:
         func_globals: Optional[Mapping[str, object]],
         function_object: Optional[object],
         index: int,
+        *,
+        is_constructor: bool,
     ) -> Value:
         if parameter.annotation is not inspect.Parameter.empty:
             typ = type_from_runtime(
@@ -448,7 +447,11 @@ class ArgSpecCache:
                 and module_name in sys.modules
             ):
                 module = sys.modules[module_name]
-                *class_names, function_name = qualname.split(".")
+                if is_constructor:
+                    class_names = qualname.split(".")
+                    function_name = "__init__"
+                else:
+                    *class_names, function_name = qualname.split(".")
                 class_obj = module
                 for class_name in class_names:
                     class_obj = getattr(class_obj, class_name, None)
@@ -476,9 +479,15 @@ class ArgSpecCache:
         return AnyValue(AnySource.unannotated)
 
     def get_argspec(
-        self, obj: object, impl: Optional[Impl] = None, is_asynq: bool = False
+        self,
+        obj: object,
+        impl: Optional[Impl] = None,
+        is_asynq: bool = False,
+        allow_synthetic_type: bool = False,
     ) -> MaybeSignature:
         """Constructs the Signature for a Python object."""
+        if safe_isinstance(obj, str) and not allow_synthetic_type:
+            return None
         return self._cached_get_argspec(
             obj, impl, is_asynq, in_overload_resolution=False
         )
@@ -508,6 +517,44 @@ class ArgSpecCache:
             self.known_argspecs[obj] = extended
         return extended
 
+    def _maybe_make_evaluator_sig(
+        self, func: Callable[..., Any], impl: Optional[Impl], is_asynq: bool
+    ) -> MaybeSignature:
+        try:
+            key = f"{func.__module__}.{func.__qualname__}"
+        except AttributeError:
+            return None
+        evaluation_funcs = get_type_evaluations(key)
+        if not evaluation_funcs:
+            return None
+        sigs = []
+        for evaluation_func in evaluation_funcs:
+            if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
+                return None
+            sig = self._cached_get_argspec(
+                evaluation_func, impl, is_asynq, in_overload_resolution=True
+            )
+            if not isinstance(sig, Signature):
+                return None
+            lines, _ = inspect.getsourcelines(evaluation_func)
+            code = textwrap.dedent("".join(lines))
+            body = ast.parse(code)
+            if not body.body:
+                return None
+            evaluator_node = body.body[0]
+            if not isinstance(evaluator_node, ast.FunctionDef):
+                return None
+            evaluator = RuntimeEvaluator(
+                evaluator_node,
+                sig.return_value,
+                evaluation_func.__globals__,
+                evaluation_func,
+            )
+            sigs.append(replace(sig, evaluator=evaluator))
+        if len(sigs) == 1:
+            return sigs[0]
+        return OverloadedSignature(sigs)
+
     def _uncached_get_argspec(
         self,
         obj: Any,
@@ -516,7 +563,7 @@ class ArgSpecCache:
         in_overload_resolution: bool,
     ) -> MaybeSignature:
         if not in_overload_resolution:
-            fq_name = _get_fully_qualified_name(obj)
+            fq_name = get_fully_qualified_name(obj)
             if fq_name is not None:
                 overloads = get_overloads(fq_name)
                 if overloads:
@@ -528,15 +575,11 @@ class ArgSpecCache:
                     ]
                     if all_of_type(sigs, Signature):
                         return OverloadedSignature(sigs)
-                evaluator = RuntimeEvaluator.get_for(obj)
-                if evaluator is not None:
-                    sig = self._cached_get_argspec(
-                        evaluator.func, impl, is_asynq, in_overload_resolution=True
-                    )
-                    if isinstance(sig, Signature):
-                        return replace(sig, evaluator=evaluator)
+                evaluator_sig = self._maybe_make_evaluator_sig(obj, impl, is_asynq)
+                if evaluator_sig is not None:
+                    return evaluator_sig
 
-        if isinstance(obj, tuple) or hasattr(obj, "__getattr__"):
+        if isinstance(obj, tuple):
             return None  # lost cause
 
         # Cythonized methods, e.g. fn.asynq
@@ -568,8 +611,8 @@ class ArgSpecCache:
             )
             return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
 
-        if hasattr(obj, "fn") or hasattr(obj, "original_fn"):
-            is_asynq = is_asynq or hasattr(obj, "asynq")
+        if hasattr_static(obj, "fn") or hasattr_static(obj, "original_fn"):
+            is_asynq = is_asynq or hasattr_static(obj, "asynq")
             # many decorators put the original function in the .fn attribute
             try:
                 original_fn = qcore.get_original_fn(obj)
@@ -582,12 +625,55 @@ class ArgSpecCache:
                     original_fn, impl, is_asynq, in_overload_resolution
                 )
 
-        allow_call = FunctionsSafeToCall.contains(obj, self.options)
-        argspec = self.ts_finder.get_argspec(obj, allow_call=allow_call)
+        # Special case for EnumMeta.__call__. Ideally this should be generalized.
+        if (
+            safe_isinstance(obj, type)
+            and safe_issubclass(obj, enum.Enum)
+            and safe_isinstance(obj.__call__, MethodType)
+            and safe_equals(obj.__call__.__func__, _ENUM_CALL)
+        ):
+            signature = self._cached_get_argspec(
+                _ENUM_CALL, impl, is_asynq, in_overload_resolution
+            )
+            bound_sig = make_bound_method(
+                signature, Composite(SubclassValue(TypedValue(obj)))
+            )
+            if bound_sig is None:
+                return None
+            sig = bound_sig.get_signature(preserve_impl=True, ctx=self.ctx)
+            if sig is not None:
+                return sig
+            return bound_sig
+
+        allow_call = FunctionsSafeToCall.contains(obj, self.options) or (
+            safe_isinstance(obj, type) and safe_issubclass(obj, self.safe_bases)
+        )
+        if safe_isinstance(obj, (type, str)):
+            type_params = self.get_type_parameters(obj)
+        else:
+            type_params = []
+        argspec = self.ts_finder.get_argspec(
+            obj, allow_call=allow_call, type_params=type_params
+        )
         if argspec is not None:
             return argspec
 
+        if is_typeddict(obj) and not is_typing_name(obj, "TypedDict"):
+            td_type = type_from_runtime(obj)
+            if isinstance(td_type, TypedDictValue):
+                params = [
+                    SigParameter(
+                        key,
+                        ParameterKind.KEYWORD_ONLY,
+                        default=None if required else KnownValue(...),
+                        annotation=value,
+                    )
+                    for key, (required, value) in td_type.items.items()
+                ]
+                return Signature.make(params, td_type)
+
         if is_newtype(obj):
+            assert hasattr(obj, "__supertype__")
             return Signature.make(
                 [
                     SigParameter(
@@ -603,7 +689,7 @@ class ArgSpecCache:
             )
 
         if inspect.isfunction(obj):
-            if hasattr(obj, "inner"):
+            if hasattr_static(obj, "inner"):
                 # @qclient.task_queue.exec_after_request() puts the original function in .inner
                 return self._cached_get_argspec(
                     obj.inner, impl, is_asynq, in_overload_resolution
@@ -641,8 +727,6 @@ class ArgSpecCache:
                 return_type = (
                     AnyValue(AnySource.error) if should_ignore else TypedValue(obj)
                 )
-                safe = tuple(self.options.get_value_for(ClassesSafeToInstantiate))
-                allow_call = safe_issubclass(obj, safe)
                 if isinstance(override, inspect.Signature):
                     inspect_sig = override
                 else:
@@ -674,11 +758,12 @@ class ArgSpecCache:
                     impl=impl,
                     returns=return_type,
                     allow_call=allow_call,
+                    is_constructor=True,
                 )
             bound_sig = make_bound_method(signature, Composite(TypedValue(obj)))
             if bound_sig is None:
                 return None
-            sig = bound_sig.get_signature(preserve_impl=True)
+            sig = bound_sig.get_signature(preserve_impl=True, ctx=self.ctx)
             if sig is not None:
                 return sig
             return bound_sig
@@ -701,7 +786,7 @@ class ArgSpecCache:
                 return self.from_signature(inspect_sig, function_object=obj)
             return self._make_any_sig(obj)
 
-        if hasattr(obj, "__call__"):
+        if hasattr_static(obj, "__call__"):
             # we could get an argspec here in some cases, but it's impossible to figure out
             # the argspec for some builtin methods (e.g., dict.__init__), and no way to detect
             # these with inspect, so just give up.
@@ -743,8 +828,17 @@ class ArgSpecCache:
             # Python 2.
             return None
 
+    def get_type_parameters(self, typ: Union[type, str]) -> List[Value]:
+        bases = self.get_generic_bases(typ, substitute_typevars=False)
+        tv_map = bases.get(typ, {})
+        return [tv for tv in tv_map.values()]
+
     def get_generic_bases(
-        self, typ: Union[type, str], generic_args: Sequence[Value] = ()
+        self,
+        typ: Union[type, str],
+        generic_args: Sequence[Value] = (),
+        *,
+        substitute_typevars: bool = True,
     ) -> GenericBases:
         if (
             typ is Generic
@@ -760,14 +854,15 @@ class ArgSpecCache:
         if not my_typevars:
             return generic_bases
         tv_map = {}
-        for i, tv_value in enumerate(my_typevars.values()):
-            if not isinstance(tv_value, TypeVarValue):
-                continue
-            try:
-                value = generic_args[i]
-            except IndexError:
-                value = AnyValue(AnySource.generic_argument)
-            tv_map[tv_value.typevar] = value
+        if substitute_typevars:
+            for i, tv_value in enumerate(my_typevars.values()):
+                if not isinstance(tv_value, TypeVarValue):
+                    continue
+                try:
+                    value = generic_args[i]
+                except IndexError:
+                    value = AnyValue(AnySource.generic_argument)
+                tv_map[tv_value.typevar] = value
         return {
             base: {tv: value.substitute_typevars(tv_map) for tv, value in args.items()}
             for base, args in generic_bases.items()
@@ -836,26 +931,20 @@ class ArgSpecCache:
         return typ.__bases__
 
 
-def _is_qcore_decorator(obj: object) -> bool:
+def _is_qcore_decorator(obj: object) -> TypeGuard[Any]:
     try:
         return (
-            hasattr(obj, "is_decorator")
+            hasattr_static(obj, "is_decorator")
             and obj.is_decorator()
-            and hasattr(obj, "decorator")
+            and hasattr_static(obj, "decorator")
         )
     except Exception:
         # black.Line has an is_decorator attribute but it is not a method
         return False
 
 
-def _get_fully_qualified_name(obj: object) -> Optional[str]:
-    if hasattr(obj, "__module__") and hasattr(obj, "__qualname__"):
-        return f"{obj.__module__}.{obj.__qualname__}"
-    return None
-
-
 def _get_class_name(obj: object) -> Optional[str]:
-    if hasattr(obj, "__qualname__"):
+    if hasattr_static(obj, "__qualname__"):
         pieces = obj.__qualname__.split(".")
         if len(pieces) >= 2:
             return pieces[-2]

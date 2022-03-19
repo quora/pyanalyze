@@ -1,9 +1,9 @@
 from .annotations import type_from_value
 from .error_code import ErrorCode
-from .extensions import reveal_type
+from .extensions import assert_type, reveal_locals, reveal_type
 from .format_strings import parse_format_string
 from .predicates import IsAssignablePredicate
-from .safe import safe_hasattr, safe_isinstance, safe_issubclass
+from .safe import hasattr_static, safe_isinstance, safe_issubclass
 from .stacked_scopes import (
     NULL_CONSTRAINT,
     AbstractConstraint,
@@ -24,6 +24,7 @@ from .signature import (
     ParameterKind,
 )
 from .value import (
+    NO_RETURN_VALUE,
     UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
@@ -47,9 +48,11 @@ from .value import (
     KNOWN_MUTABLE_TYPES,
     Value,
     WeakExtension,
+    check_hashability,
     concrete_values_from_iterable,
     kv_pairs_from_mapping,
     make_weak,
+    unannotate,
     unite_values,
     flatten_values,
     replace_known_sequence_value,
@@ -64,6 +67,8 @@ import qcore
 import inspect
 import warnings
 from types import FunctionType
+import typing
+import typing_extensions
 from typing import Sequence, TypeVar, cast, Dict, NewType, Callable, Optional, Union
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
@@ -83,8 +88,11 @@ def flatten_unions(
     unwrap_annotated: bool = False,
 ) -> ImplReturn:
     value_lists = [
-        flatten_values(val, unwrap_annotated=unwrap_annotated) for val in values
+        list(flatten_values(val, unwrap_annotated=unwrap_annotated)) for val in values
     ]
+    # If the lists are empty, we end up inferring Never as the return type, which
+    # generally isn't right.
+    value_lists = [lst if lst else [NO_RETURN_VALUE] for lst in value_lists]
     results = [
         clean_up_implementation_fn_return(callable(*vals))
         for vals in product(*value_lists)
@@ -115,12 +123,23 @@ def _issubclass_impl(ctx: CallContext) -> Value:
     return annotate_with_constraint(TypedValue(bool), constraint)
 
 
-def _isinstance_impl(ctx: CallContext) -> ImplReturn:
+def _isinstance_impl(ctx: CallContext) -> Value:
     class_or_tuple = ctx.vars["class_or_tuple"]
     varname = ctx.varname_for_arg("obj")
-    return ImplReturn(
-        TypedValue(bool), _constraint_from_isinstance(varname, class_or_tuple)
-    )
+    if varname is None or not isinstance(class_or_tuple, KnownValue):
+        return TypedValue(bool)
+    if isinstance(class_or_tuple.val, type):
+        narrowed_type = TypedValue(class_or_tuple.val)
+    elif isinstance(class_or_tuple.val, tuple) and all(
+        isinstance(elt, type) for elt in class_or_tuple.val
+    ):
+        vals = [TypedValue(elt) for elt in class_or_tuple.val]
+        narrowed_type = unite_values(*vals)
+    else:
+        return TypedValue(bool)
+    predicate = IsAssignablePredicate(narrowed_type, ctx.visitor, positive_only=False)
+    constraint = Constraint(varname, ConstraintType.predicate, True, predicate)
+    return annotate_with_constraint(TypedValue(bool), constraint)
 
 
 def _constraint_from_isinstance(
@@ -155,22 +174,32 @@ def _assert_is_instance_impl(ctx: CallContext) -> ImplReturn:
     )
 
 
+def _record_attr_set(val: Value, name: str, ctx: CallContext) -> None:
+    if isinstance(val, MultiValuedValue):
+        for subval in val.vals:
+            _record_attr_set(subval, name, ctx)
+        return
+    elif isinstance(val, AnnotatedValue):
+        _record_attr_set(val.value, name, ctx)
+        return
+    elif isinstance(val, TypedValue):
+        typ = val.typ
+    elif isinstance(val, KnownValue):
+        typ = type(val.val)
+    else:
+        return
+    ctx.visitor._record_type_attr_set(
+        typ, name, ctx.node, AnyValue(AnySource.inference)
+    )
+
+
 def _hasattr_impl(ctx: CallContext) -> Value:
     obj = ctx.vars["object"]
     name = ctx.vars["name"]
     if not isinstance(name, KnownValue) or not isinstance(name.val, str):
         return TypedValue(bool)
-    for val in flatten_values(obj):
-        if isinstance(val, (TypedValue)):
-            typ = val.typ
-        elif isinstance(val, KnownValue):
-            typ = type(val.val)
-        else:
-            continue
-        # interpret a hasattr check as a sign that the object (somehow) has the attribute
-        ctx.visitor._record_type_attr_set(
-            typ, name.val, ctx.node, AnyValue(AnySource.inference)
-        )
+    # interpret a hasattr check as a sign that the object (somehow) has the attribute
+    _record_attr_set(obj, name.val, ctx)
 
     # if the value exists on the type or instance, hasattr should return True
     # don't interpret the opposite to mean it should return False, as the attribute may
@@ -179,7 +208,7 @@ def _hasattr_impl(ctx: CallContext) -> Value:
         name.val, ctx.visitor
     ):
         return_value = KnownValue(True)
-    elif isinstance(obj, KnownValue) and safe_hasattr(obj.val, name.val):
+    elif isinstance(obj, KnownValue) and hasattr_static(obj.val, name.val):
         return_value = KnownValue(True)
     else:
         return_value = TypedValue(bool)
@@ -286,35 +315,39 @@ def _super_impl(ctx: CallContext) -> Value:
         return KnownValue(super_val)
 
 
-def _tuple_impl(ctx: CallContext) -> Value:
+def _tuple_impl(ctx: CallContext) -> ImplReturn:
     return _sequence_impl(tuple, ctx)
 
 
-def _list_impl(ctx: CallContext) -> Value:
+def _list_impl(ctx: CallContext) -> ImplReturn:
     return _sequence_impl(list, ctx)
 
 
-def _set_impl(ctx: CallContext) -> Value:
+def _set_impl(ctx: CallContext) -> ImplReturn:
     return _sequence_impl(set, ctx)
 
 
-def _sequence_impl(typ: type, ctx: CallContext) -> Value:
+def _sequence_impl(typ: type, ctx: CallContext) -> ImplReturn:
     iterable = ctx.vars["iterable"]
     if iterable is _NO_ARG_SENTINEL:
-        return KnownValue(typ())
-    cvi = concrete_values_from_iterable(iterable, ctx.visitor)
-    if isinstance(cvi, CanAssignError):
-        ctx.show_error(
-            f"{iterable} is not iterable",
-            ErrorCode.unsupported_operation,
-            arg="iterable",
-            detail=str(cvi),
-        )
-        return TypedValue(typ)
-    elif isinstance(cvi, Value):
-        return GenericValue(typ, [cvi])
-    else:
-        return SequenceIncompleteValue.make_or_known(typ, cvi)
+        return ImplReturn(KnownValue(typ()))
+
+    def inner(iterable: Value) -> Value:
+        cvi = concrete_values_from_iterable(iterable, ctx.visitor)
+        if isinstance(cvi, CanAssignError):
+            ctx.show_error(
+                f"{iterable} is not iterable",
+                ErrorCode.unsupported_operation,
+                arg="iterable",
+                detail=str(cvi),
+            )
+            return TypedValue(typ)
+        elif isinstance(cvi, Value):
+            return GenericValue(typ, [cvi])
+        else:
+            return SequenceIncompleteValue.make_or_known(typ, cvi)
+
+    return flatten_unions(inner, iterable)
 
 
 def _list_append_impl(ctx: CallContext) -> ImplReturn:
@@ -373,8 +406,16 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                     return SequenceIncompleteValue.make_or_known(
                         list, self_value.members[key.val]
                     )
-                else:
+                elif self_value.typ in (list, tuple):
+                    # For generics of exactly list/tuple, return the self type.
                     return self_value
+                else:
+                    # slicing a subclass of list or tuple returns a list
+                    # or tuple, not a subclass (unless the subclass overrides
+                    # __getitem__, but then we wouldn't get here).
+                    # TODO return a more precise type if the class inherits
+                    # from a generic list/tuple.
+                    return TypedValue(typ)
             else:
                 ctx.show_error(f"Invalid {typ.__name__} key {key}")
                 return AnyValue(AnySource.error)
@@ -431,9 +472,25 @@ def _typeddict_setitem(
             )
 
 
+def _check_dict_key_hashability(key: Value, ctx: CallContext, arg: str) -> bool:
+    hashability = check_hashability(key, ctx.visitor)
+    if isinstance(hashability, CanAssignError):
+        ctx.show_error(
+            "Dictionary key is not hashable",
+            ErrorCode.unhashable_key,
+            arg=arg,
+            detail=str(hashability),
+        )
+        return False
+    return True
+
+
 def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
     varname = ctx.varname_for_arg("self")
-    pair = KVPair(ctx.vars["k"], ctx.vars["v"])
+    key = ctx.vars["k"]
+    if not _check_dict_key_hashability(key, ctx, "k"):
+        return ImplReturn(KnownValue(None))
+    pair = KVPair(key, ctx.vars["v"])
     return _add_pairs_to_dict(ctx.vars["self"], [pair], ctx, varname)
 
 
@@ -442,16 +499,8 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
         self_value = ctx.vars["self"]
         if isinstance(self_value, AnnotatedValue):
             self_value = self_value.value
-        if isinstance(key, KnownValue):
-            try:
-                hash(key.val)
-            except Exception:
-                ctx.show_error(
-                    f"Dictionary key {key} is not hashable",
-                    ErrorCode.unhashable_key,
-                    arg="k",
-                )
-                return AnyValue(AnySource.error)
+        if not _check_dict_key_hashability(key, ctx, "k"):
+            return AnyValue(AnySource.error)
         if isinstance(self_value, KnownValue):
             if isinstance(key, KnownValue):
                 try:
@@ -492,11 +541,87 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
                 return AnyValue(AnySource.error)
             return val
         elif isinstance(self_value, TypedValue):
+            key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
+            can_assign = key_type.can_assign(key, ctx.visitor)
+            if isinstance(can_assign, CanAssignError):
+                ctx.show_error(
+                    f"Dictionary does not accept keys of type {key}",
+                    error_code=ErrorCode.incompatible_argument,
+                    detail=str(can_assign),
+                    arg="key",
+                )
             return self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
         else:
             return AnyValue(AnySource.inference)
 
     return flatten_unions(inner, ctx.vars["k"])
+
+
+def _dict_get_impl(ctx: CallContext) -> ImplReturn:
+    default = ctx.vars["default"]
+
+    def inner(key: Value) -> Value:
+        self_value = ctx.vars["self"]
+        if isinstance(self_value, AnnotatedValue):
+            self_value = self_value.value
+        if not _check_dict_key_hashability(key, ctx, "k"):
+            return AnyValue(AnySource.error)
+        if isinstance(self_value, KnownValue):
+            if isinstance(key, KnownValue):
+                try:
+                    return_value = self_value.val[key.val]
+                except Exception:
+                    return default
+                else:
+                    return KnownValue(return_value) | default
+            # else just treat it together with DictIncompleteValue
+            self_value = replace_known_sequence_value(self_value)
+        if isinstance(self_value, TypedDictValue):
+            if not TypedValue(str).is_assignable(key, ctx.visitor):
+                ctx.show_error(
+                    f"TypedDict key must be str, not {key}",
+                    ErrorCode.invalid_typeddict_key,
+                    arg="k",
+                )
+                return AnyValue(AnySource.error)
+            elif isinstance(key, KnownValue):
+                try:
+                    required, value = self_value.items[key.val]
+                # probably KeyError, but catch anything in case it's an
+                # unhashable str subclass or something
+                except Exception:
+                    # No error here; TypedDicts may have additional keys at runtime.
+                    pass
+                else:
+                    if required:
+                        return value
+                    else:
+                        return value | default
+            # TODO strictly we should throw an error for any non-Literal or unknown key:
+            # https://www.python.org/dev/peps/pep-0589/#supported-and-unsupported-operations
+            # Don't do that yet because it may cause too much disruption.
+            return default
+        elif isinstance(self_value, DictIncompleteValue):
+            val = self_value.get_value(key, ctx.visitor)
+            if val is UNINITIALIZED_VALUE:
+                return default
+            return val | default
+        elif isinstance(self_value, TypedValue):
+            key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
+            can_assign = key_type.can_assign(key, ctx.visitor)
+            if isinstance(can_assign, CanAssignError):
+                ctx.show_error(
+                    f"Dictionary does not accept keys of type {key}",
+                    error_code=ErrorCode.incompatible_argument,
+                    detail=str(can_assign),
+                    arg="key",
+                )
+            value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
+            return value_type | default
+        else:
+            return AnyValue(AnySource.inference)
+
+    return flatten_unions(inner, ctx.vars["key"])
 
 
 def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
@@ -505,16 +630,8 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
     self_value = replace_known_sequence_value(ctx.vars["self"])
 
-    if isinstance(key, KnownValue):
-        try:
-            hash(key.val)
-        except Exception:
-            ctx.show_error(
-                f"Dictionary key {key} is not hashable",
-                ErrorCode.unhashable_key,
-                arg="key",
-            )
-            return ImplReturn(AnyValue(AnySource.error))
+    if not _check_dict_key_hashability(key, ctx, "key"):
+        return ImplReturn(AnyValue(AnySource.error))
 
     if isinstance(self_value, TypedDictValue):
         if not TypedValue(str).is_assignable(key, ctx.visitor):
@@ -927,23 +1044,41 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
 
 
 def _reveal_type_impl(ctx: CallContext) -> Value:
+    value = ctx.vars["value"]
     if ctx.visitor._is_checking():
-        value = ctx.vars["value"]
         message = f"Revealed type is {ctx.visitor.display_value(value)}"
         ctx.show_error(message, ErrorCode.inference_failure, arg="value")
+    return value
+
+
+def _reveal_locals_impl(ctx: CallContext) -> Value:
+    scope = ctx.visitor.scopes.current_scope()
+    if ctx.visitor._is_collecting():
+        for varname in scope.all_variables():
+            scope.get(varname, ctx.node, ctx.visitor.state)
+    else:
+        details = []
+        for varname in scope.all_variables():
+            val, _, _ = scope.get(varname, ctx.node, ctx.visitor.state)
+            details.append(CanAssignError(f"{varname}: {val}"))
+        ctx.show_error(
+            "Revealed local types are:",
+            ErrorCode.inference_failure,
+            detail=str(CanAssignError(children=details)),
+        )
     return KnownValue(None)
 
 
 def _dump_value_impl(ctx: CallContext) -> Value:
+    value = ctx.vars["value"]
     if ctx.visitor._is_checking():
-        value = ctx.vars["value"]
         message = f"Value is '{value!r}'"
         if isinstance(value, KnownValue):
             sig = ctx.visitor.arg_spec_cache.get_argspec(value.val)
             if sig is not None:
                 message += f", signature is {sig!r}"
         ctx.show_error(message, ErrorCode.inference_failure, arg="value")
-    return KnownValue(None)
+    return value
 
 
 def _str_format_impl(ctx: CallContext) -> Value:
@@ -1029,6 +1164,20 @@ def _cast_impl(ctx: CallContext) -> Value:
     return type_from_value(typ, visitor=ctx.visitor, node=ctx.node)
 
 
+def _assert_type_impl(ctx: CallContext) -> Value:
+    # TODO maybe we should walk over the whole value and remove Annotated.
+    val = unannotate(ctx.vars["val"])
+    typ = ctx.vars["typ"]
+    expected_type = type_from_value(typ, visitor=ctx.visitor, node=ctx.node)
+    if val != expected_type:
+        ctx.show_error(
+            f"Type is {val} (expected {expected_type})",
+            error_code=ErrorCode.inference_failure,
+            arg="obj",
+        )
+    return val
+
+
 def _subclasses_impl(ctx: CallContext) -> Value:
     """Overridden because typeshed types make it (T) => List[T] instead."""
     self_obj = ctx.vars["self"]
@@ -1088,11 +1237,27 @@ def _len_impl(ctx: CallContext) -> ImplReturn:
     return ImplReturn(len_of_value(ctx.vars["obj"]), constraint)
 
 
+def _bool_impl(ctx: CallContext) -> Value:
+    if ctx.vars["o"] is _NO_ARG_SENTINEL:
+        return KnownValue(False)
+
+    # Maybe we should check boolability here too? But it seems fair to
+    # believe the author if they explicitly wrote bool().
+    varname = ctx.varname_for_arg("o")
+    if varname is None:
+        return TypedValue(bool)
+    constraint = Constraint(
+        varname, ConstraintType.is_truthy, positive=True, value=None
+    )
+    return annotate_with_constraint(TypedValue(bool), constraint)
+
+
 _POS_ONLY = ParameterKind.POSITIONAL_ONLY
 _ENCODING_PARAMETER = SigParameter(
     "encoding", annotation=TypedValue(str), default=KnownValue("")
 )
 
+T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
 
@@ -1116,14 +1281,17 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=assert_is_value,
         ),
         Signature.make(
-            [SigParameter("value", _POS_ONLY)],
-            KnownValue(None),
+            [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
+            TypeVarValue(T),
             impl=_reveal_type_impl,
             callable=reveal_type,
         ),
         Signature.make(
-            [SigParameter("value", _POS_ONLY)],
-            KnownValue(None),
+            [], KnownValue(None), impl=_reveal_locals_impl, callable=reveal_locals
+        ),
+        Signature.make(
+            [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
+            TypeVarValue(T),
             impl=_dump_value_impl,
             callable=dump_value,
         ),
@@ -1187,6 +1355,14 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_hasattr_impl,
             callable=hasattr,
+        ),
+        Signature.make(
+            [
+                SigParameter("object", _POS_ONLY),
+                SigParameter("name", _POS_ONLY, annotation=TypedValue(str)),
+            ],
+            impl=_hasattr_impl,
+            callable=hasattr_static,
         ),
         Signature.make(
             [
@@ -1310,6 +1486,15 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 SigParameter("key", _POS_ONLY),
                 SigParameter("default", _POS_ONLY, default=KnownValue(None)),
             ],
+            callable=dict.get,
+            impl=_dict_get_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter("key", _POS_ONLY),
+                SigParameter("default", _POS_ONLY, default=KnownValue(None)),
+            ],
             callable=dict.setdefault,
             impl=_dict_setdefault_impl,
         ),
@@ -1404,7 +1589,18 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=str.format,
         ),
         Signature.make(
-            [SigParameter("typ"), SigParameter("val")], callable=cast, impl=_cast_impl
+            [SigParameter("typ", _POS_ONLY), SigParameter("val", _POS_ONLY)],
+            callable=cast,
+            impl=_cast_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("val", _POS_ONLY, annotation=TypeVarValue(T)),
+                SigParameter("typ", _POS_ONLY),
+            ],
+            TypeVarValue(T),
+            callable=assert_type,
+            impl=_assert_type_impl,
         ),
         # workaround for https://github.com/python/typeshed/pull/3501
         Signature.make(
@@ -1469,41 +1665,14 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=len,
             impl=_len_impl,
         ),
-        # The overloaded annotation in typeshed causes a couple of problems:
-        # - sorted(Sequence[A] | Sequence[B]) turns into List[A | B] instead of List[A] | List[B]
-        #   pyright agrees with pyanalyze here but mypy somehow infers the second type.
-        # - The bounded TypeVar on the key argument makes pyanalyze infer the
-        #   return type as list[Sized] if we use key=len. Fixing this may require changing the
-        #   TypeVar resolution algorithm.
-        # To avoid these problems, we use a more permissive hardcoded signature for now.
         Signature.make(
             [
                 SigParameter(
-                    "iterable",
-                    ParameterKind.POSITIONAL_ONLY,
-                    annotation=TypedValue(collections.abc.Iterable),
-                ),
-                SigParameter(
-                    "key",
-                    ParameterKind.KEYWORD_ONLY,
-                    annotation=CallableValue(
-                        Signature.make(
-                            [SigParameter("arg", ParameterKind.POSITIONAL_ONLY)],
-                            return_annotation=TypedValue("_typeshed.SupportsLessThan"),
-                        )
-                    ),
-                    default=KnownValue(None),
-                ),
-                SigParameter(
-                    "reverse",
-                    ParameterKind.KEYWORD_ONLY,
-                    annotation=TypedValue(bool),
-                    default=KnownValue(False),
-                ),
+                    "o", ParameterKind.POSITIONAL_ONLY, default=_NO_ARG_SENTINEL
+                )
             ],
-            return_annotation=TypedValue(list),
-            allow_call=True,
-            callable=sorted,
+            callable=bool,
+            impl=_bool_impl,
         ),
         # TypeGuards, which aren't in typeshed yet
         Signature.make(
@@ -1533,4 +1702,47 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ),
         ),
     ]
+    for mod in typing, typing_extensions:
+        try:
+            reveal_type_func = getattr(mod, "reveal_type")
+        except AttributeError:
+            pass
+        else:
+            # Anticipating https://bugs.python.org/issue46414
+            sig = Signature.make(
+                [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
+                TypeVarValue(T),
+                impl=_reveal_type_impl,
+                callable=reveal_type_func,
+            )
+            signatures.append(sig)
+        # Anticipating that this will be added to the stdlib
+        try:
+            assert_type_func = getattr(mod, "assert_type")
+        except AttributeError:
+            pass
+        else:
+            sig = Signature.make(
+                [
+                    SigParameter("val", _POS_ONLY, annotation=TypeVarValue(T)),
+                    SigParameter("typ", _POS_ONLY),
+                ],
+                TypeVarValue(T),
+                callable=assert_type_func,
+                impl=_assert_type_impl,
+            )
+            signatures.append(sig)
+        # Anticipating that this will be added to the stdlib
+        try:
+            reveal_locals_func = getattr(mod, "reveal_locals")
+        except AttributeError:
+            pass
+        else:
+            sig = Signature.make(
+                [],
+                KnownValue(None),
+                callable=reveal_locals_func,
+                impl=_reveal_locals_impl,
+            )
+            signatures.append(sig)
     return {sig.callable: sig for sig in signatures}

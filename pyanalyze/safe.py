@@ -5,7 +5,18 @@
 """
 import inspect
 import sys
-from typing import Any, Dict, Sequence, Tuple, Union, Container, NewType, Type, TypeVar
+from typing import (
+    Any,
+    Dict,
+    Sequence,
+    Tuple,
+    Union,
+    Container,
+    NewType,
+    Type,
+    TypeVar,
+    Optional,
+)
 import typing
 import typing_extensions
 
@@ -15,6 +26,16 @@ except ImportError:
     mypy_extensions = None
 
 T = TypeVar("T")
+
+
+def hasattr_static(object: object, name: str) -> bool:
+    """Similar to ``inspect.getattr_static()``."""
+    try:
+        inspect.getattr_static(object, name)
+    except AttributeError:
+        return False
+    else:
+        return True
 
 
 def safe_hasattr(item: object, member: str) -> bool:
@@ -152,3 +173,18 @@ def _fill_typing_name_cache(name: str) -> Tuple[Tuple[Any, ...], Tuple[str, ...]
         result = tuple(objs), tuple(names)
         _typing_name_cache[name] = result
         return result
+
+
+def get_fully_qualified_name(obj: object) -> Optional[str]:
+    if hasattr(obj, "__module__") and hasattr(obj, "__qualname__"):
+        return f"{obj.__module__}.{obj.__qualname__}"
+    return None
+
+
+def is_dataclass_type(cls: type) -> bool:
+    """Like dataclasses.is_dataclass(), but works correctly for a
+    non-dataclass subclass of a dataclass."""
+    try:
+        return "__dataclass_fields__" in cls.__dict__
+    except Exception:
+        return False

@@ -121,6 +121,15 @@ class CompositeVariable:
     def extend_with(self, index: CompositeIndex) -> "CompositeVariable":
         return CompositeVariable(self.varname, (*self.attributes, index))
 
+    def __str__(self) -> str:
+        pieces = [self.varname]
+        for attr in self.attributes:
+            if isinstance(attr, str):
+                pieces.append(f".{attr}")
+            else:
+                pieces.append(f"[{attr.val!r}]")
+        return "".join(pieces)
+
 
 Varname = Union[str, CompositeVariable]
 
@@ -359,7 +368,7 @@ class Constraint(AbstractConstraint):
                         yield TypedValue(self.value)
                     # TODO: Technically here we should infer an intersection type:
                     # a type that is a subclass of both types. In practice currently
-                    # _constrain_values() will eventually return AnyValue.
+                    # _constrain_value() will eventually return NoReturn.
                 else:
                     if not safe_issubclass(inner_value.typ, self.value):
                         yield value
@@ -512,6 +521,42 @@ class PredicateProvider(AbstractConstraint):
     def invert(self) -> AbstractConstraint:
         # inverting is meaningless
         return NULL_CONSTRAINT
+
+
+@dataclass(frozen=True)
+class EquivalentConstraint(AbstractConstraint):
+    """Represents multiple constraints that are either all true or all false."""
+
+    constraints: Tuple[AbstractConstraint, ...]
+
+    def apply(self) -> Iterable["Constraint"]:
+        for cons in self.constraints:
+            yield from cons.apply()
+
+    def invert(self) -> "EquivalentConstraint":
+        # ~(A == B) -> ~A == ~B
+        return EquivalentConstraint(tuple([cons.invert() for cons in self.constraints]))
+
+    @classmethod
+    def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
+        processed = {}
+        for cons in constraints:
+            if isinstance(cons, EquivalentConstraint):
+                for subcons in cons.constraints:
+                    processed[id(subcons)] = subcons
+                continue
+            processed[id(cons)] = cons
+
+        final = list(processed.values())
+
+        if len(final) == 1:
+            (cons,) = final
+            return cons
+        return cls(tuple(final))
+
+    def __str__(self) -> str:
+        children = " == ".join(map(str, self.constraints))
+        return f"({children})"
 
 
 @dataclass(frozen=True)
@@ -746,8 +791,15 @@ class Scope:
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         return self.variables.items()
 
+    def all_variables(self) -> Iterable[Varname]:
+        return self.variables
+
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.variables
+
+    @contextlib.contextmanager
+    def suppressing_subscope(self) -> Iterator[SubScope]:
+        yield {}
 
     # no real subscopes in non-function scopes, just dummy implementations
     @contextlib.contextmanager
@@ -935,8 +987,8 @@ class FunctionScope(Scope):
     name_to_current_definition_nodes: SubScope
     usage_to_definition_nodes: Dict[Tuple[Node, Varname], List[Node]]
     definition_node_to_value: Dict[Node, Value]
-    name_to_all_definition_nodes: Dict[str, Set[Node]]
-    name_to_composites: Dict[str, Set[CompositeVariable]]
+    name_to_all_definition_nodes: Dict[Varname, Set[Node]]
+    name_to_composites: Dict[Varname, Set[CompositeVariable]]
     referencing_value_vars: Dict[Varname, Value]
     accessed_from_special_nodes: Set[Varname]
     current_loop_scopes: List[SubScope]
@@ -1108,8 +1160,55 @@ class FunctionScope(Scope):
                 return EMPTY_ORIGIN
         return self._resolve_origin(definers)
 
+    def get_all_definition_nodes(self) -> Dict[Varname, Set[Node]]:
+        """Return a copy of name_to_all_definition_nodes."""
+        return {
+            key: set(nodes) for key, nodes in self.name_to_all_definition_nodes.items()
+        }
+
     @contextlib.contextmanager
-    def subscope(self) -> Iterable[SubScope]:
+    def suppressing_subscope(self) -> Iterator[SubScope]:
+        """A suppressing subscope is a subscope that may suppress exceptions
+        inside of it.
+
+        This is used to implement try and with blocks. After code like this::
+
+            x = 1
+            try:
+                x = 2
+                x = 3
+            except Exception:
+                pass
+
+        The value of `x` may be any of 1, 2, and 3, depending on whether and
+        where an exception was thrown.
+
+        To implement this, we keep track of all assignments inside the block
+        and give them effect, so that after the suppressing subscope ends,
+        each variable's definition nodes include all of these assignments.
+
+        """
+        old_defn_nodes = self.get_all_definition_nodes()
+        with self.subscope() as inner_scope:
+            yield inner_scope
+        new_defn_nodes = self.get_all_definition_nodes()
+        rest_scope = {
+            key: list(nodes - old_defn_nodes.get(key, set()))
+            for key, nodes in new_defn_nodes.items()
+            if key != LEAVES_SCOPE
+        }
+        rest_scope = {key: nodes for key, nodes in rest_scope.items() if nodes}
+        with self.subscope() as dummy_subscope:
+            pass
+        all_keys = set(rest_scope) | set(dummy_subscope)
+        new_scope = {
+            key: [*dummy_subscope.get(key, []), *rest_scope.get(key, [])]
+            for key in all_keys
+        }
+        self.combine_subscopes([dummy_subscope, new_scope])
+
+    @contextlib.contextmanager
+    def subscope(self) -> Iterator[SubScope]:
         """Create a new subscope, to be used for conditional branches."""
         # Ignore LEAVES_SCOPE if it's already there, so that we type check code after the
         # assert False correctly. Without this, test_after_assert_false fails.
@@ -1127,12 +1226,12 @@ class FunctionScope(Scope):
             yield new_name_to_nodes
 
     @contextlib.contextmanager
-    def loop_scope(self) -> Iterable[SubScope]:
+    def loop_scope(self) -> Iterator[List[SubScope]]:
         loop_scopes = []
         with self.subscope() as main_scope:
             loop_scopes.append(main_scope)
             with qcore.override(self, "current_loop_scopes", loop_scopes):
-                yield main_scope
+                yield loop_scopes
         self.combine_subscopes(
             [
                 {name: values for name, values in scope.items() if name != LEAVES_LOOP}
@@ -1235,6 +1334,9 @@ class FunctionScope(Scope):
     def items(self) -> Iterable[Tuple[Varname, Value]]:
         raise NotImplementedError
 
+    def all_variables(self) -> Iterable[Varname]:
+        yield from self.name_to_current_definition_nodes
+
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.name_to_all_definition_nodes
 
@@ -1276,7 +1378,7 @@ class StackedScopes:
         scope_type: ScopeType,
         scope_node: Node,
         scope_object: Optional[object] = None,
-    ) -> Iterable[None]:
+    ) -> Iterator[None]:
         """Context manager that adds a scope of this type to the top of the stack."""
         if scope_type is ScopeType.function_scope:
             scope = FunctionScope(
@@ -1379,11 +1481,14 @@ class StackedScopes:
         """
         self.scopes[-1].set(varname, value, node, state)
 
+    def suppressing_subscope(self) -> ContextManager[SubScope]:
+        return self.scopes[-1].suppressing_subscope()
+
     def subscope(self) -> ContextManager[SubScope]:
         """Creates a new subscope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].subscope()
 
-    def loop_scope(self) -> ContextManager[None]:
+    def loop_scope(self) -> ContextManager[List[SubScope]]:
         """Creates a new loop scope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].loop_scope()
 
@@ -1438,20 +1543,21 @@ def uniq_chain(iterables: Iterable[Iterable[T]]) -> List[T]:
 
 
 def _constrain_value(
-    values: Iterable[Value],
+    values: Sequence[Value],
     constraints: Iterable[Constraint],
     *,
     fallback_value: Optional[Value] = None,
     simplification_limit: Optional[int] = None,
 ) -> Value:
     # Flatten MultiValuedValue so that we can apply constraints.
-    values = [val for val_or_mvv in values for val in flatten_values(val_or_mvv)]
     if not values and fallback_value is not None:
         values = list(flatten_values(fallback_value))
+    else:
+        values = [val for val_or_mvv in values for val in flatten_values(val_or_mvv)]
     for constraint in constraints:
         values = list(constraint.apply_to_values(values))
     if not values:
-        return AnyValue(AnySource.unreachable)
+        return NO_RETURN_VALUE
     if simplification_limit is not None:
         return unite_and_simplify(*values, limit=simplification_limit)
     return unite_values(*values)

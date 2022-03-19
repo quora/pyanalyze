@@ -1,6 +1,6 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import skip_before, assert_passes, assert_fails
+from .test_node_visitor import skip_before, assert_passes
 from .implementation import assert_is_value
 from .error_code import ErrorCode
 from .value import (
@@ -75,11 +75,12 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_generic(self):
-        from typing import List
+        from typing import List, Any
 
-        def capybara(x: List[int], y: List) -> None:
+        def capybara(x: List[int], y: List, z: List[Any]) -> None:
             assert_is_value(x, GenericValue(list, [TypedValue(int)]))
             assert_is_value(y, TypedValue(list))
+            assert_is_value(z, GenericValue(list, [AnyValue(AnySource.explicit)]))
 
     @assert_passes()
     def test_supports_int(self):
@@ -155,6 +156,20 @@ class TestAnnotations(TestNameCheckVisitorBase):
             yield 3
 
     @assert_passes()
+    def test_contextmanager_class(self):
+        from typing import ContextManager
+
+        def f() -> ContextManager[int]:
+            raise NotImplementedError
+
+        def capybara():
+            assert_is_value(
+                f(), GenericValue("typing.ContextManager", [TypedValue(int)])
+            )
+            with f() as x:
+                assert_is_value(x, TypedValue(int))
+
+    @assert_passes()
     def test_none_annotations(self):
         def mara() -> None:
             pass
@@ -194,13 +209,13 @@ class TestAnnotations(TestNameCheckVisitorBase):
             def static(x: "Caviidae"):
                 assert_is_value(x, TypedValue(Caviidae))
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_incompatible_annotations(self):
         def capybara(x: int) -> None:
             pass
 
         def kerodon():
-            capybara("not an int")
+            capybara("not an int")  # E: incompatible_argument
 
     @assert_passes()
     def test_incompatible_return_value(self):
@@ -248,9 +263,9 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def g():
             pass
 
-    @assert_fails(ErrorCode.incompatible_default)
+    @assert_passes()
     def test_incompatible_default(self):
-        def capybara(x: int = None) -> None:
+        def capybara(x: int = None) -> None:  # E: incompatible_default
             pass
 
     @assert_passes()
@@ -305,10 +320,10 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(y, AnyValue(AnySource.unannotated))
             assert_is_value(x, TypedValue(int))
 
-    @assert_fails(ErrorCode.incompatible_assignment)
+    @assert_passes()
     def test_incompatible_annassign(self):
         def capybara(y: str):
-            x: int = y
+            x: int = y  # E: incompatible_assignment
 
     @assert_passes()
     def test_typing_tuples(self):
@@ -436,10 +451,10 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(capybara(x), GenericValue(list, [TypedValue(str)]))
             return []
 
-    @assert_fails(ErrorCode.incompatible_return_value)
+    @assert_passes()
     def test_forward_ref_incompatible(self):
         def f() -> "int":
-            return ""
+            return ""  # E: incompatible_return_value
 
     @assert_passes()
     def test_pattern(self):
@@ -455,13 +470,13 @@ class TestAnnotations(TestNameCheckVisitorBase):
     def test_future_annotations(self):
         self.assert_passes(
             """
-from __future__ import annotations
-from typing import List
+            from __future__ import annotations
+            from typing import List
 
-def f(x: int, y: List[str]):
-    assert_is_value(x, TypedValue(int))
-    assert_is_value(y, GenericValue(list, [TypedValue(str)]))
-"""
+            def f(x: int, y: List[str]):
+                assert_is_value(x, TypedValue(int))
+                assert_is_value(y, GenericValue(list, [TypedValue(str)]))
+            """
         )
 
     @assert_passes()
@@ -556,7 +571,7 @@ def f(x: int, y: List[str]):
             )
 
     @skip_before((3, 8))
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_initvar(self):
         from dataclasses import dataclass, InitVar
 
@@ -565,7 +580,7 @@ def f(x: int, y: List[str]):
             x: InitVar[str]
 
         def f():
-            Capybara(x=3)
+            Capybara(x=3)  # E: incompatible_argument
 
     @assert_passes()
     def test_classvar(self):
@@ -767,7 +782,7 @@ class TestCallable(TestNameCheckVisitorBase):
             g(nested)
             g(decorated)
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_callable(self):
         from typing import Callable
 
@@ -778,7 +793,7 @@ class TestCallable(TestNameCheckVisitorBase):
             return 0
 
         def capybara() -> None:
-            takes_callable(wrong_callable)
+            takes_callable(wrong_callable)  # E: incompatible_argument
 
     @assert_passes()
     def test_known_value_error(self):
@@ -1210,10 +1225,10 @@ class TestCustomCheck(TestNameCheckVisitorBase):
 
             lst = []
             for x in lst:
-                assert_is_value(x, AnyValue(AnySource.unreachable))
+                assert_is_value(x, MultiValuedValue([]))
                 shallow(x)
                 deep(x)
-                none_at_all(x)  # E: incompatible_argument
+                none_at_all(x)
 
     @assert_passes()
     def test_not_none(self) -> None:
@@ -1621,7 +1636,7 @@ class TestParamSpec(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
-    def test_args_kwargs(self):
+    def test_paramspec_args_kwargs(self):
         from typing import Callable, TypeVar
         from typing_extensions import Concatenate, ParamSpec
 
@@ -1645,8 +1660,6 @@ class TestParamSpec(TestNameCheckVisitorBase):
             func(1, "A")
             func(1, 2)  # E: incompatible_argument
 
-
-class TestCallable(TestNameCheckVisitorBase):
     @assert_passes()
     def test_compatibility(self):
         from typing import Callable, TypeVar

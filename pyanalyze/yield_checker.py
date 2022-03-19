@@ -27,20 +27,18 @@ from typing import (
     List,
     Optional,
     Sequence,
-    TYPE_CHECKING,
     Tuple,
 )
 
-from pyanalyze.functions import FunctionNode
-
 from .asynq_checker import AsyncFunctionKind
 from .error_code import ErrorCode
+from .functions import FunctionNode
 from .value import Value, KnownValue, UnboundMethodValue, UNINITIALIZED_VALUE
 from .analysis_lib import get_indentation, get_line_range_for_node
 from .node_visitor import Replacement
+from .stacked_scopes import VisitorState
 
-if TYPE_CHECKING:
-    from .name_check_visitor import NameCheckVisitor
+import pyanalyze
 
 
 @dataclass
@@ -175,7 +173,7 @@ class VarnameGenerator:
 
 @dataclass
 class YieldChecker:
-    visitor: "NameCheckVisitor"
+    visitor: "pyanalyze.name_check_visitor.NameCheckVisitor"
     variables_from_yield_result: Dict[str, bool] = field(default_factory=dict)
     in_yield_result_assignment: bool = False
     in_non_async_yield: bool = False
@@ -301,7 +299,7 @@ class YieldChecker:
                 self.show_unnecessary_yield_error(unused, node, current_statement)
 
     def _check_for_duplicate_yields(
-        self, node: ast.Yield, current_statement: ast.stmt
+        self, node: ast.Yield, current_statement: ast.AST
     ) -> None:
         if not isinstance(node.value, ast.Tuple) or len(node.value.elts) < 2:
             return
@@ -485,6 +483,8 @@ class YieldChecker:
             new_assign_lines, replace_yield = self._move_out_var_from_yield(
                 second_yield, indentation
             )
+            if replace_yield is None:
+                return None
 
             between_lines = lines[
                 first_yield.line_range[-1] : second_yield.line_range[0] - 1
@@ -505,6 +505,8 @@ class YieldChecker:
             lines_to_add, replace_first = self._move_out_var_from_yield(
                 first_yield, indentation
             )
+            if replace_first is None:
+                return None
 
             if second_yield.is_assign_or_expr():
                 # just move it
@@ -523,6 +525,8 @@ class YieldChecker:
                 second_assign_lines, replace_second = self._move_out_var_from_yield(
                     second_yield, indentation
                 )
+                if replace_second is None:
+                    return None
                 lines_to_add += second_assign_lines
                 lines_for_second_yield = replace_second.lines_to_add
 
@@ -540,7 +544,7 @@ class YieldChecker:
 
     def _move_out_var_from_yield(
         self, yield_info: YieldInfo, indentation: int
-    ) -> Tuple[List[str], Replacement]:
+    ) -> Tuple[List[str], Optional[Replacement]]:
         """Helper for splitting up a yield node and moving it to an earlier place.
 
         For example, it will help turn:
@@ -608,7 +612,9 @@ class YieldChecker:
         def is_available(name: str) -> bool:
             if name in self.used_varnames:
                 return False
-            value = self.visitor.scopes.get(name, node=None, state=None)
+            value = self.visitor.scopes.get(
+                name, node=None, state=VisitorState.check_names
+            )
             return value is UNINITIALIZED_VALUE
 
         varname = VarnameGenerator(is_available).get(node)

@@ -1,5 +1,4 @@
 # static analysis: ignore
-from .error_code import ErrorCode
 from .asynq_checker import (
     is_impure_async_fn,
     _stringify_async_fn,
@@ -17,7 +16,7 @@ from .tests import (
 )
 from .value import KnownValue, UnboundMethodValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes
+from .test_node_visitor import assert_passes
 
 
 class TestImpureAsyncCalls(TestNameCheckVisitorBase):
@@ -72,7 +71,7 @@ class TestImpureAsyncCalls(TestNameCheckVisitorBase):
                 log = yield PropertyObject.async_staticmethod.asynq()
                 result(str(log))
 
-    @assert_fails(ErrorCode.impure_async_call)
+    @assert_passes()
     def test_impure_async_staticmethod(self):
         from pyanalyze.tests import PropertyObject, CheckedForAsynq
 
@@ -81,18 +80,8 @@ class TestImpureAsyncCalls(TestNameCheckVisitorBase):
                 self.uid = uid
 
             def tree(self):
-                log = PropertyObject.async_staticmethod()
+                log = PropertyObject.async_staticmethod()  # E: impure_async_call
                 return str(log)
-
-    @assert_fails(ErrorCode.impure_async_call)
-    def test_impure_async_property_access(self):
-        from pyanalyze.tests import PropertyObject
-        from asynq import asynq
-
-        @asynq()
-        def get_capybara(qid):
-            po = PropertyObject(qid)
-            return po.prop_with_get
 
     @assert_passes()
     def test_async_property_access(self):
@@ -155,7 +144,7 @@ def capybara():
                 yield async_fn.asynq(self.qid)
                 result([])
 
-    @assert_fails(ErrorCode.impure_async_call)
+    @assert_passes()
     def test_impure_async_call(self):
         from pyanalyze.tests import async_fn, CheckedForAsynq
 
@@ -164,10 +153,10 @@ def capybara():
                 self.aid = aid
 
             def tree(self):
-                async_fn(self.aid)
+                async_fn(self.aid)  # E: impure_async_call
                 return []
 
-    @assert_fails(ErrorCode.impure_async_call)
+    @assert_passes()
     def test_impure_cached_call(self):
         from pyanalyze.tests import cached_fn, CheckedForAsynq
 
@@ -176,10 +165,10 @@ def capybara():
                 self.uid = uid
 
             def tree(self):
-                cached_fn(self.uid)
+                cached_fn(self.uid)  # E: impure_async_call
                 return []
 
-    @assert_fails(ErrorCode.impure_async_call)
+    @assert_passes()
     def test_impure_async_call_in_component(self):
         from pyanalyze.tests import cached_fn, CheckedForAsynq
         from asynq import asynq
@@ -190,10 +179,10 @@ def capybara():
 
             @asynq()
             def tree(self):
-                cached_fn(self.uid)
+                cached_fn(self.uid)  # E: impure_async_call
                 return []
 
-    @assert_fails(ErrorCode.impure_async_call)
+    @assert_passes()
     def test_impure_async_call_to_method(self):
         from asynq import asynq
         from pyanalyze.tests import CheckedForAsynq
@@ -206,20 +195,8 @@ def capybara():
             @asynq()
             def tree(self):
                 z = []
-                z += self.render_stuff()
+                z += self.render_stuff()  # E: impure_async_call
                 return z
-
-    @assert_fails(ErrorCode.impure_async_call)
-    def test_impure_async_for_attributes(self):
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
-
-        class Capybara(CheckedForAsynq):
-            def init(self, qid):
-                self.qid = qid
-
-            def tree(self):
-                PropertyObject(self.qid).prop_with_get
-                return []
 
     @assert_passes()
     def test_pure_async_for_attributes(self):
@@ -295,16 +272,16 @@ def capybara():
         def fn():
             return get_capybara()
 
-    @assert_fails(ErrorCode.impure_async_call)
+    @assert_passes()
     def test_function(self):
         from asynq import asynq
         from pyanalyze.tests import async_fn
 
         @asynq()
         def capybara(aid):
-            return async_fn(aid)
+            return async_fn(aid)  # E: impure_async_call
 
-    @assert_fails(ErrorCode.impure_async_call)
+    @assert_passes()
     def test_method(self):
         from asynq import asynq
         from pyanalyze.tests import PropertyObject
@@ -312,16 +289,16 @@ def capybara():
         @asynq()
         def capybara(aid):
             po = PropertyObject(aid)
-            return po.async_method()
+            return po.async_method()  # E: impure_async_call
 
-    @assert_fails(ErrorCode.impure_async_call)
+    @assert_passes()
     def test_classmethod(self):
         from asynq import asynq
         from pyanalyze.tests import PropertyObject
 
         @asynq()
         def capybara(aid):
-            return PropertyObject.async_classmethod(aid)
+            return PropertyObject.async_classmethod(aid)  # E: impure_async_call
 
 
 class TestAsyncMethods(TestNameCheckVisitorBase):
@@ -340,7 +317,7 @@ class TestAsyncMethods(TestNameCheckVisitorBase):
                 z += yield PropertyObject(self.poid).async_method.asynq()
                 result(z)
 
-    @assert_fails(ErrorCode.impure_async_call)
+    @assert_passes()
     def test_impure_method_call(self):
         from pyanalyze.tests import PropertyObject, CheckedForAsynq
 
@@ -350,7 +327,7 @@ class TestAsyncMethods(TestNameCheckVisitorBase):
 
             def tree(self):
                 z = []
-                z += PropertyObject(self.poid).async_method()
+                z += PropertyObject(self.poid).async_method()  # E: impure_async_call
                 return z
 
     @assert_passes()

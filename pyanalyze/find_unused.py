@@ -12,8 +12,8 @@ import qcore
 from types import ModuleType, TracebackType
 import __future__
 
+import pyanalyze
 from .safe import safe_in
-from .config import Config
 from . import extensions
 
 T = TypeVar("T")
@@ -93,7 +93,7 @@ class UnusedObjectFinder:
 
     """
 
-    config: Config
+    options: Optional["pyanalyze.options.Options"] = None
     enabled: bool = False
     print_output: bool = True
     print_all: bool = False
@@ -108,6 +108,10 @@ class UnusedObjectFinder:
     )
     visited_modules: List[ModuleType] = field(default_factory=list)
     recursive_stack: Set[ModuleType] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        if self.options is None:
+            self.options = pyanalyze.options.Options.from_option_list()
 
     def __enter__(self) -> Optional["UnusedObjectFinder"]:
         if self.enabled:
@@ -207,8 +211,13 @@ class UnusedObjectFinder:
     def _should_record_as_unused(
         self, module: ModuleType, attr: str, value: object
     ) -> bool:
-        if self.config.should_ignore_unused(module, attr, value):
-            return False
+        if self.options is not None:
+            ignore_funcs = self.options.get_value_for(
+                pyanalyze.shared_options.IgnoreUnused
+            )
+            for func in ignore_funcs:
+                if func(module, attr, value):
+                    return False
         if inspect.ismodule(value):
             # test modules will usually show up as unused
             if value.__name__.split(".")[-1].startswith("test"):

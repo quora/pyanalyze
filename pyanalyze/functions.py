@@ -15,7 +15,6 @@ from itertools import zip_longest
 from typing import Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
 from typing_extensions import Protocol
 
-from .config import Config
 from .error_code import ErrorCode
 from .extensions import overload, real_overload, evaluated
 from .options import Options, PyObjectSequenceOption
@@ -67,10 +66,10 @@ class FunctionInfo:
     is_overload: bool  # typing.overload or pyanalyze.extensions.overload
     is_evaluated: bool  # @pyanalyze.extensions.evaluated
     is_abstractmethod: bool  # has @abstractmethod
-    # a list of pairs of (decorator function, applied decorator function). These are different
-    # for decorators that take arguments, like @asynq(): the first element will be the asynq
-    # function and the second will be the result of calling asynq().
-    decorators: List[Tuple[Value, Value]]
+    # a list of tuples of (decorator function, applied decorator function, AST node). These are
+    # different for decorators that take arguments, like @asynq(): the first element will be the
+    # asynq function and the second will be the result of calling asynq().
+    decorators: List[Tuple[Value, Value, ast.AST]]
     node: FunctionNode
     params: Sequence[ParamInfo]
     return_annotation: Optional[Value]
@@ -114,10 +113,6 @@ class AsynqDecorators(PyObjectSequenceOption[object]):
     default_value = [asynq.asynq]
     name = "asynq_decorators"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.ASYNQ_DECORATORS)
-
 
 class AsyncProxyDecorators(PyObjectSequenceOption[object]):
     """Decorators that are equivalent to asynq.async_proxy."""
@@ -125,20 +120,12 @@ class AsyncProxyDecorators(PyObjectSequenceOption[object]):
     default_value = [asynq.async_proxy]
     name = "async_proxy_decorators"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.ASYNC_PROXY_DECORATORS)
-
 
 class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
     """These decorators can safely be applied to nested functions."""
 
     name = "safe_decorators_for_nested_functions"
     default_value = [asynq.asynq, classmethod, staticmethod, asyncio.coroutine]
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[object]:
-        return list(fallback.SAFE_DECORATORS_FOR_NESTED_FUNCTIONS)
 
 
 def compute_function_info(
@@ -175,7 +162,7 @@ def compute_function_info(
                     # @async_proxy(pure=True) is a noop, so don't treat it specially
                     if not any(kw.arg == "pure" for kw in decorator.keywords):
                         async_kind = AsyncFunctionKind.async_proxy
-            decorators.append((callee, decorator_value))
+            decorators.append((callee, decorator_value, decorator))
         else:
             decorator_value = ctx.visit_expression(decorator)
             if decorator_value == KnownValue(classmethod):
@@ -192,7 +179,7 @@ def compute_function_info(
                 is_abstractmethod = True
             elif decorator_value == KnownValue(evaluated):
                 is_evaluated = True
-            decorators.append((decorator_value, decorator_value))
+            decorators.append((decorator_value, decorator_value, decorator))
     params = compute_parameters(
         node,
         enclosing_class,
@@ -321,6 +308,37 @@ def compute_parameters(
     return params
 
 
+@dataclass
+class IsGeneratorVisitor(ast.NodeVisitor):
+    """Determine whether an async function is a generator.
+
+    This is important because the return type of async generators
+    should not be wrapped in Awaitable.
+
+    We avoid recursing into nested functions, which is why we can't
+    just use ast.walk.
+
+    We do not need to check for yield from because it is illegal
+    in async generators. We also skip checking nested comprehensions,
+    because we error anyway if there is a yield within a comprehension.
+
+    """
+
+    is_generator: bool = False
+
+    def visit_Yield(self, node: ast.Yield) -> None:
+        self.is_generator = True
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        pass
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        pass
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        pass
+
+
 def compute_value_of_function(
     info: FunctionInfo, ctx: Context, *, result: Optional[Value] = None
 ) -> Value:
@@ -329,14 +347,20 @@ def compute_value_of_function(
     if result is None:
         result = AnyValue(AnySource.unannotated)
     if isinstance(info.node, ast.AsyncFunctionDef):
-        result = GenericValue(collections.abc.Awaitable, [result])
+        visitor = IsGeneratorVisitor()
+        for line in info.node.body:
+            visitor.visit(line)
+            if visitor.is_generator:
+                break
+        if not visitor.is_generator:
+            result = GenericValue(collections.abc.Awaitable, [result])
     sig = Signature.make(
         [param_info.param for param_info in info.params],
         result,
         has_return_annotation=info.return_annotation is not None,
     )
     val = CallableValue(sig, types.FunctionType)
-    for unapplied, decorator in reversed(info.decorators):
+    for unapplied, decorator, node in reversed(info.decorators):
         # Special case asynq.asynq until we can create the type automatically
         if unapplied == KnownValue(asynq.asynq) and isinstance(val, CallableValue):
             sig = replace(val.signature, is_asynq=True)
@@ -345,7 +369,5 @@ def compute_value_of_function(
         allow_call = isinstance(
             unapplied, KnownValue
         ) and SafeDecoratorsForNestedFunctions.contains(unapplied.val, ctx.options)
-        val = ctx.check_call(
-            info.node, decorator, [Composite(val)], allow_call=allow_call
-        )
+        val = ctx.check_call(node, decorator, [Composite(val)], allow_call=allow_call)
     return val

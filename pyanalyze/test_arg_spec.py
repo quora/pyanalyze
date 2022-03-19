@@ -1,7 +1,8 @@
 # static analysis: ignore
+from dataclasses import dataclass
 from asynq import asynq
 import functools
-from typing import TypeVar, NewType
+from typing import List, TypeVar, NewType
 
 from .checker import Checker
 from .test_name_check_visitor import (
@@ -11,7 +12,7 @@ from .test_name_check_visitor import (
 from .test_node_visitor import assert_passes
 from .signature import SigParameter, BoundMethodSignature, Signature, ParameterKind
 from .stacked_scopes import Composite
-from .arg_spec import ArgSpecCache, is_dot_asynq_function
+from .arg_spec import is_dot_asynq_function
 from .tests import l0cached_async_fn
 from .value import (
     AnySource,
@@ -21,7 +22,6 @@ from .value import (
     NewTypeValue,
     TypedValue,
     GenericValue,
-    SequenceIncompleteValue,
     assert_is_value,
 )
 
@@ -90,9 +90,16 @@ def decorator(fn):
     return wrapper
 
 
+@dataclass
+class AllTheAttrs:
+    x: List[str]
+
+    def __getattr__(self, attr: str) -> "AllTheAttrs":
+        return AllTheAttrs([*self.x, attr])
+
+
 def test_get_argspec():
-    config = ConfiguredNameCheckVisitor.config
-    checker = Checker(config)
+    checker = Checker()
     visitor = ConfiguredNameCheckVisitor(
         __file__, "", {}, fail_after_first=False, checker=checker
     )
@@ -100,13 +107,16 @@ def test_get_argspec():
 
     # test everything twice because calling qcore.get_original_fn has side effects
     for _ in range(2):
-        asc = ArgSpecCache(checker.options, checker.ts_finder)
+        asc = checker.arg_spec_cache
 
         # there's special logic for this in signature_from_value; TODO move that into
         # ExtendedArgSpec
         assert Signature.make(
             [SigParameter("arg")], callable=ClassWithCall.__call__
         ) == visitor.signature_from_value(cwc_typed)
+
+        ata = AllTheAttrs([])
+        assert asc.get_argspec(ata) is None
 
         assert BoundMethodSignature(
             Signature.make(
@@ -262,7 +272,7 @@ def test_positional_only():
             def f(self, __x, _Y__x):
                 pass
 
-    asc = Checker(ConfiguredNameCheckVisitor.config).arg_spec_cache
+    asc = Checker().arg_spec_cache
     assert asc.get_argspec(f) == Signature.make(
         [
             SigParameter("__x", ParameterKind.POSITIONAL_ONLY),
@@ -293,64 +303,6 @@ def test_is_dot_asynq_function():
     assert not is_dot_asynq_function(l0cached_async_fn)
     assert is_dot_asynq_function(l0cached_async_fn.asynq)
     assert not is_dot_asynq_function(l0cached_async_fn.dirty)
-
-
-class TestCoroutines(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_asyncio_coroutine(self):
-        import asyncio
-        from collections.abc import Awaitable
-
-        @asyncio.coroutine
-        def f():
-            yield from asyncio.sleep(3)
-            return 42
-
-        @asyncio.coroutine
-        def g():
-            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
-
-    @assert_passes()
-    def test_coroutine_from_typeshed(self):
-        import asyncio
-
-        async def capybara():
-            # annotated as def ... -> Future in typeshed
-            assert_is_value(
-                asyncio.sleep(3),
-                GenericValue(asyncio.Future, [AnyValue(AnySource.unannotated)]),
-            )
-            return 42
-
-    @assert_passes()
-    def test_async_def_from_typeshed(self):
-        from asyncio.streams import open_connection, StreamReader, StreamWriter
-        from collections.abc import Awaitable
-
-        async def capybara():
-            # annotated as async def in typeshed
-            assert_is_value(
-                open_connection(),
-                GenericValue(
-                    Awaitable,
-                    [
-                        SequenceIncompleteValue(
-                            tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
-                        )
-                    ],
-                ),
-            )
-            return 42
-
-    @assert_passes()
-    def test_async_def(self):
-        from collections.abc import Awaitable
-
-        async def f():
-            return 42
-
-        async def g():
-            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
 
 
 class TestClassInstantiation(TestNameCheckVisitorBase):

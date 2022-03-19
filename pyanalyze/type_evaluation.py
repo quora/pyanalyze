@@ -36,8 +36,7 @@ from .stacked_scopes import (
 from .safe import all_of_type
 from .value import (
     NO_RETURN_VALUE,
-    AnySource,
-    AnyValue,
+    BoundsMap,
     CanAssign,
     CanAssignContext,
     CanAssignError,
@@ -47,8 +46,8 @@ from .value import (
     Value,
     flatten_values,
     unannotate,
+    unify_bounds_maps,
     unite_values,
-    unify_typevar_maps,
     TypeVarMap,
 )
 
@@ -263,6 +262,7 @@ class EvalContext:
     variables: VarMap
     positions: Mapping[str, Position]
     can_assign_context: CanAssignContext
+    tv_map: TypeVarMap
 
     @contextmanager
     def narrow_variables(self, varmap: Optional[VarMap]) -> Iterator[None]:
@@ -281,6 +281,7 @@ class EvalContext:
 @dataclass
 class Evaluator:
     node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
+    return_annotation: Value
 
     def evaluate(self, ctx: EvalContext) -> Tuple[Value, Sequence[UserRaisedError]]:
         visitor = EvaluateVisitor(self, ctx)
@@ -300,6 +301,10 @@ class Evaluator:
 
     def evaluate_value(self, __node: ast.AST) -> Value:
         raise NotImplementedError
+
+    def evaluate_generic_type(self, __node: ast.AST, __ctx: EvalContext) -> Value:
+        typ = self.evaluate_type(__node)
+        return typ.substitute_typevars(__ctx.tv_map)
 
 
 @dataclass
@@ -388,7 +393,7 @@ class ConditionEvaluator(ast.NodeVisitor):
                     "is_of_type() takes two positional arguments", node
                 )
             varname_node = node.args[0]
-            typ = self.evaluator.evaluate_type(node.args[1])
+            typ = self.evaluator.evaluate_generic_type(node.args[1], self.ctx)
             exclude_any = True
             for keyword in node.keywords:
                 if keyword.arg == "exclude_any":
@@ -629,10 +634,7 @@ class EvaluateVisitor(ast.NodeVisitor):
 
     def _evaluate_ret(self, ret: EvalReturn, node: ast.AST) -> Value:
         if ret is None:
-            # TODO return the func's return annotation instead
-            if not self.validation_mode:
-                self.add_invalid("Evaluator failed to return", node)
-            return AnyValue(AnySource.error)
+            return self.evaluator.return_annotation.substitute_typevars(self.ctx.tv_map)
         elif isinstance(ret, CombinedReturn):
             children = [self._evaluate_ret(child, node) for child in ret.children]
             return unite_values(*children)
@@ -682,7 +684,7 @@ class EvaluateVisitor(ast.NodeVisitor):
         if node.value is None:
             self.add_invalid("return statement must have a value", node)
             return KnownValue(None)
-        return self.evaluator.evaluate_type(node.value)
+        return self.evaluator.evaluate_generic_type(node.value, self.ctx)
 
     def visit_Expr(self, node: ast.Expr) -> EvalReturn:
         if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
@@ -789,10 +791,10 @@ class EvaluateVisitor(ast.NodeVisitor):
 
 def decompose_union(
     expected_type: Value, parent_value: Value, ctx: CanAssignContext, exclude_any: bool
-) -> Optional[Tuple[TypeVarMap, Value]]:
+) -> Optional[Tuple[BoundsMap, Value]]:
     value = unannotate(parent_value)
     if isinstance(value, MultiValuedValue):
-        tv_maps = []
+        bounds_maps = []
         remaining_values = []
         for val in value.vals:
             can_assign = can_assign_maybe_exclude_any(
@@ -801,13 +803,13 @@ def decompose_union(
             if isinstance(can_assign, CanAssignError):
                 remaining_values.append(val)
             else:
-                tv_maps.append(can_assign)
-        if tv_maps:
-            tv_map = unify_typevar_maps(tv_maps)
+                bounds_maps.append(can_assign)
+        if bounds_maps:
+            result = unify_bounds_maps(bounds_maps)
             assert (
                 remaining_values
             ), f"all union members matched between {expected_type} and {parent_value}"
-            return tv_map, unite_values(*remaining_values)
+            return result, unite_values(*remaining_values)
     return None
 
 

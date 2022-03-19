@@ -4,11 +4,15 @@ The checker maintains global state that is preserved across different modules.
 
 """
 import itertools
+import collections.abc
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
+import qcore
 import sys
+import types
 from typing import (
     Callable,
+    ContextManager,
     Iterable,
     Iterator,
     List,
@@ -21,13 +25,40 @@ from typing import (
 )
 
 from .options import Options, PyObjectSequenceOption
+from .attributes import get_attribute, AttrContext
 from .node_visitor import Failure
-from .value import TypedValue, VariableNameValue
-from .arg_spec import ArgSpecCache
-from .config import Config
+from .stacked_scopes import Composite
+from .value import (
+    UNINITIALIZED_VALUE,
+    AnnotatedValue,
+    AnyValue,
+    CallableValue,
+    KnownValueWithTypeVars,
+    MultiValuedValue,
+    SubclassValue,
+    TypeVarValue,
+    TypedValue,
+    VariableNameValue,
+    Value,
+    UnboundMethodValue,
+    KnownValue,
+    is_union,
+    flatten_values,
+    unite_values,
+)
+from .arg_spec import ArgSpecCache, GenericBases
 from .reexport import ImplicitReexportTracker
 from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
 from .shared_options import VariableNameValues
+from .signature import (
+    ANY_SIGNATURE,
+    MaybeSignature,
+    Signature,
+    BoundMethodSignature,
+    ConcreteSignature,
+    OverloadedSignature,
+    make_bound_method,
+)
 from .typeshed import TypeshedFinder
 from .type_object import TypeObject, get_mro
 from .suggested_type import CallableTracker
@@ -52,14 +83,9 @@ class AdditionalBaseProviders(PyObjectSequenceOption[_BaseProvider]):
 
     name = "additional_base_providers"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[_BaseProvider]:
-        return (fallback.get_additional_bases,)
-
 
 @dataclass
 class Checker:
-    config: Config
     raw_options: InitVar[Optional[Options]] = None
     options: Options = field(init=False)
     arg_spec_cache: ArgSpecCache = field(init=False)
@@ -73,16 +99,19 @@ class Checker:
         default_factory=list
     )
     vnv_map: Dict[str, VariableNameValue] = field(default_factory=dict)
+    _should_exclude_any: bool = False
+    _has_used_any_match: bool = False
 
     def __post_init__(self, raw_options: Optional[Options]) -> None:
         if raw_options is None:
-            self.options = Options.from_option_list([], self.config)
+            self.options = Options.from_option_list()
         else:
             self.options = raw_options
-        self.ts_finder = TypeshedFinder.make(self.options)
+        self.ts_finder = TypeshedFinder.make(self, self.options)
         self.arg_spec_cache = ArgSpecCache(
             self.options,
             self.ts_finder,
+            self,
             vnv_provider=self.maybe_get_variable_name_value,
         )
         self.reexport_tracker = ImplicitReexportTracker(self.options)
@@ -169,6 +198,23 @@ class Checker:
             )
         )
 
+    def get_generic_bases(
+        self, typ: Union[type, str], generic_args: Sequence[Value] = ()
+    ) -> GenericBases:
+        return self.arg_spec_cache.get_generic_bases(typ, generic_args)
+
+    def get_signature(
+        self, obj: object, is_asynq: bool = False
+    ) -> Optional[ConcreteSignature]:
+        sig = self.arg_spec_cache.get_argspec(obj, is_asynq=is_asynq)
+        if isinstance(sig, Signature):
+            return sig
+        elif isinstance(sig, BoundMethodSignature):
+            return sig.get_signature(ctx=self)
+        elif isinstance(sig, OverloadedSignature):
+            return sig
+        return None
+
     def can_assume_compatibility(self, left: TypeObject, right: TypeObject) -> bool:
         return (left, right) in self.assumed_compatibilities
 
@@ -184,6 +230,165 @@ class Checker:
         finally:
             new_pair = self.assumed_compatibilities.pop()
             assert pair == new_pair
+
+    def display_value(self, value: Value) -> str:
+        message = f"'{value!s}'"
+        if isinstance(value, KnownValue):
+            sig = self.arg_spec_cache.get_argspec(value.val)
+        elif isinstance(value, UnboundMethodValue):
+            sig = value.get_signature(self)
+        else:
+            sig = None
+        if sig is not None:
+            message += f", signature is {sig!s}"
+        return message
+
+    def has_used_any_match(self) -> bool:
+        """Whether Any was used to secure a match."""
+        return self._has_used_any_match
+
+    def record_any_used(self) -> None:
+        """Record that Any was used to secure a match."""
+        self._has_used_any_match = True
+
+    def reset_any_used(self) -> ContextManager[None]:
+        """Context that resets the value used by :meth:`has_used_any_match` and
+        :meth:`record_any_match`."""
+        return qcore.override(self, "_has_used_any_match", False)
+
+    def set_exclude_any(self) -> ContextManager[None]:
+        """Within this context, `Any` is compatible only with itself."""
+        return qcore.override(self, "_should_exclude_any", True)
+
+    def should_exclude_any(self) -> bool:
+        """Whether Any should be compatible only with itself."""
+        return self._should_exclude_any
+
+    def signature_from_value(
+        self,
+        value: Value,
+        *,
+        get_return_override: Callable[
+            [MaybeSignature], Optional[Value]
+        ] = lambda _: None,
+        get_call_attribute: Optional[Callable[[Value], Value]] = None,
+    ) -> MaybeSignature:
+        if isinstance(value, AnnotatedValue):
+            value = value.value
+        if isinstance(value, TypeVarValue):
+            value = value.get_fallback_value()
+        if isinstance(value, KnownValue):
+            argspec = self.arg_spec_cache.get_argspec(value.val)
+            if argspec is None:
+                if get_call_attribute is not None:
+                    method_object = get_call_attribute(value)
+                else:
+                    method_object = self.get_attribute_from_value(value, "__call__")
+                if method_object is UNINITIALIZED_VALUE:
+                    return None
+                else:
+                    return ANY_SIGNATURE
+            if isinstance(value, KnownValueWithTypeVars):
+                return argspec.substitute_typevars(value.typevars)
+            return argspec
+        elif isinstance(value, UnboundMethodValue):
+            method = value.get_method()
+            if method is not None:
+                sig = self.arg_spec_cache.get_argspec(method)
+                if sig is None:
+                    # TODO return None here and figure out when the signature is missing
+                    return ANY_SIGNATURE
+                return_override = get_return_override(sig)
+                bound = make_bound_method(sig, value.composite, return_override)
+                if bound is not None and value.typevars is not None:
+                    bound = bound.substitute_typevars(value.typevars)
+                return bound
+            return None
+        elif isinstance(value, CallableValue):
+            return value.signature
+        elif isinstance(value, TypedValue):
+            typ = value.typ
+            if typ is collections.abc.Callable or typ is types.FunctionType:
+                return ANY_SIGNATURE
+            if isinstance(typ, str):
+                if get_call_attribute is not None:
+                    call_method = get_call_attribute(value)
+                else:
+                    call_method = self.get_attribute_from_value(value, "__call__")
+                if call_method is UNINITIALIZED_VALUE:
+                    return None
+                return self.signature_from_value(
+                    call_method,
+                    get_return_override=get_return_override,
+                    get_call_attribute=get_call_attribute,
+                )
+            if getattr(typ.__call__, "__objclass__", None) is type and not issubclass(
+                typ, type
+            ):
+                return None
+            call_fn = typ.__call__
+            sig = self.arg_spec_cache.get_argspec(call_fn)
+            return_override = get_return_override(sig)
+            bound_method = make_bound_method(sig, Composite(value), return_override)
+            if bound_method is None:
+                return None
+            return bound_method.get_signature(ctx=self)
+        elif isinstance(value, SubclassValue):
+            if isinstance(value.typ, TypedValue):
+                if value.typ.typ is tuple:
+                    # Probably an unknown namedtuple
+                    return ANY_SIGNATURE
+                argspec = self.arg_spec_cache.get_argspec(
+                    value.typ.typ, allow_synthetic_type=True
+                )
+                if argspec is None:
+                    return ANY_SIGNATURE
+                return argspec
+            else:
+                # TODO generic SubclassValue
+                return ANY_SIGNATURE
+        elif isinstance(value, AnyValue):
+            return ANY_SIGNATURE
+        elif isinstance(value, MultiValuedValue):
+            sigs = [
+                self.signature_from_value(
+                    subval,
+                    get_return_override=get_return_override,
+                    get_call_attribute=get_call_attribute,
+                )
+                for subval in value.vals
+            ]
+            if all(sig is not None for sig in sigs):
+                # TODO we can't return a Union if we get here
+                return ANY_SIGNATURE
+            else:
+                return None
+        else:
+            return None
+
+    def get_attribute_from_value(
+        self, root_value: Value, attribute: str, *, prefer_typeshed: bool = False
+    ) -> Value:
+        if isinstance(root_value, TypeVarValue):
+            root_value = root_value.get_fallback_value()
+        if is_union(root_value):
+            results = [
+                self.get_attribute_from_value(
+                    subval, attribute, prefer_typeshed=prefer_typeshed
+                )
+                for subval in flatten_values(root_value)
+            ]
+            return unite_values(*results)
+        ctx = CheckerAttrContext(
+            Composite(root_value),
+            attribute,
+            self.options,
+            skip_mro=False,
+            skip_unwrap=False,
+            prefer_typeshed=prefer_typeshed,
+            checker=self,
+        )
+        return get_attribute(ctx)
 
 
 EXCLUDED_PROTOCOL_MEMBERS = {
@@ -226,3 +431,26 @@ def _extract_protocol_members(typ: type) -> Set[str]:
     if sys.version_info >= (3, 10) or hasattr(typ, "__annotations__"):
         members |= set(typ.__annotations__)
     return members
+
+
+@dataclass
+class CheckerAttrContext(AttrContext):
+    checker: Checker
+
+    def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
+        return self.checker.ts_finder.get_attribute(typ, self.attr, on_class=on_class)
+
+    def get_attribute_from_typeshed_recursively(
+        self, fq_name: str, *, on_class: bool
+    ) -> Tuple[Value, object]:
+        return self.checker.ts_finder.get_attribute_recursively(
+            fq_name, self.attr, on_class=on_class
+        )
+
+    def get_signature(self, obj: object) -> MaybeSignature:
+        return self.checker.signature_from_value(KnownValue(obj))
+
+    def get_generic_bases(
+        self, typ: Union[type, str], generic_args: Sequence[Value]
+    ) -> GenericBases:
+        return self.checker.get_generic_bases(typ, generic_args)

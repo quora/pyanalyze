@@ -18,6 +18,9 @@ class TestThriftEnum(TestNameCheckVisitorBase):
         def want_enum(e: ThriftEnum):
             pass
 
+        def want_int(i: int):
+            pass
+
         def capybara(e: ThriftEnum):
             want_enum(e)
             want_enum(ThriftEnum.X)
@@ -26,6 +29,8 @@ class TestThriftEnum(TestNameCheckVisitorBase):
             want_enum(1)
             want_enum(42)  # E: incompatible_argument
             want_enum(str(e))  # E: incompatible_argument
+            want_int(e)
+            want_int(e.X)
 
     @assert_passes()
     def test_typevar(self):
@@ -58,3 +63,24 @@ class TestThriftEnum(TestNameCheckVisitorBase):
 
             assert_is_value(get_it_annotated(e), TypedValue(ThriftEnum))
             assert_is_value(get_it_annotated(ThriftEnum.X), KnownValue(ThriftEnum.X))
+
+    @assert_passes()
+    def test_int_protocol(self):
+        from typing_extensions import Protocol
+
+        class SupportsIndex(Protocol):
+            def __index__(self) -> int:
+                raise NotImplementedError
+
+        class ThriftEnum(object):
+            X = 0
+            Y = 1
+
+            _VALUES_TO_NAMES = {0: "X", 1: "Y"}
+            _NAMES_TO_VALUES = {"X": 0, "Y": 1}
+
+        def want_si(si: SupportsIndex):
+            pass
+
+        def capybara(te: ThriftEnum):
+            want_si(te)

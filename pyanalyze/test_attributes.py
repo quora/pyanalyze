@@ -1,6 +1,5 @@
 # static analysis: ignore
 from typing import Dict, Union
-from .error_code import ErrorCode
 from .value import (
     AnySource,
     AnyValue,
@@ -10,7 +9,7 @@ from .value import (
     TypedValue,
     assert_is_value,
 )
-from .test_node_visitor import assert_passes, assert_fails
+from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
 
 _global_dict: Dict[Union[int, str], float] = {}
@@ -170,29 +169,29 @@ class TestAttributes(TestNameCheckVisitorBase):
                 x.attr, MultiValuedValue([TypedValue(int), TypedValue(str)])
             )
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_optional_operation(self):
         from typing import Optional
 
         def capybara(x: Optional[str]):
-            print(x[1:])
+            print(x[1:])  # E: unsupported_operation
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_optional(self):
         from typing import Optional
 
         def capybara(x: Optional[str]):
-            x.split()
+            x.split()  # E: undefined_attribute
 
     @assert_passes()
     def test_typeshed(self):
         def capybara(c: staticmethod):
             assert_is_value(c.__isabstractmethod__, TypedValue(bool))
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_no_attribute_for_typeshed_class():
         def capybara(c: staticmethod):
-            c.no_such_attribute
+            c.no_such_attribute  # E: undefined_attribute
 
     @assert_passes()
     def test_typeshed_getattr(self):
@@ -224,7 +223,7 @@ class TestAttributes(TestNameCheckVisitorBase):
         import enum
 
         class E(enum.Enum):
-            name = 1  # E: incompatible_override
+            name = 1
             no_name = 2
 
         def capybara():
@@ -256,6 +255,18 @@ class TestAttributes(TestNameCheckVisitorBase):
             if not (name or "").strip():
                 name = "x"
             assert_is_value(name, TypedValue(str) | KnownValue("x"))
+
+    @assert_passes()
+    def test_raising_prop(self):
+        class HasProp:
+            @property
+            def does_it_really(self) -> int:
+                raise Exception("fooled you")
+
+        has_prop = HasProp()
+
+        def capybara():
+            assert_is_value(has_prop.does_it_really, AnyValue(AnySource.inference))
 
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
@@ -293,3 +304,18 @@ class TestHasAttrExtension(TestNameCheckVisitorBase):
         def inty_capybara(x: Literal[1]) -> None:
             if has_int_attr(x, "inty"):
                 assert_is_value(x.inty, TypedValue(int))
+
+    @assert_passes()
+    def test_multi_hasattr(self):
+        from typing import Union
+
+        class A:
+            pass
+
+        class B:
+            pass
+
+        def capybara(x: Union[A, B]):
+            if hasattr(x, "a") and hasattr(x, "b"):
+                assert_is_value(x.a, AnyValue(AnySource.inference))
+                assert_is_value(x.b, AnyValue(AnySource.inference))

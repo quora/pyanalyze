@@ -1,5 +1,5 @@
 # static analysis: ignore
-from .value import KnownValue, TypedValue, assert_is_value
+from .value import AnySource, AnyValue, KnownValue, TypedValue, assert_is_value
 from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .extensions import is_keyword, is_positional, is_provided, is_of_type, show_error
@@ -296,6 +296,40 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
             has_default()  # E: incompatible_call
             has_default(i)  # E: incompatible_call
 
+    @assert_passes()
+    def test_return(self):
+        from pyanalyze.extensions import evaluated
+
+        @evaluated
+        def maybe_use_header(x: bool) -> int:
+            if x is True:
+                return str
+
+        def capybara(x: bool):
+            assert_is_value(maybe_use_header(True), TypedValue(str))
+            assert_is_value(maybe_use_header(x), TypedValue(int))
+
+    @assert_passes()
+    def test_generic(self):
+        from pyanalyze.extensions import evaluated
+        from typing import TypeVar
+
+        T1 = TypeVar("T1")
+
+        @evaluated
+        def identity(x: T1):
+            return T1
+
+        @evaluated
+        def identity2(x: T1) -> T1:
+            pass
+
+        def capybara(unannotated):
+            assert_is_value(identity(1), KnownValue(1))
+            assert_is_value(identity(unannotated), AnyValue(AnySource.unannotated))
+            assert_is_value(identity2(1), KnownValue(1))
+            assert_is_value(identity2(unannotated), AnyValue(AnySource.unannotated))
+
 
 class TestBoolOp(TestNameCheckVisitorBase):
     @assert_passes()
@@ -495,3 +529,41 @@ class TestExamples(TestNameCheckVisitorBase):
             assert_is_value(open2("x", "rb+"), TypedValue(BufferedRandom))
             assert_is_value(open2("x", "rb"), TypedValue(BufferedReader))
             assert_is_value(open2("x", "rb", buffering=1), TypedValue(BufferedReader))
+
+    @assert_passes()
+    def test_safe_upcast(self):
+        from typing import Type, Any, TypeVar
+        from pyanalyze.extensions import evaluated, show_error, is_of_type
+
+        T1 = TypeVar("T1")
+
+        @evaluated
+        def safe_upcast(typ: Type[T1], value: object):
+            if is_of_type(value, T1):
+                return T1
+            show_error("unsafe cast")
+            return Any
+
+        def capybara():
+            assert_is_value(safe_upcast(object, 1), TypedValue(object))
+            assert_is_value(safe_upcast(int, 1), TypedValue(int))
+            safe_upcast(str, 1)  # E: incompatible_call
+
+    @assert_passes()
+    def test_safe_contains(self):
+        from typing import List, TypeVar, Container
+        from pyanalyze.extensions import evaluated, show_error, is_of_type
+
+        T1 = TypeVar("T1")
+        T2 = TypeVar("T2")
+
+        @evaluated
+        def safe_contains(elt: T1, container: Container[T2]) -> bool:
+            if not is_of_type(elt, T2) and not is_of_type(container, Container[T1]):
+                show_error("Element cannot be a member of container")
+
+        def capybara(lst: List[int], o: object):
+            safe_contains(True, ["x"])  # E: incompatible_call
+            safe_contains("x", lst)  # E: incompatible_call
+            safe_contains(True, lst)
+            safe_contains(o, lst)

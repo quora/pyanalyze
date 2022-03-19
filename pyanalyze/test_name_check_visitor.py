@@ -14,7 +14,7 @@ from .name_check_visitor import (
 )
 from .implementation import assert_is_value, dump_value
 from .error_code import DISABLED_IN_TESTS, ErrorCode
-from .test_config import TEST_INSTANCES, TestConfig
+from .test_config import CONFIG_PATH
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -59,7 +59,7 @@ class ConfiguredNameCheckVisitor(NameCheckVisitor):
 
     """
 
-    config = TestConfig()
+    config_filename = str(CONFIG_PATH)
 
 
 class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
@@ -83,12 +83,10 @@ class TestNameCheckVisitorBase(test_node_visitor.BaseNodeVisitorTester):
         verbosity = int(os.environ.get("ANS_TEST_SCOPE_VERBOSITY", 0))
         mod = _make_module(code_str)
         kwargs["settings"] = default_settings
-        kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs, TEST_INSTANCES)
+        kwargs = self.visitor_cls.prepare_constructor_kwargs(kwargs)
         new_code = ""
         with ClassAttributeChecker(
-            self.visitor_cls.config,
-            enabled=check_attributes,
-            options=kwargs["checker"].options,
+            enabled=check_attributes, options=kwargs["checker"].options
         ) as attribute_checker:
             visitor = self.visitor_cls(
                 mod.__name__,
@@ -159,7 +157,7 @@ def _make_module(code_str: str) -> types.ModuleType:
 
 def test_annotation():
     tree = ast.Call(ast.Name("int", ast.Load()), [], [])
-    checker = Checker(ConfiguredNameCheckVisitor.config)
+    checker = Checker()
     ConfiguredNameCheckVisitor(
         "<test input>", "int()", tree, module=ast, annotate=True, checker=checker
     ).check()
@@ -167,19 +165,6 @@ def test_annotation():
 
 
 class TestNameCheckVisitor(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_list_return(self):
-        from typing import List
-
-        class A:
-            pass
-
-        def func() -> List[A]:
-            return [A]  # E: incompatible_return_value
-
-        def func() -> A:
-            return A  # E: incompatible_return_value
-
     @assert_passes()
     def test_known_ordered(self):
         from typing_extensions import OrderedDict
@@ -194,45 +179,37 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             capybara(known_ordered)
             capybara(bad_ordered)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name(self):
         def run():
-            print(undefined_variable)
+            print(undefined_variable)  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_undefined_attribute(self):
         def run():
             lst = []
-            print(lst.coruro)
+            print(lst.coruro)  # E: undefined_attribute
 
     def test_undefined_name_with_star_import(self):
         # can't use the decorator version because import * isn't allowed with nested functions
         self.assert_fails(
             ErrorCode.undefined_name,
             """
-from qcore.asserts import *
-def run():
-    print(not_in_qcore.asserts)
-""",
+            from qcore.asserts import *
+            def run():
+                print(not_in_qcore.asserts)
+            """,
         )
 
-    @assert_fails(ErrorCode.duplicate_enum_member)
-    def test_duplicate_enum_member(self):
-        import enum
-
-        class Foo(enum.Enum):
-            a = 1
-            b = 1
-
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name_in_return(self):
         def what_is_it():
-            return tucotuco
+            return tucotuco  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name_in_class_kwarg(self):
         def capybara():
-            class Capybara(metaclass=Hutia):
+            class Capybara(metaclass=Hutia):  # E: undefined_name
                 pass
 
     @assert_passes()
@@ -267,22 +244,22 @@ def run():
 
             sphiggurus = coendou
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_class_scope_fails_wrong_order(self):
         def run():
             class Porcupine(object):
-                sphiggurus = coendou
+                sphiggurus = coendou  # E: undefined_name
 
                 def coendou(self):
                     return 1
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_class_scope_is_not_searched(self):
         class Porcupine(object):
             sphiggurus = 1
 
             def coendou(self):
-                return sphiggurus
+                return sphiggurus  # E: undefined_name
 
     @assert_passes()
     def test_getter_decorator(self):
@@ -342,10 +319,10 @@ def run():
         def run():
             assert_is_value(fn, KnownValue(assert_eq))
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_builtin_attribute(self):
         def run():
-            print(True.hutia)
+            print(True.hutia)  # E: undefined_attribute
 
     @assert_passes()
     def test_module_reassignment(self):
@@ -356,15 +333,18 @@ def run():
 
         _std_set()
 
-    @assert_fails(ErrorCode.not_callable)
+    @assert_passes()
     def test_display(self):
         def run():
-            print([1, 2]())
+            print([1, 2]())  # E: not_callable
 
-    @assert_fails(ErrorCode.unhashable_key)
-    def test_list_in_set(self):
+    @assert_passes()
+    def test_set_display(self):
         def run():
-            print({[]})
+            print({[]})  # E: unhashable_key
+
+            print({*[1, 2, 3], "a", "b"})
+            print({*[{}], "a", "b"})  # E: unhashable_key
 
     @assert_passes()
     def test_multiple_assignment_global(self):
@@ -385,32 +365,31 @@ def run():
             else:
                 goes_in_set = "capybara"
             assert_is_value(goes_in_set, KnownValue([]) | KnownValue("capybara"))
-            # TODO why isn't this an error?
-            print({goes_in_set})
+            print({goes_in_set})  # E: unhashable_key
 
-    @assert_fails(ErrorCode.duplicate_dict_key)
+    @assert_passes()
     def test_duplicate_dict_key(self):
         def run():
-            print({"capybara": 1, "capybara": 2})
+            print({"capybara": 1, "capybara": 2})  # E: duplicate_dict_key
 
-    @assert_fails(ErrorCode.unhashable_key)
+    @assert_passes()
     def test_unhashable_dict_key(self):
         def run():
-            print({[]: 1})
+            print({[]: 1})  # E: unhashable_key
 
-    @assert_fails(ErrorCode.duplicate_dict_key)
+    @assert_passes()
     def test_inferred_duplicate_dict_key(self):
         key = "capybara"
 
         def run():
-            print({"capybara": 1, key: 1})
+            print({"capybara": 1, key: 1})  # E: duplicate_dict_key
 
-    @assert_fails(ErrorCode.unhashable_key)
+    @assert_passes()
     def test_inferred_unhashable_dict_key(self):
         key = []
 
         def run():
-            print({key: 1})
+            print({key: 1})  # E: unhashable_key
 
     @assert_passes()
     def test_nested_classes(self):
@@ -422,58 +401,33 @@ def run():
             def method(self, cap: Capybaras):
                 assert_is_value(cap, TypedValue(Caviids.Capybaras))
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_class_in_function(self):
         def get_capybaras(object):
             class Capybaras(object):
                 if False:
-                    print(neochoerus)
+                    print(neochoerus)  # E: undefined_name
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_cant_del_tuple(self):
         tpl = (1, 2, 3)
 
         def run():
-            del tpl[1]
+            del tpl[1]  # E: unsupported_operation
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_cant_del_generator(self):
         tpl = (x for x in (1, 2, 3))
 
         def run():
-            del tpl[1]
+            del tpl[1]  # E: unsupported_operation
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_cant_assign_tuple(self):
         tpl = (1, 2, 3)
 
         def run():
-            tpl[1] = 1
-
-    @assert_passes()
-    def test_binop(self):
-        from typing import Union
-
-        def tucotuco():
-            assert_is_value(2 + 3, KnownValue(5))
-
-        def capybara(x: Union[int, float], y: Union[int, float]) -> float:
-            return x + y
-
-    @assert_passes()
-    def test_inplace_binop(self):
-        class Capybara:
-            def __add__(self, x: int) -> str:
-                return ""
-
-            def __iadd__(self, x: str) -> int:
-                return 0
-
-        def tucotuco():
-            x = Capybara()
-            assert_is_value(x + 1, TypedValue(str))
-            x += "a"
-            assert_is_value(x, TypedValue(int))
+            tpl[1] = 1  # E: unsupported_operation
 
     @assert_passes()
     def test_global_sets_value(self):
@@ -486,6 +440,7 @@ def run():
         def use_it():
             assert_is_value(capybara, KnownValue((0,)) | KnownValue(None))
 
+    # can't change to assert_passes because it changes between Python 3.6 to 3.7
     @assert_fails(ErrorCode.unsupported_operation)
     def test_self_type_inference(self):
         class Capybara(object):
@@ -590,14 +545,14 @@ def run():
                 item = None
             assert_is_value(item, KnownValue(None) | AnyValue(AnySource.unannotated))
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_bad_attribute_of_global(self):
         import os
 
         path = os.path
 
         def capybara():
-            print(path.joyn)
+            print(path.joyn)  # E: undefined_attribute
 
     @assert_passes()
     def test_double_assignment(self):
@@ -609,20 +564,20 @@ def run():
             answer = PropertyObject(aid)
             assert_is_value(answer, TypedValue(PropertyObject))
 
-    @assert_fails(ErrorCode.class_variable_redefinition)
+    @assert_passes()
     def test_duplicate_method(self):
         class Tucotuco(object):
             def __init__(self, fn):
                 pass
 
-            def __init__(self, an):
+            def __init__(self, an):  # E: class_variable_redefinition
                 pass
 
-    @assert_fails(ErrorCode.class_variable_redefinition)
+    @assert_passes()
     def test_duplicate_attribute(self):
         class Hutia:
             capromys = 1
-            capromys = 2
+            capromys = 2  # E: class_variable_redefinition
 
     @assert_passes()
     def test_duplicate_attribute_augassign(self):
@@ -641,15 +596,15 @@ def run():
             def fur(self, value):
                 pass
 
-    @assert_fails(ErrorCode.bad_global)
+    @assert_passes()
     def test_bad_global(self):
-        global x
+        global x  # E: bad_global
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_global(self):
         def fn():
             global x
-            return x
+            return x  # E: undefined_name
 
     @assert_passes()
     def test_global_value(self):
@@ -658,31 +613,6 @@ def run():
         def capybara():
             global x
             assert_is_value(x, KnownValue(3))
-
-
-class TestNoReturn(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_no_return(self):
-        from typing_extensions import NoReturn
-        from typing import Optional
-
-        def f() -> NoReturn:
-            raise Exception
-
-        def capybara(x: Optional[int]) -> None:
-            if x is None:
-                f()
-            assert_is_value(x, TypedValue(int))
-
-    @assert_fails(ErrorCode.incompatible_argument)
-    def test_no_return_parameter(self):
-        from typing_extensions import NoReturn
-
-        def assert_unreachable(x: NoReturn) -> None:
-            pass
-
-        def capybara():
-            assert_unreachable(1)
 
 
 class TestSubclassValue(TestNameCheckVisitorBase):
@@ -751,103 +681,7 @@ class TestSubclassValue(TestNameCheckVisitorBase):
             capybara(str)
 
 
-class TestBoolOp(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test(self):
-        def capybara(x):
-            if x:
-                cond = str(x)
-                cond2 = True
-            else:
-                cond = None
-                cond2 = None
-            assert_is_value(cond, MultiValuedValue([TypedValue(str), KnownValue(None)]))
-            assert_is_value(
-                cond2, MultiValuedValue([KnownValue(True), KnownValue(None)])
-            )
-            assert_is_value(
-                cond and 1,
-                MultiValuedValue([TypedValue(str), KnownValue(None), KnownValue(1)]),
-                skip_annotated=True,
-            )
-            assert_is_value(
-                cond2 and 1,
-                MultiValuedValue([KnownValue(None), KnownValue(1)]),
-                skip_annotated=True,
-            )
-            assert_is_value(
-                cond or 1,
-                MultiValuedValue([TypedValue(str), KnownValue(1)]),
-                skip_annotated=True,
-            )
-            assert_is_value(
-                cond2 or 1,
-                MultiValuedValue([KnownValue(True), KnownValue(1)]),
-                skip_annotated=True,
-            )
-
-        def hutia(x=None):
-            assert_is_value(x, AnyValue(AnySource.unannotated) | KnownValue(None))
-            assert_is_value(
-                x or 1,
-                AnyValue(AnySource.unannotated) | KnownValue(1),
-                skip_annotated=True,
-            )
-            y = x or 1
-            assert_is_value(
-                y, AnyValue(AnySource.unannotated) | KnownValue(1), skip_annotated=True
-            )
-            assert_is_value(
-                (True if x else False) or None, KnownValue(True) | KnownValue(None)
-            )
-
-
 class TestReturn(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_type_inference(self):
-        from asynq import asynq, async_proxy, AsyncTask, ConstFuture, FutureBase
-
-        def returns_3():
-            return 3
-
-        @asynq(pure=True)
-        def pure_async_fn():
-            return 4
-
-        @asynq()
-        def async_fn():
-            return 3
-
-        class WithAProperty(object):
-            @property
-            def this_is_one(self):
-                return str(5)
-
-        @async_proxy(pure=True)
-        def pure_async_proxy(oid):
-            return ConstFuture(oid)
-
-        @async_proxy()
-        def impure_async_proxy():
-            return ConstFuture(3)
-
-        def capybara(oid):
-            assert_is_value(returns_3(), KnownValue(3))
-            assert_is_value(
-                pure_async_fn(), AsyncTaskIncompleteValue(AsyncTask, KnownValue(4))
-            )
-            assert_is_value(async_fn(), KnownValue(3))
-            assert_is_value(
-                async_fn.asynq(), AsyncTaskIncompleteValue(AsyncTask, KnownValue(3))
-            )
-            assert_is_value(WithAProperty().this_is_one, TypedValue(str))
-            assert_is_value(pure_async_proxy(oid), AnyValue(AnySource.unannotated))
-            assert_is_value(impure_async_proxy(), AnyValue(AnySource.unannotated))
-            assert_is_value(
-                impure_async_proxy.asynq(),
-                AsyncTaskIncompleteValue(FutureBase, AnyValue(AnySource.unannotated)),
-            )
-
     @assert_passes()
     def test_missing_return(self):
         from abc import abstractmethod
@@ -878,100 +712,18 @@ class TestReturn(TestNameCheckVisitorBase):
         def no_return_returns() -> NoReturn:
             return 42  # E: no_return_may_return
 
-    # Can't use assert_passes for those two because the location of the error
-    # changes between 3.7 and 3.8. Maybe we should hack the error code to
-    # always show the error for a function on the def line, not the decorator line.
-    @assert_fails(ErrorCode.missing_return)
-    def test_asynq_missing_return(self):
-        from asynq import asynq
-
-        @asynq()  # E: missing_return
-        def f() -> int:
-            yield f.asynq()
-
-    @assert_fails(ErrorCode.missing_return)
-    def test_asynq_missing_branch(self):
-        from asynq import asynq
-
-        @asynq()  # E: missing_return
-        def capybara(cond: bool) -> int:
-            if cond:
-                return 3
-            yield capybara.asynq(False)
-
     @assert_passes()
-    def test_async_def(self):
-        async def capybara() -> int:  # E: missing_return
+    def test_list_return(self):
+        from typing import List
+
+        class A:
             pass
 
-        async def acouchy(cond: bool) -> int:  # E: missing_return
-            if cond:
-                return 4
+        def func() -> List[A]:
+            return [A]  # E: incompatible_return_value
 
-
-class TestUnwrapYield(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test(self):
-        from asynq import asynq
-        from typing import Sequence
-        from typing_extensions import Literal
-
-        @asynq()
-        def async_fn(n):
-            return "async_fn"
-
-        @asynq()
-        def square(n):
-            return int(n * n)
-
-        class Capybara(object):
-            @asynq()
-            def async_method(self):
-                return "capybara"
-
-        @asynq()
-        def caller(ints: Sequence[Literal[0, 1, 2]]):
-            val1 = yield async_fn.asynq(1)
-            assert_is_value(val1, KnownValue("async_fn"))
-            val2 = yield square.asynq(3)
-            assert_is_value(val2, TypedValue(int))
-
-            val3, val4 = yield async_fn.asynq(1), async_fn.asynq(2)
-            assert_is_value(val3, KnownValue("async_fn"))
-            assert_is_value(val4, KnownValue("async_fn"))
-
-            val5 = yield Capybara().async_method.asynq()
-            assert_is_value(val5, KnownValue("capybara"))
-
-            vals1 = yield [square.asynq(1), square.asynq(2), square.asynq(3)]
-            assert_is_value(
-                vals1,
-                SequenceIncompleteValue(
-                    list, [TypedValue(int), TypedValue(int), TypedValue(int)]
-                ),
-            )
-
-            vals2 = yield [square.asynq(i) for i in ints]
-            for val in vals2:
-                assert_is_value(val, TypedValue(int))
-
-            vals3 = yield {1: square.asynq(1)}
-            assert_is_value(
-                vals3,
-                DictIncompleteValue(dict, [KVPair(KnownValue(1), TypedValue(int))]),
-            )
-
-            vals4 = yield {i: square.asynq(i) for i in ints}
-            assert_is_value(
-                vals4,
-                GenericValue(
-                    dict,
-                    [
-                        MultiValuedValue([KnownValue(0), KnownValue(1), KnownValue(2)]),
-                        TypedValue(int),
-                    ],
-                ),
-            )
+        def func() -> A:
+            return A  # E: incompatible_return_value
 
 
 class TestYieldFrom(TestNameCheckVisitorBase):
@@ -985,10 +737,10 @@ class TestYieldFrom(TestNameCheckVisitorBase):
     def capybara(x):
         yield from [1, 2]
 
-    @assert_fails(ErrorCode.bad_yield_from)
+    @assert_passes()
     def test_bad_yield_from(self):
         def capybara():
-            yield from 3
+            yield from 3  # E: bad_yield_from
 
 
 class TestClassAttributeChecker(TestNameCheckVisitorBase):
@@ -1001,11 +753,11 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
             def other_method(self):
                 self.__mangled()
 
-    @assert_fails(ErrorCode.attribute_is_never_set)
+    @assert_passes()
     def test_never_set(self):
         class Capybara(object):
             def method(self):
-                return self.doesnt_exist
+                return self.doesnt_exist  # E: attribute_is_never_set
 
     @assert_passes()
     def test_exists_on_class(self):
@@ -1017,12 +769,12 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
             def method(self):
                 return self.__class__.type()
 
-    @assert_fails(ErrorCode.attribute_is_never_set)
+    @assert_passes()
     def test_in_classmethod(self):
         class Capybara(object):
             @classmethod
             def do_stuff(cls):
-                return cls.stuff
+                return cls.stuff  # E: attribute_is_never_set
 
     @assert_passes()
     def test_getattribute_overridden(self):
@@ -1052,7 +804,7 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
             def tree(self):
                 return self.this_attribute_does_not_exist
 
-    @assert_fails(ErrorCode.attribute_is_never_set)
+    @assert_passes()
     def test_cythonized_unexamined_base(self):
         import qcore
 
@@ -1060,7 +812,7 @@ class TestClassAttributeChecker(TestNameCheckVisitorBase):
         # attribute does not exist
         class Capybara(qcore.decorators.DecoratorBase):
             def tree(self):
-                return self.this_attribute_does_not_exist
+                return self.this_attribute_does_not_exist  # E: attribute_is_never_set
 
     @assert_passes()
     def test_setattr(self):
@@ -1157,10 +909,10 @@ class TestImports(TestNameCheckVisitorBase):
     def test_star_import(self):
         self.assert_passes(
             """
-from qcore.asserts import *
+            from qcore.asserts import *
 
-assert_eq(1, 1)
-"""
+            assert_eq(1, 1)
+            """
         )
 
     @assert_passes()
@@ -1183,29 +935,29 @@ assert_eq(1, 1)
 
 
 class TestComprehensions(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_scoping_in_list_py3(self):
         def capybara(self):
             x = [a for a in (1, 2)]
-            return a, x
+            return a, x  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_scoping_in_set(self):
         def capybara(self):
             x = {a for a in (1, 2)}
-            return a, x
+            return a, x  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_scoping_in_generator(self):
         def capybara(self):
             x = (a for a in (1, 2))
-            return a, x
+            return a, x  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_scoping_in_dict(self):
         def capybara(self):
             x = {a: 3 for a in (1, 2)}
-            return a, x
+            return a, x  # E: undefined_name
 
     @assert_passes()
     def test_incomplete_value(self):
@@ -1236,18 +988,34 @@ class TestComprehensions(TestNameCheckVisitorBase):
             tmp = str(oid)
             return [s for s in tmp]
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_comprehension_body_within_class(self):
         def capybara():
             class Capybara(object):
                 incisors = [1, 2]
-                canines = {incisors[0] for _ in incisors}
+                canines = {incisors[0] for _ in incisors}  # E: undefined_name
 
     @assert_passes()
     def test_comprehension_within_class(self):
         class Capybara(object):
             incisors = [1, 2]
             canines = {i + 1 for i in incisors}
+
+    @assert_passes()
+    def test_hashability(self):
+        def capybara(it):
+            x = {set() for _ in it}  # E: unhashable_key
+            assert_is_value(
+                x, make_weak(GenericValue(set, [AnyValue(AnySource.error)]))
+            )
+
+            y = {set(): 3 for _ in it}  # E: unhashable_key
+            assert_is_value(
+                y,
+                make_weak(
+                    GenericValue(dict, [AnyValue(AnySource.error), KnownValue(3)])
+                ),
+            )
 
 
 class TestIterationTarget(TestNameCheckVisitorBase):
@@ -1280,16 +1048,16 @@ class TestIterationTarget(TestNameCheckVisitorBase):
                     ),
                 )
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_known_not_iterable(self):
         def capybara():
-            for _ in 3:
+            for _ in 3:  # E: unsupported_operation
                 pass
 
-    @assert_fails(ErrorCode.unsupported_operation)
+    @assert_passes()
     def test_typed_not_iterable(self):
         def capybara(x):
-            for _ in int(x):
+            for _ in int(x):  # E: unsupported_operation
                 pass
 
     @assert_passes()
@@ -1352,7 +1120,9 @@ class TestIterationTarget(TestNameCheckVisitorBase):
 
             lst3 = [i + j * 10 for i in range(2) for j in range(3)]
             # TODO: should be list[int] instead
-            assert_is_value(lst3, TypedValue(list))
+            assert_is_value(
+                lst3, make_weak(GenericValue(list, [AnyValue(AnySource.inference)]))
+            )
 
     @assert_passes()
     def test_dict_comprehension(self):
@@ -1408,57 +1178,6 @@ class TestIterationTarget(TestNameCheckVisitorBase):
                 assert_is_value(x, AnyValue(AnySource.error))
 
 
-class TestAddImports(TestNameCheckVisitorBase):
-    def test_top_level(self):
-        self.assert_is_changed(
-            """
-import sys
-
-def capybara():
-    return qcore.utime()
-""",
-            """
-import qcore
-import sys
-
-def capybara():
-    return qcore.utime()
-""",
-        )
-
-    def test_from(self):
-        self.assert_is_changed(
-            """
-from qcore.asserts import assert_eq
-
-def capybara():
-    assert_is(3, 4)
-""",
-            """
-from qcore.asserts import assert_eq, assert_is
-
-def capybara():
-    assert_is(3, 4)
-""",
-        )
-
-        self.assert_is_changed(
-            """
-import sys
-
-def capybara():
-    assert_is(3, 4)
-""",
-            """
-from qcore.asserts import assert_is
-import sys
-
-def capybara():
-    assert_is(3, 4)
-""",
-        )
-
-
 class TestYieldInComprehension(TestNameCheckVisitorBase):
     # this became a syntax error in 3.8
     @only_before((3, 8))
@@ -1466,9 +1185,9 @@ class TestYieldInComprehension(TestNameCheckVisitorBase):
         self.assert_fails(
             ErrorCode.yield_in_comprehension,
             """
-def capybara():
-    [(yield x) for x in []]
-""",
+            def capybara():
+                [(yield x) for x in []]
+            """,
         )
 
     @only_before((3, 8))
@@ -1476,9 +1195,9 @@ def capybara():
         self.assert_fails(
             ErrorCode.yield_in_comprehension,
             """
-def capybara():
-    {(yield x) for x in []}
-""",
+            def capybara():
+                {(yield x) for x in []}
+            """,
         )
 
     @only_before((3, 8))
@@ -1486,9 +1205,9 @@ def capybara():
         self.assert_fails(
             ErrorCode.yield_in_comprehension,
             """
-def capybara():
-    {(yield x): (yield y) for x in []}
-""",
+            def capybara():
+                {(yield x): (yield y) for x in []}
+            """,
         )
 
     @only_before((3, 8))
@@ -1496,9 +1215,9 @@ def capybara():
         self.assert_fails(
             ErrorCode.yield_in_comprehension,
             """
-def capybara():
-    [x for x in [] if (yield x)]
-""",
+            def capybara():
+                [x for x in [] if (yield x)]
+            """,
         )
 
     @assert_passes()
@@ -1636,313 +1355,6 @@ class TestSubscripting(TestNameCheckVisitorBase):
             return [r["pk"] for r in [*min_pks, *max_pks]]
 
 
-class TestPython3Compatibility(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_bytes_and_text(self):
-        def capybara():
-            return b"foo" + "bar"  # E: unsupported_operation
-
-    @assert_passes()
-    def test_text_and_bytes(self):
-        def capybara():
-            return "foo" + b"bar"  # E: unsupported_operation
-
-
-class TestOperators(TestNameCheckVisitorBase):
-    @assert_passes(settings={ErrorCode.value_always_true: False})
-    def test_not(self):
-        def capybara(x):
-            assert_is_value(not x, TypedValue(bool), skip_annotated=True)
-            assert_is_value(not True, KnownValue(False))
-
-    @assert_passes()
-    def test_unary_op(self):
-        def capybara(x):
-            assert_is_value(~x, AnyValue(AnySource.from_another))
-            assert_is_value(~3, KnownValue(-4))
-
-    @assert_passes()
-    def test_binop_type_inference(self):
-        def capybara(x):
-            assert_is_value(1 + int(x), TypedValue(int))
-            assert_is_value(3 * int(x), TypedValue(int))
-            assert_is_value("foo" + str(x), TypedValue(str))
-            assert_is_value(1 + float(x), TypedValue(float))
-            assert_is_value(1.0 + int(x), TypedValue(float))
-            assert_is_value(3 * 3.0 + 1, KnownValue(10.0))
-
-    @assert_passes()
-    def test_union(self):
-        from typing import Union
-
-        def capybara(x: Union[int, str]) -> None:
-            assert_is_value(x * 3, MultiValuedValue([TypedValue(int), TypedValue(str)]))
-
-    @assert_passes()
-    def test_rop(self):
-        class HasAdd:
-            def __add__(self, other: int) -> "HasAdd":
-                raise NotImplementedError
-
-        class HasRadd:
-            def __radd__(self, other: int) -> "HasRadd":
-                raise NotImplementedError
-
-        class HasBoth:
-            def __add__(self, other: "HasBoth") -> "HasBoth":
-                raise NotImplementedError
-
-            def __radd__(self, other: "HasBoth") -> int:
-                raise NotImplementedError
-
-        def capybara(x):
-            ha = HasAdd()
-            hr = HasRadd()
-            assert_is_value(1 + hr, TypedValue(HasRadd))
-            assert_is_value(x + hr, AnyValue(AnySource.from_another))
-            assert_is_value(ha + 1, TypedValue(HasAdd))
-            assert_is_value(ha + x, AnyValue(AnySource.from_another))
-            assert_is_value(HasBoth() + HasBoth(), TypedValue(HasBoth))
-
-    @assert_passes()
-    def test_unsupported_unary_op(self):
-        def capybara():
-            ~"capybara"  # E: unsupported_operation
-
-    @assert_passes()
-    def test_int_float_product(self):
-        def capybara(f: float, i: int):
-            assert_is_value(i * f, TypedValue(float))
-
-
-class TestTaskNeedsYield(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.task_needs_yield)
-    def test_constfuture(self):
-        from asynq import asynq, ConstFuture
-
-        @asynq()
-        def bad_async_fn():
-            return ConstFuture(3)
-
-    @assert_fails(ErrorCode.task_needs_yield)
-    def test_async(self):
-        from asynq import asynq
-
-        @asynq()
-        def async_fn():
-            pass
-
-        @asynq()
-        def bad_async_fn():
-            return async_fn.asynq()
-
-    @assert_fails(ErrorCode.task_needs_yield)
-    def test_not_yielded(self):
-        from asynq import asynq
-        from pyanalyze.tests import async_fn
-
-        @asynq()
-        def capybara(oid):
-            return async_fn.asynq(oid)
-
-    def test_not_yielded_replacement(self):
-        self.assert_is_changed(
-            """
-from asynq import asynq
-from pyanalyze.tests import async_fn
-
-@asynq()
-def capybara(oid):
-    async_fn.asynq(oid)
-""",
-            """
-from asynq import asynq
-from pyanalyze.tests import async_fn
-
-@asynq()
-def capybara(oid):
-    yield async_fn.asynq(oid)
-""",
-        )
-
-
-class TestAsyncAwait(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_type_inference(self):
-        from collections.abc import Awaitable
-
-        async def capybara(x):
-            assert_is_value(x, AnyValue(AnySource.unannotated))
-            return "hydrochoerus"
-
-        async def kerodon(x):
-            task = capybara(x)
-            assert_is_value(task, GenericValue(Awaitable, [KnownValue("hydrochoerus")]))
-            val = await task
-            assert_is_value(val, KnownValue("hydrochoerus"))
-
-    @assert_fails(ErrorCode.unsupported_operation)
-    def test_type_error(self):
-        async def capybara():
-            await None
-
-    @assert_passes()
-    def test_exotic_awaitable(self):
-        from typing import TypeVar, Awaitable, Iterable
-
-        T = TypeVar("T")
-        U = TypeVar("U")
-
-        class Aww(Iterable[T], Awaitable[U]):
-            pass
-
-        async def capybara(aw: Aww[int, str]) -> None:
-            assert_is_value(await aw, TypedValue(str))
-
-    @assert_passes()
-    def test_async_comprehension(self):
-        class ANext:
-            async def __anext__(self) -> int:
-                return 42
-
-        class AIter:
-            def __aiter__(self) -> ANext:
-                return ANext()
-
-        async def f():
-            x = [y async for y in AIter()]
-            assert_is_value(x, make_weak(GenericValue(list, [TypedValue(int)])))
-
-    @assert_passes()
-    def test_async_generator(self):
-        import collections.abc
-        from typing import AsyncIterator
-
-        async def f() -> AsyncIterator[int]:
-            yield 1
-            yield 2
-
-        async def capybara():
-            x = f()
-            assert_is_value(
-                x, GenericValue(collections.abc.AsyncIterator, [TypedValue(int)])
-            )
-            ints = [i async for i in x]
-            # TODO should be list[int] but we lose the type argument somewhere
-            assert_is_value(ints, TypedValue(list))
-
-    @assert_passes()
-    def test_bad_async_comprehension(self):
-        async def f():
-            return [x async for x in []]  # E: unsupported_operation
-
-
-class TestMissingAwait(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.missing_await)
-    def test_asyncio_coroutine_internal(self):
-        import asyncio
-
-        @asyncio.coroutine
-        def f():
-            yield from asyncio.sleep(3)
-
-        @asyncio.coroutine
-        def g():
-            f()
-
-    @assert_passes()
-    def test_yield_from(self):
-        import asyncio
-
-        @asyncio.coroutine
-        def f():
-            yield from asyncio.sleep(3)
-
-        @asyncio.coroutine
-        def g():
-            yield from f()
-
-    @assert_fails(ErrorCode.missing_await)
-    def test_asyncio_coroutine_external(self):
-        import asyncio
-
-        @asyncio.coroutine
-        def f():
-            asyncio.sleep(3)
-
-    def test_add_yield_from(self):
-        self.assert_is_changed(
-            """
-import asyncio
-
-@asyncio.coroutine
-def f():
-    asyncio.sleep(3)
-""",
-            """
-import asyncio
-
-@asyncio.coroutine
-def f():
-    yield from asyncio.sleep(3)
-""",
-        )
-
-    @assert_passes()
-    def test_has_yield_from_external(self):
-        import asyncio
-
-        @asyncio.coroutine
-        def f():
-            yield from asyncio.sleep(3)
-
-    @assert_fails(ErrorCode.missing_await)
-    def test_async_def_internal(self):
-        async def f():
-            return 42
-
-        async def g():
-            f()
-
-    @assert_passes()
-    def test_async_def_internal_has_await(self):
-        async def f():
-            return 42
-
-        async def g():
-            await f()
-
-    @assert_fails(ErrorCode.missing_await)
-    def test_async_def_external(self):
-        import asyncio
-
-        async def f():
-            asyncio.sleep(1)
-
-    def test_async_def_external_add_await(self):
-        self.assert_is_changed(
-            """
-import asyncio
-
-async def f():
-    asyncio.sleep(1)
-""",
-            """
-import asyncio
-
-async def f():
-    await asyncio.sleep(1)
-""",
-        )
-
-    @assert_passes()
-    def test_async_def_external_has_await(self):
-        import asyncio
-
-        async def f():
-            await asyncio.sleep(1)
-
-
 class TestNonlocal(TestNameCheckVisitorBase):
     @assert_passes()
     def test_nonlocal(self):
@@ -2031,36 +1443,6 @@ def test_get_task_cls():
     assert AsyncTask is _get_task_cls(PropertyObject(1).l0cached_async_method)
 
 
-class TestBadAsyncYield(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_const_future(self):
-        from asynq import asynq, ConstFuture, FutureBase
-
-        @asynq()
-        def capybara(condition):
-            yield FutureBase()
-            val = yield ConstFuture(3)
-            assert_is_value(val, KnownValue(3))
-            val2 = yield None
-            assert_is_value(val2, KnownValue(None))
-
-            if condition:
-                task = ConstFuture(4)
-            else:
-                task = capybara.asynq(True)
-            val3 = yield task
-            assert_is_value(val3, KnownValue(4) | AnyValue(AnySource.inference))
-
-
-class TestAugAssign(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_aug_assign(self):
-        def capybara(condition):
-            x = 1
-            x += 2
-            assert_is_value(x, KnownValue(3))
-
-
 class TestUnpacking(TestNameCheckVisitorBase):
     @assert_passes()
     def test_dict_unpacking(self):
@@ -2137,6 +1519,25 @@ class TestUnpacking(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
+    def test_minimal_mapping(self):
+        from typing import List
+
+        class MyMapping:
+            def keys(self) -> List[bool]:
+                raise NotImplementedError
+
+            def __getitem__(self, key: bool) -> float:
+                raise NotImplementedError
+
+        def capybara(m: MyMapping):
+            assert_is_value(
+                {**m},
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(bool), TypedValue(float), is_many=True)]
+                ),
+            )
+
+    @assert_passes()
     def test_iterable_unpacking(self):
         def capybara(x):
             degu = (1, *x)
@@ -2150,12 +1551,7 @@ class TestUnpacking(TestNameCheckVisitorBase):
             )
 
             z = [1, *(2, 3)]
-            assert_is_value(
-                z,
-                SequenceIncompleteValue(
-                    list, [KnownValue(1), KnownValue(2), KnownValue(3)]
-                ),
-            )
+            assert_is_value(z, KnownValue([1, 2, 3]))
 
     @assert_passes()
     def test_not_iterable(self):
@@ -2236,7 +1632,7 @@ class TestUnpacking(TestNameCheckVisitorBase):
             assert_is_value(s, SequenceIncompleteValue(list, []))
 
             for sprime in []:
-                assert_is_value(sprime, AnyValue(AnySource.unreachable))
+                assert_is_value(sprime, NO_RETURN_VALUE)
 
             for t, u in []:
                 assert_is_value(t, AnyValue(AnySource.unreachable))
@@ -2265,16 +1661,30 @@ class TestUnpacking(TestNameCheckVisitorBase):
 
 
 class TestUnusedIgnore(TestNameCheckVisitorBase):
-    @assert_fails(ErrorCode.unused_ignore)
+    @assert_passes()
     def test_unused(self):
         def capybara(condition):
             x = 1
-            print(x)  # static analysis: ignore
+            print(x)  # static analysis: ignore[undefined_name]  # E: unused_ignore
+            print(x)  # static analysis: ignore  # E: unused_ignore  # E: bare_ignore
 
     @assert_passes()
     def test_used(self):
         def capybara(condition):
             print(x)  # static analysis: ignore[undefined_name]
+
+
+class TestNestedLoop(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        def capybara(x: int):
+            v = 1
+            while x < 2:
+                while True:
+                    if x == 0:
+                        assert_is_value(v, KnownValue(1) | KnownValue(2))
+                        break
+                v = 2
 
 
 class TestMissingF(TestNameCheckVisitorBase):
@@ -2289,24 +1699,24 @@ class TestMissingF(TestNameCheckVisitorBase):
             print("a{x}".format(x=x))
             func("translate {x}", x=x)
 
-    @assert_fails(ErrorCode.missing_f)
+    @assert_passes()
     def test_missing_f(self):
         def capybara():
             x = 3
-            return "x = {x}"
+            return "x = {x}"  # E: missing_f
 
     def test_autofix(self):
         self.assert_is_changed(
             """
-def capybara():
-    x = 3
-    return "x = {x}"
-""",
+            def capybara():
+                x = 3
+                return "x = {x}"
+            """,
             """
-def capybara():
-    x = 3
-    return f'x = {x}'
-""",
+            def capybara():
+                x = 3
+                return f'x = {x}'
+            """,
         )
 
 
@@ -2317,10 +1727,10 @@ class TestFStrings(TestNameCheckVisitorBase):
             y = f"{x} stuff"
             assert_is_value(y, TypedValue(str))
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_name(self):
         def capybara():
-            return f"{x}"
+            return f"{x}"  # E: undefined_name
 
 
 class TestTypedDict(TestNameCheckVisitorBase):
@@ -2539,19 +1949,6 @@ def test_static_hasattr():
     assert not _static_hasattr(hgat, "random_attribute")
 
 
-class TestCompare(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_multi(self):
-        from typing_extensions import Literal
-
-        def capybara(i: Literal[1, 2, 3], x: Literal[3, 4]) -> None:
-            assert_is_value(i, KnownValue(1) | KnownValue(2) | KnownValue(3))
-            assert_is_value(x, KnownValue(3) | KnownValue(4))
-            if 1 < i < 3 != x:
-                assert_is_value(i, KnownValue(2))
-                assert_is_value(x, KnownValue(4))
-
-
 class TestIncompatibleOverride(TestNameCheckVisitorBase):
     @assert_passes()
     def test_simple(self):
@@ -2600,6 +1997,41 @@ class TestWalrus(TestNameCheckVisitorBase):
         )
 
     @skip_before((3, 8))
+    def test_and(self):
+        self.assert_passes(
+            """
+            from typing import Optional
+
+            def opt() -> Optional[int]:
+                return None
+
+            def capybara(cond):
+                if (x := opt()) and cond:
+                    assert_is_value(x, TypedValue(int))
+                assert_is_value(x, TypedValue(int) | KnownValue(None))
+            """
+        )
+        self.assert_passes(
+            """
+            from typing import Set
+
+            def func(myvar: str, strset: Set[str]) -> None:
+                if (encoder_type := myvar) and myvar in strset:
+                    print(encoder_type)
+            """
+        )
+
+    @skip_before((3, 8))
+    def test_if_exp(self):
+        self.assert_passes(
+            """
+            def capybara(cond):
+                (x := 2) if cond else (x := 1)
+                assert_is_value(x, KnownValue(2) | KnownValue(1))
+            """
+        )
+
+    @skip_before((3, 8))
     def test_comprehension_scope(self):
         self.assert_passes(
             """
@@ -2622,3 +2054,194 @@ class TestUnion(TestNameCheckVisitorBase):
             assert_is_value(x, TypedValue(str) | KnownValue(None))
             assert_is_value(y, TypedValue(str) | KnownValue(None))
             return x or y
+
+
+class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_sync(self):
+        from typing import Optional, Type, ContextManager, Iterator
+        from types import TracebackType
+        import contextlib
+
+        class SuppressException:
+            def __enter__(self) -> None:
+                pass
+
+            def __exit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> bool:
+                return isinstance(exn, Exception)
+
+        class EmptyContext(object):
+            def __enter__(self) -> None:
+                pass
+
+            def __exit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> None:
+                pass
+
+        def empty_context_manager() -> ContextManager[None]:
+            return EmptyContext()
+
+        @contextlib.contextmanager
+        def empty_contextlib_manager() -> Iterator[None]:
+            yield
+
+        def use_suppress_exception():
+            a = 2
+            with SuppressException():
+                a = 3
+            assert_is_value(a, KnownValue(2) | KnownValue(3))
+
+        def use_suppress_exception_multi_assignment():
+            a = 2
+            with SuppressException():
+                a = 3
+                a = 4
+            assert_is_value(a, KnownValue(2) | KnownValue(3) | KnownValue(4))
+
+        def use_empty_context():
+            a = 2  # E: unused_variable
+            with EmptyContext():
+                a = 3  # E: unused_variable
+                a = 4
+            assert_is_value(a, KnownValue(4))
+
+        def use_context_manager():
+            a = 2  # E: unused_variable
+            with empty_context_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_builtin_function():
+            a = 2  # E: unused_variable
+            with open("test_file.txt"):
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_contextlib_manager():
+            a = 2  # E: unused_variable
+            with empty_contextlib_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        def use_nested_contexts():
+            b = 2
+            with SuppressException(), EmptyContext() as b:
+                assert_is_value(b, KnownValue(None))
+            assert_is_value(b, KnownValue(2) | KnownValue(None))
+
+            c = 2  # E: unused_variable
+            with EmptyContext() as c, SuppressException():
+                assert_is_value(c, KnownValue(None))
+            assert_is_value(c, KnownValue(None))
+
+    @assert_passes()
+    def test_possibly_undefined_with_leaves_scope(self):
+        from typing import Optional, Type
+        from types import TracebackType
+
+        class SuppressException:
+            def __enter__(self) -> None:
+                pass
+
+            def __exit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> bool:
+                return isinstance(exn, Exception)
+
+        def use_suppress_with_nested_block():
+            with SuppressException():
+                a = 4
+                try:
+                    b = 3
+                except Exception:
+                    return
+            print(a)  # E: possibly_undefined_name
+            print(b)  # E: possibly_undefined_name
+
+    @assert_passes()
+    def test_async(self):
+        from typing import Optional, Type, AsyncContextManager
+        from types import TracebackType
+
+        class AsyncSuppressException(object):
+            async def __aenter__(self) -> None:
+                pass
+
+            async def __aexit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> bool:
+                return isinstance(exn, Exception)
+
+        class AsyncEmptyContext(object):
+            async def __aenter__(self) -> None:
+                pass
+
+            async def __aexit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> None:
+                pass
+
+        def async_empty_context_manager() -> AsyncContextManager[None]:
+            return AsyncEmptyContext()
+
+        async def use_async_suppress_exception():
+            a = 2
+            async with AsyncSuppressException():
+                a = 3
+            assert_is_value(a, KnownValue(2) | KnownValue(3))
+
+        async def use_async_empty_context():
+            a = 2  # E: unused_variable
+            async with AsyncEmptyContext():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        async def use_async_context_manager():
+            a = 2  # E: unused_variable
+            async with async_empty_context_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))
+
+        async def use_async_nested_contexts():
+            b = 2
+            async with AsyncSuppressException(), AsyncEmptyContext() as b:
+                assert_is_value(b, KnownValue(None))
+            assert_is_value(b, KnownValue(2) | KnownValue(None))
+
+            c = 2  # E: unused_variable
+            async with AsyncEmptyContext() as c, AsyncSuppressException():
+                assert_is_value(c, KnownValue(None))
+            assert_is_value(c, KnownValue(None))
+
+    @skip_before((3, 7))
+    def test_async_contextlib_manager(self):
+        import contextlib
+        from typing import AsyncIterator
+
+        @contextlib.asynccontextmanager
+        async def async_empty_contextlib_manager() -> AsyncIterator[None]:
+            yield
+
+        async def use_async_contextlib_manager():
+            a = 2  # E: unused_variable
+            async with async_empty_contextlib_manager():
+                a = 3
+            assert_is_value(a, KnownValue(3))

@@ -1,5 +1,6 @@
 # static analysis: ignore
 from qcore.testing import Anything
+import collections
 import collections.abc
 from collections.abc import MutableSequence, Sequence, Collection, Reversible, Set
 import contextlib
@@ -15,16 +16,16 @@ from typing import Dict, Generic, List, TypeVar, NewType, Union
 from urllib.error import HTTPError
 import urllib.parse
 
+from .checker import Checker
 from .extensions import evaluated
-from .test_config import TestConfig, TEST_OPTIONS
+from .test_config import TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .options import Options
-from .signature import SigParameter, Signature
-from .arg_spec import ArgSpecCache
+from .signature import OverloadedSignature, SigParameter, Signature
 from .test_arg_spec import ClassWithCall
 from .typeshed import TypeshedFinder
 from .value import (
+    CallableValue,
     SubclassValue,
     TypedDictValue,
     assert_is_value,
@@ -64,7 +65,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             x.update({})  # just check that this doesn't fail
 
     def test_get_bases(self):
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert [
             GenericValue(MutableSequence, (TypeVarValue(typevar=Anything),)),
             GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
@@ -97,7 +98,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             )
             (temp_dir / "VERSIONS").write_text("newt: 3.5\ntyping: 3.5\n")
             (temp_dir / "@python2").mkdir()
-            tsf = TypeshedFinder(verbose=True)
+            tsf = TypeshedFinder(Checker(), verbose=True)
             search_context = get_search_context(typeshed=temp_dir, search_path=[])
             tsf.resolver = Resolver(search_context)
 
@@ -143,12 +144,12 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             assert_is_value(s.count("x"), TypedValue(int))
 
     def test_has_stubs(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert tsf.has_stubs(object)
         assert not tsf.has_stubs(ClassWithCall)
 
     def test_get_attribute(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert UNINITIALIZED_VALUE is tsf.get_attribute(object, "nope", on_class=False)
         assert TypedValue(bool) == tsf.get_attribute(
             staticmethod, "__isabstractmethod__", on_class=False
@@ -190,14 +191,21 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             assert_is_value(explicitly_aliased_constant, TypedValue(int))
 
     def test_aliases(self):
-        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
+        tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.aliases"
         assert tsf.resolve_name(mod, "constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "aliased_constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "explicitly_aliased_constant") == TypedValue(int)
 
+    def test_overloaded(self):
+        tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
+        mod = "_pyanalyze_tests.overloaded"
+        val = tsf.resolve_name(mod, "func")
+        assert isinstance(val, CallableValue)
+        assert isinstance(val.signature, OverloadedSignature)
+
     def test_typeddict(self):
-        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
+        tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.typeddict"
 
         for name, expected in _EXPECTED_TYPED_DICTS.items():
@@ -216,14 +224,14 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 assert_is_value(inherited, _EXPECTED_TYPED_DICTS["Inherited"])
 
     def test_evaluated(self):
-        tsf = TypeshedFinder.make(TEST_OPTIONS, verbose=True)
+        tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.evaluated"
         assert tsf.resolve_name(mod, "evaluated") == KnownValue(evaluated)
 
     @assert_passes()
     def test_evaluated_import(self):
         def capybara(unannotated):
-            from _pyanalyze_tests.evaluated import open
+            from _pyanalyze_tests.evaluated import open, open2
             from typing import TextIO, BinaryIO, IO
 
             assert_is_value(open("r"), TypedValue(TextIO))
@@ -235,6 +243,82 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 open("r" if unannotated else "rb"),
                 TypedValue(TextIO) | TypedValue(BinaryIO),
             )
+            assert_is_value(open2("r"), TypedValue(TextIO))
+            assert_is_value(open2("rb"), TypedValue(BinaryIO))
+            assert_is_value(
+                open2(unannotated), GenericValue(IO, [AnyValue(AnySource.explicit)])
+            )
+            assert_is_value(
+                open2("r" if unannotated else "rb"),
+                TypedValue(TextIO) | TypedValue(BinaryIO),
+            )
+
+    @assert_passes()
+    def test_recursive_base(self):
+        from typing import Any, ContextManager
+
+        def capybara():
+            from _pyanalyze_tests.recursion import _ScandirIterator
+
+            def want_cm(cm: ContextManager[Any]) -> None:
+                pass
+
+            def f(x: _ScandirIterator):
+                want_cm(x)
+                len(x)  # E: incompatible_argument
+
+
+class TestConstructors(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_init_new(self):
+        def capybara():
+            from _pyanalyze_tests.initnew import (
+                my_enumerate,
+                simple,
+                overloadinit,
+                simplenew,
+                overloadnew,
+            )
+
+            simple()  # E: incompatible_call
+            simple("x")  # E: incompatible_argument
+            assert_is_value(simple(1), TypedValue("_pyanalyze_tests.initnew.simple"))
+
+            my_enumerate()  # E: incompatible_call
+            my_enumerate([1], start="x")  # E: incompatible_argument
+            assert_is_value(
+                my_enumerate([1]),
+                GenericValue("_pyanalyze_tests.initnew.my_enumerate", [KnownValue(1)]),
+            )
+
+            overloadinit()  # E: incompatible_call
+            assert_is_value(
+                overloadinit(1, "x", 2),
+                GenericValue("_pyanalyze_tests.initnew.overloadinit", [KnownValue(2)]),
+            )
+
+            simplenew()  # E: incompatible_call
+            assert_is_value(
+                simplenew(1), TypedValue("_pyanalyze_tests.initnew.simplenew")
+            )
+
+            overloadnew()  # E: incompatible_call
+            assert_is_value(
+                overloadnew(1, "x", 2),
+                GenericValue("_pyanalyze_tests.initnew.overloadnew", [KnownValue(2)]),
+            )
+
+    @assert_passes()
+    def test_typeshed_constructors(self):
+        def capybara(x):
+            assert_is_value(int(x), TypedValue(int))
+            assert_is_value(
+                frozenset(),
+                GenericValue(frozenset, [AnyValue(AnySource.generic_argument)]),
+            )
+
+            assert_is_value(type("x"), TypedValue(type))
+            assert_is_value(type("x", (), {}), TypedValue(type))
 
 
 class Parent(Generic[T]):
@@ -251,10 +335,8 @@ class GenericChild(Parent[T]):
 
 class TestGetGenericBases:
     def setup(self) -> None:
-        arg_spec_cache = ArgSpecCache(
-            Options.from_option_list([], TestConfig()), TypeshedFinder()
-        )
-        self.get_generic_bases = arg_spec_cache.get_generic_bases
+        checker = Checker()
+        self.get_generic_bases = checker.arg_spec_cache.get_generic_bases
 
     def test_runtime(self):
         assert {
@@ -325,29 +407,24 @@ class TestGetGenericBases:
             # Until 3.8 NamedTuple is actually a class.
             expected = {
                 time.struct_time: [],
-                "time._struct_time": [],
-                typing.NamedTuple: [],
-                # Ideally should be not Any, but we haven't implemented
-                # support for typeshed namedtuples.
-                tuple: [AnyValue(AnySource.explicit)],
-                collections.abc.Collection: [AnyValue(AnySource.explicit)],
-                collections.abc.Reversible: [AnyValue(AnySource.explicit)],
-                collections.abc.Iterable: [AnyValue(AnySource.explicit)],
-                collections.abc.Sequence: [AnyValue(AnySource.explicit)],
-                collections.abc.Container: [AnyValue(AnySource.explicit)],
+                "_typeshed.structseq": [AnyValue(AnySource.explicit) | TypedValue(int)],
+                tuple: [TypedValue(int)],
+                collections.abc.Collection: [TypedValue(int)],
+                collections.abc.Reversible: [TypedValue(int)],
+                collections.abc.Iterable: [TypedValue(int)],
+                collections.abc.Sequence: [TypedValue(int)],
+                collections.abc.Container: [TypedValue(int)],
             }
         else:
             expected = {
                 time.struct_time: [],
-                "time._struct_time": [],
-                # Ideally should be not Any, but we haven't implemented
-                # support for typeshed namedtuples.
-                tuple: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Collection: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Reversible: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Iterable: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Container: [AnyValue(AnySource.generic_argument)],
+                "_typeshed.structseq": [AnyValue(AnySource.explicit) | TypedValue(int)],
+                tuple: [TypedValue(int)],
+                collections.abc.Collection: [TypedValue(int)],
+                collections.abc.Reversible: [TypedValue(int)],
+                collections.abc.Iterable: [TypedValue(int)],
+                collections.abc.Sequence: [TypedValue(int)],
+                collections.abc.Container: [TypedValue(int)],
             }
         self.check(expected, time.struct_time)
 
@@ -498,17 +575,17 @@ class TestGetGenericBases:
 
 class TestAttribute:
     def test_basic(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert TypedValue(bool) == tsf.get_attribute(
             staticmethod, "__isabstractmethod__", on_class=False
         )
 
     def test_property(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert TypedValue(int) == tsf.get_attribute(int, "real", on_class=False)
 
     def test_http_error(self) -> None:
-        tsf = TypeshedFinder(verbose=True)
+        tsf = TypeshedFinder(Checker(), verbose=True)
         assert True is tsf.has_attribute(HTTPError, "read")
 
 
@@ -539,3 +616,19 @@ class TestParamSpec(TestNameCheckVisitorBase):
                 GenericValue(contextlib._GeneratorContextManager, [TypedValue(str)]),
             )
             wrapped("x")  # E: incompatible_argument
+
+
+class TestOpen(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        import io
+        from typing import BinaryIO, IO, Any
+        from pyanalyze.extensions import assert_type
+
+        def capybara(buffering: int, mode: str):
+            assert_type(open("x"), io.TextIOWrapper)
+            assert_type(open("x", "r"), io.TextIOWrapper)
+            assert_type(open("x", "rb"), io.BufferedReader)
+            assert_type(open("x", "rb", buffering=0), io.FileIO)
+            assert_type(open("x", "rb", buffering=buffering), BinaryIO)
+            assert_type(open("x", mode, buffering=buffering), IO[Any])

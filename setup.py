@@ -4,22 +4,18 @@ from setuptools import setup
 from setuptools.extension import Extension
 
 
-VERSION = "0.5.0"
+version = "0.6.0"
+package_data = ["test.toml", "stubs/*/*.pyi"]
 # Used in internal packaging system.
 if "SANTA_PACKAGE_VERSION" in os.environ:
-    VERSION = "%s.%s" % (VERSION, os.environ["SANTA_PACKAGE_VERSION"])
-
     CYTHON_MODULES = ["name_check_visitor"]
-    DATA_FILES = ["%s.pxd" % module for module in CYTHON_MODULES]
+    DATA_FILES = [f"{module}.pxd" for module in CYTHON_MODULES]
     EXTENSIONS = [
-        Extension("pyanalyze.%s" % module, ["pyanalyze/%s.py" % module])
+        Extension(f"pyanalyze.{module}", [f"pyanalyze/{module}.py"])
         for module in CYTHON_MODULES
     ]
-    setup_kwargs = {
-        "package_data": {"pyanalyze": DATA_FILES},
-        "ext_modules": EXTENSIONS,
-        "setup_requires": "Cython",
-    }
+    package_data += DATA_FILES
+    setup_kwargs = {"ext_modules": EXTENSIONS, "setup_requires": "Cython"}
 else:
     setup_kwargs = {}
 
@@ -27,7 +23,7 @@ else:
 if __name__ == "__main__":
     setup(
         name="pyanalyze",
-        version=VERSION,
+        version=version,
         author="Quora, Inc.",
         author_email="jelle@quora.com",
         description="A static analyzer for Python",
@@ -54,11 +50,13 @@ if __name__ == "__main__":
             "ast_decompiler>=0.4.0",
             "typeshed_client>=2.0.0",
             "typing_inspect>=0.7.0",
-            "typing_extensions>=3.10.0.0",
-            "mypy_extensions",
+            "typing_extensions>=4.0.0",
             "aenum>=2.2.3",
             "codemod",
             "tomli>=1.1.0",
         ],
+        # These are useful for unit tests of pyanalyze extensions
+        # outside the package.
+        package_data={"pyanalyze": package_data},
         **setup_kwargs,
     )

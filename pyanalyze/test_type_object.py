@@ -332,3 +332,43 @@ class TestSyntheticType(TestNameCheckVisitorBase):
         def capybara():
             want_p(good)
             want_p(bad)  # E: incompatible_argument
+
+
+class TestHashable(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_type(self):
+        from typing import Hashable, Type
+        from typing_extensions import Protocol
+
+        class MyHashable(Protocol):
+            def __hash__(self) -> int:
+                raise NotImplementedError
+
+        def want_hash(h: Hashable):
+            pass
+
+        def want_myhash(h: MyHashable):
+            pass
+
+        class A:
+            pass
+
+        def capybara(t1: Type[int], t2: type):
+            want_hash(t1)
+            want_hash(t2)
+            want_hash(int)
+            want_hash(A)
+
+            # TODO these errors are wrong
+            want_myhash(t1)  # E: incompatible_argument
+            want_myhash(t2)
+            want_myhash(int)  # E: incompatible_argument
+            want_myhash(A)  # E: incompatible_argument
+
+            {t1: 0}
+            {t2: 0}
+            {int: 0}
+            {A: 0}
+
+            want_hash([])  # E: incompatible_argument
+            want_myhash([])  # E: incompatible_argument

@@ -5,13 +5,18 @@ Functions to be used in test_scope unit tests.
 
 """
 
-from typing import ClassVar, Union, overload
+from typing import ClassVar, Union, overload, NoReturn
 from asynq import asynq, async_proxy, AsyncTask, ConstFuture, get_async_fn, result
 from asynq.decorators import AsyncDecorator
 import qcore
 
+from .value import VariableNameValue
+
 ASYNQ_METHOD_NAME = "asynq"
 ASYNQ_METHOD_NAMES = ("asynq",)
+
+uid_vnv = VariableNameValue(["uid"])
+qid_vnv = VariableNameValue(["qid"])
 
 
 class CacheDecorator(AsyncDecorator):
@@ -226,3 +231,7 @@ def overloaded(*args: str) -> Union[int, str]:
         return args[0]
     else:
         raise TypeError("too many arguments")
+
+
+def assert_never(arg: NoReturn) -> NoReturn:
+    raise RuntimeError("no way")

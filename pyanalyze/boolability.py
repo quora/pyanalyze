@@ -80,10 +80,13 @@ def get_boolability(value: Value) -> Boolability:
             # If it contains both values that are always true and values that are always false,
             # it's boolable.
             return Boolability.boolable
-        else:
+        elif boolabilities:
             # This means the set contains either only truthy or only falsy options.
             # Choose the lowest-valued (and therefore weakest) one.
             return min(boolabilities, key=lambda b: b.value)
+        else:
+            # NO_RETURN_VALUE
+            return Boolability.boolable
     else:
         return _get_boolability_no_mvv(value)
 

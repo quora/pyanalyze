@@ -29,44 +29,13 @@ But note that this will try to import all Python files it is passed. If you have
 
 In order to run successfully, pyanalyze needs to be able to import the code it checks. To make this work you may have to manually adjust Python's import path using the `$PYTHONPATH` environment variable.
 
+### Configuration
+
 Pyanalyze has a number of command-line options, which you can see by running `python -m pyanalyze --help`. Important ones include `-f`, which runs an interactive prompt that lets you examine and fix each error found by pyanalyze, and `--enable`/`--disable`, which enable and disable specific error codes.
 
-### Advanced usage
-
-At Quora, when we want pyanalyze to check a library in CI, we write a unit test that invokes pyanalyze for us. This allows us to run pyanalyze with other tests without further special setup, and it provides a convenient place to put configuration options. An example is pyanalyze's own `test_self.py` test:
-
-```python
-import os.path
-import pyanalyze
-from pyanalyze.error_code import ErrorCode
-from pyanalyze.test_node_visitor import skip_before
-
-
-class PyanalyzeConfig(pyanalyze.config.Config):
-    DEFAULT_DIRS = (str(os.path.dirname(__file__)),)
-    DEFAULT_BASE_MODULE = pyanalyze
-    ENABLED_ERRORS = {
-        ErrorCode.possibly_undefined_name,
-        ErrorCode.use_fstrings,
-        ErrorCode.missing_return_annotation,
-        ErrorCode.missing_parameter_annotation,
-        ErrorCode.unused_variable,
-    }
-
-
-class PyanalyzeVisitor(pyanalyze.name_check_visitor.NameCheckVisitor):
-    config = PyanalyzeConfig()
-    should_check_environ_for_files = False
-
-
-@skip_before((3, 6))
-def test_all():
-    PyanalyzeVisitor.check_all_files()
-
-
-if __name__ == "__main__":
-    PyanalyzeVisitor.main()
-```
+Configuration through a `pyproject.toml` file is also supported. See
+[the documentation](https://pyanalyze.readthedocs.io/en/latest/configuration.html) for
+details.
 
 ### Extending pyanalyze
 
@@ -81,7 +50,6 @@ database.run_query("SELECT answer, question FROM content")
 You want to detect when a call to `run_query()` contains syntactically invalid SQL or refers to a non-existent table or column. You could set that up with code like this:
 
 ```python
-import pyanalyze
 from pyanalyze.error_code import ErrorCode
 from pyanalyze.signature import CallContext, Signature, SigParameter
 from pyanalyze.value import KnownValue, TypedValue, AnyValue, AnySource, Value
@@ -113,20 +81,21 @@ def run_query_impl(ctx: CallContext) -> Value:
     return TypedValue(list)
 
 
-class Config(pyanalyze.config.Config):
-    def get_known_argspecs(self, arg_spec_cache):
-        return {
-            # This infers the parameter types and names from the function signature
-            run_query: arg_spec_cache.get_argspec(
-                run_query, impl=run_query_impl
-            ),
-            # You can also write the signature manually
-            run_query: Signature.make(
-                [SigParameter("sql", annotation=TypedValue(str))],
-                callable=run_query,
-                impl=run_query_impl,
-            ),
-        }
+# in pyproject.toml, set:
+# known_signatures = ["<module>.get_known_argspecs"]
+def get_known_argspecs(arg_spec_cache):
+    return {
+        # This infers the parameter types and names from the function signature
+        run_query: arg_spec_cache.get_argspec(
+            run_query, impl=run_query_impl
+        ),
+        # You can also write the signature manually
+        run_query: Signature.make(
+            [SigParameter("sql", annotation=TypedValue(str))],
+            callable=run_query,
+            impl=run_query_impl,
+        ),
+    }
 ```
 
 ### Displaying and checking the type of an expression
@@ -177,13 +146,12 @@ You can add an error code, like `# static analysis: ignore[undefined_name]`, to 
 
 ### Python version support
 
-Pyanalyze supports Python 3.6 through 3.9. Because it imports the code it checks, you have to run it using the same version of Python you use to run your code.
+Pyanalyze supports Python 3.6 through 3.10. Because it imports the code it checks, you have to run it using the same version of Python you use to run your code.
 
-## Developing pyanalyze
+## Contributing
 
-Pyanalyze has hundreds of unit tests that check its behavior. To run them, you can just run `pytest` in the project directory.
-
-The code is formatted using [Black](https://github.com/psf/black).
+We welcome your contributions. See [CONTRIBUTING.md](https://github.com/quora/pyanalyze/blob/master/CONTRIBUTING.md)
+for how to get started.
 
 ## Documentation
 

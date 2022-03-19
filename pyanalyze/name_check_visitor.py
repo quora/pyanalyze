@@ -7,9 +7,11 @@ type inference. It is the central object that invokes other parts of
 the system.
 
 """
+import abc
 from argparse import ArgumentParser
 import ast
 import enum
+import itertools
 from ast_decompiler import decompile
 import asyncio
 import builtins
@@ -50,12 +52,13 @@ from typing import (
     TypeVar,
     Container,
 )
-from typing_extensions import Annotated
+from typing_extensions import Annotated, Protocol
 
 import asynq
 import qcore
 
-from . import attributes, format_strings, node_visitor, importer, method_return_type
+from . import attributes, format_strings, node_visitor, importer
+from .analysis_lib import get_attribute_path
 from .annotations import (
     SyntheticEvaluator,
     is_instance_of_typing_name,
@@ -65,10 +68,9 @@ from .annotations import (
 )
 from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass, IgnoredCallees
 from .boolability import Boolability, get_boolability
-from .checker import Checker
-from .config import Config
-from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
-from .extensions import ParameterTypeGuard
+from .checker import Checker, CheckerAttrContext
+from .error_code import ErrorCode, ERROR_DESCRIPTION
+from .extensions import ParameterTypeGuard, assert_error, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
 from .options import (
     ConfigOption,
@@ -77,18 +79,27 @@ from .options import (
     InvalidConfigOption,
     IntegerOption,
     Options,
+    PyObjectSequenceOption,
     StringSequenceOption,
     add_arguments,
 )
 from .patma import PatmaVisitor
+from .predicates import EqualsPredicate
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
-from .safe import safe_getattr, is_hashable, all_of_type
+from .safe import (
+    safe_getattr,
+    is_hashable,
+    all_of_type,
+    safe_issubclass,
+    is_dataclass_type,
+)
 from .stacked_scopes import (
     EMPTY_ORIGIN,
     AbstractConstraint,
     Composite,
     CompositeIndex,
+    EquivalentConstraint,
     FunctionScope,
     Varname,
     Constraint,
@@ -113,13 +124,11 @@ from .stacked_scopes import (
 )
 from .signature import (
     ANY_SIGNATURE,
-    BoundMethodSignature,
     ConcreteSignature,
     MaybeSignature,
     OverloadedSignature,
     SigParameter,
     Signature,
-    make_bound_method,
     ARGS,
     KWARGS,
 )
@@ -143,21 +152,24 @@ from .functions import (
 from .yield_checker import YieldChecker
 from .type_object import TypeObject, get_mro
 from .value import (
+    VOID,
     AlwaysPresentExtension,
     AnnotatedValue,
     AnySource,
     AnyValue,
-    CallableValue,
+    AssertErrorExtension,
     CanAssign,
     CanAssignError,
     ConstraintExtension,
     GenericBases,
     KVPair,
-    KnownValueWithTypeVars,
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
+    annotate_value,
+    check_hashability,
     flatten_values,
+    get_tv_map,
     is_union,
     kv_pairs_from_mapping,
     make_weak,
@@ -179,7 +191,7 @@ from .value import (
     concrete_values_from_iterable,
     unpack_values,
 )
-from pyanalyze import type_evaluation
+from . import type_evaluation
 
 try:
     from ast import NamedExpr
@@ -193,6 +205,7 @@ except ImportError:
     Match = Any
 
 T = TypeVar("T")
+U = TypeVar("U")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
 KnownNone = KnownValue(None)
 ExceptionValue = TypedValue(BaseException) | SubclassValue(TypedValue(BaseException))
@@ -213,6 +226,26 @@ BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.BitAnd: ("bitwise AND", "__and__", "__iand__", "__rand__"),
     ast.FloorDiv: ("floor division", "__floordiv__", "__ifloordiv__", "__rfloordiv__"),
     ast.MatMult: ("matrix multiplication", "__matmul__", "__imatmul__", "__rmatmul__"),
+}
+
+# Certain special methods are expected to return NotImplemented if they
+# can't handle a particular argument, so that the interpreter can
+# try some other call. To support thiis, such methods are allowed to
+# return NotImplemented, even if their return annotation says otherwise.
+# This is pieced together from the CPython source code, including:
+# - Methods defined as SLOT1BIN in Objects/typeobject.c
+# - Objects/abstract.c also does the binops
+# - Rich comparison in object.c and typeobject.c
+METHODS_ALLOWING_NOTIMPLEMENTED = {
+    *itertools.chain.from_iterable(BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD.values()),
+    "__eq__",
+    "__ne__",
+    "__lt__",
+    "__le__",
+    "__gt__",
+    "__ge__",
+    "__length_hint__",  # Objects/abstract.c
+    "__subclasshook__",  # Modules/_abc.c
 }
 
 UNARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
@@ -244,6 +277,32 @@ COMPARATOR_TO_OPERATOR = {
 }
 
 
+class CustomContextManager(Protocol[T, U]):
+    def __enter__(self) -> T:
+        raise NotImplementedError
+
+    def __exit__(
+        self,
+        __exc_type: Optional[Type[BaseException]],
+        __exc_value: Optional[BaseException],
+        __traceback: Optional[types.TracebackType],
+    ) -> U:
+        raise NotImplementedError
+
+
+class AsyncCustomContextManager(Protocol[T, U]):
+    async def __aenter__(self) -> T:
+        raise NotImplementedError
+
+    async def __aexit__(
+        self,
+        __exc_type: Optional[Type[BaseException]],
+        __exc_value: Optional[BaseException],
+        __traceback: Optional[types.TracebackType],
+    ) -> U:
+        raise NotImplementedError
+
+
 @dataclass
 class _StarredValue(Value):
     """Helper Value to represent the result of "*x".
@@ -261,7 +320,7 @@ class _StarredValue(Value):
 
 
 @dataclass(init=False)
-class _AttrContext(attributes.AttrContext):
+class _AttrContext(CheckerAttrContext):
     visitor: "NameCheckVisitor"
     node: Optional[ast.AST]
     ignore_none: bool = False
@@ -277,9 +336,16 @@ class _AttrContext(attributes.AttrContext):
         ignore_none: bool = False,
         skip_mro: bool = False,
         skip_unwrap: bool = False,
+        prefer_typeshed: bool = False,
     ) -> None:
         super().__init__(
-            root_composite, attr, skip_mro=skip_mro, skip_unwrap=skip_unwrap
+            root_composite,
+            attr,
+            visitor.options,
+            skip_mro=skip_mro,
+            skip_unwrap=skip_unwrap,
+            prefer_typeshed=prefer_typeshed,
+            checker=visitor.checker,
         )
         self.node = node
         self.visitor = visitor
@@ -292,9 +358,6 @@ class _AttrContext(attributes.AttrContext):
         if self.node is not None:
             self.visitor._record_type_attr_read(obj, self.attr, self.node)
 
-    def should_ignore_class_attribute(self, obj: object) -> bool:
-        return self.visitor.config.should_ignore_class_attribute(obj)
-
     def get_property_type_from_argspec(self, obj: object) -> Value:
         argspec = self.visitor.arg_spec_cache.get_argspec(obj)
         if argspec is not None:
@@ -302,60 +365,28 @@ class _AttrContext(attributes.AttrContext):
                 return argspec.return_value
             # If we visited the property and inferred a return value,
             # use it.
-            try:
-                return self.visitor.get_local_return_value(argspec)
-            except KeyError:
-                pass
+            local = self.visitor.get_local_return_value(argspec)
+            if local is not None:
+                return local
         return AnyValue(AnySource.inference)
-
-    def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
-        typeshed_type = self.visitor.checker.ts_finder.get_attribute(
-            typ, self.attr, on_class=on_class
-        )
-        if (
-            typeshed_type is UNINITIALIZED_VALUE
-            and attributes.may_have_dynamic_attributes(typ)
-        ):
-            return AnyValue(AnySource.inference)
-        return typeshed_type
-
-    def get_attribute_from_typeshed_recursively(
-        self, fq_name: str, *, on_class: bool
-    ) -> Tuple[Value, object]:
-        return self.visitor.checker.ts_finder.get_attribute_recursively(
-            fq_name, self.attr, on_class=on_class
-        )
 
     def should_ignore_none_attributes(self) -> bool:
         return self.ignore_none
-
-    def get_generic_bases(
-        self, typ: Union[type, str], generic_args: Sequence[Value]
-    ) -> GenericBases:
-        return self.visitor.get_generic_bases(typ, generic_args)
 
 
 class ComprehensionLengthInferenceLimit(IntegerOption):
     """If we iterate over something longer than this, we don't try to infer precise
     types for comprehensions. Increasing this can hurt performance."""
 
-    default_value = 100
+    default_value = 25
     name = "comprehension_length_inference_limit"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> int:
-        return fallback.COMPREHENSION_LENGTH_INFERENCE_LIMIT
 
 
 class UnionSimplificationLimit(IntegerOption):
     """We may simplify unions with more than this many values."""
 
-    default_value = 25
+    default_value = 100
     name = "union_simplification_limit"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> int:
-        return fallback.UNION_SIMPLIFICATION_LIMIT
 
 
 class DisallowCallsToDunders(StringSequenceOption):
@@ -363,10 +394,6 @@ class DisallowCallsToDunders(StringSequenceOption):
     objects."""
 
     name = "disallow_calls_to_dunders"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
-        return list(fallback.DISALLOW_CALLS_TO_DUNDERS)
 
 
 class ForLoopAlwaysEntered(BooleanOption):
@@ -376,20 +403,12 @@ class ForLoopAlwaysEntered(BooleanOption):
 
     name = "for_loop_always_entered"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> bool:
-        return fallback.FOR_LOOP_ALWAYS_ENTERED
-
 
 class IgnoreNoneAttributes(BooleanOption):
     """If True, we ignore None when type checking attribute access on a Union
     type."""
 
     name = "ignore_none_attributes"
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> bool:
-        return fallback.IGNORE_NONE_ATTRIBUTES
 
 
 class UnimportableModules(StringSequenceOption):
@@ -398,20 +417,12 @@ class UnimportableModules(StringSequenceOption):
     default_value = []
     name = "unimportable_modules"
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
-        return list(fallback.UNIMPORTABLE_MODULES)
-
 
 class ExtraBuiltins(StringSequenceOption):
     """Even if these variables are undefined, no errors are shown."""
 
     name = "extra_builtins"
     default_value = ["__IPYTHON__"]  # special global defined in IPython
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
-        return list(fallback.IGNORED_VARIABLES)
 
 
 class IgnoredPaths(ConcatenatedOption[Sequence[str]]):
@@ -422,10 +433,6 @@ class IgnoredPaths(ConcatenatedOption[Sequence[str]]):
 
     # too complicated and this option isn't too useful anyway
     should_create_command_line_option = False
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[Sequence[str]]:
-        return fallback.IGNORED_PATHS
 
     @classmethod
     def parse(cls, data: object, source_path: Path) -> Sequence[Sequence[str]]:
@@ -458,10 +465,6 @@ class IgnoredEndOfReference(StringSequenceOption):
         "assert_not_called",
     ]
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[str]:
-        return list(fallback.IGNORED_END_OF_REFERENCE)
-
 
 class IgnoredForIncompatibleOverride(StringSequenceOption):
     """These attributes are not checked for incompatible overrides."""
@@ -470,20 +473,117 @@ class IgnoredForIncompatibleOverride(StringSequenceOption):
     default_value = ["__init__", "__eq__", "__ne__"]
 
 
+class IgnoredUnusedAttributes(StringSequenceOption):
+    """When these attributes are unused, they are not listed as such by the unused attribute
+    finder."""
+
+    name = "ignored_unused_attributes"
+    default_value = [
+        # ABCs
+        "_abc_cache",
+        "_abc_negative_cache",
+        "__abstractmethods__",
+        "_abc_negative_cache_version",
+        "_abc_registry",
+        # Python core
+        "__module__",
+        "__doc__",
+        "__init__",
+        "__dict__",
+        "__weakref__",
+        "__enter__",
+        "__exit__",
+        "__metaclass__",
+    ]
+
+
+class IgnoredUnusedClassAttributes(ConcatenatedOption[Tuple[type, Set[str]]]):
+    """List of pairs of (class, set of attribute names). When these attribute names are seen as
+    unused on a child or base class of the class, they are not listed."""
+
+    name = "ignored_unused_class_attributes"
+    default_value = []
+    should_create_command_line_option = False  # too complicated
+
+    @classmethod
+    def parse(cls, data: object, source_path: Path) -> Sequence[Tuple[type, Set[str]]]:
+        if not isinstance(data, (list, tuple)):
+            raise InvalidConfigOption.from_parser(
+                cls, "sequence of (type, [attribute]) pairs", data
+            )
+        final = []
+        for elt in data:
+            if not isinstance(elt, (list, tuple)) or len(elt) != 2:
+                raise InvalidConfigOption.from_parser(
+                    cls, "sequence of (type, [attribute]) pairs", elt
+                )
+            typ, attrs = elt
+            try:
+                obj = qcore.object_from_string(typ)
+            except Exception:
+                raise InvalidConfigOption.from_parser(
+                    cls, "path to Python object", typ
+                ) from None
+            if not isinstance(attrs, (list, tuple)):
+                raise InvalidConfigOption.from_parser(
+                    cls, "sequence of attributes", attrs
+                )
+            for attr in attrs:
+                if not isinstance(attr, str):
+                    raise InvalidConfigOption.from_parser(cls, "attribute string", attr)
+            final.append((obj, set(attrs)))
+        return final
+
+
+class CheckForDuplicateValues(PyObjectSequenceOption[type]):
+    """For subclasses of these classes, we error if multiple attributes have the same
+    value. This is used for the duplicate_enum check."""
+
+    name = "check_for_duplicate_values"
+    default_value = [enum.Enum]
+
+
+class AllowDuplicateValues(PyObjectSequenceOption[type]):
+    """For subclasses of these classes, we do not error if multiple attributes have the same
+    value. This overrides CheckForDuplicateValues."""
+
+    name = "allow_duplicate_values"
+    default_value = []
+
+
+def should_check_for_duplicate_values(cls: object, options: Options) -> bool:
+    if not isinstance(cls, type):
+        return False
+    positive_list = tuple(options.get_value_for(CheckForDuplicateValues))
+    if not safe_issubclass(cls, positive_list):
+        return False
+    negative_list = tuple(options.get_value_for(AllowDuplicateValues))
+    if safe_issubclass(cls, negative_list):
+        return False
+    return True
+
+
+class IgnoredTypesForAttributeChecking(PyObjectSequenceOption[type]):
+    """Used in the check for object attributes that are accessed but not set. In general, the check
+    will only alert about attributes that don't exist when it has visited all the base classes of
+    the class with the possibly missing attribute. However, these classes are never going to be
+    visited (since they're builtin), but they don't set any attributes that we rely on."""
+
+    name = "ignored_types_for_attribute_checking"
+    default_value = [object, abc.ABC]
+
+
 class ClassAttributeChecker:
     """Helper class to keep track of attributes that are read and set on instances."""
 
     def __init__(
         self,
-        config: Config,
+        *,
         enabled: bool = True,
         should_check_unused_attributes: bool = False,
         should_serialize: bool = False,
-        *,
-        options: Optional[Options] = None,
+        options: Options = Options.from_option_list(),
     ) -> None:
-        if options is None:
-            options = Options.from_option_list([], config)
         self.options = options
         # we might not have examined all parent classes when looking for attributes set
         # we dump them here. incase the callers want to extend coverage.
@@ -494,7 +594,6 @@ class ClassAttributeChecker:
         self.should_serialize = should_serialize
         self.all_failures = []
         self.types_with_dynamic_attrs = set()
-        self.config = config
         self.filename_to_visitor = {}
         # Dictionary from type to list of (attr_name, node, filename) tuples
         self.attributes_read = collections.defaultdict(list)
@@ -505,7 +604,7 @@ class ClassAttributeChecker:
         # Classes that we have examined the AST for
         self.classes_examined = {
             self.serialize_type(typ)
-            for typ in config.IGNORED_TYPES_FOR_ATTRIBUTE_CHECKING
+            for typ in self.options.get_value_for(IgnoredTypesForAttributeChecking)
         }
 
     def __enter__(self) -> Optional["ClassAttributeChecker"]:
@@ -684,18 +783,15 @@ class ClassAttributeChecker:
             attr_names_read = {attr_name for attr_name, _, _ in attrs_read}
             _add_attrs(self.unserialize_type(serialized), attr_names_read)
 
-        for typ, attrs in self.config.IGNORED_UNUSED_ATTRS_BY_CLASS:
+        for typ, attrs in self.options.get_value_for(IgnoredUnusedClassAttributes):
             _add_attrs(typ, attrs)
 
-        used_bases = tuple(self.config.USED_BASE_CLASSES)
-
+        ignored = set(self.options.get_value_for(IgnoredUnusedAttributes))
         for typ, attrs_read in sorted(all_attrs_read.items(), key=self._cls_sort):
-            if self.serialize_type(typ) not in self.classes_examined or issubclass(
-                typ, used_bases
-            ):
+            if self.serialize_type(typ) not in self.classes_examined:
                 continue
             existing_attrs = set(typ.__dict__.keys())
-            for attr in existing_attrs - attrs_read - self.config.IGNORED_UNUSED_ATTRS:
+            for attr in existing_attrs - attrs_read - ignored:
                 # server calls will always show up as unused here
                 if safe_getattr(safe_getattr(typ, attr, None), "server_call", False):
                     continue
@@ -717,7 +813,15 @@ class ClassAttributeChecker:
             return
         # the attribute is in __annotations__, e.g. a dataclass
         if _has_annotation_for_attr(typ, attr_name) or attributes.get_attrs_attribute(
-            typ, attributes.AttrContext(Composite(TypedValue(typ)), attr_name)
+            typ,
+            attributes.AttrContext(
+                Composite(TypedValue(typ)),
+                attr_name,
+                visitor.options,
+                skip_unwrap=False,
+                skip_mro=False,
+                prefer_typeshed=False,
+            ),
         ):
             return
 
@@ -886,9 +990,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
-    config: ClassVar[
-        Config
-    ] = Config()  # subclasses may override this with a more specific config
     config_filename: ClassVar[Optional[str]] = None
     """Path (relative to this class's file) to a pyproject.toml config file."""
 
@@ -902,6 +1003,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     current_enum_members: Optional[Dict[object, str]]
     _name_node_to_statement: Optional[Dict[ast.AST, Optional[ast.AST]]]
     import_name_to_node: Dict[str, Union[ast.Import, ast.ImportFrom]]
+    expected_return_value: Optional[Value]
+    error_for_implicit_any: bool
 
     def __init__(
         self,
@@ -992,6 +1095,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.imports_added = set()
         self.future_imports = set()  # active future imports in this file
         self.return_values = []
+        self.error_for_implicit_any = self.options.is_error_code_enabled(
+            ErrorCode.implicit_any
+        )
 
         self._name_node_to_statement = None
         # Cache the return values of functions within this file, so that we can use them to
@@ -1004,10 +1110,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._should_exclude_any = False
         self._fill_method_cache()
 
-    def get_local_return_value(self, sig: MaybeSignature) -> Value:
-        val, saved_sig = self._argspec_to_retval[id(sig)]
+    def get_local_return_value(self, sig: MaybeSignature) -> Optional[Value]:
+        val, saved_sig = self._argspec_to_retval.get(id(sig), (None, None))
         if sig is not saved_sig:
-            raise KeyError(sig)
+            return None
         return val
 
     def make_type_object(self, typ: Union[type, super, str]) -> TypeObject:
@@ -1042,8 +1148,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """Whether Any should be compatible only with itself."""
         return self._should_exclude_any
 
-    # The type for typ should be type, but that leads Cython to reject calls that pass
-    # an instance of ABCMeta.
     def get_generic_bases(
         self, typ: Union[type, str], generic_args: Sequence[Value] = ()
     ) -> GenericBases:
@@ -1052,14 +1156,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def get_signature(
         self, obj: object, is_asynq: bool = False
     ) -> Optional[ConcreteSignature]:
-        sig = self.arg_spec_cache.get_argspec(obj, is_asynq=is_asynq)
-        if isinstance(sig, Signature):
-            return sig
-        elif isinstance(sig, BoundMethodSignature):
-            return sig.get_signature()
-        elif isinstance(sig, OverloadedSignature):
-            return sig
-        return None
+        return self.checker.get_signature(obj, is_asynq=is_asynq)
 
     def __reduce_ex__(self, proto: object) -> object:
         # Only pickle the attributes needed to get error reporting working
@@ -1174,9 +1271,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         finally:
             self.node_context.contexts.pop()
         if ret is None:
-            ret = AnyValue(AnySource.inference)
+            ret = VOID
         if self.annotate:
             node.inferred_value = ret
+        if self.error_for_implicit_any:
+            for val in ret.walk_values():
+                if isinstance(val, AnyValue) and val.source is not AnySource.explicit:
+                    self._show_error_if_checking(
+                        node,
+                        f"Inferred value contains Any: {ret}",
+                        ErrorCode.implicit_any,
+                    )
         return ret
 
     def generic_visit(self, node: ast.AST) -> None:
@@ -1288,16 +1393,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
 
     def display_value(self, value: Value) -> str:
-        message = f"'{value!s}'"
-        if isinstance(value, KnownValue):
-            sig = self.arg_spec_cache.get_argspec(value.val)
-        elif isinstance(value, UnboundMethodValue):
-            sig = value.get_signature(self)
-        else:
-            sig = None
-        if sig is not None:
-            message += f", signature is {sig!s}"
-        return message
+        return self.checker.display_value(value)
 
     def _can_assign_to_base(self, base_value: Value, child_value: Value) -> CanAssign:
         if base_value is UNINITIALIZED_VALUE:
@@ -1309,10 +1405,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             child_sig = self.signature_from_value(child_value)
             if not isinstance(child_sig, (Signature, OverloadedSignature)):
                 return CanAssignError(f"{child_value} is not callable")
-            base_bound = base_sig.bind_self()
+            base_bound = base_sig.bind_self(ctx=self)
             if base_bound is None:
                 return {}
-            child_bound = child_sig.bind_self()
+            child_bound = child_sig.bind_self(ctx=self)
             if child_bound is None:
                 return CanAssignError(f"{child_value} is missing a 'self' argument")
             return base_bound.can_assign(child_bound, self)
@@ -1379,7 +1475,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if suppress_errors or node.id in self.options.get_value_for(ExtraBuiltins):
                 self.log(logging.INFO, "ignoring undefined name", node.id)
             else:
-                self._maybe_show_missing_import_error(node)
                 self._show_error_if_checking(
                     error_node, f"Undefined name: {node.id}", ErrorCode.undefined_name
                 )
@@ -1414,64 +1509,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     return new_mvv, origin
         return value, origin
 
-    def _maybe_show_missing_import_error(self, node: ast.Name) -> None:
-        """Shows errors that suggest adding an import statement in the semi-right place.
-
-        This mostly exists to make refactorings that add imported names easier. A couple of
-        potential improvements:
-        - Currently it just adds new imports before the first existing one. It could be made
-          smarter.
-        - It doesn't know what to do if the file doesn't have any imports.
-        - The code adding more entries to a from ... import will fail if the existing node spans
-          multiple lines.
-
-        """
-        if not self._is_checking():
-            return
-        if node.id not in self.config.NAMES_TO_IMPORTS:
-            return
-        if node.id in self.imports_added:
-            return
-        self.imports_added.add(node.id)
-        target = self.config.NAMES_TO_IMPORTS[node.id]
-        if target is None or target not in self.import_name_to_node:
-            # add the import
-            try:
-                target_node = self._get_first_import_node()
-            except ValueError:
-                return  # no import nodes, you're on your own
-            lineno = target_node.lineno
-            if target is None:
-                new_line = f"import {node.id}\n"
-            else:
-                new_line = f"from {target} import {node.id}\n"
-            new_lines = [new_line, self._lines()[lineno - 1]]
-            self._show_error_if_checking(
-                target_node,
-                f"add an import for {node.id}",
-                error_code=ErrorCode.add_import,
-                replacement=node_visitor.Replacement([lineno], new_lines),
-            )
-        else:
-            existing = self.import_name_to_node[target]
-            if not isinstance(existing, ast.ImportFrom):
-                return
-            names = existing.names + [ast.alias(name=node.id, asname=None)]
-            names = sorted(names, key=lambda alias: alias.name)
-            existing.names = (
-                names  # so that when we add more names this one is maintained
-            )
-            new_node = ast.ImportFrom(
-                module=existing.module, names=names, level=existing.level
-            )
-            new_code = decompile(new_node)
-            self._show_error_if_checking(
-                existing,
-                f"add an import for {node.id}",
-                error_code=ErrorCode.add_import,
-                replacement=node_visitor.Replacement([existing.lineno], [new_code]),
-            )
-
     def _get_first_import_node(self) -> ast.stmt:
         return min(self.import_name_to_node.values(), key=lambda node: node.lineno)
 
@@ -1486,9 +1523,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     @contextlib.contextmanager
     def _set_current_class(self, current_class: type) -> Iterator[None]:
-        if isinstance(
-            current_class, type
-        ) and self.config.should_check_class_for_duplicate_values(current_class):
+        if should_check_for_duplicate_values(current_class, self.options):
             current_enum_members = {}
         else:
             current_enum_members = None
@@ -1580,12 +1615,21 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 node, error_code=ErrorCode.missing_return_annotation
             )
 
+        computed_function = compute_value_of_function(info, self)
         if potential_function is None:
-            val = compute_value_of_function(info, self)
+            val = computed_function
         else:
             val = KnownValue(potential_function)
         if not info.is_overload and not info.is_evaluated:
             self._set_name_in_scope(node.name, node, val)
+
+        if (
+            node.name in METHODS_ALLOWING_NOTIMPLEMENTED
+            and info.return_annotation is not None
+        ):
+            expected_return = info.return_annotation | KnownValue(NotImplemented)
+        else:
+            expected_return = info.return_annotation
 
         with self.asynq_checker.set_func_name(
             node.name, async_kind=info.async_kind, is_classmethod=info.is_classmethod
@@ -1596,7 +1640,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         ), qcore.override(
             self, "current_function", potential_function
         ), qcore.override(
-            self, "expected_return_value", info.return_annotation
+            self, "expected_return_value", expected_return
         ):
             result = self._visit_function_body(info)
 
@@ -1741,11 +1785,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if self._is_collecting() or isinstance(node, ast.Lambda):
                 return FunctionResult(parameters=params)
             with self.scopes.allow_only_module_scope():
-                evaluator = SyntheticEvaluator.from_visitor(node, self)
+                # The return annotation doesn't actually matter for validation.
+                evaluator = SyntheticEvaluator.from_visitor(
+                    node, self, AnyValue(AnySource.marker)
+                )
                 ctx = type_evaluation.EvalContext(
                     variables={param.name: param.annotation for param in params},
                     positions={param.name: type_evaluation.DEFAULT for param in params},
                     can_assign_context=self,
+                    tv_map={},
                 )
                 for error in evaluator.validate(ctx):
                     self.show_error(
@@ -1836,8 +1884,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         params: Sequence[SigParameter],
     ) -> FunctionResult:
         # Ignore generators for now.
-        if isinstance(return_set, AnyValue) or (
-            self.is_generator and info.async_kind is not AsyncFunctionKind.normal
+        if (
+            isinstance(return_set, AnyValue)
+            or return_set is NO_RETURN_VALUE
+            or (self.is_generator and info.async_kind is not AsyncFunctionKind.normal)
         ):
             has_return = True
         elif return_set is UNINITIALIZED_VALUE:
@@ -1846,8 +1896,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             assert False, return_set
         # if the return value was never set, the function returns None
         if not return_values:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                method_return_type.check_no_return(node, self, node.name)
             return FunctionResult(KnownNone, params, has_return, self.is_generator)
         # None is added to return_values if the function raises an error.
         return_values = [val for val in return_values if val is not None]
@@ -2088,10 +2136,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 module_name = parent_module_name + "." + node.module
             else:
                 module_name = parent_module_name
+        if module_name is None:
+            return
         module = sys.modules.get(module_name)
         if module is None:
-            if module_name is None:
-                return
             try:
                 module = __import__(module_name)
             except Exception:
@@ -2197,7 +2245,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             f.flush()
             f.seek(0)
             try:
-                pseudo_module = importer.import_module(pseudo_module_name, f.name)
+                pseudo_module = importer.import_module(pseudo_module_name, Path(f.name))
             except Exception:
                 # sets the name of the imported module to Any so we don't get further
                 # errors
@@ -2361,6 +2409,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             with qcore.override(self, "in_comprehension_body", True):
                 key_value = self.visit(node.key)
                 value_value = self.visit(node.value)
+
+                hashability = check_hashability(key_value, self)
+                if isinstance(hashability, CanAssignError):
+                    self._show_error_if_checking(
+                        node.key,
+                        "Dictionary key is not hashable",
+                        ErrorCode.unhashable_key,
+                        detail=str(hashability),
+                    )
+                    key_value = AnyValue(AnySource.error)
             if isinstance(key_value, AnyValue) and isinstance(value_value, AnyValue):
                 return TypedValue(dict)
             else:
@@ -2368,14 +2426,21 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         with qcore.override(self, "in_comprehension_body", True):
             member_value = self.visit(node.elt)
-        if isinstance(member_value, AnyValue):
-            return TypedValue(typ)
-        else:
-            if typ is types.GeneratorType:
-                return GenericValue(
-                    typ, [member_value, KnownValue(None), KnownValue(None)]
-                )
-            return make_weak(GenericValue(typ, [member_value]))
+
+            if typ is set:
+                hashability = check_hashability(member_value, self)
+                if isinstance(hashability, CanAssignError):
+                    self._show_error_if_checking(
+                        node.elt,
+                        "Set member is not hashable",
+                        ErrorCode.unhashable_key,
+                        detail=str(hashability),
+                    )
+                    member_value = AnyValue(AnySource.error)
+
+        if typ is types.GeneratorType:
+            return GenericValue(typ, [member_value, KnownValue(None), KnownValue(None)])
+        return make_weak(GenericValue(typ, [member_value]))
 
     # Literals and displays
 
@@ -2480,6 +2545,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 all_pairs += new_pairs
                 continue
             key_val = self.visit(key_node)
+
+            hashability = check_hashability(key_val, self)
+            if isinstance(hashability, CanAssignError):
+                self._show_error_if_checking(
+                    key_node,
+                    "Dictionary key is not hashable",
+                    ErrorCode.unhashable_key,
+                    detail=str(hashability),
+                )
+
             all_pairs.append(KVPair(key_val, value_val))
             if not isinstance(key_val, KnownValue) or not isinstance(
                 value_val, KnownValue
@@ -2495,16 +2570,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             try:
                 already_exists = key in ret
             except TypeError as e:
-                self._show_error_if_checking(
-                    key_node, repr(e), ErrorCode.unhashable_key
-                )
                 continue
 
-            if (
-                already_exists
-                and os.path.basename(self.filename)
-                not in self.config.IGNORED_FILES_FOR_DUPLICATE_DICT_KEYS
-            ):
+            if already_exists:
                 self._show_error_if_checking(
                     key_node,
                     "Duplicate dictionary key %r" % (key,),
@@ -2576,50 +2644,81 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self, node: Union[ast.Set, ast.List, ast.Tuple], typ: type
     ) -> Value:
         elts = [self.visit(elt) for elt in node.elts]
-        return self._maybe_make_sequence(typ, elts, node)
+        return self._maybe_make_sequence(typ, elts, node, elt_nodes=node.elts)
 
     def _maybe_make_sequence(
-        self, typ: type, elts: Sequence[Value], node: ast.AST
+        self,
+        typ: type,
+        elts: Sequence[Value],
+        node: ast.AST,
+        elt_nodes: Optional[Sequence[ast.AST]] = None,
     ) -> Value:
-        if all_of_type(elts, KnownValue):
-            vals = [elt.val for elt in elts]
+        values = []
+        has_unknown_value = False
+        for i, elt in enumerate(elts):
+            if isinstance(elt, _StarredValue):
+                vals = concrete_values_from_iterable(elt.value, self)
+                if isinstance(vals, CanAssignError):
+                    self.show_error(
+                        elt.node,
+                        f"{elt.value} is not iterable",
+                        ErrorCode.unsupported_operation,
+                        detail=str(vals),
+                    )
+                    new_vals = [AnyValue(AnySource.error)]
+                    has_unknown_value = True
+                elif isinstance(vals, Value):
+                    # single value
+                    has_unknown_value = True
+                    new_vals = [vals]
+                else:
+                    new_vals = vals
+                if typ is set:
+                    for val in new_vals:
+                        hashability = check_hashability(val, self)
+                        if isinstance(hashability, CanAssignError):
+                            if elt_nodes:
+                                error_node = elt_nodes[i]
+                            else:
+                                error_node = node
+                            self._show_error_if_checking(
+                                error_node,
+                                "Set element is not hashable",
+                                ErrorCode.unhashable_key,
+                                detail=str(hashability),
+                            )
+
+                values += new_vals
+            else:
+                if typ is set:
+                    hashability = check_hashability(elt, self)
+                    if isinstance(hashability, CanAssignError):
+                        if elt_nodes:
+                            error_node = elt_nodes[i]
+                        else:
+                            error_node = node
+                        self._show_error_if_checking(
+                            error_node,
+                            "Set element is not hashable",
+                            ErrorCode.unhashable_key,
+                            detail=str(hashability),
+                        )
+                values.append(elt)
+        if has_unknown_value:
+            arg = unite_and_simplify(
+                *values, limit=self.options.get_value_for(UnionSimplificationLimit)
+            )
+            return make_weak(GenericValue(typ, [arg]))
+        elif all_of_type(values, KnownValue):
+            vals = [elt.val for elt in values]
             try:
                 obj = typ(vals)
-            except TypeError as e:
+            except TypeError:
                 # probably an unhashable type being included in a set
-                self._show_error_if_checking(node, repr(e), ErrorCode.unhashable_key)
                 return TypedValue(typ)
             return KnownValue(obj)
         else:
-            values = []
-            has_unknown_value = False
-            for elt in elts:
-                if isinstance(elt, _StarredValue):
-                    vals = concrete_values_from_iterable(elt.value, self)
-                    if isinstance(vals, CanAssignError):
-                        self.show_error(
-                            elt.node,
-                            f"{elt.value} is not iterable",
-                            ErrorCode.unsupported_operation,
-                            detail=str(vals),
-                        )
-                        values.append(AnyValue(AnySource.error))
-                        has_unknown_value = True
-                    elif isinstance(vals, Value):
-                        # single value
-                        has_unknown_value = True
-                        values.append(vals)
-                    else:
-                        values += vals
-                else:
-                    values.append(elt)
-            if has_unknown_value:
-                arg = unite_and_simplify(
-                    *values, limit=self.options.get_value_for(UnionSimplificationLimit)
-                )
-                return make_weak(GenericValue(typ, [arg]))
-            else:
-                return SequenceIncompleteValue(typ, values)
+            return SequenceIncompleteValue(typ, values)
 
     # Operations
 
@@ -2635,22 +2734,34 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # we set a negative constraint.
 
         is_and = isinstance(node.op, ast.And)
+        stack = contextlib.ExitStack()
+        scopes = []
         out_constraints = []
-        with self.scopes.subscope():
-            values = []
-            left = node.values[:-1]
-            for condition in left:
-                new_value, constraint = self.constraint_from_condition(condition)
-                out_constraints.append(constraint)
+        values = []
+        constraint = NULL_CONSTRAINT
+        with stack:
+            for i, condition in enumerate(node.values):
+                is_last = i == len(node.values) - 1
+                scope = stack.enter_context(self.scopes.subscope())
+                scopes.append(scope)
                 if is_and:
                     self.add_constraint(condition, constraint)
-                    values.append(constrain_value(new_value, FALSY_CONSTRAINT))
                 else:
                     self.add_constraint(condition, constraint.invert())
+
+                new_value, constraint = self.constraint_from_condition(
+                    condition, check_boolability=not is_last
+                )
+                out_constraints.append(constraint)
+
+                if is_last:
+                    values.append(new_value)
+                elif is_and:
+                    values.append(constrain_value(new_value, FALSY_CONSTRAINT))
+                else:
                     values.append(constrain_value(new_value, TRUTHY_CONSTRAINT))
-            right_value = self._visit_possible_constraint(node.values[-1])
-            values.append(right_value)
-            out_constraints.append(extract_constraints(right_value))
+
+        self.scopes.combine_subscopes(scopes)
         constraint_cls = AndConstraint if is_and else OrConstraint
         constraint = constraint_cls.make(reversed(out_constraints))
         return annotate_with_constraint(unite_values(*values), constraint)
@@ -2701,7 +2812,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         else:
             constraint = NULL_CONSTRAINT
-        if isinstance(op, (ast.Is, ast.IsNot)):
+        # is, is not, in, and not in always return a boolean, but the other
+        # comparisons may return arbitrary objects. We should get the
+        # return value out of the dunder methods, but we don't do that yet.
+        if isinstance(op, (ast.Is, ast.IsNot, ast.In, ast.NotIn)):
             val = TypedValue(bool)
         else:
             val = AnyValue(AnySource.inference)
@@ -2714,32 +2828,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if varname is None:
             return NULL_CONSTRAINT
         if isinstance(op, (ast.Is, ast.IsNot)):
+            predicate = EqualsPredicate(other_val, self, use_is=True)
             positive = isinstance(op, ast.Is)
-            return Constraint(varname, ConstraintType.is_value, positive, other_val)
+            return Constraint(varname, ConstraintType.predicate, positive, predicate)
         elif isinstance(op, (ast.Eq, ast.NotEq)):
-
-            def predicate_func(value: Value, positive: bool) -> Optional[Value]:
-                op = operator.eq if positive else operator.ne
-                if isinstance(value, KnownValue):
-                    try:
-                        result = op(value.val, other_val)
-                    except Exception:
-                        pass
-                    else:
-                        if not result:
-                            return None
-                elif positive:
-                    known_other = KnownValue(other_val)
-                    if value.is_assignable(known_other, self):
-                        return known_other
-                    else:
-                        return None
-                return value
-
+            predicate = EqualsPredicate(other_val, self)
             positive = isinstance(op, ast.Eq)
-            return Constraint(
-                varname, ConstraintType.predicate, positive, predicate_func
-            )
+            return Constraint(varname, ConstraintType.predicate, positive, predicate)
         elif isinstance(op, (ast.In, ast.NotIn)) and is_right:
 
             def predicate_func(value: Value, positive: bool) -> Optional[Value]:
@@ -2997,10 +3092,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_Await(self, node: ast.Await) -> Value:
         composite = self.composite_from_node(node.value)
-        return self.unpack_awaitable(composite, node.value)
+        return_value = self.unpack_awaitable(composite, node.value)
+        if return_value is NO_RETURN_VALUE:
+            self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
+        return return_value
 
     def unpack_awaitable(self, composite: Composite, node: ast.AST) -> Value:
-        tv_map = AwaitableValue.can_assign(composite.value, self)
+        tv_map = get_tv_map(AwaitableValue, composite.value, self)
         if isinstance(tv_map, CanAssignError):
             return self._check_dunder_call(node, composite, "__await__", [])
         else:
@@ -3117,21 +3215,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_Return(self, node: ast.Return) -> None:
         if node.value is None:
             value = KnownNone
-            if self.current_function_name is not None:
-                method_return_type.check_no_return(
-                    node, self, self.current_function_name
-                )
         else:
             value = self.visit(node.value)
-            if self.current_function_name is not None:
-                method_return_type.check_return_value(
-                    node, self, value, self.current_function_name
-                )
-        if value is NO_RETURN_VALUE:
-            return
         self.return_values.append(value)
         self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
-        if self.expected_return_value is NO_RETURN_VALUE:
+        if (
+            self.expected_return_value is NO_RETURN_VALUE
+            and value is not NO_RETURN_VALUE
+        ):
             self._show_error_if_checking(
                 node, error_code=ErrorCode.no_return_may_return
             )
@@ -3140,16 +3231,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             not (self.is_generator and self.async_kind == AsyncFunctionKind.non_async)
             and self.expected_return_value is not None
         ):
-            tv_map = self.expected_return_value.can_assign(value, self)
-            if isinstance(tv_map, CanAssignError):
+            can_assign = self.expected_return_value.can_assign(value, self)
+            if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     node,
                     f"Declared return type {self.expected_return_value} is incompatible"
                     f" with actual return type {value}",
                     error_code=ErrorCode.incompatible_return_value,
-                    detail=tv_map.display(),
+                    detail=can_assign.display(),
                 )
-        if self.expected_return_value == KnownNone and value != KnownNone:
+        if (
+            self.expected_return_value == KnownNone
+            and value != KnownNone
+            and value is not NO_RETURN_VALUE
+        ):
             self._show_error_if_checking(
                 node,
                 "Function declared as returning None may not return a value",
@@ -3211,7 +3306,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 constraint = Constraint(
                     composite.varname, ConstraintType.is_truthy, True, None
                 )
-                return annotate_with_constraint(composite.value, constraint)
+                existing = extract_constraints(composite.value)
+                new_value, _ = unannotate_value(composite.value, ConstraintExtension)
+                return annotate_with_constraint(
+                    new_value, EquivalentConstraint.make([constraint, existing])
+                )
             else:
                 return composite.value
         else:
@@ -3223,8 +3322,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_Continue(self, node: ast.Continue) -> None:
         self._set_name_in_scope(LEAVES_LOOP, node, AnyValue(AnySource.marker))
 
-    def visit_For(self, node: ast.For) -> None:
-        iterated_value = self._member_value_of_iterator(node.iter)
+    def visit_For(self, node: Union[ast.For, ast.AsyncFor]) -> None:
+        iterated_value = self._member_value_of_iterator(
+            node.iter, is_async=isinstance(node, ast.AsyncFor)
+        )
         if self.options.get_value_for(ForLoopAlwaysEntered):
             always_entered = True
         elif isinstance(iterated_value, Value):
@@ -3261,6 +3362,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     self.visit(node.target)
                 self._generic_visit_list(node.body)
 
+    visit_AsyncFor = visit_For
+
     def visit_While(self, node: ast.While) -> None:
         # see comments under For for discussion
 
@@ -3273,7 +3376,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             Boolability.type_always_true,
         )
         with self.scopes.subscope() as body_scope:
-            with self.scopes.loop_scope() as loop_scope:
+            with self.scopes.loop_scope() as loop_scopes:
                 # The "node" argument need not be an AST node but must be unique.
                 self.add_constraint((node, 1), constraint)
                 self._generic_visit_list(node.body)
@@ -3287,7 +3390,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self.add_constraint((node, 2), constraint)
                 self._generic_visit_list(node.body)
 
-        if always_entered and LEAVES_LOOP not in loop_scope:
+        if always_entered and all(LEAVES_LOOP not in scope for scope in loop_scopes):
             # This means the code following the loop is unreachable.
             self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
 
@@ -3334,23 +3437,56 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return result
 
     def visit_With(self, node: ast.With) -> None:
-        for item in node.items:
-            self.visit_withitem(item)
-        self._generic_visit_list(node.body)
+        if len(node.items) == 1:
+            with self.scopes.subscope():
+                context = self.visit(node.items[0].context_expr)
+            if isinstance(context, AnnotatedValue) and context.has_metadata_of_type(
+                AssertErrorExtension
+            ):
+                self._visit_assert_errors_block(node)
+                return
+
+        self.visit_single_cm(node.items, node.body, is_async=False)
+
+    def _visit_assert_errors_block(self, node: ast.With) -> None:
+        with self.catch_errors() as caught:
+            self._generic_visit_list(node.body)
+        if not caught:
+            self._show_error_if_checking(
+                node,
+                "No errors found in assert_error() block",
+                error_code=ErrorCode.inference_failure,
+            )
 
     def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
-        for item in node.items:
-            self.visit_withitem(item, is_async=True)
-        self._generic_visit_list(node.body)
+        self.visit_single_cm(node.items, node.body, is_async=True)
 
-    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> None:
+    def visit_single_cm(
+        self,
+        items: List[ast.withitem],
+        body: Iterable[ast.AST],
+        *,
+        is_async: bool = False,
+    ) -> None:
+        if len(items) == 0:
+            self._generic_visit_list(body)
+            return
+        first_item = items[0]
+        can_suppress = self.visit_withitem(first_item, is_async)
+        if can_suppress:
+            with self.scopes.suppressing_subscope():
+                self.visit_single_cm(items[1:], body, is_async=is_async)
+        else:
+            self.visit_single_cm(items[1:], body, is_async=is_async)
+
+    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> bool:
         context = self.visit(node.context_expr)
         if is_async:
-            protocol = "typing.AsyncContextManager"
+            protocol = AsyncCustomContextManager
         else:
-            protocol = "typing.ContextManager"
-        val = GenericValue(protocol, [TypeVarValue(T)])
-        can_assign = val.can_assign(context, self)
+            protocol = CustomContextManager
+        val = GenericValue(protocol, [TypeVarValue(T), TypeVarValue(U)])
+        can_assign = get_tv_map(val, context, self)
         if isinstance(can_assign, CanAssignError):
             self._show_error_if_checking(
                 node.context_expr,
@@ -3359,54 +3495,69 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 error_code=ErrorCode.invalid_context_manager,
             )
             assigned = AnyValue(AnySource.error)
+            can_suppress = False
         else:
             assigned = can_assign.get(T, AnyValue(AnySource.generic_argument))
+            exit_assigned = can_assign.get(U, AnyValue(AnySource.generic_argument))
+            exit_boolability = get_boolability(exit_assigned)
+            can_suppress = not exit_boolability.is_safely_false()
+            if isinstance(exit_assigned, AnyValue) or (
+                isinstance(context, TypedValue)
+                and context.typ
+                in ["typing.ContextManager", "typing.AsyncContextManager"]
+            ):
+                # cannot easily infer what the context manager will do,
+                # assume it does not suppress exceptions.
+                can_suppress = False
         if node.optional_vars is not None:
             with qcore.override(self, "being_assigned", assigned):
                 self.visit(node.optional_vars)
+        return can_suppress
 
-    def visit_try_except(self, node: ast.Try) -> List[SubScope]:
-        # reset yield checks between branches to avoid incorrect errors when we yield both in the
-        # try and the except block
+    def visit_try_except(self, node: ast.Try) -> None:
         with self.scopes.subscope():
-            with self.scopes.subscope() as try_scope:
-                self._generic_visit_list(node.body)
-                self.yield_checker.reset_yield_checks()
-                self._generic_visit_list(node.orelse)
-            with self.scopes.subscope() as dummy_subscope:
+            with self.scopes.subscope() as dummy_scope:
                 pass
-            self.scopes.combine_subscopes([try_scope, dummy_subscope])
+
+            with self.scopes.subscope() as failure_scope:
+                with self.scopes.suppressing_subscope() as success_scope:
+                    self._generic_visit_list(node.body)
+
+            with self.scopes.subscope() as else_scope:
+                self.yield_checker.reset_yield_checks()
+                self.scopes.combine_subscopes([success_scope])
+                self._generic_visit_list(node.orelse)
 
             except_scopes = []
             for handler in node.handlers:
                 with self.scopes.subscope() as except_scope:
                     except_scopes.append(except_scope)
+                    # reset yield checks between branches to avoid incorrect errors when we yield
+                    # both in the try and the except block
                     self.yield_checker.reset_yield_checks()
+                    self.scopes.combine_subscopes([dummy_scope, failure_scope])
                     self.visit(handler)
 
-        return [try_scope] + except_scopes
+        self.scopes.combine_subscopes([else_scope, *except_scopes])
 
     def visit_Try(self, node: ast.Try) -> None:
         # py3 combines the Try and Try/Finally nodes
         if node.finalbody:
-            subscopes = self.visit_try_except(node)
+            with self.scopes.subscope() as failure_scope:
+                with self.scopes.suppressing_subscope() as success_scope:
+                    self.visit_try_except(node)
 
-            # For the case where nothing in the try-except block is executed
+            # If the try block fails
             with self.scopes.subscope():
-                self._generic_visit_list(node.finalbody)
-
-            # For the case where something in the try-except exits the scope
-            with self.scopes.subscope():
-                self.scopes.combine_subscopes(subscopes, ignore_leaves_scope=True)
+                self.scopes.combine_subscopes([failure_scope])
                 self._generic_visit_list(node.finalbody)
 
             # For the case where execution continues after the try-finally
-            self.scopes.combine_subscopes(subscopes)
+            self.scopes.combine_subscopes([success_scope])
             self._generic_visit_list(node.finalbody)
         else:
             # Life is much simpler without finally
-            subscopes = self.visit_try_except(node)
-            self.scopes.combine_subscopes(subscopes)
+            self.visit_try_except(node)
         self.yield_checker.reset_yield_checks()
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
@@ -3462,12 +3613,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_IfExp(self, node: ast.IfExp) -> Value:
         _, constraint = self.constraint_from_condition(node.test)
-        with self.scopes.subscope():
+        with self.scopes.subscope() as if_scope:
             self.add_constraint(node, constraint)
             then_val = self.visit(node.body)
-        with self.scopes.subscope():
+        with self.scopes.subscope() as else_scope:
             self.add_constraint(node, constraint.invert())
             else_val = self.visit(node.orelse)
+        self.scopes.combine_subscopes([if_scope, else_scope])
         return unite_values(then_val, else_val)
 
     def constraint_from_condition(
@@ -3612,13 +3764,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if node.value:
             is_yield = isinstance(node.value, ast.Yield)
             value = self.visit(node.value)
-            tv_map = expected_type.can_assign(value, self)
-            if isinstance(tv_map, CanAssignError):
+            can_assign = expected_type.can_assign(value, self)
+            if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     node.value,
                     f"Incompatible assignment: expected {expected_type}, got {value}",
                     error_code=ErrorCode.incompatible_assignment,
-                    detail=tv_map.display(),
+                    detail=can_assign.display(),
                 )
 
             with qcore.override(
@@ -3923,7 +4075,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if vals:
                 return unite_values(*vals)
             else:
-                return UNINITIALIZED_VALUE
+                return NO_RETURN_VALUE
         return local_value
 
     def visit_Attribute(self, node: ast.Attribute) -> Value:
@@ -3966,9 +4118,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):
             if self._is_checking():
-                self.asynq_checker.record_attribute_access(
-                    root_composite.value, node.attr, node
-                )
                 if (
                     isinstance(root_composite.value, KnownValue)
                     and isinstance(root_composite.value.val, types.ModuleType)
@@ -4008,6 +4157,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         *,
         ignore_none: bool = False,
         use_fallback: bool = False,
+        prefer_typeshed: bool = False,
     ) -> Value:
         """Get an attribute of this value.
 
@@ -4042,15 +4192,24 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 results.append(subresult)
             return unite_values(*results)
         ctx = _AttrContext(
-            root_composite, attr, self, node=node, ignore_none=ignore_none
+            root_composite,
+            attr,
+            self,
+            node=node,
+            ignore_none=ignore_none,
+            prefer_typeshed=prefer_typeshed,
         )
         result = attributes.get_attribute(ctx)
         if result is UNINITIALIZED_VALUE and use_fallback and node is not None:
             return self._get_attribute_fallback(root_composite.value, attr, node)
         return result
 
-    def get_attribute_from_value(self, root_value: Value, attribute: str) -> Value:
-        return self.get_attribute(Composite(root_value), attribute)
+    def get_attribute_from_value(
+        self, root_value: Value, attribute: str, *, prefer_typeshed: bool = False
+    ) -> Value:
+        return self.get_attribute(
+            Composite(root_value), attribute, prefer_typeshed=prefer_typeshed
+        )
 
     def _get_attribute_fallback(
         self, root_value: Value, attr: str, node: ast.AST
@@ -4121,7 +4280,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return True
         ts_finder = self.checker.ts_finder
         if (
-            ts_finder.has_stubs(typ)
+            (ts_finder.has_stubs(typ) or is_dataclass_type(typ))
             and not ts_finder.has_attribute(typ, "__getattr__")
             and not ts_finder.has_attribute(typ, "__getattribute__")
             and not attributes.may_have_dynamic_attributes(typ)
@@ -4174,7 +4333,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _should_ignore_val(self, node: ast.AST) -> bool:
         if node is not None:
-            path = self._get_attribute_path(node)
+            path = get_attribute_path(node)
             if path is not None:
                 ignored_paths = self.options.get_value_for(IgnoredPaths)
                 for ignored_path in ignored_paths:
@@ -4226,6 +4385,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if caller is not None:
                     self.collector.record_call(caller, callee_val)
 
+        if (
+            isinstance(callee_wrapped, KnownValue)
+            and callee_wrapped.val is assert_error
+        ):
+            return annotate_value(return_value, [AssertErrorExtension()])
         return return_value
 
     def _can_perform_call(
@@ -4317,10 +4481,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.add_constraint(node, extension.constraint)
 
         if extended_argspec is not None and not extended_argspec.has_return_value():
-            try:
-                return_value = self.get_local_return_value(extended_argspec)
-            except KeyError:
-                pass
+            local = self.get_local_return_value(extended_argspec)
+            if local is not None:
+                return_value = local
 
         if allow_call and isinstance(callee_wrapped, KnownValue):
             arg_values = [arg.value for arg in args]
@@ -4375,91 +4538,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def signature_from_value(
         self, value: Value, node: Optional[ast.AST] = None
     ) -> MaybeSignature:
-        if isinstance(value, AnnotatedValue):
-            value = value.value
-        if isinstance(value, TypeVarValue):
-            value = value.get_fallback_value()
-        if isinstance(value, KnownValue):
-            argspec = self.arg_spec_cache.get_argspec(value.val)
-            if argspec is None:
-                method_object = self.get_attribute(
-                    Composite(value),
-                    "__call__",
-                    node,
-                    ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
-                )
-                if method_object is UNINITIALIZED_VALUE:
-                    return None
-                else:
-                    return ANY_SIGNATURE
-            if isinstance(value, KnownValueWithTypeVars):
-                return argspec.substitute_typevars(value.typevars)
-            return argspec
-        elif isinstance(value, UnboundMethodValue):
-            method = value.get_method()
-            if method is not None:
-                sig = self.arg_spec_cache.get_argspec(method)
-                if sig is None:
-                    # TODO return None here and figure out when the signature is missing
-                    return ANY_SIGNATURE
-                try:
-                    return_override = self.get_local_return_value(sig)
-                except KeyError:
-                    return_override = None
-                bound = make_bound_method(sig, value.composite, return_override)
-                if bound is not None and value.typevars is not None:
-                    bound = bound.substitute_typevars(value.typevars)
-                return bound
-            return None
-        elif isinstance(value, CallableValue):
-            return value.signature
-        elif isinstance(value, TypedValue):
-            typ = value.typ
-            if typ is collections.abc.Callable or typ is types.FunctionType:
-                return ANY_SIGNATURE
-            if isinstance(typ, str):
-                call_method = self.get_attribute(
-                    Composite(value),
-                    "__call__",
-                    ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
-                )
-                if call_method is UNINITIALIZED_VALUE:
-                    return None
-                return self.signature_from_value(call_method, node=node)
-            if getattr(typ.__call__, "__objclass__", None) is type and not issubclass(
-                typ, type
-            ):
-                return None
-            call_fn = typ.__call__
-            sig = self.arg_spec_cache.get_argspec(call_fn)
-            try:
-                return_override = self.get_local_return_value(sig)
-            except KeyError:
-                return_override = None
-            bound_method = make_bound_method(sig, Composite(value), return_override)
-            if bound_method is None:
-                return None
-            return bound_method.get_signature()
-        elif isinstance(value, SubclassValue):
-            if isinstance(value.typ, TypedValue):
-                if isinstance(value.typ.typ, type):
-                    if value.typ.typ is tuple:
-                        # Probably an unknown namedtuple
-                        return ANY_SIGNATURE
-                    argspec = self.arg_spec_cache.get_argspec(value.typ.typ)
-                    if argspec is None:
-                        return ANY_SIGNATURE
-                    return argspec
-                else:
-                    # TODO synthetic types
-                    return ANY_SIGNATURE
-            else:
-                # TODO generic SubclassValue
-                return ANY_SIGNATURE
-        elif isinstance(value, AnyValue):
-            return ANY_SIGNATURE
-        else:
-            return None
+        def get_call_attribute(value: Value) -> Value:
+            return self.get_attribute(
+                Composite(value),
+                "__call__",
+                node,
+                ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
+            )
+
+        return self.checker.signature_from_value(
+            value,
+            get_return_override=self.get_local_return_value,
+            get_call_attribute=get_call_attribute,
+        )
 
     # Match statements
 
@@ -4582,30 +4673,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return parser
 
     @classmethod
-    def is_enabled_by_default(cls, code: ErrorCode) -> bool:
-        if code in DISABLED_BY_DEFAULT:
-            return code in cls.config.ENABLED_ERRORS
-        else:
-            return code not in cls.config.DISABLED_ERRORS
-
-    @classmethod
     def get_description_for_error_code(cls, error_code: ErrorCode) -> str:
         return ERROR_DESCRIPTION[error_code]
-
-    @classmethod
-    def get_default_modules(cls) -> Tuple[types.ModuleType, ...]:
-        if cls.config.DEFAULT_BASE_MODULE is None:
-            return ()
-        return (cls.config.DEFAULT_BASE_MODULE,)
 
     @classmethod
     def get_default_directories(
         cls, checker: Checker, **kwargs: Any
     ) -> Tuple[str, ...]:
         paths = checker.options.get_value_for(Paths)
-        if paths:
-            return tuple(str(path) for path in paths)
-        return cls.config.DEFAULT_DIRS
+        return tuple(str(path) for path in paths)
 
     @classmethod
     def _get_default_settings(cls) -> Optional[Dict[enum.Enum, bool]]:
@@ -4637,11 +4713,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if config_filename is not None:
                 module_path = Path(sys.modules[cls.__module__].__file__).parent
                 config_file = module_path / config_filename
-        options = Options.from_option_list(instances, cls.config, config_file)
+        options = Options.from_option_list(instances, config_file_path=config_file)
         if kwargs.pop("display_options", False):
             options.display()
             sys.exit(0)
-        kwargs.setdefault("checker", Checker(cls.config, options))
+        kwargs.setdefault("checker", Checker(raw_options=options))
+        patch_typing_overload()
         return kwargs
 
     def is_enabled(self, error_code: enum.Enum) -> bool:
@@ -4672,7 +4749,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         )
         if attribute_checker is None:
             inner_attribute_checker_obj = attribute_checker = ClassAttributeChecker(
-                cls.config,
                 enabled=attribute_checker_enabled,
                 should_check_unused_attributes=find_unused_attributes,
                 should_serialize=kwargs.get("parallel", False),
@@ -4682,7 +4758,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             inner_attribute_checker_obj = qcore.empty_context
         if unused_finder is None:
             unused_finder = UnusedObjectFinder(
-                cls.config,
+                checker.options,
                 enabled=find_unused or checker.options.get_value_for(EnforceNoUnused),
                 print_output=False,
             )

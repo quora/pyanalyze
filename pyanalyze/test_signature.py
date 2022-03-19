@@ -1,5 +1,4 @@
 # static analysis: ignore
-from pyanalyze.implementation import assert_is_value
 from collections.abc import Sequence
 
 from .value import (
@@ -9,20 +8,21 @@ from .value import (
     CanAssignError,
     GenericValue,
     KnownValue,
-    MultiValuedValue,
     SequenceIncompleteValue,
     TypedDictValue,
     TypedValue,
+    make_weak,
 )
+from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes, skip_before
-from .error_code import ErrorCode
+from .test_node_visitor import assert_passes, skip_before
 from .signature import (
     ELLIPSIS_PARAM,
     ConcreteSignature,
     OverloadedSignature,
     Signature,
     SigParameter as P,
+    ParameterKind as K,
 )
 from .test_value import CTX
 
@@ -78,14 +78,14 @@ class TestCanAssign:
         )
 
     def test_pos_only(self):
-        pos_only_int = P("x", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY)
-        pos_only_object = P("y", annotation=TypedValue(object), kind=P.POSITIONAL_ONLY)
-        pos_only_bool = P("z", annotation=TypedValue(bool), kind=P.POSITIONAL_ONLY)
-        pos_kw_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_OR_KEYWORD)
+        pos_only_int = P("x", annotation=TypedValue(int), kind=K.POSITIONAL_ONLY)
+        pos_only_object = P("y", annotation=TypedValue(object), kind=K.POSITIONAL_ONLY)
+        pos_only_bool = P("z", annotation=TypedValue(bool), kind=K.POSITIONAL_ONLY)
+        pos_kw_int = P("a", annotation=TypedValue(int), kind=K.POSITIONAL_OR_KEYWORD)
         pos_only_with_default = P(
             "d",
             annotation=TypedValue(int),
-            kind=P.POSITIONAL_ONLY,
+            kind=K.POSITIONAL_ONLY,
             default=KnownValue(0),
         )
         pos_only_sig = Signature.make([pos_only_int])
@@ -99,31 +99,31 @@ class TestCanAssign:
         self.cannot(pos_only_sig, Signature.make([pos_only_bool]))
         self.cannot(
             pos_only_sig,
-            Signature.make([P("x", annotation=TypedValue(int), kind=P.KEYWORD_ONLY)]),
+            Signature.make([P("x", annotation=TypedValue(int), kind=K.KEYWORD_ONLY)]),
         )
 
         # *args interaction
         self.can(
             pos_only_sig,
-            Signature.make([P("whatever", annotation=TupleInt, kind=P.VAR_POSITIONAL)]),
+            Signature.make([P("whatever", annotation=TupleInt, kind=K.VAR_POSITIONAL)]),
         )
         self.cannot(
             pos_only_sig,
-            Signature.make([P("x", annotation=TupleBool, kind=P.VAR_POSITIONAL)]),
+            Signature.make([P("x", annotation=TupleBool, kind=K.VAR_POSITIONAL)]),
         )
 
     def test_pos_or_keyword(self) -> None:
-        pos_kw_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_OR_KEYWORD)
-        pos_kw_int_b = P("b", annotation=TypedValue(int), kind=P.POSITIONAL_OR_KEYWORD)
+        pos_kw_int = P("a", annotation=TypedValue(int), kind=K.POSITIONAL_OR_KEYWORD)
+        pos_kw_int_b = P("b", annotation=TypedValue(int), kind=K.POSITIONAL_OR_KEYWORD)
         pos_kw_object = P(
-            "a", annotation=TypedValue(object), kind=P.POSITIONAL_OR_KEYWORD
+            "a", annotation=TypedValue(object), kind=K.POSITIONAL_OR_KEYWORD
         )
-        pos_kw_bool = P("a", annotation=TypedValue(bool), kind=P.POSITIONAL_OR_KEYWORD)
-        pos_only_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY)
+        pos_kw_bool = P("a", annotation=TypedValue(bool), kind=K.POSITIONAL_OR_KEYWORD)
+        pos_only_int = P("a", annotation=TypedValue(int), kind=K.POSITIONAL_ONLY)
         pos_kw_with_default = P(
             "d",
             annotation=TypedValue(int),
-            kind=P.POSITIONAL_OR_KEYWORD,
+            kind=K.POSITIONAL_OR_KEYWORD,
             default=KnownValue(0),
         )
         pos_kw_sig = Signature.make([pos_kw_int])
@@ -136,17 +136,17 @@ class TestCanAssign:
         self.cannot(pos_kw_sig, Signature.make([pos_kw_int_b]))
         self.cannot(
             pos_kw_sig,
-            Signature.make([P("x", annotation=TupleInt, kind=P.VAR_POSITIONAL)]),
+            Signature.make([P("x", annotation=TupleInt, kind=K.VAR_POSITIONAL)]),
         )
         self.cannot(
-            pos_kw_sig, Signature.make([P("x", annotation=DictInt, kind=P.VAR_KEYWORD)])
+            pos_kw_sig, Signature.make([P("x", annotation=DictInt, kind=K.VAR_KEYWORD)])
         )
         self.can(
             pos_kw_sig,
             Signature.make(
                 [
-                    P("x", annotation=TupleInt, kind=P.VAR_POSITIONAL),
-                    P("y", annotation=DictInt, kind=P.VAR_KEYWORD),
+                    P("x", annotation=TupleInt, kind=K.VAR_POSITIONAL),
+                    P("y", annotation=DictInt, kind=K.VAR_KEYWORD),
                 ]
             ),
         )
@@ -154,8 +154,8 @@ class TestCanAssign:
             pos_kw_sig,
             Signature.make(
                 [
-                    P("x", annotation=TupleObject, kind=P.VAR_POSITIONAL),
-                    P("y", annotation=DictInt, kind=P.VAR_KEYWORD),
+                    P("x", annotation=TupleObject, kind=K.VAR_POSITIONAL),
+                    P("y", annotation=DictInt, kind=K.VAR_KEYWORD),
                 ]
             ),
         )
@@ -163,8 +163,8 @@ class TestCanAssign:
             pos_kw_sig,
             Signature.make(
                 [
-                    P("x", annotation=TupleBool, kind=P.VAR_POSITIONAL),
-                    P("y", annotation=DictInt, kind=P.VAR_KEYWORD),
+                    P("x", annotation=TupleBool, kind=K.VAR_POSITIONAL),
+                    P("y", annotation=DictInt, kind=K.VAR_KEYWORD),
                 ]
             ),
         )
@@ -175,22 +175,22 @@ class TestCanAssign:
             "a",
             annotation=seq_int,
             default=KnownValue([]),
-            kind=P.POSITIONAL_OR_KEYWORD,
+            kind=K.POSITIONAL_OR_KEYWORD,
         )
         sig = Signature.make([list_default])
         no_default_sig = Signature.make(
-            [P("a", annotation=seq_int, kind=P.POSITIONAL_OR_KEYWORD)]
+            [P("a", annotation=seq_int, kind=K.POSITIONAL_OR_KEYWORD)]
         )
         self.cannot(sig, no_default_sig)
         self.can(no_default_sig, sig)
 
     def test_kw_only(self) -> None:
-        kw_only_int = P("a", annotation=TypedValue(int), kind=P.KEYWORD_ONLY)
-        kw_only_int_b = P("b", annotation=TypedValue(int), kind=P.KEYWORD_ONLY)
-        kw_only_bool = P("a", annotation=TypedValue(bool), kind=P.KEYWORD_ONLY)
-        kw_only_object = P("a", annotation=TypedValue(object), kind=P.KEYWORD_ONLY)
-        pos_only_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY)
-        pos_kw_int = P("a", annotation=TypedValue(int), kind=P.POSITIONAL_OR_KEYWORD)
+        kw_only_int = P("a", annotation=TypedValue(int), kind=K.KEYWORD_ONLY)
+        kw_only_int_b = P("b", annotation=TypedValue(int), kind=K.KEYWORD_ONLY)
+        kw_only_bool = P("a", annotation=TypedValue(bool), kind=K.KEYWORD_ONLY)
+        kw_only_object = P("a", annotation=TypedValue(object), kind=K.KEYWORD_ONLY)
+        pos_only_int = P("a", annotation=TypedValue(int), kind=K.POSITIONAL_ONLY)
+        pos_kw_int = P("a", annotation=TypedValue(int), kind=K.POSITIONAL_OR_KEYWORD)
         kw_only_sig = Signature.make([kw_only_int])
         self.can(kw_only_sig, kw_only_sig)
         self.can(kw_only_sig, Signature.make([kw_only_object]))
@@ -200,18 +200,18 @@ class TestCanAssign:
         self.cannot(kw_only_sig, Signature.make([pos_only_int]))
         self.can(
             kw_only_sig,
-            Signature.make([P("x", annotation=DictInt, kind=P.VAR_KEYWORD)]),
+            Signature.make([P("x", annotation=DictInt, kind=K.VAR_KEYWORD)]),
         )
         self.cannot(
             kw_only_sig,
-            Signature.make([P("x", annotation=DictBool, kind=P.VAR_KEYWORD)]),
+            Signature.make([P("x", annotation=DictBool, kind=K.VAR_KEYWORD)]),
         )
         self.cannot(Signature.make([]), kw_only_sig)
 
     def test_var_positional(self) -> None:
-        var_pos_int = P("a", annotation=TupleInt, kind=P.VAR_POSITIONAL)
-        var_pos_object = P("b", annotation=TupleObject, kind=P.VAR_POSITIONAL)
-        var_pos_bool = P("c", annotation=TupleBool, kind=P.VAR_POSITIONAL)
+        var_pos_int = P("a", annotation=TupleInt, kind=K.VAR_POSITIONAL)
+        var_pos_object = P("b", annotation=TupleObject, kind=K.VAR_POSITIONAL)
+        var_pos_bool = P("c", annotation=TupleBool, kind=K.VAR_POSITIONAL)
         var_pos_sig = Signature.make([var_pos_int])
         self.can(var_pos_sig, var_pos_sig)
         self.can(var_pos_sig, Signature.make([var_pos_object]))
@@ -223,7 +223,7 @@ class TestCanAssign:
                     P(
                         "d",
                         annotation=TypedValue(object),
-                        kind=P.POSITIONAL_ONLY,
+                        kind=K.POSITIONAL_ONLY,
                         default=KnownValue(True),
                     ),
                     var_pos_int,
@@ -237,7 +237,7 @@ class TestCanAssign:
                     P(
                         "d",
                         annotation=TypedValue(bool),
-                        kind=P.POSITIONAL_ONLY,
+                        kind=K.POSITIONAL_ONLY,
                         default=KnownValue(True),
                     ),
                     var_pos_int,
@@ -246,9 +246,9 @@ class TestCanAssign:
         )
 
     def test_var_keyword(self) -> None:
-        var_kw_int = P("a", annotation=DictInt, kind=P.VAR_KEYWORD)
-        var_kw_object = P("b", annotation=DictObject, kind=P.VAR_KEYWORD)
-        var_kw_bool = P("c", annotation=DictBool, kind=P.VAR_KEYWORD)
+        var_kw_int = P("a", annotation=DictInt, kind=K.VAR_KEYWORD)
+        var_kw_object = P("b", annotation=DictObject, kind=K.VAR_KEYWORD)
+        var_kw_bool = P("c", annotation=DictBool, kind=K.VAR_KEYWORD)
         var_kw_sig = Signature.make([var_kw_int])
         self.can(var_kw_sig, var_kw_sig)
         self.can(var_kw_sig, Signature.make([var_kw_object]))
@@ -260,7 +260,7 @@ class TestCanAssign:
                     P(
                         "d",
                         annotation=TypedValue(object),
-                        kind=P.KEYWORD_ONLY,
+                        kind=K.KEYWORD_ONLY,
                         default=KnownValue(True),
                     ),
                     var_kw_int,
@@ -274,7 +274,7 @@ class TestCanAssign:
                     P(
                         "d",
                         annotation=TypedValue(bool),
-                        kind=P.KEYWORD_ONLY,
+                        kind=K.KEYWORD_ONLY,
                         default=KnownValue(True),
                     ),
                     var_kw_int,
@@ -285,9 +285,9 @@ class TestCanAssign:
     def test_advanced_var_positional(self) -> None:
         three_ints_sig = Signature.make(
             [
-                P("a", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY),
-                P("b", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY),
-                P("c", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY),
+                P("a", annotation=TypedValue(int), kind=K.POSITIONAL_ONLY),
+                P("b", annotation=TypedValue(int), kind=K.POSITIONAL_ONLY),
+                P("c", annotation=TypedValue(int), kind=K.POSITIONAL_ONLY),
             ]
         )
         object_int = P(
@@ -295,12 +295,12 @@ class TestCanAssign:
             annotation=SequenceIncompleteValue(
                 tuple, [TypedValue(object), TypedValue(int)]
             ),
-            kind=P.VAR_POSITIONAL,
+            kind=K.VAR_POSITIONAL,
         )
         self.can(
             three_ints_sig,
             Signature.make(
-                [P("a", annotation=TypedValue(int), kind=P.POSITIONAL_ONLY), object_int]
+                [P("a", annotation=TypedValue(int), kind=K.POSITIONAL_ONLY), object_int]
             ),
         )
         self.cannot(three_ints_sig, Signature.make([object_int]))
@@ -308,15 +308,15 @@ class TestCanAssign:
     def test_advanced_var_keyword(self) -> None:
         three_ints_sig = Signature.make(
             [
-                P("a", annotation=TypedValue(int), kind=P.KEYWORD_ONLY),
-                P("b", annotation=TypedValue(int), kind=P.KEYWORD_ONLY),
-                P("c", annotation=TypedValue(int), kind=P.KEYWORD_ONLY),
+                P("a", annotation=TypedValue(int), kind=K.KEYWORD_ONLY),
+                P("b", annotation=TypedValue(int), kind=K.KEYWORD_ONLY),
+                P("c", annotation=TypedValue(int), kind=K.KEYWORD_ONLY),
             ]
         )
         dict_int = P(
             "args",
             annotation=GenericValue(dict, [TypedValue(str), TypedValue(int)]),
-            kind=P.VAR_KEYWORD,
+            kind=K.VAR_KEYWORD,
         )
         self.can(three_ints_sig, Signature.make([dict_int]))
         good_td = TypedDictValue(
@@ -328,7 +328,7 @@ class TestCanAssign:
         )
         self.can(
             three_ints_sig,
-            Signature.make([P("a", annotation=good_td, kind=P.VAR_KEYWORD)]),
+            Signature.make([P("a", annotation=good_td, kind=K.VAR_KEYWORD)]),
         )
         smaller_td = TypedDictValue(
             {"a": (True, TypedValue(int)), "b": (True, TypedValue(int))}
@@ -337,14 +337,14 @@ class TestCanAssign:
         # TODO change to can
         self.cannot(
             three_ints_sig,
-            Signature.make([P("a", annotation=smaller_td, kind=P.VAR_KEYWORD)]),
+            Signature.make([P("a", annotation=smaller_td, kind=K.VAR_KEYWORD)]),
         )
         bad_td = TypedDictValue(
             {"a": (True, TypedValue(str)), "b": (True, TypedValue(int))}
         )
         self.cannot(
             three_ints_sig,
-            Signature.make([P("a", annotation=bad_td, kind=P.VAR_KEYWORD)]),
+            Signature.make([P("a", annotation=bad_td, kind=K.VAR_KEYWORD)]),
         )
 
     def test_overloads(self) -> None:
@@ -363,6 +363,37 @@ class TestCanAssign:
         self.cannot(overload2, overload)
         self.can(sig1, overload2)
         self.cannot(sig3, overload)
+
+    def test_asynq(self) -> None:
+        ret = AnyValue(AnySource.unannotated)
+        self.can(Signature.make([], ret), Signature.make([], ret, is_asynq=True))
+        self.cannot(Signature.make([], ret, is_asynq=True), Signature.make([], ret))
+        self.can(
+            Signature.make([], ret, is_asynq=True),
+            Signature.make([P("", K.ELLIPSIS)], ret),
+        )
+        self.can(
+            Signature.make(
+                [P("x", K.POSITIONAL_ONLY, annotation=TypedValue(int))],
+                ret,
+                is_asynq=True,
+            ),
+            Signature.make([P("", K.ELLIPSIS)], ret),
+        )
+        self.cannot(
+            Signature.make(
+                [P("x", K.POSITIONAL_ONLY, annotation=TypedValue(int))],
+                ret,
+                is_asynq=True,
+            ),
+            Signature.make(
+                [
+                    P("x", K.POSITIONAL_ONLY, annotation=TypedValue(str)),
+                    P("", K.ELLIPSIS),
+                ],
+                ret,
+            ),
+        )
 
 
 class TestProperty(TestNameCheckVisitorBase):
@@ -450,7 +481,7 @@ class TestCalls(TestNameCheckVisitorBase):
             def tucotuco(self):
                 self.hutia()
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_staticmethod_bad_arg(self):
         class Capybara(object):
             @staticmethod
@@ -458,14 +489,17 @@ class TestCalls(TestNameCheckVisitorBase):
                 pass
 
             def tucotuco(self):
-                self.hutia(1)
+                self.hutia(1)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.not_callable)
+    @assert_passes()
     def test_typ_call(self):
         def run(elts):
             lst = [x for x in elts]
-            assert_is_value(lst, TypedValue(list))
-            lst()
+            assert_is_value(
+                lst,
+                make_weak(GenericValue(list, [AnyValue(AnySource.generic_argument)])),
+            )
+            lst()  # E: not_callable
 
     @assert_passes()
     def test_override__call__(self):
@@ -478,16 +512,16 @@ class TestCalls(TestNameCheckVisitorBase):
             assert_is_value(obj, TypedValue(WithCall))
             assert_is_value(obj(x), AnyValue(AnySource.unannotated))
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_unbound_method(self):
         class Capybara(object):
             def hutia(self, x=None):
                 pass
 
             def tucotuco(self):
-                self.hutia(y=2)
+                self.hutia(y=2)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.undefined_attribute)
+    @assert_passes()
     def test_method_is_attribute(self):
         class Capybara(object):
             def __init__(self):
@@ -497,7 +531,7 @@ class TestCalls(TestNameCheckVisitorBase):
                 return []
 
             def hutia(self):
-                self.tabs.append("hutia")
+                self.tabs.append("hutia")  # E: undefined_attribute
 
     @assert_passes()
     def test_type_inference_for_type_call(self):
@@ -512,29 +546,29 @@ class TestCalls(TestNameCheckVisitorBase):
         def run():
             takes_kwonly_argument(1, kwonly_arg=True)
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_missing_kwonly_arg(self):
         from pyanalyze.tests import takes_kwonly_argument
 
         def run():
-            takes_kwonly_argument(1)
+            takes_kwonly_argument(1)  # E: incompatible_call
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_type_kwonly_arg(self):
         from pyanalyze.tests import takes_kwonly_argument
 
         def run():
-            takes_kwonly_argument(1, kwonly_arg="capybara")
+            takes_kwonly_argument(1, kwonly_arg="capybara")  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_variable_name_value(self):
         def fn(qid):
             pass
 
         def capybara(uid):
-            fn(uid)
+            fn(uid)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_variable_name_value_in_attr(self):
         def fn(qid):
             pass
@@ -544,15 +578,15 @@ class TestCalls(TestNameCheckVisitorBase):
                 self.uid = uid
 
             def get_it(self):
-                return fn(self.uid)
+                return fn(self.uid)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_variable_name_value_in_subscript(self):
         def fn(qid):
             pass
 
         def render_item(self, item):
-            return fn(item["uid"])
+            return fn(item["uid"])  # E: incompatible_argument
 
     @assert_passes()
     def test_kwargs(self):
@@ -561,15 +595,15 @@ class TestCalls(TestNameCheckVisitorBase):
 
         fn(uid=3)
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_known_argspec(self):
         def run():
-            getattr(False, 42)
+            getattr(False, 42)  # E: incompatible_argument
 
-    @assert_fails(ErrorCode.incompatible_argument)
+    @assert_passes()
     def test_wrong_getattr_args(self):
         def run(attr):
-            getattr(False, int(attr))
+            getattr(False, int(attr))  # E: incompatible_argument
 
     @assert_passes()
     def test_kwonly_args(self):
@@ -578,7 +612,7 @@ class TestCalls(TestNameCheckVisitorBase):
         def capybara():
             return KeywordOnlyArguments(kwonly_arg="hydrochoerus")
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_kwonly_args_bad_kwarg(self):
         from pyanalyze.tests import KeywordOnlyArguments
 
@@ -587,7 +621,7 @@ class TestCalls(TestNameCheckVisitorBase):
                 pass
 
         def run():
-            Capybara(bad_kwarg="1")
+            Capybara(bad_kwarg="1")  # E: incompatible_call
 
     @assert_passes()
     def test_hasattr(self):
@@ -619,7 +653,7 @@ class TestCalls(TestNameCheckVisitorBase):
             val = hasattr(o, "__qualname__")
             assert_is_value(val, inferred)
 
-    @assert_fails(ErrorCode.incompatible_call)
+    @assert_passes()
     def test_keyword_only_args(self):
         from pyanalyze.tests import KeywordOnlyArguments
 
@@ -628,7 +662,7 @@ class TestCalls(TestNameCheckVisitorBase):
                 pass
 
         def run():
-            Capybara(hydrochoerus=None)
+            Capybara(hydrochoerus=None)  # E: incompatible_call
 
     @assert_passes()
     def test_correct_keyword_only_args(self):
@@ -640,18 +674,18 @@ class TestCalls(TestNameCheckVisitorBase):
 
         def run():
             # This fails at runtime, but pyanalyze accepts it because of a special case
-            # in pyanalyze.test_config.TestConfig.CLASS_TO_KEYWORD_ONLY_ARGUMENTS.
+            # in pyanalyze.test_config.get_constructor.
             Capybara(None, kwonly_arg="capybara")
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_args(self):
-        def fn():
-            return fn(*x)
+        def fn(*args):
+            return fn(*x)  # E: undefined_name
 
-    @assert_fails(ErrorCode.undefined_name)
+    @assert_passes()
     def test_undefined_kwargs(self):
-        def fn():
-            return fn(**x)
+        def fn(**kwargs):
+            return fn(**x)  # E: undefined_name
 
     @assert_passes()
     def test_set__name__(self):
@@ -828,160 +862,6 @@ class TestCalls(TestNameCheckVisitorBase):
             kwonly(**bad_td)  # E: incompatible_call
 
 
-class TestTypeVar(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_simple(self):
-        from typing import TypeVar, List, Generic
-
-        T = TypeVar("T")
-
-        def id(obj: T) -> T:
-            return obj
-
-        def get_one(obj: List[T]) -> T:
-            for elt in obj:
-                return elt
-            assert False
-
-        class GenCls(Generic[T]):
-            def get_one(self: "GenCls[T]") -> T:
-                raise NotImplementedError
-
-            def get_another(self) -> T:
-                raise NotImplementedError
-
-        def capybara(x: str, xs: List[int], gen: GenCls[int]) -> None:
-            assert_is_value(id(3), KnownValue(3))
-            assert_is_value(id(x), TypedValue(str))
-            assert_is_value(get_one(xs), TypedValue(int))
-            assert_is_value(get_one([int(3)]), TypedValue(int))
-            # This one doesn't work yet because we don't know how to go from
-            # KnownValue([3]) to a GenericValue of some sort.
-            # assert_is_value(get_one([3]), KnownValue(3))
-
-            assert_is_value(gen.get_one(), TypedValue(int))
-            assert_is_value(gen.get_another(), TypedValue(int))
-
-    @assert_passes()
-    def test_union_math(self):
-        from typing import TypeVar, Optional
-
-        T = TypeVar("T")
-
-        def assert_not_none(arg: Optional[T]) -> T:
-            assert arg is not None
-            return arg
-
-        def capybara(x: Optional[int]):
-            assert_is_value(x, MultiValuedValue([KnownValue(None), TypedValue(int)]))
-            assert_is_value(assert_not_none(x), TypedValue(int))
-
-    @assert_passes()
-    def test_only_T(self):
-        from typing import Generic, TypeVar
-
-        T = TypeVar("T")
-
-        class Capybara(Generic[T]):
-            def add_one(self, obj: T) -> None:
-                pass
-
-        def capybara(x: Capybara[int]) -> None:
-            x.add_one("x")  # E: incompatible_argument
-
-    @assert_passes()
-    def test_multi_typevar(self):
-        from typing import TypeVar, Optional
-
-        T = TypeVar("T")
-
-        # inspired by tempfile.mktemp
-        def mktemp(prefix: Optional[T] = None, suffix: Optional[T] = None) -> T:
-            raise NotImplementedError
-
-        def capybara() -> None:
-            assert_is_value(mktemp(), AnyValue(AnySource.generic_argument))
-            assert_is_value(mktemp(prefix="p"), KnownValue("p"))
-            assert_is_value(mktemp(suffix="s"), KnownValue("s"))
-            assert_is_value(mktemp("p", "s"), KnownValue("p") | KnownValue("s"))
-
-    @assert_passes()
-    def test_generic_base(self):
-        from typing import TypeVar, Generic
-
-        T = TypeVar("T")
-
-        class Base(Generic[T]):
-            pass
-
-        class Derived(Base[int]):
-            pass
-
-        def take_base(b: Base[int]) -> None:
-            pass
-
-        def capybara(c: Derived):
-            take_base(c)
-
-    @assert_fails(ErrorCode.incompatible_argument)
-    def test_wrong_generic_base(self):
-        from typing import TypeVar, Generic
-
-        T = TypeVar("T")
-
-        class Base(Generic[T]):
-            pass
-
-        class Derived(Base[int]):
-            pass
-
-        def take_base(b: Base[str]) -> None:
-            pass
-
-        def capybara(c: Derived):
-            take_base(c)
-
-    @skip_before((3, 10))
-    @assert_passes()
-    def test_typeshed(self):
-        from typing import List
-
-        def capybara(lst: List[int]) -> None:
-            lst.append("x")  # E: incompatible_argument
-
-    @assert_passes()
-    def test_generic_super(self):
-        from typing import Generic, TypeVar
-
-        T = TypeVar("T")
-
-        class A(Generic[T]):
-            def capybara(self) -> None:
-                pass
-
-        class B(A):
-            def capybara(self) -> None:
-                super().capybara()
-
-    @assert_passes()
-    def test_default(self):
-        from typing import TypeVar, Dict, Union
-
-        KT = TypeVar("KT")
-        VT = TypeVar("VT")
-        T = TypeVar("T")
-
-        def dictget(d: Dict[KT, VT], key: KT, default: T = None) -> Union[VT, T]:
-            try:
-                return d[key]
-            except KeyError:
-                return default
-
-        def capybara(d: Dict[str, str], key: str) -> None:
-            assert_is_value(dictget(d, key), TypedValue(str) | KnownValue(None))
-            assert_is_value(dictget(d, key, 1), TypedValue(str) | KnownValue(1))
-
-
 class TestAllowCall(TestNameCheckVisitorBase):
     @assert_passes()
     def test_encode_decode(self):
@@ -994,22 +874,6 @@ class TestAllowCall(TestNameCheckVisitorBase):
             s.encode("not an encoding")  # E: incompatible_call
 
 
-class TestAnnotated(TestNameCheckVisitorBase):
-    @assert_passes()
-    def test_preserve(self):
-        from typing_extensions import Annotated
-        from typing import TypeVar
-
-        T = TypeVar("T")
-
-        def f(x: T) -> T:
-            return x
-
-        def caller(x: Annotated[int, 42]):
-            assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue(42)]))
-            assert_is_value(f(x), AnnotatedValue(TypedValue(int), [KnownValue(42)]))
-
-
 class TestOverload(TestNameCheckVisitorBase):
     @assert_passes()
     def test_overloaded_impl(self):
@@ -1018,7 +882,7 @@ class TestOverload(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(overloaded(), TypedValue(int))
             assert_is_value(overloaded("x"), TypedValue(str))
-            overloaded(1)  # E: incompatible_call
+            overloaded(1)  # E: incompatible_argument
             overloaded("x", "y")  # E: incompatible_call
 
     @assert_passes()
@@ -1128,6 +992,38 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_is_value(val3, AnyValue(AnySource.error))
 
     @assert_passes()
+    def test_same_return(self):
+        from pyanalyze.extensions import overload
+        from typing import Any
+        from typing_extensions import Literal
+
+        @overload
+        def overloaded1(x: Any, y: str) -> Literal[2]:
+            pass
+
+        @overload
+        def overloaded1(x: str, y: int) -> Literal[2]:
+            pass
+
+        def overloaded1(x: object, y: object) -> Literal[2]:
+            raise NotImplementedError
+
+        def capybara(x, y):
+            # If multiple overloads match but have the same return type,
+            # don't fall back to Any. This comes up in practice with str.__new__
+            # in typeshed.
+            assert_is_value(overloaded1(x, y), KnownValue(2))
+
+    @assert_passes()
+    def test_nested_class(self):
+        class Outer:
+            class Inner:
+                pass
+
+        def capybara():
+            assert_is_value(Outer.Inner(), TypedValue(Outer.Inner))
+
+    @assert_passes()
     def test_typeshed_overload(self):
         class SupportsWrite:
             def write(self, s: str) -> None:
@@ -1143,10 +1039,72 @@ class TestOverload(TestNameCheckVisitorBase):
             print("x", file=SupportsWrite(), flush=True)  # E: incompatible_argument
             print("x", file=SupportsWriteAndFlush(), flush=True)
             print("x", file=SupportsWriteAndFlush())
-            print("x", file="not a file")  # E: incompatible_call
+            print("x", file="not a file")  # E: incompatible_argument
 
         def pacarana(f: float):
             assert_is_value(f.__round__(), TypedValue(int))
             assert_is_value(f.__round__(None), TypedValue(int))
             f.__round__(ndigits=None)  # E: incompatible_call
             assert_is_value(f.__round__(1), TypedValue(float))
+
+    @assert_passes()
+    def test_runtime(self):
+        from pyanalyze.extensions import (
+            overload as extension_overload,
+            patch_typing_overload,
+        )
+
+        patch_typing_overload()
+        from typing import overload
+
+        assert overload is extension_overload, (overload, extension_overload)
+
+        @overload
+        def f(x: int) -> str:
+            pass
+
+        @overload
+        def f(x: str) -> int:
+            pass
+
+        def f(x: object) -> object:
+            raise NotImplementedError
+
+        def capybara():
+            assert_is_value(f(1), TypedValue(str))
+            assert_is_value(f(""), TypedValue(int))
+
+    @assert_passes()
+    def test_bound_args_first(self):
+        from pyanalyze.extensions import overload
+
+        @overload
+        def f(x: int, y: str) -> None:
+            pass
+
+        @overload
+        def f(x: int) -> int:
+            pass
+
+        @overload
+        def f(x: str) -> str:
+            pass
+
+        def f(x: object, y: object = ...) -> object:
+            raise NotImplementedError
+
+        def capybara():
+            f(1.0)  # E: incompatible_argument
+            f(1, 1)  # E: incompatible_argument
+            f(1, 1, 1)  # E: incompatible_call
+
+    @assert_passes()
+    def test_ellipsis_default(self):
+        from pyanalyze.extensions import assert_type
+
+        def wrapper():
+            from _pyanalyze_tests.overloaded import func
+
+            assert_type(func(1), int)
+            assert_type(func(1, 1), int)
+            assert_type(func("x"), float)

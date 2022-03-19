@@ -23,6 +23,7 @@ These functions all use :class:`Context` objects to resolve names and
 show errors.
 
 """
+import contextlib
 from dataclasses import dataclass, InitVar, field
 import typing
 
@@ -30,9 +31,8 @@ import typing_inspect
 import qcore
 import ast
 import builtins
-import inspect
-from collections.abc import Callable, Iterable
-import textwrap
+from collections.abc import Callable, Iterable, Hashable
+import sys
 from typing import (
     Any,
     Container,
@@ -59,7 +59,6 @@ from .extensions import (
     NoReturnGuard,
     ParameterTypeGuard,
     TypeGuard,
-    get_type_evaluation,
 )
 from .find_unused import used
 from .functions import FunctionDefNode
@@ -82,6 +81,7 @@ from .value import (
     ParamSpecArgsValue,
     ParamSpecKwargsValue,
     ParameterTypeGuardExtension,
+    SelfTVV,
     TypeGuardExtension,
     TypedValue,
     SequenceIncompleteValue,
@@ -93,6 +93,7 @@ from .value import (
     TypedDictValue,
     NewTypeValue,
     TypeVarValue,
+    _HashableValue,
 )
 
 if TYPE_CHECKING:
@@ -109,6 +110,18 @@ except ImportError:
 
     def get_args(obj: object) -> Tuple[Any, ...]:
         return ()
+
+
+CONTEXT_MANAGER_TYPES = (typing.ContextManager, contextlib.AbstractContextManager)
+if sys.version_info >= (3, 7):
+    ASYNC_CONTEXT_MANAGER_TYPES = (
+        typing.AsyncContextManager,
+        # Doesn't exist on 3.6
+        # static analysis: ignore[undefined_attribute]
+        contextlib.AbstractAsyncContextManager,
+    )
+else:
+    ASYNC_CONTEXT_MANAGER_TYPES = (typing.AsyncContextManager,)
 
 
 @dataclass
@@ -170,25 +183,6 @@ class RuntimeEvaluator(type_evaluation.Evaluator, Context):
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
         return self.get_name_from_globals(node.id, self.globals)
 
-    @classmethod
-    def get_for(cls, func: typing.Callable[..., Any]) -> Optional["RuntimeEvaluator"]:
-        try:
-            key = f"{func.__module__}.{func.__qualname__}"
-        except AttributeError:
-            return None
-        evaluation_func = get_type_evaluation(key)
-        if evaluation_func is None or not hasattr(evaluation_func, "__globals__"):
-            return None
-        lines, _ = inspect.getsourcelines(evaluation_func)
-        code = textwrap.dedent("".join(lines))
-        body = ast.parse(code)
-        if not body.body:
-            return None
-        evaluator = body.body[0]
-        if not isinstance(evaluator, ast.FunctionDef):
-            return None
-        return RuntimeEvaluator(evaluator, evaluation_func.__globals__, evaluation_func)
-
 
 @dataclass
 class SyntheticEvaluator(type_evaluation.Evaluator):
@@ -217,10 +211,16 @@ class SyntheticEvaluator(type_evaluation.Evaluator):
 
     @classmethod
     def from_visitor(
-        cls, node: FunctionDefNode, visitor: "NameCheckVisitor"
+        cls,
+        node: FunctionDefNode,
+        visitor: "NameCheckVisitor",
+        return_annotation: Value,
     ) -> "SyntheticEvaluator":
         return cls(
-            node, visitor, _DefaultContext(visitor, node, use_name_node_for_error=True)
+            node,
+            return_annotation,
+            visitor,
+            _DefaultContext(visitor, node, use_name_node_for_error=True),
         )
 
 
@@ -441,8 +441,10 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return _maybe_typed_value(val)
     elif val is None:
         return KnownValue(None)
-    elif is_typing_name(val, "NoReturn"):
+    elif is_typing_name(val, "NoReturn") or is_typing_name(val, "Never"):
         return NO_RETURN_VALUE
+    elif is_typing_name(val, "Self"):
+        return SelfTVV
     elif val is typing.Any:
         return AnyValue(AnySource.explicit)
     elif hasattr(val, "__supertype__"):
@@ -457,17 +459,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             return AnyValue(AnySource.error)
     elif typing_inspect.is_typevar(val):
         tv = cast(TypeVar, val)
-        if tv.__bound__ is not None:
-            bound = _type_from_runtime(tv.__bound__, ctx)
-        else:
-            bound = None
-        if tv.__constraints__:
-            constraints = tuple(
-                _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
-            )
-        else:
-            constraints = ()
-        return TypeVarValue(tv, bound=bound, constraints=constraints)
+        return make_type_var_value(tv, ctx)
     elif is_instance_of_typing_name(val, "ParamSpec"):
         return TypeVarValue(val, is_paramspec=True)
     elif is_instance_of_typing_name(val, "ParamSpecArgs"):
@@ -550,6 +542,20 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             return TypedValue(tuple)
         ctx.show_error(f"Invalid type annotation {val}")
         return AnyValue(AnySource.error)
+
+
+def make_type_var_value(tv: TypeVar, ctx: Context) -> TypeVarValue:
+    if tv.__bound__ is not None:
+        bound = _type_from_runtime(tv.__bound__, ctx)
+    else:
+        bound = None
+    if tv.__constraints__:
+        constraints = tuple(
+            _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
+        )
+    else:
+        constraints = ()
+    return TypeVarValue(tv, bound=bound, constraints=constraints)
 
 
 def _callable_args_from_runtime(
@@ -776,8 +782,7 @@ def _type_from_subscripted_value(
             # On Python 3.9 at least, get_origin() of a class that inherits
             # from Generic[T] is None.
             origin = root
-        if getattr(origin, "__extra__", None) is not None:
-            origin = origin.__extra__
+        origin = _maybe_get_extra(origin)
         return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
     elif isinstance(root, type):
         return GenericValue(root, [_type_from_value(elt, ctx) for elt in members])
@@ -789,6 +794,22 @@ def _type_from_subscripted_value(
             return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
         ctx.show_error(f"Unrecognized subscripted annotation: {root}")
         return AnyValue(AnySource.error)
+
+
+def _maybe_get_extra(origin: type) -> Union[type, str]:
+    # ContextManager is defined oddly and we lose the Protocol if we don't use
+    # synthetic types.
+    if any(origin is cls for cls in CONTEXT_MANAGER_TYPES):
+        return "typing.ContextManager"
+    elif any(origin is cls for cls in ASYNC_CONTEXT_MANAGER_TYPES):
+        return "typing.AsyncContextManager"
+    else:
+        # turn typing.List into list in some Python versions
+        # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
+        extra_origin = getattr(origin, "__extra__", None)
+        if extra_origin is not None:
+            return extra_origin
+        return origin
 
 
 class _DefaultContext(Context):
@@ -1060,15 +1081,9 @@ def _value_of_origin_args(
             ctx,
         )
     elif isinstance(origin, type):
-        # turn typing.List into list in some Python versions
-        # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
-        extra_origin = getattr(origin, "__extra__", None)
-        if extra_origin is not None:
-            origin = extra_origin
+        origin = _maybe_get_extra(origin)
         if args:
             args_vals = [_type_from_runtime(val, ctx) for val in args]
-            if all(isinstance(val, AnyValue) for val in args_vals):
-                return _maybe_typed_value(origin)
             return GenericValue(origin, args_vals)
         else:
             return _maybe_typed_value(origin)
@@ -1116,9 +1131,11 @@ def _value_of_origin_args(
         return AnyValue(AnySource.error)
 
 
-def _maybe_typed_value(val: type) -> Value:
+def _maybe_typed_value(val: Union[type, str]) -> Value:
     if val is type(None):
         return KnownValue(None)
+    elif val is Hashable:
+        return _HashableValue(val)
     return TypedValue(val)
 
 

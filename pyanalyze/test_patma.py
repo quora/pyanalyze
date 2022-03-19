@@ -23,13 +23,15 @@ class TestPatma(TestNameCheckVisitorBase):
         self.assert_passes(
             """
             from typing import Literal
+            from pyanalyze.tests import assert_never
 
             def capybara(x: int):
                 match x:
                     case None:  # E: impossible_pattern
-                        assert_is_value(x, AnyValue(AnySource.unreachable))
+                        assert_never(x)
                     case "x":  # E: impossible_pattern
-                        assert_is_value(x, AnyValue(AnySource.unreachable))
+                        assert_is_value(x, NO_RETURN_VALUE)
+                        assert_never(x)
                     case 3:
                         assert_is_value(x, KnownValue(3))
                     case _ if x == 4:

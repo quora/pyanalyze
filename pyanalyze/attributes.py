@@ -11,12 +11,13 @@ import inspect
 import qcore
 import sys
 import types
-from typing import Any, Generic, Sequence, Tuple, Optional, Union
+from typing import Any, Callable, Generic, Sequence, Tuple, Optional, Union
 
 
 from .annotations import type_from_annotations, type_from_runtime, Context
+from .options import Options, PyObjectSequenceOption
 from .safe import safe_isinstance, safe_issubclass
-from .signature import Signature, MaybeSignature
+from .signature import MaybeSignature
 from .stacked_scopes import Composite
 from .value import (
     AnnotatedValue,
@@ -35,6 +36,7 @@ from .value import (
     SubclassValue,
     TypedValue,
     TypeVarValue,
+    set_self,
 )
 
 # these don't appear to be in the standard types module
@@ -47,8 +49,10 @@ NoneType = type(None)
 class AttrContext:
     root_composite: Composite
     attr: str
-    skip_mro: bool = False
-    skip_unwrap: bool = False
+    options: Options
+    skip_mro: bool
+    skip_unwrap: bool
+    prefer_typeshed: bool
 
     @property
     def root_value(self) -> Value:
@@ -59,9 +63,6 @@ class AttrContext:
 
     def record_attr_read(self, obj: Any) -> None:
         pass
-
-    def should_ignore_class_attribute(self, obj: Any) -> bool:
-        return False
 
     def get_property_type_from_argspec(self, obj: Any) -> Value:
         return AnyValue(AnySource.inference)
@@ -77,7 +78,7 @@ class AttrContext:
     def should_ignore_none_attributes(self) -> bool:
         return False
 
-    def get_signature(self, obj: object) -> Optional[Signature]:
+    def get_signature(self, obj: object) -> MaybeSignature:
         return None
 
     def get_generic_bases(
@@ -116,7 +117,9 @@ def get_attribute(ctx: AttrContext) -> Value:
             if isinstance(root_value.typ.typ, str):
                 # TODO handle synthetic types
                 return AnyValue(AnySource.inference)
-            attribute_value = _get_attribute_from_subclass(root_value.typ.typ, ctx)
+            attribute_value = _get_attribute_from_subclass(
+                root_value.typ.typ, root_value.typ, ctx
+            )
         elif isinstance(root_value.typ, AnyValue):
             attribute_value = AnyValue(AnySource.from_another)
         else:
@@ -145,7 +148,9 @@ def may_have_dynamic_attributes(typ: type) -> bool:
     return False
 
 
-def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
+def _get_attribute_from_subclass(
+    typ: type, self_value: Value, ctx: AttrContext
+) -> Value:
     ctx.record_attr_read(typ)
 
     # First check values that are special in Python
@@ -158,8 +163,32 @@ def _get_attribute_from_subclass(typ: type, ctx: AttrContext) -> Value:
     result, _, should_unwrap = _get_attribute_from_mro(typ, ctx, on_class=True)
     if should_unwrap:
         result = _unwrap_value_from_subclass(result, ctx)
+    result = set_self(result, self_value)
     ctx.record_usage(typ, result)
     return result
+
+
+_TCAA = Callable[[object], bool]
+
+
+class TreatClassAttributeAsAny(PyObjectSequenceOption[_TCAA]):
+    """Allows treating certain class attributes as Any.
+
+    Instances of this option are callables that take an object found among
+    a class's attributes and return True if the attribute should instead
+    be treated as Any.
+
+    """
+
+    default_value: Sequence[_TCAA] = [
+        lambda cls_val: cls_val is None or cls_val is NotImplemented
+    ]
+    name = "treat_class_attribute_as_any"
+
+    @classmethod
+    def should_treat_as_any(cls, val: object, options: Options) -> bool:
+        option_value = options.get_value_for(cls)
+        return any(func(val) for func in option_value)
 
 
 def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
@@ -183,7 +212,7 @@ def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
         return KnownValue(cls_val)
     elif _static_hasattr(cls_val, "__get__"):
         return AnyValue(AnySource.inference)  # can't figure out what this will return
-    elif ctx.should_ignore_class_attribute(cls_val):
+    elif TreatClassAttributeAsAny.should_treat_as_any(cls_val, ctx.options):
         return AnyValue(AnySource.error)
     else:
         return KnownValue(cls_val)
@@ -201,7 +230,9 @@ def _get_attribute_from_synthetic_type(
     result, provider = ctx.get_attribute_from_typeshed_recursively(
         fq_name, on_class=False
     )
-    return _substitute_typevars(fq_name, generic_args, result, provider, ctx)
+    result = _substitute_typevars(fq_name, generic_args, result, provider, ctx)
+    result = set_self(result, ctx.root_value)
+    return result
 
 
 def _get_attribute_from_typed(
@@ -214,11 +245,13 @@ def _get_attribute_from_typed(
         return KnownValue(typ)
     elif ctx.attr == "__dict__":
         return TypedValue(dict)
+
     result, provider, should_unwrap = _get_attribute_from_mro(typ, ctx, on_class=False)
     result = _substitute_typevars(typ, generic_args, result, provider, ctx)
     if should_unwrap:
         result = _unwrap_value_from_typed(result, typ, ctx)
     ctx.record_usage(typ, result)
+    result = set_self(result, ctx.root_value)
     return result
 
 
@@ -292,7 +325,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         if typeshed_type is not UNINITIALIZED_VALUE:
             return typeshed_type
         return AnyValue(AnySource.inference)
-    elif ctx.should_ignore_class_attribute(cls_val):
+    elif TreatClassAttributeAsAny.should_treat_as_any(cls_val, ctx.options):
         return AnyValue(AnySource.error)
     else:
         return result
@@ -315,6 +348,8 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
         return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
 
     result, _, _ = _get_attribute_from_mro(obj, ctx, on_class=True)
+    if safe_isinstance(obj, type):
+        result = set_self(result, TypedValue(obj))
     if isinstance(obj, (types.ModuleType, type)):
         ctx.record_usage(obj, result)
     else:
@@ -405,12 +440,24 @@ def _get_attribute_from_mro(
                 continue
             if ctx.skip_mro and base_cls is not typ:
                 continue
+
+            if ctx.prefer_typeshed:
+                typeshed_type = ctx.get_attribute_from_typeshed(
+                    base_cls, on_class=on_class or ctx.skip_unwrap
+                )
+                if typeshed_type is not UNINITIALIZED_VALUE:
+                    return typeshed_type, base_cls, False
+
+            try:
+                base_dict = base_cls.__dict__
+            except Exception:
+                continue
+
             try:
                 # Make sure to use only __annotations__ that are actually on this
                 # class, not ones inherited from a base class.
-                annotations = base_cls.__dict__["__annotations__"]
+                annotations = base_dict["__annotations__"]
             except Exception:
-                # no __annotations__, or it's not a dict, or the attr isn't there
                 pass
             else:
                 attr_type = type_from_annotations(
@@ -418,19 +465,26 @@ def _get_attribute_from_mro(
                 )
                 if attr_type is not None:
                     return (attr_type, base_cls, False)
+
             try:
                 # Make sure we use only the object from this class, but do invoke
                 # the descriptor protocol with getattr.
-                base_cls.__dict__[ctx.attr]
-                return KnownValue(getattr(typ, ctx.attr)), base_cls, True
+                base_dict[ctx.attr]
             except Exception:
                 pass
+            else:
+                try:
+                    val = KnownValue(getattr(typ, ctx.attr))
+                except Exception:
+                    val = AnyValue(AnySource.inference)
+                return val, base_cls, True
 
-            typeshed_type = ctx.get_attribute_from_typeshed(
-                base_cls, on_class=on_class or ctx.skip_unwrap
-            )
-            if typeshed_type is not UNINITIALIZED_VALUE:
-                return typeshed_type, base_cls, False
+            if not ctx.prefer_typeshed:
+                typeshed_type = ctx.get_attribute_from_typeshed(
+                    base_cls, on_class=on_class or ctx.skip_unwrap
+                )
+                if typeshed_type is not UNINITIALIZED_VALUE:
+                    return typeshed_type, base_cls, False
 
     attrs_type = get_attrs_attribute(typ, ctx)
     if attrs_type is not None:
@@ -440,8 +494,11 @@ def _get_attribute_from_mro(
         # Even if we didn't find it any __dict__, maybe getattr() finds it directly.
         try:
             return KnownValue(getattr(typ, ctx.attr)), typ, True
-        except Exception:
+        except AttributeError:
             pass
+        except Exception:
+            # It exists, but has a broken __getattr__ or something
+            return AnyValue(AnySource.inference), typ, True
 
     return UNINITIALIZED_VALUE, object, False
 

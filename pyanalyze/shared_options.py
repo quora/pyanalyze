@@ -3,14 +3,12 @@
 Defines some concrete options that cannot easily be placed elsewhere.
 
 """
-from pathlib import Path
-from typing import Sequence
+from typing import Callable
+from types import ModuleType
 
-from pyanalyze.value import VariableNameValue
-
-from .config import Config
 from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
 from .options import PathSequenceOption, BooleanOption, PyObjectSequenceOption
+from .value import VariableNameValue
 
 
 class Paths(PathSequenceOption):
@@ -19,10 +17,6 @@ class Paths(PathSequenceOption):
     name = "paths"
     is_global = True
     should_create_command_line_option = False
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[Path]:
-        return [Path(s) for s in fallback.DEFAULT_DIRS]
 
 
 class ImportPaths(PathSequenceOption):
@@ -38,10 +32,6 @@ class EnforceNoUnused(BooleanOption):
     name = "enforce_no_unused"
     is_global = True
 
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> bool:
-        return fallback.ENFORCE_NO_UNUSED_OBJECTS
-
 
 class VariableNameValues(PyObjectSequenceOption[VariableNameValue]):
     """List of :class:`pyanalyze.value.VariableNameValue` instances that create pseudo-types
@@ -49,10 +39,6 @@ class VariableNameValues(PyObjectSequenceOption[VariableNameValue]):
 
     name = "variable_name_values"
     is_global = True
-
-    @classmethod
-    def get_value_from_fallback(cls, fallback: Config) -> Sequence[VariableNameValue]:
-        return fallback.VARIABLE_NAME_VALUES
 
 
 for _code in ErrorCode:
@@ -66,3 +52,17 @@ for _code in ErrorCode:
             "should_create_command_line_option": False,
         },
     )
+
+_IgnoreUnusedFunc = Callable[[ModuleType, str, object], bool]
+
+
+class IgnoreUnused(PyObjectSequenceOption[_IgnoreUnusedFunc]):
+    """If any of these functions returns True, we will exclude this
+    object from the unused object check.
+
+    The arguments are the module the object was found in, the attribute used to
+    access it, and the object itself.
+
+    """
+
+    name = "ignore_unused"
