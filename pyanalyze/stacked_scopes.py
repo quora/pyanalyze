@@ -1178,8 +1178,6 @@ class FunctionScope(Scope):
             if key != LEAVES_SCOPE
         }
         rest_scope = {key: nodes for key, nodes in rest_scope.items() if nodes}
-        # If an exception was suppressed, assume no other CMs
-        # or any code in the body was executed.
         with self.subscope() as dummy_subscope:
             pass
         all_keys = set(rest_scope) | set(dummy_subscope)

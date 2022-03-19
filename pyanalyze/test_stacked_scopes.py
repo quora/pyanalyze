@@ -310,16 +310,34 @@ class TestTry(TestNameCheckVisitorBase):
     @assert_passes()
     def test_else(self):
         def capybara():
+            x = 1
             try:
+                x = 2
                 x = 3
                 assert_is_value(x, KnownValue(3))
             except NameError:
+                assert_is_value(x, KnownValue(1) | KnownValue(2) | KnownValue(3))
                 x = 4
                 assert_is_value(x, KnownValue(4))
             else:
+                assert_is_value(x, KnownValue(3))
                 x = 5
                 assert_is_value(x, KnownValue(5))
-            assert_is_value(x, MultiValuedValue([KnownValue(5), KnownValue(4)]))
+            assert_is_value(x, KnownValue(5) | KnownValue(4))
+
+    @assert_passes()
+    def test_multiple_assignment(self):
+        def capybara():
+            x = 1
+            try:
+                x = 2
+                x = 3
+                assert_is_value(x, KnownValue(3))
+            except NameError:
+                assert_is_value(x, KnownValue(1) | KnownValue(2) | KnownValue(3))
+            else:
+                assert_is_value(x, KnownValue(3))
+            assert_is_value(x, KnownValue(1) | KnownValue(2) | KnownValue(3))
 
     @assert_passes()
     def test_finally(self):
