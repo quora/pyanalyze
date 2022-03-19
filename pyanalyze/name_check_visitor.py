@@ -3482,6 +3482,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             rest_scope = {
                 key: list(nodes - old_defn_nodes.get(key, set()))
                 for key, nodes in new_defn_nodes.items()
+                if key != LEAVES_SCOPE
             }
             rest_scope = {key: nodes for key, nodes in rest_scope.items() if nodes}
             # If an exception was suppressed, assume no other CMs
@@ -3493,7 +3494,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 key: [*dummy_subscope.get(key, []), *rest_scope.get(key, [])]
                 for key in all_keys
             }
-            self.scopes.combine_subscopes([new_scope])
+            self.scopes.combine_subscopes([dummy_subscope, new_scope])
         else:
             self.visit_single_cm(items[1:], body, is_async=is_async)
 

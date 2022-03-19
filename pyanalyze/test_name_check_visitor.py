@@ -2144,6 +2144,33 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
             assert_is_value(c, KnownValue(None))
 
     @assert_passes()
+    def test_possibly_undefined_with_leaves_scope(self):
+        from typing import Optional, Type
+        from types import TracebackType
+
+        class SuppressException:
+            def __enter__(self) -> None:
+                pass
+
+            def __exit__(
+                self,
+                typ: Optional[Type[BaseException]],
+                exn: Optional[BaseException],
+                tb: Optional[TracebackType],
+            ) -> bool:
+                return isinstance(exn, Exception)
+
+        def use_suppress_with_nested_block():
+            with SuppressException():
+                a = 4
+                try:
+                    b = 3
+                except Exception:
+                    return
+            print(a)  # E: possibly_undefined_name
+            print(b)  # E: possibly_undefined_name
+
+    @assert_passes()
     def test_async(self):
         from typing import Optional, Type, AsyncContextManager
         from types import TracebackType
