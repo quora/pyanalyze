@@ -3532,8 +3532,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             for handler in node.handlers:
                 with self.scopes.subscope() as except_scope:
                     except_scopes.append(except_scope)
-                    # reset yield checks between branches to avoid incorrect errors when we yield both in the
-                    # try and the except block
+                    # reset yield checks between branches to avoid incorrect errors when we yield
+                    # both in the try and the except block
                     self.yield_checker.reset_yield_checks()
                     self.scopes.combine_subscopes([dummy_scope, failure_scope])
                     self.visit(handler)
