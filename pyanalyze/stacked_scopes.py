@@ -797,6 +797,10 @@ class Scope:
     def __contains__(self, varname: Varname) -> bool:
         return varname in self.variables
 
+    @contextlib.contextmanager
+    def suppressing_subscope(self) -> Iterator[SubScope]:
+        yield {}
+
     # no real subscopes in non-function scopes, just dummy implementations
     @contextlib.contextmanager
     def subscope(self) -> Iterator[None]:
@@ -1156,6 +1160,53 @@ class FunctionScope(Scope):
                 return EMPTY_ORIGIN
         return self._resolve_origin(definers)
 
+    def get_all_definition_nodes(self) -> Dict[Varname, Set[Node]]:
+        """Return a copy of name_to_all_definition_nodes."""
+        return {
+            key: set(nodes) for key, nodes in self.name_to_all_definition_nodes.items()
+        }
+
+    @contextlib.contextmanager
+    def suppressing_subscope(self) -> Iterator[SubScope]:
+        """A suppressing subscope is a subscope that may suppress exceptions
+        inside of it.
+
+        This is used to implement try and with blocks. After code like this::
+
+            x = 1
+            try:
+                x = 2
+                x = 3
+            except Exception:
+                pass
+
+        The value of `x` may be any of 1, 2, and 3, depending on whether and
+        where an exception was thrown.
+
+        To implement this, we keep track of all assignments inside the block
+        and give them effect, so that after the suppressing subscope ends,
+        each variable's definition nodes include all of these assignments.
+
+        """
+        old_defn_nodes = self.get_all_definition_nodes()
+        with self.subscope() as inner_scope:
+            yield inner_scope
+        new_defn_nodes = self.get_all_definition_nodes()
+        rest_scope = {
+            key: list(nodes - old_defn_nodes.get(key, set()))
+            for key, nodes in new_defn_nodes.items()
+            if key != LEAVES_SCOPE
+        }
+        rest_scope = {key: nodes for key, nodes in rest_scope.items() if nodes}
+        with self.subscope() as dummy_subscope:
+            pass
+        all_keys = set(rest_scope) | set(dummy_subscope)
+        new_scope = {
+            key: [*dummy_subscope.get(key, []), *rest_scope.get(key, [])]
+            for key in all_keys
+        }
+        self.combine_subscopes([dummy_subscope, new_scope])
+
     @contextlib.contextmanager
     def subscope(self) -> Iterator[SubScope]:
         """Create a new subscope, to be used for conditional branches."""
@@ -1429,6 +1480,9 @@ class StackedScopes:
 
         """
         self.scopes[-1].set(varname, value, node, state)
+
+    def suppressing_subscope(self) -> ContextManager[SubScope]:
+        return self.scopes[-1].suppressing_subscope()
 
     def subscope(self) -> ContextManager[SubScope]:
         """Creates a new subscope (see the :class:`FunctionScope` docstring)."""
