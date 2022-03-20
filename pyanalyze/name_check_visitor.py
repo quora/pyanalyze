@@ -3795,6 +3795,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # TODO: Also extract Final from more complex annotations
             is_final = False
 
+        if node.value:
+            is_yield = isinstance(node.value, ast.Yield)
+            value = self.visit(node.value)
+        else:
+            is_yield = False
+            value = None
+
         if isinstance(node.target, ast.Name):
             if (
                 not self.scopes.current_scope().set_declared_type(
@@ -3809,16 +3816,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
         elif isinstance(node.target, ast.Attribute):
             # TODO: Set declared class attributes.
-            pass
+            # Allow users to override the inferred type.
+            value = expected_type
         else:
             self.show_error(node, error_code=ErrorCode.invalid_annotated_assignment)
-
-        if node.value:
-            is_yield = isinstance(node.value, ast.Yield)
-            value = self.visit(node.value)
-        else:
-            is_yield = False
-            value = None
 
         with qcore.override(
             self, "being_assigned", value

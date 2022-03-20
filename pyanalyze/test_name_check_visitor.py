@@ -1875,6 +1875,12 @@ class TestAnnAssign(TestNameCheckVisitorBase):
             x: int = 0
             assert_is_value(x, TypedValue(int))
 
+            def __init__(self) -> None:
+                self.y: object = 3
+
+            def method(self):
+                assert_is_value(self.y, TypedValue(object))
+
 
 class TestWhile(TestNameCheckVisitorBase):
     @assert_passes()
