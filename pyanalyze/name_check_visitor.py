@@ -998,7 +998,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     arg_spec_cache: ArgSpecCache
     reexport_tracker: ImplicitReexportTracker
     being_assigned: Optional[Value]
-    is_in_annotated_assignment: False
+    is_in_annotated_assignment: bool
     current_class: Optional[type]
     current_function_name: Optional[str]
     current_enum_members: Optional[Dict[object, str]]
