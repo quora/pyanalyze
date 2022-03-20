@@ -1445,7 +1445,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _check_for_class_variable_redefinition(
         self, varname: str, node: ast.AST
     ) -> None:
-        if varname not in self.scopes.current_scope():
+        if varname not in self.scopes.current_scope().variables:
             return
 
         # exclude cases where we do @<property>.setter

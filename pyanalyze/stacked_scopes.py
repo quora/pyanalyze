@@ -770,7 +770,7 @@ class Scope:
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
     ) -> VarnameOrigin:
-        if varname not in self:
+        if varname not in self.variables:
             self.variables[varname] = value
         elif isinstance(value, AnyValue) or not safe_equals(
             self.variables[varname], value

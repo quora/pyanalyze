@@ -1869,6 +1869,12 @@ class TestAnnAssign(TestNameCheckVisitorBase):
             y: int = "y"  # E: incompatible_assignment
             return (x, y)
 
+    @assert_passes()
+    def test_class_scope(self):
+        class Capybara:
+            x: int = 0
+            assert_is_value(x, TypedValue(int))
+
 
 class TestWhile(TestNameCheckVisitorBase):
     @assert_passes()
