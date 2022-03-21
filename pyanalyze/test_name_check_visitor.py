@@ -1847,6 +1847,9 @@ class TestAnnAssign(TestNameCheckVisitorBase):
             z: float
             print(z)  # E: undefined_name
 
+            y: float = 4.0  # E: already_declared
+            assert_is_value(y, TypedValue(float))
+
     @assert_passes()
     def test_final(self):
         from typing_extensions import Final
@@ -1880,6 +1883,14 @@ class TestAnnAssign(TestNameCheckVisitorBase):
 
             def method(self):
                 assert_is_value(self.y, TypedValue(object))
+
+    @assert_passes()
+    def test_loop(self):
+        def capybara():
+            for i in range(3):
+                j: int = i
+
+            j: int = 0  # E: already_declared
 
 
 class TestWhile(TestNameCheckVisitorBase):

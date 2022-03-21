@@ -709,7 +709,7 @@ class Scope:
     scope_node: Optional[Node] = None
     scope_object: Optional[object] = None
     simplification_limit: Optional[int] = None
-    declared_types: Dict[str, Tuple[Optional[Value], bool]] = field(
+    declared_types: Dict[str, Tuple[Optional[Value], bool, AST]] = field(
         default_factory=dict
     )
 
@@ -798,22 +798,30 @@ class Scope:
         return self.variables
 
     def set_declared_type(
-        self, varname: str, typ: Optional[Value], is_final: bool
+        self, varname: str, typ: Optional[Value], is_final: bool, node: AST
     ) -> bool:
-        already_present = varname in self.declared_types
-        self.declared_types[varname] = (typ, is_final)
+        if varname in self.declared_types:
+            _, _, existing_node = self.declared_types[varname]
+            already_present = node is not existing_node
+            # Don't replace the existing node, or we'll generate spurious already_declared
+            # errors.
+            node = existing_node
+        else:
+            already_present = False
+        # Even if we give an error, still honor the later type.
+        self.declared_types[varname] = (typ, is_final, node)
         return not already_present
 
     def get_declared_type(self, varname: str) -> Optional[Value]:
         if varname not in self.declared_types:
             return None
-        typ, _ = self.declared_types[varname]
+        typ, _, _ = self.declared_types[varname]
         return typ
 
     def is_final(self, varname: str) -> bool:
         if varname not in self.declared_types:
             return False
-        _, is_final = self.declared_types[varname]
+        _, is_final, _ = self.declared_types[varname]
         return is_final
 
     def __contains__(self, varname: Varname) -> bool:
