@@ -1363,7 +1363,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if isinstance(can_assign, CanAssignError):
                     self._show_error_if_checking(
                         node,
-                        f"Incompatible assignment: expected {declared_type}, got {value}",
+                        f"Incompatible assignment: expected {declared_type}, got"
+                        f" {value}",
                         error_code=ErrorCode.incompatible_assignment,
                         detail=can_assign.display(),
                     )
@@ -3816,7 +3817,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if isinstance(can_assign, CanAssignError):
                     self._show_error_if_checking(
                         node,
-                        f"Incompatible assignment: expected {expected_type}, got {value}",
+                        f"Incompatible assignment: expected {expected_type}, got"
+                        f" {value}",
                         error_code=ErrorCode.incompatible_assignment,
                         detail=can_assign.display(),
                     )
