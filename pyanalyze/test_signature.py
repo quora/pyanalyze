@@ -1108,3 +1108,34 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_type(func(1), int)
             assert_type(func(1, 1), int)
             assert_type(func("x"), float)
+
+
+class TestSelfAnnotation(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_method(self):
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class Capybara(Generic[T]):
+            def method(self: "Capybara[int]") -> int:
+                return 1
+
+        def caller(ci: Capybara[int], cs: Capybara[str]):
+            assert_is_value(ci.method(), TypedValue(int))
+            cs.method()  # E: incompatible_argument
+
+    @assert_passes()
+    def test_property(self):
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class Capybara(Generic[T]):
+            @property
+            def prop(self: "Capybara[int]") -> int:
+                return 1
+
+        def caller(ci: Capybara[int], cs: Capybara[str]):
+            assert_is_value(ci.prop, TypedValue(int))
+            cs.prop  # E: incompatible_argument

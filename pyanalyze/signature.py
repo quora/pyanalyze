@@ -183,7 +183,7 @@ class _CanAssignBasedContext:
 @dataclass
 class _VisitorBasedContext:
     visitor: "NameCheckVisitor"
-    node: ast.AST
+    node: Optional[ast.AST]
 
     @property
     def can_assign_ctx(self) -> CanAssignContext:
@@ -197,7 +197,11 @@ class _VisitorBasedContext:
         node: Optional[ast.AST] = None,
         detail: Optional[str] = ...,
     ) -> None:
-        self.visitor.show_error(node or self.node, message, code, detail=detail)
+        if node is None:
+            node = self.node
+        if node is None:
+            return
+        self.visitor.show_error(node, message, code, detail=detail)
 
 
 @dataclass
@@ -278,7 +282,7 @@ class CallContext:
     """Using the visitor can allow various kinds of advanced logic
     in impl functions."""
     composites: Dict[str, Composite]
-    node: ast.AST
+    node: Optional[ast.AST]
     """AST node corresponding to the function call. Useful for
     showing errors."""
 
@@ -1040,7 +1044,10 @@ class Signature:
         return CallReturn(return_value, is_error=True)
 
     def check_call(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+        self,
+        args: Iterable[Argument],
+        visitor: "NameCheckVisitor",
+        node: Optional[ast.AST],
     ) -> Value:
         """Type check a call to this Signature with the given arguments.
 
@@ -1998,7 +2005,10 @@ class OverloadedSignature:
         object.__setattr__(self, "signatures", tuple(sigs))
 
     def check_call(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+        self,
+        args: Iterable[Argument],
+        visitor: "NameCheckVisitor",
+        node: Optional[ast.AST],
     ) -> Value:
         """Check a call to an overloaded function.
 
@@ -2255,7 +2265,10 @@ class BoundMethodSignature:
     return_override: Optional[Value] = None
 
     def check_call(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+        self,
+        args: Iterable[Argument],
+        visitor: "NameCheckVisitor",
+        node: Optional[ast.AST],
     ) -> Value:
         ret = self.signature.check_call(
             [(self.self_composite, None), *args], visitor, node
@@ -2307,7 +2320,10 @@ class PropertyArgSpec:
     return_value: Value = AnyValue(AnySource.unannotated)
 
     def check_call(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+        self,
+        args: Iterable[Argument],
+        visitor: "NameCheckVisitor",
+        node: Optional[ast.AST],
     ) -> Value:
         raise TypeError("property object is not callable")
 
