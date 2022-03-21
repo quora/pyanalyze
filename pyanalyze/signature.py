@@ -94,7 +94,7 @@ from typing import (
     Tuple,
     TYPE_CHECKING,
 )
-from typing_extensions import Literal, Protocol, Self
+from typing_extensions import Literal, Protocol, Self, assert_never
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -2319,33 +2319,7 @@ class BoundMethodSignature:
         return f"{self.signature} bound to {self.self_composite.value}"
 
 
-@dataclass(frozen=True)
-class PropertyArgSpec:
-    """Pseudo-argspec for properties."""
-
-    obj: object
-    return_value: Value = AnyValue(AnySource.unannotated)
-
-    def check_call(
-        self,
-        args: Iterable[Argument],
-        visitor: "NameCheckVisitor",
-        node: Optional[ast.AST],
-    ) -> Value:
-        raise TypeError("property object is not callable")
-
-    def has_return_value(self) -> bool:
-        return not isinstance(self.return_value, AnyValue)
-
-    def substitute_typevars(self, typevars: TypeVarMap) -> "PropertyArgSpec":
-        return PropertyArgSpec(
-            self.obj, self.return_value.substitute_typevars(typevars)
-        )
-
-
-MaybeSignature = Union[
-    None, Signature, BoundMethodSignature, PropertyArgSpec, OverloadedSignature
-]
+MaybeSignature = Union[None, Signature, BoundMethodSignature, OverloadedSignature]
 
 
 def make_bound_method(
@@ -2362,7 +2336,7 @@ def make_bound_method(
             return_override = argspec.return_override
         return BoundMethodSignature(argspec.signature, self_composite, return_override)
     else:
-        assert False, f"invalid argspec {argspec}"
+        assert_never(argspec)
 
 
 T = TypeVar("T")
