@@ -4460,10 +4460,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         elif extended_argspec is None:
             if node is not None:
                 self._show_error_if_checking(
-                node,
-                f"{callee_wrapped} is not callable",
-                error_code=ErrorCode.not_callable,
-            )
+                    node,
+                    f"{callee_wrapped} is not callable",
+                    error_code=ErrorCode.not_callable,
+                )
             return_value = AnyValue(AnySource.error)
 
         else:

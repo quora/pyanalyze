@@ -404,6 +404,16 @@ class TestProperty(TestNameCheckVisitorBase):
         def capybara(uid):
             assert_is_value(PropertyObject(uid).string_property, TypedValue(str))
 
+    @assert_passes()
+    def test_local_return(self):
+        class X:
+            @property
+            def foo(self):
+                return str(1)
+
+        def capybara() -> None:
+            assert_is_value(X().foo, TypedValue(str))
+
 
 class TestShadowing(TestNameCheckVisitorBase):
     @assert_passes()

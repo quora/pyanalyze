@@ -1593,9 +1593,15 @@ class Signature:
                     params.append((name, param))
             else:
                 params.append((name, param.substitute_typevars(typevars)))
+        params_dict = dict(params)
+        return_value = self.return_value.substitute_typevars(typevars)
+        # Returning the same object helps the local return value check, which relies
+        # on identity of signature objects.
+        if return_value == self.return_value and params_dict == self.parameters:
+            return self
         return Signature(
-            dict(params),
-            self.return_value.substitute_typevars(typevars),
+            params_dict,
+            return_value,
             impl=self.impl,
             callable=self.callable,
             is_asynq=self.is_asynq,
@@ -2189,9 +2195,10 @@ class OverloadedSignature:
         return CanAssignError(children=details)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "OverloadedSignature":
-        return OverloadedSignature(
-            [sig.substitute_typevars(typevars) for sig in self.signatures]
-        )
+        new_sigs = [sig.substitute_typevars(typevars) for sig in self.signatures]
+        if all(sig1 is sig2 for sig1, sig2 in zip(self.signatures, new_sigs)):
+            return self
+        return OverloadedSignature(new_sigs)
 
     def bind_self(
         self,
