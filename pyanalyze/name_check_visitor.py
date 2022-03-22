@@ -4581,7 +4581,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         )
                     return_value = KnownValue(result)
 
-        if return_value is NO_RETURN_VALUE:
+        if return_value is NO_RETURN_VALUE and node is not None:
             self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
 
         # for .asynq functions, we use the argspec for the underlying function, but that means
