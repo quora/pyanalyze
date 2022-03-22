@@ -93,6 +93,8 @@ class ErrorCode(enum.Enum):
     bad_match = 75
     bad_evaluator = 76
     implicit_any = 77
+    already_declared = 78
+    invalid_annotated_assignment = 79
 
 
 # Allow testing unannotated functions without too much fuss
@@ -212,6 +214,8 @@ ERROR_DESCRIPTION = {
     ErrorCode.bad_match: "Invalid type in match statement",
     ErrorCode.bad_evaluator: "Invalid code in type evaluator",
     ErrorCode.implicit_any: "Value is inferred as Any",
+    ErrorCode.already_declared: "Name is already declared",
+    ErrorCode.invalid_annotated_assignment: "Invalid annotated assignment",
 }
 
 

@@ -996,7 +996,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     options: Options
     arg_spec_cache: ArgSpecCache
     reexport_tracker: ImplicitReexportTracker
-    being_assigned: Value
+    being_assigned: Optional[Value]
+    ann_assign_type: Optional[Tuple[Optional[Value], bool]]
     current_class: Optional[type]
     current_function_name: Optional[str]
     current_enum_members: Optional[Dict[object, str]]
@@ -1037,6 +1038,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.state = VisitorState.collect_names
         # value currently being assigned
         self.being_assigned = AnyValue(AnySource.inference)
+        self.ann_assign_type = None
         # current match target
         self.match_subject = Composite(AnyValue(AnySource.inference))
         # current class (for inferring the type of cls and self arguments)
@@ -1335,12 +1337,44 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _set_name_in_scope(
         self,
         varname: str,
-        node: object,
+        node: ast.AST,
         value: Value = AnyValue(AnySource.inference),
         *,
         private: bool = False,
+        lookup_node: object = None,
     ) -> Tuple[Value, VarnameOrigin]:
+        if lookup_node is None:
+            lookup_node = node
+
         current_scope = self.scopes.current_scope()
+        if self.ann_assign_type is not None:
+            expected_type, is_final = self.ann_assign_type
+            if not current_scope.set_declared_type(
+                varname, expected_type, is_final, node
+            ):
+                self._show_error_if_checking(
+                    node, f"{varname} already declared", ErrorCode.already_declared
+                )
+
+        else:
+            declared_type = current_scope.get_declared_type(varname)
+            if declared_type is not None:
+                can_assign = declared_type.can_assign(value, self)
+                if isinstance(can_assign, CanAssignError):
+                    self._show_error_if_checking(
+                        node,
+                        f"Incompatible assignment: expected {declared_type}, got"
+                        f" {value}",
+                        error_code=ErrorCode.incompatible_assignment,
+                        detail=can_assign.display(),
+                    )
+            if current_scope.is_final(varname):
+                self._show_error_if_checking(
+                    node,
+                    f"Cannot assign to final name {varname}",
+                    ErrorCode.incompatible_assignment,
+                )
+
         scope_type = current_scope.scope_type
         if self.module is not None and scope_type == ScopeType.module_scope:
             if self.module.__name__ is not None and not private:
@@ -1348,12 +1382,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     self.module.__name__, varname
                 )
             if varname in current_scope:
-                value, _ = current_scope.get_local(varname, node, self.state)
+                value, _ = current_scope.get_local(varname, lookup_node, self.state)
                 return value, EMPTY_ORIGIN
-        if scope_type == ScopeType.class_scope and isinstance(node, ast.AST):
+        if scope_type == ScopeType.class_scope:
             self._check_for_incompatible_overrides(varname, node, value)
             self._check_for_class_variable_redefinition(varname, node)
-        origin = current_scope.set(varname, value, node, self.state)
+        origin = current_scope.set(varname, value, lookup_node, self.state)
         return value, origin
 
     def _check_for_incompatible_overrides(
@@ -1418,7 +1452,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _check_for_class_variable_redefinition(
         self, varname: str, node: ast.AST
     ) -> None:
-        if varname not in self.scopes.current_scope():
+        if varname not in self.scopes.current_scope().variables:
             return
 
         # exclude cases where we do @<property>.setter
@@ -2273,7 +2307,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             ):
                 continue
             self._set_name_in_scope(
-                name, (node, name), KnownValue(value), private=not force_public
+                name,
+                node,
+                KnownValue(value),
+                private=not force_public,
+                lookup_node=(node, name),
             )
 
     def _handle_imports(
@@ -2627,6 +2665,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 else:
                     target_length += 1
 
+            assert (
+                self.being_assigned is not None
+            ), "annotated assignment can only have a single target"
             being_assigned = unpack_values(
                 self.being_assigned, self, target_length, post_starred_length
             )
@@ -3756,40 +3797,45 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(annotation, KnownValue) and is_typing_name(
             annotation.val, "Final"
         ):
-            # TODO disallow assignments to Final variables (current code
-            # just avoids false positive errors).
             is_final = True
-            expected_type = AnyValue(AnySource.marker)
+            expected_type = None
         else:
             expected_type = self._value_of_annotation_type(
                 annotation,
                 node.annotation,
                 is_typeddict=self.is_in_typeddict_definition(),
             )
+            # TODO: Also extract Final from more complex annotations
             is_final = False
 
-        if node.value:
+        if node.value is not None:
             is_yield = isinstance(node.value, ast.Yield)
             value = self.visit(node.value)
-            can_assign = expected_type.can_assign(value, self)
-            if isinstance(can_assign, CanAssignError):
-                self._show_error_if_checking(
-                    node.value,
-                    f"Incompatible assignment: expected {expected_type}, got {value}",
-                    error_code=ErrorCode.incompatible_assignment,
-                    detail=can_assign.display(),
-                )
 
-            with qcore.override(
-                self, "being_assigned", value if is_final else expected_type
-            ), self.yield_checker.check_yield_result_assignment(is_yield):
-                self.visit(node.target)
+            if expected_type is not None:
+                can_assign = expected_type.can_assign(value, self)
+                if isinstance(can_assign, CanAssignError):
+                    self._show_error_if_checking(
+                        node,
+                        f"Incompatible assignment: expected {expected_type}, got"
+                        f" {value}",
+                        error_code=ErrorCode.incompatible_assignment,
+                        detail=can_assign.display(),
+                    )
+                # We set the declared type on initial assignment, so that the
+                # annotation can be used to adjust pyanalyze's type inference.
+                value = expected_type
+
         else:
-            with qcore.override(self, "being_assigned", expected_type):
-                self.visit(node.target)
-        # TODO: Idea for what to do if there is no value:
-        # - Scopes keep track of a map {name: expected type}
-        # - Assignments that are inconsistent with the declared type produce an error.
+            is_yield = False
+            value = None
+
+        with qcore.override(
+            self, "being_assigned", value
+        ), self.yield_checker.check_yield_result_assignment(is_yield), qcore.override(
+            self, "ann_assign_type", (expected_type, is_final)
+        ):
+            self.visit(node.target)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         is_yield = isinstance(node.value, ast.Yield)
@@ -3829,18 +3875,22 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     (ast.stmt, ast.comprehension)
                 )
                 self._name_node_to_statement[node] = statement
-                # If we're in an AnnAssign without a value, we skip the assignment,
-                # since no value is actually assigned to the name.
-                is_ann_assign = (
-                    isinstance(statement, ast.AnnAssign) and statement.value is None
-                )
-            else:
-                is_ann_assign = False
+
             value = self.being_assigned
-            origin = EMPTY_ORIGIN
-            if not is_ann_assign:
+            if (
+                value is None
+                and self.scopes.current_scope().scope_type == ScopeType.class_scope
+                and self.ann_assign_type is not None
+            ):
+                ann_assign_type, _ = self.ann_assign_type
+                if ann_assign_type is not None:
+                    value = ann_assign_type
+            if value is not None:
                 self.yield_checker.record_assignment(node.id)
                 value, origin = self._set_name_in_scope(node.id, node, value=value)
+            else:
+                value = AnyValue(AnySource.inference)
+                origin = EMPTY_ORIGIN
             varname = VarnameWithOrigin(node.id, origin)
             constraint = Constraint(varname, ConstraintType.is_truthy, True, None)
             value = annotate_with_constraint(value, constraint)
@@ -3856,6 +3906,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_arg(self, node: ast.arg) -> None:
         self.yield_checker.record_assignment(node.arg)
+        # it's none only for AnnAssign nodes without a value
+        assert self.being_assigned is not None, "should not happen"
         self._set_name_in_scope(node.arg, node, value=self.being_assigned)
 
     def _should_use_varname_value(self, value: Value) -> bool:
@@ -3913,6 +3965,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         index = index_composite.value
 
         if isinstance(node.ctx, ast.Store):
+            if self.ann_assign_type is not None:
+                self._show_error_if_checking(
+                    node, error_code=ErrorCode.invalid_annotated_assignment
+                )
+            if self.being_assigned is None:
+                assert (
+                    self.ann_assign_type is not None
+                ), "should only happen in AnnAssign"
+                return AnyValue(AnySource.inference)
             if (
                 composite_var is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
@@ -4108,6 +4169,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         root_composite = self.composite_from_node(node.value)
         composite = self._extend_composite(root_composite, node.attr, node)
         if self._is_write_ctx(node.ctx):
+            # TODO: We should do something here if we're in an AnnAssign, e.g.
+            # note the type in the class's namespace.
+            if self.being_assigned is None:
+                assert (
+                    self.ann_assign_type is not None
+                ), "should only happen in AnnAssign"
+                return Composite(AnyValue(AnySource.inference), composite, node)
             if (
                 composite is not None
                 and self.scopes.scope_type() == ScopeType.function_scope
@@ -4513,7 +4581,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         )
                     return_value = KnownValue(result)
 
-        if return_value is NO_RETURN_VALUE:
+        if return_value is NO_RETURN_VALUE and node is not None:
             self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
 
         # for .asynq functions, we use the argspec for the underlying function, but that means

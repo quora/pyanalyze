@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Basic support for checking `Final` and for checking re-assignments
+  to variables declared with a specific type (#505)
 - Correctly check the `self` argument to `@property` getters (#506)
 - Correctly track assignments of variables inside `try` blocks
   and inside `with` blocks that may suppress exceptions (#504)

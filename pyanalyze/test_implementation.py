@@ -395,15 +395,15 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 lst, SequenceIncompleteValue(list, [TypedValue(int), KnownValue(1)])
             )
 
-            lst: List[str] = ["x"]
-            assert_is_value(lst, GenericValue(list, [TypedValue(str)]))
-            lst.append("y")
-            assert_is_value(lst, GenericValue(list, [TypedValue(str)]))
+            lst2: List[str] = ["x"]
+            assert_is_value(lst2, GenericValue(list, [TypedValue(str)]))
+            lst2.append("y")
+            assert_is_value(lst2, GenericValue(list, [TypedValue(str)]))
 
-            lst = ["x"]
-            assert_is_value(lst, KnownValue(["x"]))
-            lst.append(3)
-            assert_is_value(lst, KnownValue(["x", 3]))
+            lst3 = ["x"]
+            assert_is_value(lst3, KnownValue(["x"]))
+            lst3.append(3)
+            assert_is_value(lst3, KnownValue(["x", 3]))
 
     @assert_passes()
     def test_list_append_pos_only(self):
@@ -426,17 +426,17 @@ class TestGenericMutators(TestNameCheckVisitorBase):
         from typing import Set
 
         def capybara(x: int):
-            lst = {x}
-            assert_is_value(lst, SequenceIncompleteValue(set, [TypedValue(int)]))
-            lst.add(1)
+            s = {x}
+            assert_is_value(s, SequenceIncompleteValue(set, [TypedValue(int)]))
+            s.add(1)
             assert_is_value(
-                lst, SequenceIncompleteValue(set, [TypedValue(int), KnownValue(1)])
+                s, SequenceIncompleteValue(set, [TypedValue(int), KnownValue(1)])
             )
 
-            lst: Set[str] = {"x"}
-            assert_is_value(lst, GenericValue(set, [TypedValue(str)]))
-            lst.add("y")
-            assert_is_value(lst, GenericValue(set, [TypedValue(str)]))
+            s2: Set[str] = {"x"}
+            assert_is_value(s2, GenericValue(set, [TypedValue(str)]))
+            s2.add("y")
+            assert_is_value(s2, GenericValue(set, [TypedValue(str)]))
 
     @assert_passes()
     def test_list_add(self):
@@ -546,10 +546,10 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 ),
             )
 
-            lst: List[int] = [3]
-            assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
-            lst += [x]
-            assert_is_value(lst, GenericValue(list, [TypedValue(int)]))
+            lst2: List[int] = [3]
+            assert_is_value(lst2, GenericValue(list, [TypedValue(int)]))
+            lst2 += [x]
+            assert_is_value(lst2, GenericValue(list, [TypedValue(int)]))
 
     @assert_passes()
     def test_list_iadd_never(self):

@@ -709,6 +709,9 @@ class Scope:
     scope_node: Optional[Node] = None
     scope_object: Optional[object] = None
     simplification_limit: Optional[int] = None
+    declared_types: Dict[str, Tuple[Optional[Value], bool, AST]] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         if self.parent_scope is not None:
@@ -767,7 +770,7 @@ class Scope:
     def set(
         self, varname: Varname, value: Value, node: Node, state: VisitorState
     ) -> VarnameOrigin:
-        if varname not in self:
+        if varname not in self.variables:
             self.variables[varname] = value
         elif isinstance(value, AnyValue) or not safe_equals(
             self.variables[varname], value
@@ -794,8 +797,35 @@ class Scope:
     def all_variables(self) -> Iterable[Varname]:
         return self.variables
 
+    def set_declared_type(
+        self, varname: str, typ: Optional[Value], is_final: bool, node: AST
+    ) -> bool:
+        if varname in self.declared_types:
+            _, _, existing_node = self.declared_types[varname]
+            already_present = node is not existing_node
+            # Don't replace the existing node, or we'll generate spurious already_declared
+            # errors.
+            node = existing_node
+        else:
+            already_present = False
+        # Even if we give an error, still honor the later type.
+        self.declared_types[varname] = (typ, is_final, node)
+        return not already_present
+
+    def get_declared_type(self, varname: str) -> Optional[Value]:
+        if varname not in self.declared_types:
+            return None
+        typ, _, _ = self.declared_types[varname]
+        return typ
+
+    def is_final(self, varname: str) -> bool:
+        if varname not in self.declared_types:
+            return False
+        _, is_final, _ = self.declared_types[varname]
+        return is_final
+
     def __contains__(self, varname: Varname) -> bool:
-        return varname in self.variables
+        return varname in self.variables or varname in self.declared_types
 
     @contextlib.contextmanager
     def suppressing_subscope(self) -> Iterator[SubScope]:
@@ -1338,7 +1368,10 @@ class FunctionScope(Scope):
         yield from self.name_to_current_definition_nodes
 
     def __contains__(self, varname: Varname) -> bool:
-        return varname in self.name_to_all_definition_nodes
+        return (
+            varname in self.name_to_all_definition_nodes
+            or varname in self.declared_types
+        )
 
 
 class StackedScopes:

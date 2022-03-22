@@ -1836,7 +1836,7 @@ class TestRequireAnnotations(TestNameCheckVisitorBase):
 
 class TestAnnAssign(TestNameCheckVisitorBase):
     @assert_passes()
-    def test(self):
+    def test_simple(self):
         from typing_extensions import Final
 
         def capybara() -> None:
@@ -1846,6 +1846,51 @@ class TestAnnAssign(TestNameCheckVisitorBase):
             assert_is_value(y, TypedValue(int))
             z: float
             print(z)  # E: undefined_name
+
+            y: float = 4.0  # E: already_declared
+            assert_is_value(y, TypedValue(float))
+
+    @assert_passes()
+    def test_final(self):
+        from typing_extensions import Final
+
+        x: Final = 1
+        x = 2  # E: incompatible_assignment
+
+        def capybara():
+            y: Final = 1
+            y = 2  # E: incompatible_assignment
+            return y
+
+    @assert_passes()
+    def test_inconsistent_type(self):
+        def capybara():
+            x: int = 1
+            assert_is_value(x, TypedValue(int))
+            x = "x"  # E: incompatible_assignment
+
+            y: int = "y"  # E: incompatible_assignment
+            return (x, y)
+
+    @assert_passes()
+    def test_class_scope(self):
+        class Capybara:
+            x: int = 0
+            assert_is_value(x, TypedValue(int))
+
+            def __init__(self) -> None:
+                self.y: object = 3
+
+            def method(self):
+                assert_is_value(self.y, TypedValue(object))
+
+    @assert_passes()
+    def test_loop(self):
+        def capybara():
+            for i in range(3):
+                j: int = i
+
+            j: int = 0  # E: already_declared
 
 
 class TestWhile(TestNameCheckVisitorBase):
