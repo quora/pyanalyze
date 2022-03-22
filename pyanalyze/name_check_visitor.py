@@ -3877,12 +3877,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self._name_node_to_statement[node] = statement
 
             value = self.being_assigned
-            origin = EMPTY_ORIGIN
+            if (
+                value is None
+                and self.scopes.current_scope().scope_type == ScopeType.class_scope
+                and self.ann_assign_type is not None
+            ):
+                ann_assign_type, _ = self.ann_assign_type
+                if ann_assign_type is not None:
+                    value = ann_assign_type
             if value is not None:
                 self.yield_checker.record_assignment(node.id)
                 value, origin = self._set_name_in_scope(node.id, node, value=value)
             else:
                 value = AnyValue(AnySource.inference)
+                origin = EMPTY_ORIGIN
             varname = VarnameWithOrigin(node.id, origin)
             constraint = Constraint(varname, ConstraintType.is_truthy, True, None)
             value = annotate_with_constraint(value, constraint)
