@@ -28,7 +28,6 @@ from .signature import (
     Impl,
     MaybeSignature,
     OverloadedSignature,
-    PropertyArgSpec,
     make_bound_method,
     SigParameter,
     Signature,
@@ -791,16 +790,6 @@ class ArgSpecCache:
             # the argspec for some builtin methods (e.g., dict.__init__), and no way to detect
             # these with inspect, so just give up.
             return self._make_any_sig(obj)
-
-        if isinstance(obj, property):
-            # If we know the getter, inherit its return value.
-            if obj.fget:
-                fget_argspec = self._cached_get_argspec(
-                    obj.fget, impl, is_asynq, in_overload_resolution
-                )
-                if fget_argspec is not None and fget_argspec.has_return_value():
-                    return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
-            return PropertyArgSpec(obj)
 
         return None
 

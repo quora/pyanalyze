@@ -404,6 +404,16 @@ class TestProperty(TestNameCheckVisitorBase):
         def capybara(uid):
             assert_is_value(PropertyObject(uid).string_property, TypedValue(str))
 
+    @assert_passes()
+    def test_local_return(self):
+        class X:
+            @property
+            def foo(self):
+                return str(1)
+
+        def capybara() -> None:
+            assert_is_value(X().foo, TypedValue(str))
+
 
 class TestShadowing(TestNameCheckVisitorBase):
     @assert_passes()
@@ -1108,3 +1118,34 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_type(func(1), int)
             assert_type(func(1, 1), int)
             assert_type(func("x"), float)
+
+
+class TestSelfAnnotation(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_method(self):
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class Capybara(Generic[T]):
+            def method(self: "Capybara[int]") -> int:
+                return 1
+
+        def caller(ci: Capybara[int], cs: Capybara[str]):
+            assert_is_value(ci.method(), TypedValue(int))
+            cs.method()  # E: incompatible_argument
+
+    @assert_passes()
+    def test_property(self):
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class Capybara(Generic[T]):
+            @property
+            def prop(self: "Capybara[int]") -> int:
+                return 1
+
+        def caller(ci: Capybara[int], cs: Capybara[str]):
+            assert_is_value(ci.prop, TypedValue(int))
+            cs.prop  # E: incompatible_argument
