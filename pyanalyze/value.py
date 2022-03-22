@@ -570,8 +570,6 @@ class UnboundMethodValue(Value):
             return None
         if isinstance(signature, pyanalyze.signature.BoundMethodSignature):
             signature = signature.get_signature(ctx=ctx)
-        if isinstance(signature, pyanalyze.signature.PropertyArgSpec):
-            return None
         return signature
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "Value":

@@ -94,7 +94,7 @@ from typing import (
     Tuple,
     TYPE_CHECKING,
 )
-from typing_extensions import Literal, Protocol, Self
+from typing_extensions import Literal, Protocol, Self, assert_never
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -183,7 +183,7 @@ class _CanAssignBasedContext:
 @dataclass
 class _VisitorBasedContext:
     visitor: "NameCheckVisitor"
-    node: ast.AST
+    node: Optional[ast.AST]
 
     @property
     def can_assign_ctx(self) -> CanAssignContext:
@@ -197,7 +197,11 @@ class _VisitorBasedContext:
         node: Optional[ast.AST] = None,
         detail: Optional[str] = ...,
     ) -> None:
-        self.visitor.show_error(node or self.node, message, code, detail=detail)
+        if node is None:
+            node = self.node
+        if node is None:
+            return
+        self.visitor.show_error(node, message, code, detail=detail)
 
 
 @dataclass
@@ -278,7 +282,7 @@ class CallContext:
     """Using the visitor can allow various kinds of advanced logic
     in impl functions."""
     composites: Dict[str, Composite]
-    node: ast.AST
+    node: Optional[ast.AST]
     """AST node corresponding to the function call. Useful for
     showing errors."""
 
@@ -1040,7 +1044,10 @@ class Signature:
         return CallReturn(return_value, is_error=True)
 
     def check_call(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+        self,
+        args: Iterable[Argument],
+        visitor: "NameCheckVisitor",
+        node: Optional[ast.AST],
     ) -> Value:
         """Type check a call to this Signature with the given arguments.
 
@@ -1586,9 +1593,15 @@ class Signature:
                     params.append((name, param))
             else:
                 params.append((name, param.substitute_typevars(typevars)))
+        params_dict = dict(params)
+        return_value = self.return_value.substitute_typevars(typevars)
+        # Returning the same object helps the local return value check, which relies
+        # on identity of signature objects.
+        if return_value == self.return_value and params_dict == self.parameters:
+            return self
         return Signature(
-            dict(params),
-            self.return_value.substitute_typevars(typevars),
+            params_dict,
+            return_value,
             impl=self.impl,
             callable=self.callable,
             is_asynq=self.is_asynq,
@@ -1998,7 +2011,10 @@ class OverloadedSignature:
         object.__setattr__(self, "signatures", tuple(sigs))
 
     def check_call(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+        self,
+        args: Iterable[Argument],
+        visitor: "NameCheckVisitor",
+        node: Optional[ast.AST],
     ) -> Value:
         """Check a call to an overloaded function.
 
@@ -2179,9 +2195,10 @@ class OverloadedSignature:
         return CanAssignError(children=details)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "OverloadedSignature":
-        return OverloadedSignature(
-            [sig.substitute_typevars(typevars) for sig in self.signatures]
-        )
+        new_sigs = [sig.substitute_typevars(typevars) for sig in self.signatures]
+        if all(sig1 is sig2 for sig1, sig2 in zip(self.signatures, new_sigs)):
+            return self
+        return OverloadedSignature(new_sigs)
 
     def bind_self(
         self,
@@ -2255,7 +2272,10 @@ class BoundMethodSignature:
     return_override: Optional[Value] = None
 
     def check_call(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
+        self,
+        args: Iterable[Argument],
+        visitor: "NameCheckVisitor",
+        node: Optional[ast.AST],
     ) -> Value:
         ret = self.signature.check_call(
             [(self.self_composite, None), *args], visitor, node
@@ -2299,30 +2319,7 @@ class BoundMethodSignature:
         return f"{self.signature} bound to {self.self_composite.value}"
 
 
-@dataclass(frozen=True)
-class PropertyArgSpec:
-    """Pseudo-argspec for properties."""
-
-    obj: object
-    return_value: Value = AnyValue(AnySource.unannotated)
-
-    def check_call(
-        self, args: Iterable[Argument], visitor: "NameCheckVisitor", node: ast.AST
-    ) -> Value:
-        raise TypeError("property object is not callable")
-
-    def has_return_value(self) -> bool:
-        return not isinstance(self.return_value, AnyValue)
-
-    def substitute_typevars(self, typevars: TypeVarMap) -> "PropertyArgSpec":
-        return PropertyArgSpec(
-            self.obj, self.return_value.substitute_typevars(typevars)
-        )
-
-
-MaybeSignature = Union[
-    None, Signature, BoundMethodSignature, PropertyArgSpec, OverloadedSignature
-]
+MaybeSignature = Union[None, Signature, BoundMethodSignature, OverloadedSignature]
 
 
 def make_bound_method(
@@ -2339,7 +2336,7 @@ def make_bound_method(
             return_override = argspec.return_override
         return BoundMethodSignature(argspec.signature, self_composite, return_override)
     else:
-        assert False, f"invalid argspec {argspec}"
+        assert_never(argspec)
 
 
 T = TypeVar("T")

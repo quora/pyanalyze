@@ -173,6 +173,7 @@ from .value import (
     is_union,
     kv_pairs_from_mapping,
     make_weak,
+    set_self,
     unannotate_value,
     unite_and_simplify,
     unite_values,
@@ -324,6 +325,7 @@ class _AttrContext(CheckerAttrContext):
     visitor: "NameCheckVisitor"
     node: Optional[ast.AST]
     ignore_none: bool = False
+    record_reads: bool = True
 
     # Needs to be implemented explicitly to work around Cython limitations
     def __init__(
@@ -332,11 +334,12 @@ class _AttrContext(CheckerAttrContext):
         attr: str,
         visitor: "NameCheckVisitor",
         *,
-        node: Optional[ast.AST] = None,
+        node: Optional[ast.AST],
         ignore_none: bool = False,
         skip_mro: bool = False,
         skip_unwrap: bool = False,
         prefer_typeshed: bool = False,
+        record_reads: bool = True,
     ) -> None:
         super().__init__(
             root_composite,
@@ -350,25 +353,21 @@ class _AttrContext(CheckerAttrContext):
         self.node = node
         self.visitor = visitor
         self.ignore_none = ignore_none
+        self.record_reads = record_reads
 
     def record_usage(self, obj: object, val: Value) -> None:
         self.visitor._maybe_record_usage(obj, self.attr, val)
 
     def record_attr_read(self, obj: type) -> None:
-        if self.node is not None:
+        if self.record_reads and self.node is not None:
             self.visitor._record_type_attr_read(obj, self.attr, self.node)
 
-    def get_property_type_from_argspec(self, obj: object) -> Value:
-        argspec = self.visitor.arg_spec_cache.get_argspec(obj)
-        if argspec is not None:
-            if argspec.has_return_value():
-                return argspec.return_value
-            # If we visited the property and inferred a return value,
-            # use it.
-            local = self.visitor.get_local_return_value(argspec)
-            if local is not None:
-                return local
-        return AnyValue(AnySource.inference)
+    def get_property_type_from_argspec(self, obj: property) -> Value:
+        if obj.fget is None:
+            return UNINITIALIZED_VALUE
+
+        getter = set_self(KnownValue(obj.fget), self.root_composite.value)
+        return self.visitor.check_call(self.node, getter, [self.root_composite])
 
     def should_ignore_none_attributes(self) -> bool:
         return self.ignore_none
@@ -1372,8 +1371,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 Composite(base_class_value),
                 varname,
                 self,
+                node=node,
                 skip_mro=True,
                 skip_unwrap=True,
+                record_reads=False,
             )
             base_value = attributes.get_attribute(ctx)
             can_assign = self._can_assign_to_base(base_value, value)
@@ -1722,6 +1723,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         if isinstance(info.node, ast.AsyncFunctionDef) or info.is_decorated_coroutine:
             return_value = GenericValue(collections.abc.Awaitable, [return_value])
+
+        if isinstance(val, KnownValue) and isinstance(val.val, property):
+            fget = val.val.fget
+            if fget is None:
+                return
+            val = KnownValue(fget)
 
         sig = self.signature_from_value(val)
         if sig is None or sig.has_return_value():
@@ -4407,7 +4414,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def check_call(
         self,
-        node: ast.AST,
+        node: Optional[ast.AST],
         callee: Value,
         args: Iterable[Composite],
         keywords: Iterable[Tuple[Optional[str], Composite]] = (),
@@ -4430,7 +4437,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _check_call_no_mvv(
         self,
-        node: ast.AST,
+        node: Optional[ast.AST],
         callee_wrapped: Value,
         args: Iterable[Composite],
         keywords: Iterable[Tuple[Optional[str], Composite]] = (),
@@ -4451,11 +4458,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return_value = AnyValue(AnySource.from_another)
 
         elif extended_argspec is None:
-            self._show_error_if_checking(
-                node,
-                f"{callee_wrapped} is not callable",
-                error_code=ErrorCode.not_callable,
-            )
+            if node is not None:
+                self._show_error_if_checking(
+                    node,
+                    f"{callee_wrapped} is not callable",
+                    error_code=ErrorCode.not_callable,
+                )
             return_value = AnyValue(AnySource.error)
 
         else:
