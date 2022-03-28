@@ -10,5 +10,5 @@ aenum>=2.2.3
 codemod
 myst-parser==0.15.1
 Sphinx==4.2.0
-black==22.1.0
+black==22.3.0
 flake8==4.0.1
