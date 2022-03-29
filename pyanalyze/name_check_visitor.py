@@ -1381,7 +1381,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self.reexport_tracker.record_exported_attribute(
                     self.module.__name__, varname
                 )
-            if varname in current_scope:
+            if varname in current_scope.variables:
                 value, _ = current_scope.get_local(varname, lookup_node, self.state)
                 return value, EMPTY_ORIGIN
         if scope_type == ScopeType.class_scope:

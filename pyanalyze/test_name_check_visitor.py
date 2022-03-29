@@ -1892,6 +1892,15 @@ class TestAnnAssign(TestNameCheckVisitorBase):
 
             j: int = 0  # E: already_declared
 
+    @assert_passes()
+    def test_module_scope(self):
+        x: int = 3
+        assert_is_value(x, TypedValue(int))
+
+        if __name__ == "__main__":
+            y: int = 3
+            assert_is_value(y, TypedValue(int))
+
 
 class TestWhile(TestNameCheckVisitorBase):
     @assert_passes()
