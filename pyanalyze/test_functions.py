@@ -34,6 +34,8 @@ class TestNestedFunction(TestNameCheckVisitorBase):
                 class Nested(object):
                     xs = ys
 
+                return Nested
+
     @assert_passes()
     def test_asynq(self):
         from asynq import asynq

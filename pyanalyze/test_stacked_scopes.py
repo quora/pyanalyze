@@ -548,22 +548,33 @@ class TestUnusedVariable(TestNameCheckVisitorBase):
             if condition:
                 print(x)
 
+            return nested
+
     @assert_passes()
     def test_unused(self):
         def capybara():
             y = 3  # E: unused_variable
 
+            def f():  # E: unused_variable
+                pass
+
+            async def g():  # E: unused_variable
+                pass
+
+            class Capybara:  # E: unused_variable
+                pass
+
     def test_replacement(self):
         self.assert_is_changed(
             """
-def capybara():
-    y = 3
-    return 3
-""",
+            def capybara():
+                y = 3
+                return 3
+            """,
             """
-def capybara():
-    return 3
-""",
+            def capybara():
+                return 3
+            """,
         )
 
     @assert_passes()
@@ -1269,7 +1280,7 @@ class TestConstraints(TestNameCheckVisitorBase):
             def nested():
                 assert_is_value(x, TypedValue(int))
 
-            return [assert_is_value(x, TypedValue(int)) for _ in z]
+            return [assert_is_value(x, TypedValue(int)) for _ in z], nested
 
     @assert_passes()
     def test_repeated_constraints(self):
@@ -1361,6 +1372,8 @@ class TestConstraints(TestNameCheckVisitorBase):
                 else:
                     assert_is_value(x, KnownValue(False))
 
+            return nested
+
     @assert_passes()
     def test_nonlocal_known_with_write(self):
         def capybara(y):
@@ -1381,6 +1394,8 @@ class TestConstraints(TestNameCheckVisitorBase):
                     x = True
                     assert_is_value(x, KnownValue(True))
 
+            return nested
+
     @assert_passes()
     def test_nonlocal_in_loop(self):
         def capybara(x):
@@ -1388,6 +1403,8 @@ class TestConstraints(TestNameCheckVisitorBase):
                 for _ in y:
                     if x:
                         pass
+
+            return nested
 
     @assert_passes()
     def test_nonlocal_not_unused(self):

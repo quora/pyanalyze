@@ -223,6 +223,8 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 assert_is_value(pep655, _EXPECTED_TYPED_DICTS["PEP655"])
                 assert_is_value(inherited, _EXPECTED_TYPED_DICTS["Inherited"])
 
+            return nested
+
     def test_evaluated(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.evaluated"
@@ -266,6 +268,8 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             def f(x: _ScandirIterator):
                 want_cm(x)
                 len(x)  # E: incompatible_argument
+
+            return f
 
 
 class TestConstructors(TestNameCheckVisitorBase):

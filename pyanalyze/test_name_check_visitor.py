@@ -212,6 +212,8 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             class Capybara(metaclass=Hutia):  # E: undefined_name
                 pass
 
+            return Capybara
+
     @assert_passes()
     def test_no_failure_on_builtin(self):
         def run():
@@ -252,6 +254,8 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
 
                 def coendou(self):
                     return 1
+
+            return Porcupine
 
     @assert_passes()
     def test_class_scope_is_not_searched(self):
@@ -407,6 +411,8 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             class Capybaras(object):
                 if False:
                     print(neochoerus)  # E: undefined_name
+
+            return Capybaras
 
     @assert_passes()
     def test_cant_del_tuple(self):
@@ -995,6 +1001,8 @@ class TestComprehensions(TestNameCheckVisitorBase):
                 incisors = [1, 2]
                 canines = {incisors[0] for _ in incisors}  # E: undefined_name
 
+            return Capybara
+
     @assert_passes()
     def test_comprehension_within_class(self):
         class Capybara(object):
@@ -1374,7 +1382,7 @@ class TestNonlocal(TestNameCheckVisitorBase):
                 # this should not throw unused_variable
                 x = 5
 
-            return x
+            return x, inner_capybara, second_inner
 
     @assert_passes()
     def test_no_unused_var(self):
@@ -1385,7 +1393,7 @@ class TestNonlocal(TestNameCheckVisitorBase):
                 nonlocal running
                 running = False
 
-            return running
+            return running, handler
 
 
 class TestingCallSiteCollector(object):
@@ -1824,10 +1832,12 @@ class TestRequireAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes(settings=_AnnotSettings)
     def test_dont_annotate_self():
-        def f() -> None:
+        def f() -> type:
             class X:
                 def method(self) -> None:
                     pass
+
+            return X
 
         class X:
             def f(self) -> None:

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Detect unused nested function and class definitions (#510)
 - Basic support for checking `Final` and for checking re-assignments
   to variables declared with a specific type (#505)
 - Correctly check the `self` argument to `@property` getters (#506)
