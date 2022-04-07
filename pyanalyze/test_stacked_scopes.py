@@ -569,7 +569,7 @@ def capybara():
     @assert_passes()
     def test_unused_then_used(self):
         def capybara():
-            y = 3  # E: unused_variable
+            y = 3  # E: unused_assignment
             y = 4
             return y
 
@@ -577,7 +577,7 @@ def capybara():
     def test_unused_in_if(self):
         def capybara(condition):
             if condition:
-                x = 3  # E: unused_variable
+                x = 3  # E: unused_assignment
             x = 4
             return x
 

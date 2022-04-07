@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `unused_assignment` error code, separated out from
+  `unused_variable`. Enable these error codes and
+  `possibly_undefined_name` by default (#511)
 - Basic support for checking `Final` and for checking re-assignments
   to variables declared with a specific type (#505)
 - Correctly check the `self` argument to `@property` getters (#506)
