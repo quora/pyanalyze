@@ -384,7 +384,10 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
     elif typing_inspect.is_tuple_type(val):
         args = typing_inspect.get_args(val)
         if not args:
-            return TypedValue(tuple)
+            if val is tuple or val is Tuple:
+                return TypedValue(tuple)
+            else:
+                return SequenceIncompleteValue(tuple, [])
         elif len(args) == 2 and args[1] is Ellipsis:
             return GenericValue(tuple, [_type_from_runtime(args[0], ctx)])
         elif len(args) == 1 and args[0] == ():
@@ -437,6 +440,8 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return _value_of_origin_args(Callable, args, val, ctx)
     elif val is AsynqCallable:
         return CallableValue(Signature.make([ELLIPSIS_PARAM], is_asynq=True))
+    elif val is typing.Any:
+        return AnyValue(AnySource.explicit)
     elif isinstance(val, type):
         return _maybe_typed_value(val)
     elif val is None:
@@ -445,8 +450,6 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return NO_RETURN_VALUE
     elif is_typing_name(val, "Self"):
         return SelfTVV
-    elif val is typing.Any:
-        return AnyValue(AnySource.explicit)
     elif hasattr(val, "__supertype__"):
         if isinstance(val.__supertype__, type):
             # NewType

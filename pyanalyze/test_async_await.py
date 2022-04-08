@@ -9,7 +9,7 @@ from .value import (
     SequenceIncompleteValue,
 )
 from .implementation import assert_is_value
-from .test_node_visitor import assert_passes
+from .test_node_visitor import assert_passes, only_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
 
 
@@ -99,6 +99,7 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
 
 
 class TestMissingAwait(TestNameCheckVisitorBase):
+    @only_before((3, 11))
     @assert_passes()
     def test_asyncio_coroutine_internal(self):
         import asyncio
@@ -111,6 +112,7 @@ class TestMissingAwait(TestNameCheckVisitorBase):
         def g():
             f()  # E: missing_await
 
+    @only_before((3, 11))
     @assert_passes()
     def test_yield_from(self):
         import asyncio
@@ -123,6 +125,7 @@ class TestMissingAwait(TestNameCheckVisitorBase):
         def g():
             yield from f()
 
+    @only_before((3, 11))
     @assert_passes()
     def test_asyncio_coroutine_external(self):
         import asyncio
@@ -131,6 +134,7 @@ class TestMissingAwait(TestNameCheckVisitorBase):
         def f():
             asyncio.sleep(3)  # E: missing_await
 
+    @only_before((3, 11))
     def test_add_yield_from(self):
         self.assert_is_changed(
             """
@@ -149,6 +153,7 @@ class TestMissingAwait(TestNameCheckVisitorBase):
             """,
         )
 
+    @only_before((3, 11))
     @assert_passes()
     def test_has_yield_from_external(self):
         import asyncio
@@ -205,6 +210,7 @@ class TestMissingAwait(TestNameCheckVisitorBase):
 
 
 class TestArgSpec(TestNameCheckVisitorBase):
+    @only_before((3, 11))
     @assert_passes()
     def test_asyncio_coroutine(self):
         import asyncio

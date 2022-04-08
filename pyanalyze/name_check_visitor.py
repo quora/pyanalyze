@@ -277,6 +277,10 @@ COMPARATOR_TO_OPERATOR = {
     ast.NotIn: (_not_in, _in),
 }
 
+SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL = [KnownValue(asynq.asynq), KnownValue(property)]
+if sys.version_info < (3, 11):
+    SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL.append(KnownValue(asyncio.coroutine))
+
 
 class CustomContextManager(Protocol[T, U]):
     def __enter__(self) -> T:
@@ -1736,12 +1740,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return
         if info.node.decorator_list and not (
             len(info.decorators) == 1
-            and info.decorators[0][0]
-            in (
-                KnownValue(asynq.asynq),
-                KnownValue(asyncio.coroutine),
-                KnownValue(property),
-            )
+            and info.decorators[0][0] in SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL
         ):
             return  # With decorators we don't know what it will return
         return_value = result.return_value
