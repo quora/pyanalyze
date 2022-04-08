@@ -561,23 +561,6 @@ class ArgSpecCache:
         is_asynq: bool,
         in_overload_resolution: bool,
     ) -> MaybeSignature:
-        if not in_overload_resolution:
-            fq_name = get_fully_qualified_name(obj)
-            if fq_name is not None:
-                overloads = get_overloads(fq_name)
-                if overloads:
-                    sigs = [
-                        self._cached_get_argspec(
-                            overload, impl, is_asynq, in_overload_resolution=True
-                        )
-                        for overload in overloads
-                    ]
-                    if all_of_type(sigs, Signature):
-                        return OverloadedSignature(sigs)
-                evaluator_sig = self._maybe_make_evaluator_sig(obj, impl, is_asynq)
-                if evaluator_sig is not None:
-                    return evaluator_sig
-
         if isinstance(obj, tuple):
             return None  # lost cause
 
@@ -609,6 +592,25 @@ class ArgSpecCache:
                 obj.__func__, impl, is_asynq, in_overload_resolution
             )
             return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
+
+        # Must be after the check for bound methods, because otherwise we
+        # won't bind self correctly.
+        if not in_overload_resolution:
+            fq_name = get_fully_qualified_name(obj)
+            if fq_name is not None:
+                overloads = get_overloads(fq_name)
+                if overloads:
+                    sigs = [
+                        self._cached_get_argspec(
+                            overload, impl, is_asynq, in_overload_resolution=True
+                        )
+                        for overload in overloads
+                    ]
+                    if all_of_type(sigs, Signature):
+                        return OverloadedSignature(sigs)
+                evaluator_sig = self._maybe_make_evaluator_sig(obj, impl, is_asynq)
+                if evaluator_sig is not None:
+                    return evaluator_sig
 
         if hasattr_static(obj, "fn") or hasattr_static(obj, "original_fn"):
             is_asynq = is_asynq or hasattr_static(obj, "asynq")

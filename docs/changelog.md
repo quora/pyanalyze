@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix handling of overloaded methods called on literals (#513)
 - Partial support for running on Python 3.11 (#512)
 - Basic support for checking `Final` and for checking re-assignments
   to variables declared with a specific type (#505)

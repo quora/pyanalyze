@@ -1119,6 +1119,31 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_type(func(1, 1), int)
             assert_type(func("x"), float)
 
+    @assert_passes()
+    def test_overloaded_method(self):
+        from pyanalyze.extensions import overload, assert_type
+
+        class Capybara:
+            @overload
+            def meth(self, x: int) -> str:
+                ...
+
+            @overload
+            def meth(self, x: str) -> int:
+                ...
+
+            def meth(self, x: object) -> object:
+                raise NotImplementedError
+
+        cap = Capybara()
+
+        def caller(inst: Capybara) -> None:
+            assert_type(cap.meth(1), str)
+            assert_type(cap.meth(""), int)
+
+            assert_type(inst.meth(1), str)
+            assert_type(inst.meth(""), int)
+
 
 class TestSelfAnnotation(TestNameCheckVisitorBase):
     @assert_passes()
