@@ -63,7 +63,8 @@ _FALSE_BOOLABILITIES = {
     Boolability.value_always_false,
     Boolability.value_always_false_mutable,
 }
-_ASYNQ_BOOL = asynq.FutureBase.__bool__
+# doesn't exist if asynq is not compiled
+_ASYNQ_BOOL = getattr(asynq.FutureBase, "__bool__", object())
 
 
 def get_boolability(value: Value) -> Boolability:
