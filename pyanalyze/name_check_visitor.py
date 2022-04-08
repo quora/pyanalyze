@@ -2033,12 +2033,23 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     # ignore assignments in AnnAssign nodes, which don't actually
                     # bind the name
                     continue
-            self._show_error_if_checking(
-                unused,
-                "Variable {} is not read after being written to".format(unused.id),
-                error_code=ErrorCode.unused_variable,
-                replacement=replacement,
-            )
+            if all(
+                node in all_unused_nodes
+                for node in scope.name_to_all_definition_nodes[unused.id]
+            ):
+                self._show_error_if_checking(
+                    unused,
+                    f"Variable {unused.id} is never accessed",
+                    error_code=ErrorCode.unused_variable,
+                    replacement=replacement,
+                )
+            else:
+                self._show_error_if_checking(
+                    unused,
+                    f"Assigned value of {unused.id} is never accessed",
+                    error_code=ErrorCode.unused_assignment,
+                    replacement=replacement,
+                )
 
     def value_of_annotation(self, node: ast.expr) -> Value:
         with qcore.override(self, "state", VisitorState.collect_names):

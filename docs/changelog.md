@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `unused_assignment` error code, separated out from
+  `unused_variable`. Enable these error codes and
+  `possibly_undefined_name` by default (#511)
 - Fix handling of overloaded methods called on literals (#513)
 - Partial support for running on Python 3.11 (#512)
 - Basic support for checking `Final` and for checking re-assignments
