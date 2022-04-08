@@ -7,6 +7,7 @@ from abc import abstractmethod
 import ast
 import asyncio
 import collections.abc
+import sys
 import types
 import asynq
 import enum
@@ -121,11 +122,16 @@ class AsyncProxyDecorators(PyObjectSequenceOption[object]):
     name = "async_proxy_decorators"
 
 
+_safe_decorators = [asynq.asynq, classmethod, staticmethod]
+if sys.version_info < (3, 11):
+    _safe_decorators.append(asyncio.coroutine)
+
+
 class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
     """These decorators can safely be applied to nested functions."""
 
     name = "safe_decorators_for_nested_functions"
-    default_value = [asynq.asynq, classmethod, staticmethod, asyncio.coroutine]
+    default_value = _safe_decorators
 
 
 def compute_function_info(
@@ -169,7 +175,9 @@ def compute_function_info(
                 is_classmethod = True
             elif decorator_value == KnownValue(staticmethod):
                 is_staticmethod = True
-            elif decorator_value == KnownValue(asyncio.coroutine):
+            elif sys.version_info < (3, 11) and decorator_value == KnownValue(
+                asyncio.coroutine
+            ):
                 is_decorated_coroutine = True
             elif decorator_value == KnownValue(
                 real_overload
