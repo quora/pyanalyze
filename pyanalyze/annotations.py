@@ -450,6 +450,8 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return NO_RETURN_VALUE
     elif is_typing_name(val, "Self"):
         return SelfTVV
+    elif is_typing_name(val, "LiteralString"):
+        return TypedValue(str, literal_only=True)
     elif hasattr(val, "__supertype__"):
         if isinstance(val.__supertype__, type):
             # NewType
