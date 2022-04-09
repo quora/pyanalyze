@@ -600,6 +600,8 @@ class TypedValue(Value):
 
     typ: Union[type, str]
     """The underlying type, or a fully qualified reference to one."""
+    literal_only: bool = False
+    """True if this is LiteralString (PEP 675)."""
     _type_object: Optional["pyanalyze.type_object.TypeObject"] = field(
         init=False, repr=False, hash=False, compare=False, default=None
     )
@@ -627,6 +629,8 @@ class TypedValue(Value):
                     return {}
             return can_assign
         elif isinstance(other, TypedValue):
+            if self.literal_only and not other.literal_only:
+                return CanAssignError(f"{other} is not a literal")
             return self_tobj.can_assign(self, other, ctx)
         elif isinstance(other, SubclassValue):
             if isinstance(other.typ, TypedValue):
@@ -709,9 +713,15 @@ class TypedValue(Value):
         return KnownValue(self.typ)
 
     def __str__(self) -> str:
+        if self.literal_only:
+            if self.typ is str:
+                return "LiteralString"
+            suffix = " (literal only)"
+        else:
+            suffix = ""
         if self._type_object is not None:
-            return str(self._type_object)
-        return stringify_object(self.typ)
+            return f"{self._type_object}{suffix}"
+        return stringify_object(self.typ) + suffix
 
 
 @dataclass(unsafe_hash=True, init=False)

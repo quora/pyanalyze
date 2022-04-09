@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support `LiteralString` (PEP 675) (#514)
 - Add `unused_assignment` error code, separated out from
   `unused_variable`. Enable these error codes and
   `possibly_undefined_name` by default (#511)

@@ -117,8 +117,8 @@ def test_unbound_method_value() -> None:
 
 def test_typed_value() -> None:
     val = TypedValue(str)
-    assert str is val.typ
-    assert "str" == str(val)
+    assert val.typ is str
+    assert str(val) == "str"
     assert val.is_type(str)
     assert not val.is_type(int)
 
@@ -128,8 +128,15 @@ def test_typed_value() -> None:
     assert_can_assign(val, MultiValuedValue([val, KnownValue("x")]))
     assert_cannot_assign(val, MultiValuedValue([KnownValue("x"), TypedValue(int)]))
 
+    literal_string = TypedValue(str, literal_only=True)
+    assert literal_string.typ is str
+    assert str(literal_string) == "LiteralString"
+    assert_can_assign(val, literal_string)
+    assert_cannot_assign(literal_string, val)
+    assert_can_assign(literal_string, KnownValue("x"))
+
     float_val = TypedValue(float)
-    assert "float" == str(float_val)
+    assert str(float_val) == "float"
     assert_can_assign(float_val, KnownValue(1.0))
     assert_can_assign(float_val, KnownValue(1))
     assert_cannot_assign(float_val, KnownValue(""))
