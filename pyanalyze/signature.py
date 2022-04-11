@@ -42,7 +42,6 @@ from .value import (
     ParamSpecArgsValue,
     ParamSpecKwargsValue,
     ParameterTypeGuardExtension,
-    SequenceIncompleteValue,
     DictIncompleteValue,
     SequenceValue,
     TypeGuardExtension,
@@ -924,10 +923,17 @@ class Signature:
                         tuple, [AnyValue(AnySource.ellipsis_callable)]
                     )
                 elif actual_args.star_args is not None:
-                    element_value = unite_values(*positionals, actual_args.star_args)
-                    star_args_value = GenericValue(tuple, [element_value])
+                    star_args_value = SequenceValue(
+                        tuple,
+                        [
+                            *[(False, pos) for pos in positionals],
+                            (True, actual_args.star_args),
+                        ],
+                    )
                 else:
-                    star_args_value = SequenceIncompleteValue(tuple, positionals)
+                    star_args_value = SequenceValue(
+                        tuple, [(False, pos) for pos in positionals]
+                    )
                     if not positionals:
                         # no *args were actually provided
                         position = DEFAULT
@@ -2350,7 +2356,6 @@ MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarVa
 def can_assign_var_positional(
     my_param: SigParameter, args_annotation: Value, idx: int, ctx: CanAssignContext
 ) -> Union[List[BoundsMap], CanAssignError]:
-    bounds_maps = []
     my_annotation = my_param.get_annotation()
     if isinstance(args_annotation, SequenceValue):
         members = args_annotation.get_member_sequence()
@@ -2369,41 +2374,20 @@ def can_assign_var_positional(
                     " type is incompatible",
                     [can_assign],
                 )
-            bounds_maps.append(can_assign)
-            return bounds_maps
+            return [can_assign]
 
-    if isinstance(args_annotation, SequenceIncompleteValue):
-        length = len(args_annotation.members)
-        if idx >= length:
-            return CanAssignError(
-                f"parameter {my_param.name!r} is not accepted; {args_annotation} only"
-                f" accepts {length} values"
-            )
-        their_annotation = args_annotation.members[idx]
-        can_assign = their_annotation.can_assign(my_annotation, ctx)
-        if isinstance(can_assign, CanAssignError):
-            return CanAssignError(
-                f"type of parameter {my_param.name!r} is incompatible: *args[{idx}]"
-                " type is incompatible",
-                [can_assign],
-            )
-        bounds_maps.append(can_assign)
-    else:
-        tv_map = get_tv_map(IterableValue, args_annotation, ctx)
-        if isinstance(tv_map, CanAssignError):
-            return CanAssignError(
-                f"{args_annotation} is not an iterable type", [tv_map]
-            )
-        iterable_arg = tv_map.get(T, AnyValue(AnySource.generic_argument))
-        bounds_map = iterable_arg.can_assign(my_annotation, ctx)
-        if isinstance(bounds_map, CanAssignError):
-            return CanAssignError(
-                f"type of parameter {my_param.name!r} is incompatible: "
-                "*args type is incompatible",
-                [bounds_map],
-            )
-        bounds_maps.append(bounds_map)
-    return bounds_maps
+    tv_map = get_tv_map(IterableValue, args_annotation, ctx)
+    if isinstance(tv_map, CanAssignError):
+        return CanAssignError(f"{args_annotation} is not an iterable type", [tv_map])
+    iterable_arg = tv_map.get(T, AnyValue(AnySource.generic_argument))
+    bounds_map = iterable_arg.can_assign(my_annotation, ctx)
+    if isinstance(bounds_map, CanAssignError):
+        return CanAssignError(
+            f"type of parameter {my_param.name!r} is incompatible: "
+            "*args type is incompatible",
+            [bounds_map],
+        )
+    return [bounds_map]
 
 
 def can_assign_var_keyword(

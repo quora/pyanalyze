@@ -63,7 +63,13 @@ from .extensions import (
 from .find_unused import used
 from .functions import FunctionDefNode
 from .node_visitor import ErrorContext
-from .signature import ELLIPSIS_PARAM, SigParameter, Signature, ParameterKind
+from .signature import (
+    ELLIPSIS_PARAM,
+    InvalidSignature,
+    SigParameter,
+    Signature,
+    ParameterKind,
+)
 from .safe import is_typing_name, is_instance_of_typing_name
 from . import type_evaluation
 from .value import (
@@ -85,7 +91,6 @@ from .value import (
     SequenceValue,
     TypeGuardExtension,
     TypedValue,
-    SequenceIncompleteValue,
     annotate_value,
     unite_values,
     Value,
@@ -385,7 +390,7 @@ def _type_from_runtime(
         origin = get_origin(val)
         args = get_args(val)
         if origin is tuple and not args:
-            return SequenceIncompleteValue(tuple, [])
+            return SequenceValue(tuple, [])
         return _value_of_origin_args(
             origin, args, val, ctx, unpack_allowed=origin is tuple
         )
@@ -404,24 +409,16 @@ def _type_from_runtime(
             if val is tuple or val is Tuple:
                 return TypedValue(tuple)
             else:
-                return SequenceIncompleteValue(tuple, [])
+                return SequenceValue(tuple, [])
         elif len(args) == 2 and args[1] is Ellipsis:
             return GenericValue(tuple, [_type_from_runtime(args[0], ctx)])
         elif len(args) == 1 and args[0] == ():
-            return SequenceIncompleteValue(tuple, [])  # empty tuple
+            return SequenceValue(tuple, [])  # empty tuple
         else:
-            args_vals = [
-                _type_from_runtime(arg, ctx, unpack_allowed=True) for arg in args
-            ]
-            if any(isinstance(val, UnpackedValue) for val in args_vals):
-                members = []
-                for val in args_vals:
-                    if isinstance(val, UnpackedValue):
-                        members += val.elements
-                    else:
-                        members.append((False, val))
-                return SequenceValue(tuple, members)
-            return SequenceIncompleteValue(tuple, args_vals)
+            return _make_sequence_value(
+                tuple,
+                [_type_from_runtime(arg, ctx, unpack_allowed=True) for arg in args],
+            )
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
         required_keys = getattr(val, "__required_keys__", None)
         # 3.8's typing.TypedDict doesn't have __required_keys__. With
@@ -799,18 +796,12 @@ def _type_from_subscripted_value(
         if len(members) == 2 and members[1] == KnownValue(Ellipsis):
             return GenericValue(tuple, [_type_from_value(members[0], ctx)])
         elif len(members) == 1 and members[0] == KnownValue(()):
-            return SequenceIncompleteValue(tuple, [])
+            return SequenceValue(tuple, [])
         else:
-            args = [_type_from_value(arg, ctx, unpack_allowed=True) for arg in members]
-            if any(isinstance(val, UnpackedValue) for val in args):
-                tuple_members = []
-                for val in args:
-                    if isinstance(val, UnpackedValue):
-                        tuple_members += val.elements
-                    else:
-                        tuple_members.append((False, val))
-                return SequenceValue(tuple, tuple_members)
-            return SequenceIncompleteValue(tuple, args)
+            return _make_sequence_value(
+                tuple,
+                [_type_from_value(arg, ctx, unpack_allowed=True) for arg in members],
+            )
     elif root is typing.Optional:
         if len(members) != 1:
             ctx.show_error("Optional[] takes only one argument")
@@ -982,9 +973,7 @@ class _Visitor(ast.NodeVisitor):
     def visit_Subscript(self, node: ast.Subscript) -> Value:
         value = self.visit(node.value)
         index = self.visit(node.slice)
-        if isinstance(index, SequenceIncompleteValue):
-            members = index.members
-        elif isinstance(index, SequenceValue):
+        if isinstance(index, SequenceValue):
             members = index.get_member_sequence()
             if members is None:
                 # TODO support unpacking here
@@ -1009,12 +998,12 @@ class _Visitor(ast.NodeVisitor):
         return AnyValue(AnySource.error)
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
-        elts = [self.visit(elt) for elt in node.elts]
-        return SequenceIncompleteValue(tuple, elts)
+        elts = [(False, self.visit(elt)) for elt in node.elts]
+        return SequenceValue(tuple, elts)
 
     def visit_List(self, node: ast.List) -> Value:
-        elts = [self.visit(elt) for elt in node.elts]
-        return SequenceIncompleteValue(list, elts)
+        elts = [(False, self.visit(elt)) for elt in node.elts]
+        return SequenceValue(list, elts)
 
     def visit_Index(self, node: ast.Index) -> Value:
         # class is unused in 3.9
@@ -1159,12 +1148,12 @@ def _value_of_origin_args(
         elif len(args) == 2 and args[1] is Ellipsis:
             return GenericValue(tuple, [_type_from_runtime(args[0], ctx)])
         elif len(args) == 1 and args[0] == ():
-            return SequenceIncompleteValue(tuple, [])
+            return SequenceValue(tuple, [])
         else:
             args_vals = [
                 _type_from_runtime(arg, ctx, unpack_allowed=True) for arg in args
             ]
-            return SequenceIncompleteValue(tuple, args_vals)
+            return _make_sequence_value(tuple, args_vals)
     elif origin is typing.Union:
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
     elif origin is Callable or origin is typing.Callable:
@@ -1254,11 +1243,19 @@ def _maybe_typed_value(val: Union[type, str]) -> Value:
     return TypedValue(val)
 
 
+def _make_sequence_value(typ: type, members: Sequence[Value]) -> SequenceValue:
+    pairs = []
+    for val in members:
+        if isinstance(val, UnpackedValue):
+            pairs += val.elements
+        else:
+            pairs.append((False, val))
+    return SequenceValue(typ, pairs)
+
+
 def _make_unpacked_value(val: Value, ctx: Context) -> UnpackedValue:
     if isinstance(val, SequenceValue) and val.typ is tuple:
         return UnpackedValue(val.members)
-    elif isinstance(val, SequenceIncompleteValue) and val.typ is tuple:
-        return UnpackedValue([(False, elt) for elt in val.members])
     elif isinstance(val, GenericValue) and val.typ is tuple:
         return UnpackedValue([(True, val.args[0])])
     elif isinstance(val, TypedValue) and val.typ is tuple:
@@ -1277,16 +1274,28 @@ def _make_callable_from_value(
                 [ELLIPSIS_PARAM], return_annotation=return_annotation, is_asynq=is_asynq
             )
         )
-    elif isinstance(args, SequenceIncompleteValue):
-        params = [
-            SigParameter(
-                f"__arg{i}",
-                kind=ParameterKind.POSITIONAL_ONLY,
-                annotation=_type_from_value(arg, ctx),
-            )
-            for i, arg in enumerate(args.members)
-        ]
-        sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+    elif isinstance(args, SequenceValue):
+        params = []
+        for i, (is_many, arg) in enumerate(args.members):
+            annotation = _type_from_value(arg, ctx)
+            if is_many:
+                param = SigParameter(
+                    f"__arg{i}",
+                    kind=ParameterKind.VAR_POSITIONAL,
+                    annotation=GenericValue(tuple, [annotation]),
+                )
+            else:
+                param = SigParameter(
+                    f"__arg{i}",
+                    kind=ParameterKind.POSITIONAL_ONLY,
+                    annotation=annotation,
+                )
+            params.append(param)
+        try:
+            sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+        except InvalidSignature as e:
+            ctx.show_error(str(e))
+            return AnyValue(AnySource.error)
         return CallableValue(sig)
     elif isinstance(args, KnownValue) and is_instance_of_typing_name(
         args.val, "ParamSpec"

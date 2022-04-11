@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Initial support for variable-length heterogeneous sequences
+  (required for PEP 646). More precise types are now inferred
+  for heterogeneous sequences containing variable-length
+  objects. (#515, #516)
 - Support `LiteralString` (PEP 675) (#514)
 - Add `unused_assignment` error code, separated out from
   `unused_variable`. Enable these error codes and

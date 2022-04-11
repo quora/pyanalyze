@@ -29,7 +29,6 @@ from .value import (
     CanAssignContext,
     KnownValue,
     DictIncompleteValue,
-    SequenceIncompleteValue,
     SequenceValue,
     TypedValue,
     Value,
@@ -369,9 +368,7 @@ class PercentFormatString:
             if isinstance(args, AnnotatedValue):
                 args = args.value
             args = replace_known_sequence_value(args)
-            if isinstance(args, SequenceIncompleteValue):
-                all_args = args.members
-            elif isinstance(args, SequenceValue):
+            if isinstance(args, SequenceValue):
                 all_args = args.get_member_sequence()
                 if all_args is None:
                     return

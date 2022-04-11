@@ -50,7 +50,6 @@ from .value import (
     CustomCheckExtension,
     DictIncompleteValue,
     KVPair,
-    SequenceIncompleteValue,
     SequenceValue,
     SubclassValue,
     TypedValue,
@@ -167,8 +166,8 @@ class LenPredicate:
         ):
             # Narrow Tuple[...] to a known length
             arg = cleaned.get_generic_arg_for_type(tuple, self.ctx, 0)
-            return SequenceIncompleteValue(
-                tuple, [arg for _ in range(self.expected_length)]
+            return SequenceValue(
+                tuple, [(False, arg) for _ in range(self.expected_length)]
             )
         return value
 
@@ -479,20 +478,7 @@ def get_match_args(
     if match_args_value is UNINITIALIZED_VALUE:
         return CanAssignError(f"{cls} has no attribute __match_args__")
     match_args_value = replace_known_sequence_value(match_args_value)
-    if isinstance(match_args_value, SequenceIncompleteValue):
-        if match_args_value.typ is not tuple:
-            return CanAssignError(
-                f"__match_args__ must be a literal tuple, not {match_args_value}"
-            )
-        match_args = []
-        for i, arg in enumerate(match_args_value.members):
-            if not isinstance(arg, KnownValue) or not isinstance(arg.val, str):
-                return CanAssignError(
-                    f"__match_args__ element {i} is {arg}, not a string literal"
-                )
-            match_args.append(arg.val)
-        return match_args
-    elif isinstance(match_args_value, SequenceValue):
+    if isinstance(match_args_value, SequenceValue):
         if match_args_value.typ is not tuple:
             return CanAssignError(
                 f"__match_args__ must be a literal tuple, not {match_args_value}"

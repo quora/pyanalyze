@@ -5,12 +5,12 @@ Functions to be used in test_scope unit tests.
 
 """
 
-from typing import ClassVar, Union, overload, NoReturn
+from typing import ClassVar, Sequence, Union, overload, NoReturn
 from asynq import asynq, async_proxy, AsyncTask, ConstFuture, get_async_fn, result
 from asynq.decorators import AsyncDecorator
 import qcore
 
-from .value import VariableNameValue
+from .value import SequenceValue, VariableNameValue, Value
 
 ASYNQ_METHOD_NAME = "asynq"
 ASYNQ_METHOD_NAMES = ("asynq",)
@@ -235,3 +235,7 @@ def overloaded(*args: str) -> Union[int, str]:
 
 def assert_never(arg: NoReturn) -> NoReturn:
     raise RuntimeError("no way")
+
+
+def make_simple_sequence(typ: type, vals: Sequence[Value]) -> SequenceValue:
+    return SequenceValue(typ, [(False, val) for val in vals])

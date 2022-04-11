@@ -1,13 +1,6 @@
 # static analysis: ignore
-from .value import (
-    GenericValue,
-    KnownValue,
-    TypedValue,
-    make_weak,
-    AnyValue,
-    AnySource,
-    SequenceIncompleteValue,
-)
+from .tests import make_simple_sequence
+from .value import GenericValue, KnownValue, TypedValue, make_weak, AnyValue, AnySource
 from .implementation import assert_is_value
 from .test_node_visitor import assert_passes, only_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -251,7 +244,7 @@ class TestArgSpec(TestNameCheckVisitorBase):
                 GenericValue(
                     Awaitable,
                     [
-                        SequenceIncompleteValue(
+                        make_simple_sequence(
                             tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
                         )
                     ],

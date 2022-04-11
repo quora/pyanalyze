@@ -1,6 +1,7 @@
 # static analysis: ignore
 from collections.abc import Sequence
 
+
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -8,7 +9,6 @@ from .value import (
     CanAssignError,
     GenericValue,
     KnownValue,
-    SequenceIncompleteValue,
     TypedDictValue,
     TypedValue,
     make_weak,
@@ -25,6 +25,7 @@ from .signature import (
     ParameterKind as K,
 )
 from .test_value import CTX
+from .tests import make_simple_sequence
 
 TupleInt = GenericValue(tuple, [TypedValue(int)])
 TupleBool = GenericValue(tuple, [TypedValue(bool)])
@@ -292,7 +293,7 @@ class TestCanAssign:
         )
         object_int = P(
             "args",
-            annotation=SequenceIncompleteValue(
+            annotation=make_simple_sequence(
                 tuple, [TypedValue(object), TypedValue(int)]
             ),
             kind=K.VAR_POSITIONAL,
