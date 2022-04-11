@@ -1548,10 +1548,12 @@ class TestUnpacking(TestNameCheckVisitorBase):
             degu = (1, *x)
             assert_is_value(
                 degu,
-                make_weak(
-                    GenericValue(
-                        tuple, [KnownValue(1) | AnyValue(AnySource.generic_argument)]
-                    )
+                SequenceValue(
+                    tuple,
+                    [
+                        (False, KnownValue(1)),
+                        (True, AnyValue(AnySource.generic_argument)),
+                    ],
                 ),
             )
 

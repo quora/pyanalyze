@@ -2668,7 +2668,7 @@ def _unpack_sequence_value(
             return CanAssignError(f"{value} must have exactly {target_length} elements")
         middle_length = remaining_target_length - len(tail)
         fallback_value = unite_values(*[val for _, val in remaining_members])
-        return [*head, *[fallback_value for _ in range(middle_length)], *tail]
+        return [*head, *[fallback_value for _ in range(middle_length)], *reversed(tail)]
     else:
         while len(tail) < post_starred_length:
             if len(tail) >= len(value.members) - len(head):
@@ -2699,10 +2699,10 @@ def _unpack_sequence_value(
                     *[fallback_value for _ in range(remaining_target_length)],
                     GenericValue(list, [fallback_value]),
                     *[fallback_value for _ in range(remaining_post_starred_length)],
-                    *tail,
+                    *reversed(tail),
                 ]
         else:
-            return [*head, SequenceValue(list, remaining_members), *tail]
+            return [*head, SequenceValue(list, remaining_members), *reversed(tail)]
 
 
 def replace_known_sequence_value(value: Value) -> Value:

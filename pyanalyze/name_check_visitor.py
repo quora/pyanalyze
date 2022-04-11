@@ -87,13 +87,7 @@ from .patma import PatmaVisitor
 from .predicates import EqualsPredicate
 from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
-from .safe import (
-    safe_getattr,
-    is_hashable,
-    all_of_type,
-    safe_issubclass,
-    is_dataclass_type,
-)
+from .safe import safe_getattr, is_hashable, safe_issubclass, is_dataclass_type
 from .stacked_scopes import (
     EMPTY_ORIGIN,
     AbstractConstraint,

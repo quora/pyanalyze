@@ -491,23 +491,11 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(
                 lst, make_simple_sequence(list, [TypedValue(int), TypedValue(str)])
             )
-            # If we extend with a set, don't use a SequenceValue any more,
-            # because we don't know how many values were added or in what order.
-            # (Technically we do know for a one-element set, but that doesn't seem worth
-            # writing a special case for.)
-            # TODO: This reasoning no longer applies to SequenceValue.
             lst.extend({float(1.0)})
             assert_is_value(
                 lst,
-                make_weak(
-                    GenericValue(
-                        list,
-                        [
-                            MultiValuedValue(
-                                [TypedValue(int), TypedValue(str), TypedValue(float)]
-                            )
-                        ],
-                    )
+                make_simple_sequence(
+                    list, [TypedValue(int), TypedValue(str), TypedValue(float)]
                 ),
             )
 
@@ -527,23 +515,11 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(
                 lst, make_simple_sequence(list, [TypedValue(int), TypedValue(str)])
             )
-            # If we extend with a set, don't use a SequenceValue any more,
-            # because we don't know how many values were added or in what order.
-            # (Technically we do know for a one-element set, but that doesn't seem worth
-            # writing a special case for.)
-            # TODO: This reasoning no longer applies to SequenceValue.
             lst += {float(1.0)}
             assert_is_value(
                 lst,
-                make_weak(
-                    GenericValue(
-                        list,
-                        [
-                            MultiValuedValue(
-                                [TypedValue(int), TypedValue(str), TypedValue(float)]
-                            )
-                        ],
-                    )
+                make_simple_sequence(
+                    list, [TypedValue(int), TypedValue(str), TypedValue(float)]
                 ),
             )
 
@@ -578,61 +554,40 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst.extend(func())
             assert_is_value(
                 lst,
-                make_weak(
-                    GenericValue(
-                        list,
-                        [
-                            MultiValuedValue(
-                                [
-                                    KnownValue("a"),
-                                    KnownValue("b"),
-                                    KnownValue("c"),
-                                    KnownValue("d"),
-                                ]
-                            )
-                        ],
-                    )
+                SequenceValue(
+                    list,
+                    [
+                        (False, KnownValue("a")),
+                        (False, KnownValue("b")),
+                        (True, KnownValue("c") | KnownValue("d")),
+                    ],
                 ),
             )
             lst.extend(["e"])
             assert_is_value(
                 lst,
-                make_weak(
-                    GenericValue(
-                        list,
-                        [
-                            MultiValuedValue(
-                                [
-                                    KnownValue("a"),
-                                    KnownValue("b"),
-                                    KnownValue("c"),
-                                    KnownValue("d"),
-                                    KnownValue("e"),
-                                ]
-                            )
-                        ],
-                    )
+                SequenceValue(
+                    list,
+                    [
+                        (False, KnownValue("a")),
+                        (False, KnownValue("b")),
+                        (True, KnownValue("c") | KnownValue("d")),
+                        (False, KnownValue("e")),
+                    ],
                 ),
             )
             lst.append("f")
             assert_is_value(
                 lst,
-                make_weak(
-                    GenericValue(
-                        list,
-                        [
-                            MultiValuedValue(
-                                [
-                                    KnownValue("a"),
-                                    KnownValue("b"),
-                                    KnownValue("c"),
-                                    KnownValue("d"),
-                                    KnownValue("e"),
-                                    KnownValue("f"),
-                                ]
-                            )
-                        ],
-                    )
+                SequenceValue(
+                    list,
+                    [
+                        (False, KnownValue("a")),
+                        (False, KnownValue("b")),
+                        (True, KnownValue("c") | KnownValue("d")),
+                        (False, KnownValue("e")),
+                        (False, KnownValue("f")),
+                    ],
                 ),
             )
 
@@ -646,24 +601,20 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             lst2 = [*lst1, "b"]
             assert_is_value(
                 lst2,
-                make_weak(
-                    GenericValue(
-                        list, [MultiValuedValue([KnownValue("a"), KnownValue("b")])]
-                    )
+                SequenceValue(
+                    list, [(True, KnownValue("a")), (False, KnownValue("b"))]
                 ),
             )
             lst2.append("c")
             assert_is_value(
                 lst2,
-                make_weak(
-                    GenericValue(
-                        list,
-                        [
-                            MultiValuedValue(
-                                [KnownValue("a"), KnownValue("b"), KnownValue("c")]
-                            )
-                        ],
-                    )
+                SequenceValue(
+                    list,
+                    [
+                        (True, KnownValue("a")),
+                        (False, KnownValue("b")),
+                        (False, KnownValue("c")),
+                    ],
                 ),
             )
 
