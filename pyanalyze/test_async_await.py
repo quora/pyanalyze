@@ -1,14 +1,6 @@
 # static analysis: ignore
 from .tests import make_simple_sequence
-from .value import (
-    GenericValue,
-    KnownValue,
-    SequenceValue,
-    TypedValue,
-    make_weak,
-    AnyValue,
-    AnySource,
-)
+from .value import GenericValue, KnownValue, TypedValue, make_weak, AnyValue, AnySource
 from .implementation import assert_is_value
 from .test_node_visitor import assert_passes, only_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
