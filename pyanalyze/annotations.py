@@ -574,7 +574,7 @@ def _type_from_runtime(
         if unpack_allowed:
             return _make_unpacked_value(_type_from_runtime(val.__type__, ctx), ctx)
         else:
-            ctx.show_error(f"Unpack[] used in unsupported context")
+            ctx.show_error("Unpack[] used in unsupported context")
             return AnyValue(AnySource.error)
     elif is_typing_name(val, "TypeAlias"):
         return AnyValue(AnySource.incomplete_annotation)
