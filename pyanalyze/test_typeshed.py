@@ -23,6 +23,7 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .signature import OverloadedSignature, SigParameter, Signature
 from .test_arg_spec import ClassWithCall
+from .tests import make_simple_sequence
 from .typeshed import TypeshedFinder
 from .value import (
     CallableValue,
@@ -38,7 +39,6 @@ from .value import (
     make_weak,
     TypeVarValue,
     UNINITIALIZED_VALUE,
-    SequenceIncompleteValue,
     Value,
 )
 
@@ -386,7 +386,7 @@ class TestGetGenericBases:
     def test_dict_items(self):
         TInt = TypedValue(int)
         TStr = TypedValue(str)
-        TTuple = SequenceIncompleteValue(tuple, [TInt, TStr])
+        TTuple = make_simple_sequence(tuple, [TInt, TStr])
         self.check(
             {
                 "_collections_abc.dict_items": [TInt, TStr],
@@ -445,7 +445,7 @@ class TestGetGenericBases:
     def test_collections(self):
         int_tv = TypedValue(int)
         str_tv = TypedValue(str)
-        int_str_tuple = SequenceIncompleteValue(tuple, [int_tv, str_tv])
+        int_str_tuple = make_simple_sequence(tuple, [int_tv, str_tv])
         self.check(
             {
                 collections.abc.ValuesView: [int_tv],

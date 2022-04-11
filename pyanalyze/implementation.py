@@ -42,7 +42,6 @@ from .value import (
     GenericValue,
     NewTypeValue,
     DictIncompleteValue,
-    SequenceIncompleteValue,
     TypedDictValue,
     KnownValue,
     MultiValuedValue,
@@ -346,7 +345,8 @@ def _sequence_impl(typ: type, ctx: CallContext) -> ImplReturn:
         elif isinstance(cvi, Value):
             return GenericValue(typ, [cvi])
         else:
-            return SequenceIncompleteValue.make_or_known(typ, cvi)
+            # TODO: Consider changing concrete_values_from_iterable to preserve unpacked bits
+            return SequenceValue.make_or_known(typ, [(False, elt) for elt in cvi])
 
     return flatten_unions(inner, iterable)
 
@@ -356,15 +356,7 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
     element = ctx.vars["object"]
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
     if varname is not None:
-        if isinstance(lst, SequenceIncompleteValue):
-            no_return_unless = Constraint(
-                varname,
-                ConstraintType.is_value_object,
-                True,
-                SequenceIncompleteValue.make_or_known(list, (*lst.members, element)),
-            )
-            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        elif isinstance(lst, SequenceValue):
+        if isinstance(lst, SequenceValue):
             no_return_unless = Constraint(
                 varname,
                 ConstraintType.is_value_object,
@@ -436,15 +428,6 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                                     return member
                     # fall back to the common type
                     return self_value.args[0]
-                elif isinstance(self_value, SequenceIncompleteValue):
-                    if -len(self_value.members) <= key.val < len(self_value.members):
-                        return self_value.members[key.val]
-                    elif typ is list:
-                        # fall back to the common type
-                        return self_value.args[0]
-                    else:
-                        ctx.show_error(f"Tuple index out of range: {key}")
-                        return AnyValue(AnySource.error)
                 else:
                     return self_value.get_generic_arg_for_type(typ, ctx.visitor, 0)
             elif isinstance(key.val, slice):
@@ -458,10 +441,6 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                         # If the value contains unpacked values, we don't attempt
                         # to resolve the slice.
                         return GenericValue(typ, self_value.args)
-                elif isinstance(self_value, SequenceIncompleteValue):
-                    return SequenceIncompleteValue.make_or_known(
-                        list, self_value.members[key.val]
-                    )
                 elif self_value.typ in (list, tuple):
                     # For generics of exactly list/tuple, return the self type.
                     return self_value
@@ -922,12 +901,6 @@ def _list_add_impl(ctx: CallContext) -> ImplReturn:
         right = replace_known_sequence_value(right)
         if isinstance(left, SequenceValue) and isinstance(right, SequenceValue):
             return SequenceValue.make_or_known(list, [*left.members, *right.members])
-        elif isinstance(left, SequenceIncompleteValue) and isinstance(
-            right, SequenceIncompleteValue
-        ):
-            return SequenceIncompleteValue.make_or_known(
-                list, [*left.members, *right.members]
-            )
         elif isinstance(left, TypedValue) and isinstance(right, TypedValue):
             left_arg = left.get_generic_arg_for_type(list, ctx.visitor, 0)
             right_arg = right.get_generic_arg_for_type(list, ctx.visitor, 0)
@@ -946,36 +919,8 @@ def _list_extend_or_iadd_impl(
     def inner(lst: Value, iterable: Value) -> ImplReturn:
         cleaned_lst = replace_known_sequence_value(lst)
         iterable = replace_known_sequence_value(iterable)
-        if isinstance(cleaned_lst, SequenceIncompleteValue):
-            if isinstance(
-                iterable, SequenceIncompleteValue
-            ) and iterable.get_type_object(ctx.visitor).is_exactly((list, tuple)):
-                constrained_value = SequenceIncompleteValue.make_or_known(
-                    list, (*cleaned_lst.members, *iterable.members)
-                )
-            else:
-                if isinstance(iterable, TypedValue):
-                    arg_type = iterable.get_generic_arg_for_type(
-                        collections.abc.Iterable, ctx.visitor, 0
-                    )
-                else:
-                    arg_type = AnyValue(AnySource.generic_argument)
-                generic_arg = unite_values(*cleaned_lst.members, arg_type)
-                constrained_value = make_weak(GenericValue(list, [generic_arg]))
-            if return_container:
-                return ImplReturn(constrained_value)
-            if varname is not None:
-                no_return_unless = Constraint(
-                    varname, ConstraintType.is_value_object, True, constrained_value
-                )
-                return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        elif isinstance(cleaned_lst, SequenceValue):
-            if isinstance(iterable, SequenceIncompleteValue):
-                constrained_value = SequenceValue.make_or_known(
-                    list,
-                    (*cleaned_lst.members, *[(False, m) for m in iterable.members]),
-                )
-            elif isinstance(iterable, SequenceValue):
+        if isinstance(cleaned_lst, SequenceValue):
+            if isinstance(iterable, SequenceValue):
                 constrained_value = SequenceValue.make_or_known(
                     list, (*cleaned_lst.members, *iterable.members)
                 )
@@ -1073,17 +1018,7 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
     element = ctx.vars["object"]
     varname = ctx.visitor.varname_for_self_constraint(ctx.node)
     if varname is not None:
-        if isinstance(set_value, SequenceIncompleteValue):
-            no_return_unless = Constraint(
-                varname,
-                ConstraintType.is_value_object,
-                True,
-                SequenceIncompleteValue.make_or_known(
-                    set, (*set_value.members, element)
-                ),
-            )
-            return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        elif isinstance(set_value, SequenceValue):
+        if isinstance(set_value, SequenceValue):
             no_return_unless = Constraint(
                 varname,
                 ConstraintType.is_value_object,
@@ -1181,9 +1116,7 @@ def _str_format_impl(ctx: CallContext) -> Value:
     if not isinstance(self, KnownValue):
         return TypedValue(str)
     args_value = replace_known_sequence_value(ctx.vars["args"])
-    if isinstance(args_value, SequenceIncompleteValue):
-        args = args_value.members
-    elif isinstance(args_value, SequenceValue):
+    if isinstance(args_value, SequenceValue):
         args = args_value.get_member_sequence()
         if args is None:
             return TypedValue(str)
@@ -1313,12 +1246,6 @@ def _qcore_assert_impl(
 
 
 def len_of_value(val: Value) -> Value:
-    if (
-        isinstance(val, SequenceIncompleteValue)
-        and isinstance(val.typ, type)
-        and not issubclass(val.typ, KNOWN_MUTABLE_TYPES)
-    ):
-        return KnownValue(len(val.members))
     if (
         isinstance(val, SequenceValue)
         and isinstance(val.typ, type)

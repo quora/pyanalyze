@@ -185,7 +185,6 @@ from .value import (
     ReferencingValue,
     SubclassValue,
     DictIncompleteValue,
-    SequenceIncompleteValue,
     AsyncTaskIncompleteValue,
     GenericValue,
     Value,
@@ -2439,10 +2438,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         for val in iterable_type:
                             self.visit_comprehension(generator, iterable_type=val)
                             with qcore.override(self, "in_comprehension_body", True):
-                                elts.append(self.visit(node.elt))
+                                elts.append((False, self.visit(node.elt)))
                     finally:
                         self.node_context.contexts.pop()
-                    return SequenceIncompleteValue(typ, elts)
+                    return SequenceValue(typ, elts)
 
             iterable_type = unite_and_simplify(
                 *iterable_type,
@@ -2713,7 +2712,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         elt_nodes: Optional[Sequence[ast.AST]] = None,
     ) -> Value:
         values = []
-        has_unknown_value = False
         for i, elt in enumerate(elts):
             if isinstance(elt, _StarredValue):
                 vals = concrete_values_from_iterable(elt.value, self)
@@ -2724,16 +2722,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         ErrorCode.unsupported_operation,
                         detail=str(vals),
                     )
-                    new_vals = [AnyValue(AnySource.error)]
-                    has_unknown_value = True
+                    new_vals = [(True, AnyValue(AnySource.error))]
                 elif isinstance(vals, Value):
                     # single value
-                    has_unknown_value = True
-                    new_vals = [vals]
+                    new_vals = [(True, vals)]
                 else:
-                    new_vals = vals
+                    new_vals = [(False, val) for val in vals]
                 if typ is set:
-                    for val in new_vals:
+                    for _, val in new_vals:
                         hashability = check_hashability(val, self)
                         if isinstance(hashability, CanAssignError):
                             if elt_nodes:
@@ -2762,22 +2758,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                             ErrorCode.unhashable_key,
                             detail=str(hashability),
                         )
-                values.append(elt)
-        if has_unknown_value:
-            arg = unite_and_simplify(
-                *values, limit=self.options.get_value_for(UnionSimplificationLimit)
-            )
-            return make_weak(GenericValue(typ, [arg]))
-        elif all_of_type(values, KnownValue):
-            vals = [elt.val for elt in values]
-            try:
-                obj = typ(vals)
-            except TypeError:
-                # probably an unhashable type being included in a set
-                return TypedValue(typ)
-            return KnownValue(obj)
-        else:
-            return SequenceIncompleteValue(typ, values)
+                values.append((False, elt))
+
+        return SequenceValue.make_or_known(typ, values)
 
     # Operations
 
@@ -3213,14 +3196,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # https://github.com/quora/asynq/blob/b07682d8b11e53e4ee5c585020cc9033e239c7eb/asynq/async_task.py#L446
             value.get_type_object().is_exactly({list, tuple})
         ):
-            if isinstance(value, SequenceIncompleteValue) and isinstance(
-                value.typ, type
-            ):
-                values = [
-                    self._unwrap_yield_result(node, member) for member in value.members
-                ]
-                return self._maybe_make_sequence(value.typ, values, node)
-            elif isinstance(value, SequenceValue) and isinstance(value.typ, type):
+            if isinstance(value, SequenceValue) and isinstance(value.typ, type):
                 values = [
                     (is_many, self._unwrap_yield_result(node, member))
                     for is_many, member in value.members
@@ -4016,15 +3992,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     return_value = KnownValue(type[index.val])
                 else:
                     return_value = AnyValue(AnySource.inference)
-            elif (
-                isinstance(value, SequenceIncompleteValue)
-                and isinstance(index, KnownValue)
-                and isinstance(index.val, int)
-                and -len(value.members) <= index.val < len(value.members)
-            ):
-                # Don't error if it's out of range; the object may be mutated at runtime.
-                # TODO: handle slices; error for things that aren't ints or slices.
-                return_value = value.members[index.val]
             else:
                 with self.catch_errors():
                     getitem = self._get_dunder(node.value, value, "__getitem__")

@@ -1,17 +1,17 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-
+from .tests import make_simple_sequence
 from .value import (
     NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
     KVPair,
+    SequenceValue,
     assert_is_value,
     CallableValue,
     GenericValue,
-    SequenceIncompleteValue,
     KnownValue,
     TypedValue,
     DictIncompleteValue,
@@ -197,9 +197,9 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
             assert_is_value(tuple(i for i in ints), GenericValue(tuple, [one_two]))
             assert_is_value(tuple({i: i for i in ints}), GenericValue(tuple, [one_two]))
 
-            # SequenceIncompleteValue
+            # SequenceValue
             assert_is_value(
-                tuple([int(x)]), SequenceIncompleteValue(tuple, [TypedValue(int)])
+                tuple([int(x)]), make_simple_sequence(tuple, [TypedValue(int)])
             )
 
             # fallback
@@ -389,10 +389,10 @@ class TestGenericMutators(TestNameCheckVisitorBase):
 
         def capybara(x: int):
             lst = [x]
-            assert_is_value(lst, SequenceIncompleteValue(list, [TypedValue(int)]))
+            assert_is_value(lst, make_simple_sequence(list, [TypedValue(int)]))
             lst.append(1)
             assert_is_value(
-                lst, SequenceIncompleteValue(list, [TypedValue(int), KnownValue(1)])
+                lst, make_simple_sequence(list, [TypedValue(int), KnownValue(1)])
             )
 
             lst2: List[str] = ["x"]
@@ -427,10 +427,10 @@ class TestGenericMutators(TestNameCheckVisitorBase):
 
         def capybara(x: int):
             s = {x}
-            assert_is_value(s, SequenceIncompleteValue(set, [TypedValue(int)]))
+            assert_is_value(s, make_simple_sequence(set, [TypedValue(int)]))
             s.add(1)
             assert_is_value(
-                s, SequenceIncompleteValue(set, [TypedValue(int), KnownValue(1)])
+                s, make_simple_sequence(set, [TypedValue(int), KnownValue(1)])
             )
 
             s2: Set[str] = {"x"}
@@ -445,11 +445,10 @@ class TestGenericMutators(TestNameCheckVisitorBase):
         def capybara(x: int, y: str) -> None:
             assert_is_value(
                 [x] + [y],
-                SequenceIncompleteValue(list, [TypedValue(int), TypedValue(str)]),
+                make_simple_sequence(list, [TypedValue(int), TypedValue(str)]),
             )
             assert_is_value(
-                [x] + [1],
-                SequenceIncompleteValue(list, [TypedValue(int), KnownValue(1)]),
+                [x] + [1], make_simple_sequence(list, [TypedValue(int), KnownValue(1)])
             )
             left: List[int] = []
             right: List[str] = []
@@ -487,15 +486,16 @@ class TestGenericMutators(TestNameCheckVisitorBase):
 
         def capybara(x: int, y: str) -> None:
             lst = [x]
-            assert_is_value(lst, SequenceIncompleteValue(list, [TypedValue(int)]))
+            assert_is_value(lst, make_simple_sequence(list, [TypedValue(int)]))
             lst.extend([y])
             assert_is_value(
-                lst, SequenceIncompleteValue(list, [TypedValue(int), TypedValue(str)])
+                lst, make_simple_sequence(list, [TypedValue(int), TypedValue(str)])
             )
-            # If we extend with a set, don't use a SequenceIncompleteValue any more,
+            # If we extend with a set, don't use a SequenceValue any more,
             # because we don't know how many values were added or in what order.
             # (Technically we do know for a one-element set, but that doesn't seem worth
             # writing a special case for.)
+            # TODO: This reasoning no longer applies to SequenceValue.
             lst.extend({float(1.0)})
             assert_is_value(
                 lst,
@@ -522,15 +522,16 @@ class TestGenericMutators(TestNameCheckVisitorBase):
 
         def capybara(x: int, y: str) -> None:
             lst = [x]
-            assert_is_value(lst, SequenceIncompleteValue(list, [TypedValue(int)]))
+            assert_is_value(lst, make_simple_sequence(list, [TypedValue(int)]))
             lst += [y]
             assert_is_value(
-                lst, SequenceIncompleteValue(list, [TypedValue(int), TypedValue(str)])
+                lst, make_simple_sequence(list, [TypedValue(int), TypedValue(str)])
             )
-            # If we extend with a set, don't use a SequenceIncompleteValue any more,
+            # If we extend with a set, don't use a SequenceValue any more,
             # because we don't know how many values were added or in what order.
             # (Technically we do know for a one-element set, but that doesn't seem worth
             # writing a special case for.)
+            # TODO: This reasoning no longer applies to SequenceValue.
             lst += {float(1.0)}
             assert_is_value(
                 lst,
@@ -902,7 +903,7 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(empty[0], AnyValue(AnySource.unreachable))
             assert_is_value(empty[1:], KnownValue([]))
             assert_is_value(empty[i], AnyValue(AnySource.unreachable))
-            assert_is_value(empty[s], SequenceIncompleteValue(list, []))
+            assert_is_value(empty[s], SequenceValue(list, []))
             assert_is_value(empty[unannotated], AnyValue(AnySource.from_another))
 
             known = [1, 2]
@@ -913,7 +914,7 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(known[::-1], KnownValue([2, 1]))
             assert_is_value(known[i], KnownValue(1) | KnownValue(2))
             assert_is_value(
-                known[s], SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)])
+                known[s], make_simple_sequence(list, [KnownValue(1), KnownValue(2)])
             )
             assert_is_value(known[unannotated], AnyValue(AnySource.from_another))
 
@@ -934,7 +935,7 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(empty[0], AnyValue(AnySource.error))  # E: incompatible_call
             assert_is_value(empty[1:], KnownValue(()))
             assert_is_value(empty[i], AnyValue(AnySource.unreachable))
-            assert_is_value(empty[s], SequenceIncompleteValue(tuple, []))
+            assert_is_value(empty[s], SequenceValue(tuple, []))
             assert_is_value(empty[unannotated], AnyValue(AnySource.from_another))
 
             known = (1, 2)
@@ -947,7 +948,7 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
             assert_is_value(known[::-1], KnownValue((2, 1)))
             assert_is_value(known[i], KnownValue(1) | KnownValue(2))
             assert_is_value(
-                known[s], SequenceIncompleteValue(tuple, [KnownValue(1), KnownValue(2)])
+                known[s], make_simple_sequence(tuple, [KnownValue(1), KnownValue(2)])
             )
             assert_is_value(known[unannotated], AnyValue(AnySource.from_another))
 
