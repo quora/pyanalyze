@@ -51,6 +51,7 @@ from typing_extensions import Literal, Protocol, ParamSpec
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
+from .find_unused import used
 from .safe import all_of_type, safe_equals, safe_issubclass, safe_isinstance
 
 T = TypeVar("T")
@@ -1023,6 +1024,7 @@ class SequenceValue(GenericValue):
 
 
 # TODO(jelle): Replace with SequenceValue
+@used  # for compatibility for now
 @dataclass(unsafe_hash=True, init=False)
 class SequenceIncompleteValue(GenericValue):
     """A :class:`TypedValue` subclass representing a sequence of known type and length.
