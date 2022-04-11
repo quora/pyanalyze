@@ -43,6 +43,7 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     SequenceIncompleteValue,
+    SequenceValue,
     Value,
     flatten_values,
     unannotate,
@@ -607,6 +608,8 @@ class ConditionEvaluator(ast.NodeVisitor):
             and all_of_type(val.members, KnownValue)
         ):
             val = KnownValue(val.typ(elt.val for elt in val.members))
+        if isinstance(val, SequenceValue):
+            val = val.make_known_value()
         if isinstance(val, KnownValue):
             return val
         self.errors.append(InvalidEvaluation("Only literals supported", node))

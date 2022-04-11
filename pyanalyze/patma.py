@@ -51,6 +51,7 @@ from .value import (
     DictIncompleteValue,
     KVPair,
     SequenceIncompleteValue,
+    SequenceValue,
     SubclassValue,
     TypedValue,
     Value,
@@ -478,18 +479,34 @@ def get_match_args(
     if match_args_value is UNINITIALIZED_VALUE:
         return CanAssignError(f"{cls} has no attribute __match_args__")
     match_args_value = replace_known_sequence_value(match_args_value)
-    if (
-        not isinstance(match_args_value, SequenceIncompleteValue)
-        or match_args_value.typ is not tuple
-    ):
-        return CanAssignError(
-            f"__match_args__ must be a literal tuple, not {match_args_value}"
-        )
-    match_args = []
-    for i, arg in enumerate(match_args_value.members):
-        if not isinstance(arg, KnownValue) or not isinstance(arg.val, str):
+    if isinstance(match_args_value, SequenceIncompleteValue):
+        if match_args_value.typ is not tuple:
             return CanAssignError(
-                f"__match_args__ element {i} is {arg}, not a string literal"
+                f"__match_args__ must be a literal tuple, not {match_args_value}"
             )
-        match_args.append(arg.val)
-    return match_args
+        match_args = []
+        for i, arg in enumerate(match_args_value.members):
+            if not isinstance(arg, KnownValue) or not isinstance(arg.val, str):
+                return CanAssignError(
+                    f"__match_args__ element {i} is {arg}, not a string literal"
+                )
+            match_args.append(arg.val)
+        return match_args
+    elif isinstance(match_args_value, SequenceValue):
+        if match_args_value.typ is not tuple:
+            return CanAssignError(
+                f"__match_args__ must be a literal tuple, not {match_args_value}"
+            )
+        match_args = []
+        for i, (is_many, arg) in enumerate(match_args_value.members):
+            if is_many:
+                return CanAssignError("Cannot use unpacking in __match_args__")
+            if not isinstance(arg, KnownValue) or not isinstance(arg.val, str):
+                return CanAssignError(
+                    f"__match_args__ element {i} is {arg}, not a string literal"
+                )
+            match_args.append(arg.val)
+        return match_args
+    return CanAssignError(
+        f"__match_args__ must be a literal tuple, not {match_args_value}"
+    )

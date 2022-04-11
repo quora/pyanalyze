@@ -20,6 +20,7 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     SequenceIncompleteValue,
+    SequenceValue,
     SubclassValue,
     TypedDictValue,
     TypedValue,
@@ -125,6 +126,23 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
                 return Boolability.value_always_true_mutable
             else:
                 return Boolability.value_always_false_mutable
+    elif isinstance(value, SequenceValue):
+        if not value.members:
+            if value.typ is tuple:
+                return Boolability.value_always_false
+            else:
+                return Boolability.value_always_false_mutable
+        may_be_empty = all(is_many for is_many, _ in value.members)
+        if may_be_empty:
+            return Boolability.boolable
+        if value.typ is tuple:
+            # We lie slightly here, since at the type level a tuple
+            # may be false. But tuples are a common source of boolability
+            # bugs and they're rarely mutated, so we put a stronger
+            # condition on them.
+            return Boolability.type_always_true
+        else:
+            return Boolability.value_always_true_mutable
     elif isinstance(value, DictIncompleteValue):
         if any(pair.is_required and not pair.is_many for pair in value.kv_pairs):
             return Boolability.value_always_true_mutable

@@ -22,6 +22,7 @@ from .value import (
     GenericValue,
     KnownValue,
     SequenceIncompleteValue,
+    SequenceValue,
     SubclassValue,
     TypedDictValue,
     TypedValue,
@@ -162,6 +163,14 @@ def prepare_type(value: Value) -> Value:
             )
         else:
             return GenericValue(value.typ, [prepare_type(arg) for arg in value.args])
+    elif isinstance(value, SequenceValue):
+        if value.typ is tuple:
+            members = value.get_member_sequence()
+            if members is not None:
+                return SequenceValue(
+                    tuple, [(False, prepare_type(elt)) for elt in members]
+                )
+        return GenericValue(value.typ, [prepare_type(arg) for arg in value.args])
     elif isinstance(value, (TypedDictValue, CallableValue)):
         return value
     elif isinstance(value, GenericValue):

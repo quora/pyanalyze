@@ -12,6 +12,7 @@ from .value import (
     MultiValuedValue,
     NewTypeValue,
     SequenceIncompleteValue,
+    SequenceValue,
     TypeVarValue,
     TypedDictValue,
     TypedValue,
@@ -1731,3 +1732,27 @@ class TestTypeAlias(TestNameCheckVisitorBase):
             assert_is_value(x_quoted, TypedValue(int))
             assert_is_value(y_quoted, TypedValue(int))
             assert_is_value(z, TypedValue(int))
+
+
+class TestUnpack(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_in_tuple(self):
+        from typing_extensions import Unpack
+        from typing import Tuple
+
+        def capybara(
+            x: Tuple[int, Unpack[Tuple[str, ...]]],
+            y: "Tuple[int, Unpack[Tuple[str, ...]]]",
+        ):
+            assert_is_value(
+                x,
+                SequenceValue(
+                    tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
+                ),
+            )
+            assert_is_value(
+                y,
+                SequenceValue(
+                    tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
+                ),
+            )

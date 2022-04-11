@@ -30,6 +30,7 @@ from .value import (
     KnownValue,
     DictIncompleteValue,
     SequenceIncompleteValue,
+    SequenceValue,
     TypedValue,
     Value,
     flatten_values,
@@ -370,6 +371,10 @@ class PercentFormatString:
             args = replace_known_sequence_value(args)
             if isinstance(args, SequenceIncompleteValue):
                 all_args = args.members
+            elif isinstance(args, SequenceValue):
+                all_args = args.get_member_sequence()
+                if all_args is None:
+                    return
             else:
                 # it's a tuple but we don't know what's in it, so assume it's ok
                 return

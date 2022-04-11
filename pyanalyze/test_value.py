@@ -23,6 +23,7 @@ from .value import (
     CallableValue,
     CanAssignError,
     KVPair,
+    SequenceValue,
     Value,
     GenericValue,
     KnownValue,
@@ -33,6 +34,7 @@ from .value import (
     TypeVarMap,
     concrete_values_from_iterable,
     unite_and_simplify,
+    unpack_values,
 )
 
 _checker = Checker()
@@ -576,3 +578,65 @@ def test_unite_and_simplify() -> None:
     assert unite_and_simplify(*vals, limit=2) == GenericValue(
         list, [TypedValue(int)]
     ) | GenericValue(list, [AnyValue(AnySource.unreachable)])
+
+
+def test_unpack_values() -> None:
+    t_int = SequenceValue(tuple, [(False, TypedValue(int))])
+    assert unpack_values(t_int, CTX, 1, None) == [TypedValue(int)]
+    assert unpack_values(t_int, CTX, 1, 0) == [TypedValue(int), SequenceValue(list, [])]
+    assert isinstance(unpack_values(t_int, CTX, 1, 1), CanAssignError)
+    assert isinstance(unpack_values(t_int, CTX, 2, None), CanAssignError)
+
+    t_int_str = SequenceValue(
+        tuple, [(False, TypedValue(int)), (False, TypedValue(str))]
+    )
+    assert isinstance(unpack_values(t_int_str, CTX, 1, None), CanAssignError)
+    assert unpack_values(t_int_str, CTX, 2, None) == [TypedValue(int), TypedValue(str)]
+    assert unpack_values(t_int_str, CTX, 2, 0) == [
+        TypedValue(int),
+        TypedValue(str),
+        SequenceValue(list, []),
+    ]
+    assert unpack_values(t_int_str, CTX, 1, 1) == [
+        TypedValue(int),
+        SequenceValue(list, []),
+        TypedValue(str),
+    ]
+
+    t_int_star_str = SequenceValue(
+        tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
+    )
+    assert unpack_values(t_int_star_str, CTX, 1, None) == [TypedValue(int)]
+    assert unpack_values(t_int_star_str, CTX, 1, 0) == [
+        TypedValue(int),
+        SequenceValue(list, [(True, TypedValue(str))]),
+    ]
+    assert unpack_values(t_int_star_str, CTX, 1, 1) == [
+        TypedValue(int),
+        GenericValue(list, [TypedValue(str)]),
+        TypedValue(str),
+    ]
+    assert unpack_values(t_int_star_str, CTX, 2, None) == [
+        TypedValue(int),
+        TypedValue(str),
+    ]
+
+    t_int_star_str_float = SequenceValue(
+        tuple,
+        [(False, TypedValue(int)), (True, TypedValue(str)), (False, TypedValue(float))],
+    )
+    assert isinstance(unpack_values(t_int_star_str_float, CTX, 1, None), CanAssignError)
+    assert unpack_values(t_int_star_str_float, CTX, 2, None) == [
+        TypedValue(int),
+        TypedValue(float),
+    ]
+    assert unpack_values(t_int_star_str_float, CTX, 1, 1) == [
+        TypedValue(int),
+        SequenceValue(list, [(True, TypedValue(str))]),
+        TypedValue(float),
+    ]
+    assert unpack_values(t_int_star_str_float, CTX, 0, 2) == [
+        GenericValue(list, [TypedValue(str) | TypedValue(int)]),
+        TypedValue(int) | TypedValue(str),
+        TypedValue(float),
+    ]
