@@ -569,6 +569,13 @@ def _type_from_runtime(
             cls = "Required" if required else "NotRequired"
             ctx.show_error(f"{cls}[] used in unsupported context")
             return AnyValue(AnySource.error)
+    # Also 3.6 only.
+    elif is_instance_of_typing_name(val, "_Unpack"):
+        if unpack_allowed:
+            return _make_unpacked_value(_type_from_runtime(val.__type__, ctx), ctx)
+        else:
+            ctx.show_error(f"Unpack[] used in unsupported context")
+            return AnyValue(AnySource.error)
     elif is_typing_name(val, "TypeAlias"):
         return AnyValue(AnySource.incomplete_annotation)
     elif is_typing_name(val, "TypedDict"):
