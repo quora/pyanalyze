@@ -964,7 +964,8 @@ class SequenceValue(GenericValue):
             ):
                 if is_many:
                     return CanAssignError(
-                        f"Member {i} is an unpacked type, but a non-unpacked type is provided"
+                        f"Member {i} is an unpacked type, but a non-unpacked type is"
+                        " provided"
                     )
                 can_assign = my_member.can_assign(their_member, ctx)
                 if isinstance(can_assign, CanAssignError):
@@ -998,11 +999,13 @@ class SequenceValue(GenericValue):
                 if my_is_many != their_is_many:
                     if my_is_many:
                         return CanAssignError(
-                            f"Member {i} is an unpacked type, but a single element is provided"
+                            f"Member {i} is an unpacked type, but a single element is"
+                            " provided"
                         )
                     else:
                         return CanAssignError(
-                            f"Member {i} is a single element, but an unpacked type is provided"
+                            f"Member {i} is a single element, but an unpacked type is"
+                            " provided"
                         )
                 can_assign = my_member.can_assign(their_member, ctx)
                 if isinstance(can_assign, CanAssignError):
@@ -1134,7 +1137,8 @@ class SequenceIncompleteValue(GenericValue):
             ):
                 if is_many:
                     return CanAssignError(
-                        f"Member {i} is a single element, but an unpacked type is provided"
+                        f"Member {i} is a single element, but an unpacked type is"
+                        " provided"
                     )
                 can_assign = my_member.can_assign(their_member, ctx)
                 if isinstance(can_assign, CanAssignError):
@@ -2711,7 +2715,8 @@ def _unpack_sequence_value(
         while len(tail) < post_starred_length:
             if len(tail) >= len(value.members) - len(head):
                 return CanAssignError(
-                    f"{value} must have at least {target_length + post_starred_length} elements"
+                    f"{value} must have at least"
+                    f" {target_length + post_starred_length} elements"
                 )
             is_many, val = value.members[-len(tail) - 1]
             if is_many:
@@ -2726,7 +2731,8 @@ def _unpack_sequence_value(
         if remaining_target_length != 0 or remaining_post_starred_length != 0:
             if not remaining_members:
                 return CanAssignError(
-                    f"{value} must have at least {target_length + post_starred_length} elements"
+                    f"{value} must have at least"
+                    f" {target_length + post_starred_length} elements"
                 )
             else:
                 fallback_value = unite_values(*[val for _, val in remaining_members])

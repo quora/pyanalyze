@@ -24,7 +24,6 @@ show errors.
 
 """
 import contextlib
-import traceback
 from dataclasses import dataclass, InitVar, field
 import typing
 
@@ -1158,7 +1157,6 @@ def _value_of_origin_args(
             args_vals = [
                 _type_from_runtime(arg, ctx, unpack_allowed=True) for arg in args
             ]
-            print(args_vals)
             return SequenceIncompleteValue(tuple, args_vals)
     elif origin is typing.Union:
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])

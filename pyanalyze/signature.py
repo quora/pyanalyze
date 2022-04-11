@@ -2358,8 +2358,8 @@ def can_assign_var_positional(
             length = len(members)
             if idx >= length:
                 return CanAssignError(
-                    f"parameter {my_param.name!r} is not accepted; {args_annotation} only"
-                    f" accepts {length} values"
+                    f"parameter {my_param.name!r} is not accepted;"
+                    f" {args_annotation} only accepts {length} values"
                 )
             their_annotation = members[idx]
             can_assign = their_annotation.can_assign(my_annotation, ctx)
