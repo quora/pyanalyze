@@ -166,6 +166,7 @@ from .value import (
     UNINITIALIZED_VALUE,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
+    SequenceValue,
     annotate_value,
     check_hashability,
     flatten_values,
@@ -3219,6 +3220,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     self._unwrap_yield_result(node, member) for member in value.members
                 ]
                 return self._maybe_make_sequence(value.typ, values, node)
+            elif isinstance(value, SequenceValue) and isinstance(value.typ, type):
+                values = [
+                    (is_many, self._unwrap_yield_result(node, member))
+                    for is_many, member in value.members
+                ]
+                return SequenceValue.make_or_known(value.typ, values)
             elif isinstance(value, GenericValue):
                 member_value = self._unwrap_yield_result(node, value.get_arg(0))
                 return GenericValue(value.typ, [member_value])

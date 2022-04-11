@@ -44,6 +44,7 @@ from .value import (
     ParameterTypeGuardExtension,
     SequenceIncompleteValue,
     DictIncompleteValue,
+    SequenceValue,
     TypeGuardExtension,
     TypeVarValue,
     TypedDictValue,
@@ -2351,6 +2352,26 @@ def can_assign_var_positional(
 ) -> Union[List[BoundsMap], CanAssignError]:
     bounds_maps = []
     my_annotation = my_param.get_annotation()
+    if isinstance(args_annotation, SequenceValue):
+        members = args_annotation.get_member_sequence()
+        if members is not None:
+            length = len(members)
+            if idx >= length:
+                return CanAssignError(
+                    f"parameter {my_param.name!r} is not accepted;"
+                    f" {args_annotation} only accepts {length} values"
+                )
+            their_annotation = members[idx]
+            can_assign = their_annotation.can_assign(my_annotation, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"type of parameter {my_param.name!r} is incompatible: *args[{idx}]"
+                    " type is incompatible",
+                    [can_assign],
+                )
+            bounds_maps.append(can_assign)
+            return bounds_maps
+
     if isinstance(args_annotation, SequenceIncompleteValue):
         length = len(args_annotation.members)
         if idx >= length:

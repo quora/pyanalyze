@@ -886,6 +886,173 @@ class GenericValue(TypedValue):
 
 
 @dataclass(unsafe_hash=True, init=False)
+class SequenceValue(GenericValue):
+    """A :class:`TypedValue` subclass representing a sequence of known type.
+
+    This is represented as a sequence, but each entry in the sequence may
+    consist of multiple values.
+    For example, the expression ``[int(self.foo)]`` may be typed as
+    ``SequenceValue(list, [(False, TypedValue(int))])``. The expression
+    ``["x", *some_str.split()]`` would be represented as
+    ``SequenceValue(list, [(False, KnownValue("x")), (True, TypedValue(str))])``.
+
+    This is only used for ``set``, ``list``, and ``tuple``.
+
+    """
+
+    members: Tuple[Tuple[bool, Value], ...]
+    """The elements of the sequence."""
+
+    def __init__(
+        self, typ: Union[type, str], members: Sequence[Tuple[bool, Value]]
+    ) -> None:
+        if members:
+            args = (unite_values(*[typ for _, typ in members]),)
+        else:
+            args = (AnyValue(AnySource.unreachable),)
+        super().__init__(typ, args)
+        self.members = tuple(members)
+
+    def get_member_sequence(self) -> Optional[Sequence[Value]]:
+        """Return the :class:`Value` objects in this sequence. Return
+        None if there are any unpacked values in the sequence."""
+        members = []
+        for is_many, member in self.members:
+            if is_many:
+                return None
+            members.append(member)
+        return members
+
+    def make_known_value(self) -> Value:
+        """Turn this value into a KnownValue if possible."""
+        if isinstance(self.typ, str):
+            return self
+        return self.make_or_known(self.typ, self.members)
+
+    @classmethod
+    def make_or_known(
+        cls, typ: type, members: Sequence[Tuple[bool, Value]]
+    ) -> Union[KnownValue, "SequenceValue"]:
+        known_members = []
+        for is_many, member in members:
+            if is_many or not isinstance(member, KnownValue):
+                return SequenceValue(typ, members)
+            known_members.append(member.val)
+        return KnownValue(typ(known_members))
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(other, SequenceIncompleteValue):
+            can_assign = self.get_type_object(ctx).can_assign(self, other, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"Cannot assign {stringify_object(other.typ)} to"
+                    f" {stringify_object(self.typ)}"
+                )
+            my_len = len(self.members)
+            their_len = len(other.members)
+            if my_len != their_len:
+                type_str = stringify_object(self.typ)
+                return CanAssignError(
+                    f"Cannot assign {type_str} of length {their_len} to {type_str} of"
+                    f" length {my_len}"
+                )
+            if my_len == 0:
+                return {}  # they're both empty
+            bounds_maps = [can_assign]
+            for i, ((is_many, my_member), their_member) in enumerate(
+                zip(self.members, other.members)
+            ):
+                if is_many:
+                    return CanAssignError(
+                        f"Member {i} is an unpacked type, but a non-unpacked type is"
+                        " provided"
+                    )
+                can_assign = my_member.can_assign(their_member, ctx)
+                if isinstance(can_assign, CanAssignError):
+                    return CanAssignError(
+                        f"Types for member {i} are incompatible", [can_assign]
+                    )
+                bounds_maps.append(can_assign)
+            return unify_bounds_maps(bounds_maps)
+        elif isinstance(other, SequenceValue):
+            can_assign = self.get_type_object(ctx).can_assign(self, other, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"Cannot assign {stringify_object(other.typ)} to"
+                    f" {stringify_object(self.typ)}"
+                )
+            my_len = len(self.members)
+            their_len = len(other.members)
+            if my_len != their_len:
+                type_str = stringify_object(self.typ)
+                return CanAssignError(
+                    f"Cannot assign {type_str} of length {their_len} to {type_str} of"
+                    f" length {my_len}"
+                )
+            if my_len == 0:
+                return {}  # they're both empty
+            bounds_maps = [can_assign]
+            for i, (
+                (my_is_many, my_member),
+                (their_is_many, their_member),
+            ) in enumerate(zip(self.members, other.members)):
+                if my_is_many != their_is_many:
+                    if my_is_many:
+                        return CanAssignError(
+                            f"Member {i} is an unpacked type, but a single element is"
+                            " provided"
+                        )
+                    else:
+                        return CanAssignError(
+                            f"Member {i} is a single element, but an unpacked type is"
+                            " provided"
+                        )
+                can_assign = my_member.can_assign(their_member, ctx)
+                if isinstance(can_assign, CanAssignError):
+                    return CanAssignError(
+                        f"Types for member {i} are incompatible", [can_assign]
+                    )
+                bounds_maps.append(can_assign)
+            return unify_bounds_maps(bounds_maps)
+        return super().can_assign(other, ctx)
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Value:
+        return SequenceValue(
+            self.typ,
+            [
+                (is_many, member.substitute_typevars(typevars))
+                for is_many, member in self.members
+            ],
+        )
+
+    def __str__(self) -> str:
+        members = ", ".join(
+            (f"*tuple[{m}, ...]" if is_many else str(m)) for is_many, m in self.members
+        )
+        if self.typ is tuple:
+            return f"tuple[{members}]"
+        return f"<{stringify_object(self.typ)} containing [{members}]>"
+
+    def walk_values(self) -> Iterable[Value]:
+        yield self
+        for _, member in self.members:
+            yield from member.walk_values()
+
+    def simplify(self) -> GenericValue:
+        if self.typ is tuple:
+            return SequenceValue(
+                tuple,
+                [(is_many, member.simplify()) for is_many, member in self.members],
+            )
+        members = [member.simplify() for _, member in self.members]
+        arg = unite_values(*members)
+        if arg is NO_RETURN_VALUE:
+            arg = AnyValue(AnySource.unreachable)
+        return GenericValue(self.typ, [arg])
+
+
+# TODO(jelle): Replace with SequenceValue
+@dataclass(unsafe_hash=True, init=False)
 class SequenceIncompleteValue(GenericValue):
     """A :class:`TypedValue` subclass representing a sequence of known type and length.
 
@@ -893,6 +1060,8 @@ class SequenceIncompleteValue(GenericValue):
     ``SequenceIncompleteValue(list, [TypedValue(int)])``.
 
     This is only used for ``set``, ``list``, and ``tuple``.
+
+    This type is being phased out in favor of :class:`SequenceValue`.
 
     """
 
@@ -938,6 +1107,39 @@ class SequenceIncompleteValue(GenericValue):
             for i, (my_member, their_member) in enumerate(
                 zip(self.members, other.members)
             ):
+                can_assign = my_member.can_assign(their_member, ctx)
+                if isinstance(can_assign, CanAssignError):
+                    return CanAssignError(
+                        f"Types for member {i} are incompatible", [can_assign]
+                    )
+                bounds_maps.append(can_assign)
+            return unify_bounds_maps(bounds_maps)
+        elif isinstance(other, SequenceValue):
+            can_assign = self.get_type_object(ctx).can_assign(self, other, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"Cannot assign {stringify_object(other.typ)} to"
+                    f" {stringify_object(self.typ)}"
+                )
+            my_len = len(self.members)
+            their_len = len(other.members)
+            if my_len != their_len:
+                type_str = stringify_object(self.typ)
+                return CanAssignError(
+                    f"Cannot assign {type_str} of length {their_len} to {type_str} of"
+                    f" length {my_len}"
+                )
+            if my_len == 0:
+                return {}  # they're both empty
+            bounds_maps = [can_assign]
+            for i, (my_member, (is_many, their_member)) in enumerate(
+                zip(self.members, other.members)
+            ):
+                if is_many:
+                    return CanAssignError(
+                        f"Member {i} is a single element, but an unpacked type is"
+                        " provided"
+                    )
                 can_assign = my_member.can_assign(their_member, ctx)
                 if isinstance(can_assign, CanAssignError):
                     return CanAssignError(
@@ -2229,6 +2431,11 @@ def concrete_values_from_iterable(
         return unite_values(*value_subvals, *chain.from_iterable(seq_subvals))
     if isinstance(value, SequenceIncompleteValue):
         return value.members
+    if isinstance(value, SequenceValue):
+        members = value.get_member_sequence()
+        if members is None:
+            return value.args[0]
+        return members
     elif isinstance(value, TypedDictValue):
         if all(required for required, _ in value.items.items()):
             return [KnownValue(key) for key in value.items]
@@ -2435,6 +2642,13 @@ def unpack_values(
             )
             if not isinstance(vals, CanAssignError):
                 return vals
+    elif isinstance(value, SequenceValue):
+        if value.typ is tuple:
+            return _unpack_sequence_value(value, target_length, post_starred_length)
+        elif value.typ is list:
+            vals = _unpack_sequence_value(value, target_length, post_starred_length)
+            if not isinstance(vals, CanAssignError):
+                return vals
 
     tv_map = get_tv_map(IterableValue, value, ctx)
     if isinstance(tv_map, CanAssignError):
@@ -2454,6 +2668,83 @@ def _create_unpacked_list(
         ]
     else:
         return [iterable_type] * target_length
+
+
+def _unpack_sequence_value(
+    value: SequenceValue, target_length: int, post_starred_length: Optional[int]
+) -> Union[Sequence[Value], CanAssignError]:
+    head = []
+    tail = []
+    while len(head) < target_length:
+        if len(head) >= len(value.members):
+            return CanAssignError(
+                f"{value} must have at least {target_length} elements"
+            )
+        is_many, val = value.members[len(head)]
+        if is_many:
+            break
+        head.append(val)
+    remaining_target_length = target_length - len(head)
+    if post_starred_length is None:
+        if remaining_target_length == 0:
+            if all(is_many for is_many, _ in value.members[target_length:]):
+                return head
+            return CanAssignError(f"{value} must have exactly {target_length} elements")
+
+        tail = []
+        while len(tail) < remaining_target_length:
+            if len(tail) + len(head) >= len(value.members):
+                return CanAssignError(
+                    f"{value} must have at least {target_length} elements"
+                )
+            is_many, val = value.members[-len(tail) - 1]
+            if is_many:
+                break
+            tail.append(val)
+
+        if tail:
+            remaining_members = value.members[len(head) : -len(tail)]
+        else:
+            remaining_members = value.members[len(head) :]
+        if not remaining_members:
+            return CanAssignError(f"{value} must have exactly {target_length} elements")
+        middle_length = remaining_target_length - len(tail)
+        fallback_value = unite_values(*[val for _, val in remaining_members])
+        return [*head, *[fallback_value for _ in range(middle_length)], *tail]
+    else:
+        while len(tail) < post_starred_length:
+            if len(tail) >= len(value.members) - len(head):
+                return CanAssignError(
+                    f"{value} must have at least"
+                    f" {target_length + post_starred_length} elements"
+                )
+            is_many, val = value.members[-len(tail) - 1]
+            if is_many:
+                break
+            tail.append(val)
+        remaining_post_starred_length = post_starred_length - len(tail)
+
+        if tail:
+            remaining_members = value.members[len(head) : -len(tail)]
+        else:
+            remaining_members = value.members[len(head) :]
+        if remaining_target_length != 0 or remaining_post_starred_length != 0:
+            if not remaining_members:
+                return CanAssignError(
+                    f"{value} must have at least"
+                    f" {target_length + post_starred_length} elements"
+                )
+            else:
+                fallback_value = unite_values(*[val for _, val in remaining_members])
+                return [
+                    *head,
+                    *[fallback_value for _ in range(remaining_target_length)],
+                    GenericValue(list, [fallback_value]),
+                    *[fallback_value for _ in range(remaining_post_starred_length)],
+                    *tail,
+                ]
+        else:
+            return [*head, SequenceValue(list, remaining_members), *tail]
 
 
 def _unpack_value_sequence(
