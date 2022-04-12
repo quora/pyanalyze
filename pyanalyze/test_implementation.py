@@ -833,6 +833,17 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(strong_dict, expected)
 
     @assert_passes()
+    def test_dict_pop_union(self):
+        def capybara(cond):
+            d = {"a": 1, "b": 2}
+            if cond:
+                d["c"] = 3
+            else:
+                d["d"] = 4
+
+            assert_is_value(d.pop("a"), KnownValue(1))
+
+    @assert_passes()
     def test_dict_update(self):
         def capybara():
             d1 = {}
