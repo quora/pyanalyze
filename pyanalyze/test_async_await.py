@@ -1,6 +1,13 @@
 # static analysis: ignore
 from .tests import make_simple_sequence
-from .value import GenericValue, KnownValue, TypedValue, make_weak, AnyValue, AnySource
+from .value import (
+    GenericValue,
+    KnownValue,
+    SequenceValue,
+    TypedValue,
+    AnyValue,
+    AnySource,
+)
 from .implementation import assert_is_value
 from .test_node_visitor import assert_passes, only_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -62,7 +69,7 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
 
         async def f():
             x = [y async for y in AIter()]
-            assert_is_value(x, make_weak(GenericValue(list, [TypedValue(int)])))
+            assert_is_value(x, SequenceValue(list, [(True, TypedValue(int))]))
 
     @assert_passes()
     def test_async_generator(self):
@@ -82,7 +89,7 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
             # TODO should be list[int] but we lose the type argument somewhere
             assert_is_value(
                 ints,
-                make_weak(GenericValue(list, [AnyValue(AnySource.generic_argument)])),
+                SequenceValue(list, [(True, AnyValue(AnySource.generic_argument))]),
             )
 
     @assert_passes()

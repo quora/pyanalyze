@@ -47,11 +47,9 @@ from .value import (
     MultiValuedValue,
     KNOWN_MUTABLE_TYPES,
     Value,
-    WeakExtension,
     check_hashability,
     concrete_values_from_iterable,
     kv_pairs_from_mapping,
-    make_weak,
     unannotate,
     unite_values,
     flatten_values,
@@ -365,15 +363,8 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
             )
             return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
         elif isinstance(lst, GenericValue):
-            return _maybe_broaden_weak_type(
-                "list.append",
-                "object",
-                ctx.vars["self"],
-                lst,
-                element,
-                ctx,
-                list,
-                varname,
+            return _check_generic_container(
+                "list.append", "object", ctx.vars["self"], lst, element, ctx, list
             )
     return ImplReturn(KnownValue(None))
 
@@ -721,27 +712,14 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
         key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
         value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
         new_value_type = unite_values(value_type, default)
-        if _is_weak(ctx.vars["self"]):
-            new_key_type = unite_values(key_type, key)
-            new_type = make_weak(
-                GenericValue(self_value.typ, [new_key_type, new_value_type])
+        tv_map = key_type.can_assign(key, ctx.visitor)
+        if isinstance(tv_map, CanAssignError):
+            ctx.show_error(
+                f"Key {key} is not valid for {self_value}",
+                ErrorCode.incompatible_argument,
+                arg="key",
             )
-            if varname is not None:
-                no_return_unless = Constraint(
-                    varname, ConstraintType.is_value_object, True, new_type
-                )
-            else:
-                no_return_unless = NULL_CONSTRAINT
-            return ImplReturn(new_value_type, no_return_unless=no_return_unless)
-        else:
-            tv_map = key_type.can_assign(key, ctx.visitor)
-            if isinstance(tv_map, CanAssignError):
-                ctx.show_error(
-                    f"Key {key} is not valid for {self_value}",
-                    ErrorCode.incompatible_argument,
-                    arg="key",
-                )
-            return ImplReturn(new_value_type)
+        return ImplReturn(new_value_type)
     else:
         return ImplReturn(AnyValue(AnySource.inference))
 
@@ -767,7 +745,7 @@ def _unpack_iterable_of_pairs(
     return kv_pairs
 
 
-def _weak_dict_update(
+def _update_incomplete_dict(
     self_val: Value,
     pairs: Sequence[KVPair],
     ctx: CallContext,
@@ -799,17 +777,13 @@ def _add_pairs_to_dict(
     ctx: CallContext,
     varname: Optional[VarnameWithOrigin],
 ) -> ImplReturn:
-    if _is_weak(self_val):
-        return _weak_dict_update(self_val, pairs, ctx, varname)
-
-    # Now we don't care about Annotated
     self_val = replace_known_sequence_value(self_val)
     if isinstance(self_val, TypedDictValue):
         for pair in pairs:
             _typeddict_setitem(self_val, pair.key, pair.value, ctx)
         return ImplReturn(KnownValue(None))
     elif isinstance(self_val, DictIncompleteValue):
-        return _weak_dict_update(self_val, pairs, ctx, varname)
+        return _update_incomplete_dict(self_val, pairs, ctx, varname)
     elif isinstance(self_val, TypedValue):
         key_type = self_val.get_generic_arg_for_type(dict, ctx.visitor, 0)
         value_type = self_val.get_generic_arg_for_type(dict, ctx.visitor, 1)
@@ -832,7 +806,7 @@ def _add_pairs_to_dict(
                 )
         return ImplReturn(KnownValue(None))
     else:
-        return _weak_dict_update(self_val, pairs, ctx, varname)
+        return _update_incomplete_dict(self_val, pairs, ctx, varname)
 
 
 def _dict_update_impl(ctx: CallContext) -> ImplReturn:
@@ -949,7 +923,7 @@ def _list_extend_or_iadd_impl(
             actual_type = iterable.get_generic_arg_for_type(
                 collections.abc.Iterable, ctx.visitor, 0
             )
-            return _maybe_broaden_weak_type(
+            return _check_generic_container(
                 name,
                 iterable_arg,
                 lst,
@@ -957,7 +931,6 @@ def _list_extend_or_iadd_impl(
                 actual_type,
                 ctx,
                 list,
-                varname,
                 return_container=return_container,
             )
         return ImplReturn(lst if return_container else KnownValue(None))
@@ -973,33 +946,18 @@ def _list_iadd_impl(ctx: CallContext) -> ImplReturn:
     return _list_extend_or_iadd_impl(ctx, "x", "list.__iadd__", return_container=True)
 
 
-def _is_weak(val: Value) -> bool:
-    return isinstance(val, AnnotatedValue) and val.has_metadata_of_type(WeakExtension)
-
-
-def _maybe_broaden_weak_type(
+def _check_generic_container(
     function_name: str,
     arg: str,
     original_container_type: Value,
-    container_type: Value,
+    container_type: GenericValue,
     actual_type: Value,
     ctx: CallContext,
     typ: type,
-    varname: VarnameWithOrigin,
     *,
     return_container: bool = False,
 ) -> ImplReturn:
     expected_type = container_type.get_generic_arg_for_type(typ, ctx.visitor, 0)
-    if _is_weak(original_container_type):
-        generic_arg = unite_values(expected_type, actual_type)
-        constrained_value = make_weak(GenericValue(typ, [generic_arg]))
-        no_return_unless = Constraint(
-            varname, ConstraintType.is_value_object, True, constrained_value
-        )
-        if return_container:
-            return ImplReturn(constrained_value)
-        return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-
     tv_map = expected_type.can_assign(actual_type, ctx.visitor)
     if isinstance(tv_map, CanAssignError):
         ctx.show_error(
@@ -1029,15 +987,8 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
             )
             return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
         elif isinstance(set_value, GenericValue):
-            return _maybe_broaden_weak_type(
-                "set.add",
-                "object",
-                ctx.vars["self"],
-                set_value,
-                element,
-                ctx,
-                set,
-                varname,
+            return _check_generic_container(
+                "set.add", "object", ctx.vars["self"], set_value, element, ctx, set
             )
     return ImplReturn(KnownValue(None))
 
@@ -1551,9 +1502,8 @@ def get_default_argspecs() -> Dict[object, Signature]:
                     annotation=GenericValue(dict, [TypeVarValue(K), TypeVarValue(V)]),
                 )
             ],
-            AnnotatedValue(
-                GenericValue(dict, [TypeVarValue(K), TypeVarValue(V)]),
-                [WeakExtension()],
+            DictIncompleteValue(
+                dict, [KVPair(TypeVarValue(K), TypeVarValue(V), is_many=True)]
             ),
             callable=dict.copy,
         ),

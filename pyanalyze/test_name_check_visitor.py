@@ -38,7 +38,6 @@ from .value import (
     SubclassValue,
     GenericValue,
     TypedDictValue,
-    make_weak,
 )
 from .tests import (
     proxied_fn,
@@ -149,7 +148,6 @@ def _make_module(code_str: str) -> types.ModuleType:
         TypedDictValue=TypedDictValue,
         TypeVarValue=TypeVarValue,
         dump_value=dump_value,
-        make_weak=make_weak,
         make_simple_sequence=make_simple_sequence,
         UNINITIALIZED_VALUE=UNINITIALIZED_VALUE,
         NO_RETURN_VALUE=NO_RETURN_VALUE,
@@ -970,7 +968,7 @@ class TestComprehensions(TestNameCheckVisitorBase):
 
         def capybara(lst):
             a = [int(x) for x in lst]
-            assert_is_value(a, make_weak(GenericValue(list, [TypedValue(int)])))
+            assert_is_value(a, SequenceValue(list, [(True, TypedValue(int))]))
 
             b = (0 for _ in lst)
             assert_is_value(
@@ -983,7 +981,10 @@ class TestComprehensions(TestNameCheckVisitorBase):
 
             c = {int(x): int(x) for x in lst}
             assert_is_value(
-                c, make_weak(GenericValue(dict, [TypedValue(int), TypedValue(int)]))
+                c,
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(int), TypedValue(int), is_many=True)]
+                ),
             )
 
     @assert_passes()
@@ -1010,15 +1011,14 @@ class TestComprehensions(TestNameCheckVisitorBase):
     def test_hashability(self):
         def capybara(it):
             x = {set() for _ in it}  # E: unhashable_key
-            assert_is_value(
-                x, make_weak(GenericValue(set, [AnyValue(AnySource.error)]))
-            )
+            assert_is_value(x, SequenceValue(set, [(True, AnyValue(AnySource.error))]))
 
             y = {set(): 3 for _ in it}  # E: unhashable_key
             assert_is_value(
                 y,
-                make_weak(
-                    GenericValue(dict, [AnyValue(AnySource.error), KnownValue(3)])
+                DictIncompleteValue(
+                    dict,
+                    [KVPair(AnyValue(AnySource.error), KnownValue(3), is_many=True)],
                 ),
             )
 
@@ -1113,8 +1113,8 @@ class TestIterationTarget(TestNameCheckVisitorBase):
 
         def capybara(ints: Sequence[Literal[1, 2]]):
             lst = [x for x in ints]
-            mvv = MultiValuedValue([KnownValue(1), KnownValue(2)])
-            assert_is_value(lst, make_weak(GenericValue(list, [mvv])))
+            mvv = KnownValue(1) | KnownValue(2)
+            assert_is_value(lst, SequenceValue(list, [(True, mvv)]))
             for y in lst:
                 assert_is_value(y, mvv)
 
@@ -1126,7 +1126,7 @@ class TestIterationTarget(TestNameCheckVisitorBase):
             lst3 = [i + j * 10 for i in range(2) for j in range(3)]
             # TODO: should be list[int] instead
             assert_is_value(
-                lst3, make_weak(GenericValue(list, [AnyValue(AnySource.inference)]))
+                lst3, SequenceValue(list, [(True, AnyValue(AnySource.inference))])
             )
 
     @assert_passes()
@@ -1136,8 +1136,10 @@ class TestIterationTarget(TestNameCheckVisitorBase):
 
         def capybara(ints: Sequence[Literal[1, 2, 3]]):
             dct = {x: x for x in ints}
-            mvv = MultiValuedValue([KnownValue(1), KnownValue(2), KnownValue(3)])
-            assert_is_value(dct, make_weak(GenericValue(dict, [mvv, mvv])))
+            mvv = KnownValue(1) | KnownValue(2) | KnownValue(3)
+            assert_is_value(
+                dct, DictIncompleteValue(dict, [KVPair(mvv, mvv, is_many=True)])
+            )
 
             for key in dct:
                 assert_is_value(key, mvv)

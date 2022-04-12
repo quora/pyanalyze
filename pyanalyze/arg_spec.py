@@ -50,7 +50,6 @@ from .value import (
     Value,
     TypeVarValue,
     extract_typevars,
-    make_weak,
 )
 import pyanalyze
 
@@ -206,7 +205,7 @@ class FunctionsSafeToCall(PyObjectSequenceOption[object]):
     arguments."""
 
     name = "functions_safe_to_call"
-    default_value = [sorted, asynq.asynq, make_weak]
+    default_value = [sorted, asynq.asynq]
 
 
 _HookReturn = Union[None, ConcreteSignature, inspect.Signature, Callable[..., Any]]
