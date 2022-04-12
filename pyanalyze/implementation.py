@@ -650,6 +650,90 @@ def _dict_get_impl(ctx: CallContext) -> ImplReturn:
     return flatten_unions(inner, ctx.vars["key"])
 
 
+def _dict_pop_impl(ctx: CallContext) -> ImplReturn:
+    key = ctx.vars["key"]
+    default = ctx.vars["default"]
+    varname = ctx.visitor.varname_for_self_constraint(ctx.node)
+    self_value = replace_known_sequence_value(ctx.vars["self"])
+
+    if not _check_dict_key_hashability(key, ctx, "key"):
+        return ImplReturn(AnyValue(AnySource.error))
+
+    if isinstance(self_value, TypedDictValue):
+        if not TypedValue(str).is_assignable(key, ctx.visitor):
+            ctx.show_error(
+                f"TypedDict key must be str, not {key}",
+                ErrorCode.invalid_typeddict_key,
+                arg="key",
+            )
+            return ImplReturn(AnyValue(AnySource.error))
+        elif isinstance(key, KnownValue):
+            try:
+                is_required, expected_type = self_value.items[key.val]
+            # probably KeyError, but catch anything in case it's an
+            # unhashable str subclass or something
+            except Exception:
+                pass
+            else:
+                if is_required:
+                    ctx.show_error(
+                        f"Cannot pop required TypedDict key {key}",
+                        error_code=ErrorCode.incompatible_argument,
+                        arg="key",
+                    )
+                return ImplReturn(_maybe_unite(expected_type, default))
+        ctx.show_error(
+            f"Key {key} does not exist in TypedDict",
+            ErrorCode.invalid_typeddict_key,
+            arg="key",
+        )
+        return ImplReturn(default)
+    elif isinstance(self_value, DictIncompleteValue):
+        existing_value = self_value.get_value(key, ctx.visitor)
+        is_present = existing_value is not UNINITIALIZED_VALUE
+        if varname is not None and isinstance(key, KnownValue):
+            new_value = DictIncompleteValue(
+                self_value.typ,
+                [pair for pair in self_value.kv_pairs if pair.key != key],
+            )
+            no_return_unless = Constraint(
+                varname, ConstraintType.is_value_object, True, new_value
+            )
+        else:
+            no_return_unless = NULL_CONSTRAINT
+        if not is_present:
+            if default is _NO_ARG_SENTINEL:
+                ctx.show_error(
+                    f"Key {key} does not exist in dictionary {self_value}",
+                    error_code=ErrorCode.incompatible_argument,
+                    arg="key",
+                )
+                return ImplReturn(AnyValue(AnySource.error))
+            return ImplReturn(default, no_return_unless=no_return_unless)
+        return ImplReturn(
+            _maybe_unite(existing_value, default), no_return_unless=no_return_unless
+        )
+    elif isinstance(self_value, TypedValue):
+        key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
+        value_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 1)
+        tv_map = key_type.can_assign(key, ctx.visitor)
+        if isinstance(tv_map, CanAssignError):
+            ctx.show_error(
+                f"Key {key} is not valid for {self_value}",
+                ErrorCode.incompatible_argument,
+                arg="key",
+            )
+        return ImplReturn(_maybe_unite(value_type, default))
+    else:
+        return ImplReturn(AnyValue(AnySource.inference))
+
+
+def _maybe_unite(value: Value, default: Value) -> Value:
+    if default is _NO_ARG_SENTINEL:
+        return value
+    return unite_values(value, default)
+
+
 def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
     key = ctx.vars["key"]
     default = ctx.vars["default"]
@@ -1483,6 +1567,15 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=dict.setdefault,
             impl=_dict_setdefault_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter("key", _POS_ONLY),
+                SigParameter("default", _POS_ONLY, default=_NO_ARG_SENTINEL),
+            ],
+            callable=dict.pop,
+            impl=_dict_pop_impl,
         ),
         Signature.make(
             [

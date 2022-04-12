@@ -4,7 +4,6 @@ from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .value import (
     NO_RETURN_VALUE,
-    AnnotatedValue,
     AnySource,
     AnyValue,
     KVPair,
@@ -776,6 +775,54 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 strong_dict.setdefault(3),
                 MultiValuedValue([TypedValue(str), KnownValue(None)]),
             )
+            assert_is_value(strong_dict, expected)
+
+    @assert_passes()
+    def test_dict_pop(self):
+        from typing_extensions import TypedDict, NotRequired
+        from typing import Dict
+
+        class TD(TypedDict):
+            a: int
+            b: NotRequired[str]
+
+        def typeddict(td: TD):
+            td.pop({})  # E: unhashable_key
+            td.pop(0)  # E: invalid_typeddict_key
+            td.pop("c")  # E: invalid_typeddict_key
+            val = td.pop("a", "s")  # E: incompatible_argument
+            assert_is_value(val, TypedValue(int) | KnownValue("s"))
+            assert_is_value(td.pop("b", "x"), TypedValue(str) | KnownValue("x"))
+
+        def dict_incomplete_value():
+            incomplete_value = {"a": str(TD), "c": 42}
+            assert_is_value(
+                incomplete_value,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(KnownValue("a"), TypedValue(str)),
+                        KVPair(KnownValue("c"), KnownValue(42)),
+                    ],
+                ),
+            )
+            incomplete_value.pop("b")  # E: incompatible_argument
+            assert_is_value(incomplete_value.pop("a"), TypedValue(str))
+            assert_is_value(
+                incomplete_value,
+                DictIncompleteValue(dict, [KVPair(KnownValue("c"), KnownValue(42))]),
+            )
+            assert_is_value(
+                incomplete_value.pop("c", 1), KnownValue(42) | KnownValue(1)
+            )
+            assert_is_value(incomplete_value, DictIncompleteValue(dict, []))
+
+        def strong_typed(strong_dict: Dict[int, str]):
+            expected = GenericValue(dict, [TypedValue(int), TypedValue(str)])
+            assert_is_value(strong_dict, expected)
+            assert_is_value(strong_dict.pop(3, 42), TypedValue(str) | KnownValue(42))
+            assert_is_value(strong_dict, expected)
+            assert_is_value(strong_dict.pop(3), TypedValue(str))
             assert_is_value(strong_dict, expected)
 
     @assert_passes()
