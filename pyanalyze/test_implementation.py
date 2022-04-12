@@ -644,7 +644,6 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             )
             lst.extend([3, 4])
 
-            # TODO: this is wrong; it drops all but the last Union member
             assert_is_value(
                 lst,
                 make_weak(
@@ -653,6 +652,16 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                         [
                             MultiValuedValue(
                                 [KnownValue(2), KnownValue(3), KnownValue(4)]
+                            )
+                        ],
+                    )
+                )
+                | make_weak(
+                    GenericValue(
+                        list,
+                        [
+                            MultiValuedValue(
+                                [KnownValue(1), KnownValue(3), KnownValue(4)]
                             )
                         ],
                     )
