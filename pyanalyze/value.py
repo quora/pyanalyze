@@ -51,7 +51,6 @@ from typing_extensions import Literal, Protocol, ParamSpec
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
-from .find_unused import used
 from .safe import all_of_type, safe_equals, safe_issubclass, safe_isinstance
 
 T = TypeVar("T")
