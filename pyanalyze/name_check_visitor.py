@@ -4476,10 +4476,24 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     for val in callee.vals
                 ]
 
-            return unite_values(*values)
-        return self._check_call_no_mvv(
-            node, callee, args, keywords, allow_call=allow_call
-        )
+            pairs = [
+                unannotate_value(val, NoReturnConstraintExtension) for val in values
+            ]
+            val = unite_values(*[val for val, _ in pairs])
+            constraint = OrConstraint.make(
+                [
+                    AndConstraint.make(ext.constraint for ext in exts)
+                    for _, exts in pairs
+                ]
+            )
+        else:
+            val = self._check_call_no_mvv(
+                node, callee, args, keywords, allow_call=allow_call
+            )
+            val, nru_extensions = unannotate_value(val, NoReturnConstraintExtension)
+            constraint = AndConstraint.make(ext.constraint for ext in nru_extensions)
+        self.add_constraint(node, constraint)
+        return val
 
     def _check_call_no_mvv(
         self,
@@ -4527,12 +4541,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             else:
                 with self.catch_errors():
                     return_value = extended_argspec.check_call(arguments, self, node)
-
-        return_value, nru_extensions = unannotate_value(
-            return_value, NoReturnConstraintExtension
-        )
-        for extension in nru_extensions:
-            self.add_constraint(node, extension.constraint)
 
         if extended_argspec is not None and not extended_argspec.has_return_value():
             local = self.get_local_return_value(extended_argspec)

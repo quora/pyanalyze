@@ -638,10 +638,17 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             )
             lst.extend([3, 4])
 
-            # TODO: this is wrong; it drops all but the last Union member
             assert_is_value(
                 lst,
                 SequenceValue(
+                    list,
+                    [
+                        (True, KnownValue(1)),
+                        (False, KnownValue(3)),
+                        (False, KnownValue(4)),
+                    ],
+                )
+                | SequenceValue(
                     list,
                     [
                         (True, KnownValue(2)),

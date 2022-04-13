@@ -4,6 +4,8 @@
 
 - Add implementation function for `dict.pop` (#517)
 - Remove `WeakExtension` (#517)
+- Fix propagation of no-return-unless constraints from calls
+  to unions (#518)
 - Initial support for variable-length heterogeneous sequences
   (required for PEP 646). More precise types are now inferred
   for heterogeneous sequences containing variable-length
