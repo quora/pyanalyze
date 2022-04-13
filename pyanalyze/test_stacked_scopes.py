@@ -14,10 +14,10 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     ReferencingValue,
+    SequenceValue,
     TypedValue,
     UNINITIALIZED_VALUE,
     assert_is_value,
-    make_weak,
 )
 
 
@@ -992,8 +992,6 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_nested_scope(self):
-        from pyanalyze.value import WeakExtension
-
         class A:
             pass
 
@@ -1004,12 +1002,7 @@ class TestConstraints(TestNameCheckVisitorBase):
             if isinstance(a, B):
                 assert_is_value(a, TypedValue(B))
                 lst = [a for _ in iterable]
-                assert_is_value(
-                    lst,
-                    AnnotatedValue(
-                        GenericValue(list, [TypedValue(B)]), [WeakExtension()]
-                    ),
-                )
+                assert_is_value(lst, SequenceValue(list, [(True, TypedValue(B))]))
 
     @assert_passes()
     def test_qcore_asserts(self):
@@ -1419,21 +1412,14 @@ class TestConstraints(TestNameCheckVisitorBase):
                 return None
 
         def capybara(x, y):
-            assert_is_value(
-                maybe_int(x), MultiValuedValue([TypedValue(int), KnownValue(None)])
-            )
+            assert_is_value(maybe_int(x), TypedValue(int) | KnownValue(None))
 
             lst = [maybe_int(elt) for elt in y]
             assert_is_value(
-                lst,
-                make_weak(
-                    GenericValue(
-                        list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
-                    )
-                ),
+                lst, SequenceValue(list, [(True, TypedValue(int) | KnownValue(None))])
             )
             lst2 = [elt for elt in lst if elt]
-            assert_is_value(lst2, make_weak(GenericValue(list, [TypedValue(int)])))
+            assert_is_value(lst2, SequenceValue(list, [(True, TypedValue(int))]))
 
     @assert_passes()
     def test_comprehension_composite(self):
@@ -1447,37 +1433,29 @@ class TestConstraints(TestNameCheckVisitorBase):
         def use_attr(c: List[Capybara]) -> None:
             assert_is_value(
                 [elt.x for elt in c],
-                make_weak(
-                    GenericValue(
-                        list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
-                    )
-                ),
+                SequenceValue(list, [(True, TypedValue(int) | KnownValue(None))]),
             )
             assert_is_value(
                 [elt.x for elt in c if elt.x is not None],
-                make_weak(GenericValue(list, [TypedValue(int)])),
+                SequenceValue(list, [(True, TypedValue(int))]),
             )
             assert_is_value(
                 [elt.x for elt in c if elt.x],
-                make_weak(GenericValue(list, [TypedValue(int)])),
+                SequenceValue(list, [(True, TypedValue(int))]),
             )
 
         def use_subscript(d: List[Tuple[int, Optional[int]]]) -> None:
             assert_is_value(
                 [pair[1] for pair in d],
-                make_weak(
-                    GenericValue(
-                        list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
-                    )
-                ),
+                SequenceValue(list, [(True, TypedValue(int) | KnownValue(None))]),
             )
             assert_is_value(
                 [pair[1] for pair in d if pair[1] is not None],
-                make_weak(GenericValue(list, [TypedValue(int)])),
+                SequenceValue(list, [(True, TypedValue(int))]),
             )
             assert_is_value(
                 [pair[1] for pair in d if pair[1]],
-                make_weak(GenericValue(list, [TypedValue(int)])),
+                SequenceValue(list, [(True, TypedValue(int))]),
             )
 
     @assert_passes()

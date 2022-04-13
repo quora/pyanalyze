@@ -167,7 +167,6 @@ from .value import (
     get_tv_map,
     is_union,
     kv_pairs_from_mapping,
-    make_weak,
     set_self,
     unannotate_value,
     unite_and_simplify,
@@ -2468,10 +2467,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         detail=str(hashability),
                     )
                     key_value = AnyValue(AnySource.error)
-            if isinstance(key_value, AnyValue) and isinstance(value_value, AnyValue):
-                return TypedValue(dict)
-            else:
-                return make_weak(GenericValue(dict, [key_value, value_value]))
+            return DictIncompleteValue(
+                dict, [KVPair(key_value, value_value, is_many=True)]
+            )
 
         with qcore.override(self, "in_comprehension_body", True):
             member_value = self.visit(node.elt)
@@ -2489,7 +2487,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         if typ is types.GeneratorType:
             return GenericValue(typ, [member_value, KnownValue(None), KnownValue(None)])
-        return make_weak(GenericValue(typ, [member_value]))
+        # Returning a SequenceValue here instead of a GenericValue allows
+        # later code to modify this container.
+        return SequenceValue(typ, [(True, member_value)])
 
     # Literals and displays
 

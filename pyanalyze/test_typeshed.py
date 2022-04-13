@@ -27,6 +27,7 @@ from .tests import make_simple_sequence
 from .typeshed import TypeshedFinder
 from .value import (
     CallableValue,
+    DictIncompleteValue,
     SubclassValue,
     TypedDictValue,
     assert_is_value,
@@ -36,7 +37,7 @@ from .value import (
     NewTypeValue,
     TypedValue,
     GenericValue,
-    make_weak,
+    KVPair,
     TypeVarValue,
     UNINITIALIZED_VALUE,
     Value,
@@ -130,7 +131,9 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         def capybara(x: Dict[int, str]):
             assert_is_value(
                 {k: v for k, v in x.items()},
-                make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(int), TypedValue(str), is_many=True)]
+                ),
             )
 
     @assert_passes()

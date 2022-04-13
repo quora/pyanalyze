@@ -6,9 +6,7 @@ from .value import (
     AnyValue,
     AsyncTaskIncompleteValue,
     KnownValue,
-    MultiValuedValue,
     TypedValue,
-    GenericValue,
     DictIncompleteValue,
     KVPair,
 )
@@ -93,11 +91,14 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
             vals4 = yield {i: square.asynq(i) for i in ints}
             assert_is_value(
                 vals4,
-                GenericValue(
+                DictIncompleteValue(
                     dict,
                     [
-                        MultiValuedValue([KnownValue(0), KnownValue(1), KnownValue(2)]),
-                        TypedValue(int),
+                        KVPair(
+                            KnownValue(0) | KnownValue(1) | KnownValue(2),
+                            TypedValue(int),
+                            is_many=True,
+                        )
                     ],
                 ),
             )

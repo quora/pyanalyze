@@ -2002,22 +2002,6 @@ class NoReturnConstraintExtension(Extension):
 
 
 @dataclass(frozen=True)
-class WeakExtension(Extension):
-    """Used to indicate that a generic argument to a container may be widened.
-
-    This is used only in conjuction with the special casing for functions
-    like ``list.extend``. After code like ``lst = [1, 2]; lst.extend([i for in range(5)])``
-    we may end up inferring a type like ``List[Literal[0, 1, 2, 3, 4]]``, but that is
-    too narrow and leads to false positives if later code puts a different int in
-    the list. If the generic argument is instead annotated with ``WeakExtension``, we
-    widen the type to accommodate later appends.
-
-    The ``TestGenericMutators.test_weak_value`` test case is an example.
-
-    """
-
-
-@dataclass(frozen=True)
 class AlwaysPresentExtension(Extension):
     """Extension that indicates that an iterable value is nonempty.
 
@@ -2235,10 +2219,6 @@ def intersect_bounds_maps(bounds_maps: Sequence[BoundsMap]) -> BoundsMap:
         for tv, bound_lists in intermediate.items()
         if all(tv in bounds_map for bounds_map in bounds_maps)
     }
-
-
-def make_weak(val: Value) -> Value:
-    return annotate_value(val, [WeakExtension()])
 
 
 def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -> Value:

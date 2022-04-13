@@ -4,7 +4,6 @@ from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .value import (
     NO_RETURN_VALUE,
-    AnnotatedValue,
     AnySource,
     AnyValue,
     KVPair,
@@ -17,7 +16,6 @@ from .value import (
     DictIncompleteValue,
     SubclassValue,
     MultiValuedValue,
-    make_weak,
 )
 
 
@@ -635,36 +633,28 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 lst = [2 for _ in cond]
             assert_is_value(
                 lst,
-                MultiValuedValue(
-                    [
-                        make_weak(GenericValue(list, [KnownValue(1)])),
-                        make_weak(GenericValue(list, [KnownValue(2)])),
-                    ]
-                ),
+                SequenceValue(list, [(True, KnownValue(1))])
+                | SequenceValue(list, [(True, KnownValue(2))]),
             )
             lst.extend([3, 4])
 
             assert_is_value(
                 lst,
-                make_weak(
-                    GenericValue(
-                        list,
-                        [
-                            MultiValuedValue(
-                                [KnownValue(2), KnownValue(3), KnownValue(4)]
-                            )
-                        ],
-                    )
+                SequenceValue(
+                    list,
+                    [
+                        (True, KnownValue(1)),
+                        (False, KnownValue(3)),
+                        (False, KnownValue(4)),
+                    ],
                 )
-                | make_weak(
-                    GenericValue(
-                        list,
-                        [
-                            MultiValuedValue(
-                                [KnownValue(1), KnownValue(3), KnownValue(4)]
-                            )
-                        ],
-                    )
+                | SequenceValue(
+                    list,
+                    [
+                        (True, KnownValue(2)),
+                        (False, KnownValue(3)),
+                        (False, KnownValue(4)),
+                    ],
                 ),
             )
 
@@ -754,28 +744,32 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             weak_dict = {i: str(i) for i in ints}
             assert_is_value(
                 weak_dict,
-                make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(int), TypedValue(str), is_many=True)]
+                ),
             )
             assert_is_value(weak_dict.setdefault(3, str(TD)), TypedValue(str))
 
-            int_or_3 = MultiValuedValue([TypedValue(int), KnownValue(3)])
-            assert_is_value(
-                weak_dict, make_weak(GenericValue(dict, [int_or_3, TypedValue(str)]))
-            )
-            assert_is_value(
-                weak_dict.setdefault(3),
-                MultiValuedValue([TypedValue(str), KnownValue(None)]),
-            )
             assert_is_value(
                 weak_dict,
-                make_weak(
-                    GenericValue(
-                        dict,
-                        [
-                            int_or_3,
-                            MultiValuedValue([TypedValue(str), KnownValue(None)]),
-                        ],
-                    )
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(TypedValue(int), TypedValue(str), is_many=True),
+                        KVPair(KnownValue(3), TypedValue(str), is_required=False),
+                    ],
+                ),
+            )
+            assert_is_value(weak_dict.setdefault(3), TypedValue(str) | KnownValue(None))
+            assert_is_value(
+                weak_dict,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(TypedValue(int), TypedValue(str), is_many=True),
+                        KVPair(KnownValue(3), TypedValue(str), is_required=False),
+                        KVPair(KnownValue(3), KnownValue(None), is_required=False),
+                    ],
                 ),
             )
 
@@ -789,6 +783,65 @@ class TestGenericMutators(TestNameCheckVisitorBase):
                 MultiValuedValue([TypedValue(str), KnownValue(None)]),
             )
             assert_is_value(strong_dict, expected)
+
+    @assert_passes()
+    def test_dict_pop(self):
+        from typing_extensions import TypedDict, NotRequired
+        from typing import Dict
+
+        class TD(TypedDict):
+            a: int
+            b: NotRequired[str]
+
+        def typeddict(td: TD):
+            td.pop({})  # E: unhashable_key
+            td.pop(0)  # E: invalid_typeddict_key
+            td.pop("c")  # E: invalid_typeddict_key
+            val = td.pop("a", "s")  # E: incompatible_argument
+            assert_is_value(val, TypedValue(int) | KnownValue("s"))
+            assert_is_value(td.pop("b", "x"), TypedValue(str) | KnownValue("x"))
+
+        def dict_incomplete_value():
+            incomplete_value = {"a": str(TD), "c": 42}
+            assert_is_value(
+                incomplete_value,
+                DictIncompleteValue(
+                    dict,
+                    [
+                        KVPair(KnownValue("a"), TypedValue(str)),
+                        KVPair(KnownValue("c"), KnownValue(42)),
+                    ],
+                ),
+            )
+            incomplete_value.pop("b")  # E: incompatible_argument
+            assert_is_value(incomplete_value.pop("a"), TypedValue(str))
+            assert_is_value(
+                incomplete_value,
+                DictIncompleteValue(dict, [KVPair(KnownValue("c"), KnownValue(42))]),
+            )
+            assert_is_value(
+                incomplete_value.pop("c", 1), KnownValue(42) | KnownValue(1)
+            )
+            assert_is_value(incomplete_value, DictIncompleteValue(dict, []))
+
+        def strong_typed(strong_dict: Dict[int, str]):
+            expected = GenericValue(dict, [TypedValue(int), TypedValue(str)])
+            assert_is_value(strong_dict, expected)
+            assert_is_value(strong_dict.pop(3, 42), TypedValue(str) | KnownValue(42))
+            assert_is_value(strong_dict, expected)
+            assert_is_value(strong_dict.pop(3), TypedValue(str))
+            assert_is_value(strong_dict, expected)
+
+    @assert_passes()
+    def test_dict_pop_union(self):
+        def capybara(cond):
+            d = {"a": 1, "b": 2}
+            if cond:
+                d["c"] = 3
+            else:
+                d["d"] = 4
+
+            assert_is_value(d.pop("a"), KnownValue(1))
 
     @assert_passes()
     def test_dict_update(self):
@@ -824,7 +877,6 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_copy_and_update(self):
         from typing import Dict
-        from pyanalyze.value import WeakExtension
 
         def capybara():
             d1: Dict[str, int] = {"x": 1}
@@ -832,7 +884,12 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(d1, d1_val)
             d1[1] = 3  # E: incompatible_argument
             d2 = d1.copy()
-            assert_is_value(d2, AnnotatedValue(d1_val, [WeakExtension()]))
+            assert_is_value(
+                d2,
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(str), TypedValue(int), is_many=True)]
+                ),
+            )
             d2[1] = 3
             assert_is_value(
                 d2,
@@ -1181,15 +1238,12 @@ class TestDictSetItem(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_weak(self):
-        from pyanalyze.value import WeakExtension
-
         def capybara(arg):
             dct = {int(k): 1 for k in arg}
             assert_is_value(
                 dct,
-                AnnotatedValue(
-                    GenericValue(dict, [TypedValue(int), KnownValue(1)]),
-                    [WeakExtension()],
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(int), KnownValue(1), is_many=True)]
                 ),
             )
             dct["x"] = "y"
