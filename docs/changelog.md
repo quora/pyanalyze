@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Remove `SequenceIncompleteValue` (#519)
 - Add implementation function for `dict.pop` (#517)
 - Remove `WeakExtension` (#517)
 - Fix propagation of no-return-unless constraints from calls
