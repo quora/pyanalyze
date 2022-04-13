@@ -1626,6 +1626,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return self.visit_FunctionDef(node)
 
     def visit_FunctionDef(self, node: FunctionDefNode) -> Value:
+        start = qcore.utime()
         potential_function = self._get_potential_function(node)
         info = compute_function_info(
             node,
@@ -1719,6 +1720,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
 
         self._set_argspec_to_retval(val, info, result)
+        end = qcore.utime()
+        duration = (end - start) / qcore.SECOND
+        if duration > 5:
+            self._show_error_if_checking(
+                node,
+                f"Function took {duration:.2f} s to process",
+                error_code=ErrorCode.slow_function,
+            )
         return val
 
     def _set_argspec_to_retval(
