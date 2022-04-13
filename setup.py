@@ -4,7 +4,7 @@ from setuptools import setup
 from setuptools.extension import Extension
 
 
-version = "0.6.0"
+version = "0.7.0"
 package_data = ["test.toml", "stubs/*/*.pyi"]
 # Used in internal packaging system.
 if "SANTA_PACKAGE_VERSION" in os.environ:
