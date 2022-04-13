@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## Version 0.7.0 (April 13, 2022)
 
+Release highlights:
+- Support for PEP 673 (`Self`)
+- Support for PEP 675 (`LiteralString`)
+- Support for `assert_type` and other additions to `typing` in Python 3.11
+
+Full changelog:
 - Remove `SequenceIncompleteValue` (#519)
 - Add implementation function for `dict.pop` (#517)
 - Remove `WeakExtension` (#517)
