@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Optimize local variables with very complex inferred types (#521)
+
 ## Version 0.7.0 (April 13, 2022)
 
 Release highlights:

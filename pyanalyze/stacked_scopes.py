@@ -1331,6 +1331,8 @@ class FunctionScope(Scope):
         ctx: _LookupContext,
         constraints: Iterable[Constraint] = (),
     ) -> Value:
+        # Deduplicate nodes to gain some performance.
+        nodes = OrderedDict.fromkeys(nodes)
         # If the variable is a nonlocal or composite, "uninitialized" doesn't make sense;
         # instead use an empty constraint to point to the parent scope.
         should_use_unconstrained = (
