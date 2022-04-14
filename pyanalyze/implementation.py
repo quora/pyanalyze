@@ -352,9 +352,9 @@ def _sequence_impl(typ: type, ctx: CallContext) -> ImplReturn:
 def _list_append_impl(ctx: CallContext) -> ImplReturn:
     lst = replace_known_sequence_value(ctx.vars["self"])
     element = ctx.vars["object"]
-    varname = ctx.visitor.varname_for_self_constraint(ctx.node)
-    if varname is not None:
-        if isinstance(lst, SequenceValue):
+    if isinstance(lst, SequenceValue):
+        varname = ctx.visitor.varname_for_self_constraint(ctx.node)
+        if varname is not None:
             no_return_unless = Constraint(
                 varname,
                 ConstraintType.is_value_object,
@@ -362,10 +362,10 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
                 SequenceValue.make_or_known(list, (*lst.members, (False, element))),
             )
             return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        elif isinstance(lst, GenericValue):
-            return _check_generic_container(
-                "list.append", "object", ctx.vars["self"], lst, element, ctx, list
-            )
+    if isinstance(lst, GenericValue):
+        return _check_generic_container(
+            "list.append", "object", ctx.vars["self"], lst, element, ctx, list
+        )
     return ImplReturn(KnownValue(None))
 
 
@@ -999,11 +999,7 @@ def _list_extend_or_iadd_impl(
                     varname, ConstraintType.is_value_object, True, constrained_value
                 )
                 return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        elif (
-            varname is not None
-            and isinstance(cleaned_lst, GenericValue)
-            and isinstance(iterable, TypedValue)
-        ):
+        if isinstance(cleaned_lst, GenericValue) and isinstance(iterable, TypedValue):
             actual_type = iterable.get_generic_arg_for_type(
                 collections.abc.Iterable, ctx.visitor, 0
             )
@@ -1058,9 +1054,9 @@ def _check_generic_container(
 def _set_add_impl(ctx: CallContext) -> ImplReturn:
     set_value = replace_known_sequence_value(ctx.vars["self"])
     element = ctx.vars["object"]
-    varname = ctx.visitor.varname_for_self_constraint(ctx.node)
-    if varname is not None:
-        if isinstance(set_value, SequenceValue):
+    if isinstance(set_value, SequenceValue):
+        varname = ctx.visitor.varname_for_self_constraint(ctx.node)
+        if varname is not None:
             no_return_unless = Constraint(
                 varname,
                 ConstraintType.is_value_object,
@@ -1070,10 +1066,10 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
                 ),
             )
             return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
-        elif isinstance(set_value, GenericValue):
-            return _check_generic_container(
-                "set.add", "object", ctx.vars["self"], set_value, element, ctx, set
-            )
+    if isinstance(set_value, GenericValue):
+        return _check_generic_container(
+            "set.add", "object", ctx.vars["self"], set_value, element, ctx, set
+        )
     return ImplReturn(KnownValue(None))
 
 
