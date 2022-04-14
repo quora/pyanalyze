@@ -419,6 +419,12 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             assert_is_value(lst, GenericValue(list, [TypedValue(str)]))
             lst.append(1)  # E: incompatible_argument
 
+            double_lst: List[List[int]] = [[42]]
+            assert_is_value(
+                double_lst, GenericValue(list, [GenericValue(list, [TypedValue(int)])])
+            )
+            double_lst[0].append("x")  # E: incompatible_argument
+
     @assert_passes()
     def test_set_add(self):
         from typing import Set

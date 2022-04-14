@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Detect incompatible types for some calls to `list.append`,
+  `list.extend`, `list.__add__`, and `set.add` (#522)
 - Optimize local variables with very complex inferred types (#521)
 
 ## Version 0.7.0 (April 13, 2022)
