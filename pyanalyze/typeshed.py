@@ -4,6 +4,7 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
+from pyanalyze.functions import translate_vararg_type
 from .node_visitor import Failure
 from .options import Options, PathSequenceOption
 from .extensions import evaluated
@@ -829,20 +830,16 @@ class TypeshedFinder:
                 arguments = arguments[1:]
 
         if args.vararg is not None:
-            vararg_param = self._parse_param(
-                args.vararg, None, mod, ParameterKind.VAR_POSITIONAL
+            arguments.append(
+                self._parse_param(args.vararg, None, mod, ParameterKind.VAR_POSITIONAL)
             )
-            annotation = GenericValue(tuple, [vararg_param.annotation])
-            arguments.append(replace(vararg_param, annotation=annotation))
         arguments += self._parse_param_list(
             args.kwonlyargs, args.kw_defaults, mod, ParameterKind.KEYWORD_ONLY
         )
         if args.kwarg is not None:
-            kwarg_param = self._parse_param(
-                args.kwarg, None, mod, ParameterKind.VAR_KEYWORD
+            arguments.append(
+                self._parse_param(args.kwarg, None, mod, ParameterKind.VAR_KEYWORD)
             )
-            annotation = GenericValue(dict, [TypedValue(str), kwarg_param.annotation])
-            arguments.append(replace(kwarg_param, annotation=annotation))
         # some typeshed types have a positional-only after a normal argument,
         # and Signature doesn't like that
         seen_non_positional = False
@@ -898,7 +895,9 @@ class TypeshedFinder:
     ) -> SigParameter:
         typ = AnyValue(AnySource.unannotated)
         if arg.annotation is not None:
-            typ = self._parse_type(arg.annotation, module)
+            typ = self._parse_type(
+                arg.annotation, module, allow_unpack=kind.allow_unpack()
+            )
         elif objclass is not None:
             bases = self.get_bases(objclass)
             if bases is None:
@@ -925,6 +924,7 @@ class TypeshedFinder:
         ):
             kind = ParameterKind.POSITIONAL_ONLY
             name = name[2:]
+        typ = translate_vararg_type(kind, typ)
         # Mark self as positional-only. objclass should be given only if we believe
         # it's the "self" parameter.
         if objclass is not None:
@@ -942,11 +942,18 @@ class TypeshedFinder:
         return value_from_ast(node, ctx=ctx)
 
     def _parse_type(
-        self, node: ast.AST, module: str, *, is_typeddict: bool = False
+        self,
+        node: ast.AST,
+        module: str,
+        *,
+        is_typeddict: bool = False,
+        allow_unpack: bool = False,
     ) -> Value:
         val = self._parse_expr(node, module)
         ctx = _AnnotationContext(finder=self, module=module)
-        typ = type_from_value(val, ctx=ctx, is_typeddict=is_typeddict)
+        typ = type_from_value(
+            val, ctx=ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
+        )
         if self.verbose and isinstance(typ, AnyValue):
             self.log("Got Any", (ast.dump(node), module))
         return typ

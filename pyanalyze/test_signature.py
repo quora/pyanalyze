@@ -1,6 +1,5 @@
 # static analysis: ignore
 from collections.abc import Sequence
-from typing import TypeVar
 
 
 from .value import (

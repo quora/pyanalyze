@@ -271,9 +271,7 @@ def compute_parameters(
         )
         if arg.annotation is not None:
             value = ctx.value_of_annotation(
-                arg.annotation,
-                allow_unpack=kind
-                in (ParameterKind.VAR_POSITIONAL, ParameterKind.VAR_KEYWORD),
+                arg.annotation, allow_unpack=kind.allow_unpack()
             )
             if default is not None:
                 tv_map = value.can_assign(default, ctx)
@@ -312,21 +310,25 @@ def compute_parameters(
             if default is not None:
                 value = unite_values(value, default)
 
-        if kind is ParameterKind.VAR_POSITIONAL:
-            if isinstance(value, UnpackedValue):
-                value = value.value
-            else:
-                value = GenericValue(tuple, [value])
-        elif kind is ParameterKind.VAR_KEYWORD:
-            if isinstance(value, UnpackedValue):
-                value = value.value
-            else:
-                value = GenericValue(dict, [TypedValue(str), value])
-
+        value = translate_vararg_type(kind, value)
         param = SigParameter(arg.arg, kind, default, value)
         info = ParamInfo(param, arg, is_self)
         params.append(info)
     return params
+
+
+def translate_vararg_type(kind: ParameterKind, typ: Value) -> Value:
+    if kind is ParameterKind.VAR_POSITIONAL:
+        if isinstance(typ, UnpackedValue):
+            return typ.value
+        else:
+            return GenericValue(tuple, [typ])
+    elif kind is ParameterKind.VAR_KEYWORD:
+        if isinstance(typ, UnpackedValue):
+            return typ.value
+        else:
+            return GenericValue(dict, [TypedValue(str), typ])
+    return typ
 
 
 @dataclass

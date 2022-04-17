@@ -351,6 +351,9 @@ class ParameterKind(enum.Enum):
     with any other callable. There can only be one ELLIPSIS parameter
     and it must be the last one."""
 
+    def allow_unpack(self) -> bool:
+        return self is ParameterKind.VAR_KEYWORD or self is ParameterKind.VAR_POSITIONAL
+
 
 KIND_TO_ALLOWED_PREVIOUS = {
     ParameterKind.POSITIONAL_ONLY: {ParameterKind.POSITIONAL_ONLY},
