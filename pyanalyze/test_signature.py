@@ -1214,3 +1214,13 @@ class TestUnpack(TestNameCheckVisitorBase):
             capybara()  # E: incompatible_call
             capybara(a="x", b="x")  # E: incompatible_argument
             capybara(a=1, b="x", c=3)  # E: incompatible_call
+
+    @assert_passes()
+    def test_invalid(self):
+        from typing_extensions import Unpack
+
+        def unpack_that_int(*args: Unpack[int]) -> None:  # E: invalid_annotation
+            assert_is_value(args, AnyValue(AnySource.error))
+
+        def bad_kwargs(**kwargs: Unpack[None]) -> None:  # E: invalid_annotation
+            assert_is_value(kwargs, AnyValue(AnySource.error))

@@ -429,7 +429,7 @@ class ArgSpecCache:
             typ = type_from_runtime(
                 parameter.annotation, ctx=ctx, allow_unpack=kind.allow_unpack()
             )
-            return translate_vararg_type(kind, typ)
+            return translate_vararg_type(kind, typ, self.ctx)
         # If this is the self argument of a method, try to infer the self type.
         elif index == 0 and parameter.kind in (
             inspect.Parameter.POSITIONAL_ONLY,

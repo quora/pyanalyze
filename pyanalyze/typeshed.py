@@ -924,7 +924,7 @@ class TypeshedFinder:
         ):
             kind = ParameterKind.POSITIONAL_ONLY
             name = name[2:]
-        typ = translate_vararg_type(kind, typ)
+        typ = translate_vararg_type(kind, typ, self.ctx)
         # Mark self as positional-only. objclass should be given only if we believe
         # it's the "self" parameter.
         if objclass is not None:
