@@ -270,6 +270,22 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 want_cm(x)
                 len(x)  # E: incompatible_argument
 
+    @assert_passes()
+    def test_args_kwargs(self):
+        def capybara():
+            from _pyanalyze_tests.args import f, g, h, i
+
+            f(1)  # E: incompatible_call
+            f(1, "x")
+            g(x=1)  # E: incompatible_call
+            g(x=1, y="x")
+            h("x")  # E: incompatible_argument
+            h()
+            h(1)
+            i(x=3)  # E: incompatible_argument
+            i(x="x")
+            i()
+
 
 class TestConstructors(TestNameCheckVisitorBase):
     @assert_passes()

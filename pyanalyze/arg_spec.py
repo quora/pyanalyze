@@ -4,6 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
+from .functions import translate_vararg_type
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import CustomCheck, TypeGuard, get_overloads, get_type_evaluations
@@ -423,14 +424,12 @@ class ArgSpecCache:
         is_constructor: bool,
     ) -> Value:
         if parameter.annotation is not inspect.Parameter.empty:
+            kind = ParameterKind(parameter.kind)
+            ctx = AnnotationsContext(self, func_globals)
             typ = type_from_runtime(
-                parameter.annotation, ctx=AnnotationsContext(self, func_globals)
+                parameter.annotation, ctx=ctx, allow_unpack=kind.allow_unpack()
             )
-            if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
-                return GenericValue(tuple, [typ])
-            elif parameter.kind is inspect.Parameter.VAR_KEYWORD:
-                return GenericValue(dict, [TypedValue(str), typ])
-            return typ
+            return translate_vararg_type(kind, typ, self.ctx)
         # If this is the self argument of a method, try to infer the self type.
         elif index == 0 and parameter.kind in (
             inspect.Parameter.POSITIONAL_ONLY,

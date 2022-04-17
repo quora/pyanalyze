@@ -32,6 +32,7 @@ from .value import (
     KnownValue,
     GenericValue,
     SubclassValue,
+    UnpackedValue,
     TypeVarValue,
     unite_values,
     CanAssignError,
@@ -94,7 +95,9 @@ class Context(ErrorContext, CanAssignContext, Protocol):
     def visit_expression(self, __node: ast.AST) -> Value:
         raise NotImplementedError
 
-    def value_of_annotation(self, __node: ast.expr) -> Value:
+    def value_of_annotation(
+        self, __node: ast.expr, *, allow_unpack: bool = False
+    ) -> Value:
         raise NotImplementedError
 
     def check_call(
@@ -259,7 +262,9 @@ def compute_parameters(
     params = []
     tv_index = 1
 
-    for idx, ((kind, arg), default) in enumerate(zip_longest(args, defaults)):
+    for idx, (param, default) in enumerate(zip_longest(args, defaults)):
+        assert param is not None, "must have more args than defaults"
+        (kind, arg) = param
         is_self = (
             idx == 0
             and enclosing_class is not None
@@ -267,7 +272,9 @@ def compute_parameters(
             and not isinstance(node, ast.Lambda)
         )
         if arg.annotation is not None:
-            value = ctx.value_of_annotation(arg.annotation)
+            value = ctx.value_of_annotation(
+                arg.annotation, allow_unpack=kind.allow_unpack()
+            )
             if default is not None:
                 tv_map = value.can_assign(default, ctx)
                 if isinstance(tv_map, CanAssignError):
@@ -305,15 +312,48 @@ def compute_parameters(
             if default is not None:
                 value = unite_values(value, default)
 
-        if kind is ParameterKind.VAR_POSITIONAL:
-            value = GenericValue(tuple, [value])
-        elif kind is ParameterKind.VAR_KEYWORD:
-            value = GenericValue(dict, [TypedValue(str), value])
-
+        value = translate_vararg_type(kind, value, ctx, error_ctx=ctx, node=arg)
         param = SigParameter(arg.arg, kind, default, value)
         info = ParamInfo(param, arg, is_self)
         params.append(info)
     return params
+
+
+def translate_vararg_type(
+    kind: ParameterKind,
+    typ: Value,
+    can_assign_ctx: CanAssignContext,
+    *,
+    error_ctx: Optional[ErrorContext] = None,
+    node: Optional[ast.AST] = None,
+) -> Value:
+    if kind is ParameterKind.VAR_POSITIONAL:
+        if isinstance(typ, UnpackedValue):
+            if not TypedValue(tuple).is_assignable(typ.value, can_assign_ctx):
+                if error_ctx is not None and node is not None:
+                    error_ctx.show_error(
+                        node,
+                        "Expected tuple type inside Unpack[]",
+                        error_code=ErrorCode.invalid_annotation,
+                    )
+                return AnyValue(AnySource.error)
+            return typ.value
+        else:
+            return GenericValue(tuple, [typ])
+    elif kind is ParameterKind.VAR_KEYWORD:
+        if isinstance(typ, UnpackedValue):
+            if not TypedValue(dict).is_assignable(typ.value, can_assign_ctx):
+                if error_ctx is not None and node is not None:
+                    error_ctx.show_error(
+                        node,
+                        "Expected dict type inside Unpack[]",
+                        error_code=ErrorCode.invalid_annotation,
+                    )
+                return AnyValue(AnySource.error)
+            return typ.value
+        else:
+            return GenericValue(dict, [TypedValue(str), typ])
+    return typ
 
 
 @dataclass

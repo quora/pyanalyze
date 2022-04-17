@@ -1974,6 +1974,22 @@ class AnnotatedValue(Value):
 
 
 @dataclass(frozen=True)
+class UnpackedValue(Value):
+    """Represents the result of PEP 646's Unpack operator."""
+
+    value: Value
+
+    def get_elements(self) -> Optional[Sequence[Tuple[bool, Value]]]:
+        if isinstance(self.value, SequenceValue) and self.value.typ is tuple:
+            return self.value.members
+        elif isinstance(self.value, GenericValue) and self.value.typ is tuple:
+            return [(True, self.value.args[0])]
+        elif isinstance(self.value, TypedValue) and self.value.typ is tuple:
+            return [(True, AnyValue(AnySource.generic_argument))]
+        return None
+
+
+@dataclass(frozen=True)
 class VariableNameValue(AnyValue):
     """Value that is stored in a variable associated with a particular kind of value.
 

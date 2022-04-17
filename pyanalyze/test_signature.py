@@ -1174,3 +1174,53 @@ class TestSelfAnnotation(TestNameCheckVisitorBase):
         def caller(ci: Capybara[int], cs: Capybara[str]):
             assert_is_value(ci.prop, TypedValue(int))
             cs.prop  # E: incompatible_argument
+
+
+class TestUnpack(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_args(self):
+        from typing_extensions import Unpack
+        from typing import Tuple
+
+        def f(*args: Unpack[Tuple[int, str]]) -> None:
+            assert_is_value(
+                args, make_simple_sequence(tuple, [TypedValue(int), TypedValue(str)])
+            )
+
+        def capybara():
+            f(1, "x")
+            f(1)  # E: incompatible_call
+            f(1, 1)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_kwargs(self):
+        from typing_extensions import Unpack, TypedDict, NotRequired, Required
+
+        class TD(TypedDict):
+            a: NotRequired[int]
+            b: Required[str]
+
+        def capybara(**kwargs: Unpack[TD]):
+            assert_is_value(
+                kwargs,
+                TypedDictValue(
+                    {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
+                ),
+            )
+
+        def caller():
+            capybara(a=1, b="x")
+            capybara(b="x")
+            capybara()  # E: incompatible_call
+            capybara(a="x", b="x")  # E: incompatible_argument
+            capybara(a=1, b="x", c=3)  # E: incompatible_call
+
+    @assert_passes()
+    def test_invalid(self):
+        from typing_extensions import Unpack
+
+        def unpack_that_int(*args: Unpack[int]) -> None:  # E: invalid_annotation
+            assert_is_value(args, AnyValue(AnySource.error))
+
+        def bad_kwargs(**kwargs: Unpack[None]) -> None:  # E: invalid_annotation
+            assert_is_value(kwargs, AnyValue(AnySource.error))

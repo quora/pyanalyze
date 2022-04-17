@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add support for use of the `Unpack` operator to
+  annotate heterogeneous `*args` and `**kwargs` parameters (#523)
 - Detect incompatible types for some calls to `list.append`,
   `list.extend`, `list.__add__`, and `set.add` (#522)
 - Optimize local variables with very complex inferred types (#521)
