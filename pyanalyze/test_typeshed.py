@@ -275,9 +275,9 @@ class TestBundledStubs(TestNameCheckVisitorBase):
         def capybara():
             from _pyanalyze_tests.args import f, g, h, i
 
-            f(1)  # E: incompatible_argument
+            f(1)  # E: incompatible_call
             f(1, "x")
-            g(x=1)  # E: incompatible_argument
+            g(x=1)  # E: incompatible_call
             g(x=1, y="x")
             h("x")  # E: incompatible_argument
             h()

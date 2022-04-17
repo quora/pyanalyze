@@ -434,19 +434,28 @@ class SigParameter:
     def get_annotation(self) -> Value:
         return self.annotation
 
+    def is_unnamed(self) -> bool:
+        return self.name.startswith("@")
+
     def __str__(self) -> str:
         # Adapted from Parameter.__str__
         kind = self.kind
-        formatted = self.name
-
-        if self.annotation != UNANNOTATED:
-            formatted = f"{formatted}: {self.annotation}"
-
-        if self.default is not None:
-            if self.annotation != UNANNOTATED:
-                formatted = f"{formatted} = {self.default}"
+        if self.is_unnamed():
+            if self.default is None:
+                formatted = str(self.annotation)
             else:
-                formatted = f"{formatted}={self.default}"
+                formatted = f"{self.annotation} = {self.default}"
+        else:
+            formatted = self.name
+
+            if self.annotation != UNANNOTATED:
+                formatted = f"{formatted}: {self.annotation}"
+
+            if self.default is not None:
+                if self.annotation != UNANNOTATED:
+                    formatted = f"{formatted} = {self.default}"
+                else:
+                    formatted = f"{formatted}={self.default}"
 
         if kind is ParameterKind.VAR_POSITIONAL:
             formatted = "*" + formatted
@@ -782,9 +791,11 @@ class Signature:
                 elif actual_args.ellipsis:
                     bound_args[param.name] = UNKNOWN, ELLIPSIS_COMPOSITE
                 else:
-                    self.show_call_error(
-                        f"Missing required positional argument: '{param.name}'", ctx
-                    )
+                    if param.is_unnamed():
+                        message = f"Missing required positional argument at position {int(param.name[1:])}"
+                    else:
+                        message = f"Missing required positional argument '{param.name}'"
+                    self.show_call_error(message, ctx)
                     return None
             elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
                 if positional_index < len(actual_args.positionals):
@@ -867,7 +878,7 @@ class Signature:
                     bound_args[param.name] = DEFAULT, ELLIPSIS_COMPOSITE
                 else:
                     self.show_call_error(
-                        f"Missing required argument: '{param.name}'", ctx
+                        f"Missing required argument '{param.name}'", ctx
                     )
                     return None
             elif param.kind is ParameterKind.KEYWORD_ONLY:
@@ -909,7 +920,7 @@ class Signature:
                     bound_args[param.name] = DEFAULT, ELLIPSIS_COMPOSITE
                 else:
                     self.show_call_error(
-                        f"Missing required argument: '{param.name}'", ctx
+                        f"Missing required argument '{param.name}'", ctx
                     )
                     return None
             elif param.kind is ParameterKind.VAR_POSITIONAL:
@@ -1665,8 +1676,39 @@ class Signature:
         if return_annotation is None:
             return_annotation = AnyValue(AnySource.unannotated)
             has_return_annotation = False
+        param_dict = {}
+        i = 0
+        for param in parameters:
+            if param.kind is ParameterKind.VAR_POSITIONAL and isinstance(
+                param.annotation, SequenceValue
+            ):
+                simple_members = param.annotation.get_member_sequence()
+                if simple_members is None:
+                    param_dict[param.name] = param
+                    i += 1
+                else:
+                    for member in simple_members:
+                        name = f"@{i}"
+                        param_dict[name] = SigParameter(
+                            name, ParameterKind.POSITIONAL_ONLY, annotation=member
+                        )
+                        i += 1
+            elif param.kind is ParameterKind.VAR_KEYWORD and isinstance(
+                param.annotation, TypedDictValue
+            ):
+                for name, (is_required, value) in param.annotation.items.items():
+                    param_dict[name] = SigParameter(
+                        name,
+                        ParameterKind.KEYWORD_ONLY,
+                        annotation=value,
+                        default=None if is_required else AnyValue(AnySource.marker),
+                    )
+                    i += 1
+            else:
+                param_dict[param.name] = param
+                i += 1
         return cls(
-            {param.name: param for param in parameters},
+            param_dict,
             return_value=return_annotation,
             impl=impl,
             callable=callable,

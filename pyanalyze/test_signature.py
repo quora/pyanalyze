@@ -1189,7 +1189,7 @@ class TestUnpack(TestNameCheckVisitorBase):
 
         def capybara():
             f(1, "x")
-            f(1)  # E: incompatible_argument
+            f(1)  # E: incompatible_call
             f(1, 1)  # E: incompatible_argument
 
     @assert_passes()
@@ -1211,6 +1211,6 @@ class TestUnpack(TestNameCheckVisitorBase):
         def caller():
             capybara(a=1, b="x")
             capybara(b="x")
-            capybara()  # E: incompatible_argument
+            capybara()  # E: incompatible_call
             capybara(a="x", b="x")  # E: incompatible_argument
-            capybara(a=1, b="x", c=3)  # TODO this should be an error
+            capybara(a=1, b="x", c=3)  # E: incompatible_call

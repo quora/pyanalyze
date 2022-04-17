@@ -630,7 +630,7 @@ def _callable_args_from_runtime(
         types = [_type_from_runtime(arg, ctx) for arg in arg_types]
         params = [
             SigParameter(
-                f"__arg{i}",
+                f"@{i}",
                 kind=ParameterKind.PARAM_SPEC
                 if isinstance(typ, TypeVarValue) and typ.is_paramspec
                 else ParameterKind.POSITIONAL_ONLY,
@@ -656,7 +656,7 @@ def _args_from_concatenate(concatenate: Any, ctx: Context) -> Sequence[SigParame
     types = [_type_from_runtime(arg, ctx) for arg in concatenate.__args__]
     params = [
         SigParameter(
-            f"__arg{i}",
+            f"@{i}",
             kind=ParameterKind.PARAM_SPEC
             if i == len(types) - 1
             else ParameterKind.POSITIONAL_ONLY,
@@ -1279,15 +1279,13 @@ def _make_callable_from_value(
             annotation = _type_from_value(arg, ctx)
             if is_many:
                 param = SigParameter(
-                    f"__arg{i}",
+                    f"@{i}",
                     kind=ParameterKind.VAR_POSITIONAL,
                     annotation=GenericValue(tuple, [annotation]),
                 )
             else:
                 param = SigParameter(
-                    f"__arg{i}",
-                    kind=ParameterKind.POSITIONAL_ONLY,
-                    annotation=annotation,
+                    f"@{i}", kind=ParameterKind.POSITIONAL_ONLY, annotation=annotation
                 )
             params.append(param)
         try:
@@ -1317,7 +1315,7 @@ def _make_callable_from_value(
         annotations = [_type_from_value(arg, ctx) for arg in args.members]
         params = [
             SigParameter(
-                f"__arg{i}",
+                f"@{i}",
                 kind=ParameterKind.PARAM_SPEC
                 if i == len(annotations) - 1
                 else ParameterKind.POSITIONAL_ONLY,
