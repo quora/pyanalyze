@@ -792,7 +792,10 @@ class Signature:
                     bound_args[param.name] = UNKNOWN, ELLIPSIS_COMPOSITE
                 else:
                     if param.is_unnamed():
-                        message = f"Missing required positional argument at position {int(param.name[1:])}"
+                        message = (
+                            "Missing required positional argument at position"
+                            f" {int(param.name[1:])}"
+                        )
                     else:
                         message = f"Missing required positional argument '{param.name}'"
                     self.show_call_error(message, ctx)
