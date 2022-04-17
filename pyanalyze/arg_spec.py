@@ -47,6 +47,7 @@ from .value import (
     GenericValue,
     NewTypeValue,
     KnownValue,
+    UnpackedValue,
     Value,
     TypeVarValue,
     extract_typevars,
@@ -423,13 +424,22 @@ class ArgSpecCache:
         is_constructor: bool,
     ) -> Value:
         if parameter.annotation is not inspect.Parameter.empty:
-            typ = type_from_runtime(
-                parameter.annotation, ctx=AnnotationsContext(self, func_globals)
+            is_variadic = parameter.kind in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
             )
-            if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
-                return GenericValue(tuple, [typ])
-            elif parameter.kind is inspect.Parameter.VAR_KEYWORD:
-                return GenericValue(dict, [TypedValue(str), typ])
+            typ = type_from_runtime(
+                parameter.annotation,
+                ctx=AnnotationsContext(self, func_globals),
+                allow_unpack=is_variadic,
+            )
+            if is_variadic:
+                if isinstance(typ, UnpackedValue):
+                    return typ.value
+                elif parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+                    return GenericValue(tuple, [typ])
+                elif parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                    return GenericValue(dict, [TypedValue(str), typ])
             return typ
         # If this is the self argument of a method, try to infer the self type.
         elif index == 0 and parameter.kind in (

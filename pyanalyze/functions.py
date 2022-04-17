@@ -32,6 +32,7 @@ from .value import (
     KnownValue,
     GenericValue,
     SubclassValue,
+    UnpackedValue,
     TypeVarValue,
     unite_values,
     CanAssignError,
@@ -94,7 +95,9 @@ class Context(ErrorContext, CanAssignContext, Protocol):
     def visit_expression(self, __node: ast.AST) -> Value:
         raise NotImplementedError
 
-    def value_of_annotation(self, __node: ast.expr) -> Value:
+    def value_of_annotation(
+        self, __node: ast.expr, *, allow_unpack: bool = False
+    ) -> Value:
         raise NotImplementedError
 
     def check_call(
@@ -267,7 +270,11 @@ def compute_parameters(
             and not isinstance(node, ast.Lambda)
         )
         if arg.annotation is not None:
-            value = ctx.value_of_annotation(arg.annotation)
+            value = ctx.value_of_annotation(
+                arg.annotation,
+                allow_unpack=kind
+                in (ParameterKind.VAR_POSITIONAL, ParameterKind.VAR_KEYWORD),
+            )
             if default is not None:
                 tv_map = value.can_assign(default, ctx)
                 if isinstance(tv_map, CanAssignError):
@@ -306,9 +313,15 @@ def compute_parameters(
                 value = unite_values(value, default)
 
         if kind is ParameterKind.VAR_POSITIONAL:
-            value = GenericValue(tuple, [value])
+            if isinstance(value, UnpackedValue):
+                value = value.value
+            else:
+                value = GenericValue(tuple, [value])
         elif kind is ParameterKind.VAR_KEYWORD:
-            value = GenericValue(dict, [TypedValue(str), value])
+            if isinstance(value, UnpackedValue):
+                value = value.value
+            else:
+                value = GenericValue(dict, [TypedValue(str), value])
 
         param = SigParameter(arg.arg, kind, default, value)
         info = ParamInfo(param, arg, is_self)

@@ -2044,20 +2044,35 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     replacement=replacement,
                 )
 
-    def value_of_annotation(self, node: ast.expr) -> Value:
+    def value_of_annotation(
+        self, node: ast.expr, *, allow_unpack: bool = False
+    ) -> Value:
         with qcore.override(self, "state", VisitorState.collect_names):
             annotated_type = self._visit_annotation(node)
-        return self._value_of_annotation_type(annotated_type, node)
+        return self._value_of_annotation_type(
+            annotated_type, node, allow_unpack=allow_unpack
+        )
 
     def _visit_annotation(self, node: ast.AST) -> Value:
         with qcore.override(self, "in_annotation", True):
             return self.visit(node)
 
     def _value_of_annotation_type(
-        self, val: Value, node: ast.AST, is_typeddict: bool = False
+        self,
+        val: Value,
+        node: ast.AST,
+        *,
+        is_typeddict: bool = False,
+        allow_unpack: bool = False,
     ) -> Value:
         """Given a value encountered in a type annotation, return a type."""
-        return type_from_value(val, visitor=self, node=node, is_typeddict=is_typeddict)
+        return type_from_value(
+            val,
+            visitor=self,
+            node=node,
+            is_typeddict=is_typeddict,
+            allow_unpack=allow_unpack,
+        )
 
     def _check_method_first_arg(
         self, node: FunctionNode, function_info: FunctionInfo
