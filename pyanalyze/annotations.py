@@ -176,6 +176,19 @@ class Context:
             return KnownValue(getattr(builtins, name))
         return self.handle_undefined_name(name)
 
+    def get_attribute(self, root_value: Value, node: ast.Attribute) -> Value:
+        if isinstance(root_value, KnownValue):
+            try:
+                return KnownValue(getattr(root_value.val, node.attr))
+            except AttributeError:
+                self.show_error(
+                    f"{root_value.val!r} has no attribute {node.attr!r}", node=node
+                )
+                return AnyValue(AnySource.error)
+        elif not isinstance(root_value, AnyValue):
+            self.show_error(f"Cannot resolve annotation {root_value}", node=node)
+        return AnyValue(AnySource.error)
+
 
 @dataclass
 class RuntimeEvaluator(type_evaluation.Evaluator, Context):
@@ -991,17 +1004,7 @@ class _Visitor(ast.NodeVisitor):
 
     def visit_Attribute(self, node: ast.Attribute) -> Optional[Value]:
         root_value = self.visit(node.value)
-        if isinstance(root_value, KnownValue):
-            try:
-                return KnownValue(getattr(root_value.val, node.attr))
-            except AttributeError:
-                self.ctx.show_error(
-                    f"{root_value.val!r} has no attribute {node.attr!r}", node=node
-                )
-                return AnyValue(AnySource.error)
-        elif not isinstance(root_value, AnyValue):
-            self.ctx.show_error(f"Cannot resolve annotation {root_value}", node=node)
-        return AnyValue(AnySource.error)
+        return self.ctx.get_attribute(root_value, node)
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
         elts = [(False, self.visit(elt)) for elt in node.elts]

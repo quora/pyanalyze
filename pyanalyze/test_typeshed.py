@@ -216,6 +216,25 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             assert tsf.resolve_name(mod, name) == SubclassValue(expected, exactly=True)
 
     @assert_passes()
+    def test_cdata(self):
+        import array
+        import mmap
+
+        def capybara():
+            from _typeshed import ReadableBuffer
+
+            def inner(b: ReadableBuffer):
+                assert_is_value(
+                    b,
+                    TypedValue(bytes)
+                    | TypedValue(bytearray)
+                    | TypedValue(memoryview)
+                    | GenericValue(array.array, [AnyValue(AnySource.explicit)])
+                    | TypedValue(mmap.mmap)
+                    | TypedValue("ctypes._CData"),
+                )
+
+    @assert_passes()
     def test_import_typeddicts(self):
         def capybara():
             from _pyanalyze_tests.typeddict import Inherited, PEP655, TD1, TD2
