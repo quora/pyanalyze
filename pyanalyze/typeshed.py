@@ -21,7 +21,7 @@ from collections.abc import (
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from types import GeneratorType
+from types import GeneratorType, ModuleType
 from typing import (
     Any,
     Callable,
@@ -110,6 +110,12 @@ class _AnnotationContext(Context):
 
     def get_name(self, node: ast.Name) -> Value:
         return self.finder.resolve_name(self.module, node.id)
+
+    def get_attribute(self, root_value: Value, node: ast.Attribute) -> Value:
+        if isinstance(root_value, KnownValue):
+            if isinstance(root_value.val, ModuleType):
+                return self.finder.resolve_name(root_value.val.__name__, node.attr)
+        return super().get_attribute(root_value, node)
 
 
 class _DummyErrorContext:
