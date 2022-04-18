@@ -235,6 +235,14 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 )
 
     @assert_passes()
+    def test_ast(self):
+        import ast
+
+        def capybara(x: ast.Yield):
+            assert_is_value(x, TypedValue(ast.Yield))
+            assert_is_value(x.value, TypedValue(ast.expr) | KnownValue(None))
+
+    @assert_passes()
     def test_import_typeddicts(self):
         def capybara():
             from _pyanalyze_tests.typeddict import Inherited, PEP655, TD1, TD2
