@@ -1,18 +1,18 @@
 # static analysis: ignore
-from .tests import make_simple_sequence
+from .error_code import ErrorCode
 from .implementation import assert_is_value
+from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_fails, assert_passes
+from .tests import make_simple_sequence
 from .value import (
     AnySource,
     AnyValue,
     AsyncTaskIncompleteValue,
-    KnownValue,
-    TypedValue,
     DictIncompleteValue,
+    KnownValue,
     KVPair,
+    TypedValue,
 )
-from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, assert_fails
-from .error_code import ErrorCode
 
 
 class TestBadAsyncYield(TestNameCheckVisitorBase):
@@ -39,8 +39,9 @@ class TestBadAsyncYield(TestNameCheckVisitorBase):
 class TestUnwrapYield(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
-        from asynq import asynq
         from typing import Sequence
+
+        from asynq import asynq
         from typing_extensions import Literal
 
         @asynq()
@@ -130,6 +131,7 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
     @assert_fails(ErrorCode.task_needs_yield)
     def test_not_yielded(self):
         from asynq import asynq
+
         from pyanalyze.tests import async_fn
 
         @asynq()
@@ -160,7 +162,7 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
 class TestReturn(TestNameCheckVisitorBase):
     @assert_passes()
     def test_type_inference(self):
-        from asynq import asynq, async_proxy, AsyncTask, ConstFuture, FutureBase
+        from asynq import async_proxy, AsyncTask, asynq, ConstFuture, FutureBase
 
         def returns_3():
             return 3

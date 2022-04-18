@@ -5,19 +5,20 @@
 """
 import inspect
 import sys
+import typing
 from typing import (
     Any,
+    Container,
     Dict,
+    NewType,
+    Optional,
     Sequence,
     Tuple,
-    Union,
-    Container,
-    NewType,
     Type,
     TypeVar,
-    Optional,
+    Union,
 )
-import typing
+
 import typing_extensions
 
 try:

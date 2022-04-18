@@ -3,8 +3,9 @@
 TypeVar solver.
 
 """
-import qcore
 from typing import Iterable, Sequence, Tuple, Union
+
+import qcore
 
 from .safe import all_of_type
 from .value import (
@@ -13,15 +14,15 @@ from .value import (
     Bound,
     BoundsMap,
     CanAssignContext,
+    CanAssignError,
     IsOneOf,
     LowerBound,
     OrBound,
     TypeVarLike,
     TypeVarMap,
+    unite_values,
     UpperBound,
     Value,
-    CanAssignError,
-    unite_values,
 )
 
 

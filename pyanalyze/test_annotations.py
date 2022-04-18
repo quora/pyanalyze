@@ -1,31 +1,31 @@
 # static analysis: ignore
-from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import skip_before, assert_passes
-from .implementation import assert_is_value
 from .error_code import ErrorCode
+from .implementation import assert_is_value
+from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes, skip_before
+from .tests import make_simple_sequence
 from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
     CallableValue,
+    GenericValue,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
     SequenceValue,
-    TypeVarValue,
+    SubclassValue,
     TypedDictValue,
     TypedValue,
-    SubclassValue,
-    GenericValue,
+    TypeVarValue,
 )
-from .tests import make_simple_sequence
 
 
 class TestAnnotations(TestNameCheckVisitorBase):
     @assert_passes()
     def test_union(self):
         import re
-        from typing import Union, Optional, List, Set, Dict, Match, Pattern
+        from typing import Dict, List, Match, Optional, Pattern, Set, Union
 
         _Pattern = type(re.compile("a"))
         _Match = type(re.match("a", "a"))
@@ -76,7 +76,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_generic(self):
-        from typing import List, Any
+        from typing import Any, List
 
         def capybara(x: List[int], y: List, z: List[Any]) -> None:
             assert_is_value(x, GenericValue(list, [TypedValue(int)]))
@@ -426,8 +426,8 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_pattern(self):
-        from typing import Pattern
         import re
+        from typing import Pattern
 
         _Pattern = type(re.compile(""))
 
@@ -525,7 +525,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_double_subscript(self):
-        from typing import Union, List, Set, TypeVar
+        from typing import List, Set, TypeVar, Union
 
         T = TypeVar("T")
 
@@ -570,8 +570,9 @@ class TestAnnotated(TestNameCheckVisitorBase):
     @assert_passes()
     def test_typing_extensions(self):
         import collections.abc
+        from typing import Iterable, Optional
+
         from typing_extensions import Annotated
-        from typing import Optional, Iterable
 
         obj = object()
 
@@ -696,8 +697,8 @@ class TestCallable(TestNameCheckVisitorBase):
     @skip_before((3, 9))
     @assert_passes()
     def test_abc_callable(self):
-        from typing import TypeVar
         from collections.abc import Callable, Sequence
+        from typing import TypeVar
 
         T = TypeVar("T")
 
@@ -717,8 +718,9 @@ class TestCallable(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_known_value(self):
-        from typing_extensions import Literal
         from typing import Any
+
+        from typing_extensions import Literal
 
         class Capybara:
             def method(self, x: int) -> int:
@@ -782,6 +784,7 @@ class TestCallable(TestNameCheckVisitorBase):
     @assert_passes()
     def test_asynq_callable_incompatible(self):
         from typing import Callable
+
         from pyanalyze.extensions import AsynqCallable
 
         def f(x: AsynqCallable[[], int]) -> None:
@@ -805,10 +808,12 @@ class TestCallable(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_asynq_callable(self):
-        from asynq import asynq
-        from pyanalyze.extensions import AsynqCallable
-        from pyanalyze.signature import Signature, ELLIPSIS_PARAM
         from typing import Optional
+
+        from asynq import asynq
+
+        from pyanalyze.extensions import AsynqCallable
+        from pyanalyze.signature import ELLIPSIS_PARAM, Signature
 
         @asynq()
         def func_example(x: int) -> str:
@@ -837,9 +842,11 @@ class TestCallable(TestNameCheckVisitorBase):
 
     @assert_passes(settings={ErrorCode.impure_async_call: False})
     def test_amap(self):
+        from typing import Iterable, List, TypeVar
+
         from asynq import asynq
+
         from pyanalyze.extensions import AsynqCallable
-        from typing import TypeVar, List, Iterable
 
         T = TypeVar("T")
         U = TypeVar("U")
@@ -910,7 +917,8 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_callable_compatibility(self):
-        from typing import TypeVar, Callable, Union, Iterable
+        from typing import Callable, Iterable, TypeVar, Union
+
         from typing_extensions import Protocol
 
         AnyStr = TypeVar("AnyStr", bytes, str)
@@ -965,7 +973,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_getitem(self):
-        from typing import Any, Dict, TypeVar, Iterable
+        from typing import Any, Dict, Iterable, TypeVar
 
         T = TypeVar("T", bound=Dict[str, Any])
 
@@ -979,8 +987,9 @@ class TestTypeVar(TestNameCheckVisitorBase):
 class TestParameterTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):
-        from pyanalyze.extensions import ParameterTypeGuard
         from typing_extensions import Annotated
+
+        from pyanalyze.extensions import ParameterTypeGuard
 
         def is_int(x: object) -> Annotated[bool, ParameterTypeGuard["x", int]]:
             return isinstance(x, int)
@@ -993,9 +1002,11 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
     def test_generic(self):
         import collections.abc
-        from pyanalyze.extensions import ParameterTypeGuard
+        from typing import Iterable, Type, TypeVar, Union
+
         from typing_extensions import Annotated
-        from typing import TypeVar, Type, Iterable, Union
+
+        from pyanalyze.extensions import ParameterTypeGuard
 
         T = TypeVar("T")
 
@@ -1019,9 +1030,11 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_self(self):
-        from pyanalyze.extensions import ParameterTypeGuard
-        from typing_extensions import Annotated
         from typing import Union
+
+        from typing_extensions import Annotated
+
+        from pyanalyze.extensions import ParameterTypeGuard
 
         class A:
             def is_b(self) -> Annotated[bool, ParameterTypeGuard["self", "B"]]:
@@ -1049,8 +1062,9 @@ class TestParameterTypeGuard(TestNameCheckVisitorBase):
 class TestNoReturnGuard(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):
-        from pyanalyze.extensions import NoReturnGuard
         from typing_extensions import Annotated
+
+        from pyanalyze.extensions import NoReturnGuard
 
         def assert_is_int(x: object) -> Annotated[None, NoReturnGuard["x", int]]:
             assert isinstance(x, int)
@@ -1063,8 +1077,9 @@ class TestNoReturnGuard(TestNameCheckVisitorBase):
 class TestTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
     def test_typing_extesions(self):
-        from typing_extensions import TypeGuard
         from typing import Union
+
+        from typing_extensions import TypeGuard
 
         def is_int(x: Union[int, str]) -> TypeGuard[int]:
             return x == 42
@@ -1086,8 +1101,9 @@ class TestTypeGuard(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test(self):
-        from pyanalyze.extensions import TypeGuard
         from typing import Union
+
+        from pyanalyze.extensions import TypeGuard
 
         def is_int(x: Union[int, str]) -> TypeGuard[int]:
             return x == 42
@@ -1100,8 +1116,9 @@ class TestTypeGuard(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_method(self) -> None:
-        from pyanalyze.extensions import TypeGuard
         from typing import Union
+
+        from pyanalyze.extensions import TypeGuard
 
         class Cls:
             def is_int(self, x: Union[int, str]) -> TypeGuard[int]:
@@ -1120,8 +1137,9 @@ class TestTypeGuard(TestNameCheckVisitorBase):
 class TestCustomCheck(TestNameCheckVisitorBase):
     @assert_passes()
     def test_literal_only(self) -> None:
-        from pyanalyze.extensions import LiteralOnly
         from typing_extensions import Annotated
+
+        from pyanalyze.extensions import LiteralOnly
 
         def capybara(x: Annotated[str, LiteralOnly()]) -> str:
             return x
@@ -1135,16 +1153,18 @@ class TestCustomCheck(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_reverse_direction(self):
+        from typing import Any
+
+        from typing_extensions import Annotated
+
         from pyanalyze.extensions import CustomCheck
         from pyanalyze.value import (
-            CanAssignContext,
-            Value,
             CanAssign,
-            flatten_values,
+            CanAssignContext,
             CanAssignError,
+            flatten_values,
+            Value,
         )
-        from typing import Any
-        from typing_extensions import Annotated
 
         class DontAssignToAny(CustomCheck):
             def can_be_assigned(self, value: Value, ctx: CanAssignContext) -> CanAssign:
@@ -1162,9 +1182,11 @@ class TestCustomCheck(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_no_any(self) -> None:
-        from pyanalyze.extensions import NoAny
-        from typing_extensions import Annotated
         from typing import List
+
+        from typing_extensions import Annotated
+
+        from pyanalyze.extensions import NoAny
 
         def shallow(x: Annotated[List[int], NoAny()]) -> None:
             pass
@@ -1201,17 +1223,19 @@ class TestCustomCheck(TestNameCheckVisitorBase):
     @assert_passes()
     def test_not_none(self) -> None:
         from dataclasses import dataclass
+        from typing import Any, Optional
+
+        from typing_extensions import Annotated
+
         from pyanalyze.extensions import CustomCheck
         from pyanalyze.value import (
-            flatten_values,
             CanAssign,
-            CanAssignError,
             CanAssignContext,
+            CanAssignError,
+            flatten_values,
             KnownValue,
             Value,
         )
-        from typing_extensions import Annotated
-        from typing import Any, Optional
 
         @dataclass(frozen=True)
         class IsNot(CustomCheck):
@@ -1236,19 +1260,21 @@ class TestCustomCheck(TestNameCheckVisitorBase):
     @assert_passes()
     def test_greater_than(self) -> None:
         from dataclasses import dataclass
+        from typing import Iterable, TypeVar, Union
+
+        from typing_extensions import Annotated, TypeGuard
+
         from pyanalyze.extensions import CustomCheck
         from pyanalyze.value import (
-            flatten_values,
             CanAssign,
-            CanAssignError,
             CanAssignContext,
+            CanAssignError,
+            flatten_values,
             KnownValue,
             TypeVarMap,
             TypeVarValue,
             Value,
         )
-        from typing_extensions import Annotated, TypeGuard
-        from typing import Iterable, TypeVar, Union
 
         @dataclass(frozen=True)
         class GreaterThan(CustomCheck):
@@ -1325,9 +1351,11 @@ class TestExternalType(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self) -> None:
         import os
-        from pyanalyze.extensions import ExternalType
-        from typing_extensions import Annotated
         from typing import Union
+
+        from typing_extensions import Annotated
+
+        from pyanalyze.extensions import ExternalType
 
         def capybara(
             x: ExternalType["builtins.str"],
@@ -1407,7 +1435,8 @@ class TestRequired(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_typeddict_from_call(self):
-        from typing import Optional, Any
+        from typing import Any, Optional
+
         from typing_extensions import NotRequired, Required, TypedDict
 
         class Stringify(TypedDict):
@@ -1451,8 +1480,9 @@ class TestRequired(TestNameCheckVisitorBase):
     @skip_before((3, 8))
     @assert_passes()
     def test_typing(self):
-        from typing_extensions import NotRequired, Required
         from typing import TypedDict
+
+        from typing_extensions import NotRequired, Required
 
         class RNR(TypedDict):
             a: int
@@ -1523,8 +1553,9 @@ class TestRequired(TestNameCheckVisitorBase):
 class TestParamSpec(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):
+        from typing import Callable, List, TypeVar
+
         from typing_extensions import ParamSpec
-        from typing import Callable, TypeVar, List
 
         P = ParamSpec("P")
         T = TypeVar("T")
@@ -1588,8 +1619,9 @@ class TestParamSpec(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_match_any(self):
+        from typing import Callable, List, TypeVar
+
         from typing_extensions import ParamSpec
-        from typing import Callable, TypeVar, List
 
         P = ParamSpec("P")
         T = TypeVar("T")
@@ -1606,6 +1638,7 @@ class TestParamSpec(TestNameCheckVisitorBase):
     @assert_passes()
     def test_paramspec_args_kwargs(self):
         from typing import Callable, TypeVar
+
         from typing_extensions import Concatenate, ParamSpec
 
         P = ParamSpec("P")
@@ -1661,6 +1694,7 @@ class TestParamSpec(TestNameCheckVisitorBase):
     @assert_passes()
     def test_args_kwargs(self):
         from typing import Callable, TypeVar
+
         from typing_extensions import Concatenate, ParamSpec
 
         P = ParamSpec("P")
@@ -1704,8 +1738,9 @@ class TestTypeAlias(TestNameCheckVisitorBase):
 class TestUnpack(TestNameCheckVisitorBase):
     @assert_passes()
     def test_in_tuple(self):
-        from typing_extensions import Unpack
         from typing import Tuple
+
+        from typing_extensions import Unpack
 
         def capybara(
             x: Tuple[int, Unpack[Tuple[str, ...]]],

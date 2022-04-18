@@ -5,7 +5,9 @@ Error codes used by test_scope.
 """
 
 import enum
+
 from aenum import extend_enum
+
 import pyanalyze
 
 from .find_unused import used

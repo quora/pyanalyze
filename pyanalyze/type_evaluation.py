@@ -5,13 +5,11 @@ Implementation of type evaluation.
 """
 
 import ast
-from contextlib import contextmanager
 import contextlib
-from dataclasses import dataclass, field
 import operator
-import qcore
 import sys
-from typing_extensions import Literal
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import (
     Any,
     Callable,
@@ -26,28 +24,31 @@ from typing import (
     Union,
 )
 
+import qcore
+from typing_extensions import Literal
+
 from .predicates import IsAssignablePredicate
 from .stacked_scopes import (
+    constrain_value,
     Constraint,
     ConstraintType,
     VarnameWithOrigin,
-    constrain_value,
 )
 from .value import (
-    NO_RETURN_VALUE,
     BoundsMap,
     CanAssign,
     CanAssignContext,
     CanAssignError,
+    flatten_values,
     KnownValue,
     MultiValuedValue,
+    NO_RETURN_VALUE,
     SequenceValue,
-    Value,
-    flatten_values,
+    TypeVarMap,
     unannotate,
     unify_bounds_maps,
     unite_values,
-    TypeVarMap,
+    Value,
 )
 
 ARGS = qcore.MarkerObject("*args")

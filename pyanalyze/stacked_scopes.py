@@ -19,14 +19,13 @@ Other subtleties implemented here:
 - Class scopes except the current one are skipped in name lookup
 
 """
+import builtins
+import contextlib
+import enum
 from ast import AST
 from collections import defaultdict, OrderedDict
-import contextlib
 from dataclasses import dataclass, field, replace
-import enum
-import qcore
 from itertools import chain
-import builtins
 from types import ModuleType
 from typing import (
     Any,
@@ -38,35 +37,37 @@ from typing import (
     Iterator,
     List,
     NamedTuple,
-    Sequence,
     Optional,
+    Sequence,
     Set,
     Tuple,
     TypeVar,
     Union,
 )
 
+import qcore
+
 from .boolability import get_boolability
 from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
-    NO_RETURN_VALUE,
+    annotate_value,
     AnnotatedValue,
     AnySource,
     AnyValue,
     ConstraintExtension,
+    flatten_values,
     KnownValue,
     MultiValuedValue,
+    NO_RETURN_VALUE,
     ReferencingValue,
     SubclassValue,
-    TypeVarMap,
     TypedValue,
-    Value,
-    annotate_value,
+    TypeVarMap,
     UNINITIALIZED_VALUE,
     unite_and_simplify,
     unite_values,
-    flatten_values,
+    Value,
 )
 
 T = TypeVar("T")

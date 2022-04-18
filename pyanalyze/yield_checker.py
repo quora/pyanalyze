@@ -10,35 +10,36 @@ This does the following three checks:
 """
 
 import ast
-from ast_decompiler import decompile
-import asynq
 import contextlib
-from dataclasses import dataclass, field
-import qcore
 import itertools
 import logging
+from dataclasses import dataclass, field
 from typing import (
     Any,
-    Dict,
-    Set,
     Callable,
     ContextManager,
+    Dict,
     Iterator,
     List,
     Optional,
     Sequence,
+    Set,
     Tuple,
 )
+
+import asynq
+import qcore
+from ast_decompiler import decompile
+
+import pyanalyze
+from .analysis_lib import get_indentation, get_line_range_for_node
 
 from .asynq_checker import AsyncFunctionKind
 from .error_code import ErrorCode
 from .functions import FunctionNode
-from .value import Value, KnownValue, UnboundMethodValue, UNINITIALIZED_VALUE
-from .analysis_lib import get_indentation, get_line_range_for_node
 from .node_visitor import Replacement
 from .stacked_scopes import VisitorState
-
-import pyanalyze
+from .value import KnownValue, UnboundMethodValue, UNINITIALIZED_VALUE, Value
 
 
 @dataclass

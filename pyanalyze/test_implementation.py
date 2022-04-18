@@ -3,19 +3,19 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .value import (
-    NO_RETURN_VALUE,
     AnySource,
     AnyValue,
-    KVPair,
-    SequenceValue,
     assert_is_value,
     CallableValue,
+    DictIncompleteValue,
     GenericValue,
     KnownValue,
-    TypedValue,
-    DictIncompleteValue,
-    SubclassValue,
+    KVPair,
     MultiValuedValue,
+    NO_RETURN_VALUE,
+    SequenceValue,
+    SubclassValue,
+    TypedValue,
 )
 
 
@@ -91,7 +91,7 @@ class TestSuperCall(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_good_super_call(self):
-        from pyanalyze.tests import wrap, PropertyObject
+        from pyanalyze.tests import PropertyObject, wrap
 
         @wrap
         class Tainotherium(PropertyObject):
@@ -100,7 +100,7 @@ class TestSuperCall(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_bad_super_call(self):
-        from pyanalyze.tests import wrap, PropertyObject
+        from pyanalyze.tests import PropertyObject, wrap
 
         @wrap
         class Tainotherium2(PropertyObject):
@@ -123,7 +123,7 @@ class TestSuperCall(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_bad_super_call_classmethod(self):
-        from pyanalyze.tests import wrap, PropertyObject
+        from pyanalyze.tests import PropertyObject, wrap
 
         @wrap
         class Tainotherium3(PropertyObject):
@@ -180,6 +180,7 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
         from typing import Sequence
+
         from typing_extensions import Literal
 
         def capybara(x, ints: Sequence[Literal[1, 2]]):
@@ -211,6 +212,7 @@ class TestSequenceImpl(TestNameCheckVisitorBase):
     @assert_passes()
     def test_union(self):
         from typing import Sequence, Union
+
         from typing_extensions import Never
 
         def capybara(x: Union[Sequence[int], Sequence[str]], never: Never):
@@ -547,6 +549,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_weak_value(self):
         from typing import List
+
         from typing_extensions import Literal
 
         def func() -> List[Literal["c", "d"]]:
@@ -598,6 +601,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_starred_weak(self):
         from typing import List
+
         from typing_extensions import Literal
 
         def capybara(arg) -> None:
@@ -666,8 +670,9 @@ class TestGenericMutators(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_dict_get(self):
-        from typing_extensions import TypedDict, NotRequired
         from typing import Dict
+
+        from typing_extensions import NotRequired, TypedDict
 
         class TD(TypedDict):
             a: int
@@ -699,8 +704,9 @@ class TestGenericMutators(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_setdefault(self):
-        from typing_extensions import TypedDict
         from typing import Dict, Sequence
+
+        from typing_extensions import TypedDict
 
         class TD(TypedDict):
             a: int
@@ -792,8 +798,9 @@ class TestGenericMutators(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_dict_pop(self):
-        from typing_extensions import TypedDict, NotRequired
         from typing import Dict
+
+        from typing_extensions import NotRequired, TypedDict
 
         class TD(TypedDict):
             a: int
@@ -1083,6 +1090,7 @@ class TestDictGetItem(TestNameCheckVisitorBase):
     @assert_passes()
     def test_complex_incomplete(self):
         from typing import Sequence
+
         from typing_extensions import NotRequired, TypedDict
 
         class TD(TypedDict):
@@ -1120,6 +1128,7 @@ class TestDictGetItem(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
         from typing import Dict, Generic, TypeVar
+
         from typing_extensions import TypedDict
 
         K = TypeVar("K")
@@ -1306,8 +1315,8 @@ class TestCallableGuards(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_isfunction(self):
-        from types import FunctionType
         import inspect
+        from types import FunctionType
 
         def capybara(o: object) -> None:
             assert_is_value(o, TypedValue(object))

@@ -5,35 +5,36 @@ Module for checking %-formatted and .format()-formatted strings.
 """
 
 import ast
-from collections import defaultdict
-from dataclasses import dataclass, field
 import enum
 import re
 import sys
+from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import (
     Callable,
     Dict,
     Iterable,
+    List,
     Match,
     Optional,
     Sequence,
-    Union,
-    List,
     Tuple,
+    Union,
 )
+
 from typing_extensions import Literal, Protocol, runtime_checkable
 
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
     CanAssignContext,
-    KnownValue,
     DictIncompleteValue,
+    flatten_values,
+    KnownValue,
+    replace_known_sequence_value,
     SequenceValue,
     TypedValue,
     Value,
-    flatten_values,
-    replace_known_sequence_value,
 )
 
 # refer to https://docs.python.org/2/library/stdtypes.html#string-formatting-operations

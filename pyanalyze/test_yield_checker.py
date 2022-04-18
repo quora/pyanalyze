@@ -1,9 +1,10 @@
 # static analysis: ignore
 import ast
 
-from .yield_checker import VarnameGenerator, _camel_case_to_snake_case
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
+
+from .yield_checker import _camel_case_to_snake_case, VarnameGenerator
 
 
 class TestUnnecessaryYield(TestNameCheckVisitorBase):
@@ -59,8 +60,9 @@ class TestUnnecessaryYield(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_if(self):
-        from pyanalyze.tests import PropertyObject
         from asynq import asynq, result
+
+        from pyanalyze.tests import PropertyObject
 
         @asynq()
         def capybara(qid, include_deleted):
@@ -72,9 +74,10 @@ class TestUnnecessaryYield(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_nested(self):
-        from pyanalyze.tests import PropertyObject, async_fn
         from asynq import asynq, result
         from asynq.tools import afilter
+
+        from pyanalyze.tests import async_fn, PropertyObject
 
         @asynq()
         def capybara(qids, t):
@@ -88,8 +91,9 @@ class TestUnnecessaryYield(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_usage_in_nested_function(self):
-        from pyanalyze.tests import async_fn, cached_fn
         from asynq import asynq, result
+
+        from pyanalyze.tests import async_fn, cached_fn
 
         @asynq()
         def capybara(oid):
@@ -430,8 +434,9 @@ class TestBatchingYields(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_in_except_handler(self):
-        from pyanalyze.tests import async_fn
         from asynq import asynq, result
+
+        from pyanalyze.tests import async_fn
 
         @asynq()
         def capybara():
@@ -444,10 +449,11 @@ class TestBatchingYields(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_no_assignment(self):
+        from asynq import asynq, result
+
         # if the result value isn't assigned, we assume it's a side-effecting operation that can't
         # be batched
         from pyanalyze.tests import async_fn
-        from asynq import asynq, result
 
         @asynq()
         def f():
@@ -459,10 +465,11 @@ class TestBatchingYields(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_augassign_used(self):
+        from asynq import asynq
+
         # if the result value isn't assigned, we assume it's a side-effecting operation that can't
         # be batched
         from pyanalyze.tests import async_fn
-        from asynq import asynq
 
         @asynq()
         def f():
@@ -589,6 +596,7 @@ class TestDuplicateYield(TestNameCheckVisitorBase):
     @assert_passes()
     def test_dupe_none(self):
         from asynq import asynq
+
         from pyanalyze.tests import async_fn
 
         @asynq()

@@ -1,16 +1,17 @@
 # static analysis: ignore
 from typing import Dict, Union
+
+from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes
 from .value import (
     AnySource,
     AnyValue,
+    assert_is_value,
     GenericValue,
     KnownValue,
     MultiValuedValue,
     TypedValue,
-    assert_is_value,
 )
-from .test_node_visitor import assert_passes
-from .test_name_check_visitor import TestNameCheckVisitorBase
 
 _global_dict: Dict[Union[int, str], float] = {}
 
@@ -153,8 +154,8 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_union(self):
-        from typing import Union
         from dataclasses import dataclass
+        from typing import Union
 
         @dataclass
         class Capybara:
@@ -195,11 +196,11 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_typeshed_getattr(self):
-        # has __getattribute__ in typeshed
-        from types import SimpleNamespace
-
         # has __getattr__
         from codecs import StreamWriter
+
+        # has __getattribute__ in typeshed
+        from types import SimpleNamespace
 
         def capybara(sn: SimpleNamespace, sw: StreamWriter):
             assert_is_value(sn.whatever, AnyValue(AnySource.inference))
@@ -233,8 +234,9 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_module_annotations(self):
-        from pyanalyze import test_attributes
         from typing import Optional
+
+        from pyanalyze import test_attributes
 
         annotated_global: Optional[str] = None
 
@@ -280,8 +282,10 @@ class TestHasAttrExtension(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_user_hasattr(self):
-        from typing import TypeVar, Any
+        from typing import Any, TypeVar
+
         from typing_extensions import Annotated, Literal
+
         from pyanalyze.extensions import HasAttrGuard
 
         T = TypeVar("T", bound=str)

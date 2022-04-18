@@ -1,16 +1,16 @@
 # static analysis: ignore
+from .implementation import assert_is_value
+from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes, only_before
 from .tests import make_simple_sequence
 from .value import (
+    AnySource,
+    AnyValue,
     GenericValue,
     KnownValue,
     SequenceValue,
     TypedValue,
-    AnyValue,
-    AnySource,
 )
-from .implementation import assert_is_value
-from .test_node_visitor import assert_passes, only_before
-from .test_name_check_visitor import TestNameCheckVisitorBase
 
 
 class TestAsyncDef(TestNameCheckVisitorBase):
@@ -46,7 +46,7 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_exotic_awaitable(self):
-        from typing import TypeVar, Awaitable, Iterable
+        from typing import Awaitable, Iterable, TypeVar
 
         T = TypeVar("T")
         U = TypeVar("U")

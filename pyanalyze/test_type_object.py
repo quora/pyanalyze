@@ -5,11 +5,11 @@ from .test_node_visitor import assert_passes
 from .value import (
     AnySource,
     AnyValue,
+    assert_is_value,
     CallableValue,
     GenericValue,
     KnownValue,
     TypedValue,
-    assert_is_value,
 )
 
 
@@ -65,7 +65,8 @@ class TestSyntheticType(TestNameCheckVisitorBase):
     def test_functools(self):
         import functools
         import types
-        from pyanalyze.signature import Signature, ELLIPSIS_PARAM
+
+        from pyanalyze.signature import ELLIPSIS_PARAM, Signature
 
         sig = Signature.make([ELLIPSIS_PARAM], return_annotation=TypedValue(int))
 
@@ -242,7 +243,7 @@ class TestSyntheticType(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_container(self):
-        from typing import Container, Any
+        from typing import Any, Container
 
         class Good:
             def __contains__(self, whatever: object) -> bool:
@@ -338,6 +339,7 @@ class TestHashable(TestNameCheckVisitorBase):
     @assert_passes()
     def test_type(self):
         from typing import Hashable, Type
+
         from typing_extensions import Protocol
 
         class MyHashable(Protocol):

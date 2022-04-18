@@ -2,9 +2,10 @@ import ast
 from pathlib import Path
 from typing import Callable, Type
 
-from .ast_annotator import annotate_file, annotate_code
 from .analysis_lib import files_with_extension_from_directory
-from .value import KnownValue, Value, unannotate
+
+from .ast_annotator import annotate_code, annotate_file
+from .value import KnownValue, unannotate, Value
 
 
 def _check_inferred_value(

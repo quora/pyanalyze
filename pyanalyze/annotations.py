@@ -23,32 +23,35 @@ These functions all use :class:`Context` objects to resolve names and
 show errors.
 
 """
-import contextlib
-from dataclasses import dataclass, InitVar, field
-import typing
-
-import typing_inspect
-import qcore
 import ast
 import builtins
-from collections.abc import Callable, Iterable, Hashable
+import contextlib
 import sys
+import typing
+from collections.abc import Callable, Hashable, Iterable
+from dataclasses import dataclass, field, InitVar
 from typing import (
     Any,
-    Container,
-    NamedTuple,
     cast,
-    TypeVar,
+    Container,
     ContextManager,
     Mapping,
+    NamedTuple,
     NewType,
-    Sequence,
     Optional,
+    Sequence,
     Tuple,
-    Union,
     TYPE_CHECKING,
+    TypeVar,
+    Union,
 )
+
+import qcore
+
+import typing_inspect
 from typing_extensions import ParamSpec, TypedDict
+
+from . import type_evaluation
 
 from .error_code import ErrorCode
 from .extensions import (
@@ -63,52 +66,51 @@ from .extensions import (
 from .find_unused import used
 from .functions import FunctionDefNode
 from .node_visitor import ErrorContext
+from .safe import is_instance_of_typing_name, is_typing_name
 from .signature import (
     ELLIPSIS_PARAM,
     InvalidSignature,
-    SigParameter,
-    Signature,
     ParameterKind,
+    Signature,
+    SigParameter,
 )
-from .safe import is_typing_name, is_instance_of_typing_name
-from . import type_evaluation
 from .value import (
+    _HashableValue,
+    annotate_value,
     AnnotatedValue,
     AnySource,
     AnyValue,
     CallableValue,
     CustomCheckExtension,
     Extension,
+    GenericValue,
     HasAttrGuardExtension,
     KnownValue,
     MultiValuedValue,
+    NewTypeValue,
     NO_RETURN_VALUE,
     NoReturnGuardExtension,
+    ParameterTypeGuardExtension,
     ParamSpecArgsValue,
     ParamSpecKwargsValue,
-    ParameterTypeGuardExtension,
     SelfTVV,
     SequenceValue,
-    TypeGuardExtension,
-    TypedValue,
-    UnpackedValue,
-    annotate_value,
-    unite_values,
-    Value,
-    GenericValue,
     SubclassValue,
     TypedDictValue,
-    NewTypeValue,
+    TypedValue,
+    TypeGuardExtension,
     TypeVarValue,
-    _HashableValue,
+    unite_values,
+    UnpackedValue,
+    Value,
 )
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
 
 try:
-    from typing import get_origin, get_args  # Python 3.9
     from types import GenericAlias
+    from typing import get_args, get_origin  # Python 3.9
 except ImportError:
     GenericAlias = None
 

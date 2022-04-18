@@ -3,21 +3,21 @@ from asynq.futures import FutureBase
 
 from .boolability import Boolability, get_boolability
 from .stacked_scopes import Composite
+from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes
 from .value import (
-    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
     DictIncompleteValue,
-    KVPair,
     KnownValue,
+    KVPair,
+    NO_RETURN_VALUE,
     SequenceValue,
     TypedDictValue,
-    UnboundMethodValue,
     TypedValue,
+    UnboundMethodValue,
 )
-from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes
 
 
 class BadBool:

@@ -3,39 +3,40 @@
 Code for understanding function definitions.
 
 """
-from abc import abstractmethod
 import ast
 import asyncio
 import collections.abc
+import enum
 import sys
 import types
-import asynq
-import enum
+from abc import abstractmethod
 from dataclasses import dataclass, replace
 from itertools import zip_longest
 from typing import Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
+
+import asynq
 from typing_extensions import Protocol
 
 from .error_code import ErrorCode
-from .extensions import overload, real_overload, evaluated
-from .options import Options, PyObjectSequenceOption
+from .extensions import evaluated, overload, real_overload
 from .node_visitor import ErrorContext
-from .signature import SigParameter, ParameterKind, Signature
+from .options import Options, PyObjectSequenceOption
+from .signature import ParameterKind, Signature, SigParameter
 from .stacked_scopes import Composite
 from .value import (
-    CallableValue,
-    CanAssignContext,
-    TypedValue,
-    Value,
     AnySource,
     AnyValue,
-    KnownValue,
+    CallableValue,
+    CanAssignContext,
+    CanAssignError,
     GenericValue,
+    KnownValue,
     SubclassValue,
-    UnpackedValue,
+    TypedValue,
     TypeVarValue,
     unite_values,
-    CanAssignError,
+    UnpackedValue,
+    Value,
 )
 
 FunctionDefNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]

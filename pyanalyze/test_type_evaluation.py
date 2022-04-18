@@ -1,15 +1,16 @@
 # static analysis: ignore
-from .value import AnySource, AnyValue, KnownValue, TypedValue, assert_is_value
-from .test_node_visitor import assert_passes
+from .extensions import is_keyword, is_of_type, is_positional, is_provided, show_error
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .extensions import is_keyword, is_positional, is_provided, is_of_type, show_error
+from .test_node_visitor import assert_passes
+from .value import AnySource, AnyValue, assert_is_value, KnownValue, TypedValue
 
 
 class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_is_provided(self):
-        from pyanalyze.extensions import evaluated
         from typing import Union
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def simple_evaluated(x: int, y: str = ""):
@@ -34,9 +35,11 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_is_of_type(self):
-        from pyanalyze.extensions import evaluated
         from typing import Union
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def is_of_type_evaluated(x: int):
@@ -62,9 +65,11 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_not(self):
-        from pyanalyze.extensions import evaluated
         from typing import Union
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def not_evaluated(x: int):
@@ -90,8 +95,9 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_compare(self):
-        from pyanalyze.extensions import evaluated
         from typing import Union
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def compare_evaluated(x: object):
@@ -116,8 +122,9 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_error(self):
-        from pyanalyze.extensions import evaluated
         from typing import Any
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def nonempty_please(x: str) -> int:
@@ -180,6 +187,7 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
     @assert_passes()
     def test_enum(self):
         import enum
+
         from pyanalyze.extensions import evaluated
 
         class Color(enum.Enum):
@@ -205,9 +213,11 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_platform(self):
-        from pyanalyze.extensions import evaluated
         import sys
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def where_am_i():
@@ -226,9 +236,11 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_version(self):
-        from pyanalyze.extensions import evaluated
         import sys
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def is_walrus_available():
@@ -246,8 +258,9 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_nested_ifs(self):
-        from pyanalyze.extensions import evaluated, is_of_type
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import evaluated, is_of_type
 
         @evaluated
         def is_int(i: int):
@@ -311,8 +324,9 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_generic(self):
-        from pyanalyze.extensions import evaluated
         from typing import TypeVar
+
+        from pyanalyze.extensions import evaluated
 
         T1 = TypeVar("T1")
 
@@ -334,8 +348,9 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 class TestBoolOp(TestNameCheckVisitorBase):
     @assert_passes()
     def test_and(self):
-        from pyanalyze.extensions import evaluated
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def use_and(a: int, b: str):
@@ -357,8 +372,9 @@ class TestBoolOp(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_or(self):
-        from pyanalyze.extensions import evaluated
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def use_or(b: str):
@@ -380,8 +396,9 @@ class TestBoolOp(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_literal_or(self):
-        from pyanalyze.extensions import evaluated
         from typing import Union
+
+        from pyanalyze.extensions import evaluated
 
         @evaluated
         def is_one(i: int):
@@ -450,9 +467,6 @@ class TestValidation(TestNameCheckVisitorBase):
 class TestExamples(TestNameCheckVisitorBase):
     @assert_passes()
     def test_open(self):
-        from pyanalyze.extensions import evaluated, is_of_type
-        from typing import Callable, Union, IO, BinaryIO, Any, Optional
-        from typing_extensions import Literal
         from io import (
             BufferedRandom,
             BufferedReader,
@@ -460,6 +474,11 @@ class TestExamples(TestNameCheckVisitorBase):
             FileIO,
             TextIOWrapper,
         )
+        from typing import Any, BinaryIO, Callable, IO, Optional, Union
+
+        from typing_extensions import Literal
+
+        from pyanalyze.extensions import evaluated, is_of_type
 
         _OpenFile = Union[str, bytes, int]
         _Opener = Callable[[str, int], int]
@@ -532,8 +551,9 @@ class TestExamples(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_safe_upcast(self):
-        from typing import Type, Any, TypeVar
-        from pyanalyze.extensions import evaluated, show_error, is_of_type
+        from typing import Any, Type, TypeVar
+
+        from pyanalyze.extensions import evaluated, is_of_type, show_error
 
         T1 = TypeVar("T1")
 
@@ -551,8 +571,9 @@ class TestExamples(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_safe_contains(self):
-        from typing import List, TypeVar, Container
-        from pyanalyze.extensions import evaluated, show_error, is_of_type
+        from typing import Container, List, TypeVar
+
+        from pyanalyze.extensions import evaluated, is_of_type, show_error
 
         T1 = TypeVar("T1")
         T2 = TypeVar("T2")

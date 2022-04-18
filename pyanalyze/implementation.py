@@ -1,71 +1,72 @@
+import collections
+import collections.abc
+import inspect
+import typing
+from itertools import product
+from typing import Callable, cast, Dict, NewType, Optional, Sequence, TypeVar, Union
+
+import qcore
+import typing_extensions
+
 from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import assert_type, reveal_locals, reveal_type
 from .format_strings import parse_format_string
 from .predicates import IsAssignablePredicate
 from .safe import hasattr_static, safe_isinstance, safe_issubclass
+from .signature import (
+    ANY_SIGNATURE,
+    CallContext,
+    ImplReturn,
+    ParameterKind,
+    Signature,
+    SigParameter,
+)
 from .stacked_scopes import (
-    NULL_CONSTRAINT,
     AbstractConstraint,
+    annotate_with_constraint,
     Composite,
     Constraint,
     ConstraintType,
-    PredicateProvider,
+    NULL_CONSTRAINT,
     OrConstraint,
+    PredicateProvider,
     VarnameWithOrigin,
-    annotate_with_constraint,
-)
-from .signature import (
-    SigParameter,
-    Signature,
-    ImplReturn,
-    CallContext,
-    ParameterKind,
-    ANY_SIGNATURE,
 )
 from .value import (
-    NO_RETURN_VALUE,
-    UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
+    assert_is_value,
     CallableValue,
     CanAssignContext,
     CanAssignError,
-    HasAttrGuardExtension,
-    KVPair,
-    ParameterTypeGuardExtension,
-    SequenceValue,
-    TypeVarValue,
-    TypedValue,
-    SubclassValue,
-    GenericValue,
-    DictIncompleteValue,
-    TypedDictValue,
-    KnownValue,
-    MultiValuedValue,
-    KNOWN_MUTABLE_TYPES,
-    Value,
     check_hashability,
     concrete_values_from_iterable,
-    kv_pairs_from_mapping,
-    unannotate,
-    unite_values,
-    flatten_values,
-    replace_known_sequence_value,
+    DictIncompleteValue,
     dump_value,
-    assert_is_value,
+    flatten_values,
+    GenericValue,
+    HasAttrGuardExtension,
+    KNOWN_MUTABLE_TYPES,
+    KnownValue,
+    kv_pairs_from_mapping,
+    KVPair,
+    MultiValuedValue,
+    NO_RETURN_VALUE,
+    ParameterTypeGuardExtension,
+    replace_known_sequence_value,
+    SequenceValue,
+    SubclassValue,
+    TypedDictValue,
+    TypedValue,
+    TypeVarValue,
+    unannotate,
+    UNINITIALIZED_VALUE,
+    unite_values,
     unpack_values,
+    Value,
 )
-
-import collections
-import collections.abc
-from itertools import product
-import qcore
-import inspect
-import typing
-import typing_extensions
-from typing import Sequence, TypeVar, cast, Dict, NewType, Callable, Optional, Union
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
 

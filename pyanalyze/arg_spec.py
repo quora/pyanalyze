@@ -4,83 +4,84 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
+import ast
+import asyncio
+import contextlib
+import enum
+import inspect
+import sys
+import textwrap
+from collections.abc import Awaitable
+from dataclasses import dataclass, replace
+from types import FunctionType, MethodType, ModuleType
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
+from unittest import mock
+
+import asynq
+import qcore
+import typing_inspect
+from typing_extensions import is_typeddict
+
+import pyanalyze
+from . import implementation
+from .analysis_lib import is_positional_only_arg_name
+from .annotations import Context, RuntimeEvaluator, type_from_runtime
+from .extensions import CustomCheck, get_overloads, get_type_evaluations, TypeGuard
+from .find_unused import used
 from .functions import translate_vararg_type
 from .options import Options, PyObjectSequenceOption
-from .analysis_lib import is_positional_only_arg_name
-from .extensions import CustomCheck, TypeGuard, get_overloads, get_type_evaluations
-from .annotations import Context, RuntimeEvaluator, type_from_runtime
-from .find_unused import used
-from . import implementation
 from .safe import (
     all_of_type,
+    get_fully_qualified_name,
     hasattr_static,
     is_newtype,
-    safe_equals,
-    safe_issubclass,
     is_typing_name,
+    safe_equals,
     safe_isinstance,
-    get_fully_qualified_name,
+    safe_issubclass,
 )
-from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
-    ELLIPSIS_PARAM,
     ConcreteSignature,
+    ELLIPSIS_PARAM,
     Impl,
+    make_bound_method,
     MaybeSignature,
     OverloadedSignature,
-    make_bound_method,
-    SigParameter,
-    Signature,
     ParameterKind,
+    Signature,
+    SigParameter,
 )
+from .stacked_scopes import Composite, uniq_chain
 from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
     AnyValue,
     CanAssignContext,
     Extension,
+    extract_typevars,
     GenericBases,
+    GenericValue,
+    KnownValue,
     KVPair,
+    NewTypeValue,
     SubclassValue,
     TypedDictValue,
     TypedValue,
-    GenericValue,
-    NewTypeValue,
-    KnownValue,
-    Value,
     TypeVarValue,
-    extract_typevars,
+    Value,
 )
-import pyanalyze
-
-import ast
-import asyncio
-import asynq
-from collections.abc import Awaitable
-import contextlib
-from dataclasses import dataclass, replace
-import enum
-import qcore
-import inspect
-import sys
-import textwrap
-from types import FunctionType, ModuleType, MethodType
-from typing import (
-    Any,
-    Callable,
-    Iterator,
-    List,
-    Sequence,
-    Generic,
-    Mapping,
-    Optional,
-    Tuple,
-    Union,
-)
-from typing_extensions import is_typeddict
-import typing_inspect
-from unittest import mock
 
 # types.MethodWrapperType in 3.7+
 MethodWrapperType = type(object().__str__)

@@ -1,9 +1,9 @@
 # static analysis: ignore
-from .value import GenericValue, KnownValue, AnyValue, AnySource, TypedValue
 from .error_code import ErrorCode
 from .implementation import assert_is_value
-from .test_node_visitor import assert_passes, skip_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes, skip_before
+from .value import AnySource, AnyValue, GenericValue, KnownValue, TypedValue
 
 
 class TestNestedFunction(TestNameCheckVisitorBase):

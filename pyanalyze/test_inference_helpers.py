@@ -7,7 +7,7 @@ from .value import KnownValue
 class TestInferenceHelpers(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self) -> None:
-        from pyanalyze import dump_value, assert_is_value
+        from pyanalyze import assert_is_value, dump_value
         from pyanalyze.value import Value
 
         def capybara(val: Value) -> None:
@@ -19,7 +19,7 @@ class TestInferenceHelpers(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_return_value(self) -> None:
-        from pyanalyze import dump_value, assert_is_value
+        from pyanalyze import assert_is_value, dump_value
 
         def capybara():
             x = dump_value(1)  # E: inference_failure
@@ -29,8 +29,9 @@ class TestInferenceHelpers(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_assert_type(self) -> None:
-        from pyanalyze.extensions import assert_type
         from typing import Any
+
+        from pyanalyze.extensions import assert_type
 
         def capybara(x: int) -> None:
             assert_type(x, int)

@@ -1,5 +1,6 @@
 from typing import Tuple
-from typing_extensions import Unpack, TypedDict
+
+from typing_extensions import TypedDict, Unpack
 
 class TD(TypedDict):
     x: int

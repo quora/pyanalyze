@@ -2,26 +2,26 @@
 from .error_code import ErrorCode
 from .format_strings import (
     ConversionSpecifier,
-    PercentFormatString,
-    StarConversionSpecifier,
     FormatString,
-    ReplacementField,
     IndexOrAttribute,
     parse_format_string,
+    PercentFormatString,
+    ReplacementField,
+    StarConversionSpecifier,
 )
-from .value import (
-    KVPair,
-    assert_is_value,
-    AnySource,
-    AnyValue,
-    KnownValue,
-    DictIncompleteValue,
-    TypedValue,
-)
-from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes
 from .test_value import CTX
 from .tests import make_simple_sequence
+from .value import (
+    AnySource,
+    AnyValue,
+    assert_is_value,
+    DictIncompleteValue,
+    KnownValue,
+    KVPair,
+    TypedValue,
+)
 
 
 PERCENT_TESTCASES = [

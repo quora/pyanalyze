@@ -4,17 +4,17 @@ Code for retrieving the value of attributes.
 
 """
 import ast
-import asynq
-from dataclasses import dataclass
-from enum import Enum
 import inspect
-import qcore
 import sys
 import types
-from typing import Any, Callable, Generic, Sequence, Tuple, Optional, Union
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Callable, Generic, Optional, Sequence, Tuple, Union
 
+import asynq
+import qcore
 
-from .annotations import type_from_annotations, type_from_runtime, Context
+from .annotations import Context, type_from_annotations, type_from_runtime
 from .options import Options, PyObjectSequenceOption
 from .safe import safe_isinstance, safe_issubclass
 from .signature import MaybeSignature
@@ -25,18 +25,18 @@ from .value import (
     AnyValue,
     CallableValue,
     GenericBases,
-    HasAttrExtension,
-    KnownValueWithTypeVars,
-    Value,
-    KnownValue,
     GenericValue,
-    UNINITIALIZED_VALUE,
+    HasAttrExtension,
+    KnownValue,
+    KnownValueWithTypeVars,
     MultiValuedValue,
-    UnboundMethodValue,
+    set_self,
     SubclassValue,
     TypedValue,
     TypeVarValue,
-    set_self,
+    UnboundMethodValue,
+    UNINITIALIZED_VALUE,
+    Value,
 )
 
 # these don't appear to be in the standard types module

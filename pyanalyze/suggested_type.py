@@ -9,11 +9,12 @@ from dataclasses import dataclass, field
 from types import FunctionType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 
-from .safe import safe_getattr, safe_isinstance
 from .error_code import ErrorCode
-from .node_visitor import Failure, ErrorContext
+from .node_visitor import ErrorContext, Failure
+
+from .safe import safe_getattr, safe_isinstance
+from .signature import Signature
 from .value import (
-    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -21,18 +22,18 @@ from .value import (
     CanAssignError,
     GenericValue,
     KnownValue,
+    MultiValuedValue,
+    NO_RETURN_VALUE,
+    replace_known_sequence_value,
     SequenceValue,
+    stringify_object,
     SubclassValue,
     TypedDictValue,
     TypedValue,
-    Value,
-    MultiValuedValue,
-    VariableNameValue,
-    replace_known_sequence_value,
-    stringify_object,
     unite_values,
+    Value,
+    VariableNameValue,
 )
-from .signature import Signature
 
 CallArgs = Mapping[str, Value]
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]

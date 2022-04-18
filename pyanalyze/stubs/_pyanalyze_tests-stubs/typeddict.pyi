@@ -1,4 +1,4 @@
-from typing_extensions import TypedDict, NotRequired, Required
+from typing_extensions import NotRequired, Required, TypedDict
 
 class TD1(TypedDict):
     a: int

@@ -5,19 +5,20 @@ Implementation of test_scope's asynq checks.
 """
 
 import ast
-import asynq
 import contextlib
-from dataclasses import dataclass, field
-import qcore
 import inspect
 import types
-from typing import Iterator, Any, Callable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterator, Optional
+
+import asynq
+import qcore
 
 from .error_code import ErrorCode
 from .functions import AsyncFunctionKind
 from .options import Options, PyObjectSequenceOption, StringSequenceOption
 from .safe import safe_getattr, safe_hasattr
-from .value import AnnotatedValue, Value, KnownValue, TypedValue, UnboundMethodValue
+from .value import AnnotatedValue, KnownValue, TypedValue, UnboundMethodValue, Value
 
 
 class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):

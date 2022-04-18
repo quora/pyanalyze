@@ -5,12 +5,13 @@ Functions to be used in test_scope unit tests.
 
 """
 
-from typing import ClassVar, Sequence, Union, overload, NoReturn
-from asynq import asynq, async_proxy, AsyncTask, ConstFuture, get_async_fn, result
-from asynq.decorators import AsyncDecorator
-import qcore
+from typing import ClassVar, NoReturn, overload, Sequence, Union
 
-from .value import SequenceValue, VariableNameValue, Value
+import qcore
+from asynq import async_proxy, AsyncTask, asynq, ConstFuture, get_async_fn, result
+from asynq.decorators import AsyncDecorator
+
+from .value import SequenceValue, Value, VariableNameValue
 
 ASYNQ_METHOD_NAME = "asynq"
 ASYNQ_METHOD_NAMES = ("asynq",)

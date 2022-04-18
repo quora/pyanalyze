@@ -6,95 +6,103 @@ calls.
 
 """
 
-from .type_evaluation import EvalContext, Evaluator
+import ast
+import collections.abc
+import enum
+import inspect
+import itertools
+from dataclasses import dataclass, field, replace
+from types import FunctionType, MethodType
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Container,
+    Dict,
+    Iterable,
+    List,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TYPE_CHECKING,
+    TypeVar,
+    Union,
+)
+
+import asynq
+import qcore
+from qcore.helpers import safe_str
+from typing_extensions import assert_never, Literal, Protocol, Self
+
 from .error_code import ErrorCode
 from .safe import all_of_type
 from .stacked_scopes import (
+    AbstractConstraint,
     AndConstraint,
-    OrConstraint,
     Composite,
     Constraint,
     ConstraintType,
     NULL_CONSTRAINT,
-    AbstractConstraint,
+    OrConstraint,
     VarnameWithOrigin,
 )
-from .type_evaluation import ARGS, KWARGS, DEFAULT, UNKNOWN, Position
+from .type_evaluation import (
+    ARGS,
+    DEFAULT,
+    EvalContext,
+    Evaluator,
+    KWARGS,
+    Position,
+    UNKNOWN,
+)
 from .typevar import resolve_bounds_map
 from .value import (
+    annotate_value,
     AnnotatedValue,
     AnySource,
     AnyValue,
     AsyncTaskIncompleteValue,
     BoundsMap,
     CallableValue,
-    CanAssignContext,
-    ConstraintExtension,
-    GenericValue,
-    HasAttrExtension,
-    HasAttrGuardExtension,
-    KVPair,
-    KnownValue,
-    LowerBound,
-    MultiValuedValue,
-    NoReturnConstraintExtension,
-    NoReturnGuardExtension,
-    ParamSpecArgsValue,
-    ParamSpecKwargsValue,
-    ParameterTypeGuardExtension,
-    DictIncompleteValue,
-    SequenceValue,
-    TypeGuardExtension,
-    TypeVarValue,
-    TypedDictValue,
-    TypedValue,
-    Value,
-    TypeVarMap,
-    CanAssign,
-    CanAssignError,
-    annotate_value,
     can_assign_and_used_any,
+    CanAssign,
+    CanAssignContext,
+    CanAssignError,
     concrete_values_from_iterable,
+    ConstraintExtension,
+    DictIncompleteValue,
     extract_typevars,
     flatten_values,
+    GenericValue,
     get_tv_map,
+    HasAttrExtension,
+    HasAttrGuardExtension,
+    KnownValue,
+    KVPair,
+    LowerBound,
+    MultiValuedValue,
+    NO_RETURN_VALUE,
+    NoReturnConstraintExtension,
+    NoReturnGuardExtension,
+    ParameterTypeGuardExtension,
+    ParamSpecArgsValue,
+    ParamSpecKwargsValue,
     replace_known_sequence_value,
+    SequenceValue,
     stringify_object,
+    TypedDictValue,
+    TypedValue,
+    TypeGuardExtension,
+    TypeVarMap,
+    TypeVarValue,
+    unannotate,
     unannotate_value,
     unify_bounds_maps,
     unite_values,
-    unannotate,
-    NO_RETURN_VALUE,
+    Value,
 )
-
-import ast
-import asynq
-import collections.abc
-from dataclasses import dataclass, field, replace
-import enum
-import itertools
-import qcore
-from types import MethodType, FunctionType
-import inspect
-from qcore.helpers import safe_str
-from typing import (
-    Any,
-    Container,
-    Iterable,
-    NamedTuple,
-    Optional,
-    ClassVar,
-    Sequence,
-    Union,
-    Callable,
-    Dict,
-    List,
-    Set,
-    TypeVar,
-    Tuple,
-    TYPE_CHECKING,
-)
-from typing_extensions import Literal, Protocol, Self, assert_never
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor

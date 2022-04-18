@@ -1,6 +1,6 @@
 # static analysis: ignore
-from .test_node_visitor import skip_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import skip_before
 
 
 class TestPatma(TestNameCheckVisitorBase):

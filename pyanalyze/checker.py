@@ -3,16 +3,16 @@
 The checker maintains global state that is preserved across different modules.
 
 """
-import itertools
 import collections.abc
-from contextlib import contextmanager
-from dataclasses import InitVar, dataclass, field
-import qcore
+import itertools
 import sys
 import types
+from contextlib import contextmanager
+from dataclasses import dataclass, field, InitVar
 from typing import (
     Callable,
     ContextManager,
+    Dict,
     Iterable,
     Iterator,
     List,
@@ -21,47 +21,49 @@ from typing import (
     Set,
     Tuple,
     Union,
-    Dict,
 )
 
-from .options import Options, PyObjectSequenceOption
-from .attributes import get_attribute, AttrContext
-from .node_visitor import Failure
-from .stacked_scopes import Composite
-from .value import (
-    UNINITIALIZED_VALUE,
-    AnnotatedValue,
-    AnyValue,
-    CallableValue,
-    KnownValueWithTypeVars,
-    MultiValuedValue,
-    SubclassValue,
-    TypeVarValue,
-    TypedValue,
-    VariableNameValue,
-    Value,
-    UnboundMethodValue,
-    KnownValue,
-    is_union,
-    flatten_values,
-    unite_values,
-)
+import qcore
+
 from .arg_spec import ArgSpecCache, GenericBases
+from .attributes import AttrContext, get_attribute
+from .node_visitor import Failure
+
+from .options import Options, PyObjectSequenceOption
 from .reexport import ImplicitReexportTracker
 from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
 from .shared_options import VariableNameValues
 from .signature import (
     ANY_SIGNATURE,
-    MaybeSignature,
-    Signature,
     BoundMethodSignature,
     ConcreteSignature,
-    OverloadedSignature,
     make_bound_method,
+    MaybeSignature,
+    OverloadedSignature,
+    Signature,
 )
-from .typeshed import TypeshedFinder
-from .type_object import TypeObject, get_mro
+from .stacked_scopes import Composite
 from .suggested_type import CallableTracker
+from .type_object import get_mro, TypeObject
+from .typeshed import TypeshedFinder
+from .value import (
+    AnnotatedValue,
+    AnyValue,
+    CallableValue,
+    flatten_values,
+    is_union,
+    KnownValue,
+    KnownValueWithTypeVars,
+    MultiValuedValue,
+    SubclassValue,
+    TypedValue,
+    TypeVarValue,
+    UnboundMethodValue,
+    UNINITIALIZED_VALUE,
+    unite_values,
+    Value,
+    VariableNameValue,
+)
 
 _BaseProvider = Callable[[Union[type, super]], Set[type]]
 
