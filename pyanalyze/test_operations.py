@@ -197,8 +197,7 @@ class TestAdd(TestNameCheckVisitorBase):
     @assert_passes()
     def test_bytes_and_text(self):
         def capybara():
-            # Doesn't error because the stub parser can't understand ctypes._CData
-            return b"foo" + "bar"  # TODO: Fix. E: unsupported_operation
+            return b"foo" + "bar"  # E: unsupported_operation
 
     @assert_passes()
     def test_text_and_bytes(self):
