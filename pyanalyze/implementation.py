@@ -15,13 +15,21 @@ from .stacked_scopes import (
     VarnameWithOrigin,
     annotate_with_constraint,
 )
-from .signature import SigParameter, Signature, ImplReturn, CallContext, ParameterKind
+from .signature import (
+    SigParameter,
+    Signature,
+    ImplReturn,
+    CallContext,
+    ParameterKind,
+    ANY_SIGNATURE,
+)
 from .value import (
     NO_RETURN_VALUE,
     UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
+    CallableValue,
     CanAssignContext,
     CanAssignError,
     HasAttrGuardExtension,
@@ -32,7 +40,6 @@ from .value import (
     TypedValue,
     SubclassValue,
     GenericValue,
-    NewTypeValue,
     DictIncompleteValue,
     TypedDictValue,
     KnownValue,
@@ -51,11 +58,11 @@ from .value import (
     unpack_values,
 )
 
+import collections
 import collections.abc
 from itertools import product
 import qcore
 import inspect
-import warnings
 import typing
 import typing_extensions
 from typing import Sequence, TypeVar, cast, Dict, NewType, Callable, Optional, Union
@@ -1587,6 +1594,39 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ),
             callable=dict.copy,
         ),
+        # Implementations of keys/items/values to compensate for incomplete
+        # typeshed support. In the stubs these return instances of a private class
+        # that doesn't exist in reality.
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=dict.keys,
+            impl=_dict_keys_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=dict.values,
+            impl=_dict_values_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=dict.items,
+            impl=_dict_items_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=collections.OrderedDict.keys,
+            impl=_dict_keys_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=collections.OrderedDict.values,
+            impl=_dict_values_impl,
+        ),
+        Signature.make(
+            [SigParameter("self", _POS_ONLY, annotation=TypedValue(dict))],
+            callable=collections.OrderedDict.items,
+            impl=_dict_items_impl,
+        ),
         Signature.make(
             [
                 SigParameter("self", _POS_ONLY, annotation=TypedValue(bytes)),
@@ -1688,6 +1728,20 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=bool,
             impl=_bool_impl,
+        ),
+        # Typeshed has it as TypeGuard[Callable[..., object]], which causes some
+        # false positives.
+        Signature.make(
+            [
+                SigParameter(
+                    "obj", ParameterKind.POSITIONAL_ONLY, annotation=TypedValue(object)
+                )
+            ],
+            callable=callable,
+            return_annotation=AnnotatedValue(
+                TypedValue(bool),
+                [ParameterTypeGuardExtension("obj", CallableValue(ANY_SIGNATURE))],
+            ),
         ),
     ]
     for mod in typing, typing_extensions:
