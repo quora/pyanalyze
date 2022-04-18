@@ -16,12 +16,12 @@ from .stacked_scopes import (
     annotate_with_constraint,
 )
 from .signature import (
-    ANY_SIGNATURE,
     SigParameter,
     Signature,
     ImplReturn,
     CallContext,
     ParameterKind,
+    ANY_SIGNATURE,
 )
 from .value import (
     NO_RETURN_VALUE,
@@ -40,7 +40,6 @@ from .value import (
     TypedValue,
     SubclassValue,
     GenericValue,
-    NewTypeValue,
     DictIncompleteValue,
     TypedDictValue,
     KnownValue,
@@ -59,12 +58,11 @@ from .value import (
     unpack_values,
 )
 
+import collections
 import collections.abc
 from itertools import product
 import qcore
 import inspect
-import warnings
-from types import FunctionType
 import typing
 import typing_extensions
 from typing import Sequence, TypeVar, cast, Dict, NewType, Callable, Optional, Union
@@ -1676,23 +1674,6 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=assert_type,
             impl=_assert_type_impl,
         ),
-        # workaround for https://github.com/python/typeshed/pull/3501
-        Signature.make(
-            [
-                SigParameter(
-                    "message",
-                    annotation=MultiValuedValue([TypedValue(str), TypedValue(Warning)]),
-                ),
-                SigParameter("category", default=KnownValue(None)),
-                SigParameter(
-                    "stacklevel", annotation=TypedValue(int), default=KnownValue(1)
-                ),
-            ],
-            KnownValue(None),
-            callable=warnings.warn,
-        ),
-        # just so we can infer the return value
-        Signature.make([], NewTypeValue(qcore.Utime), callable=qcore.utime),
         Signature.make(
             [
                 SigParameter("expected"),
@@ -1748,7 +1729,8 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=bool,
             impl=_bool_impl,
         ),
-        # TypeGuards, which aren't in typeshed yet
+        # Typeshed has it as TypeGuard[Callable[..., object]], which causes some
+        # false positives.
         Signature.make(
             [
                 SigParameter(
@@ -1759,20 +1741,6 @@ def get_default_argspecs() -> Dict[object, Signature]:
             return_annotation=AnnotatedValue(
                 TypedValue(bool),
                 [ParameterTypeGuardExtension("obj", CallableValue(ANY_SIGNATURE))],
-            ),
-        ),
-        Signature.make(
-            [
-                SigParameter(
-                    "object",
-                    ParameterKind.POSITIONAL_OR_KEYWORD,
-                    annotation=TypedValue(object),
-                )
-            ],
-            callable=inspect.isfunction,
-            return_annotation=AnnotatedValue(
-                TypedValue(bool),
-                [ParameterTypeGuardExtension("object", TypedValue(FunctionType))],
             ),
         ),
     ]
@@ -1804,19 +1772,6 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 TypeVarValue(T),
                 callable=assert_type_func,
                 impl=_assert_type_impl,
-            )
-            signatures.append(sig)
-        # Anticipating that this will be added to the stdlib
-        try:
-            reveal_locals_func = getattr(mod, "reveal_locals")
-        except AttributeError:
-            pass
-        else:
-            sig = Signature.make(
-                [],
-                KnownValue(None),
-                callable=reveal_locals_func,
-                impl=_reveal_locals_impl,
             )
             signatures.append(sig)
     return {sig.callable: sig for sig in signatures}
