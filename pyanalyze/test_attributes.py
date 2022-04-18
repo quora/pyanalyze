@@ -198,6 +198,7 @@ class TestAttributes(TestNameCheckVisitorBase):
     def test_typeshed_getattr(self):
         # has __getattr__
         from codecs import StreamWriter
+
         # has __getattribute__ in typeshed
         from types import SimpleNamespace
 
