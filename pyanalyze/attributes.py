@@ -441,11 +441,16 @@ def _get_attribute_from_mro(
             if ctx.skip_mro and base_cls is not typ:
                 continue
 
-            if ctx.prefer_typeshed:
-                typeshed_type = ctx.get_attribute_from_typeshed(
-                    base_cls, on_class=on_class or ctx.skip_unwrap
-                )
-                if typeshed_type is not UNINITIALIZED_VALUE:
+            typeshed_type = ctx.get_attribute_from_typeshed(
+                base_cls, on_class=on_class or ctx.skip_unwrap
+            )
+            if typeshed_type is not UNINITIALIZED_VALUE:
+                if ctx.prefer_typeshed:
+                    return typeshed_type, base_cls, False
+                # If it's a callable, we'll probably do better
+                # getting the attribute from the type ourselves,
+                # because we may have our own implementation.
+                if not isinstance(typeshed_type, CallableValue):
                     return typeshed_type, base_cls, False
 
             try:
@@ -479,12 +484,8 @@ def _get_attribute_from_mro(
                     val = AnyValue(AnySource.inference)
                 return val, base_cls, True
 
-            if not ctx.prefer_typeshed:
-                typeshed_type = ctx.get_attribute_from_typeshed(
-                    base_cls, on_class=on_class or ctx.skip_unwrap
-                )
-                if typeshed_type is not UNINITIALIZED_VALUE:
-                    return typeshed_type, base_cls, False
+            if typeshed_type is not UNINITIALIZED_VALUE:
+                return typeshed_type, base_cls, False
 
     attrs_type = get_attrs_attribute(typ, ctx)
     if attrs_type is not None:

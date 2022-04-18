@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Retrieve attributes from stubs even when a runtime
+  equivalent exists (#526)
 - Fix attribute access to stub-only names (#525)
 - Remove a number of unnecessary special-cased signatures
   (#499)
