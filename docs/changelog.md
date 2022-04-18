@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove a number of unnecessary special-cased signatures
+  (#499)
 - Add support for use of the `Unpack` operator to
   annotate heterogeneous `*args` and `**kwargs` parameters (#523)
 - Detect incompatible types for some calls to `list.append`,
