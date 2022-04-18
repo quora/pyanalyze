@@ -4,29 +4,31 @@ Structured configuration options.
 
 """
 import argparse
+import pathlib
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-import pathlib
 from typing import (
     Any,
     ClassVar,
     Collection,
     Dict,
+    Generic,
     Iterable,
     Mapping,
     Optional,
     Sequence,
-    Generic,
     Tuple,
     Type,
     TypeVar,
 )
+
 import qcore
 import tomli
 
-from .find_unused import used
 from .error_code import ErrorCode
+
+from .find_unused import used
 from .safe import safe_in
 
 try:

@@ -1,43 +1,44 @@
 # static analysis: ignore
-from qcore.testing import Anything
 import collections
 import collections.abc
-from collections.abc import MutableSequence, Sequence, Collection, Reversible, Set
 import contextlib
 import io
-from pathlib import Path
 import sys
 import tempfile
 import textwrap
 import time
-from typeshed_client import Resolver, get_search_context
 import typing
-from typing import Dict, Generic, List, TypeVar, NewType, Union
-from urllib.error import HTTPError
 import urllib.parse
+from collections.abc import Collection, MutableSequence, Reversible, Sequence, Set
+from pathlib import Path
+from typing import Dict, Generic, List, NewType, TypeVar, Union
+from urllib.error import HTTPError
+
+from qcore.testing import Anything
+from typeshed_client import get_search_context, Resolver
 
 from .checker import Checker
 from .extensions import evaluated
+from .signature import OverloadedSignature, Signature, SigParameter
+from .test_arg_spec import ClassWithCall
 from .test_config import TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .signature import OverloadedSignature, SigParameter, Signature
-from .test_arg_spec import ClassWithCall
 from .tests import make_simple_sequence
 from .typeshed import TypeshedFinder
 from .value import (
-    CallableValue,
-    DictIncompleteValue,
-    SubclassValue,
-    TypedDictValue,
-    assert_is_value,
     AnySource,
     AnyValue,
-    KnownValue,
-    NewTypeValue,
-    TypedValue,
+    assert_is_value,
+    CallableValue,
+    DictIncompleteValue,
     GenericValue,
+    KnownValue,
     KVPair,
+    NewTypeValue,
+    SubclassValue,
+    TypedDictValue,
+    TypedValue,
     TypeVarValue,
     UNINITIALIZED_VALUE,
     Value,
@@ -182,10 +183,10 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     def test_import_aliases(self):
         def capybara():
             from _pyanalyze_tests.aliases import (
-                constant,
                 aliased_constant,
-                explicitly_aliased_constant,
+                constant,
                 ExplicitAlias,
+                explicitly_aliased_constant,
             )
 
             assert_is_value(ExplicitAlias, KnownValue(int))
@@ -217,7 +218,8 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     @assert_passes()
     def test_import_typeddicts(self):
         def capybara():
-            from _pyanalyze_tests.typeddict import TD1, TD2, PEP655, Inherited
+            from _pyanalyze_tests.typeddict import Inherited, PEP655, TD1, TD2
+
             from pyanalyze.test_typeshed import _EXPECTED_TYPED_DICTS
 
             def nested(td1: TD1, td2: TD2, pep655: PEP655, inherited: Inherited):
@@ -234,8 +236,9 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     @assert_passes()
     def test_evaluated_import(self):
         def capybara(unannotated):
+            from typing import BinaryIO, IO, TextIO
+
             from _pyanalyze_tests.evaluated import open, open2
-            from typing import TextIO, BinaryIO, IO
 
             assert_is_value(open("r"), TypedValue(TextIO))
             assert_is_value(open("rb"), TypedValue(BinaryIO))
@@ -293,10 +296,10 @@ class TestConstructors(TestNameCheckVisitorBase):
         def capybara():
             from _pyanalyze_tests.initnew import (
                 my_enumerate,
-                simple,
                 overloadinit,
-                simplenew,
                 overloadnew,
+                simple,
+                simplenew,
             )
 
             simple()  # E: incompatible_call
@@ -641,7 +644,8 @@ class TestOpen(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):
         import io
-        from typing import BinaryIO, IO, Any
+        from typing import Any, BinaryIO, IO
+
         from pyanalyze.extensions import assert_type
 
         def capybara(buffering: int, mode: str):

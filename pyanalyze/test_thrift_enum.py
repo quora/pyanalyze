@@ -2,7 +2,7 @@
 
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .value import KnownValue, TypedValue, assert_is_value
+from .value import assert_is_value, KnownValue, TypedValue
 
 
 class TestThriftEnum(TestNameCheckVisitorBase):
@@ -35,6 +35,7 @@ class TestThriftEnum(TestNameCheckVisitorBase):
     @assert_passes()
     def test_typevar(self):
         from typing import TypeVar
+
         from typing_extensions import Annotated
 
         class ThriftEnum(object):

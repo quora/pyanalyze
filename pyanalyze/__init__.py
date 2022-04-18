@@ -6,37 +6,39 @@ pyanalyze is a package for Python static analysis.
 # ignore unused import errors
 # flake8: noqa
 
-from . import ast_annotator
-from . import name_check_visitor
-from . import analysis_lib
-from . import annotations
-from . import arg_spec
-from . import asynq_checker
-from . import boolability
-from . import checker
-from . import error_code
-from . import extensions
-from . import find_unused
+from . import (
+    analysis_lib,
+    annotations,
+    arg_spec,
+    ast_annotator,
+    asynq_checker,
+    boolability,
+    checker,
+    error_code,
+    extensions,
+    find_unused,
+    functions,
+    implementation,
+    name_check_visitor,
+    node_visitor,
+    options,
+    patma,
+    predicates,
+    reexport,
+    safe,
+    shared_options,
+    signature,
+    stacked_scopes,
+    suggested_type,
+    tests,
+    type_object,
+    typeshed,
+    typevar,
+    value,
+    yield_checker,
+)
 from .find_unused import used as used
-from . import functions
-from . import implementation
-from . import node_visitor
-from . import options
-from . import patma
-from . import predicates
-from . import reexport
-from . import safe
-from . import shared_options
-from . import signature
-from . import stacked_scopes
-from . import suggested_type
-from . import type_object
-from . import typeshed
-from . import typevar
-from . import tests
-from . import value
 from .value import assert_is_value as assert_is_value, dump_value as dump_value
-from . import yield_checker
 
 # Exposed as APIs
 used(ast_annotator)

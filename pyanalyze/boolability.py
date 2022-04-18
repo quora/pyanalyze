@@ -7,25 +7,26 @@ use them in a boolean context. This file helps figure out whether
 a particular type is usable as a boolean.
 
 """
-import asynq
 import enum
+
+import asynq
 
 from pyanalyze.safe import safe_getattr, safe_hasattr
 
 from .value import (
-    KNOWN_MUTABLE_TYPES,
     AnnotatedValue,
     AnyValue,
     DictIncompleteValue,
+    KNOWN_MUTABLE_TYPES,
     KnownValue,
     MultiValuedValue,
+    replace_known_sequence_value,
     SequenceValue,
     SubclassValue,
     TypedDictValue,
     TypedValue,
     UnboundMethodValue,
     Value,
-    replace_known_sequence_value,
 )
 
 

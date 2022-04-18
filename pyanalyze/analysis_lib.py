@@ -4,13 +4,13 @@ Commonly useful components for static analysis tools.
 
 """
 import ast
-from dataclasses import dataclass
 import linecache
 import os
 import secrets
 import sys
 import types
-from typing import List, Callable, Mapping, Optional, Set
+from dataclasses import dataclass
+from typing import Callable, List, Mapping, Optional, Set
 
 
 def _all_files(

@@ -1,28 +1,30 @@
 # static analysis: ignore
-from dataclasses import dataclass
-from asynq import asynq
 import functools
-from typing import List, TypeVar, NewType
+from dataclasses import dataclass
+from typing import List, NewType, TypeVar
+
+from asynq import asynq
+
+from .arg_spec import is_dot_asynq_function
 
 from .checker import Checker
+from .signature import BoundMethodSignature, ParameterKind, Signature, SigParameter
+from .stacked_scopes import Composite
 from .test_name_check_visitor import (
-    TestNameCheckVisitorBase,
     ConfiguredNameCheckVisitor,
+    TestNameCheckVisitorBase,
 )
 from .test_node_visitor import assert_passes
-from .signature import SigParameter, BoundMethodSignature, Signature, ParameterKind
-from .stacked_scopes import Composite
-from .arg_spec import is_dot_asynq_function
 from .tests import l0cached_async_fn
 from .value import (
     AnySource,
     AnyValue,
+    assert_is_value,
+    GenericValue,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
     TypedValue,
-    GenericValue,
-    assert_is_value,
 )
 
 T = TypeVar("T")

@@ -20,17 +20,17 @@ these subclasses and some related utilities.
 """
 
 import collections.abc
-from collections import OrderedDict, deque
-from dataclasses import dataclass, field, InitVar
 import enum
 import inspect
+import textwrap
+from collections import deque, OrderedDict
+from dataclasses import dataclass, field, InitVar
 from itertools import chain
 from types import FunctionType
-import qcore
-import textwrap
 from typing import (
     Any,
     Callable,
+    cast,
     ContextManager,
     Dict,
     Iterable,
@@ -41,17 +41,18 @@ from typing import (
     Sequence,
     Set,
     Tuple,
-    Union,
     Type,
     TypeVar,
-    cast,
+    Union,
 )
-from typing_extensions import Literal, Protocol, ParamSpec
+
+import qcore
+from typing_extensions import Literal, ParamSpec, Protocol
 
 import pyanalyze
 from pyanalyze.extensions import CustomCheck
 
-from .safe import all_of_type, safe_equals, safe_issubclass, safe_isinstance
+from .safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3

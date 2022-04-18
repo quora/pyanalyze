@@ -5,15 +5,10 @@ Base class for scripts that run ast-based checks on the codebase.
 """
 
 import argparse
-from ast_decompiler import decompile
 import ast
-import codemod
+import builtins
 import collections
-from contextlib import contextmanager
 import concurrent.futures
-from dataclasses import dataclass
-from enum import Enum
-import qcore
 import cProfile
 import json
 import logging
@@ -23,10 +18,11 @@ import re
 import subprocess
 import sys
 import tempfile
-import builtins
 from builtins import print as real_print
+from contextlib import contextmanager
+from dataclasses import dataclass
+from enum import Enum
 from types import ModuleType
-from typing_extensions import NotRequired, Protocol, TypedDict
 from typing import (
     Any,
     Dict,
@@ -40,6 +36,11 @@ from typing import (
     Type,
     Union,
 )
+
+import codemod
+import qcore
+from ast_decompiler import decompile
+from typing_extensions import NotRequired, Protocol, TypedDict
 
 from . import analysis_lib
 

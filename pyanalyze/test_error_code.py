@@ -1,6 +1,6 @@
 # static analysis: ignore
-from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes
 
 
 class TestRegisterErrorCode(TestNameCheckVisitorBase):

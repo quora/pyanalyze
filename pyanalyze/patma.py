@@ -6,12 +6,9 @@ Visitor for pattern matching.
 
 import ast
 import collections.abc
-from dataclasses import dataclass, replace
 import enum
 import itertools
-
-import qcore
-import pyanalyze
+from dataclasses import dataclass, replace
 from typing import (
     Any,
     Callable,
@@ -24,21 +21,25 @@ from typing import (
     Union,
 )
 
-from .implementation import len_of_value
-from .signature import MappingValue
+import qcore
+
+import pyanalyze
 from .annotations import type_from_value
-from .extensions import CustomCheck
 from .error_code import ErrorCode
+from .extensions import CustomCheck
+
+from .implementation import len_of_value
 from .predicates import EqualsPredicate, IsAssignablePredicate
+from .signature import MappingValue
 from .stacked_scopes import (
-    NULL_CONSTRAINT,
     AbstractConstraint,
     AndConstraint,
     Composite,
+    constrain_value,
     Constraint,
     ConstraintType,
+    NULL_CONSTRAINT,
     OrConstraint,
-    constrain_value,
 )
 from .value import (
     AnnotatedValue,
@@ -49,20 +50,20 @@ from .value import (
     CanAssignError,
     CustomCheckExtension,
     DictIncompleteValue,
+    flatten_values,
+    is_overlapping,
+    KnownValue,
+    kv_pairs_from_mapping,
     KVPair,
+    replace_known_sequence_value,
     SequenceValue,
     SubclassValue,
     TypedValue,
-    Value,
-    KnownValue,
-    flatten_values,
-    kv_pairs_from_mapping,
-    replace_known_sequence_value,
     unannotate,
+    UNINITIALIZED_VALUE,
     unite_values,
     unpack_values,
-    is_overlapping,
-    UNINITIALIZED_VALUE,
+    Value,
 )
 
 try:

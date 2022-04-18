@@ -5,19 +5,19 @@ from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
-    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
+    assert_is_value,
     DictIncompleteValue,
     GenericValue,
     KnownValue,
     MultiValuedValue,
+    NO_RETURN_VALUE,
     ReferencingValue,
     SequenceValue,
     TypedValue,
     UNINITIALIZED_VALUE,
-    assert_is_value,
 )
 
 
@@ -973,7 +973,7 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_double_index(self):
-        from typing import Union, Optional
+        from typing import Optional, Union
 
         class A:
             attr: Union[int, str]
@@ -1424,7 +1424,7 @@ class TestConstraints(TestNameCheckVisitorBase):
     @assert_passes()
     def test_comprehension_composite(self):
         from dataclasses import dataclass
-        from typing import Optional, Tuple, List
+        from typing import List, Optional, Tuple
 
         @dataclass
         class Capybara:
@@ -1473,6 +1473,7 @@ class TestConstraints(TestNameCheckVisitorBase):
     @assert_passes()
     def test_while_hasattr(self):
         from typing import Optional
+
         from pyanalyze.value import HasAttrExtension
 
         def capybara(x: Optional[int]):
@@ -1547,6 +1548,7 @@ class TestConstraints(TestNameCheckVisitorBase):
     @assert_passes()
     def test_operator_constraints(self):
         from typing import Union
+
         from typing_extensions import Literal
 
         container = {1, 2, 3}
@@ -1589,8 +1591,9 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_preserve_annotated(self):
-        from typing_extensions import Annotated
         from typing import Optional
+
+        from typing_extensions import Annotated
 
         AnnotatedUnion = AnnotatedValue(
             TypedValue(str), [KnownValue(1)]

@@ -1,8 +1,8 @@
 # static analysis: ignore
-from .value import GenericValue, KnownValue, TypedValue
 from .implementation import assert_is_value
-from .test_node_visitor import assert_passes
 from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes
+from .value import GenericValue, KnownValue, TypedValue
 
 
 class TestPEP673(TestNameCheckVisitorBase):
@@ -52,6 +52,7 @@ class TestPEP673(TestNameCheckVisitorBase):
     @assert_passes()
     def test_parameter_type(self):
         from typing import Callable
+
         from typing_extensions import Self
 
         class Shape:
@@ -96,9 +97,10 @@ class TestPEP673(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_linked_list(self):
-        from typing import Generic, TypeVar, Optional
-        from typing_extensions import Self
         from dataclasses import dataclass
+        from typing import Generic, Optional, TypeVar
+
+        from typing_extensions import Self
 
         T = TypeVar("T")
 
@@ -118,6 +120,7 @@ class TestPEP673(TestNameCheckVisitorBase):
     @assert_passes()
     def test_generic(self):
         from typing import Generic, TypeVar
+
         from typing_extensions import Self
 
         T = TypeVar("T")
@@ -134,8 +137,9 @@ class TestPEP673(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_classvar(self):
-        from typing_extensions import Self
         from typing import ClassVar, List
+
+        from typing_extensions import Self
 
         class Registry:
             children: ClassVar[List[Self]]

@@ -3,18 +3,20 @@
 Implementation of unused object detection.
 
 """
-from collections import defaultdict
-from dataclasses import dataclass, field
-import enum
-import inspect
-from typing import Set, List, Dict, Type, Iterable, Optional, TypeVar
-import qcore
-from types import ModuleType, TracebackType
 import __future__
 
+import enum
+import inspect
+from collections import defaultdict
+from dataclasses import dataclass, field
+from types import ModuleType, TracebackType
+from typing import Dict, Iterable, List, Optional, Set, Type, TypeVar
+
+import qcore
+
 import pyanalyze
-from .safe import safe_in
 from . import extensions
+from .safe import safe_in
 
 T = TypeVar("T")
 

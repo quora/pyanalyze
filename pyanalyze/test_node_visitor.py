@@ -1,7 +1,5 @@
 # static analysis: ignore
 import ast
-from ast_decompiler import decompile
-from collections import defaultdict
 import difflib
 import enum
 import functools
@@ -10,14 +8,17 @@ import itertools
 import re
 import sys
 import textwrap
+from collections import defaultdict
+
+from ast_decompiler import decompile
 
 from .node_visitor import (
     BaseNodeVisitor,
-    VisitorError,
-    Replacement,
     NodeTransformer,
+    Replacement,
     ReplaceNodeTransformer,
     ReplacingNodeVisitor,
+    VisitorError,
 )
 
 

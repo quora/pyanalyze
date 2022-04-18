@@ -8,23 +8,18 @@ the system.
 
 """
 import abc
-from argparse import ArgumentParser
 import ast
-import enum
-import itertools
-from ast_decompiler import decompile
 import asyncio
 import builtins
 import collections
 import collections.abc
 import contextlib
-from dataclasses import dataclass
-from itertools import chain
+import enum
+import itertools
 import logging
 import operator
 import os
 import os.path
-from pathlib import Path
 import pickle
 import random
 import re
@@ -33,98 +28,114 @@ import sys
 import tempfile
 import traceback
 import types
-import typeshed_client
+from argparse import ArgumentParser
+from dataclasses import dataclass
+from itertools import chain
+from pathlib import Path
 from typing import (
-    ClassVar,
-    ContextManager,
-    Iterator,
-    Mapping,
-    Iterable,
-    Dict,
-    Union,
     Any,
+    ClassVar,
+    Container,
+    ContextManager,
+    Dict,
+    Iterable,
+    Iterator,
     List,
+    Mapping,
     Optional,
+    Sequence,
     Set,
     Tuple,
-    Sequence,
     Type,
     TypeVar,
-    Container,
+    Union,
 )
-from typing_extensions import Annotated, Protocol
 
 import asynq
 import qcore
+import typeshed_client
+from ast_decompiler import decompile
+from typing_extensions import Annotated, Protocol
 
-from . import attributes, format_strings, node_visitor, importer
+from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
 from .annotations import (
-    SyntheticEvaluator,
     is_instance_of_typing_name,
+    is_typing_name,
+    SyntheticEvaluator,
     type_from_annotations,
     type_from_value,
-    is_typing_name,
 )
-from .arg_spec import ArgSpecCache, is_dot_asynq_function, UnwrapClass, IgnoredCallees
+from .arg_spec import ArgSpecCache, IgnoredCallees, is_dot_asynq_function, UnwrapClass
+from .asynq_checker import AsynqChecker
 from .boolability import Boolability, get_boolability
 from .checker import Checker, CheckerAttrContext
-from .error_code import ErrorCode, ERROR_DESCRIPTION
-from .extensions import ParameterTypeGuard, assert_error, patch_typing_overload
+from .error_code import ERROR_DESCRIPTION, ErrorCode
+from .extensions import assert_error, ParameterTypeGuard, patch_typing_overload
 from .find_unused import UnusedObjectFinder, used
+from .functions import (
+    AsyncFunctionKind,
+    compute_function_info,
+    compute_value_of_function,
+    FunctionDefNode,
+    FunctionInfo,
+    FunctionNode,
+    FunctionResult,
+    IMPLICIT_CLASSMETHODS,
+)
 from .options import (
-    ConfigOption,
-    ConcatenatedOption,
+    add_arguments,
     BooleanOption,
-    InvalidConfigOption,
+    ConcatenatedOption,
+    ConfigOption,
     IntegerOption,
+    InvalidConfigOption,
     Options,
     PyObjectSequenceOption,
     StringSequenceOption,
-    add_arguments,
 )
 from .patma import PatmaVisitor
 from .predicates import EqualsPredicate
-from .shared_options import Paths, ImportPaths, EnforceNoUnused
 from .reexport import ImplicitReexportTracker
-from .safe import safe_getattr, is_hashable, safe_issubclass, is_dataclass_type
+from .safe import is_dataclass_type, is_hashable, safe_getattr, safe_issubclass
+from .shared_options import EnforceNoUnused, ImportPaths, Paths
+from .signature import (
+    ANY_SIGNATURE,
+    ARGS,
+    ConcreteSignature,
+    KWARGS,
+    MaybeSignature,
+    OverloadedSignature,
+    Signature,
+    SigParameter,
+)
 from .stacked_scopes import (
-    EMPTY_ORIGIN,
     AbstractConstraint,
+    AndConstraint,
+    annotate_with_constraint,
     Composite,
     CompositeIndex,
-    EquivalentConstraint,
-    FunctionScope,
-    Varname,
+    constrain_value,
     Constraint,
-    AndConstraint,
-    OrConstraint,
-    NULL_CONSTRAINT,
-    FALSY_CONSTRAINT,
-    TRUTHY_CONSTRAINT,
     ConstraintType,
+    EMPTY_ORIGIN,
+    EquivalentConstraint,
+    extract_constraints,
+    FALSY_CONSTRAINT,
+    FunctionScope,
+    LEAVES_LOOP,
+    LEAVES_SCOPE,
+    NULL_CONSTRAINT,
+    OrConstraint,
+    PredicateProvider,
     ScopeType,
     StackedScopes,
+    SubScope,
+    TRUTHY_CONSTRAINT,
+    Varname,
     VarnameOrigin,
     VarnameWithOrigin,
     VisitorState,
-    PredicateProvider,
-    LEAVES_LOOP,
-    LEAVES_SCOPE,
-    annotate_with_constraint,
-    constrain_value,
-    SubScope,
-    extract_constraints,
-)
-from .signature import (
-    ANY_SIGNATURE,
-    ConcreteSignature,
-    MaybeSignature,
-    OverloadedSignature,
-    SigParameter,
-    Signature,
-    ARGS,
-    KWARGS,
 )
 from .suggested_type import (
     CallArgs,
@@ -132,60 +143,48 @@ from .suggested_type import (
     prepare_type,
     should_suggest_type,
 )
-from .asynq_checker import AsynqChecker
-from .functions import (
-    AsyncFunctionKind,
-    FunctionInfo,
-    FunctionResult,
-    FunctionDefNode,
-    FunctionNode,
-    compute_function_info,
-    IMPLICIT_CLASSMETHODS,
-    compute_value_of_function,
-)
-from .yield_checker import YieldChecker
-from .type_object import TypeObject, get_mro
+from .type_object import get_mro, TypeObject
 from .value import (
-    VOID,
     AlwaysPresentExtension,
+    annotate_value,
     AnnotatedValue,
     AnySource,
     AnyValue,
     AssertErrorExtension,
+    AsyncTaskIncompleteValue,
     CanAssign,
     CanAssignError,
-    ConstraintExtension,
-    GenericBases,
-    KVPair,
-    UNINITIALIZED_VALUE,
-    NO_RETURN_VALUE,
-    NoReturnConstraintExtension,
-    SequenceValue,
-    annotate_value,
     check_hashability,
+    concrete_values_from_iterable,
+    ConstraintExtension,
+    DictIncompleteValue,
     flatten_values,
+    GenericBases,
+    GenericValue,
     get_tv_map,
     is_union,
+    KnownValue,
     kv_pairs_from_mapping,
+    KVPair,
+    MultiValuedValue,
+    NO_RETURN_VALUE,
+    NoReturnConstraintExtension,
+    ReferencingValue,
+    SequenceValue,
     set_self,
+    SubclassValue,
+    TypedValue,
+    TypeVarValue,
     unannotate_value,
+    UnboundMethodValue,
+    UNINITIALIZED_VALUE,
     unite_and_simplify,
     unite_values,
-    KnownValue,
-    TypedValue,
-    MultiValuedValue,
-    UnboundMethodValue,
-    ReferencingValue,
-    SubclassValue,
-    DictIncompleteValue,
-    AsyncTaskIncompleteValue,
-    GenericValue,
-    Value,
-    TypeVarValue,
-    concrete_values_from_iterable,
     unpack_values,
+    Value,
+    VOID,
 )
-from . import type_evaluation
+from .yield_checker import YieldChecker
 
 try:
     from ast import NamedExpr

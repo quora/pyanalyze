@@ -1,8 +1,8 @@
 # static analysis: ignore
-from .value import NO_RETURN_VALUE, TypedValue
 from .implementation import assert_is_value
-from .test_node_visitor import assert_passes, skip_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes, skip_before
+from .value import NO_RETURN_VALUE, TypedValue
 
 
 class TestAnnotations(TestNameCheckVisitorBase):
@@ -35,8 +35,9 @@ class TestAnnotations(TestNameCheckVisitorBase):
 class TestNoReturn(TestNameCheckVisitorBase):
     @assert_passes()
     def test_no_return(self):
-        from typing_extensions import NoReturn
         from typing import Optional
+
+        from typing_extensions import NoReturn
 
         def f() -> NoReturn:
             raise Exception
@@ -67,8 +68,9 @@ class TestNoReturn(TestNameCheckVisitorBase):
 class TestAssertNever(TestNameCheckVisitorBase):
     @assert_passes()
     def test_if(self):
-        from pyanalyze.tests import assert_never
         from typing import Union
+
+        from pyanalyze.tests import assert_never
 
         def capybara(x: Union[int, str]) -> None:
             if isinstance(x, int):

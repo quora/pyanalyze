@@ -1,21 +1,21 @@
 # static analysis: ignore
 from .implementation import assert_is_value
+from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes, skip_before
 from .value import (
+    AnnotatedValue,
     AnySource,
     AnyValue,
     KnownValue,
     MultiValuedValue,
     TypedValue,
-    AnnotatedValue,
 )
-from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
 
 
 class TestTypeVar(TestNameCheckVisitorBase):
     @assert_passes()
     def test_simple(self):
-        from typing import TypeVar, List, Generic
+        from typing import Generic, List, TypeVar
 
         T = TypeVar("T")
 
@@ -48,7 +48,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_union_math(self):
-        from typing import TypeVar, Optional
+        from typing import Optional, TypeVar
 
         T = TypeVar("T")
 
@@ -75,7 +75,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_multi_typevar(self):
-        from typing import TypeVar, Optional
+        from typing import Optional, TypeVar
 
         T = TypeVar("T")
 
@@ -91,7 +91,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_generic_base(self):
-        from typing import TypeVar, Generic
+        from typing import Generic, TypeVar
 
         T = TypeVar("T")
 
@@ -109,7 +109,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_wrong_generic_base(self):
-        from typing import TypeVar, Generic
+        from typing import Generic, TypeVar
 
         T = TypeVar("T")
 
@@ -149,7 +149,7 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_default(self):
-        from typing import TypeVar, Dict, Union
+        from typing import Dict, TypeVar, Union
 
         KT = TypeVar("KT")
         VT = TypeVar("VT")
@@ -227,7 +227,7 @@ class TestSolve(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_tv_sequence(self):
-        from typing import TypeVar, Sequence, Union
+        from typing import Sequence, TypeVar, Union
 
         AnyStr = TypeVar("AnyStr", bound=Union[str, bytes])
 
@@ -239,7 +239,7 @@ class TestSolve(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_call_with_value_restriction(self):
-        from typing import TypeVar, Callable, Union
+        from typing import Callable, TypeVar, Union
 
         CallableT = TypeVar("CallableT", Callable[..., str], Callable[..., int])
         UnionT = TypeVar("UnionT", bound=Union[Callable[..., str], Callable[..., int]])
@@ -264,8 +264,9 @@ class TestSolve(TestNameCheckVisitorBase):
 class TestAnnotated(TestNameCheckVisitorBase):
     @assert_passes()
     def test_preserve(self):
-        from typing_extensions import Annotated
         from typing import TypeVar
+
+        from typing_extensions import Annotated
 
         T = TypeVar("T")
 

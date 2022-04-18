@@ -1,6 +1,19 @@
 # static analysis: ignore
 from collections.abc import Sequence
 
+from .implementation import assert_is_value
+from .signature import (
+    ConcreteSignature,
+    ELLIPSIS_PARAM,
+    OverloadedSignature,
+    ParameterKind as K,
+    Signature,
+    SigParameter as P,
+)
+from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes, skip_before
+from .test_value import CTX
+from .tests import make_simple_sequence
 
 from .value import (
     AnnotatedValue,
@@ -13,19 +26,6 @@ from .value import (
     TypedDictValue,
     TypedValue,
 )
-from .implementation import assert_is_value
-from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
-from .signature import (
-    ELLIPSIS_PARAM,
-    ConcreteSignature,
-    OverloadedSignature,
-    Signature,
-    SigParameter as P,
-    ParameterKind as K,
-)
-from .test_value import CTX
-from .tests import make_simple_sequence
 
 TupleInt = GenericValue(tuple, [TypedValue(int)])
 TupleBool = GenericValue(tuple, [TypedValue(bool)])
@@ -635,9 +635,10 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_hasattr(self):
-        from typing import Any, cast
-        from qcore.testing import Anything
         from dataclasses import dataclass
+        from typing import Any, cast
+
+        from qcore.testing import Anything
 
         @dataclass
         class Quemisia(object):
@@ -716,7 +717,7 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_star_args(self):
-        from typing import Sequence, Dict
+        from typing import Dict, Sequence
 
         def takes_args(*args: int) -> None:
             pass
@@ -750,8 +751,9 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_star_kwargs(self):
-        from typing_extensions import TypedDict, NotRequired
-        from typing import Dict, Any, Sequence
+        from typing import Any, Dict, Sequence
+
+        from typing_extensions import NotRequired, TypedDict
 
         def takes_ab(a: int, b: str = "") -> None:
             pass
@@ -897,8 +899,9 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_runtime(self):
-        from pyanalyze.extensions import overload
         from typing import Union
+
+        from pyanalyze.extensions import overload
 
         @overload
         def overloaded() -> int:
@@ -924,9 +927,11 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_list_any(self):
-        from pyanalyze.extensions import overload
-        from typing import List, Any, Union
+        from typing import Any, List, Union
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import overload
 
         @overload
         def overloaded(lst: List[str]) -> Literal[2]:
@@ -963,9 +968,11 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_any_and_union(self):
-        from pyanalyze.extensions import overload
         from typing import Any, Union
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import overload
 
         @overload
         def overloaded1(x: Any, y: str) -> Literal[2]:
@@ -1003,9 +1010,11 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_same_return(self):
-        from pyanalyze.extensions import overload
         from typing import Any
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import overload
 
         @overload
         def overloaded1(x: Any, y: str) -> Literal[2]:
@@ -1121,7 +1130,7 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_overloaded_method(self):
-        from pyanalyze.extensions import overload, assert_type
+        from pyanalyze.extensions import assert_type, overload
 
         class Capybara:
             @overload
@@ -1179,8 +1188,9 @@ class TestSelfAnnotation(TestNameCheckVisitorBase):
 class TestUnpack(TestNameCheckVisitorBase):
     @assert_passes()
     def test_args(self):
-        from typing_extensions import Unpack
         from typing import Tuple
+
+        from typing_extensions import Unpack
 
         def f(*args: Unpack[Tuple[int, str]]) -> None:
             assert_is_value(
@@ -1194,7 +1204,7 @@ class TestUnpack(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_kwargs(self):
-        from typing_extensions import Unpack, TypedDict, NotRequired, Required
+        from typing_extensions import NotRequired, Required, TypedDict, Unpack
 
         class TD(TypedDict):
             a: NotRequired[int]

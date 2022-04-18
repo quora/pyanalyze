@@ -1,9 +1,9 @@
 # static analysis: ignore
+from .error_code import ErrorCode
 from .implementation import assert_is_value
-from .value import AnySource, AnyValue, KnownValue, MultiValuedValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .error_code import ErrorCode
+from .value import AnySource, AnyValue, KnownValue, MultiValuedValue, TypedValue
 
 
 class TestBinOps(TestNameCheckVisitorBase):

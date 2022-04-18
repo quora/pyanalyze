@@ -3,26 +3,26 @@
 Reusable predicates.
 
 """
-from dataclasses import dataclass
 import enum
 import operator
+from dataclasses import dataclass
 from typing import Optional
 
 from .safe import safe_issubclass
 from .value import (
-    NO_RETURN_VALUE,
     AnnotatedValue,
     AnyValue,
-    KnownValue,
-    MultiValuedValue,
-    SubclassValue,
-    TypeVarValue,
-    TypedValue,
-    Value,
-    unite_values,
     CanAssignContext,
     is_overlapping,
+    KnownValue,
+    MultiValuedValue,
+    NO_RETURN_VALUE,
+    SubclassValue,
+    TypedValue,
+    TypeVarValue,
     unannotate,
+    unite_values,
+    Value,
 )
 
 

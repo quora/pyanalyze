@@ -1,7 +1,8 @@
-from qcore.asserts import AssertRaises
-import typing_inspect
-from typing import List, Optional, Union, TypeVar
 from types import FunctionType
+from typing import List, Optional, TypeVar, Union
+
+import typing_inspect
+from qcore.asserts import AssertRaises
 
 from .extensions import AsynqCallable, get_overloads, overload
 from .safe import all_of_type

@@ -3,15 +3,14 @@ import collections.abc
 import enum
 import io
 import pickle
-from typing import NewType
-from typing_extensions import Protocol, runtime_checkable
-import typing
 import types
+import typing
+from typing import NewType
 from unittest import mock
 
+from typing_extensions import Protocol, runtime_checkable
 
-from . import tests
-from . import value
+from . import tests, value
 from .checker import Checker
 from .name_check_visitor import NameCheckVisitor
 from .signature import ELLIPSIS_PARAM, Signature
@@ -22,18 +21,18 @@ from .value import (
     AnyValue,
     CallableValue,
     CanAssignError,
-    KVPair,
-    SequenceValue,
-    Value,
+    concrete_values_from_iterable,
     GenericValue,
     KnownValue,
-    TypedValue,
+    KVPair,
     MultiValuedValue,
+    SequenceValue,
     SubclassValue,
+    TypedValue,
     TypeVarMap,
-    concrete_values_from_iterable,
     unite_and_simplify,
     unpack_values,
+    Value,
 )
 
 _checker = Checker()

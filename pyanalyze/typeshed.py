@@ -4,50 +4,13 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
-from pyanalyze.functions import translate_vararg_type
-from .node_visitor import Failure
-from .options import Options, PathSequenceOption
-from .extensions import evaluated
-from .analysis_lib import is_positional_only_arg_name
-from .annotations import (
-    Context,
-    Pep655Value,
-    SyntheticEvaluator,
-    make_type_var_value,
-    type_from_value,
-    value_from_ast,
-)
-from .error_code import ErrorCode
-from .extensions import overload, real_overload
-from .safe import all_of_type, hasattr_static, is_typing_name, safe_isinstance
-from .stacked_scopes import uniq_chain, Composite
-from .signature import (
-    ConcreteSignature,
-    OverloadedSignature,
-    SigParameter,
-    Signature,
-    ParameterKind,
-    make_bound_method,
-)
-from .value import (
-    AnySource,
-    AnyValue,
-    CallableValue,
-    CanAssignContext,
-    SubclassValue,
-    TypedDictValue,
-    TypedValue,
-    GenericValue,
-    KnownValue,
-    UNINITIALIZED_VALUE,
-    Value,
-    TypeVarValue,
-    extract_typevars,
-)
-
-from abc import abstractmethod
 import ast
 import builtins
+import collections.abc
+import inspect
+import sys
+
+from abc import abstractmethod
 from collections.abc import (
     Awaitable,
     Collection,
@@ -57,28 +20,66 @@ from collections.abc import (
 )
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
-import collections.abc
 from enum import Enum
-import qcore
-import inspect
-import sys
 from types import GeneratorType
 from typing import (
+    Any,
+    Callable,
     Dict,
+    Generic,
+    Iterable,
+    List,
+    Optional,
     Sequence,
     Set,
     Tuple,
-    Any,
-    Generic,
-    Iterable,
-    Optional,
-    Union,
-    Callable,
-    List,
     TypeVar,
+    Union,
 )
-from typing_extensions import Protocol, TypedDict
+
+import qcore
 import typeshed_client
+from typing_extensions import Protocol, TypedDict
+
+from pyanalyze.functions import translate_vararg_type
+from .analysis_lib import is_positional_only_arg_name
+from .annotations import (
+    Context,
+    make_type_var_value,
+    Pep655Value,
+    SyntheticEvaluator,
+    type_from_value,
+    value_from_ast,
+)
+from .error_code import ErrorCode
+from .extensions import evaluated, overload, real_overload
+from .node_visitor import Failure
+from .options import Options, PathSequenceOption
+from .safe import all_of_type, hasattr_static, is_typing_name, safe_isinstance
+from .signature import (
+    ConcreteSignature,
+    make_bound_method,
+    OverloadedSignature,
+    ParameterKind,
+    Signature,
+    SigParameter,
+)
+from .stacked_scopes import Composite, uniq_chain
+from .value import (
+    AnySource,
+    AnyValue,
+    CallableValue,
+    CanAssignContext,
+    extract_typevars,
+    GenericValue,
+    KnownValue,
+    SubclassValue,
+    TypedDictValue,
+    TypedValue,
+    TypeVarValue,
+    UNINITIALIZED_VALUE,
+    Value,
+)
 
 
 try:

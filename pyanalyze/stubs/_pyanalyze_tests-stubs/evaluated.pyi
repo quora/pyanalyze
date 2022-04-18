@@ -1,5 +1,6 @@
+from typing import Any, BinaryIO, IO, TextIO
+
 from pyanalyze.extensions import evaluated
-from typing import Any, TextIO, BinaryIO, IO
 
 @evaluated
 def open(mode: str):
