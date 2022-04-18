@@ -28,6 +28,14 @@ We use [flake8](https://flake8.pycqa.org/en/latest/) as a linter:
 $ flake8 pyanalyze
 ```
 
+## usort
+
+Imports are sorted using [μsort](https://usort.readthedocs.io/en/stable/index.html):
+
+```
+$ usort format pyanalyze
+```
+
 ## Unit tests
 
 The unit tests are run with [pytest](https://docs.pytest.org/):
