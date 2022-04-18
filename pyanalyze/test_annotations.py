@@ -11,13 +11,14 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
-    SequenceIncompleteValue,
+    SequenceValue,
     TypeVarValue,
     TypedDictValue,
     TypedValue,
     SubclassValue,
     GenericValue,
 )
+from .tests import make_simple_sequence
 
 
 class TestAnnotations(TestNameCheckVisitorBase):
@@ -337,22 +338,11 @@ class TestAnnotations(TestNameCheckVisitorBase):
             empty: Tuple[()],
         ) -> None:
             assert_is_value(x, GenericValue(tuple, [TypedValue(int)]))
-            assert_is_value(y, SequenceIncompleteValue(tuple, [TypedValue(int)]))
-            assert_is_value(
-                z, SequenceIncompleteValue(tuple, [TypedValue(str), TypedValue(int)])
-            )
-            assert_is_value(
-                omega,
-                MultiValuedValue(
-                    [
-                        SequenceIncompleteValue(
-                            tuple, [TypedValue(str), TypedValue(int)]
-                        ),
-                        KnownValue(None),
-                    ]
-                ),
-            )
-            assert_is_value(empty, SequenceIncompleteValue(tuple, []))
+            assert_is_value(y, make_simple_sequence(tuple, [TypedValue(int)]))
+            t_str_int = make_simple_sequence(tuple, [TypedValue(str), TypedValue(int)])
+            assert_is_value(z, t_str_int)
+            assert_is_value(omega, t_str_int | KnownValue(None))
+            assert_is_value(empty, SequenceValue(tuple, []))
 
     @assert_passes()
     def test_stringified_tuples(self):
@@ -366,22 +356,11 @@ class TestAnnotations(TestNameCheckVisitorBase):
             empty: "Tuple[()]",
         ) -> None:
             assert_is_value(x, GenericValue(tuple, [TypedValue(int)]))
-            assert_is_value(y, SequenceIncompleteValue(tuple, [TypedValue(int)]))
-            assert_is_value(
-                z, SequenceIncompleteValue(tuple, [TypedValue(str), TypedValue(int)])
-            )
-            assert_is_value(
-                omega,
-                MultiValuedValue(
-                    [
-                        SequenceIncompleteValue(
-                            tuple, [TypedValue(str), TypedValue(int)]
-                        ),
-                        KnownValue(None),
-                    ]
-                ),
-            )
-            assert_is_value(empty, SequenceIncompleteValue(tuple, []))
+            assert_is_value(y, make_simple_sequence(tuple, [TypedValue(int)]))
+            t_str_int = make_simple_sequence(tuple, [TypedValue(str), TypedValue(int)])
+            assert_is_value(z, t_str_int)
+            assert_is_value(omega, t_str_int | KnownValue(None))
+            assert_is_value(empty, SequenceValue(tuple, []))
 
     @skip_before((3, 9))
     @assert_passes()
@@ -396,22 +375,11 @@ class TestAnnotations(TestNameCheckVisitorBase):
             empty: tuple[()],
         ) -> None:
             assert_is_value(x, GenericValue(tuple, [TypedValue(int)]))
-            assert_is_value(y, SequenceIncompleteValue(tuple, [TypedValue(int)]))
-            assert_is_value(
-                z, SequenceIncompleteValue(tuple, [TypedValue(str), TypedValue(int)])
-            )
-            assert_is_value(
-                omega,
-                MultiValuedValue(
-                    [
-                        SequenceIncompleteValue(
-                            tuple, [TypedValue(str), TypedValue(int)]
-                        ),
-                        KnownValue(None),
-                    ]
-                ),
-            )
-            assert_is_value(empty, SequenceIncompleteValue(tuple, []))
+            assert_is_value(y, make_simple_sequence(tuple, [TypedValue(int)]))
+            t_str_int = make_simple_sequence(tuple, [TypedValue(str), TypedValue(int)])
+            assert_is_value(z, t_str_int)
+            assert_is_value(omega, t_str_int | KnownValue(None))
+            assert_is_value(empty, SequenceValue(tuple, []))
 
     @assert_passes()
     def test_invalid_annotation(self):
@@ -531,7 +499,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def capybara(x: list[int], y: tuple[int, str], z: tuple[int, ...]) -> None:
             assert_is_value(x, GenericValue(list, [TypedValue(int)]))
             assert_is_value(
-                y, SequenceIncompleteValue(tuple, [TypedValue(int), TypedValue(str)])
+                y, make_simple_sequence(tuple, [TypedValue(int), TypedValue(str)])
             )
             assert_is_value(z, GenericValue(tuple, [TypedValue(int)]))
 
@@ -1731,3 +1699,27 @@ class TestTypeAlias(TestNameCheckVisitorBase):
             assert_is_value(x_quoted, TypedValue(int))
             assert_is_value(y_quoted, TypedValue(int))
             assert_is_value(z, TypedValue(int))
+
+
+class TestUnpack(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_in_tuple(self):
+        from typing_extensions import Unpack
+        from typing import Tuple
+
+        def capybara(
+            x: Tuple[int, Unpack[Tuple[str, ...]]],
+            y: "Tuple[int, Unpack[Tuple[str, ...]]]",
+        ):
+            assert_is_value(
+                x,
+                SequenceValue(
+                    tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
+                ),
+            )
+            assert_is_value(
+                y,
+                SequenceValue(
+                    tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
+                ),
+            )

@@ -11,7 +11,7 @@ from .value import (
     DictIncompleteValue,
     KVPair,
     KnownValue,
-    SequenceIncompleteValue,
+    SequenceValue,
     TypedDictValue,
     UnboundMethodValue,
     TypedValue,
@@ -50,17 +50,30 @@ def test_get_boolability() -> None:
         TypedDictValue({"a": (False, TypedValue(int))})
     )
     assert Boolability.type_always_true == get_boolability(
-        SequenceIncompleteValue(tuple, [KnownValue(1)])
+        SequenceValue(tuple, [(False, KnownValue(1))])
     )
-    assert Boolability.value_always_false == get_boolability(
-        SequenceIncompleteValue(tuple, [])
+    assert Boolability.value_always_false == get_boolability(SequenceValue(tuple, []))
+    assert Boolability.boolable == get_boolability(
+        SequenceValue(tuple, [(True, KnownValue(1))])
+    )
+    assert Boolability.type_always_true == get_boolability(
+        # many 1s followed by one 2
+        SequenceValue(tuple, [(True, KnownValue(1)), (False, KnownValue(2))])
     )
     assert Boolability.value_always_true_mutable == get_boolability(
-        SequenceIncompleteValue(list, [KnownValue(1)])
+        SequenceValue(list, [(False, KnownValue(1))])
     )
     assert Boolability.value_always_false_mutable == get_boolability(
-        SequenceIncompleteValue(list, [])
+        SequenceValue(list, [])
     )
+    assert Boolability.boolable == get_boolability(
+        SequenceValue(list, [(True, KnownValue(1))])
+    )
+    assert Boolability.value_always_true_mutable == get_boolability(
+        # many 1s followed by one 2
+        SequenceValue(list, [(True, KnownValue(1)), (False, KnownValue(2))])
+    )
+
     assert Boolability.value_always_true_mutable == get_boolability(
         DictIncompleteValue(dict, [KVPair(KnownValue(1), KnownValue(1))])
     )

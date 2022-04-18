@@ -1,15 +1,13 @@
 # static analysis: ignore
+from .tests import make_simple_sequence
 from .implementation import assert_is_value
 from .value import (
     AnySource,
     AnyValue,
     AsyncTaskIncompleteValue,
     KnownValue,
-    MultiValuedValue,
     TypedValue,
-    GenericValue,
     DictIncompleteValue,
-    SequenceIncompleteValue,
     KVPair,
 )
 from .test_name_check_visitor import TestNameCheckVisitorBase
@@ -75,7 +73,7 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
             vals1 = yield [square.asynq(1), square.asynq(2), square.asynq(3)]
             assert_is_value(
                 vals1,
-                SequenceIncompleteValue(
+                make_simple_sequence(
                     list, [TypedValue(int), TypedValue(int), TypedValue(int)]
                 ),
             )
@@ -93,11 +91,14 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
             vals4 = yield {i: square.asynq(i) for i in ints}
             assert_is_value(
                 vals4,
-                GenericValue(
+                DictIncompleteValue(
                     dict,
                     [
-                        MultiValuedValue([KnownValue(0), KnownValue(1), KnownValue(2)]),
-                        TypedValue(int),
+                        KVPair(
+                            KnownValue(0) | KnownValue(1) | KnownValue(2),
+                            TypedValue(int),
+                            is_many=True,
+                        )
                     ],
                 ),
             )

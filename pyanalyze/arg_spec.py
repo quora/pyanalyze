@@ -4,6 +4,7 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
+from .functions import translate_vararg_type
 from .options import Options, PyObjectSequenceOption
 from .analysis_lib import is_positional_only_arg_name
 from .extensions import CustomCheck, TypeGuard, get_overloads, get_type_evaluations
@@ -28,7 +29,6 @@ from .signature import (
     Impl,
     MaybeSignature,
     OverloadedSignature,
-    PropertyArgSpec,
     make_bound_method,
     SigParameter,
     Signature,
@@ -51,7 +51,6 @@ from .value import (
     Value,
     TypeVarValue,
     extract_typevars,
-    make_weak,
 )
 import pyanalyze
 
@@ -207,7 +206,7 @@ class FunctionsSafeToCall(PyObjectSequenceOption[object]):
     arguments."""
 
     name = "functions_safe_to_call"
-    default_value = [sorted, asynq.asynq, make_weak]
+    default_value = [sorted, asynq.asynq]
 
 
 _HookReturn = Union[None, ConcreteSignature, inspect.Signature, Callable[..., Any]]
@@ -425,14 +424,12 @@ class ArgSpecCache:
         is_constructor: bool,
     ) -> Value:
         if parameter.annotation is not inspect.Parameter.empty:
+            kind = ParameterKind(parameter.kind)
+            ctx = AnnotationsContext(self, func_globals)
             typ = type_from_runtime(
-                parameter.annotation, ctx=AnnotationsContext(self, func_globals)
+                parameter.annotation, ctx=ctx, allow_unpack=kind.allow_unpack()
             )
-            if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
-                return GenericValue(tuple, [typ])
-            elif parameter.kind is inspect.Parameter.VAR_KEYWORD:
-                return GenericValue(dict, [TypedValue(str), typ])
-            return typ
+            return translate_vararg_type(kind, typ, self.ctx)
         # If this is the self argument of a method, try to infer the self type.
         elif index == 0 and parameter.kind in (
             inspect.Parameter.POSITIONAL_ONLY,
@@ -562,23 +559,6 @@ class ArgSpecCache:
         is_asynq: bool,
         in_overload_resolution: bool,
     ) -> MaybeSignature:
-        if not in_overload_resolution:
-            fq_name = get_fully_qualified_name(obj)
-            if fq_name is not None:
-                overloads = get_overloads(fq_name)
-                if overloads:
-                    sigs = [
-                        self._cached_get_argspec(
-                            overload, impl, is_asynq, in_overload_resolution=True
-                        )
-                        for overload in overloads
-                    ]
-                    if all_of_type(sigs, Signature):
-                        return OverloadedSignature(sigs)
-                evaluator_sig = self._maybe_make_evaluator_sig(obj, impl, is_asynq)
-                if evaluator_sig is not None:
-                    return evaluator_sig
-
         if isinstance(obj, tuple):
             return None  # lost cause
 
@@ -610,6 +590,25 @@ class ArgSpecCache:
                 obj.__func__, impl, is_asynq, in_overload_resolution
             )
             return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
+
+        # Must be after the check for bound methods, because otherwise we
+        # won't bind self correctly.
+        if not in_overload_resolution:
+            fq_name = get_fully_qualified_name(obj)
+            if fq_name is not None:
+                overloads = get_overloads(fq_name)
+                if overloads:
+                    sigs = [
+                        self._cached_get_argspec(
+                            overload, impl, is_asynq, in_overload_resolution=True
+                        )
+                        for overload in overloads
+                    ]
+                    if all_of_type(sigs, Signature):
+                        return OverloadedSignature(sigs)
+                evaluator_sig = self._maybe_make_evaluator_sig(obj, impl, is_asynq)
+                if evaluator_sig is not None:
+                    return evaluator_sig
 
         if hasattr_static(obj, "fn") or hasattr_static(obj, "original_fn"):
             is_asynq = is_asynq or hasattr_static(obj, "asynq")
@@ -791,16 +790,6 @@ class ArgSpecCache:
             # the argspec for some builtin methods (e.g., dict.__init__), and no way to detect
             # these with inspect, so just give up.
             return self._make_any_sig(obj)
-
-        if isinstance(obj, property):
-            # If we know the getter, inherit its return value.
-            if obj.fget:
-                fget_argspec = self._cached_get_argspec(
-                    obj.fget, impl, is_asynq, in_overload_resolution
-                )
-                if fget_argspec is not None and fget_argspec.has_return_value():
-                    return PropertyArgSpec(obj, return_value=fget_argspec.return_value)
-            return PropertyArgSpec(obj)
 
         return None
 

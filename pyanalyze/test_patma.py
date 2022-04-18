@@ -53,7 +53,7 @@ class TestPatma(TestNameCheckVisitorBase):
                     case [1, 2, 3]:
                         assert_is_value(
                             seq,
-                            SequenceIncompleteValue(
+                            make_simple_sequence(
                                 tuple,
                                 [TypedValue(int), TypedValue(int), TypedValue(int)]
                             )

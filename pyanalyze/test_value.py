@@ -23,16 +23,17 @@ from .value import (
     CallableValue,
     CanAssignError,
     KVPair,
+    SequenceValue,
     Value,
     GenericValue,
     KnownValue,
     TypedValue,
     MultiValuedValue,
     SubclassValue,
-    SequenceIncompleteValue,
     TypeVarMap,
     concrete_values_from_iterable,
     unite_and_simplify,
+    unpack_values,
 )
 
 _checker = Checker()
@@ -117,8 +118,8 @@ def test_unbound_method_value() -> None:
 
 def test_typed_value() -> None:
     val = TypedValue(str)
-    assert str is val.typ
-    assert "str" == str(val)
+    assert val.typ is str
+    assert str(val) == "str"
     assert val.is_type(str)
     assert not val.is_type(int)
 
@@ -128,8 +129,15 @@ def test_typed_value() -> None:
     assert_can_assign(val, MultiValuedValue([val, KnownValue("x")]))
     assert_cannot_assign(val, MultiValuedValue([KnownValue("x"), TypedValue(int)]))
 
+    literal_string = TypedValue(str, literal_only=True)
+    assert literal_string.typ is str
+    assert str(literal_string) == "LiteralString"
+    assert_can_assign(val, literal_string)
+    assert_cannot_assign(literal_string, val)
+    assert_can_assign(literal_string, KnownValue("x"))
+
     float_val = TypedValue(float)
-    assert "float" == str(float_val)
+    assert str(float_val) == "float"
     assert_can_assign(float_val, KnownValue(1.0))
     assert_can_assign(float_val, KnownValue(1))
     assert_cannot_assign(float_val, KnownValue(""))
@@ -212,22 +220,36 @@ def test_generic_value() -> None:
     )
 
 
-def test_sequence_incomplete_value() -> None:
-    val = value.SequenceIncompleteValue(tuple, [TypedValue(int), TypedValue(str)])
+def test_sequence_value() -> None:
+    val = value.SequenceValue(
+        tuple, [(False, TypedValue(int)), (False, TypedValue(str))]
+    )
     assert_can_assign(val, TypedValue(tuple))
     assert_can_assign(val, GenericValue(tuple, [TypedValue(int) | TypedValue(str)]))
     assert_cannot_assign(val, GenericValue(tuple, [TypedValue(int) | TypedValue(list)]))
 
     assert_can_assign(val, val)
-    assert_cannot_assign(val, value.SequenceIncompleteValue(tuple, [TypedValue(int)]))
+    assert_cannot_assign(val, value.SequenceValue(tuple, [(False, TypedValue(int))]))
     assert_can_assign(
-        val, value.SequenceIncompleteValue(tuple, [TypedValue(bool), TypedValue(str)])
+        val,
+        value.SequenceValue(
+            tuple, [(False, TypedValue(bool)), (False, TypedValue(str))]
+        ),
     )
 
-    assert "tuple[int, str]" == str(val)
-    assert "tuple[int]" == str(value.SequenceIncompleteValue(tuple, [TypedValue(int)]))
-    assert "<list containing [int]>" == str(
-        value.SequenceIncompleteValue(list, [TypedValue(int)])
+    assert str(val) == "tuple[int, str]"
+    assert str(value.SequenceValue(tuple, [(False, TypedValue(int))])) == "tuple[int]"
+    assert (
+        str(
+            value.SequenceValue(
+                tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
+            )
+        )
+        == "tuple[int, *tuple[str, ...]]"
+    )
+    assert (
+        str(value.SequenceValue(list, [(False, TypedValue(int))]))
+        == "<list containing [int]>"
     )
 
 
@@ -494,13 +516,14 @@ def test_io() -> None:
 
 def test_concrete_values_from_iterable() -> None:
     assert isinstance(concrete_values_from_iterable(KnownValue(1), CTX), CanAssignError)
-    assert () == concrete_values_from_iterable(KnownValue(()), CTX)
-    assert (KnownValue(1), KnownValue(2)) == concrete_values_from_iterable(
-        KnownValue((1, 2)), CTX
-    )
-    assert (KnownValue(1), KnownValue(2)) == concrete_values_from_iterable(
-        SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]), CTX
-    )
+    assert concrete_values_from_iterable(KnownValue(()), CTX) == []
+    assert concrete_values_from_iterable(KnownValue((1, 2)), CTX) == [
+        KnownValue(1),
+        KnownValue(2),
+    ]
+    assert concrete_values_from_iterable(
+        tests.make_simple_sequence(list, [KnownValue(1), KnownValue(2)]), CTX
+    ) == [KnownValue(1), KnownValue(2)]
     assert TypedValue(int) == concrete_values_from_iterable(
         GenericValue(list, [TypedValue(int)]), CTX
     )
@@ -510,7 +533,7 @@ def test_concrete_values_from_iterable() -> None:
     ] == concrete_values_from_iterable(
         MultiValuedValue(
             [
-                SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                tests.make_simple_sequence(list, [KnownValue(1), KnownValue(2)]),
                 KnownValue((3, 4)),
             ]
         ),
@@ -521,7 +544,7 @@ def test_concrete_values_from_iterable() -> None:
     ) == concrete_values_from_iterable(
         MultiValuedValue(
             [
-                SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                tests.make_simple_sequence(list, [KnownValue(1), KnownValue(2)]),
                 GenericValue(list, [TypedValue(int)]),
             ]
         ),
@@ -532,7 +555,7 @@ def test_concrete_values_from_iterable() -> None:
     ) == concrete_values_from_iterable(
         MultiValuedValue(
             [
-                SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+                tests.make_simple_sequence(list, [KnownValue(1), KnownValue(2)]),
                 KnownValue((3,)),
             ]
         ),
@@ -569,3 +592,65 @@ def test_unite_and_simplify() -> None:
     assert unite_and_simplify(*vals, limit=2) == GenericValue(
         list, [TypedValue(int)]
     ) | GenericValue(list, [AnyValue(AnySource.unreachable)])
+
+
+def test_unpack_values() -> None:
+    t_int = SequenceValue(tuple, [(False, TypedValue(int))])
+    assert unpack_values(t_int, CTX, 1, None) == [TypedValue(int)]
+    assert unpack_values(t_int, CTX, 1, 0) == [TypedValue(int), SequenceValue(list, [])]
+    assert isinstance(unpack_values(t_int, CTX, 1, 1), CanAssignError)
+    assert isinstance(unpack_values(t_int, CTX, 2, None), CanAssignError)
+
+    t_int_str = SequenceValue(
+        tuple, [(False, TypedValue(int)), (False, TypedValue(str))]
+    )
+    assert isinstance(unpack_values(t_int_str, CTX, 1, None), CanAssignError)
+    assert unpack_values(t_int_str, CTX, 2, None) == [TypedValue(int), TypedValue(str)]
+    assert unpack_values(t_int_str, CTX, 2, 0) == [
+        TypedValue(int),
+        TypedValue(str),
+        SequenceValue(list, []),
+    ]
+    assert unpack_values(t_int_str, CTX, 1, 1) == [
+        TypedValue(int),
+        SequenceValue(list, []),
+        TypedValue(str),
+    ]
+
+    t_int_star_str = SequenceValue(
+        tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
+    )
+    assert unpack_values(t_int_star_str, CTX, 1, None) == [TypedValue(int)]
+    assert unpack_values(t_int_star_str, CTX, 1, 0) == [
+        TypedValue(int),
+        SequenceValue(list, [(True, TypedValue(str))]),
+    ]
+    assert unpack_values(t_int_star_str, CTX, 1, 1) == [
+        TypedValue(int),
+        GenericValue(list, [TypedValue(str)]),
+        TypedValue(str),
+    ]
+    assert unpack_values(t_int_star_str, CTX, 2, None) == [
+        TypedValue(int),
+        TypedValue(str),
+    ]
+
+    t_int_star_str_float = SequenceValue(
+        tuple,
+        [(False, TypedValue(int)), (True, TypedValue(str)), (False, TypedValue(float))],
+    )
+    assert isinstance(unpack_values(t_int_star_str_float, CTX, 1, None), CanAssignError)
+    assert unpack_values(t_int_star_str_float, CTX, 2, None) == [
+        TypedValue(int),
+        TypedValue(float),
+    ]
+    assert unpack_values(t_int_star_str_float, CTX, 1, 1) == [
+        TypedValue(int),
+        SequenceValue(list, [(True, TypedValue(str))]),
+        TypedValue(float),
+    ]
+    assert unpack_values(t_int_star_str_float, CTX, 0, 2) == [
+        GenericValue(list, [TypedValue(str) | TypedValue(int)]),
+        TypedValue(int) | TypedValue(str),
+        TypedValue(float),
+    ]

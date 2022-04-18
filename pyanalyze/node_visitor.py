@@ -167,7 +167,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     should_check_environ_for_files: bool = True
     caught_errors: Optional[List[Dict[str, Any]]] = None
 
-    _changes_for_fixer = collections.defaultdict(list)
+    _changes_for_fixer: Dict[str, List[Replacement]] = collections.defaultdict(list)
 
     tree: ast.Module
     all_failures: List[Failure]

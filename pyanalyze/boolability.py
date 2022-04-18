@@ -19,7 +19,7 @@ from .value import (
     DictIncompleteValue,
     KnownValue,
     MultiValuedValue,
-    SequenceIncompleteValue,
+    SequenceValue,
     SubclassValue,
     TypedDictValue,
     TypedValue,
@@ -63,7 +63,8 @@ _FALSE_BOOLABILITIES = {
     Boolability.value_always_false,
     Boolability.value_always_false_mutable,
 }
-_ASYNQ_BOOL = asynq.FutureBase.__bool__
+# doesn't exist if asynq is not compiled
+_ASYNQ_BOOL = getattr(asynq.FutureBase, "__bool__", object())
 
 
 def get_boolability(value: Value) -> Boolability:
@@ -109,21 +110,23 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
             return Boolability.type_always_true
         else:
             return Boolability.boolable
-    elif isinstance(value, SequenceIncompleteValue):
-        if value.typ is tuple:
-            if value.members:
-                # We lie slightly here, since at the type level a tuple
-                # may be false. But tuples are a common source of boolability
-                # bugs and they're rarely mutated, so we put a stronger
-                # condition on them.
-                return Boolability.type_always_true
-            else:
+    elif isinstance(value, SequenceValue):
+        if not value.members:
+            if value.typ is tuple:
                 return Boolability.value_always_false
-        else:
-            if value.members:
-                return Boolability.value_always_true_mutable
             else:
                 return Boolability.value_always_false_mutable
+        may_be_empty = all(is_many for is_many, _ in value.members)
+        if may_be_empty:
+            return Boolability.boolable
+        if value.typ is tuple:
+            # We lie slightly here, since at the type level a tuple
+            # may be false. But tuples are a common source of boolability
+            # bugs and they're rarely mutated, so we put a stronger
+            # condition on them.
+            return Boolability.type_always_true
+        else:
+            return Boolability.value_always_true_mutable
     elif isinstance(value, DictIncompleteValue):
         if any(pair.is_required and not pair.is_many for pair in value.kv_pairs):
             return Boolability.value_always_true_mutable

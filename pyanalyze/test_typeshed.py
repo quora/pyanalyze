@@ -23,9 +23,11 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .signature import OverloadedSignature, SigParameter, Signature
 from .test_arg_spec import ClassWithCall
+from .tests import make_simple_sequence
 from .typeshed import TypeshedFinder
 from .value import (
     CallableValue,
+    DictIncompleteValue,
     SubclassValue,
     TypedDictValue,
     assert_is_value,
@@ -35,10 +37,9 @@ from .value import (
     NewTypeValue,
     TypedValue,
     GenericValue,
-    make_weak,
+    KVPair,
     TypeVarValue,
     UNINITIALIZED_VALUE,
-    SequenceIncompleteValue,
     Value,
 )
 
@@ -132,7 +133,9 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             reveal_type(x.items().__iter__())
             assert_is_value(
                 {k: v for k, v in x.items()},
-                make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(int), TypedValue(str), is_many=True)]
+                ),
             )
 
     @assert_passes()
@@ -269,6 +272,22 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 want_cm(x)
                 len(x)  # E: incompatible_argument
 
+    @assert_passes()
+    def test_args_kwargs(self):
+        def capybara():
+            from _pyanalyze_tests.args import f, g, h, i
+
+            f(1)  # E: incompatible_call
+            f(1, "x")
+            g(x=1)  # E: incompatible_call
+            g(x=1, y="x")
+            h("x")  # E: incompatible_argument
+            h()
+            h(1)
+            i(x=3)  # E: incompatible_argument
+            i(x="x")
+            i()
+
 
 class TestConstructors(TestNameCheckVisitorBase):
     @assert_passes()
@@ -388,7 +407,7 @@ class TestGetGenericBases:
     def test_dict_items(self):
         TInt = TypedValue(int)
         TStr = TypedValue(str)
-        TTuple = SequenceIncompleteValue(tuple, [TInt, TStr])
+        TTuple = make_simple_sequence(tuple, [TInt, TStr])
         self.check(
             {
                 "_collections_abc.dict_items": [TInt, TStr],
@@ -447,7 +466,7 @@ class TestGetGenericBases:
     def test_collections(self):
         int_tv = TypedValue(int)
         str_tv = TypedValue(str)
-        int_str_tuple = SequenceIncompleteValue(tuple, [int_tv, str_tv])
+        int_str_tuple = make_simple_sequence(tuple, [int_tv, str_tv])
         self.check(
             {
                 collections.abc.ValuesView: [int_tv],

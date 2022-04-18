@@ -33,7 +33,6 @@ from .stacked_scopes import (
     VarnameWithOrigin,
     constrain_value,
 )
-from .safe import all_of_type
 from .value import (
     NO_RETURN_VALUE,
     BoundsMap,
@@ -42,7 +41,7 @@ from .value import (
     CanAssignError,
     KnownValue,
     MultiValuedValue,
-    SequenceIncompleteValue,
+    SequenceValue,
     Value,
     flatten_values,
     unannotate,
@@ -601,12 +600,8 @@ class ConditionEvaluator(ast.NodeVisitor):
 
     def evaluate_literal(self, node: ast.expr) -> Optional[KnownValue]:
         val = self.evaluator.evaluate_value(node)
-        if (
-            isinstance(val, SequenceIncompleteValue)
-            and isinstance(val.typ, type)
-            and all_of_type(val.members, KnownValue)
-        ):
-            val = KnownValue(val.typ(elt.val for elt in val.members))
+        if isinstance(val, SequenceValue):
+            val = val.make_known_value()
         if isinstance(val, KnownValue):
             return val
         self.errors.append(InvalidEvaluation("Only literals supported", node))

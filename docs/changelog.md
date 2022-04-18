@@ -4,6 +4,38 @@
 
 - Remove a number of unnecessary special-cased signatures
   (#499)
+- Add support for use of the `Unpack` operator to
+  annotate heterogeneous `*args` and `**kwargs` parameters (#523)
+- Detect incompatible types for some calls to `list.append`,
+  `list.extend`, `list.__add__`, and `set.add` (#522)
+- Optimize local variables with very complex inferred types (#521)
+
+## Version 0.7.0 (April 13, 2022)
+
+Release highlights:
+- Support for PEP 673 (`Self`)
+- Support for PEP 675 (`LiteralString`)
+- Support for `assert_type` and other additions to `typing` in Python 3.11
+
+Full changelog:
+- Remove `SequenceIncompleteValue` (#519)
+- Add implementation function for `dict.pop` (#517)
+- Remove `WeakExtension` (#517)
+- Fix propagation of no-return-unless constraints from calls
+  to unions (#518)
+- Initial support for variable-length heterogeneous sequences
+  (required for PEP 646). More precise types are now inferred
+  for heterogeneous sequences containing variable-length
+  objects. (#515, #516)
+- Support `LiteralString` (PEP 675) (#514)
+- Add `unused_assignment` error code, separated out from
+  `unused_variable`. Enable these error codes and
+  `possibly_undefined_name` by default (#511)
+- Fix handling of overloaded methods called on literals (#513)
+- Partial support for running on Python 3.11 (#512)
+- Basic support for checking `Final` and for checking re-assignments
+  to variables declared with a specific type (#505)
+- Correctly check the `self` argument to `@property` getters (#506)
 - Correctly track assignments of variables inside `try` blocks
   and inside `with` blocks that may suppress exceptions (#504)
 - Support mappings that do not inherit from `collections.abc.Mapping`
