@@ -34,6 +34,7 @@ from itertools import chain
 from pathlib import Path
 from typing import (
     Any,
+    Callable,
     ClassVar,
     Container,
     ContextManager,
@@ -1002,19 +1003,45 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     config_filename: ClassVar[Optional[str]] = None
     """Path (relative to this class's file) to a pyproject.toml config file."""
 
-    checker: Checker
-    options: Options
-    arg_spec_cache: ArgSpecCache
-    reexport_tracker: ImplicitReexportTracker
-    being_assigned: Optional[Value]
-    ann_assign_type: Optional[Tuple[Optional[Value], bool]]
-    current_class: Optional[type]
-    current_function_name: Optional[str]
-    current_enum_members: Optional[Dict[object, str]]
+    _argspec_to_retval: Dict[int, Tuple[Value, MaybeSignature]]
+    _has_used_any_match: bool
+    _method_cache: Dict[Type[ast.AST], Callable[[Any], Optional[Value]]]
     _name_node_to_statement: Optional[Dict[ast.AST, Optional[ast.AST]]]
-    import_name_to_node: Dict[str, Union[ast.Import, ast.ImportFrom]]
-    expected_return_value: Optional[Value]
+    _should_exclude_any: bool
+    _statement_types: Set[Type[ast.AST]]
+    ann_assign_type: Optional[Tuple[Optional[Value], bool]]
+    annotate: bool
+    arg_spec_cache: ArgSpecCache
+    async_kind: AsyncFunctionKind
+    asynq_checker: AsynqChecker
+    attribute_checker: ClassAttributeChecker
+    being_assigned: Optional[Value]
+    checker: Checker
+    collector: Optional[CallSiteCollector]
+    current_class: Optional[type]
+    current_enum_members: Optional[Dict[object, str]]
+    current_function: Optional[object]
+    current_function_name: Optional[str]
     error_for_implicit_any: bool
+    expected_return_value: Optional[Value]
+    future_imports: Set[str]
+    in_annotation: bool
+    in_comprehension_body: bool
+    in_union_decomposition: bool
+    import_name_to_node: Dict[str, Union[ast.Import, ast.ImportFrom]]
+    is_async_def: bool
+    is_compiled: bool
+    is_generator: bool
+    match_subject: Composite
+    module: Optional[types.ModuleType]
+    node_context: StackedContexts
+    options: Options
+    reexport_tracker: ImplicitReexportTracker
+    return_values: List[Optional[Value]]
+    scopes: StackedScopes
+    state: VisitorState
+    unused_finder: UnusedObjectFinder
+    yield_checker: YieldChecker
 
     def __init__(
         self,
@@ -1103,7 +1130,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.in_union_decomposition = False
         self.collector = collector
         self.import_name_to_node = {}
-        self.imports_added = set()
         self.future_imports = set()  # active future imports in this file
         self.return_values = []
         self.error_for_implicit_any = self.options.is_error_code_enabled(
@@ -1114,7 +1140,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # Cache the return values of functions within this file, so that we can use them to
         # infer types. Previously, we cached this globally, but that makes things non-
         # deterministic because we'll start depending on the order modules are checked.
-        self._argspec_to_retval: Dict[int, Tuple[Value, MaybeSignature]] = {}
+        self._argspec_to_retval = {}
         self._method_cache = {}
         self._statement_types = set()
         self._has_used_any_match = False
@@ -1602,15 +1628,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if self._is_checking():
             cls_obj = self._get_class_object(node)
 
-            if isinstance(cls_obj, MultiValuedValue) and self.module is not None:
+            module = self.module
+            if isinstance(cls_obj, MultiValuedValue) and module is not None:
                 # if there are multiple, see if there is only one that matches this module
                 possible_values = [
                     val
                     for val in cls_obj.vals
                     if isinstance(val, KnownValue)
                     and isinstance(val.val, type)
-                    and safe_getattr(val.val, "__module__", None)
-                    == self.module.__name__
+                    and safe_getattr(val.val, "__module__", None) == module.__name__
                 ]
                 if len(possible_values) == 1:
                     cls_obj = possible_values[0]
