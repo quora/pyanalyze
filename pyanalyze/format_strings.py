@@ -7,7 +7,6 @@ Module for checking %-formatted and .format()-formatted strings.
 import ast
 import enum
 import re
-import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import (
