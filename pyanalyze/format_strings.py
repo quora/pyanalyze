@@ -7,7 +7,6 @@ Module for checking %-formatted and .format()-formatted strings.
 import ast
 import enum
 import re
-import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import (
@@ -287,7 +286,7 @@ class PercentFormatString:
                         " that do not"
                     )
         for piece in self.raw_pieces:
-            if (b"%" in piece) if self.is_bytes else ("%" in piece):
+            if (b"%" in piece) if isinstance(piece, bytes) else ("%" in piece):
                 yield "invalid conversion specifier in {}".format(piece)
 
     def accept(self, args: Value, ctx: CanAssignContext) -> Iterable[str]:
@@ -418,16 +417,14 @@ def maybe_replace_with_fstring(
     fs: PercentFormatString, args_node: ast.AST
 ) -> Optional[ast.AST]:
     """If appropriate, emits an error to replace this % format with an f-string."""
-    # otherwise there are no f-strings
-    if sys.version_info < (3, 6):
-        return None
     # there are no bytes f-strings
     if isinstance(fs.pattern, bytes):
         return None
     # if there is a { in the string, we will need escaping in order to use an f-string, which might
     # make the code worse
-    if any("{" in piece or "}" in piece for piece in fs.raw_pieces):
-        return None
+    for piece in fs.raw_pieces:
+        if isinstance(piece, bytes) or "{" in piece or "}" in piece:
+            return None
     # special conversion specifiers are rare and more difficult to replace, so just ignore them for
     # now
     if any(

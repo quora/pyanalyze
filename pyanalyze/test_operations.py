@@ -192,6 +192,37 @@ class TestCompare(TestNameCheckVisitorBase):
                 assert_is_value(i, KnownValue(2))
                 assert_is_value(x, KnownValue(4))
 
+    @assert_passes()
+    def test_dunders(self):
+        from typing import Optional
+
+        class X:
+            def __eq__(self, other: int) -> float:
+                return 3.14
+
+        def capybara(x: X):
+            assert_is_value(x == 1, TypedValue(float), skip_annotated=True)
+            assert_is_value(x == "x", TypedValue(bool), skip_annotated=True)
+
+        class Container:
+            def __contains__(self, x: int) -> bool:
+                return x < 3
+
+        def pacarana(x: Container):
+            assert_is_value(1 in x, TypedValue(bool), skip_annotated=True)
+            "4" in x  # E: incompatible_argument
+
+        def comparison(i: int, f: float, s: str, os: Optional[str]):
+            assert_is_value(i < i, TypedValue(bool))
+            assert_is_value(i < f, TypedValue(bool))
+            assert_is_value(i <= f, TypedValue(bool))
+            assert_is_value(s >= s, TypedValue(bool))
+            i < s  # E: unsupported_operation
+            s >= f  # E: unsupported_operation
+            # TODO: These don't throw errors because None.__lt__ exists at runtime.
+            s > None
+            s > os
+
 
 class TestAdd(TestNameCheckVisitorBase):
     @assert_passes()

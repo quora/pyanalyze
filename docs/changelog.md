@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Type check calls to comparison operators (#527)
 - Retrieve attributes from stubs even when a runtime
   equivalent exists (#526)
 - Fix attribute access to stub-only names (#525)

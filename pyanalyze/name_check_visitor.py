@@ -219,6 +219,14 @@ BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
     ast.BitAnd: ("bitwise AND", "__and__", "__iand__", "__rand__"),
     ast.FloorDiv: ("floor division", "__floordiv__", "__ifloordiv__", "__rfloordiv__"),
     ast.MatMult: ("matrix multiplication", "__matmul__", "__imatmul__", "__rmatmul__"),
+    ast.Eq: ("equality", "__eq__", None, "__eq__"),
+    ast.NotEq: ("inequality", "__ne__", None, "__ne__"),
+    ast.Lt: ("less than", "__lt__", None, "__gt__"),
+    ast.LtE: ("less than or equal", "__le__", None, "__ge__"),
+    ast.Gt: ("greater than", "__gt__", None, "__lt__"),
+    ast.GtE: ("greater than or equal", "__ge__", None, "__le__"),
+    ast.In: ("contains", "__contains__", None, None),
+    ast.NotIn: ("contains", "__contains__", None, None),
 }
 
 # Certain special methods are expected to return NotImplemented if they
@@ -230,7 +238,13 @@ BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD = {
 # - Objects/abstract.c also does the binops
 # - Rich comparison in object.c and typeobject.c
 METHODS_ALLOWING_NOTIMPLEMENTED = {
-    *itertools.chain.from_iterable(BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD.values()),
+    *[
+        method
+        for method in itertools.chain.from_iterable(
+            data[1:] for data in BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD.values()
+        )
+        if method is not None
+    ],
     "__eq__",
     "__ne__",
     "__lt__",
@@ -2827,7 +2841,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             op = node.ops[i - 1]
             lhs_node = nodes[i - 1]
             lhs = vals[i - 1]
-            result = self._visit_single_compare(lhs_node, lhs, op, rhs_node, rhs)
+            result = self._visit_single_compare(lhs_node, lhs, op, rhs_node, rhs, node)
             constraints.append(extract_constraints(result))
             result, _ = unannotate_value(result, ConstraintExtension)
             results.append(result)
@@ -2836,7 +2850,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         )
 
     def _visit_single_compare(
-        self, lhs_node: ast.AST, lhs: Value, op: ast.AST, rhs_node: ast.AST, rhs: Value
+        self,
+        lhs_node: ast.AST,
+        lhs: Value,
+        op: ast.AST,
+        rhs_node: ast.AST,
+        rhs: Value,
+        parent_node: ast.AST,
     ) -> Value:
         lhs_constraint = extract_constraints(lhs)
         rhs_constraint = extract_constraints(rhs)
@@ -2847,11 +2867,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(lhs_constraint, PredicateProvider) and isinstance(
             rhs, KnownValue
         ):
-            return self._value_from_predicate_provider(lhs_constraint, rhs.val, op)
+            constraint = self._constraint_from_predicate_provider(
+                lhs_constraint, rhs.val, op
+            )
         elif isinstance(rhs_constraint, PredicateProvider) and isinstance(
             lhs, KnownValue
         ):
-            return self._value_from_predicate_provider(rhs_constraint, lhs.val, op)
+            constraint = self._constraint_from_predicate_provider(
+                rhs_constraint, lhs.val, op
+            )
         elif isinstance(rhs, KnownValue):
             constraint = self._constraint_from_compare_op(
                 lhs_node, rhs.val, op, is_right=True
@@ -2862,13 +2886,32 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         else:
             constraint = NULL_CONSTRAINT
-        # is, is not, in, and not in always return a boolean, but the other
-        # comparisons may return arbitrary objects. We should get the
-        # return value out of the dunder methods, but we don't do that yet.
-        if isinstance(op, (ast.Is, ast.IsNot, ast.In, ast.NotIn)):
+        if isinstance(op, (ast.Is, ast.IsNot)):
+            # is and is not always return a boolean and don't forward to a dunder.
+            val = TypedValue(bool)
+        elif isinstance(op, (ast.In, ast.NotIn)):
+            self._visit_binop_internal(
+                rhs_node,
+                Composite(rhs),
+                op,
+                lhs_node,
+                Composite(lhs),
+                parent_node,
+                allow_call=False,
+            )
+            # These always return a bool, regardless of what the dunder does.
             val = TypedValue(bool)
         else:
-            val = AnyValue(AnySource.inference)
+            val = self._visit_binop_internal(
+                lhs_node,
+                Composite(lhs),
+                op,
+                rhs_node,
+                Composite(rhs),
+                parent_node,
+                allow_call=False,
+            )
+
         return annotate_with_constraint(val, constraint)
 
     def _constraint_from_compare_op(
@@ -2939,9 +2982,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
             return Constraint(varname, ConstraintType.predicate, True, predicate_func)
 
-    def _value_from_predicate_provider(
+    def _constraint_from_predicate_provider(
         self, pred: PredicateProvider, other_val: Any, op: ast.AST
-    ) -> Value:
+    ) -> Constraint:
         positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
 
         def predicate_func(value: Value, positive: bool) -> Optional[Value]:
@@ -2957,10 +3000,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         return None
             return value
 
-        constraint = Constraint(
-            pred.varname, ConstraintType.predicate, True, predicate_func
-        )
-        return annotate_with_constraint(AnyValue(AnySource.inference), constraint)
+        return Constraint(pred.varname, ConstraintType.predicate, True, predicate_func)
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Value:
         if isinstance(node.op, ast.Not):
@@ -2996,6 +3036,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         right_composite: Composite,
         source_node: ast.AST,
         is_inplace: bool = False,
+        allow_call: bool = True,
     ) -> Value:
         left = left_composite.value
         right = right_composite.value
@@ -3039,9 +3080,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             imethod,
             rmethod,
         ) = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(op)]
-        allow_call = method not in self.options.get_value_for(DisallowCallsToDunders)
+        allow_call = allow_call and method not in self.options.get_value_for(
+            DisallowCallsToDunders
+        )
 
         if is_inplace:
+            assert imethod is not None, f"no inplace method available for {op}"
             with self.catch_errors() as inplace_errors:
                 inplace_result = self._check_dunder_call(
                     source_node,
@@ -3060,6 +3104,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # them all.
         if isinstance(left, MultiValuedValue) and isinstance(right, MultiValuedValue):
             return AnyValue(AnySource.inference)
+
+        if rmethod is None:
+            return self._check_dunder_call(
+                source_node,
+                left_composite,
+                method,
+                [right_composite],
+                allow_call=allow_call,
+            )
 
         with self.catch_errors() as left_errors:
             left_result = self._check_dunder_call(
