@@ -2891,13 +2891,25 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             val = TypedValue(bool)
         elif isinstance(op, (ast.In, ast.NotIn)):
             self._visit_binop_internal(
-                rhs_node, Composite(rhs), op, lhs_node, Composite(lhs), parent_node, allow_call=False
+                rhs_node,
+                Composite(rhs),
+                op,
+                lhs_node,
+                Composite(lhs),
+                parent_node,
+                allow_call=False,
             )
             # These always return a bool, regardless of what the dunder does.
             val = TypedValue(bool)
         else:
             val = self._visit_binop_internal(
-                lhs_node, Composite(lhs), op, rhs_node, Composite(rhs), parent_node, allow_call=False
+                lhs_node,
+                Composite(lhs),
+                op,
+                rhs_node,
+                Composite(rhs),
+                parent_node,
+                allow_call=False,
             )
 
         return annotate_with_constraint(val, constraint)
@@ -3068,7 +3080,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             imethod,
             rmethod,
         ) = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(op)]
-        allow_call = allow_call and method not in self.options.get_value_for(DisallowCallsToDunders)
+        allow_call = allow_call and method not in self.options.get_value_for(
+            DisallowCallsToDunders
+        )
 
         if is_inplace:
             assert imethod is not None, f"no inplace method available for {op}"
