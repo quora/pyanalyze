@@ -3260,6 +3260,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         node,
                         f"Cannot use {value} in yield from",
                         error_code=ErrorCode.bad_yield_from,
+                        detail=can_assign.display(),
                     )
                     tv_map = {ReturnT: AnyValue(AnySource.error)}
                 else:
@@ -3276,6 +3277,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     node,
                     f"Cannot yield from {value} (expected {expected_yield})",
                     error_code=ErrorCode.incompatible_yield,
+                    detail=can_assign.display(),
                 )
 
             expected_send = self.current_function_info.get_generator_send_type(self)
@@ -3287,6 +3289,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     f"Cannot send {send_type} to a generator (expected"
                     f" {expected_send})",
                     error_code=ErrorCode.incompatible_yield,
+                    detail=can_assign.display(),
                 )
 
         return tv_map.get(ReturnT, AnyValue(AnySource.generic_argument))
@@ -3327,6 +3330,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 f"Cannot assign value of type {value} to yield expression of type"
                 f" {yield_type}",
                 error_code=ErrorCode.incompatible_yield,
+                detail=can_assign.display(),
             )
         return self.current_function_info.get_generator_send_type(self)
 
