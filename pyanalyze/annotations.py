@@ -76,6 +76,7 @@ from .signature import (
 )
 from .value import (
     _HashableValue,
+    TypeVarLike,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -610,12 +611,12 @@ def _type_from_runtime(
         return AnyValue(AnySource.error)
 
 
-def make_type_var_value(tv: TypeVar, ctx: Context) -> TypeVarValue:
+def make_type_var_value(tv: TypeVarLike, ctx: Context) -> TypeVarValue:
     if tv.__bound__ is not None:
         bound = _type_from_runtime(tv.__bound__, ctx)
     else:
         bound = None
-    if tv.__constraints__:
+    if isinstance(tv, TypeVar) and tv.__constraints__:
         constraints = tuple(
             _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
         )

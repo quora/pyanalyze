@@ -2604,7 +2604,7 @@ def replace_known_sequence_value(value: Value) -> Value:
     return value
 
 
-def extract_typevars(value: Value) -> Iterable["TypeVar"]:
+def extract_typevars(value: Value) -> Iterable[TypeVarLike]:
     for val in value.walk_values():
         if isinstance(val, TypeVarValue):
             yield val.typevar

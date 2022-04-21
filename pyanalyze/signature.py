@@ -59,6 +59,7 @@ from .type_evaluation import (
 )
 from .typevar import resolve_bounds_map
 from .value import (
+    TypeVarLike,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -522,10 +523,10 @@ class Signature:
     """Whether type checking can call the actual function to retrieve a precise return value."""
     evaluator: Optional[Evaluator] = None
     """Type evaluator for this function."""
-    typevars_of_params: Dict[str, List["TypeVar"]] = field(
+    typevars_of_params: Dict[str, List[TypeVarLike]] = field(
         init=False, default_factory=dict, repr=False, compare=False, hash=False
     )
-    all_typevars: Set["TypeVar"] = field(
+    all_typevars: Set[TypeVarLike] = field(
         init=False, default_factory=set, repr=False, compare=False, hash=False
     )
 
