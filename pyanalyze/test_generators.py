@@ -2,7 +2,7 @@
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .value import KnownValue, TypedValue
+from .value import AnySource, AnyValue, KnownValue, TypedValue
 
 
 class TestGenerator(TestNameCheckVisitorBase):
@@ -42,4 +42,4 @@ class TestGenerator(TestNameCheckVisitorBase):
 
         def caller() -> Iterable[int]:
             x = yield from gen(True)
-            assert_is_value(x, KnownValue(None))
+            assert_is_value(x, AnyValue(AnySource.generic_argument))
