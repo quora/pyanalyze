@@ -98,6 +98,7 @@ class ErrorCode(enum.Enum):
     already_declared = 78
     invalid_annotated_assignment = 79
     unused_assignment = 80
+    incompatible_yield = 81
 
 
 # Allow testing unannotated functions without too much fuss
@@ -217,6 +218,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.already_declared: "Name is already declared",
     ErrorCode.invalid_annotated_assignment: "Invalid annotated assignment",
     ErrorCode.unused_assignment: "Assigned value is never used",
+    ErrorCode.incompatible_yield: "Incompatible yield type",
 }
 
 

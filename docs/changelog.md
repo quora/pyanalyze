@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Type check `yield`, `yield from`, and `return` nodes in generators (#529)
 - Type check calls to comparison operators (#527)
 - Retrieve attributes from stubs even when a runtime
   equivalent exists (#526)

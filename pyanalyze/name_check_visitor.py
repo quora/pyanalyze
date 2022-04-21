@@ -82,7 +82,12 @@ from .functions import (
     FunctionInfo,
     FunctionNode,
     FunctionResult,
+    GeneratorValue,
     IMPLICIT_CLASSMETHODS,
+    IterableValue,
+    ReturnT,
+    SendT,
+    YieldT,
 )
 from .options import (
     add_arguments,
@@ -1021,6 +1026,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     current_class: Optional[type]
     current_enum_members: Optional[Dict[object, str]]
     current_function: Optional[object]
+    current_function_info: Optional[FunctionInfo]
     current_function_name: Optional[str]
     error_for_implicit_any: bool
     expected_return_value: Optional[Value]
@@ -1081,6 +1087,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # current class (for inferring the type of cls and self arguments)
         self.current_class = None
         self.current_function_name = None
+        self.current_function_info = None
 
         # async
         self.async_kind = AsyncFunctionKind.non_async
@@ -1712,6 +1719,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self, "current_function", potential_function
         ), qcore.override(
             self, "expected_return_value", expected_return
+        ), qcore.override(
+            self, "current_function_info", info
         ):
             result = self._visit_function_body(info)
 
@@ -1831,7 +1840,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_Lambda(self, node: ast.Lambda) -> Value:
         with self.asynq_checker.set_func_name("<lambda>"):
             info = compute_function_info(node, self)
-            result = self._visit_function_body(info)
+            with qcore.override(self, "current_function_info", info):
+                result = self._visit_function_body(info)
             return compute_value_of_function(info, self, result=result.return_value)
 
     def _visit_function_body(self, function_info: FunctionInfo) -> FunctionResult:
@@ -3236,15 +3246,53 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_YieldFrom(self, node: ast.YieldFrom) -> Value:
         self.is_generator = True
         value = self.visit(node.value)
-        if not TypedValue(collections.abc.Iterable).is_assignable(
-            value, self
-        ) and not AwaitableValue.is_assignable(value, self):
-            self._show_error_if_checking(
-                node,
-                f"Cannot use {value} in yield from",
-                error_code=ErrorCode.bad_yield_from,
-            )
-        return AnyValue(AnySource.inference)
+        tv_map = get_tv_map(GeneratorValue, value, self)
+        if isinstance(tv_map, CanAssignError):
+            can_assign = get_tv_map(AwaitableValue, value, self)
+            if not isinstance(can_assign, CanAssignError):
+                tv_map = {
+                    ReturnT: can_assign.get(T, AnyValue(AnySource.generic_argument))
+                }
+            else:
+                can_assign = get_tv_map(IterableValue, value, self)
+                if isinstance(can_assign, CanAssignError):
+                    self._show_error_if_checking(
+                        node,
+                        f"Cannot use {value} in yield from",
+                        error_code=ErrorCode.bad_yield_from,
+                        detail=can_assign.display(),
+                    )
+                    tv_map = {ReturnT: AnyValue(AnySource.error)}
+                else:
+                    tv_map = {
+                        YieldT: can_assign.get(T, AnyValue(AnySource.generic_argument))
+                    }
+
+        if self.current_function_info is not None:
+            expected_yield = self.current_function_info.get_generator_yield_type(self)
+            yield_type = tv_map.get(YieldT, AnyValue(AnySource.generic_argument))
+            can_assign = expected_yield.can_assign(yield_type, self)
+            if isinstance(can_assign, CanAssignError):
+                self._show_error_if_checking(
+                    node,
+                    f"Cannot yield from {value} (expected {expected_yield})",
+                    error_code=ErrorCode.incompatible_yield,
+                    detail=can_assign.display(),
+                )
+
+            expected_send = self.current_function_info.get_generator_send_type(self)
+            send_type = tv_map.get(SendT, AnyValue(AnySource.generic_argument))
+            can_assign = send_type.can_assign(expected_send, self)
+            if isinstance(can_assign, CanAssignError):
+                self._show_error_if_checking(
+                    node,
+                    f"Cannot send {send_type} to a generator (expected"
+                    f" {expected_send})",
+                    error_code=ErrorCode.incompatible_yield,
+                    detail=can_assign.display(),
+                )
+
+        return tv_map.get(ReturnT, AnyValue(AnySource.generic_argument))
 
     def visit_Yield(self, node: ast.Yield) -> Value:
         if self._is_checking():
@@ -3260,7 +3308,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if node.value is not None:
                 value = self.visit(node.value)
             else:
-                value = None
+                value = KnownValue(None)
 
         if node.value is None and self.async_kind in (
             AsyncFunctionKind.normal,
@@ -3270,10 +3318,21 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.is_generator = True
 
         # unwrap the results of async yields
-        if self.async_kind != AsyncFunctionKind.non_async and value is not None:
+        if self.async_kind != AsyncFunctionKind.non_async:
             return self._unwrap_yield_result(node, value)
-        else:
+        if self.current_function_info is None:
             return AnyValue(AnySource.inference)
+        yield_type = self.current_function_info.get_generator_yield_type(self)
+        can_assign = yield_type.can_assign(value, self)
+        if isinstance(can_assign, CanAssignError):
+            self._show_error_if_checking(
+                node,
+                f"Cannot assign value of type {value} to yield expression of type"
+                f" {yield_type}",
+                error_code=ErrorCode.incompatible_yield,
+                detail=can_assign.display(),
+            )
+        return self.current_function_info.get_generator_send_type(self)
 
     def _unwrap_yield_result(self, node: ast.AST, value: Value) -> Value:
         if isinstance(value, AsyncTaskIncompleteValue):
@@ -3335,7 +3394,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             self._show_error_if_checking(
                 node,
-                "Invalid value yielded: %r" % (value,),
+                f"Invalid value yielded: {value}",
                 error_code=ErrorCode.bad_async_yield,
             )
             return AnyValue(AnySource.error)
@@ -3354,11 +3413,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._show_error_if_checking(
                 node, error_code=ErrorCode.no_return_may_return
             )
-        elif (
-            # TODO check generator types properly
-            not (self.is_generator and self.async_kind == AsyncFunctionKind.non_async)
-            and self.expected_return_value is not None
-        ):
+        elif self.is_generator and self.async_kind == AsyncFunctionKind.non_async:
+            if self.current_function_info is not None:
+                expected = self.current_function_info.get_generator_return_type(self)
+                can_assign = expected.can_assign(value, self)
+                if isinstance(can_assign, CanAssignError):
+                    self._show_error_if_checking(
+                        node,
+                        f"Incompatible return value {value} (expected {expected})",
+                        error_code=ErrorCode.incompatible_return_value,
+                        detail=can_assign.display(),
+                    )
+        elif self.expected_return_value is not None:
             can_assign = self.expected_return_value.can_assign(value, self)
             if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
