@@ -352,6 +352,18 @@ class TestClassInstantiation(TestNameCheckVisitorBase):
             assert_is_value(t(1), TypedValue(A))
             t("x")  # E: incompatible_argument
 
+    @assert_passes()
+    def test_constructor_forward_refs(self):
+        import pathlib
+
+        class Capybara:
+            def __init__(self, p: "pathlib.Path") -> None:
+                pass
+
+        def capybara():
+            Capybara(3)  # E: incompatible_argument
+            Capybara(pathlib.Path("x"))
+
 
 class TestFunctionsSafeToCall(TestNameCheckVisitorBase):
     @assert_passes()
