@@ -6,6 +6,7 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
+    GenericValue,
     KnownValue,
     MultiValuedValue,
     TypedValue,
@@ -259,6 +260,34 @@ class TestSolve(TestNameCheckVisitorBase):
         def capybara():
             m = min(E)
             assert_is_value(m, TypedValue(E))
+
+    @assert_passes()
+    def test_constraints(self):
+        from typing import List, TypeVar
+
+        LT = TypeVar("LT", List[int], List[str])
+
+        def g(x: LT) -> LT:
+            return x
+
+        def pacarana() -> None:
+            assert_is_value(g([]), AnyValue(AnySource.inference))
+            assert_is_value(g([1]), GenericValue(list, [TypedValue(int)]))
+
+    @assert_passes()
+    def test_redundant_constraints(self):
+        from typing import TypeVar
+        from typing_extensions import SupportsIndex
+
+        T = TypeVar("T", int, float, SupportsIndex)
+
+        def f(x: T) -> T:
+            return x
+
+        def capybara(si: SupportsIndex):
+            assert_is_value(f(1), TypedValue(int))
+            assert_is_value(f(si), TypedValue(SupportsIndex))
+            assert_is_value(f(1.0), TypedValue(float))
 
 
 class TestAnnotated(TestNameCheckVisitorBase):

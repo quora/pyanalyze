@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improve `TypeVar` solution heuristic for constrained
+  typevars with multiple solutions (#532)
 - Fix resolution of stringified annotations in `__init__` methods (#530)
 - Type check `yield`, `yield from`, and `return` nodes in generators (#529)
 - Type check calls to comparison operators (#527)
