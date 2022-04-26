@@ -124,8 +124,16 @@ class TestOperators(TestNameCheckVisitorBase):
     def test_union(self):
         from typing import Union
 
-        def capybara(x: Union[int, str]) -> None:
-            assert_is_value(x * 3, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+        def capybara(
+            x: Union[int, str],
+            y: Union[int, str],
+            z: Union[int, float],
+            a: Union[int, float],
+        ) -> None:
+            assert_is_value(x * 3, TypedValue(int) | TypedValue(str))
+
+            x + y  # E: unsupported_operation
+            assert_is_value(z + a, TypedValue(int) | TypedValue(float))
 
     @assert_passes()
     def test_rop(self):

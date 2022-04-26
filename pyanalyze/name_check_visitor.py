@@ -3110,12 +3110,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
             return value
 
-        (
-            description,
-            method,
-            imethod,
-            rmethod,
-        ) = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(op)]
+        (_, method, imethod, _) = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(op)]
         allow_call = allow_call and method not in self.options.get_value_for(
             DisallowCallsToDunders
         )
@@ -3133,14 +3128,31 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if not inplace_errors:
                 return inplace_result
 
-        # TODO handle MVV properly here. The naive approach (removing this check)
-        # leads to an error on Union[int, float] + Union[int, float], presumably because
-        # some combinations need the left and some need the right variant.
-        # A proper solution may be to take the product of the MVVs on both sides and try
-        # them all.
-        if isinstance(left, MultiValuedValue) and isinstance(right, MultiValuedValue):
-            return AnyValue(AnySource.inference)
+        possibilities = []
+        for subval in flatten_values(left):
+            result = self._visit_binop_no_mvv(
+                Composite(subval, left_composite.varname, left_composite.node),
+                op,
+                right_composite,
+                source_node,
+                allow_call,
+            )
+            possibilities.append(result)
+        return unite_values(*possibilities)
 
+    def _visit_binop_no_mvv(
+        self,
+        left_composite: Composite,
+        op: ast.AST,
+        right_composite: Composite,
+        source_node: ast.AST,
+        allow_call: bool = True,
+    ) -> Value:
+        left = left_composite.value
+        right = right_composite.value
+        (description, method, _, rmethod) = BINARY_OPERATION_TO_DESCRIPTION_AND_METHOD[
+            type(op)
+        ]
         if rmethod is None:
             return self._check_dunder_call(
                 source_node,
