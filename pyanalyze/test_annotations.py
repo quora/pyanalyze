@@ -904,9 +904,10 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(f(b"x"), TypedValue(bytes))
             assert_is_value(f(s), TypedValue(str))
             assert_is_value(f(b), TypedValue(bytes))
-            f(sb)  # E: incompatible_argument
+            result = f(sb)  # E: incompatible_argument
+            assert_is_value(result, AnyValue(AnySource.error))
             f(3)  # E: incompatible_argument
-            assert_is_value(f(unannotated), AnyValue(AnySource.inference))
+            assert_is_value(f(unannotated), AnyValue(AnySource.unannotated))
 
     @assert_passes()
     def test_constraint_in_typeshed(self):

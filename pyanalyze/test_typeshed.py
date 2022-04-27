@@ -667,9 +667,9 @@ class TestParamSpec(TestNameCheckVisitorBase):
             wrapped("x")  # E: incompatible_argument
 
 
-class TestOpen(TestNameCheckVisitorBase):
+class TestIntegration(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_basic(self):
+    def test_open(self):
         import io
         from typing import Any, BinaryIO, IO
 
@@ -682,3 +682,12 @@ class TestOpen(TestNameCheckVisitorBase):
             assert_type(open("x", "rb", buffering=0), io.FileIO)
             assert_type(open("x", "rb", buffering=buffering), BinaryIO)
             assert_type(open("x", mode, buffering=buffering), IO[Any])
+
+    @assert_passes()
+    def test_itertools_count(self):
+        import itertools
+
+        def capybara():
+            assert_is_value(
+                itertools.count(1), GenericValue(itertools.count, [TypedValue(int)])
+            )
