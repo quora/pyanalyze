@@ -316,6 +316,20 @@ class TestSolve(TestNameCheckVisitorBase):
 
         def capybara(si: SupportsIndex):
             assert_is_value(f(1), AnyValue(AnySource.inference))
+    
+    @assert_passes()
+    def test_or_bounds(self):
+        from typing import Dict, Mapping, Tuple, TypeVar, Union
+
+        T = TypeVar("T")
+        U = TypeVar("U")
+
+        def capybara(d: Union[Dict[T, U], Mapping[U, T]]) -> Tuple[T, U]:
+            raise NotImplementedError
+        
+        def caller():
+            result = capybara({"x": 1})
+            assert_is_value(result, make_simple_sequence(tuple, [AnyValue(AnySource.generic_argument), AnyValue(AnySource.generic_argument)]))
 
     @assert_passes()
     def test_or_bounds(self):
