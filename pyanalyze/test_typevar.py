@@ -2,6 +2,7 @@
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes, skip_before
+from .tests import make_simple_sequence
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -315,6 +316,20 @@ class TestSolve(TestNameCheckVisitorBase):
 
         def capybara(si: SupportsIndex):
             assert_is_value(f(1), AnyValue(AnySource.inference))
+    
+    @assert_passes()
+    def test_or_bounds(self):
+        from typing import Dict, Mapping, Tuple, TypeVar, Union
+
+        T = TypeVar("T")
+        U = TypeVar("U")
+
+        def capybara(d: Union[Dict[T, U], Mapping[U, T]]) -> Tuple[T, U]:
+            raise NotImplementedError
+        
+        def caller():
+            result = capybara({"x": 1})
+            assert_is_value(result, make_simple_sequence(tuple, [AnyValue(AnySource.generic_argument), AnyValue(AnySource.generic_argument)]))
 
 
 class TestAnnotated(TestNameCheckVisitorBase):
