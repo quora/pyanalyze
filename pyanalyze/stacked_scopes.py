@@ -119,9 +119,6 @@ class CompositeVariable:
     varname: str
     attributes: Sequence[CompositeIndex]
 
-    def extend_with(self, index: CompositeIndex) -> "CompositeVariable":
-        return CompositeVariable(self.varname, (*self.attributes, index))
-
     def __str__(self) -> str:
         pieces = [self.varname]
         for attr in self.attributes:
