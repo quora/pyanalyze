@@ -98,8 +98,6 @@ class Value:
                     # Adding an additional layer here isn't helpful
                     return can_assign
                 bounds_maps.append(can_assign)
-            if not bounds_maps:
-                return CanAssignError(f"Cannot assign {other} to {self}")
             return unify_bounds_maps(bounds_maps)
         elif isinstance(other, (AnnotatedValue, TypeVarValue)):
             return other.can_be_assigned(self, ctx)
