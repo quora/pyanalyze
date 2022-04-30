@@ -55,6 +55,8 @@ def test_any_value() -> None:
     assert_can_assign(any, KnownValue(1))
     assert_can_assign(any, TypedValue(int))
     assert_can_assign(any, MultiValuedValue([KnownValue(1), TypedValue(int)]))
+    assert str(any) == "Any[unannotated]"
+    assert str(AnyValue(AnySource.default)) == "Any"
 
 
 def test_known_value() -> None:
