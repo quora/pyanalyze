@@ -289,6 +289,33 @@ class TestSolve(TestNameCheckVisitorBase):
             assert_is_value(f(si), TypedValue(SupportsIndex))
             assert_is_value(f(1.0), TypedValue(float))
 
+    @assert_passes()
+    def test_lots_of_constraints(self):
+        from typing import TypeVar, Union
+        from typing_extensions import SupportsIndex
+
+        T = TypeVar(
+            "T",
+            Union[int, str],
+            Union[int, float],
+            Union[int, range],
+            Union[int, bytes],
+            SupportsIndex,
+            Union[int, bytearray],
+            Union[int, memoryview],
+            Union[int, list],
+            Union[int, tuple],
+            Union[int, set],
+            Union[int, frozenset],
+            Union[int, dict],
+        )
+
+        def f(x: T) -> T:
+            return x
+
+        def capybara(si: SupportsIndex):
+            assert_is_value(f(1), AnyValue(AnySource.inference))
+
 
 class TestAnnotated(TestNameCheckVisitorBase):
     @assert_passes()
