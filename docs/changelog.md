@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix type checking of binary operators involving unions (#531)
 - Improve `TypeVar` solution heuristic for constrained
   typevars with multiple solutions (#532)
 - Fix resolution of stringified annotations in `__init__` methods (#530)

@@ -1129,10 +1129,7 @@ class TestIterationTarget(TestNameCheckVisitorBase):
             )
 
             lst3 = [i + j * 10 for i in range(2) for j in range(3)]
-            # TODO: should be list[int] instead
-            assert_is_value(
-                lst3, SequenceValue(list, [(True, AnyValue(AnySource.inference))])
-            )
+            assert_is_value(lst3, SequenceValue(list, [(True, TypedValue(int))]))
 
     @assert_passes()
     def test_dict_comprehension(self):
