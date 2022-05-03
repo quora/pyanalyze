@@ -185,3 +185,36 @@ class TestDecorators(TestNameCheckVisitorBase):
         @asynccontextmanager
         async def make_cm() -> AsyncIterator[None]:
             yield
+
+
+class TestAsyncGenerator(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_not_a_generator(self):
+        from collections.abc import Awaitable
+
+        async def capybara() -> None:
+            async def agen():
+                yield 1
+
+            def gen():
+                yield 2
+
+            print(agen, gen, lambda: (yield 3))
+
+        def caller() -> None:
+            x = capybara()
+            assert_is_value(x, GenericValue(Awaitable, [KnownValue(None)]))
+
+    @assert_passes()
+    def test_is_a_generator(self):
+        import collections.abc
+        from typing import AsyncIterator
+
+        async def capybara() -> AsyncIterator[int]:
+            yield 1
+
+        def caller() -> None:
+            x = capybara()
+            assert_is_value(
+                x, GenericValue(collections.abc.AsyncIterator, [TypedValue(int)])
+            )

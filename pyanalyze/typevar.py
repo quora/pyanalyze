@@ -114,8 +114,36 @@ def solve(
             for option, can_assign in zip(options, can_assigns)
             if not isinstance(can_assign, CanAssignError)
         ]
+        # If there's only one solution, pick it.
         if len(available) == 1:
             return available[0]
-        # TODO consider returning unite_values(*available) here instead.
+        # If we inferred Any, keep it; all the solutions will be valid, and
+        # picking one will lead to weird errors down the line.
+        if isinstance(solution, AnyValue):
+            return solution
+        available = remove_redundant_solutions(available, ctx)
+        if len(available) == 1:
+            return available[0]
+        # If there are still multiple options, we fall back to Any.
         return AnyValue(AnySource.inference)
     return solution
+
+
+def remove_redundant_solutions(
+    solutions: Sequence[Value], ctx: CanAssignContext
+) -> Sequence[Value]:
+    # This is going to be quadratic, so don't do it when there's too many
+    # opttions.
+    initial_count = len(solutions)
+    if initial_count > 10:
+        return solutions
+
+    temp_solutions = list(solutions)
+    for i in range(initial_count):
+        sol = temp_solutions[i]
+        for j, other in enumerate(temp_solutions):
+            if i == j or other is None:
+                continue
+            if sol.is_assignable(other, ctx) and not other.is_assignable(sol, ctx):
+                temp_solutions[i] = None
+    return [sol for sol in temp_solutions if sol is not None]

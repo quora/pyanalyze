@@ -231,6 +231,18 @@ class TestCompare(TestNameCheckVisitorBase):
             s > None
             s > os
 
+    @assert_passes()
+    def test_failing_eq(self):
+        class FlakyCapybara:
+            def __eq__(self, other: object) -> bool:
+                raise IndentationError
+
+        fc = FlakyCapybara()
+
+        def capybara():
+            if fc == 3:
+                print(fc)  # should not fail
+
 
 class TestAdd(TestNameCheckVisitorBase):
     @assert_passes()

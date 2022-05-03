@@ -2,10 +2,12 @@
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes, skip_before
+from .tests import make_simple_sequence
 from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
+    GenericValue,
     KnownValue,
     MultiValuedValue,
     TypedValue,
@@ -259,6 +261,84 @@ class TestSolve(TestNameCheckVisitorBase):
         def capybara():
             m = min(E)
             assert_is_value(m, TypedValue(E))
+
+    @assert_passes()
+    def test_constraints(self):
+        from typing import List, TypeVar
+
+        LT = TypeVar("LT", List[int], List[str])
+
+        def g(x: LT) -> LT:
+            return x
+
+        def pacarana() -> None:
+            assert_is_value(g([]), AnyValue(AnySource.inference))
+            assert_is_value(g([1]), GenericValue(list, [TypedValue(int)]))
+
+    @assert_passes()
+    def test_redundant_constraints(self):
+        from typing import TypeVar
+        from typing_extensions import SupportsIndex
+
+        T = TypeVar("T", int, float, SupportsIndex)
+
+        def f(x: T) -> T:
+            return x
+
+        def capybara(si: SupportsIndex):
+            assert_is_value(f(1), TypedValue(int))
+            assert_is_value(f(si), TypedValue(SupportsIndex))
+            assert_is_value(f(1.0), TypedValue(float))
+
+    @assert_passes()
+    def test_lots_of_constraints(self):
+        from typing import TypeVar, Union
+        from typing_extensions import SupportsIndex
+
+        T = TypeVar(
+            "T",
+            Union[int, str],
+            Union[int, float],
+            Union[int, range],
+            Union[int, bytes],
+            SupportsIndex,
+            Union[int, bytearray],
+            Union[int, memoryview],
+            Union[int, list],
+            Union[int, tuple],
+            Union[int, set],
+            Union[int, frozenset],
+            Union[int, dict],
+        )
+
+        def f(x: T) -> T:
+            return x
+
+        def capybara(si: SupportsIndex):
+            assert_is_value(f(1), AnyValue(AnySource.inference))
+
+    @assert_passes()
+    def test_or_bounds(self):
+        from typing import Dict, Mapping, Tuple, TypeVar, Union
+
+        T = TypeVar("T")
+        U = TypeVar("U")
+
+        def capybara(d: Union[Dict[T, U], Mapping[U, T]]) -> Tuple[T, U]:
+            raise NotImplementedError
+
+        def caller():
+            result = capybara({"x": 1})
+            assert_is_value(
+                result,
+                make_simple_sequence(
+                    tuple,
+                    [
+                        AnyValue(AnySource.generic_argument),
+                        AnyValue(AnySource.generic_argument),
+                    ],
+                ),
+            )
 
 
 class TestAnnotated(TestNameCheckVisitorBase):
