@@ -446,12 +446,10 @@ class YieldChecker:
             if adjacent:
                 return self._merge_assign_nodes(first_yield, second_yield)
             else:
-                first_indent = first_yield.get_indentation()
-                second_indent = second_yield.get_indentation()
-                assert first_indent == second_indent, (
-                    f"cannot combine yields {first_yield} and {second_yield} across"
-                    " indentation levels"
-                )
+                # give up if the two are at different indentations
+                # this probably means the one is in a try-except
+                if first_yield.get_indentation() != second_yield.get_indentation():
+                    return None
                 # if there is intervening code, first move the first yield to right before the
                 # second one
                 to_delete = list(

@@ -498,6 +498,29 @@ class TestBatchingYields(TestNameCheckVisitorBase):
             x += yield async_fn.asynq(1)
             yield async_fn.asynq(x)
 
+    @assert_passes()
+    def test_combine_in_try(self):
+        from asynq import asynq
+        from pyanalyze.tests import async_fn
+
+        @asynq()
+        def capybara():
+            x = yield async_fn.asynq(2)
+            try:
+                y = yield async_fn.asynq(1)  # E: unnecessary_yield
+            except OverflowError:
+                y = 3
+            return (x, y)
+
+        @asynq()
+        def pacarana():
+            try:
+                y = yield async_fn.asynq(1)
+            except OverflowError:
+                y = 3
+            x = yield async_fn.asynq(2)
+            return (x, y)
+
 
 class TestMissingAsync(TestNameCheckVisitorBase):
     @assert_passes()
