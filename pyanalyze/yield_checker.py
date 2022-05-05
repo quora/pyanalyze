@@ -99,16 +99,9 @@ class YieldInfo:
             # can be combined with another yield
             return ([self.statement_node.targets[0]], [self.yield_node.value])
 
-        # not an assign statement
-        # e.g. yield x.asynq()
-        if not isinstance(self.yield_node.value, ast.Tuple):
-            # single entity yielded
-            return ([ast.Name(id="_", ctx=ast.Store())], [self.yield_node.value])
-        # multiple values yielded e.g. yield x.asynq(), z.asynq()
-        return (
-            [ast.Name(id="_", ctx=ast.Store()) for _ in self.yield_node.value.elts],
-            self.yield_node.value.elts,
-        )
+        else:
+            # Apparently never happens
+            assert False, f"Unrecognized node {self.statement_node}"
 
 
 class VarnameGenerator:
@@ -387,11 +380,9 @@ class YieldChecker:
         self, unused: Sequence[object], node: ast.Yield, current_statement: ast.stmt
     ) -> None:
         if not unused:
-            message = "Unnecessary yield: += assignments can be combined"
+            assert False, "unused must be nonempty"
         elif len(unused) == 1:
-            message = "Unnecessary yield: %s was not used before this yield" % (
-                unused[0],
-            )
+            message = f"Unnecessary yield: {unused[0]} was not used before this yield"
         else:
             unused_str = ", ".join(map(str, unused))
             message = f"Unnecessary yield: {unused_str} were not used before this yield"
@@ -402,11 +393,7 @@ class YieldChecker:
 
     def _lines_of_node(self, yield_node: ast.Yield) -> List[int]:
         """Returns the lines that the given yield node occupies."""
-        # see if it has a parent assign node
-        if hasattr(yield_node, "parent_assign_node"):
-            first_lineno = yield_node.parent_assign_node.lineno
-        else:
-            first_lineno = yield_node.lineno
+        first_lineno = yield_node.lineno
         lines = self.visitor._lines()
         first_line = lines[first_lineno - 1]
         indent = get_indentation(first_line)
@@ -415,10 +402,10 @@ class YieldChecker:
             if last_lineno - 1 >= len(lines):
                 break
             last_line = lines[last_lineno - 1]
-            last_line_indent = get_indentation(last_line)
             # if it is just spaces then stop
             if last_line.isspace():
                 break
+            last_line_indent = get_indentation(last_line)
             if last_line_indent > indent:
                 last_lineno += 1
             elif (
@@ -428,7 +415,8 @@ class YieldChecker:
             ):
                 last_lineno += 1
             else:
-                break
+                # Seems like a coverage bug, tests fail if I put "assert False" here.
+                break  # pragma: no cover
         return list(range(first_lineno, last_lineno))
 
     def _create_replacement_for_yield_nodes(
@@ -443,12 +431,8 @@ class YieldChecker:
         )
         second_yield = YieldInfo(second_node, second_parent, lines)
 
-        # this shouldn't happen in async code but test_scope checks for it elsewhere
-        if (
-            first_yield.yield_node.value is None
-            or second_yield.yield_node.value is None
-        ):
-            return None
+        assert first_yield.yield_node.value is not None, repr(first_yield)
+        assert second_yield.yield_node.value is not None, repr(second_yield)
 
         # check whether there is any code between the two yield statements
         lines_in_between = list(
@@ -463,7 +447,7 @@ class YieldChecker:
                 return self._merge_assign_nodes(first_yield, second_yield)
             else:
                 # give up if the two are at different indentations
-                # this probably means the second one is in a with context or try-except
+                # this probably means the one is in a try-except
                 if first_yield.get_indentation() != second_yield.get_indentation():
                     return None
                 # if there is intervening code, first move the first yield to right before the
@@ -484,7 +468,10 @@ class YieldChecker:
             new_assign_lines, replace_yield = self._move_out_var_from_yield(
                 second_yield, indentation
             )
-            if replace_yield is None:
+            # Happens only if there is no current statement or if ast_decompiler
+            # doesn't know how to decompile the node. Neither condition should
+            # normally happen.
+            if replace_yield is None:  # pragma: no cover
                 return None
 
             between_lines = lines[
@@ -506,7 +493,8 @@ class YieldChecker:
             lines_to_add, replace_first = self._move_out_var_from_yield(
                 first_yield, indentation
             )
-            if replace_first is None:
+            # As above
+            if replace_first is None:  # pragma: no cover
                 return None
 
             if second_yield.is_assign_or_expr():
@@ -515,18 +503,17 @@ class YieldChecker:
                     second_yield.line_range[0] - 1 : second_yield.line_range[-1]
                 ]
                 second_indentation = get_indentation(second_lines[0])
-                difference = indentation - second_indentation
-                if difference > 0:
-                    second_lines = [" " * difference + line for line in second_lines]
-                elif difference < 0:
-                    second_lines = [line[(-difference):] for line in second_lines]
+                assert (
+                    indentation == second_indentation
+                ), "should never combine indented yield"
                 lines_to_add += second_lines
                 lines_for_second_yield = []
             else:
                 second_assign_lines, replace_second = self._move_out_var_from_yield(
                     second_yield, indentation
                 )
-                if replace_second is None:
+                # As above
+                if replace_second is None:  # pragma: no cover
                     return None
                 lines_to_add += second_assign_lines
                 lines_for_second_yield = replace_second.lines_to_add
