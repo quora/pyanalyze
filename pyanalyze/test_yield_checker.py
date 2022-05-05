@@ -648,9 +648,7 @@ class TestDuplicateYield(TestNameCheckVisitorBase):
         def way_too_many(oid, oid2):
             yield async_fn.asynq(oid), async_fn.asynq(  # E: duplicate_yield
                 oid
-            ), async_fn.asynq(
-                oid2
-            )
+            ), async_fn.asynq(oid2)
             len((yield async_fn.asynq(oid), async_fn.asynq(oid)))  # E: duplicate_yield
 
         @asynq()
