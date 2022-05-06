@@ -190,7 +190,7 @@ def get_pure_async_equivalent(value: Value) -> str:
     """Returns the pure-async equivalent of an async function."""
     assert is_impure_async_fn(value), f"{value} is not an impure async function"
     if isinstance(value, KnownValue):
-        return "%s.asynq" % (_stringify_obj(value.val),)
+        return f"{_stringify_obj(value.val)}.asynq"
     elif isinstance(value, UnboundMethodValue):
         return _stringify_async_fn(
             UnboundMethodValue(value.attr_name, value.composite, "asynq")
@@ -221,13 +221,13 @@ def _stringify_obj(obj: Any) -> str:
     if (inspect.isbuiltin(obj) and obj.__self__ is not None) or isinstance(
         obj, types.MethodType
     ):
-        return "%s.%s" % (_stringify_obj(obj.__self__), obj.__name__)
+        return f"{_stringify_obj(obj.__self__)}.{obj.__name__}"
     elif hasattr(obj, "decorator") and hasattr(obj, "instance"):
         if hasattr(obj.instance, "__name__"):
             cls = obj.instance
         else:
             cls = type(obj.instance)
-        return "%s.%s" % (_stringify_obj(cls), obj.decorator.fn.__name__)
+        return f"{_stringify_obj(cls)}.{obj.decorator.fn.__name__}"
     elif isinstance(obj, super):
         # self might not always be correct, but it's close enough
         return "super(%s, self)" % _stringify_obj(obj.__self_class__)
