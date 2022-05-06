@@ -2206,7 +2206,7 @@ class OverloadedSignature:
 
         # None of the signatures matched
         errors = list(itertools.chain.from_iterable(errors_per_overload))
-        codes = set(error["error_code"] for error in errors)
+        codes = {error["error_code"] for error in errors}
         if len(codes) == 1:
             (error_code,) = codes
         else:

@@ -190,7 +190,7 @@ class TypeshedFinder:
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
             return
-        print("%s: %r" % (message, obj))
+        print(f"{message}: {obj!r}")
 
     def get_argspec(
         self,

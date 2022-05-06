@@ -810,7 +810,7 @@ class ClassAttributeChecker:
                 # server calls will always show up as unused here
                 if safe_getattr(safe_getattr(typ, attr, None), "server_call", False):
                     continue
-                print("Unused method: %r.%s" % (typ, attr))
+                print(f"Unused method: {typ!r}.{attr}")
 
     # sort by module + name in order to get errors in a reasonable order
     def _cls_sort(self, pair: Tuple[Any, Any]) -> Tuple[str, ...]:
@@ -951,7 +951,7 @@ class ClassAttributeChecker:
 _AstType = Union[Type[ast.AST], Tuple[Type[ast.AST], ...]]
 
 
-class StackedContexts(object):
+class StackedContexts:
     """Object to keep track of a stack of states.
 
     This is used to indicate all the AST node types that are parents of the node being examined.
@@ -1271,7 +1271,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         except Exception as e:
             self.show_error(
                 None,
-                "%s\nInternal error: %r" % (traceback.format_exc(), e),
+                f"{traceback.format_exc()}\nInternal error: {e!r}",
                 error_code=ErrorCode.internal_error,
             )
         # Recover memory used for the AST. We keep the visitor object around later in order
@@ -1308,7 +1308,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         except Exception as e:
             self.show_error(
                 node,
-                "%s\nInternal error: %r" % (traceback.format_exc(), e),
+                f"{traceback.format_exc()}\nInternal error: {e!r}",
                 error_code=ErrorCode.internal_error,
             )
             ret = AnyValue(AnySource.error)
@@ -1511,7 +1511,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         self.show_error(
             node,
-            "Name {} is already defined".format(varname),
+            f"Name {varname} is already defined",
             error_code=ErrorCode.class_variable_redefinition,
         )
 
@@ -2688,7 +2688,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if already_exists:
                 self._show_error_if_checking(
                     key_node,
-                    "Duplicate dictionary key %r" % (key,),
+                    f"Duplicate dictionary key {key!r}",
                     ErrorCode.duplicate_dict_key,
                 )
             ret[key] = value
@@ -3794,7 +3794,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if not (isinstance(val, type) and issubclass(val, BaseException)):
             self._show_error_if_checking(
                 node,
-                "%r is not an exception class" % (val,),
+                f"{val!r} is not an exception class",
                 error_code=ErrorCode.bad_except_handler,
             )
             return False
@@ -4235,7 +4235,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if method_object is UNINITIALIZED_VALUE:
             self.show_error(
                 node,
-                "Object of type %s does not support %r" % (callee_val, method_name),
+                f"Object of type {callee_val} does not support {method_name!r}",
                 error_code=ErrorCode.unsupported_operation,
             )
         return method_object
@@ -4489,7 +4489,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         self._show_error_if_checking(
             node,
-            "%s has no attribute %r" % (root_value, attr),
+            f"{root_value} has no attribute {attr!r}",
             ErrorCode.undefined_attribute,
         )
         return AnyValue(AnySource.error)

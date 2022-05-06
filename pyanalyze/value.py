@@ -481,7 +481,7 @@ class KnownValue(Value):
         if self.val is None:
             return "None"
         else:
-            return "Literal[%r]" % (self.val,)
+            return f"Literal[{self.val!r}]"
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "KnownValue":
         if not typevars or not callable(self.val):
@@ -582,7 +582,7 @@ class UnboundMethodValue(Value):
         )
 
     def __str__(self) -> str:
-        return "<method %s%s on %s>" % (
+        return "<method {}{} on {}>".format(
             self.attr_name,
             f".{self.secondary_attr_name}" if self.secondary_attr_name else "",
             self.composite.value,
@@ -760,7 +760,7 @@ class NewTypeValue(TypedValue):
         return super().can_assign(other, ctx)
 
     def __str__(self) -> str:
-        return "NewType(%r, %s)" % (self.name, stringify_object(self.typ))
+        return f"NewType({self.name!r}, {stringify_object(self.typ)})"
 
 
 @dataclass(unsafe_hash=True, init=False)

@@ -191,7 +191,7 @@ class Checker:
 
     def _get_typeshed_bases(self, typ: Union[type, str]) -> Set[Union[type, str]]:
         base_values = self.ts_finder.get_bases_recursively(typ)
-        return set(base.typ for base in base_values if isinstance(base, TypedValue))
+        return {base.typ for base in base_values if isinstance(base, TypedValue)}
 
     def _get_protocol_members(self, bases: Iterable[Union[type, str]]) -> Set[str]:
         return set(

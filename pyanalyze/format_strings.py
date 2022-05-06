@@ -198,7 +198,7 @@ class ConversionSpecifier:
             yield "%% does not accept arguments"
         else:
             # should never happen
-            assert False, "unhandled conversion type {}".format(self.conversion_type)
+            assert False, f"unhandled conversion type {self.conversion_type}"
 
 
 class StarConversionSpecifier:
@@ -229,7 +229,7 @@ class PercentFormatString:
     def from_pattern(cls, pattern: str) -> "PercentFormatString":
         """Creates a parsed PercentFormatString from a raw string."""
         if not isinstance(pattern, str):
-            raise TypeError("invalid type for format string: {!r}".format(pattern))
+            raise TypeError(f"invalid type for format string: {pattern!r}")
         matches = list(_FORMAT_STRING_REGEX_TEXT.finditer(pattern))
         specifiers = tuple(
             ConversionSpecifier.from_match(match)
@@ -273,8 +273,7 @@ class PercentFormatString:
         """Finds errors in the pattern itself."""
         needs_mapping = self.needs_mapping()
         for cs in self.specifiers:
-            for err in cs.lint():
-                yield err
+            yield from cs.lint()
             if needs_mapping:
                 if (
                     cs.mapping_key is None
@@ -287,7 +286,7 @@ class PercentFormatString:
                     )
         for piece in self.raw_pieces:
             if (b"%" in piece) if isinstance(piece, bytes) else ("%" in piece):
-                yield "invalid conversion specifier in {}".format(piece)
+                yield f"invalid conversion specifier in {piece}"
 
     def accept(self, args: Value, ctx: CanAssignContext) -> Iterable[str]:
         """Checks whether this format string can accept the given Value as arguments."""
@@ -572,7 +571,7 @@ def _parse_children(state: _ParserState, end_at: Optional[str] = None) -> Childr
                 if current_literal:
                     children.append("".join(current_literal))
             else:
-                state.add_error("expected '{}' before end of string".format(end_at))
+                state.add_error(f"expected '{end_at}' before end of string")
             break
         elif char == end_at:
             if current_literal:
@@ -616,7 +615,7 @@ def _parse_replacement_field(state: _ParserState) -> Union[str, ReplacementField
             if char not in allowed_specials:
                 state.add_error(
                     "expected one of {}".format(
-                        ", ".join("'{}'".format(c) for c in sorted(allowed_specials))
+                        ", ".join(f"'{c}'" for c in sorted(allowed_specials))
                     )
                 )
                 return ""
@@ -636,7 +635,7 @@ def _parse_replacement_field(state: _ParserState) -> Union[str, ReplacementField
                         attribute_chars.append(char)
                 attribute_name = "".join(attribute_chars)
                 if not _IDENTIFIER_REGEX.match(attribute_name):
-                    state.add_error("invalid attribute '{}'".format(attribute_name))
+                    state.add_error(f"invalid attribute '{attribute_name}'")
                     return ""
                 index_attribute.append((IndexOrAttribute.attribute, attribute_name))
             elif char == "[":
@@ -655,17 +654,13 @@ def _parse_replacement_field(state: _ParserState) -> Union[str, ReplacementField
                 conversion = state.next()
                 allowed_specials = {":", "}"}
                 if conversion not in _FORMAT_STRING_CONVERSIONS:
-                    state.add_error(
-                        "Unknown conversion specifier '{!s}'".format(conversion)
-                    )
+                    state.add_error(f"Unknown conversion specifier '{conversion!s}'")
                     return ""
                 next_char = state.peek()
                 if next_char not in allowed_specials:
                     state.add_error(
                         "expected one of {}".format(
-                            ", ".join(
-                                "'{}'".format(c) for c in sorted(allowed_specials)
-                            )
+                            ", ".join(f"'{c}'" for c in sorted(allowed_specials))
                         )
                     )
                     return ""

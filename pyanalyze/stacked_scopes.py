@@ -437,15 +437,13 @@ class Constraint(AbstractConstraint):
 
         elif self.constraint_type == ConstraintType.one_of:
             for constraint in self.value:
-                for val in constraint.apply_to_value(value):
-                    yield val
+                yield from constraint.apply_to_value(value)
 
         elif self.constraint_type == ConstraintType.all_of:
             vals = [value]
             for constraint in self.value:
                 vals = list(constraint.apply_to_values(vals))
-            for applied in vals:
-                yield applied
+            yield from vals
 
         else:
             assert False, f"unknown constraint type {self.constraint_type}"
@@ -533,7 +531,7 @@ class EquivalentConstraint(AbstractConstraint):
 
     def invert(self) -> "EquivalentConstraint":
         # ~(A == B) -> ~A == ~B
-        return EquivalentConstraint(tuple([cons.invert() for cons in self.constraints]))
+        return EquivalentConstraint(tuple(cons.invert() for cons in self.constraints))
 
     @classmethod
     def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
@@ -569,7 +567,7 @@ class AndConstraint(AbstractConstraint):
 
     def invert(self) -> "OrConstraint":
         # ~(A and B) -> ~A or ~B
-        return OrConstraint(tuple([cons.invert() for cons in self.constraints]))
+        return OrConstraint(tuple(cons.invert() for cons in self.constraints))
 
     @classmethod
     def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
@@ -643,7 +641,7 @@ class OrConstraint(AbstractConstraint):
 
     def invert(self) -> AndConstraint:
         # ~(A or B) -> ~A and ~B
-        return AndConstraint(tuple([cons.invert() for cons in self.constraints]))
+        return AndConstraint(tuple(cons.invert() for cons in self.constraints))
 
     @classmethod
     def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:

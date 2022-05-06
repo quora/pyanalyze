@@ -152,8 +152,7 @@ class UnusedObjectFinder:
 
     def get_unused_objects(self) -> Iterable[UnusedObject]:
         for module in sorted(self.visited_modules, key=lambda mod: mod.__name__):
-            for obj in self._get_unused_from_module(module):
-                yield obj
+            yield from self._get_unused_from_module(module)
 
     def _get_unused_from_module(self, module: ModuleType) -> Iterable[UnusedObject]:
         is_test_module = any(

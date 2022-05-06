@@ -22,7 +22,7 @@ qid_vnv = VariableNameValue(["qid"])
 
 class CacheDecorator(AsyncDecorator):
     def __init__(self, fn, async_fn):
-        super(CacheDecorator, self).__init__(fn, AsyncTask)
+        super().__init__(fn, AsyncTask)
         self.async_fn = async_fn
         self.cache = {}
 
@@ -73,7 +73,7 @@ def async_fn(oid):
     return
 
 
-class Wrapper(object):
+class Wrapper:
     base: ClassVar[type]
 
 
@@ -90,7 +90,7 @@ def takes_kwonly_argument(a, **kwargs):
     assert set(kwargs) == {"kwonly_arg"}
 
 
-class ClassWithAsync(object):
+class ClassWithAsync:
     def get(self):
         return 1
 
@@ -101,7 +101,7 @@ class ClassWithAsync(object):
         return
 
 
-class PropertyObject(object):
+class PropertyObject:
     def __init__(self, poid):
         self.poid = poid
 
@@ -176,7 +176,7 @@ class Subclass(PropertyObject):
     pass
 
 
-class CheckedForAsynq(object):
+class CheckedForAsynq:
     """Subclasses of this class are checked for asynq in tests."""
 
     def not_checked(self):
@@ -184,7 +184,7 @@ class CheckedForAsynq(object):
         pass
 
 
-class FixedMethodReturnType(object):
+class FixedMethodReturnType:
     def should_return_none(self):
         pass
 
@@ -192,7 +192,7 @@ class FixedMethodReturnType(object):
         return []
 
 
-class KeywordOnlyArguments(object):
+class KeywordOnlyArguments:
     def __init__(self, *args, **kwargs):
         assert set(kwargs) <= {"kwonly_arg"}
 
