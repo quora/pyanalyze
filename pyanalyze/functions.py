@@ -174,6 +174,7 @@ class AsyncProxyDecorators(PyObjectSequenceOption[object]):
 
 _safe_decorators = [asynq.asynq, classmethod, staticmethod]
 if sys.version_info < (3, 11):
+    # static analysis: ignore[undefined_attribute]
     _safe_decorators.append(asyncio.coroutine)
 
 
@@ -226,7 +227,7 @@ def compute_function_info(
             elif decorator_value == KnownValue(staticmethod):
                 is_staticmethod = True
             elif sys.version_info < (3, 11) and decorator_value == KnownValue(
-                asyncio.coroutine
+                asyncio.coroutine  # static analysis: ignore[undefined_attribute]
             ):
                 is_decorated_coroutine = True
             elif decorator_value == KnownValue(
