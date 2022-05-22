@@ -31,11 +31,14 @@ jobs:
         - name: py310
           python: '3.10'
           toxenv: py310
+        - name: py311
+          python: '3.11'
+          toxenv: py311
         - name: black
-          python: '3.9'
+          python: '3.10'
           toxenv: black
         - name: flake8
-          python: '3.9'
+          python: '3.10'
           toxenv: flake8
 
     steps:
