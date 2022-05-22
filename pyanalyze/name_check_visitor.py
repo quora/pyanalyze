@@ -291,6 +291,7 @@ COMPARATOR_TO_OPERATOR = {
 
 SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL = [KnownValue(asynq.asynq), KnownValue(property)]
 if sys.version_info < (3, 11):
+    # static analysis: ignore[undefined_attribute]
     SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL.append(KnownValue(asyncio.coroutine))
 
 
