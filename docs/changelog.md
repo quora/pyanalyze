@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support Python 3.11 (#537)
 - Fix type checking of binary operators involving unions (#531)
 - Improve `TypeVar` solution heuristic for constrained
   typevars with multiple solutions (#532)
