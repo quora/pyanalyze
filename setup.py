@@ -6,18 +6,6 @@ from setuptools.extension import Extension
 
 version = "0.7.0"
 package_data = ["test.toml", "stubs/*/*.pyi"]
-# Used in internal packaging system.
-if "SANTA_PACKAGE_VERSION" in os.environ:
-    CYTHON_MODULES = ["name_check_visitor"]
-    DATA_FILES = [f"{module}.pxd" for module in CYTHON_MODULES]
-    EXTENSIONS = [
-        Extension(f"pyanalyze.{module}", [f"pyanalyze/{module}.py"])
-        for module in CYTHON_MODULES
-    ]
-    package_data += DATA_FILES
-    setup_kwargs = {"ext_modules": EXTENSIONS, "setup_requires": "Cython"}
-else:
-    setup_kwargs = {}
 
 
 if __name__ == "__main__":
@@ -58,5 +46,4 @@ if __name__ == "__main__":
         # These are useful for unit tests of pyanalyze extensions
         # outside the package.
         package_data={"pyanalyze": package_data},
-        **setup_kwargs,
     )
