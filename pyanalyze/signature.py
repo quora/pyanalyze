@@ -37,7 +37,6 @@ from qcore.helpers import safe_str
 from typing_extensions import assert_never, Literal, Protocol, Self
 
 from .error_code import ErrorCode
-from .safe import all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
     AndConstraint,
