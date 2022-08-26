@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `allow_call` callables are now also called if the arguments
+  are literals wrapped in `Annotated` (#540)
 - Support Python 3.11 (#537)
 - Fix type checking of binary operators involving unions (#531)
 - Improve `TypeVar` solution heuristic for constrained
