@@ -638,7 +638,8 @@ class Signature:
                     ctx.on_error(
                         f"Incompatible argument type for {param.name}: expected"
                         f" {param_typ} but got {composite.value}",
-                        code=ErrorCode.incompatible_argument,
+                        code=bounds_map.get_error_code()
+                        or ErrorCode.incompatible_argument,
                         node=composite.node if composite.node is not None else None,
                         detail=str(bounds_map),
                     )
