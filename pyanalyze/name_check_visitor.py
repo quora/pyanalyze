@@ -177,6 +177,7 @@ from .value import (
     NoReturnConstraintExtension,
     ReferencingValue,
     SequenceValue,
+    make_owned,
     set_self,
     SubclassValue,
     TypedValue,
@@ -2395,13 +2396,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     # Comprehensions
 
     def visit_DictComp(self, node: ast.DictComp) -> Value:
-        return self._visit_sequence_comp(node, dict)
+        return make_owned(self._visit_sequence_comp(node, dict))
 
     def visit_ListComp(self, node: ast.ListComp) -> Value:
-        return self._visit_sequence_comp(node, list)
+        return make_owned(self._visit_sequence_comp(node, list))
 
     def visit_SetComp(self, node: ast.SetComp) -> Value:
-        return self._visit_sequence_comp(node, set)
+        return make_owned(self._visit_sequence_comp(node, set))
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Value:
         return self._visit_sequence_comp(node, types.GeneratorType)
@@ -2655,7 +2656,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         ErrorCode.unsupported_operation,
                         detail=str(new_pairs),
                     )
-                    return TypedValue(dict)
+                    return make_owned(TypedValue(dict))
                 all_pairs += new_pairs
                 continue
             key_val = self.visit(key_node)
@@ -2695,15 +2696,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             ret[key] = value
 
         if has_non_literal:
-            return DictIncompleteValue(dict, all_pairs)
+            return make_owned(DictIncompleteValue(dict, all_pairs))
         else:
-            return KnownValue(ret)
+            return make_owned(KnownValue(ret))
 
     def visit_Set(self, node: ast.Set) -> Value:
-        return self._visit_display_read(node, set)
+        return make_owned(self._visit_display_read(node, set))
 
     def visit_List(self, node: ast.List) -> Optional[Value]:
-        return self._visit_display(node, list)
+        val = self._visit_display(node, list)
+        if val is not None:
+            return make_owned(val)
+        return None
 
     def visit_Tuple(self, node: ast.Tuple) -> Optional[Value]:
         return self._visit_display(node, tuple)

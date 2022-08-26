@@ -52,6 +52,7 @@ from .value import (
     KnownValue,
     kv_pairs_from_mapping,
     KVPair,
+    make_owned,
     MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
@@ -326,8 +327,11 @@ def _set_impl(ctx: CallContext) -> ImplReturn:
 
 def _sequence_impl(typ: type, ctx: CallContext) -> ImplReturn:
     iterable = ctx.vars["iterable"]
+    maybe_owned: Callable[[Value], Value] = (
+        (lambda x: x) if typ is tuple else make_owned
+    )
     if iterable is _NO_ARG_SENTINEL:
-        return ImplReturn(KnownValue(typ()))
+        return ImplReturn(maybe_owned(KnownValue(typ())))
 
     def inner(iterable: Value) -> Value:
         cvi = concrete_values_from_iterable(iterable, ctx.visitor)
@@ -338,12 +342,14 @@ def _sequence_impl(typ: type, ctx: CallContext) -> ImplReturn:
                 arg="iterable",
                 detail=str(cvi),
             )
-            return TypedValue(typ)
+            return maybe_owned(TypedValue(typ))
         elif isinstance(cvi, Value):
-            return GenericValue(typ, [cvi])
+            return maybe_owned(GenericValue(typ, [cvi]))
         else:
             # TODO: Consider changing concrete_values_from_iterable to preserve unpacked bits
-            return SequenceValue.make_or_known(typ, [(False, elt) for elt in cvi])
+            return maybe_owned(
+                SequenceValue.make_or_known(typ, [(False, elt) for elt in cvi])
+            )
 
     return flatten_unions(inner, iterable)
 
@@ -1468,7 +1474,9 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(list)),
+                SigParameter(
+                    "self", _POS_ONLY, annotation=make_owned(TypedValue(list))
+                ),
                 SigParameter("object", _POS_ONLY),
             ],
             callable=list.append,
@@ -1484,7 +1492,9 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(list)),
+                SigParameter(
+                    "self", _POS_ONLY, annotation=make_owned(TypedValue(list))
+                ),
                 SigParameter(
                     "x", _POS_ONLY, annotation=TypedValue(collections.abc.Iterable)
                 ),
@@ -1494,7 +1504,9 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(list)),
+                SigParameter(
+                    "self", _POS_ONLY, annotation=make_owned(TypedValue(list))
+                ),
                 SigParameter(
                     "iterable",
                     _POS_ONLY,
@@ -1522,7 +1534,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(set)),
+                SigParameter("self", _POS_ONLY, annotation=make_owned(TypedValue(set))),
                 SigParameter("object", _POS_ONLY),
             ],
             callable=set.add,
@@ -1530,7 +1542,9 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter(
+                    "self", _POS_ONLY, annotation=make_owned(TypedValue(dict))
+                ),
                 SigParameter("k", _POS_ONLY),
                 SigParameter("v", _POS_ONLY),
             ],
@@ -1556,7 +1570,9 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter(
+                    "self", _POS_ONLY, annotation=make_owned(TypedValue(dict))
+                ),
                 SigParameter("key", _POS_ONLY),
                 SigParameter("default", _POS_ONLY, default=KnownValue(None)),
             ],
@@ -1565,7 +1581,9 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter(
+                    "self", _POS_ONLY, annotation=make_owned(TypedValue(dict))
+                ),
                 SigParameter("key", _POS_ONLY),
                 SigParameter("default", _POS_ONLY, default=_NO_ARG_SENTINEL),
             ],
@@ -1574,7 +1592,9 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter(
+                    "self", _POS_ONLY, annotation=make_owned(TypedValue(dict))
+                ),
                 SigParameter("m", _POS_ONLY, default=_NO_ARG_SENTINEL),
                 SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
             ],
@@ -1590,8 +1610,10 @@ def get_default_argspecs() -> Dict[object, Signature]:
                     annotation=GenericValue(dict, [TypeVarValue(K), TypeVarValue(V)]),
                 )
             ],
-            DictIncompleteValue(
-                dict, [KVPair(TypeVarValue(K), TypeVarValue(V), is_many=True)]
+            make_owned(
+                DictIncompleteValue(
+                    dict, [KVPair(TypeVarValue(K), TypeVarValue(V), is_many=True)]
+                )
             ),
             callable=dict.copy,
         ),

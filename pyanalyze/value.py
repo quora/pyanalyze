@@ -50,7 +50,8 @@ import qcore
 from typing_extensions import Literal, ParamSpec, Protocol
 
 import pyanalyze
-from pyanalyze.extensions import CustomCheck
+from pyanalyze.error_code import ErrorCode
+from pyanalyze.extensions import CustomCheck, Owned
 
 from .safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
 
@@ -269,6 +270,7 @@ class CanAssignError:
 
     message: str = ""
     children: List["CanAssignError"] = field(default_factory=list)
+    error_code: Optional[ErrorCode] = None
 
     def display(self, depth: int = 2) -> str:
         """Display all errors in a human-readable format."""
@@ -280,6 +282,14 @@ class CanAssignError:
             return f"{message}\n{child_result}"
         else:
             return child_result
+
+    def get_error_code(self) -> Optional[ErrorCode]:
+        errors = {child.get_error_code() for child in self.children}
+        if self.error_code:
+            errors.add(self.error_code)
+        if len(errors) == 1:
+            return next(iter(errors))
+        return None
 
     def __str__(self) -> str:
         return self.display()
@@ -2637,3 +2647,7 @@ def can_assign_and_used_any(
 
 def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
     return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)
+
+
+def make_owned(typ: Value) -> Value:
+    return AnnotatedValue(typ, [CustomCheckExtension(Owned())])

@@ -146,6 +146,28 @@ class NoAny(CustomCheck):
         )
 
 
+@dataclass(frozen=True)
+class Owned(CustomCheck):
+    """Custom check that indicates that a mutable value is mutated. For example,
+    a function that mutates a list should accept an argument of type
+    ``Annotated[List[T], Owned()]``.
+    """
+
+    def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
+        for val in pyanalyze.value.flatten_values(value, unwrap_annotated=False):
+            if isinstance(val, pyanalyze.value.AnnotatedValue):
+                if any(val.get_custom_check_of_type(Owned)):
+                    continue
+                val = val.value
+            if isinstance(val, pyanalyze.value.AnyValue):
+                continue
+            return pyanalyze.value.CanAssignError(
+                f"Value {val} is not owned and may not be mutated",
+                error_code=pyanalyze.error_code.ErrorCode.disallowed_mutation,
+            )
+        return {}
+
+
 class _AsynqCallableMeta(type):
     def __getitem__(
         self, params: Tuple[Union[Literal[Ellipsis], List[object]], object]

@@ -638,7 +638,8 @@ class Signature:
                     ctx.on_error(
                         f"Incompatible argument type for {param.name}: expected"
                         f" {param_typ} but got {composite.value}",
-                        code=ErrorCode.incompatible_argument,
+                        code=bounds_map.get_error_code()
+                        or ErrorCode.incompatible_argument,
                         node=composite.node if composite.node is not None else None,
                         detail=str(bounds_map),
                     )
@@ -1253,41 +1254,45 @@ class Signature:
         args = []
         kwargs = {}
         for definitely_present, composite in actual_args.positionals:
-            if definitely_present and isinstance(composite.value, KnownValue):
-                args.append(composite.value.val)
-            else:
+            if not definitely_present:
                 return None
+            arg = _extract_known_value(composite.value)
+            if arg is None:
+                return None
+            args.append(arg.val)
         if actual_args.star_args is not None:
             values = concrete_values_from_iterable(
                 actual_args.star_args, ctx.can_assign_ctx
             )
-            if isinstance(values, collections.abc.Sequence) and all_of_type(
-                values, KnownValue
-            ):
-                args += [val.val for val in values]
-            else:
+            if not isinstance(values, collections.abc.Sequence):
                 return None
+            for args_val in values:
+                arg = _extract_known_value(args_val)
+                if arg is None:
+                    return None
+                args.append(arg.val)
         for kwarg, (required, composite) in actual_args.keywords.items():
             if not required:
                 return None
-            if isinstance(composite.value, KnownValue):
-                kwargs[kwarg] = composite.value.val
-            else:
+            kwarg_value = _extract_known_value(composite.value)
+            if kwarg_value is None:
                 return None
+            kwargs[kwarg] = kwarg_value
         if actual_args.star_kwargs is not None:
             value = replace_known_sequence_value(actual_args.star_kwargs)
             if isinstance(value, DictIncompleteValue):
                 for pair in value.kv_pairs:
-                    if (
-                        pair.is_required
-                        and not pair.is_many
-                        and isinstance(pair.key, KnownValue)
-                        and isinstance(pair.key.val, str)
-                        and isinstance(pair.value, KnownValue)
-                    ):
-                        kwargs[pair.key.val] = pair.value.val
-                    else:
+                    if pair.is_many or not pair.is_required:
                         return None
+                    key_val = _extract_known_value(pair.key)
+                    value_val = _extract_known_value(pair.value)
+                    if (
+                        key_val is None
+                        or value_val is None
+                        or not isinstance(key_val.val, str)
+                    ):
+                        return None
+                    kwargs[key_val.val] = value_val.val
             else:
                 return None
 
@@ -2516,4 +2521,12 @@ def decompose_union(
                 remaining_values
             ), f"all union members matched between {expected_type} and {parent_value}"
             return bounds_map, union_used_any, unite_values(*remaining_values)
+    return None
+
+
+def _extract_known_value(val: Value) -> Optional[KnownValue]:
+    if isinstance(val, AnnotatedValue):
+        val = val.value
+    if isinstance(val, KnownValue):
+        return val
     return None

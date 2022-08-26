@@ -99,6 +99,7 @@ class ErrorCode(enum.Enum):
     invalid_annotated_assignment = 79
     unused_assignment = 80
     incompatible_yield = 81
+    disallowed_mutation = 82
 
 
 # Allow testing unannotated functions without too much fuss
@@ -219,6 +220,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.invalid_annotated_assignment: "Invalid annotated assignment",
     ErrorCode.unused_assignment: "Assigned value is never used",
     ErrorCode.incompatible_yield: "Incompatible yield type",
+    ErrorCode.disallowed_mutation: "Mutation of unowned object",
 }
 
 
