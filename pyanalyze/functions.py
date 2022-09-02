@@ -37,7 +37,7 @@ from .value import (
     SubclassValue,
     TypedValue,
     TypeVarValue,
-    make_owned,
+    make_mutable,
     unite_values,
     UnpackedValue,
     Value,
@@ -342,7 +342,7 @@ def compute_parameters(
             else:
                 # normal method
                 value = enclosing_class
-            value = make_owned(value)
+            value = make_mutable(value)
         else:
             # This is meant to exclude methods in nested classes. It's a bit too
             # conservative for cases such as a function nested in a method nested in a

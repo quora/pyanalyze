@@ -53,7 +53,7 @@ from .value import (
     is_owned,
     kv_pairs_from_mapping,
     KVPair,
-    make_owned,
+    make_mutable,
     MultiValuedValue,
     NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
@@ -106,7 +106,7 @@ def inherit_ownership(
         ret = impl(ctx)
         if is_owned(ctx.vars["self"]):
             return ImplReturn(
-                make_owned(ret.return_value), ret.constraint, ret.no_return_unless
+                make_mutable(ret.return_value), ret.constraint, ret.no_return_unless
             )
         return ret
 
@@ -343,7 +343,7 @@ def _set_impl(ctx: CallContext) -> ImplReturn:
 def _sequence_impl(typ: type, ctx: CallContext) -> ImplReturn:
     iterable = ctx.vars["iterable"]
     maybe_owned: Callable[[Value], Value] = (
-        (lambda x: x) if typ is tuple else make_owned
+        (lambda x: x) if typ is tuple else make_mutable
     )
     if iterable is _NO_ARG_SENTINEL:
         return ImplReturn(maybe_owned(KnownValue(typ())))
@@ -379,7 +379,7 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
                 varname,
                 ConstraintType.is_value_object,
                 True,
-                make_owned(
+                make_mutable(
                     SequenceValue.make_or_known(list, (*lst.members, (False, element)))
                 ),
             )
@@ -447,7 +447,7 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                 if isinstance(self_value, SequenceValue):
                     members = self_value.get_member_sequence()
                     if members is not None:
-                        return make_owned(
+                        return make_mutable(
                             SequenceValue.make_or_known(
                                 typ, [(False, m) for m in members[key.val]]
                             )
@@ -465,7 +465,7 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                     # __getitem__, but then we wouldn't get here).
                     # TODO return a more precise type if the class inherits
                     # from a generic list/tuple.
-                    return make_owned(TypedValue(typ))
+                    return make_mutable(TypedValue(typ))
             else:
                 ctx.show_error(f"Invalid {typ.__name__} key {key}")
                 return AnyValue(AnySource.error)
@@ -720,7 +720,7 @@ def _dict_pop_impl(ctx: CallContext) -> ImplReturn:
         existing_value = self_value.get_value(key, ctx.visitor)
         is_present = existing_value is not UNINITIALIZED_VALUE
         if varname is not None and isinstance(key, KnownValue):
-            new_value = make_owned(
+            new_value = make_mutable(
                 DictIncompleteValue(
                     self_value.typ,
                     [pair for pair in self_value.kv_pairs if pair.key != key],
@@ -808,7 +808,7 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
     elif isinstance(self_value, DictIncompleteValue):
         existing_value = self_value.get_value(key, ctx.visitor)
         is_present = existing_value is not UNINITIALIZED_VALUE
-        new_value = make_owned(
+        new_value = make_mutable(
             DictIncompleteValue(
                 self_value.typ,
                 [
@@ -882,7 +882,7 @@ def _update_incomplete_dict(
             varname,
             ConstraintType.is_value_object,
             True,
-            make_owned(
+            make_mutable(
                 DictIncompleteValue(
                     self_val.typ if isinstance(self_val, TypedValue) else dict, pairs
                 )
@@ -1003,7 +1003,7 @@ def _list_add_impl(ctx: CallContext) -> ImplReturn:
             val = GenericValue(list, [unite_values(left_arg, right_arg)])
         else:
             val = TypedValue(list)
-        return make_owned(val)
+        return make_mutable(val)
 
     return flatten_unions(inner, ctx.vars["self"], ctx.vars["x"])
 
@@ -1031,7 +1031,7 @@ def _list_extend_or_iadd_impl(
                 constrained_value = SequenceValue(
                     list, [*cleaned_lst.members, (True, arg_type)]
                 )
-            constrained_value = make_owned(constrained_value)
+            constrained_value = make_mutable(constrained_value)
             if return_container:
                 return ImplReturn(constrained_value)
             if varname is not None:
@@ -1101,7 +1101,7 @@ def _set_add_impl(ctx: CallContext) -> ImplReturn:
                 varname,
                 ConstraintType.is_value_object,
                 True,
-                make_owned(
+                make_mutable(
                     SequenceValue.make_or_known(
                         set, (*set_value.members, (False, element))
                     )
@@ -1512,7 +1512,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [
                 SigParameter(
-                    "self", _POS_ONLY, annotation=make_owned(TypedValue(list))
+                    "self", _POS_ONLY, annotation=make_mutable(TypedValue(list))
                 ),
                 SigParameter("object", _POS_ONLY),
             ],
@@ -1530,7 +1530,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [
                 SigParameter(
-                    "self", _POS_ONLY, annotation=make_owned(TypedValue(list))
+                    "self", _POS_ONLY, annotation=make_mutable(TypedValue(list))
                 ),
                 SigParameter(
                     "x", _POS_ONLY, annotation=TypedValue(collections.abc.Iterable)
@@ -1542,7 +1542,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [
                 SigParameter(
-                    "self", _POS_ONLY, annotation=make_owned(TypedValue(list))
+                    "self", _POS_ONLY, annotation=make_mutable(TypedValue(list))
                 ),
                 SigParameter(
                     "iterable",
@@ -1571,7 +1571,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=make_owned(TypedValue(set))),
+                SigParameter("self", _POS_ONLY, annotation=make_mutable(TypedValue(set))),
                 SigParameter("object", _POS_ONLY),
             ],
             callable=set.add,
@@ -1580,7 +1580,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [
                 SigParameter(
-                    "self", _POS_ONLY, annotation=make_owned(TypedValue(dict))
+                    "self", _POS_ONLY, annotation=make_mutable(TypedValue(dict))
                 ),
                 SigParameter("k", _POS_ONLY),
                 SigParameter("v", _POS_ONLY),
@@ -1608,7 +1608,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [
                 SigParameter(
-                    "self", _POS_ONLY, annotation=make_owned(TypedValue(dict))
+                    "self", _POS_ONLY, annotation=make_mutable(TypedValue(dict))
                 ),
                 SigParameter("key", _POS_ONLY),
                 SigParameter("default", _POS_ONLY, default=KnownValue(None)),
@@ -1619,7 +1619,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [
                 SigParameter(
-                    "self", _POS_ONLY, annotation=make_owned(TypedValue(dict))
+                    "self", _POS_ONLY, annotation=make_mutable(TypedValue(dict))
                 ),
                 SigParameter("key", _POS_ONLY),
                 SigParameter("default", _POS_ONLY, default=_NO_ARG_SENTINEL),
@@ -1630,7 +1630,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [
                 SigParameter(
-                    "self", _POS_ONLY, annotation=make_owned(TypedValue(dict))
+                    "self", _POS_ONLY, annotation=make_mutable(TypedValue(dict))
                 ),
                 SigParameter("m", _POS_ONLY, default=_NO_ARG_SENTINEL),
                 SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
@@ -1647,7 +1647,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                     annotation=GenericValue(dict, [TypeVarValue(K), TypeVarValue(V)]),
                 )
             ],
-            make_owned(
+            make_mutable(
                 DictIncompleteValue(
                     dict, [KVPair(TypeVarValue(K), TypeVarValue(V), is_many=True)]
                 )

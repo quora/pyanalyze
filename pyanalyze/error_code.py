@@ -220,7 +220,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.invalid_annotated_assignment: "Invalid annotated assignment",
     ErrorCode.unused_assignment: "Assigned value is never used",
     ErrorCode.incompatible_yield: "Incompatible yield type",
-    ErrorCode.disallowed_mutation: "Mutation of unowned object",
+    ErrorCode.disallowed_mutation: "Mutation of object that does not allow mutation",
 }
 
 

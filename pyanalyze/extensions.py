@@ -30,7 +30,7 @@ from typing import (
 )
 
 import typing_extensions
-from typing_extensions import Literal, NoReturn
+from typing_extensions import Annotated, Literal, NoReturn
 
 import pyanalyze
 
@@ -38,6 +38,8 @@ from .safe import get_fully_qualified_name
 
 if TYPE_CHECKING:
     from .value import AnySource, CanAssign, CanAssignContext, TypeVarMap, Value
+
+_T = TypeVar("_T")
 
 
 class CustomCheck:
@@ -147,16 +149,16 @@ class NoAny(CustomCheck):
 
 
 @dataclass(frozen=True)
-class Owned(CustomCheck):
+class Mutable(CustomCheck):
     """Custom check that indicates that a mutable value is mutated. For example,
     a function that mutates a list should accept an argument of type
-    ``Annotated[List[T], Owned()]``.
+    ``Annotated[List[T], Mutable()]``.
     """
 
     def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
         for val in pyanalyze.value.flatten_values(value, unwrap_annotated=False):
             if isinstance(val, pyanalyze.value.AnnotatedValue):
-                if any(val.get_custom_check_of_type(Owned)):
+                if any(val.get_custom_check_of_type(Mutable)):
                     continue
                 val = val.value
             if isinstance(val, pyanalyze.value.AnyValue):
@@ -166,6 +168,11 @@ class Owned(CustomCheck):
                 error_code=pyanalyze.error_code.ErrorCode.disallowed_mutation,
             )
         return {}
+
+
+def make_mutable(obj: _T) -> Annotated[_T, Mutable()]:
+    """Unsafely mark an object as mutable."""
+    return obj
 
 
 class _AsynqCallableMeta(type):
@@ -392,9 +399,6 @@ class ExternalType(metaclass=_ExternalTypeMeta):
     # This makes it possible to use ExternalType within e.g. Annotated
     def __call__(self) -> NoReturn:
         raise NotImplementedError("just here to fool typing._type_check")
-
-
-_T = TypeVar("_T")
 
 
 def reveal_type(value: _T) -> _T:

@@ -50,7 +50,7 @@ from typing_extensions import Literal, ParamSpec, Protocol
 
 import pyanalyze
 from pyanalyze.error_code import ErrorCode
-from pyanalyze.extensions import CustomCheck, Owned
+from pyanalyze.extensions import CustomCheck, Mutable
 
 from .safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
 
@@ -2652,12 +2652,12 @@ def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
     return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)
 
 
-def make_owned(typ: Value) -> Value:
-    return AnnotatedValue(typ, [CustomCheckExtension(Owned())])
+def make_mutable(typ: Value) -> Value:
+    return AnnotatedValue(typ, [CustomCheckExtension(Mutable())])
 
 
 def is_owned(val: Value) -> bool:
-    return isinstance(val, AnnotatedValue) and any(val.get_custom_check_of_type(Owned))
+    return isinstance(val, AnnotatedValue) and any(val.get_custom_check_of_type(Mutable))
 
 
 def make_coro_type(return_type: Value) -> GenericValue:

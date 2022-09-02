@@ -15,7 +15,7 @@ import asynq
 import qcore
 
 from .annotations import Context, type_from_annotations, type_from_runtime
-from .extensions import Owned
+from .extensions import Mutable
 from .options import Options, PyObjectSequenceOption
 from .safe import safe_isinstance, safe_issubclass
 from .signature import MaybeSignature
@@ -31,7 +31,7 @@ from .value import (
     KnownValue,
     KnownValueWithTypeVars,
     MultiValuedValue,
-    make_owned,
+    make_mutable,
     set_self,
     SubclassValue,
     TypedValue,
@@ -95,7 +95,7 @@ def get_attribute(ctx: AttrContext) -> Value:
     if isinstance(root_value, TypeVarValue):
         root_value = root_value.get_fallback_value()
     elif isinstance(root_value, AnnotatedValue):
-        should_own = any(root_value.get_custom_check_of_type(Owned))
+        should_own = any(root_value.get_custom_check_of_type(Mutable))
         root_value = root_value.value
     if isinstance(root_value, KnownValue):
         attribute_value = _get_attribute_from_known(root_value.val, ctx)
@@ -144,7 +144,7 @@ def get_attribute(ctx: AttrContext) -> Value:
                 attribute_value = guard.attribute_type
                 break
     if should_own and attribute_value is not UNINITIALIZED_VALUE:
-        attribute_value = make_owned(attribute_value)
+        attribute_value = make_mutable(attribute_value)
     return attribute_value
 
 
