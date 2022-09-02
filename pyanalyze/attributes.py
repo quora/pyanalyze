@@ -348,6 +348,16 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
         return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
 
     result, _, _ = _get_attribute_from_mro(obj, ctx, on_class=True)
+    if (
+        isinstance(result, KnownValue)
+        and (
+            safe_isinstance(result.val, types.MethodType)
+            or safe_isinstance(result.val, types.BuiltinFunctionType)
+            and result.val.__self__ is obj
+        )
+        and isinstance(ctx.root_value, AnnotatedValue)
+    ):
+        result = UnboundMethodValue(ctx.attr, ctx.root_composite)
     if safe_isinstance(obj, type):
         result = set_self(result, TypedValue(obj))
     if isinstance(obj, (types.ModuleType, type)):
