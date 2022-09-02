@@ -112,6 +112,7 @@ from .signature import (
     KWARGS,
     MaybeSignature,
     OverloadedSignature,
+    ParameterKind,
     Signature,
     SigParameter,
 )
@@ -1914,11 +1915,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         "%first_arg",
                         VisitorState.check_names,
                     )
+                if info.param.kind is ParameterKind.VAR_KEYWORD:
+                    annotation = make_owned(info.param.annotation)
+                else:
+                    annotation = info.param.annotation
                 self.scopes.set(
-                    info.param.name,
-                    info.param.annotation,
-                    info.node,
-                    VisitorState.check_names,
+                    info.param.name, annotation, info.node, VisitorState.check_names
                 )
 
             with qcore.override(
@@ -3987,7 +3989,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     )
                 # We set the declared type on initial assignment, so that the
                 # annotation can be used to adjust pyanalyze's type inference.
-                value = expected_type
+                if isinstance(value, AnnotatedValue):
+                    value = annotate_value(expected_type, value.metadata)
+                else:
+                    value = expected_type
 
         else:
             is_yield = False
@@ -4338,12 +4343,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     composite.get_varname(), self.being_assigned, node, self.state
                 )
 
-            if isinstance(root_composite.value, TypedValue):
-                typ = root_composite.value.typ
-                if isinstance(typ, type):
-                    self._record_type_attr_set(
-                        typ, node.attr, node, self.being_assigned
-                    )
+            for root_val in flatten_values(root_composite.value, unwrap_annotated=True):
+                if isinstance(root_val, TypedValue):
+                    typ = root_val.typ
+                    if isinstance(typ, type):
+                        self._record_type_attr_set(
+                            typ, node.attr, node, self.being_assigned
+                        )
             return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):
             if self._is_checking():

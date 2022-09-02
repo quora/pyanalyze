@@ -2651,3 +2651,7 @@ def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
 
 def make_owned(typ: Value) -> Value:
     return AnnotatedValue(typ, [CustomCheckExtension(Owned())])
+
+
+def is_owned(val: Value) -> bool:
+    return isinstance(val, AnnotatedValue) and any(val.get_custom_check_of_type(Owned))

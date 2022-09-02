@@ -143,7 +143,7 @@ def get_attribute(ctx: AttrContext) -> Value:
             if guard.attribute_name == KnownValue(ctx.attr):
                 attribute_value = guard.attribute_type
                 break
-    if should_own:
+    if should_own and attribute_value is not UNINITIALIZED_VALUE:
         attribute_value = make_owned(attribute_value)
     return attribute_value
 
