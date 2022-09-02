@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve `Annotated` annotations on access to methods of
+  literals (#541)
 - `allow_call` callables are now also called if the arguments
   are literals wrapped in `Annotated` (#540)
 - Support Python 3.11 (#537)
