@@ -37,7 +37,6 @@ from qcore.helpers import safe_str
 from typing_extensions import assert_never, Literal, Protocol, Self
 
 from .error_code import ErrorCode
-from .safe import all_of_type
 from .stacked_scopes import (
     AbstractConstraint,
     AndConstraint,
@@ -1277,7 +1276,7 @@ class Signature:
             kwarg_value = _extract_known_value(composite.value)
             if kwarg_value is None:
                 return None
-            kwargs[kwarg] = kwarg_value
+            kwargs[kwarg] = kwarg_value.val
         if actual_args.star_kwargs is not None:
             value = replace_known_sequence_value(actual_args.star_kwargs)
             if isinstance(value, DictIncompleteValue):

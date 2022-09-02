@@ -4,8 +4,10 @@ from typing import Dict, Union
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes, only_before
 from .value import (
+    AnnotatedValue,
     AnySource,
     AnyValue,
+    UnboundMethodValue,
     assert_is_value,
     GenericValue,
     KnownValue,
@@ -168,6 +170,31 @@ class TestAttributes(TestNameCheckVisitorBase):
         def test(x: Union[Capybara, Paca]) -> None:
             assert_is_value(
                 x.attr, MultiValuedValue([TypedValue(int), TypedValue(str)])
+            )
+
+    @assert_passes()
+    def test_annotated_known(self):
+        from typing_extensions import Annotated, Literal
+        from pyanalyze.extensions import LiteralOnly
+        from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
+        from pyanalyze.value import CustomCheckExtension
+        from qcore.testing import Anything
+
+        origin = VarnameWithOrigin("encoding", Anything)  # E: incompatible_argument
+
+        def capybara():
+            encoding: Annotated[Literal["ascii"], LiteralOnly()] = "ascii"
+            assert_is_value(
+                encoding.encode,
+                UnboundMethodValue(
+                    "encode",
+                    Composite(
+                        AnnotatedValue(
+                            KnownValue("ascii"), [CustomCheckExtension(LiteralOnly())]
+                        ),
+                        origin,
+                    ),
+                ),
             )
 
     @assert_passes()
