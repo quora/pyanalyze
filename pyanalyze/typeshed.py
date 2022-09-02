@@ -79,6 +79,7 @@ from .value import (
     TypeVarValue,
     UNINITIALIZED_VALUE,
     Value,
+    make_owned,
 )
 
 
@@ -770,6 +771,7 @@ class TypeshedFinder:
                         sig = sig.replace_return_value(self_val)
                     else:
                         self_val = SubclassValue(self_val)
+                    sig = sig.replace_return_value(make_owned(sig.return_value))
                     bound_sig = make_bound_method(sig, Composite(self_val))
                     if bound_sig is None:
                         return None

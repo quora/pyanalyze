@@ -720,9 +720,11 @@ def _dict_pop_impl(ctx: CallContext) -> ImplReturn:
         existing_value = self_value.get_value(key, ctx.visitor)
         is_present = existing_value is not UNINITIALIZED_VALUE
         if varname is not None and isinstance(key, KnownValue):
-            new_value = DictIncompleteValue(
-                self_value.typ,
-                [pair for pair in self_value.kv_pairs if pair.key != key],
+            new_value = make_owned(
+                DictIncompleteValue(
+                    self_value.typ,
+                    [pair for pair in self_value.kv_pairs if pair.key != key],
+                )
             )
             no_return_unless = Constraint(
                 varname, ConstraintType.is_value_object, True, new_value

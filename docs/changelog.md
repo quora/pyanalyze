@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add concept of ownership: only containers owned by calling
+  code may be mutated (#542)
 - Preserve `Annotated` annotations on access to methods of
   literals (#541)
 - `allow_call` callables are now also called if the arguments
