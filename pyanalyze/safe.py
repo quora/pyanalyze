@@ -177,7 +177,7 @@ def _fill_typing_name_cache(name: str) -> Tuple[Tuple[Any, ...], Tuple[str, ...]
 
 
 def get_fully_qualified_name(obj: object) -> Optional[str]:
-    if hasattr(obj, "__module__") and hasattr(obj, "__qualname__"):
+    if safe_hasattr(obj, "__module__") and safe_hasattr(obj, "__qualname__"):
         return f"{obj.__module__}.{obj.__qualname__}"
     return None
 
