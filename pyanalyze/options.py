@@ -5,6 +5,7 @@ Structured configuration options.
 """
 import argparse
 import pathlib
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,10 +32,11 @@ from .error_code import ErrorCode
 from .find_unused import used
 from .safe import safe_in
 
-try:
+if sys.version_info >= (3, 10, 3):
     from argparse import BooleanOptionalAction
-except ImportError:
-    # 3.8 and lower (modified from CPython)
+else:
+    # 3.8 and lower do not have BooleanOptionalAction (modified from CPython)
+    # 3.9.10 and 3.10.2 are affected by https://github.com/python/cpython/issues/90238
     class BooleanOptionalAction(argparse.Action):
         def __init__(self, option_strings: Sequence[str], **kwargs: Any) -> None:
 
