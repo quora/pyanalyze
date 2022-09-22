@@ -56,6 +56,8 @@ class CallableData:
             if sig_param is None or not isinstance(sig_param.annotation, AnyValue):
                 continue  # e.g. inferred type for self
             all_values = [call[param.arg] for call in self.calls]
+            if sig_param.default is not None:
+                all_values.append(sig_param.default)
             all_values = [prepare_type(v) for v in all_values]
             all_values = [v for v in all_values if not isinstance(v, AnyValue)]
             if not all_values:
