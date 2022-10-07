@@ -263,7 +263,8 @@ class AbstractConstraint:
     """
 
     def apply(self) -> Iterable["Constraint"]:
-        """Yields concrete constraints that are active when this constraint is applied."""
+        """Yields concrete constraints that are active when this constraint is applied.
+        """
         raise NotImplementedError
 
     def invert(self) -> "AbstractConstraint":
@@ -854,7 +855,8 @@ class Scope:
             return value
 
     def scope_used_as_parent(self) -> "Scope":
-        """Class scopes are skipped in scope lookup, so don't set them as parent scopes."""
+        """Class scopes are skipped in scope lookup, so don't set them as parent scopes.
+        """
         if self.scope_type == ScopeType.class_scope:
             assert (
                 self.parent_scope is not None

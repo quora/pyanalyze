@@ -144,7 +144,6 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_tuple_subclass_with_getattr(self):
-
         # Inspired by pyspark.sql.types.Row
         class Row(tuple):
             def __getattr__(self, attr):

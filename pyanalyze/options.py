@@ -39,7 +39,6 @@ else:
     # 3.9.10 and 3.10.2 are affected by https://github.com/python/cpython/issues/90238
     class BooleanOptionalAction(argparse.Action):
         def __init__(self, option_strings: Sequence[str], **kwargs: Any) -> None:
-
             _option_strings = []
             for option_string in option_strings:
                 _option_strings.append(option_string)
