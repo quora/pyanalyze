@@ -583,7 +583,8 @@ class IgnoredTypesForAttributeChecking(PyObjectSequenceOption[type]):
     """Used in the check for object attributes that are accessed but not set. In general, the check
     will only alert about attributes that don't exist when it has visited all the base classes of
     the class with the possibly missing attribute. However, these classes are never going to be
-    visited (since they're builtin), but they don't set any attributes that we rely on."""
+    visited (since they're builtin), but they don't set any attributes that we rely on.
+    """
 
     name = "ignored_types_for_attribute_checking"
     default_value = [object, abc.ABC]
@@ -1003,7 +1004,8 @@ class CallSiteCollector:
 
 
 class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
-    """Visitor class that infers the type and value of Python objects and detects errors."""
+    """Visitor class that infers the type and value of Python objects and detects errors.
+    """
 
     error_code_enum = ErrorCode
     config_filename: ClassVar[Optional[str]] = None
@@ -1367,7 +1369,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         detail: Optional[str] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """We usually should show errors only in the check_names state to avoid duplicate errors."""
+        """We usually should show errors only in the check_names state to avoid duplicate errors.
+        """
         if self._is_checking():
             self.show_error(
                 node,
@@ -5130,7 +5133,8 @@ def _all_names_unused(
 
 
 def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
-    """Given a list of assignment targets (elts), return whether it contains the given Name node."""
+    """Given a list of assignment targets (elts), return whether it contains the given Name node.
+    """
     for elt in elts:
         if isinstance(elt, (ast.List, ast.Tuple)):
             if _contains_node(elt.elts, node):
@@ -5141,7 +5145,8 @@ def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
-    """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
+    """Returns whether this value has the given attribute, ignoring __getattr__ overrides.
+    """
     try:
         object.__getattribute__(value, attr)
     except AttributeError:

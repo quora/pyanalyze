@@ -1139,7 +1139,8 @@ class DictIncompleteValue(GenericValue):
 
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
-    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys."""
+    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys.
+    """
 
     items: Dict[str, Tuple[bool, Value]]
     """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
