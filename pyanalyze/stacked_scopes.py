@@ -239,8 +239,8 @@ class ConstraintType(enum.Enum):
     all_of = 5
     """All of several other constraints on `varname` are true."""
     is_value_object = 6
-    """`constraint.varname` should be typed as a :class:`pyanalyze.value.Value` object. Naming of this
-    and `is_value` is confusing, and ideally we'd come up with better names."""
+    """`constraint.varname` should be typed as a :class:`pyanalyze.value.Value` object. Naming of
+    this and `is_value` is confusing, and ideally we'd come up with better names."""
     predicate = 7
     """`constraint.value` is a `PredicateFunc`."""
     add_annotation = 8
