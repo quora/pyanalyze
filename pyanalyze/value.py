@@ -544,17 +544,20 @@ class UnboundMethodValue(Value):
     def get_method(self) -> Optional[Any]:
         """Return the runtime callable for this ``UnboundMethodValue``, or
         None if it cannot be found."""
+        root = self.composite.value
+        if isinstance(root, AnnotatedValue):
+            root = root.value
+        if isinstance(root, KnownValue):
+            typ = root.val
+        else:
+            typ = root.get_type()
         try:
-            typ = self.composite.value.get_type()
             method = getattr(typ, self.attr_name)
             if self.secondary_attr_name is not None:
                 method = getattr(method, self.secondary_attr_name)
-            # don't use unbound methods in py2
-            if inspect.ismethod(method) and method.__self__ is None:
-                method = method.__func__
-            return method
         except AttributeError:
             return None
+        return method
 
     def is_type(self, typ: type) -> bool:
         return isinstance(self.get_method(), typ)
