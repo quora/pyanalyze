@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix false positive error certain method calls on literals (#548)
 - Preserve `Annotated` annotations on access to methods of
   literals (#541)
 - `allow_call` callables are now also called if the arguments

@@ -351,3 +351,15 @@ class TestHasAttrExtension(TestNameCheckVisitorBase):
             if hasattr(x, "a") and hasattr(x, "b"):
                 assert_is_value(x.a, AnyValue(AnySource.inference))
                 assert_is_value(x.b, AnyValue(AnySource.inference))
+
+    @assert_passes()
+    def test_hasattr_plus_call(self):
+        class X:
+            @classmethod
+            def types(cls):
+                return []
+
+        def capybara(x: X) -> None:
+            cls = X
+            if hasattr(cls, "types"):  # E: value_always_true
+                assert_is_value(cls.types(), AnyValue(AnySource.unannotated))
