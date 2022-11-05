@@ -21,7 +21,6 @@ these subclasses and some related utilities.
 
 import collections.abc
 import enum
-import inspect
 import textwrap
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field, InitVar
@@ -1142,8 +1141,7 @@ class DictIncompleteValue(GenericValue):
 
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
-    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys.
-    """
+    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys."""
 
     items: Dict[str, Tuple[bool, Value]]
     """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
