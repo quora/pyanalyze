@@ -1,7 +1,5 @@
-import os
 from pathlib import Path
 from setuptools import setup
-from setuptools.extension import Extension
 
 
 version = "0.7.0"
@@ -28,6 +26,7 @@ if __name__ == "__main__":
             "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
+            "Programming Language :: Python :: 3.11",
         ],
         keywords="quora static analysis",
         packages=["pyanalyze"],
