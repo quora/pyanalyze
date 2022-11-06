@@ -908,9 +908,9 @@ def _maybe_get_extra(origin: type) -> Union[type, str]:
     # ContextManager is defined oddly and we lose the Protocol if we don't use
     # synthetic types.
     if any(origin is cls for cls in CONTEXT_MANAGER_TYPES):
-        return "typing.ContextManager"
+        return "contextlib.AbstractContextManager"
     elif any(origin is cls for cls in ASYNC_CONTEXT_MANAGER_TYPES):
-        return "typing.AsyncContextManager"
+        return "contextlib.AbstractAsyncContextManager"
     else:
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36

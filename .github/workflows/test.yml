@@ -16,9 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - name: py36
-          python: '3.6'
-          toxenv: py36
         - name: py37
           python: '3.7'
           toxenv: py37
@@ -32,22 +29,22 @@ jobs:
           python: '3.10'
           toxenv: py310
         - name: py311
-          python: '3.11-dev'
+          python: '3.11'
           toxenv: py311
         - name: black
-          python: '3.10'
+          python: '3.11'
           toxenv: black
         - name: flake8
-          python: '3.10'
+          python: '3.11'
           toxenv: flake8
 
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-python@v2
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python }}
     - name: install tox
-      run: pip install --upgrade setuptools tox==3.9.0
+      run: pip install --upgrade setuptools tox==3.27.0
     - name: setup tox environment
       run: tox -e ${{ matrix.toxenv }} --notest
     - name: test

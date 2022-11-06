@@ -1,7 +1,5 @@
-import os
 from pathlib import Path
 from setuptools import setup
-from setuptools.extension import Extension
 
 
 version = "0.7.0"
@@ -23,20 +21,19 @@ if __name__ == "__main__":
         classifiers=[
             "License :: OSI Approved :: Apache Software License",
             "Programming Language :: Python",
-            "Programming Language :: Python :: 3.6",
             "Programming Language :: Python :: 3.7",
             "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
+            "Programming Language :: Python :: 3.11",
         ],
         keywords="quora static analysis",
         packages=["pyanalyze"],
         install_requires=[
             "asynq",
-            "dataclasses; python_version < '3.7'",
             "qcore>=0.5.1",
             "ast_decompiler>=0.4.0",
-            "typeshed_client>=2.0.0",
+            "typeshed_client>=2.1.0",
             "typing_inspect>=0.7.0",
             "typing_extensions>=4.0.0",
             "aenum>=2.2.3",
@@ -46,4 +43,5 @@ if __name__ == "__main__":
         # These are useful for unit tests of pyanalyze extensions
         # outside the package.
         package_data={"pyanalyze": package_data},
+        python_requires=">=3.7",
     )
