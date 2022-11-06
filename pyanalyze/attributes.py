@@ -9,7 +9,7 @@ import sys
 import types
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Generic, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 import asynq
 import qcore
@@ -505,7 +505,8 @@ def _get_attribute_from_mro(
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
-    """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
+    """Returns whether this value has the given attribute, ignoring __getattr__ overrides.
+    """
     try:
         object.__getattribute__(value, attr)
     except AttributeError:
