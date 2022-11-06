@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## Version 0.8.0 (November 5, 2022)
 
+Release highlights:
+- Support for Python 3.11
+- Drop support for Python 3.6
+- Support for PEP 692 (``Unpack`` on ``**kwargs``)
+
+Full changelog:
 - Infer `async def` functions as returning `Coroutine`, not
   `Awaitable` (#557, #559)
 - Drop support for Python 3.6 (#554)
