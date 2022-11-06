@@ -438,16 +438,6 @@ def _get_attribute_from_mro(
         pass
     else:
         for base_cls in mro:
-            # On 3.6 (before PEP 560), the MRO for classes inheriting from typing generics
-            # includes a bunch of classes in the typing module that
-            # don't have any attributes we care about.
-            if (
-                sys.version_info < (3, 7)
-                and isinstance(base_cls, type)
-                and base_cls.__module__ == "typing"
-                and Generic in base_cls.mro()
-            ):
-                continue
             if ctx.skip_mro and base_cls is not typ:
                 continue
 
@@ -515,8 +505,7 @@ def _get_attribute_from_mro(
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
-    """Returns whether this value has the given attribute, ignoring __getattr__ overrides.
-    """
+    """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
     try:
         object.__getattribute__(value, attr)
     except AttributeError:

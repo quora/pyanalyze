@@ -1005,8 +1005,7 @@ class CallSiteCollector:
 
 
 class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
-    """Visitor class that infers the type and value of Python objects and detects errors.
-    """
+    """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
     config_filename: ClassVar[Optional[str]] = None
@@ -1370,8 +1369,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         detail: Optional[str] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """We usually should show errors only in the check_names state to avoid duplicate errors.
-        """
+        """We usually should show errors only in the check_names state to avoid duplicate errors."""
         if self._is_checking():
             self.show_error(
                 node,
@@ -2584,7 +2582,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _maybe_show_missing_f_error(self, node: ast.AST, s: Union[str, bytes]) -> None:
         """Show an error if this string was probably meant to be an f-string."""
-        if sys.version_info < (3, 6) or isinstance(s, bytes):
+        if isinstance(s, bytes):
             return
         if "{" not in s:
             return
@@ -4170,7 +4168,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         [root_composite, index_composite],
                         allow_call=True,
                     )
-                elif sys.version_info >= (3, 7):
+                else:
                     # If there was no __getitem__, try __class_getitem__ in 3.7+
                     cgi = self.get_attribute(
                         Composite(value), "__class_getitem__", node.value
@@ -4186,13 +4184,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         return_value = self.check_call(
                             node.value, cgi, [index_composite], allow_call=True
                         )
-                else:
-                    self._show_error_if_checking(
-                        node,
-                        f"Object {value} does not support subscripting",
-                        error_code=ErrorCode.unsupported_operation,
-                    )
-                    return_value = AnyValue(AnySource.error)
 
                 if (
                     self._should_use_varname_value(return_value)
@@ -5132,8 +5123,7 @@ def _all_names_unused(
 
 
 def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
-    """Given a list of assignment targets (elts), return whether it contains the given Name node.
-    """
+    """Given a list of assignment targets (elts), return whether it contains the given Name node."""
     for elt in elts:
         if isinstance(elt, (ast.List, ast.Tuple)):
             if _contains_node(elt.elts, node):
@@ -5144,8 +5134,7 @@ def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
-    """Returns whether this value has the given attribute, ignoring __getattr__ overrides.
-    """
+    """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
     try:
         object.__getattribute__(value, attr)
     except AttributeError:

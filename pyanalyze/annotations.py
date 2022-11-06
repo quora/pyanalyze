@@ -123,15 +123,10 @@ except ImportError:
 
 
 CONTEXT_MANAGER_TYPES = (typing.ContextManager, contextlib.AbstractContextManager)
-if sys.version_info >= (3, 7):
-    ASYNC_CONTEXT_MANAGER_TYPES = (
-        typing.AsyncContextManager,
-        # Doesn't exist on 3.6
-        # static analysis: ignore[undefined_attribute]
-        contextlib.AbstractAsyncContextManager,
-    )
-else:
-    ASYNC_CONTEXT_MANAGER_TYPES = (typing.AsyncContextManager,)
+ASYNC_CONTEXT_MANAGER_TYPES = (
+    typing.AsyncContextManager,
+    contextlib.AbstractAsyncContextManager,
+)
 
 
 @dataclass
@@ -395,20 +390,6 @@ def _type_from_runtime(
         return _eval_forward_ref(
             val, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
         )
-    elif isinstance(val, tuple):
-        # This happens under some Python versions for types
-        # nested in tuples, e.g. on 3.6:
-        # > typing_inspect.get_args(Union[Set[int], List[str]])
-        # ((typing.Set, int), (typing.List, str))
-        if not val:
-            # from Tuple[()]
-            return KnownValue(())
-        origin = val[0]
-        if len(val) == 2:
-            args = (val[1],)
-        else:
-            args = val[1:]
-        return _value_of_origin_args(origin, args, val, ctx, allow_unpack=allow_unpack)
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
         args = get_args(val)
@@ -464,12 +445,6 @@ def _type_from_runtime(
         # InitVar instances aren't being created
         # static analysis: ignore[undefined_attribute]
         return type_from_runtime(val.type)
-    elif is_instance_of_typing_name(val, "AnnotatedMeta"):
-        # Annotated in 3.6's typing_extensions
-        origin, metadata = val.__args__
-        return _make_annotated(
-            _type_from_runtime(origin, ctx), [KnownValue(v) for v in metadata], ctx
-        )
     elif is_instance_of_typing_name(val, "_AnnotatedAlias"):
         # Annotated in typing and newer typing_extensions
         return _make_annotated(
@@ -529,12 +504,7 @@ def _type_from_runtime(
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
     elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):
-        if hasattr(val, "__type__"):
-            # 3.6
-            typ = val.__type__
-        else:
-            # 3.7+
-            typ = val.__args__[0]
+        typ = val.__args__[0]
         return _type_from_runtime(typ, ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
         val, "ForwardRef"
@@ -561,12 +531,6 @@ def _type_from_runtime(
             TypedValue(bool),
             [TypeGuardExtension(_type_from_runtime(val.guarded_type, ctx))],
         )
-    elif is_instance_of_typing_name(val, "_TypeGuard"):
-        # 3.6 only
-        return AnnotatedValue(
-            TypedValue(bool),
-            [TypeGuardExtension(_type_from_runtime(val.__type__, ctx))],
-        )
     elif isinstance(val, AsynqCallable):
         params = _callable_args_from_runtime(val.args, "AsynqCallable", ctx)
         sig = Signature.make(
@@ -580,23 +544,6 @@ def _type_from_runtime(
             ctx.show_error(f"Cannot resolve type {val.type_path!r}")
             return AnyValue(AnySource.error)
         return _type_from_runtime(typ, ctx)
-    # Python 3.6 only (on later versions Required/NotRequired match
-    # is_generic_type).
-    elif is_instance_of_typing_name(val, "_MaybeRequired"):
-        required = is_instance_of_typing_name(val, "_Required")
-        if is_typeddict:
-            return Pep655Value(required, _type_from_runtime(val.__type__, ctx))
-        else:
-            cls = "Required" if required else "NotRequired"
-            ctx.show_error(f"{cls}[] used in unsupported context")
-            return AnyValue(AnySource.error)
-    # Also 3.6 only.
-    elif is_instance_of_typing_name(val, "_Unpack"):
-        if allow_unpack:
-            return UnpackedValue(_type_from_runtime(val.__type__, ctx))
-        else:
-            ctx.show_error("Unpack[] used in unsupported context")
-            return AnyValue(AnySource.error)
     elif is_typing_name(val, "TypeAlias"):
         return AnyValue(AnySource.incomplete_annotation)
     elif is_typing_name(val, "TypedDict"):
