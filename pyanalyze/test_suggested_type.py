@@ -1,9 +1,9 @@
 # static analysis: ignore
-from .suggested_type import prepare_type
-from .value import KnownValue, SubclassValue, TypedValue
 from .error_code import ErrorCode
-from .test_node_visitor import assert_passes
+from .suggested_type import prepare_type
 from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes
+from .value import KnownValue, SubclassValue, TypedValue
 
 
 class TestSuggestedType(TestNameCheckVisitorBase):

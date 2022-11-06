@@ -16,9 +16,9 @@ from typing import Optional, Type, Union
 
 from .analysis_lib import make_module
 from .error_code import ErrorCode
-from .importer import load_module_from_file
-from .name_check_visitor import NameCheckVisitor, ClassAttributeChecker
 from .find_unused import used
+from .importer import load_module_from_file
+from .name_check_visitor import ClassAttributeChecker, NameCheckVisitor
 
 
 @used  # exposed as an API
@@ -77,7 +77,8 @@ def annotate_file(
     dump: bool = False,
     show_errors: bool = False,
 ) -> ast.AST:
-    """Annotate the code in a Python source file. Return an AST with extra `inferred_value` attributes.
+    """Annotate the code in a Python source file. Return an AST with extra `inferred_value`
+    attributes.
 
     Example usage::
 

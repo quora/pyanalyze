@@ -1,6 +1,6 @@
 # static analysis: ignore
-from .test_node_visitor import skip_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import skip_before
 
 
 class TestPatma(TestNameCheckVisitorBase):
@@ -53,7 +53,7 @@ class TestPatma(TestNameCheckVisitorBase):
                     case [1, 2, 3]:
                         assert_is_value(
                             seq,
-                            SequenceIncompleteValue(
+                            make_simple_sequence(
                                 tuple,
                                 [TypedValue(int), TypedValue(int), TypedValue(int)]
                             )

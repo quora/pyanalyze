@@ -1,7 +1,5 @@
 # static analysis: ignore
 import ast
-from ast_decompiler import decompile
-from collections import defaultdict
 import difflib
 import enum
 import functools
@@ -10,14 +8,17 @@ import itertools
 import re
 import sys
 import textwrap
+from collections import defaultdict
+
+from ast_decompiler import decompile
 
 from .node_visitor import (
     BaseNodeVisitor,
-    VisitorError,
-    Replacement,
     NodeTransformer,
+    Replacement,
     ReplaceNodeTransformer,
     ReplacingNodeVisitor,
+    VisitorError,
 )
 
 
@@ -387,7 +388,8 @@ class TestHouseDivided(BaseNodeVisitorTester):
 
 
 def assert_code_equal(expected, actual):
-    """Asserts that two pieces of code are equal, and prints a nice diff if they are not."""
+    """Asserts that two pieces of code are equal, and prints a nice diff if they are not.
+    """
     # In Python2.7 ast_decompiler sometimes inserts an extra newline in the beginning
     # for some reason. We don't care.
     expected = expected.lstrip()

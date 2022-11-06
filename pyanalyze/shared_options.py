@@ -3,11 +3,11 @@
 Defines some concrete options that cannot easily be placed elsewhere.
 
 """
-from typing import Callable
 from types import ModuleType
+from typing import Callable
 
-from .error_code import ErrorCode, DISABLED_BY_DEFAULT, ERROR_DESCRIPTION
-from .options import PathSequenceOption, BooleanOption, PyObjectSequenceOption
+from .error_code import DISABLED_BY_DEFAULT, ERROR_DESCRIPTION, ErrorCode
+from .options import BooleanOption, PathSequenceOption, PyObjectSequenceOption
 from .value import VariableNameValue
 
 

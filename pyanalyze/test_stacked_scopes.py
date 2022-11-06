@@ -5,19 +5,19 @@ from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
-    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
+    assert_is_value,
     DictIncompleteValue,
     GenericValue,
     KnownValue,
     MultiValuedValue,
+    NO_RETURN_VALUE,
     ReferencingValue,
+    SequenceValue,
     TypedValue,
     UNINITIALIZED_VALUE,
-    assert_is_value,
-    make_weak,
 )
 
 
@@ -580,7 +580,7 @@ class TestUnusedVariable(TestNameCheckVisitorBase):
     @assert_passes()
     def test_unused_then_used(self):
         def capybara():
-            y = 3  # E: unused_variable
+            y = 3  # E: unused_assignment
             y = 4
             return y
 
@@ -588,7 +588,7 @@ class TestUnusedVariable(TestNameCheckVisitorBase):
     def test_unused_in_if(self):
         def capybara(condition):
             if condition:
-                x = 3  # E: unused_variable
+                x = 3  # E: unused_assignment
             x = 4
             return x
 
@@ -984,7 +984,7 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_double_index(self):
-        from typing import Union, Optional
+        from typing import Optional, Union
 
         class A:
             attr: Union[int, str]
@@ -1003,8 +1003,6 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_nested_scope(self):
-        from pyanalyze.value import WeakExtension
-
         class A:
             pass
 
@@ -1015,12 +1013,7 @@ class TestConstraints(TestNameCheckVisitorBase):
             if isinstance(a, B):
                 assert_is_value(a, TypedValue(B))
                 lst = [a for _ in iterable]
-                assert_is_value(
-                    lst,
-                    AnnotatedValue(
-                        GenericValue(list, [TypedValue(B)]), [WeakExtension()]
-                    ),
-                )
+                assert_is_value(lst, SequenceValue(list, [(True, TypedValue(B))]))
 
     @assert_passes()
     def test_qcore_asserts(self):
@@ -1436,26 +1429,19 @@ class TestConstraints(TestNameCheckVisitorBase):
                 return None
 
         def capybara(x, y):
-            assert_is_value(
-                maybe_int(x), MultiValuedValue([TypedValue(int), KnownValue(None)])
-            )
+            assert_is_value(maybe_int(x), TypedValue(int) | KnownValue(None))
 
             lst = [maybe_int(elt) for elt in y]
             assert_is_value(
-                lst,
-                make_weak(
-                    GenericValue(
-                        list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
-                    )
-                ),
+                lst, SequenceValue(list, [(True, TypedValue(int) | KnownValue(None))])
             )
             lst2 = [elt for elt in lst if elt]
-            assert_is_value(lst2, make_weak(GenericValue(list, [TypedValue(int)])))
+            assert_is_value(lst2, SequenceValue(list, [(True, TypedValue(int))]))
 
     @assert_passes()
     def test_comprehension_composite(self):
         from dataclasses import dataclass
-        from typing import Optional, Tuple, List
+        from typing import List, Optional, Tuple
 
         @dataclass
         class Capybara:
@@ -1464,37 +1450,29 @@ class TestConstraints(TestNameCheckVisitorBase):
         def use_attr(c: List[Capybara]) -> None:
             assert_is_value(
                 [elt.x for elt in c],
-                make_weak(
-                    GenericValue(
-                        list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
-                    )
-                ),
+                SequenceValue(list, [(True, TypedValue(int) | KnownValue(None))]),
             )
             assert_is_value(
                 [elt.x for elt in c if elt.x is not None],
-                make_weak(GenericValue(list, [TypedValue(int)])),
+                SequenceValue(list, [(True, TypedValue(int))]),
             )
             assert_is_value(
                 [elt.x for elt in c if elt.x],
-                make_weak(GenericValue(list, [TypedValue(int)])),
+                SequenceValue(list, [(True, TypedValue(int))]),
             )
 
         def use_subscript(d: List[Tuple[int, Optional[int]]]) -> None:
             assert_is_value(
                 [pair[1] for pair in d],
-                make_weak(
-                    GenericValue(
-                        list, [MultiValuedValue([TypedValue(int), KnownValue(None)])]
-                    )
-                ),
+                SequenceValue(list, [(True, TypedValue(int) | KnownValue(None))]),
             )
             assert_is_value(
                 [pair[1] for pair in d if pair[1] is not None],
-                make_weak(GenericValue(list, [TypedValue(int)])),
+                SequenceValue(list, [(True, TypedValue(int))]),
             )
             assert_is_value(
                 [pair[1] for pair in d if pair[1]],
-                make_weak(GenericValue(list, [TypedValue(int)])),
+                SequenceValue(list, [(True, TypedValue(int))]),
             )
 
     @assert_passes()
@@ -1512,6 +1490,7 @@ class TestConstraints(TestNameCheckVisitorBase):
     @assert_passes()
     def test_while_hasattr(self):
         from typing import Optional
+
         from pyanalyze.value import HasAttrExtension
 
         def capybara(x: Optional[int]):
@@ -1586,6 +1565,7 @@ class TestConstraints(TestNameCheckVisitorBase):
     @assert_passes()
     def test_operator_constraints(self):
         from typing import Union
+
         from typing_extensions import Literal
 
         container = {1, 2, 3}
@@ -1628,8 +1608,9 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_preserve_annotated(self):
-        from typing_extensions import Annotated
         from typing import Optional
+
+        from typing_extensions import Annotated
 
         AnnotatedUnion = AnnotatedValue(
             TypedValue(str), [KnownValue(1)]

@@ -5,7 +5,9 @@ Error codes used by test_scope.
 """
 
 import enum
+
 from aenum import extend_enum
+
 import pyanalyze
 
 from .find_unused import used
@@ -95,6 +97,8 @@ class ErrorCode(enum.Enum):
     implicit_any = 77
     already_declared = 78
     invalid_annotated_assignment = 79
+    unused_assignment = 80
+    incompatible_yield = 81
 
 
 # Allow testing unannotated functions without too much fuss
@@ -111,11 +115,8 @@ DISABLED_BY_DEFAULT = {
     *DISABLED_IN_TESTS,
     ErrorCode.method_first_arg,
     ErrorCode.value_always_true,
-    # TODO(jelle): This needs more work
-    ErrorCode.unused_variable,
     ErrorCode.use_fstrings,
     ErrorCode.unused_ignore,
-    ErrorCode.possibly_undefined_name,
     ErrorCode.missing_f,
     ErrorCode.bare_ignore,
     # TODO: turn this on
@@ -216,6 +217,8 @@ ERROR_DESCRIPTION = {
     ErrorCode.implicit_any: "Value is inferred as Any",
     ErrorCode.already_declared: "Name is already declared",
     ErrorCode.invalid_annotated_assignment: "Invalid annotated assignment",
+    ErrorCode.unused_assignment: "Assigned value is never used",
+    ErrorCode.incompatible_yield: "Incompatible yield type",
 }
 
 

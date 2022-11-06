@@ -4,87 +4,76 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 
 """
 
-from .node_visitor import Failure
-from .options import Options, PathSequenceOption
-from .extensions import evaluated
+import ast
+import builtins
+import collections.abc
+import inspect
+import sys
+
+from abc import abstractmethod
+from collections.abc import Collection, MutableMapping, Set as AbstractSet, Sized
+from dataclasses import dataclass, field, replace
+from enum import Enum, EnumMeta
+from types import GeneratorType, ModuleType
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
+
+import qcore
+import typeshed_client
+from typing_extensions import Protocol, TypedDict
+
+from pyanalyze.functions import translate_vararg_type
 from .analysis_lib import is_positional_only_arg_name
 from .annotations import (
     Context,
+    make_type_var_value,
     Pep655Value,
     SyntheticEvaluator,
-    make_type_var_value,
     type_from_value,
     value_from_ast,
 )
 from .error_code import ErrorCode
-from .extensions import overload, real_overload
+from .extensions import evaluated, overload, real_overload
+from .node_visitor import Failure
+from .options import Options, PathSequenceOption
 from .safe import all_of_type, hasattr_static, is_typing_name, safe_isinstance
-from .stacked_scopes import uniq_chain, Composite
 from .signature import (
     ConcreteSignature,
-    OverloadedSignature,
-    SigParameter,
-    Signature,
-    ParameterKind,
     make_bound_method,
+    OverloadedSignature,
+    ParameterKind,
+    Signature,
+    SigParameter,
 )
+from .stacked_scopes import Composite, uniq_chain
 from .value import (
     AnySource,
     AnyValue,
     CallableValue,
     CanAssignContext,
+    extract_typevars,
+    GenericValue,
+    KnownValue,
+    make_coro_type,
     SubclassValue,
     TypedDictValue,
     TypedValue,
-    GenericValue,
-    KnownValue,
+    TypeVarValue,
     UNINITIALIZED_VALUE,
     Value,
-    TypeVarValue,
-    extract_typevars,
 )
-
-from abc import abstractmethod
-import ast
-import builtins
-from collections.abc import (
-    Awaitable,
-    Collection,
-    MutableMapping,
-    Set as AbstractSet,
-    Sized,
-)
-from contextlib import AbstractContextManager
-from dataclasses import dataclass, field, replace
-import collections.abc
-from enum import Enum
-import qcore
-import inspect
-import sys
-from types import GeneratorType
-from typing import (
-    Dict,
-    Sequence,
-    Set,
-    Tuple,
-    Any,
-    Generic,
-    Iterable,
-    Optional,
-    Union,
-    Callable,
-    List,
-    TypeVar,
-)
-from typing_extensions import Protocol, TypedDict
-import typeshed_client
-
-
-try:
-    # 3.7+
-    from contextlib import AbstractAsyncContextManager
-except ImportError:
-    AbstractAsyncContextManager = None
 
 
 T_co = TypeVar("T_co", covariant=True)
@@ -108,6 +97,12 @@ class _AnnotationContext(Context):
 
     def get_name(self, node: ast.Name) -> Value:
         return self.finder.resolve_name(self.module, node.id)
+
+    def get_attribute(self, root_value: Value, node: ast.Attribute) -> Value:
+        if isinstance(root_value, KnownValue):
+            if isinstance(root_value.val, ModuleType):
+                return self.finder.resolve_name(root_value.val.__name__, node.attr)
+        return super().get_attribute(root_value, node)
 
 
 class _DummyErrorContext:
@@ -182,7 +177,7 @@ class TypeshedFinder:
     def log(self, message: str, obj: object) -> None:
         if not self.verbose:
             return
-        print("%s: %r" % (message, obj))
+        print(f"{message}: {obj!r}")
 
     def get_argspec(
         self,
@@ -219,7 +214,12 @@ class TypeshedFinder:
             and "." in obj.__qualname__
         ):
             parent_name, own_name = obj.__qualname__.rsplit(".", maxsplit=1)
-            parent_fqn = f"{obj.__module__}.{parent_name}"
+            # Work around the stub using the wrong name.
+            # TODO we should be able to resolve this anyway.
+            if parent_name == "EnumType" and obj.__module__ == "enum":
+                parent_fqn = "enum.EnumMeta"
+            else:
+                parent_fqn = f"{obj.__module__}.{parent_name}"
             parent_info = self._get_info_for_name(parent_fqn)
             if parent_info is not None:
                 maybe_info = self._get_child_info(parent_info, own_name, obj.__module__)
@@ -262,11 +262,9 @@ class TypeshedFinder:
             if isinstance(val.typ, type):
                 typ = val.typ
                 # The way AbstractSet/Set is handled between collections and typing is
-                # too confusing, just hardcode it. Same for (Abstract)ContextManager.
+                # too confusing, just hardcode it.
                 if typ is AbstractSet:
                     return [GenericValue(Collection, (TypeVarValue(T_co),))]
-                if typ is AbstractContextManager or typ is AbstractAsyncContextManager:
-                    return [GenericValue(Protocol, (TypeVarValue(T_co),))]
                 if typ is Callable or typ is collections.abc.Callable:
                     return None
                 if typ is TypedDict:
@@ -275,6 +273,10 @@ class TypeshedFinder:
                             MutableMapping, [TypedValue(str), TypedValue(object)]
                         )
                     ]
+                # In 3.11 it's named EnumType and EnumMeta is an alias, but the
+                # stubs have it the other way around. We can't deal with that for now.
+                if typ is EnumMeta:
+                    return [TypedValue(type)]
                 fq_name = self._get_fq_name(typ)
                 if fq_name is None:
                     return None
@@ -327,7 +329,7 @@ class TypeshedFinder:
     def get_bases_for_fq_name(self, fq_name: str) -> Optional[List[Value]]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
-        return self._get_bases_from_info(info, mod)
+        return self._get_bases_from_info(info, mod, fq_name)
 
     def get_attribute(self, typ: type, attr: str, *, on_class: bool) -> Value:
         """Return the stub for this attribute.
@@ -584,22 +586,28 @@ class TypeshedFinder:
         return False
 
     def _get_bases_from_info(
-        self, info: typeshed_client.resolver.ResolvedName, mod: str
+        self, info: typeshed_client.resolver.ResolvedName, mod: str, fq_name: str
     ) -> Optional[List[Value]]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_bases_from_info(info.info, ".".join(info.source_module))
+            return self._get_bases_from_info(
+                info.info, ".".join(info.source_module), fq_name
+            )
         elif isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, ast.ClassDef):
                 bases = info.ast.bases
                 return [self._parse_type(base, mod) for base in bases]
             elif isinstance(info.ast, ast.Assign):
-                val = self._parse_type(info.ast.value, mod)
+                val = self._parse_expr(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
+                    new_fq_name = self._get_fq_name(val.val)
+                    if fq_name == new_fq_name:
+                        # prevent infinite recursion
+                        return [AnyValue(AnySource.inference)]
                     return self.get_bases(val.val)
                 else:
-                    return [val]
+                    return [AnyValue(AnySource.inference)]
             elif isinstance(
                 info.ast,
                 (
@@ -829,20 +837,16 @@ class TypeshedFinder:
                 arguments = arguments[1:]
 
         if args.vararg is not None:
-            vararg_param = self._parse_param(
-                args.vararg, None, mod, ParameterKind.VAR_POSITIONAL
+            arguments.append(
+                self._parse_param(args.vararg, None, mod, ParameterKind.VAR_POSITIONAL)
             )
-            annotation = GenericValue(tuple, [vararg_param.annotation])
-            arguments.append(replace(vararg_param, annotation=annotation))
         arguments += self._parse_param_list(
             args.kwonlyargs, args.kw_defaults, mod, ParameterKind.KEYWORD_ONLY
         )
         if args.kwarg is not None:
-            kwarg_param = self._parse_param(
-                args.kwarg, None, mod, ParameterKind.VAR_KEYWORD
+            arguments.append(
+                self._parse_param(args.kwarg, None, mod, ParameterKind.VAR_KEYWORD)
             )
-            annotation = GenericValue(dict, [TypedValue(str), kwarg_param.annotation])
-            arguments.append(replace(kwarg_param, annotation=annotation))
         # some typeshed types have a positional-only after a normal argument,
         # and Signature doesn't like that
         seen_non_positional = False
@@ -867,7 +871,7 @@ class TypeshedFinder:
         return Signature.make(
             cleaned_arguments,
             callable=obj,
-            return_annotation=GenericValue(Awaitable, [return_value])
+            return_annotation=make_coro_type(return_value)
             if isinstance(node, ast.AsyncFunctionDef)
             else return_value,
             allow_call=allow_call,
@@ -898,7 +902,9 @@ class TypeshedFinder:
     ) -> SigParameter:
         typ = AnyValue(AnySource.unannotated)
         if arg.annotation is not None:
-            typ = self._parse_type(arg.annotation, module)
+            typ = self._parse_type(
+                arg.annotation, module, allow_unpack=kind.allow_unpack()
+            )
         elif objclass is not None:
             bases = self.get_bases(objclass)
             if bases is None:
@@ -925,6 +931,7 @@ class TypeshedFinder:
         ):
             kind = ParameterKind.POSITIONAL_ONLY
             name = name[2:]
+        typ = translate_vararg_type(kind, typ, self.ctx)
         # Mark self as positional-only. objclass should be given only if we believe
         # it's the "self" parameter.
         if objclass is not None:
@@ -942,11 +949,18 @@ class TypeshedFinder:
         return value_from_ast(node, ctx=ctx)
 
     def _parse_type(
-        self, node: ast.AST, module: str, *, is_typeddict: bool = False
+        self,
+        node: ast.AST,
+        module: str,
+        *,
+        is_typeddict: bool = False,
+        allow_unpack: bool = False,
     ) -> Value:
         val = self._parse_expr(node, module)
         ctx = _AnnotationContext(finder=self, module=module)
-        typ = type_from_value(val, ctx=ctx, is_typeddict=is_typeddict)
+        typ = type_from_value(
+            val, ctx=ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
+        )
         if self.verbose and isinstance(typ, AnyValue):
             self.log("Got Any", (ast.dump(node), module))
         return typ
@@ -970,7 +984,7 @@ class TypeshedFinder:
 
     def make_synthetic_type(self, module: str, info: typeshed_client.NameInfo) -> Value:
         fq_name = f"{module}.{info.name}"
-        bases = self._get_bases_from_info(info, module)
+        bases = self._get_bases_from_info(info, module, fq_name)
         typ = TypedValue(fq_name)
         if bases is not None:
             if any(

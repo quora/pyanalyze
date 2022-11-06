@@ -5,35 +5,35 @@ Module for checking %-formatted and .format()-formatted strings.
 """
 
 import ast
-from collections import defaultdict
-from dataclasses import dataclass, field
 import enum
 import re
-import sys
+from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import (
     Callable,
     Dict,
     Iterable,
+    List,
     Match,
     Optional,
     Sequence,
-    Union,
-    List,
     Tuple,
+    Union,
 )
+
 from typing_extensions import Literal, Protocol, runtime_checkable
 
 from .error_code import ErrorCode
 from .value import (
     AnnotatedValue,
     CanAssignContext,
-    KnownValue,
     DictIncompleteValue,
-    SequenceIncompleteValue,
+    flatten_values,
+    KnownValue,
+    replace_known_sequence_value,
+    SequenceValue,
     TypedValue,
     Value,
-    flatten_values,
-    replace_known_sequence_value,
 )
 
 # refer to https://docs.python.org/2/library/stdtypes.html#string-formatting-operations
@@ -116,7 +116,8 @@ class ConversionSpecifier:
 
     @classmethod
     def _maybe_decode(cls, string: Union[str, bytes]) -> str:
-        """We want to treat all fields as text even on a bytes pattern for simplicity."""
+        """We want to treat all fields as text even on a bytes pattern for simplicity.
+        """
         if isinstance(string, bytes):
             return string.decode("ascii")
         else:
@@ -198,11 +199,12 @@ class ConversionSpecifier:
             yield "%% does not accept arguments"
         else:
             # should never happen
-            assert False, "unhandled conversion type {}".format(self.conversion_type)
+            assert False, f"unhandled conversion type {self.conversion_type}"
 
 
 class StarConversionSpecifier:
-    """Fake conversion specifier for the '*' special cases for field width and precision."""
+    """Fake conversion specifier for the '*' special cases for field width and precision.
+    """
 
     def accept(self, arg: Value, ctx: CanAssignContext) -> Iterable[str]:
         if not TypedValue(int).is_assignable(arg, ctx):
@@ -229,7 +231,7 @@ class PercentFormatString:
     def from_pattern(cls, pattern: str) -> "PercentFormatString":
         """Creates a parsed PercentFormatString from a raw string."""
         if not isinstance(pattern, str):
-            raise TypeError("invalid type for format string: {!r}".format(pattern))
+            raise TypeError(f"invalid type for format string: {pattern!r}")
         matches = list(_FORMAT_STRING_REGEX_TEXT.finditer(pattern))
         specifiers = tuple(
             ConversionSpecifier.from_match(match)
@@ -273,8 +275,7 @@ class PercentFormatString:
         """Finds errors in the pattern itself."""
         needs_mapping = self.needs_mapping()
         for cs in self.specifiers:
-            for err in cs.lint():
-                yield err
+            yield from cs.lint()
             if needs_mapping:
                 if (
                     cs.mapping_key is None
@@ -286,8 +287,8 @@ class PercentFormatString:
                         " that do not"
                     )
         for piece in self.raw_pieces:
-            if (b"%" in piece) if self.is_bytes else ("%" in piece):
-                yield "invalid conversion specifier in {}".format(piece)
+            if (b"%" in piece) if isinstance(piece, bytes) else ("%" in piece):
+                yield f"invalid conversion specifier in {piece}"
 
     def accept(self, args: Value, ctx: CanAssignContext) -> Iterable[str]:
         """Checks whether this format string can accept the given Value as arguments."""
@@ -305,7 +306,8 @@ class PercentFormatString:
             yield from self.accept_tuple_args(args, ctx)
 
     def get_specifier_mapping(self) -> Dict[str, List[ConversionSpecifier]]:
-        """Return a mapping from mapping key to conversion specifiers for that mapping key."""
+        """Return a mapping from mapping key to conversion specifiers for that mapping key.
+        """
         out = defaultdict(list)
         for specifier in self.specifiers:
             if specifier.conversion_type != "%":
@@ -368,8 +370,10 @@ class PercentFormatString:
             if isinstance(args, AnnotatedValue):
                 args = args.value
             args = replace_known_sequence_value(args)
-            if isinstance(args, SequenceIncompleteValue):
-                all_args = args.members
+            if isinstance(args, SequenceValue):
+                all_args = args.get_member_sequence()
+                if all_args is None:
+                    return
             else:
                 # it's a tuple but we don't know what's in it, so assume it's ok
                 return
@@ -415,16 +419,14 @@ def maybe_replace_with_fstring(
     fs: PercentFormatString, args_node: ast.AST
 ) -> Optional[ast.AST]:
     """If appropriate, emits an error to replace this % format with an f-string."""
-    # otherwise there are no f-strings
-    if sys.version_info < (3, 6):
-        return None
     # there are no bytes f-strings
     if isinstance(fs.pattern, bytes):
         return None
     # if there is a { in the string, we will need escaping in order to use an f-string, which might
     # make the code worse
-    if any("{" in piece or "}" in piece for piece in fs.raw_pieces):
-        return None
+    for piece in fs.raw_pieces:
+        if isinstance(piece, bytes) or "{" in piece or "}" in piece:
+            return None
     # special conversion specifiers are rare and more difficult to replace, so just ignore them for
     # now
     if any(
@@ -572,7 +574,7 @@ def _parse_children(state: _ParserState, end_at: Optional[str] = None) -> Childr
                 if current_literal:
                     children.append("".join(current_literal))
             else:
-                state.add_error("expected '{}' before end of string".format(end_at))
+                state.add_error(f"expected '{end_at}' before end of string")
             break
         elif char == end_at:
             if current_literal:
@@ -616,7 +618,7 @@ def _parse_replacement_field(state: _ParserState) -> Union[str, ReplacementField
             if char not in allowed_specials:
                 state.add_error(
                     "expected one of {}".format(
-                        ", ".join("'{}'".format(c) for c in sorted(allowed_specials))
+                        ", ".join(f"'{c}'" for c in sorted(allowed_specials))
                     )
                 )
                 return ""
@@ -636,7 +638,7 @@ def _parse_replacement_field(state: _ParserState) -> Union[str, ReplacementField
                         attribute_chars.append(char)
                 attribute_name = "".join(attribute_chars)
                 if not _IDENTIFIER_REGEX.match(attribute_name):
-                    state.add_error("invalid attribute '{}'".format(attribute_name))
+                    state.add_error(f"invalid attribute '{attribute_name}'")
                     return ""
                 index_attribute.append((IndexOrAttribute.attribute, attribute_name))
             elif char == "[":
@@ -655,17 +657,13 @@ def _parse_replacement_field(state: _ParserState) -> Union[str, ReplacementField
                 conversion = state.next()
                 allowed_specials = {":", "}"}
                 if conversion not in _FORMAT_STRING_CONVERSIONS:
-                    state.add_error(
-                        "Unknown conversion specifier '{!s}'".format(conversion)
-                    )
+                    state.add_error(f"Unknown conversion specifier '{conversion!s}'")
                     return ""
                 next_char = state.peek()
                 if next_char not in allowed_specials:
                     state.add_error(
                         "expected one of {}".format(
-                            ", ".join(
-                                "'{}'".format(c) for c in sorted(allowed_specials)
-                            )
+                            ", ".join(f"'{c}'" for c in sorted(allowed_specials))
                         )
                     )
                     return ""

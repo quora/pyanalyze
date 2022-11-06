@@ -9,11 +9,12 @@ from dataclasses import dataclass, field
 from types import FunctionType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 
-from .safe import safe_getattr, safe_isinstance
 from .error_code import ErrorCode
-from .node_visitor import Failure, ErrorContext
+from .node_visitor import ErrorContext, Failure
+
+from .safe import safe_getattr, safe_isinstance
+from .signature import Signature
 from .value import (
-    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -21,18 +22,18 @@ from .value import (
     CanAssignError,
     GenericValue,
     KnownValue,
-    SequenceIncompleteValue,
+    MultiValuedValue,
+    NO_RETURN_VALUE,
+    replace_known_sequence_value,
+    SequenceValue,
+    stringify_object,
     SubclassValue,
     TypedDictValue,
     TypedValue,
-    Value,
-    MultiValuedValue,
-    VariableNameValue,
-    replace_known_sequence_value,
-    stringify_object,
     unite_values,
+    Value,
+    VariableNameValue,
 )
-from .signature import Signature
 
 CallArgs = Mapping[str, Value]
 FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
@@ -55,6 +56,8 @@ class CallableData:
             if sig_param is None or not isinstance(sig_param.annotation, AnyValue):
                 continue  # e.g. inferred type for self
             all_values = [call[param.arg] for call in self.calls]
+            if sig_param.default is not None:
+                all_values.append(sig_param.default)
             all_values = [prepare_type(v) for v in all_values]
             all_values = [v for v in all_values if not isinstance(v, AnyValue)]
             if not all_values:
@@ -155,13 +158,14 @@ def prepare_type(value: Value) -> Value:
     """Simplify a type to turn it into a suggestion."""
     if isinstance(value, AnnotatedValue):
         return prepare_type(value.value)
-    elif isinstance(value, SequenceIncompleteValue):
+    elif isinstance(value, SequenceValue):
         if value.typ is tuple:
-            return SequenceIncompleteValue(
-                tuple, [prepare_type(elt) for elt in value.members]
-            )
-        else:
-            return GenericValue(value.typ, [prepare_type(arg) for arg in value.args])
+            members = value.get_member_sequence()
+            if members is not None:
+                return SequenceValue(
+                    tuple, [(False, prepare_type(elt)) for elt in members]
+                )
+        return GenericValue(value.typ, [prepare_type(arg) for arg in value.args])
     elif isinstance(value, (TypedDictValue, CallableValue)):
         return value
     elif isinstance(value, GenericValue):

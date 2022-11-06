@@ -5,15 +5,10 @@ Base class for scripts that run ast-based checks on the codebase.
 """
 
 import argparse
-from ast_decompiler import decompile
 import ast
-import codemod
+import builtins
 import collections
-from contextlib import contextmanager
 import concurrent.futures
-from dataclasses import dataclass
-from enum import Enum
-import qcore
 import cProfile
 import json
 import logging
@@ -23,10 +18,11 @@ import re
 import subprocess
 import sys
 import tempfile
-import builtins
 from builtins import print as real_print
+from contextlib import contextmanager
+from dataclasses import dataclass
+from enum import Enum
 from types import ModuleType
-from typing_extensions import NotRequired, Protocol, TypedDict
 from typing import (
     Any,
     Dict,
@@ -40,6 +36,11 @@ from typing import (
     Type,
     Union,
 )
+
+import codemod
+import qcore
+from ast_decompiler import decompile
+from typing_extensions import NotRequired, Protocol, TypedDict
 
 from . import analysis_lib
 
@@ -78,7 +79,7 @@ class _PatchWithDescription(codemod.Patch):
         self.description = description
 
     def render_range(self) -> str:
-        text = super(_PatchWithDescription, self).render_range()
+        text = super().render_range()
         if self.description is not None:
             return text + ": " + self.description
         return text
@@ -157,7 +158,8 @@ class ErrorContext(Protocol):
 
 
 class BaseNodeVisitor(ast.NodeVisitor):
-    """Base Visitor class that can run on all files in a/ and show detailed error messages."""
+    """Base Visitor class that can run on all files in a/ and show detailed error messages.
+    """
 
     # Number of context lines to show around errors
     CONTEXT_LINES: int = 3
@@ -167,7 +169,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     should_check_environ_for_files: bool = True
     caught_errors: Optional[List[Dict[str, Any]]] = None
 
-    _changes_for_fixer = collections.defaultdict(list)
+    _changes_for_fixer: Dict[str, List[Replacement]] = collections.defaultdict(list)
 
     tree: ast.Module
     all_failures: List[Failure]
@@ -192,8 +194,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
         """
         if not isinstance(contents, str):
-            raise TypeError("File contents must be text, not {}".format(type(contents)))
-        super(BaseNodeVisitor, self).__init__()
+            raise TypeError(f"File contents must be text, not {type(contents)}")
+        super().__init__()
         self.filename = filename
         self.contents = contents
         self.tree = tree
@@ -229,9 +231,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     def log(self, level: int, label: str, value: object) -> None:
         if level < self._logging_level:
             return
-        self.logger.log(
-            level, "%s: %s" % (qcore.safe_str(label), qcore.safe_str(value))
-        )
+        self.logger.log(level, f"{qcore.safe_str(label)}: {qcore.safe_str(value)}")
 
     @qcore.caching.cached_per_instance()
     def _lines(self) -> List[str]:
@@ -269,12 +269,12 @@ class BaseNodeVisitor(ast.NodeVisitor):
             node = _FakeNode(i + 1, line.index(IGNORE_COMMENT))
             stripped = line.strip()
             if stripped == IGNORE_COMMENT or re.match(
-                r"^%s\[[^\s\]]+\]$" % (re.escape(IGNORE_COMMENT),), stripped
+                rf"^{re.escape(IGNORE_COMMENT)}\[[^\s\]]+\]$", stripped
             ):
                 # just remove the line
                 replacement = Replacement([i + 1], [])
             else:
-                rgx = re.compile(r"%s(\[[^\s\]]+\])?" % (re.escape(IGNORE_COMMENT),))
+                rgx = re.compile(rf"{re.escape(IGNORE_COMMENT)}(\[[^\s\]]+\])?")
                 replacement = Replacement([i + 1], [rgx.sub("", line)])
             self.show_error(
                 node, error_code=error_code, replacement=replacement, obey_ignore=False
@@ -304,12 +304,12 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
         """
         try:
-            with open(filename, "r", encoding="utf-8") as f:
+            with open(filename, encoding="utf-8") as f:
                 contents = f.read()
-        except IOError:
+        except OSError:
             raise FileNotFoundError(repr(filename))
         except UnicodeDecodeError:
-            raise FileNotFoundError("Failed to decode contents of {}".format(filename))
+            raise FileNotFoundError(f"Failed to decode contents of {filename}")
         tree = ast.parse(contents.encode("utf-8"), filename)
         return cls(filename, contents, tree, **kwargs).check()
 
@@ -317,7 +317,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
     def check_all_files(
         cls, include_tests: bool = False, assert_passes: bool = True, **kwargs: Any
     ) -> List[Failure]:
-        """Runs the check for all files in scope or changed files if we are test-local."""
+        """Runs the check for all files in scope or changed files if we are test-local.
+        """
         if "settings" not in kwargs:
             kwargs["settings"] = cls._get_default_settings()
         kwargs = cls.prepare_constructor_kwargs(kwargs)
@@ -358,7 +359,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def main(cls) -> int:
-        """Can be used as a main function. Calls the checker on files given on the command line."""
+        """Can be used as a main function. Calls the checker on files given on the command line.
+        """
         args = cls._get_argument_parser().parse_args()
 
         if cls.error_code_enum is not None:
@@ -450,13 +452,15 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 ):
                     if "\n" in failure["message"].strip():
                         lines = failure["message"].splitlines()[1:]
-                        f.write("* line %s: `%s`\n" % (failure.get("lineno"), lines[0]))
+                        f.write(
+                            "* line {}: `{}`\n".format(failure.get("lineno"), lines[0])
+                        )
                         f.write("```\n")
                         for line in lines[1:]:
                             f.write(f"{line}\n")
                         f.write("```\n")
                     else:
-                        f.write("* `%s`" % (failure["message"].strip(),))
+                        f.write("* `{}`".format(failure["message"].strip()))
 
     @classmethod
     def _run_and_apply_changes(
@@ -501,7 +505,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     @classmethod
     def _apply_changes(cls, changes: Dict[str, List[Replacement]]) -> None:
         for filename, changeset in changes.items():
-            with open(filename, "r") as f:
+            with open(filename) as f:
                 lines = f.readlines()
             lines = cls._apply_changes_to_lines(changeset, lines)
             with open(filename, "w") as f:
@@ -649,7 +653,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         if obey_ignore and lineno is not None:
             this_line = lines[lineno - 1]
             if (
-                re.search("%s(?!\\[)" % (re.escape(ignore_comment),), this_line)
+                re.search(f"{re.escape(ignore_comment)}(?!\\[)", this_line)
                 or error_code is not None
                 and f"{ignore_comment}[{error_code.name}]" in this_line
             ):
@@ -690,7 +694,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                     ignore = ignore_comment
                 replacement = Replacement(
                     [lineno],
-                    ["%s%s\n" % (" " * indentation, ignore), this_line],
+                    ["{}{}\n".format(" " * indentation, ignore), this_line],
                     str(e),
                 )
             else:
@@ -963,8 +967,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         if modules is None:
             dirs = cls.get_default_directories(**kwargs)
             if dirs:
-                for filename in _get_all_files(dirs):
-                    yield filename
+                yield from _get_all_files(dirs)
                 return
             modules = cls.get_default_modules()
         enclosing_module_names = {module.__name__ for module in modules}
@@ -989,8 +992,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             for module in modules:
                 dirname = os.path.dirname(module.__file__)
                 cmd = ["find", dirname, "-name", "test*.py"]
-                for filename in subprocess.check_output(cmd).split():
-                    yield filename
+                yield from subprocess.check_output(cmd).split()
 
     @classmethod
     def _should_ignore_module(cls, module_name: str) -> bool:
@@ -1046,7 +1048,7 @@ class ReplacingNodeVisitor(BaseNodeVisitor):
     """A NodeVisitor that enables replacing AST nodes directly in errors."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super(ReplacingNodeVisitor, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.current_statement = None
 
     def replace_node(
@@ -1101,7 +1103,7 @@ def get_files_to_check_from_environ(
 
     """
     if environ_key in os.environ:
-        with open(os.environ[environ_key], "r") as f:
+        with open(os.environ[environ_key]) as f:
             return [filename.strip() for filename in f]
     else:
         return None
@@ -1111,10 +1113,9 @@ def _get_all_files(lst: Iterable[str]) -> Iterable[str]:
     """Finds all Python files from a list of command-line arguments."""
     for entry in lst:
         if os.path.isdir(entry):
-            for filename in sorted(
+            yield from sorted(
                 analysis_lib.files_with_extension_from_directory("py", entry)
-            ):
-                yield filename
+            )
         else:
             yield entry
 
@@ -1124,7 +1125,7 @@ def _flushing_print(*args: Any, **kwargs: Any) -> None:
     real_print(*args, **kwargs)
 
 
-class _Profile(object):
+class _Profile:
     """Context for profiling an arbitrary block of code."""
 
     def __init__(self) -> None:
@@ -1137,7 +1138,7 @@ class _Profile(object):
         self.prof.disable()
         self.filename = tempfile.mktemp()
         self.prof.dump_stats(self.filename)
-        print("profiler output saved as {}".format(self.filename))
+        print(f"profiler output saved as {self.filename}")
 
 
 def _make_serializable(failure: Failure) -> Dict[str, Any]:

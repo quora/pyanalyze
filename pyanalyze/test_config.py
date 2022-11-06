@@ -3,23 +3,23 @@
 Configuration file specific to tests.
 
 """
-from typing import Dict, Optional
 from pathlib import Path
+from typing import Dict, Optional
+
+from . import tests, value
+from .arg_spec import ArgSpecCache
+from .error_code import ErrorCode, register_error_code
+from .find_unused import used
 
 from .options import Options
-from .arg_spec import ArgSpecCache
-from .find_unused import used
 from .signature import (
     CallContext,
     ConcreteSignature,
     OverloadedSignature,
+    ParameterKind,
     Signature,
     SigParameter,
-    ParameterKind,
 )
-from .error_code import ErrorCode, register_error_code
-from . import tests
-from . import value
 
 register_error_code("internal_test", "Used in an internal test")
 

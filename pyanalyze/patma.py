@@ -6,12 +6,9 @@ Visitor for pattern matching.
 
 import ast
 import collections.abc
-from dataclasses import dataclass, replace
 import enum
 import itertools
-
-import qcore
-import pyanalyze
+from dataclasses import dataclass, replace
 from typing import (
     Any,
     Callable,
@@ -24,21 +21,25 @@ from typing import (
     Union,
 )
 
-from .implementation import len_of_value
-from .signature import MappingValue
+import qcore
+
+import pyanalyze
 from .annotations import type_from_value
-from .extensions import CustomCheck
 from .error_code import ErrorCode
+from .extensions import CustomCheck
+
+from .implementation import len_of_value
 from .predicates import EqualsPredicate, IsAssignablePredicate
+from .signature import MappingValue
 from .stacked_scopes import (
-    NULL_CONSTRAINT,
     AbstractConstraint,
     AndConstraint,
     Composite,
+    constrain_value,
     Constraint,
     ConstraintType,
+    NULL_CONSTRAINT,
     OrConstraint,
-    constrain_value,
 )
 from .value import (
     AnnotatedValue,
@@ -49,20 +50,20 @@ from .value import (
     CanAssignError,
     CustomCheckExtension,
     DictIncompleteValue,
+    flatten_values,
+    is_overlapping,
+    KnownValue,
+    kv_pairs_from_mapping,
     KVPair,
-    SequenceIncompleteValue,
+    replace_known_sequence_value,
+    SequenceValue,
     SubclassValue,
     TypedValue,
-    Value,
-    KnownValue,
-    flatten_values,
-    kv_pairs_from_mapping,
-    replace_known_sequence_value,
     unannotate,
+    UNINITIALIZED_VALUE,
     unite_values,
     unpack_values,
-    is_overlapping,
-    UNINITIALIZED_VALUE,
+    Value,
 )
 
 try:
@@ -166,8 +167,8 @@ class LenPredicate:
         ):
             # Narrow Tuple[...] to a known length
             arg = cleaned.get_generic_arg_for_type(tuple, self.ctx, 0)
-            return SequenceIncompleteValue(
-                tuple, [arg for _ in range(self.expected_length)]
+            return SequenceValue(
+                tuple, [(False, arg) for _ in range(self.expected_length)]
             )
         return value
 
@@ -478,18 +479,21 @@ def get_match_args(
     if match_args_value is UNINITIALIZED_VALUE:
         return CanAssignError(f"{cls} has no attribute __match_args__")
     match_args_value = replace_known_sequence_value(match_args_value)
-    if (
-        not isinstance(match_args_value, SequenceIncompleteValue)
-        or match_args_value.typ is not tuple
-    ):
-        return CanAssignError(
-            f"__match_args__ must be a literal tuple, not {match_args_value}"
-        )
-    match_args = []
-    for i, arg in enumerate(match_args_value.members):
-        if not isinstance(arg, KnownValue) or not isinstance(arg.val, str):
+    if isinstance(match_args_value, SequenceValue):
+        if match_args_value.typ is not tuple:
             return CanAssignError(
-                f"__match_args__ element {i} is {arg}, not a string literal"
+                f"__match_args__ must be a literal tuple, not {match_args_value}"
             )
-        match_args.append(arg.val)
-    return match_args
+        match_args = []
+        for i, (is_many, arg) in enumerate(match_args_value.members):
+            if is_many:
+                return CanAssignError("Cannot use unpacking in __match_args__")
+            if not isinstance(arg, KnownValue) or not isinstance(arg.val, str):
+                return CanAssignError(
+                    f"__match_args__ element {i} is {arg}, not a string literal"
+                )
+            match_args.append(arg.val)
+        return match_args
+    return CanAssignError(
+        f"__match_args__ must be a literal tuple, not {match_args_value}"
+    )

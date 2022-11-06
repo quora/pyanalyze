@@ -4,17 +4,17 @@ Code for retrieving the value of attributes.
 
 """
 import ast
-import asynq
-from dataclasses import dataclass
-from enum import Enum
 import inspect
-import qcore
 import sys
 import types
-from typing import Any, Callable, Generic, Sequence, Tuple, Optional, Union
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
+import asynq
+import qcore
 
-from .annotations import type_from_annotations, type_from_runtime, Context
+from .annotations import Context, type_from_annotations, type_from_runtime
 from .options import Options, PyObjectSequenceOption
 from .safe import safe_isinstance, safe_issubclass
 from .signature import MaybeSignature
@@ -25,18 +25,18 @@ from .value import (
     AnyValue,
     CallableValue,
     GenericBases,
-    HasAttrExtension,
-    KnownValueWithTypeVars,
-    Value,
-    KnownValue,
     GenericValue,
-    UNINITIALIZED_VALUE,
+    HasAttrExtension,
+    KnownValue,
+    KnownValueWithTypeVars,
     MultiValuedValue,
-    UnboundMethodValue,
+    set_self,
     SubclassValue,
     TypedValue,
     TypeVarValue,
-    set_self,
+    UnboundMethodValue,
+    UNINITIALIZED_VALUE,
+    Value,
 )
 
 # these don't appear to be in the standard types module
@@ -348,6 +348,16 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
         return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
 
     result, _, _ = _get_attribute_from_mro(obj, ctx, on_class=True)
+    if (
+        isinstance(result, KnownValue)
+        and (
+            safe_isinstance(result.val, types.MethodType)
+            or safe_isinstance(result.val, types.BuiltinFunctionType)
+            and result.val.__self__ is obj
+        )
+        and isinstance(ctx.root_value, AnnotatedValue)
+    ):
+        result = UnboundMethodValue(ctx.attr, ctx.root_composite)
     if safe_isinstance(obj, type):
         result = set_self(result, TypedValue(obj))
     if isinstance(obj, (types.ModuleType, type)):
@@ -428,24 +438,19 @@ def _get_attribute_from_mro(
         pass
     else:
         for base_cls in mro:
-            # On 3.6 (before PEP 560), the MRO for classes inheriting from typing generics
-            # includes a bunch of classes in the typing module that
-            # don't have any attributes we care about.
-            if (
-                sys.version_info < (3, 7)
-                and isinstance(base_cls, type)
-                and base_cls.__module__ == "typing"
-                and Generic in base_cls.mro()
-            ):
-                continue
             if ctx.skip_mro and base_cls is not typ:
                 continue
 
-            if ctx.prefer_typeshed:
-                typeshed_type = ctx.get_attribute_from_typeshed(
-                    base_cls, on_class=on_class or ctx.skip_unwrap
-                )
-                if typeshed_type is not UNINITIALIZED_VALUE:
+            typeshed_type = ctx.get_attribute_from_typeshed(
+                base_cls, on_class=on_class or ctx.skip_unwrap
+            )
+            if typeshed_type is not UNINITIALIZED_VALUE:
+                if ctx.prefer_typeshed:
+                    return typeshed_type, base_cls, False
+                # If it's a callable, we'll probably do better
+                # getting the attribute from the type ourselves,
+                # because we may have our own implementation.
+                if not isinstance(typeshed_type, CallableValue):
                     return typeshed_type, base_cls, False
 
             try:
@@ -479,12 +484,8 @@ def _get_attribute_from_mro(
                     val = AnyValue(AnySource.inference)
                 return val, base_cls, True
 
-            if not ctx.prefer_typeshed:
-                typeshed_type = ctx.get_attribute_from_typeshed(
-                    base_cls, on_class=on_class or ctx.skip_unwrap
-                )
-                if typeshed_type is not UNINITIALIZED_VALUE:
-                    return typeshed_type, base_cls, False
+            if typeshed_type is not UNINITIALIZED_VALUE:
+                return typeshed_type, base_cls, False
 
     attrs_type = get_attrs_attribute(typ, ctx)
     if attrs_type is not None:
@@ -504,7 +505,8 @@ def _get_attribute_from_mro(
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
-    """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
+    """Returns whether this value has the given attribute, ignoring __getattr__ overrides.
+    """
     try:
         object.__getattribute__(value, attr)
     except AttributeError:

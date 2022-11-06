@@ -1,29 +1,30 @@
 # static analysis: ignore
 from .asynq_checker import (
-    is_impure_async_fn,
     _stringify_async_fn,
     get_pure_async_equivalent,
+    is_impure_async_fn,
 )
 from .stacked_scopes import Composite
-from .tests import (
-    PropertyObject,
-    async_fn,
-    cached_fn,
-    proxied_fn,
-    l0cached_async_fn,
-    Subclass,
-    ASYNQ_METHOD_NAME,
-)
-from .value import KnownValue, UnboundMethodValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
+from .tests import (
+    async_fn,
+    ASYNQ_METHOD_NAME,
+    cached_fn,
+    l0cached_async_fn,
+    PropertyObject,
+    proxied_fn,
+    Subclass,
+)
+from .value import KnownValue, TypedValue, UnboundMethodValue
 
 
 class TestImpureAsyncCalls(TestNameCheckVisitorBase):
     @assert_passes()
     def test_async_classmethod(self):
         from asynq import asynq, result
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
+
+        from pyanalyze.tests import CheckedForAsynq, PropertyObject
 
         class HostQuestion(CheckedForAsynq):
             def init(self, qid):
@@ -60,7 +61,8 @@ class TestImpureAsyncCalls(TestNameCheckVisitorBase):
     @assert_passes()
     def test_async_staticmethod(self):
         from asynq import asynq, result
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
+
+        from pyanalyze.tests import CheckedForAsynq, PropertyObject
 
         class CapybaraLink(CheckedForAsynq):
             def init(self, uid):
@@ -73,7 +75,7 @@ class TestImpureAsyncCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_impure_async_staticmethod(self):
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, PropertyObject
 
         class CapybaraLink(CheckedForAsynq):
             def init(self, uid):
@@ -85,8 +87,9 @@ class TestImpureAsyncCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_async_property_access(self):
-        from pyanalyze.tests import PropertyObject
         from asynq import asynq, result
+
+        from pyanalyze.tests import PropertyObject
 
         @asynq()
         def get_capybara(qid):
@@ -133,6 +136,7 @@ def capybara():
     @assert_passes()
     def test_pure_async_call(self):
         from asynq import asynq, result
+
         from pyanalyze.tests import async_fn, CheckedForAsynq
 
         class Capybara(CheckedForAsynq):
@@ -170,8 +174,9 @@ def capybara():
 
     @assert_passes()
     def test_impure_async_call_in_component(self):
-        from pyanalyze.tests import cached_fn, CheckedForAsynq
         from asynq import asynq
+
+        from pyanalyze.tests import cached_fn, CheckedForAsynq
 
         class Capybara(CheckedForAsynq):
             def init(self, uid):
@@ -185,6 +190,7 @@ def capybara():
     @assert_passes()
     def test_impure_async_call_to_method(self):
         from asynq import asynq
+
         from pyanalyze.tests import CheckedForAsynq
 
         class Capybara(CheckedForAsynq):
@@ -201,7 +207,8 @@ def capybara():
     @assert_passes()
     def test_pure_async_for_attributes(self):
         from asynq import asynq, result
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
+
+        from pyanalyze.tests import CheckedForAsynq, PropertyObject
 
         class Capybara(CheckedForAsynq):
             def init(self, qid):
@@ -214,7 +221,7 @@ def capybara():
 
     @assert_passes()
     def test_untyped_attribute_accesses(self):
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, PropertyObject
 
         class Capybara(CheckedForAsynq):
             def init(self, qid):
@@ -229,7 +236,7 @@ def capybara():
 
     @assert_passes()
     def test_access_in_classmethod(self):
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, PropertyObject
 
         class Capybara(CheckedForAsynq):
             def init(self, qid):
@@ -244,7 +251,7 @@ def capybara():
 
     @assert_passes()
     def test_access_in_property(self):
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, PropertyObject
 
         class LinkImageNonLive(CheckedForAsynq):
             embed_object = property(lambda self: PropertyObject(self.lid).prop)
@@ -275,6 +282,7 @@ def capybara():
     @assert_passes()
     def test_function(self):
         from asynq import asynq
+
         from pyanalyze.tests import async_fn
 
         @asynq()
@@ -284,6 +292,7 @@ def capybara():
     @assert_passes()
     def test_method(self):
         from asynq import asynq
+
         from pyanalyze.tests import PropertyObject
 
         @asynq()
@@ -294,6 +303,7 @@ def capybara():
     @assert_passes()
     def test_classmethod(self):
         from asynq import asynq
+
         from pyanalyze.tests import PropertyObject
 
         @asynq()
@@ -305,7 +315,8 @@ class TestAsyncMethods(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):
         from asynq import asynq, result
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
+
+        from pyanalyze.tests import CheckedForAsynq, PropertyObject
 
         class Capybara(CheckedForAsynq):
             def init(self, poid):
@@ -319,7 +330,7 @@ class TestAsyncMethods(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_impure_method_call(self):
-        from pyanalyze.tests import PropertyObject, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, PropertyObject
 
         class Capybara(CheckedForAsynq):
             def init(self, poid):
@@ -332,8 +343,9 @@ class TestAsyncMethods(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_pure_asynq_method(self):
-        from asynq import asynq
         import multiprocessing
+
+        from asynq import asynq
 
         class Capybara(object):
             def __init__(self, x):

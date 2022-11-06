@@ -6,3 +6,7 @@ constructor_hooks = ["pyanalyze.test_config.get_constructor"]
 known_signatures = ["pyanalyze.test_config.get_known_signatures"]
 unwrap_class = ["pyanalyze.test_config.unwrap_class"]
 stub_path = ["./stubs"]
+functions_safe_to_call = [
+    "pyanalyze.tests.make_simple_sequence",
+    "pyanalyze.value.make_coro_type",
+]

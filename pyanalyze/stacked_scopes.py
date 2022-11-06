@@ -19,14 +19,13 @@ Other subtleties implemented here:
 - Class scopes except the current one are skipped in name lookup
 
 """
+import builtins
+import contextlib
+import enum
 from ast import AST
 from collections import defaultdict, OrderedDict
-import contextlib
 from dataclasses import dataclass, field, replace
-import enum
-import qcore
 from itertools import chain
-import builtins
 from types import ModuleType
 from typing import (
     Any,
@@ -38,35 +37,37 @@ from typing import (
     Iterator,
     List,
     NamedTuple,
-    Sequence,
     Optional,
+    Sequence,
     Set,
     Tuple,
     TypeVar,
     Union,
 )
 
+import qcore
+
 from .boolability import get_boolability
 from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
-    NO_RETURN_VALUE,
+    annotate_value,
     AnnotatedValue,
     AnySource,
     AnyValue,
     ConstraintExtension,
+    flatten_values,
     KnownValue,
     MultiValuedValue,
+    NO_RETURN_VALUE,
     ReferencingValue,
     SubclassValue,
-    TypeVarMap,
     TypedValue,
-    Value,
-    annotate_value,
+    TypeVarMap,
     UNINITIALIZED_VALUE,
     unite_and_simplify,
     unite_values,
-    flatten_values,
+    Value,
 )
 
 T = TypeVar("T")
@@ -117,9 +118,6 @@ class CompositeVariable:
 
     varname: str
     attributes: Sequence[CompositeIndex]
-
-    def extend_with(self, index: CompositeIndex) -> "CompositeVariable":
-        return CompositeVariable(self.varname, (*self.attributes, index))
 
     def __str__(self) -> str:
         pieces = [self.varname]
@@ -241,8 +239,8 @@ class ConstraintType(enum.Enum):
     all_of = 5
     """All of several other constraints on `varname` are true."""
     is_value_object = 6
-    """`constraint.varname` should be typed as a :class:`pyanalyze.value.Value` object. Naming of this
-    and `is_value` is confusing, and ideally we'd come up with better names."""
+    """`constraint.varname` should be typed as a :class:`pyanalyze.value.Value` object. Naming of
+    this and `is_value` is confusing, and ideally we'd come up with better names."""
     predicate = 7
     """`constraint.value` is a `PredicateFunc`."""
     add_annotation = 8
@@ -265,7 +263,8 @@ class AbstractConstraint:
     """
 
     def apply(self) -> Iterable["Constraint"]:
-        """Yields concrete constraints that are active when this constraint is applied."""
+        """Yields concrete constraints that are active when this constraint is applied.
+        """
         raise NotImplementedError
 
     def invert(self) -> "AbstractConstraint":
@@ -439,15 +438,13 @@ class Constraint(AbstractConstraint):
 
         elif self.constraint_type == ConstraintType.one_of:
             for constraint in self.value:
-                for val in constraint.apply_to_value(value):
-                    yield val
+                yield from constraint.apply_to_value(value)
 
         elif self.constraint_type == ConstraintType.all_of:
             vals = [value]
             for constraint in self.value:
                 vals = list(constraint.apply_to_values(vals))
-            for applied in vals:
-                yield applied
+            yield from vals
 
         else:
             assert False, f"unknown constraint type {self.constraint_type}"
@@ -535,7 +532,7 @@ class EquivalentConstraint(AbstractConstraint):
 
     def invert(self) -> "EquivalentConstraint":
         # ~(A == B) -> ~A == ~B
-        return EquivalentConstraint(tuple([cons.invert() for cons in self.constraints]))
+        return EquivalentConstraint(tuple(cons.invert() for cons in self.constraints))
 
     @classmethod
     def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
@@ -571,7 +568,7 @@ class AndConstraint(AbstractConstraint):
 
     def invert(self) -> "OrConstraint":
         # ~(A and B) -> ~A or ~B
-        return OrConstraint(tuple([cons.invert() for cons in self.constraints]))
+        return OrConstraint(tuple(cons.invert() for cons in self.constraints))
 
     @classmethod
     def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
@@ -645,7 +642,7 @@ class OrConstraint(AbstractConstraint):
 
     def invert(self) -> AndConstraint:
         # ~(A or B) -> ~A and ~B
-        return AndConstraint(tuple([cons.invert() for cons in self.constraints]))
+        return AndConstraint(tuple(cons.invert() for cons in self.constraints))
 
     @classmethod
     def make(cls, constraints: Iterable[AbstractConstraint]) -> AbstractConstraint:
@@ -858,7 +855,8 @@ class Scope:
             return value
 
     def scope_used_as_parent(self) -> "Scope":
-        """Class scopes are skipped in scope lookup, so don't set them as parent scopes."""
+        """Class scopes are skipped in scope lookup, so don't set them as parent scopes.
+        """
         if self.scope_type == ScopeType.class_scope:
             assert (
                 self.parent_scope is not None
@@ -1331,6 +1329,8 @@ class FunctionScope(Scope):
         ctx: _LookupContext,
         constraints: Iterable[Constraint] = (),
     ) -> Value:
+        # Deduplicate nodes to gain some performance.
+        nodes = OrderedDict.fromkeys(nodes)
         # If the variable is a nonlocal or composite, "uninitialized" doesn't make sense;
         # instead use an empty constraint to point to the parent scope.
         should_use_unconstrained = (

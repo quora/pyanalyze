@@ -1,9 +1,9 @@
 # static analysis: ignore
-from .value import GenericValue, KnownValue, AnyValue, AnySource, TypedValue
 from .error_code import ErrorCode
 from .implementation import assert_is_value
-from .test_node_visitor import assert_passes, skip_before
 from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes, skip_before
+from .value import AnySource, AnyValue, GenericValue, KnownValue, TypedValue
 
 
 class TestNestedFunction(TestNameCheckVisitorBase):
@@ -53,15 +53,13 @@ class TestNestedFunction(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_async_def(self):
-        import collections.abc
+        from pyanalyze.value import make_coro_type
 
         def capybara():
             async def nested() -> int:
                 return 1
 
-            assert_is_value(
-                nested(), GenericValue(collections.abc.Awaitable, [TypedValue(int)])
-            )
+            assert_is_value(nested(), make_coro_type(TypedValue(int)))
 
     @assert_passes()
     def test_bad_decorator(self):
@@ -187,3 +185,36 @@ class TestDecorators(TestNameCheckVisitorBase):
         @asynccontextmanager
         async def make_cm() -> AsyncIterator[None]:
             yield
+
+
+class TestAsyncGenerator(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_not_a_generator(self):
+        from pyanalyze.value import make_coro_type
+
+        async def capybara() -> None:
+            async def agen():
+                yield 1
+
+            def gen():
+                yield 2
+
+            print(agen, gen, lambda: (yield 3))
+
+        def caller() -> None:
+            x = capybara()
+            assert_is_value(x, make_coro_type(KnownValue(None)))
+
+    @assert_passes()
+    def test_is_a_generator(self):
+        import collections.abc
+        from typing import AsyncIterator
+
+        async def capybara() -> AsyncIterator[int]:
+            yield 1
+
+        def caller() -> None:
+            x = capybara()
+            assert_is_value(
+                x, GenericValue(collections.abc.AsyncIterator, [TypedValue(int)])
+            )

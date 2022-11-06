@@ -6,95 +6,103 @@ calls.
 
 """
 
-from .type_evaluation import EvalContext, Evaluator
+import ast
+import collections.abc
+import enum
+import inspect
+import itertools
+from dataclasses import dataclass, field, replace
+from types import FunctionType, MethodType
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Container,
+    Dict,
+    Iterable,
+    List,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TYPE_CHECKING,
+    TypeVar,
+    Union,
+)
+
+import asynq
+import qcore
+from qcore.helpers import safe_str
+from typing_extensions import assert_never, Literal, Protocol, Self
+
 from .error_code import ErrorCode
-from .safe import all_of_type
 from .stacked_scopes import (
+    AbstractConstraint,
     AndConstraint,
-    OrConstraint,
     Composite,
     Constraint,
     ConstraintType,
     NULL_CONSTRAINT,
-    AbstractConstraint,
+    OrConstraint,
     VarnameWithOrigin,
 )
-from .type_evaluation import ARGS, KWARGS, DEFAULT, UNKNOWN, Position
+from .type_evaluation import (
+    ARGS,
+    DEFAULT,
+    EvalContext,
+    Evaluator,
+    KWARGS,
+    Position,
+    UNKNOWN,
+)
 from .typevar import resolve_bounds_map
 from .value import (
+    annotate_value,
     AnnotatedValue,
     AnySource,
     AnyValue,
     AsyncTaskIncompleteValue,
     BoundsMap,
     CallableValue,
-    CanAssignContext,
-    ConstraintExtension,
-    GenericValue,
-    HasAttrExtension,
-    HasAttrGuardExtension,
-    KVPair,
-    KnownValue,
-    LowerBound,
-    MultiValuedValue,
-    NoReturnConstraintExtension,
-    NoReturnGuardExtension,
-    ParamSpecArgsValue,
-    ParamSpecKwargsValue,
-    ParameterTypeGuardExtension,
-    SequenceIncompleteValue,
-    DictIncompleteValue,
-    TypeGuardExtension,
-    TypeVarValue,
-    TypedDictValue,
-    TypedValue,
-    Value,
-    TypeVarMap,
-    CanAssign,
-    CanAssignError,
-    annotate_value,
     can_assign_and_used_any,
+    CanAssign,
+    CanAssignContext,
+    CanAssignError,
     concrete_values_from_iterable,
+    ConstraintExtension,
+    DictIncompleteValue,
     extract_typevars,
     flatten_values,
+    GenericValue,
     get_tv_map,
+    HasAttrExtension,
+    HasAttrGuardExtension,
+    KnownValue,
+    KVPair,
+    LowerBound,
+    MultiValuedValue,
+    NO_RETURN_VALUE,
+    NoReturnConstraintExtension,
+    NoReturnGuardExtension,
+    ParameterTypeGuardExtension,
+    ParamSpecArgsValue,
+    ParamSpecKwargsValue,
     replace_known_sequence_value,
+    SequenceValue,
     stringify_object,
+    TypedDictValue,
+    TypedValue,
+    TypeGuardExtension,
+    TypeVarLike,
+    TypeVarMap,
+    TypeVarValue,
+    unannotate,
     unannotate_value,
     unify_bounds_maps,
     unite_values,
-    unannotate,
-    NO_RETURN_VALUE,
+    Value,
 )
-
-import ast
-import asynq
-import collections.abc
-from dataclasses import dataclass, field, replace
-import enum
-import itertools
-import qcore
-from types import MethodType, FunctionType
-import inspect
-from qcore.helpers import safe_str
-from typing import (
-    Any,
-    Container,
-    Iterable,
-    NamedTuple,
-    Optional,
-    ClassVar,
-    Sequence,
-    Union,
-    Callable,
-    Dict,
-    List,
-    Set,
-    TypeVar,
-    Tuple,
-    TYPE_CHECKING,
-)
-from typing_extensions import Literal, Protocol, Self, assert_never
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
@@ -351,6 +359,9 @@ class ParameterKind(enum.Enum):
     with any other callable. There can only be one ELLIPSIS parameter
     and it must be the last one."""
 
+    def allow_unpack(self) -> bool:
+        return self is ParameterKind.VAR_KEYWORD or self is ParameterKind.VAR_POSITIONAL
+
 
 KIND_TO_ALLOWED_PREVIOUS = {
     ParameterKind.POSITIONAL_ONLY: {ParameterKind.POSITIONAL_ONLY},
@@ -431,19 +442,28 @@ class SigParameter:
     def get_annotation(self) -> Value:
         return self.annotation
 
+    def is_unnamed(self) -> bool:
+        return self.name.startswith("@")
+
     def __str__(self) -> str:
         # Adapted from Parameter.__str__
         kind = self.kind
-        formatted = self.name
-
-        if self.annotation != UNANNOTATED:
-            formatted = f"{formatted}: {self.annotation}"
-
-        if self.default is not None:
-            if self.annotation != UNANNOTATED:
-                formatted = f"{formatted} = {self.default}"
+        if self.is_unnamed():
+            if self.default is None:
+                formatted = str(self.annotation)
             else:
-                formatted = f"{formatted}={self.default}"
+                formatted = f"{self.annotation} = {self.default}"
+        else:
+            formatted = self.name
+
+            if self.annotation != UNANNOTATED:
+                formatted = f"{formatted}: {self.annotation}"
+
+            if self.default is not None:
+                if self.annotation != UNANNOTATED:
+                    formatted = f"{formatted} = {self.default}"
+                else:
+                    formatted = f"{formatted}={self.default}"
 
         if kind is ParameterKind.VAR_POSITIONAL:
             formatted = "*" + formatted
@@ -502,10 +522,10 @@ class Signature:
     """Whether type checking can call the actual function to retrieve a precise return value."""
     evaluator: Optional[Evaluator] = None
     """Type evaluator for this function."""
-    typevars_of_params: Dict[str, List["TypeVar"]] = field(
+    typevars_of_params: Dict[str, List[TypeVarLike]] = field(
         init=False, default_factory=dict, repr=False, compare=False, hash=False
     )
-    all_typevars: Set["TypeVar"] = field(
+    all_typevars: Set[TypeVarLike] = field(
         init=False, default_factory=set, repr=False, compare=False, hash=False
     )
 
@@ -617,7 +637,8 @@ class Signature:
                     ctx.on_error(
                         f"Incompatible argument type for {param.name}: expected"
                         f" {param_typ} but got {composite.value}",
-                        code=ErrorCode.incompatible_argument,
+                        code=bounds_map.get_error_code()
+                        or ErrorCode.incompatible_argument,
                         node=composite.node if composite.node is not None else None,
                         detail=str(bounds_map),
                     )
@@ -779,9 +800,14 @@ class Signature:
                 elif actual_args.ellipsis:
                     bound_args[param.name] = UNKNOWN, ELLIPSIS_COMPOSITE
                 else:
-                    self.show_call_error(
-                        f"Missing required positional argument: '{param.name}'", ctx
-                    )
+                    if param.is_unnamed():
+                        message = (
+                            "Missing required positional argument at position"
+                            f" {int(param.name[1:])}"
+                        )
+                    else:
+                        message = f"Missing required positional argument '{param.name}'"
+                    self.show_call_error(message, ctx)
                     return None
             elif param.kind is ParameterKind.POSITIONAL_OR_KEYWORD:
                 if positional_index < len(actual_args.positionals):
@@ -864,7 +890,7 @@ class Signature:
                     bound_args[param.name] = DEFAULT, ELLIPSIS_COMPOSITE
                 else:
                     self.show_call_error(
-                        f"Missing required argument: '{param.name}'", ctx
+                        f"Missing required argument '{param.name}'", ctx
                     )
                     return None
             elif param.kind is ParameterKind.KEYWORD_ONLY:
@@ -906,7 +932,7 @@ class Signature:
                     bound_args[param.name] = DEFAULT, ELLIPSIS_COMPOSITE
                 else:
                     self.show_call_error(
-                        f"Missing required argument: '{param.name}'", ctx
+                        f"Missing required argument '{param.name}'", ctx
                     )
                     return None
             elif param.kind is ParameterKind.VAR_POSITIONAL:
@@ -923,10 +949,17 @@ class Signature:
                         tuple, [AnyValue(AnySource.ellipsis_callable)]
                     )
                 elif actual_args.star_args is not None:
-                    element_value = unite_values(*positionals, actual_args.star_args)
-                    star_args_value = GenericValue(tuple, [element_value])
+                    star_args_value = SequenceValue(
+                        tuple,
+                        [
+                            *[(False, pos) for pos in positionals],
+                            (True, actual_args.star_args),
+                        ],
+                    )
                 else:
-                    star_args_value = SequenceIncompleteValue(tuple, positionals)
+                    star_args_value = SequenceValue(
+                        tuple, [(False, pos) for pos in positionals]
+                    )
                     if not positionals:
                         # no *args were actually provided
                         position = DEFAULT
@@ -1220,41 +1253,45 @@ class Signature:
         args = []
         kwargs = {}
         for definitely_present, composite in actual_args.positionals:
-            if definitely_present and isinstance(composite.value, KnownValue):
-                args.append(composite.value.val)
-            else:
+            if not definitely_present:
                 return None
+            arg = _extract_known_value(composite.value)
+            if arg is None:
+                return None
+            args.append(arg.val)
         if actual_args.star_args is not None:
             values = concrete_values_from_iterable(
                 actual_args.star_args, ctx.can_assign_ctx
             )
-            if isinstance(values, collections.abc.Sequence) and all_of_type(
-                values, KnownValue
-            ):
-                args += [val.val for val in values]
-            else:
+            if not isinstance(values, collections.abc.Sequence):
                 return None
+            for args_val in values:
+                arg = _extract_known_value(args_val)
+                if arg is None:
+                    return None
+                args.append(arg.val)
         for kwarg, (required, composite) in actual_args.keywords.items():
             if not required:
                 return None
-            if isinstance(composite.value, KnownValue):
-                kwargs[kwarg] = composite.value.val
-            else:
+            kwarg_value = _extract_known_value(composite.value)
+            if kwarg_value is None:
                 return None
+            kwargs[kwarg] = kwarg_value.val
         if actual_args.star_kwargs is not None:
             value = replace_known_sequence_value(actual_args.star_kwargs)
             if isinstance(value, DictIncompleteValue):
                 for pair in value.kv_pairs:
-                    if (
-                        pair.is_required
-                        and not pair.is_many
-                        and isinstance(pair.key, KnownValue)
-                        and isinstance(pair.key.val, str)
-                        and isinstance(pair.value, KnownValue)
-                    ):
-                        kwargs[pair.key.val] = pair.value.val
-                    else:
+                    if pair.is_many or not pair.is_required:
                         return None
+                    key_val = _extract_known_value(pair.key)
+                    value_val = _extract_known_value(pair.value)
+                    if (
+                        key_val is None
+                        or value_val is None
+                        or not isinstance(key_val.val, str)
+                    ):
+                        return None
+                    kwargs[key_val.val] = value_val.val
             else:
                 return None
 
@@ -1655,8 +1692,39 @@ class Signature:
         if return_annotation is None:
             return_annotation = AnyValue(AnySource.unannotated)
             has_return_annotation = False
+        param_dict = {}
+        i = 0
+        for param in parameters:
+            if param.kind is ParameterKind.VAR_POSITIONAL and isinstance(
+                param.annotation, SequenceValue
+            ):
+                simple_members = param.annotation.get_member_sequence()
+                if simple_members is None:
+                    param_dict[param.name] = param
+                    i += 1
+                else:
+                    for member in simple_members:
+                        name = f"@{i}"
+                        param_dict[name] = SigParameter(
+                            name, ParameterKind.POSITIONAL_ONLY, annotation=member
+                        )
+                        i += 1
+            elif param.kind is ParameterKind.VAR_KEYWORD and isinstance(
+                param.annotation, TypedDictValue
+            ):
+                for name, (is_required, value) in param.annotation.items.items():
+                    param_dict[name] = SigParameter(
+                        name,
+                        ParameterKind.KEYWORD_ONLY,
+                        annotation=value,
+                        default=None if is_required else AnyValue(AnySource.marker),
+                    )
+                    i += 1
+            else:
+                param_dict[param.name] = param
+                i += 1
         return cls(
-            {param.name: param for param in parameters},
+            param_dict,
             return_value=return_annotation,
             impl=impl,
             callable=callable,
@@ -2142,7 +2210,7 @@ class OverloadedSignature:
 
         # None of the signatures matched
         errors = list(itertools.chain.from_iterable(errors_per_overload))
-        codes = set(error["error_code"] for error in errors)
+        codes = {error["error_code"] for error in errors}
         if len(codes) == 1:
             (error_code,) = codes
         else:
@@ -2349,40 +2417,38 @@ MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarVa
 def can_assign_var_positional(
     my_param: SigParameter, args_annotation: Value, idx: int, ctx: CanAssignContext
 ) -> Union[List[BoundsMap], CanAssignError]:
-    bounds_maps = []
     my_annotation = my_param.get_annotation()
-    if isinstance(args_annotation, SequenceIncompleteValue):
-        length = len(args_annotation.members)
-        if idx >= length:
-            return CanAssignError(
-                f"parameter {my_param.name!r} is not accepted; {args_annotation} only"
-                f" accepts {length} values"
-            )
-        their_annotation = args_annotation.members[idx]
-        can_assign = their_annotation.can_assign(my_annotation, ctx)
-        if isinstance(can_assign, CanAssignError):
-            return CanAssignError(
-                f"type of parameter {my_param.name!r} is incompatible: *args[{idx}]"
-                " type is incompatible",
-                [can_assign],
-            )
-        bounds_maps.append(can_assign)
-    else:
-        tv_map = get_tv_map(IterableValue, args_annotation, ctx)
-        if isinstance(tv_map, CanAssignError):
-            return CanAssignError(
-                f"{args_annotation} is not an iterable type", [tv_map]
-            )
-        iterable_arg = tv_map.get(T, AnyValue(AnySource.generic_argument))
-        bounds_map = iterable_arg.can_assign(my_annotation, ctx)
-        if isinstance(bounds_map, CanAssignError):
-            return CanAssignError(
-                f"type of parameter {my_param.name!r} is incompatible: "
-                "*args type is incompatible",
-                [bounds_map],
-            )
-        bounds_maps.append(bounds_map)
-    return bounds_maps
+    if isinstance(args_annotation, SequenceValue):
+        members = args_annotation.get_member_sequence()
+        if members is not None:
+            length = len(members)
+            if idx >= length:
+                return CanAssignError(
+                    f"parameter {my_param.name!r} is not accepted;"
+                    f" {args_annotation} only accepts {length} values"
+                )
+            their_annotation = members[idx]
+            can_assign = their_annotation.can_assign(my_annotation, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return CanAssignError(
+                    f"type of parameter {my_param.name!r} is incompatible: *args[{idx}]"
+                    " type is incompatible",
+                    [can_assign],
+                )
+            return [can_assign]
+
+    tv_map = get_tv_map(IterableValue, args_annotation, ctx)
+    if isinstance(tv_map, CanAssignError):
+        return CanAssignError(f"{args_annotation} is not an iterable type", [tv_map])
+    iterable_arg = tv_map.get(T, AnyValue(AnySource.generic_argument))
+    bounds_map = iterable_arg.can_assign(my_annotation, ctx)
+    if isinstance(bounds_map, CanAssignError):
+        return CanAssignError(
+            f"type of parameter {my_param.name!r} is incompatible: "
+            "*args type is incompatible",
+            [bounds_map],
+        )
+    return [bounds_map]
 
 
 def can_assign_var_keyword(
@@ -2454,4 +2520,12 @@ def decompose_union(
                 remaining_values
             ), f"all union members matched between {expected_type} and {parent_value}"
             return bounds_map, union_used_any, unite_values(*remaining_values)
+    return None
+
+
+def _extract_known_value(val: Value) -> Optional[KnownValue]:
+    if isinstance(val, AnnotatedValue):
+        val = val.value
+    if isinstance(val, KnownValue):
+        return val
     return None

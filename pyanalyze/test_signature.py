@@ -1,6 +1,20 @@
 # static analysis: ignore
 from collections.abc import Sequence
 
+from .implementation import assert_is_value
+from .signature import (
+    ConcreteSignature,
+    ELLIPSIS_PARAM,
+    OverloadedSignature,
+    ParameterKind as K,
+    Signature,
+    SigParameter as P,
+)
+from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes, skip_before
+from .test_value import CTX
+from .tests import make_simple_sequence
+
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -8,23 +22,10 @@ from .value import (
     CanAssignError,
     GenericValue,
     KnownValue,
-    SequenceIncompleteValue,
+    SequenceValue,
     TypedDictValue,
     TypedValue,
-    make_weak,
 )
-from .implementation import assert_is_value
-from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
-from .signature import (
-    ELLIPSIS_PARAM,
-    ConcreteSignature,
-    OverloadedSignature,
-    Signature,
-    SigParameter as P,
-    ParameterKind as K,
-)
-from .test_value import CTX
 
 TupleInt = GenericValue(tuple, [TypedValue(int)])
 TupleBool = GenericValue(tuple, [TypedValue(bool)])
@@ -292,7 +293,7 @@ class TestCanAssign:
         )
         object_int = P(
             "args",
-            annotation=SequenceIncompleteValue(
+            annotation=make_simple_sequence(
                 tuple, [TypedValue(object), TypedValue(int)]
             ),
             kind=K.VAR_POSITIONAL,
@@ -506,8 +507,7 @@ class TestCalls(TestNameCheckVisitorBase):
         def run(elts):
             lst = [x for x in elts]
             assert_is_value(
-                lst,
-                make_weak(GenericValue(list, [AnyValue(AnySource.generic_argument)])),
+                lst, SequenceValue(list, [(True, AnyValue(AnySource.generic_argument))])
             )
             lst()  # E: not_callable
 
@@ -635,9 +635,10 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_hasattr(self):
-        from typing import Any, cast
-        from qcore.testing import Anything
         from dataclasses import dataclass
+        from typing import Any, cast
+
+        from qcore.testing import Anything
 
         @dataclass
         class Quemisia(object):
@@ -716,7 +717,7 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_star_args(self):
-        from typing import Sequence, Dict
+        from typing import Dict, Sequence
 
         def takes_args(*args: int) -> None:
             pass
@@ -750,8 +751,9 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_star_kwargs(self):
-        from typing_extensions import TypedDict, NotRequired
-        from typing import Dict, Any, Sequence
+        from typing import Any, Dict, Sequence
+
+        from typing_extensions import NotRequired, TypedDict
 
         def takes_ab(a: int, b: str = "") -> None:
             pass
@@ -883,6 +885,18 @@ class TestAllowCall(TestNameCheckVisitorBase):
 
             s.encode("not an encoding")  # E: incompatible_call
 
+    @assert_passes()
+    def test_annotated_known(self):
+        from typing_extensions import Annotated, Literal
+
+        from pyanalyze.extensions import LiteralOnly
+
+        def capybara():
+            encoding: Annotated[Literal["ascii"], LiteralOnly()] = "ascii"
+
+            s = "x"
+            assert_is_value(s.encode(encoding), KnownValue(b"x"))
+
 
 class TestOverload(TestNameCheckVisitorBase):
     @assert_passes()
@@ -897,8 +911,9 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_runtime(self):
-        from pyanalyze.extensions import overload
         from typing import Union
+
+        from pyanalyze.extensions import overload
 
         @overload
         def overloaded() -> int:
@@ -924,9 +939,11 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_list_any(self):
-        from pyanalyze.extensions import overload
-        from typing import List, Any, Union
+        from typing import Any, List, Union
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import overload
 
         @overload
         def overloaded(lst: List[str]) -> Literal[2]:
@@ -963,9 +980,11 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_any_and_union(self):
-        from pyanalyze.extensions import overload
         from typing import Any, Union
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import overload
 
         @overload
         def overloaded1(x: Any, y: str) -> Literal[2]:
@@ -1003,9 +1022,11 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_same_return(self):
-        from pyanalyze.extensions import overload
         from typing import Any
+
         from typing_extensions import Literal
+
+        from pyanalyze.extensions import overload
 
         @overload
         def overloaded1(x: Any, y: str) -> Literal[2]:
@@ -1119,6 +1140,31 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_type(func(1, 1), int)
             assert_type(func("x"), float)
 
+    @assert_passes()
+    def test_overloaded_method(self):
+        from pyanalyze.extensions import assert_type, overload
+
+        class Capybara:
+            @overload
+            def meth(self, x: int) -> str:
+                ...
+
+            @overload
+            def meth(self, x: str) -> int:
+                ...
+
+            def meth(self, x: object) -> object:
+                raise NotImplementedError
+
+        cap = Capybara()
+
+        def caller(inst: Capybara) -> None:
+            assert_type(cap.meth(1), str)
+            assert_type(cap.meth(""), int)
+
+            assert_type(inst.meth(1), str)
+            assert_type(inst.meth(""), int)
+
 
 class TestSelfAnnotation(TestNameCheckVisitorBase):
     @assert_passes()
@@ -1149,3 +1195,54 @@ class TestSelfAnnotation(TestNameCheckVisitorBase):
         def caller(ci: Capybara[int], cs: Capybara[str]):
             assert_is_value(ci.prop, TypedValue(int))
             cs.prop  # E: incompatible_argument
+
+
+class TestUnpack(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_args(self):
+        from typing import Tuple
+
+        from typing_extensions import Unpack
+
+        def f(*args: Unpack[Tuple[int, str]]) -> None:
+            assert_is_value(
+                args, make_simple_sequence(tuple, [TypedValue(int), TypedValue(str)])
+            )
+
+        def capybara():
+            f(1, "x")
+            f(1)  # E: incompatible_call
+            f(1, 1)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_kwargs(self):
+        from typing_extensions import NotRequired, Required, TypedDict, Unpack
+
+        class TD(TypedDict):
+            a: NotRequired[int]
+            b: Required[str]
+
+        def capybara(**kwargs: Unpack[TD]):
+            assert_is_value(
+                kwargs,
+                TypedDictValue(
+                    {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
+                ),
+            )
+
+        def caller():
+            capybara(a=1, b="x")
+            capybara(b="x")
+            capybara()  # E: incompatible_call
+            capybara(a="x", b="x")  # E: incompatible_argument
+            capybara(a=1, b="x", c=3)  # E: incompatible_call
+
+    @assert_passes()
+    def test_invalid(self):
+        from typing_extensions import Unpack
+
+        def unpack_that_int(*args: Unpack[int]) -> None:  # E: invalid_annotation
+            assert_is_value(args, AnyValue(AnySource.error))
+
+        def bad_kwargs(**kwargs: Unpack[None]) -> None:  # E: invalid_annotation
+            assert_is_value(kwargs, AnyValue(AnySource.error))

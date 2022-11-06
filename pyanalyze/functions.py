@@ -3,42 +3,57 @@
 Code for understanding function definitions.
 
 """
-from abc import abstractmethod
 import ast
 import asyncio
 import collections.abc
-import types
-import asynq
 import enum
+import sys
+import types
+from abc import abstractmethod
 from dataclasses import dataclass, replace
 from itertools import zip_longest
 from typing import Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
+
+import asynq
 from typing_extensions import Protocol
 
 from .error_code import ErrorCode
-from .extensions import overload, real_overload, evaluated
-from .options import Options, PyObjectSequenceOption
+from .extensions import evaluated, overload, real_overload
 from .node_visitor import ErrorContext
-from .signature import SigParameter, ParameterKind, Signature
+from .options import Options, PyObjectSequenceOption
+from .signature import ParameterKind, Signature, SigParameter
 from .stacked_scopes import Composite
+from .typevar import resolve_bounds_map
 from .value import (
-    CallableValue,
-    CanAssignContext,
-    TypedValue,
-    Value,
     AnySource,
     AnyValue,
-    KnownValue,
+    CallableValue,
+    CanAssignContext,
+    CanAssignError,
     GenericValue,
+    get_tv_map,
+    KnownValue,
+    make_coro_type,
     SubclassValue,
+    TypedValue,
     TypeVarValue,
     unite_values,
-    CanAssignError,
+    UnpackedValue,
+    Value,
 )
 
 FunctionDefNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 FunctionNode = Union[FunctionDefNode, ast.Lambda]
 IMPLICIT_CLASSMETHODS = ("__init_subclass__", "__new__")
+
+YieldT = TypeVar("YieldT")
+SendT = TypeVar("SendT")
+ReturnT = TypeVar("ReturnT")
+IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(YieldT)])
+GeneratorValue = GenericValue(
+    collections.abc.Generator,
+    [TypeVarValue(YieldT), TypeVarValue(SendT), TypeVarValue(ReturnT)],
+)
 
 
 class AsyncFunctionKind(enum.Enum):
@@ -75,6 +90,41 @@ class FunctionInfo:
     return_annotation: Optional[Value]
     potential_function: Optional[object]
 
+    def get_generator_yield_type(self, ctx: CanAssignContext) -> Value:
+        if self.return_annotation is None:
+            return AnyValue(AnySource.unannotated)
+        can_assign = IterableValue.can_assign(self.return_annotation, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return AnyValue(AnySource.error)
+        tv_map, _ = resolve_bounds_map(can_assign, ctx)
+        return tv_map.get(YieldT, AnyValue(AnySource.generic_argument))
+
+    def get_generator_send_type(self, ctx: CanAssignContext) -> Value:
+        if self.return_annotation is None:
+            return AnyValue(AnySource.unannotated)
+        tv_map = get_tv_map(GeneratorValue, self.return_annotation, ctx)
+        if not isinstance(tv_map, CanAssignError):
+            return tv_map.get(SendT, AnyValue(AnySource.generic_argument))
+        # If the return annotation is a non-Generator Iterable, assume the send
+        # type is None.
+        can_assign = IterableValue.can_assign(self.return_annotation, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return AnyValue(AnySource.error)
+        return KnownValue(None)
+
+    def get_generator_return_type(self, ctx: CanAssignContext) -> Value:
+        if self.return_annotation is None:
+            return AnyValue(AnySource.unannotated)
+        tv_map = get_tv_map(GeneratorValue, self.return_annotation, ctx)
+        if not isinstance(tv_map, CanAssignError):
+            return tv_map.get(ReturnT, AnyValue(AnySource.generic_argument))
+        # If the return annotation is a non-Generator Iterable, assume the return
+        # type is None.
+        can_assign = IterableValue.can_assign(self.return_annotation, ctx)
+        if isinstance(can_assign, CanAssignError):
+            return AnyValue(AnySource.error)
+        return KnownValue(None)
+
 
 @dataclass
 class FunctionResult:
@@ -93,7 +143,9 @@ class Context(ErrorContext, CanAssignContext, Protocol):
     def visit_expression(self, __node: ast.AST) -> Value:
         raise NotImplementedError
 
-    def value_of_annotation(self, __node: ast.expr) -> Value:
+    def value_of_annotation(
+        self, __node: ast.expr, *, allow_unpack: bool = False
+    ) -> Value:
         raise NotImplementedError
 
     def check_call(
@@ -121,11 +173,17 @@ class AsyncProxyDecorators(PyObjectSequenceOption[object]):
     name = "async_proxy_decorators"
 
 
+_safe_decorators = [asynq.asynq, classmethod, staticmethod]
+if sys.version_info < (3, 11):
+    # static analysis: ignore[undefined_attribute]
+    _safe_decorators.append(asyncio.coroutine)
+
+
 class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
     """These decorators can safely be applied to nested functions."""
 
     name = "safe_decorators_for_nested_functions"
-    default_value = [asynq.asynq, classmethod, staticmethod, asyncio.coroutine]
+    default_value = _safe_decorators
 
 
 def compute_function_info(
@@ -169,7 +227,9 @@ def compute_function_info(
                 is_classmethod = True
             elif decorator_value == KnownValue(staticmethod):
                 is_staticmethod = True
-            elif decorator_value == KnownValue(asyncio.coroutine):
+            elif sys.version_info < (3, 11) and decorator_value == KnownValue(
+                asyncio.coroutine  # static analysis: ignore[undefined_attribute]
+            ):
                 is_decorated_coroutine = True
             elif decorator_value == KnownValue(
                 real_overload
@@ -251,7 +311,9 @@ def compute_parameters(
     params = []
     tv_index = 1
 
-    for idx, ((kind, arg), default) in enumerate(zip_longest(args, defaults)):
+    for idx, (param, default) in enumerate(zip_longest(args, defaults)):
+        assert param is not None, "must have more args than defaults"
+        (kind, arg) = param
         is_self = (
             idx == 0
             and enclosing_class is not None
@@ -259,7 +321,9 @@ def compute_parameters(
             and not isinstance(node, ast.Lambda)
         )
         if arg.annotation is not None:
-            value = ctx.value_of_annotation(arg.annotation)
+            value = ctx.value_of_annotation(
+                arg.annotation, allow_unpack=kind.allow_unpack()
+            )
             if default is not None:
                 tv_map = value.can_assign(default, ctx)
                 if isinstance(tv_map, CanAssignError):
@@ -297,15 +361,48 @@ def compute_parameters(
             if default is not None:
                 value = unite_values(value, default)
 
-        if kind is ParameterKind.VAR_POSITIONAL:
-            value = GenericValue(tuple, [value])
-        elif kind is ParameterKind.VAR_KEYWORD:
-            value = GenericValue(dict, [TypedValue(str), value])
-
+        value = translate_vararg_type(kind, value, ctx, error_ctx=ctx, node=arg)
         param = SigParameter(arg.arg, kind, default, value)
         info = ParamInfo(param, arg, is_self)
         params.append(info)
     return params
+
+
+def translate_vararg_type(
+    kind: ParameterKind,
+    typ: Value,
+    can_assign_ctx: CanAssignContext,
+    *,
+    error_ctx: Optional[ErrorContext] = None,
+    node: Optional[ast.AST] = None,
+) -> Value:
+    if kind is ParameterKind.VAR_POSITIONAL:
+        if isinstance(typ, UnpackedValue):
+            if not TypedValue(tuple).is_assignable(typ.value, can_assign_ctx):
+                if error_ctx is not None and node is not None:
+                    error_ctx.show_error(
+                        node,
+                        "Expected tuple type inside Unpack[]",
+                        error_code=ErrorCode.invalid_annotation,
+                    )
+                return AnyValue(AnySource.error)
+            return typ.value
+        else:
+            return GenericValue(tuple, [typ])
+    elif kind is ParameterKind.VAR_KEYWORD:
+        if isinstance(typ, UnpackedValue):
+            if not TypedValue(dict).is_assignable(typ.value, can_assign_ctx):
+                if error_ctx is not None and node is not None:
+                    error_ctx.show_error(
+                        node,
+                        "Expected dict type inside Unpack[]",
+                        error_code=ErrorCode.invalid_annotation,
+                    )
+                return AnyValue(AnySource.error)
+            return typ.value
+        else:
+            return GenericValue(dict, [TypedValue(str), typ])
+    return typ
 
 
 @dataclass
@@ -313,7 +410,7 @@ class IsGeneratorVisitor(ast.NodeVisitor):
     """Determine whether an async function is a generator.
 
     This is important because the return type of async generators
-    should not be wrapped in Awaitable.
+    should not be wrapped in Coroutine.
 
     We avoid recursing into nested functions, which is why we can't
     just use ast.walk.
@@ -353,7 +450,7 @@ def compute_value_of_function(
             if visitor.is_generator:
                 break
         if not visitor.is_generator:
-            result = GenericValue(collections.abc.Awaitable, [result])
+            result = make_coro_type(result)
     sig = Signature.make(
         [param_info.param for param_info in info.params],
         result,

@@ -1,7 +1,9 @@
-from qcore.asserts import AssertRaises
-import typing_inspect
-from typing import List, Optional, Union, TypeVar
+import sys
 from types import FunctionType
+from typing import List, Optional, TypeVar, Union
+
+import typing_inspect
+from qcore.asserts import AssertRaises
 
 from .extensions import AsynqCallable, get_overloads, overload
 from .safe import all_of_type
@@ -23,11 +25,15 @@ def test_asynq_callable() -> None:
         == AsynqCallable[[List[T]], List[U]][int, str]
     )
 
-    with AssertRaises(TypeError):
-        # Unfortunately this doesn't work because typing doesn't know how to
-        # get TypeVars out of an AsynqCallable instances. Solving this is hard
-        # because Callable is special-cased at various places in typing.py.
+    if sys.version_info >= (3, 11):
         assert List[AsynqCallable[[str], int]] == List[AsynqCallable[[T], int]][str]
+    else:
+        with AssertRaises(TypeError):
+            # Unfortunately this doesn't work because typing doesn't know how to
+            # get TypeVars out of an AsynqCallable instances. Solving this is hard
+            # because Callable is special-cased at various places in typing.py.
+            # Somehow it works in 3.11 though.
+            assert List[AsynqCallable[[str], int]] == List[AsynqCallable[[T], int]][str]
 
 
 @overload

@@ -4,83 +4,84 @@ Implementation of extended argument specifications used by test_scope.
 
 """
 
-from .options import Options, PyObjectSequenceOption
-from .analysis_lib import is_positional_only_arg_name
-from .extensions import CustomCheck, TypeGuard, get_overloads, get_type_evaluations
-from .annotations import Context, RuntimeEvaluator, type_from_runtime
-from .find_unused import used
+import ast
+import asyncio
+import contextlib
+import enum
+import inspect
+import sys
+import textwrap
+from dataclasses import dataclass, replace
+from types import FunctionType, MethodType, ModuleType
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
+from unittest import mock
+
+import asynq
+import qcore
+import typing_inspect
+from typing_extensions import is_typeddict
+
+import pyanalyze
 from . import implementation
+from .analysis_lib import is_positional_only_arg_name
+from .annotations import Context, RuntimeEvaluator, type_from_runtime
+from .extensions import CustomCheck, get_overloads, get_type_evaluations, TypeGuard
+from .find_unused import used
+from .functions import translate_vararg_type
+from .options import Options, PyObjectSequenceOption
 from .safe import (
     all_of_type,
+    get_fully_qualified_name,
     hasattr_static,
     is_newtype,
-    safe_equals,
-    safe_issubclass,
     is_typing_name,
+    safe_equals,
     safe_isinstance,
-    get_fully_qualified_name,
+    safe_issubclass,
 )
-from .stacked_scopes import Composite, uniq_chain
 from .signature import (
     ANY_SIGNATURE,
-    ELLIPSIS_PARAM,
     ConcreteSignature,
+    ELLIPSIS_PARAM,
     Impl,
+    make_bound_method,
     MaybeSignature,
     OverloadedSignature,
-    make_bound_method,
-    SigParameter,
-    Signature,
     ParameterKind,
+    Signature,
+    SigParameter,
 )
+from .stacked_scopes import Composite, uniq_chain
 from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
     AnyValue,
     CanAssignContext,
     Extension,
+    extract_typevars,
     GenericBases,
+    GenericValue,
+    KnownValue,
     KVPair,
+    make_coro_type,
+    NewTypeValue,
     SubclassValue,
     TypedDictValue,
     TypedValue,
-    GenericValue,
-    NewTypeValue,
-    KnownValue,
-    Value,
     TypeVarValue,
-    extract_typevars,
-    make_weak,
+    Value,
 )
-import pyanalyze
-
-import ast
-import asyncio
-import asynq
-from collections.abc import Awaitable
-import contextlib
-from dataclasses import dataclass, replace
-import enum
-import qcore
-import inspect
-import sys
-import textwrap
-from types import FunctionType, ModuleType, MethodType
-from typing import (
-    Any,
-    Callable,
-    Iterator,
-    List,
-    Sequence,
-    Generic,
-    Mapping,
-    Optional,
-    Tuple,
-    Union,
-)
-from typing_extensions import is_typeddict
-import typing_inspect
-from unittest import mock
 
 # types.MethodWrapperType in 3.7+
 MethodWrapperType = type(object().__str__)
@@ -206,7 +207,7 @@ class FunctionsSafeToCall(PyObjectSequenceOption[object]):
     arguments."""
 
     name = "functions_safe_to_call"
-    default_value = [sorted, asynq.asynq, make_weak]
+    default_value = [sorted, asynq.asynq]
 
 
 _HookReturn = Union[None, ConcreteSignature, inspect.Signature, Callable[..., Any]]
@@ -308,12 +309,12 @@ class ArgSpecCache:
         sig: inspect.Signature,
         *,
         impl: Optional[Impl] = None,
+        callable_object: object,
         function_object: object,
         is_async: bool = False,
         is_asynq: bool = False,
         returns: Optional[Value] = None,
         allow_call: bool = False,
-        is_constructor: bool = False,
     ) -> Signature:
         """Constructs a pyanalyze Signature from an inspect.Signature.
 
@@ -343,17 +344,12 @@ class ArgSpecCache:
                 )
                 has_return_annotation = True
             if is_async:
-                returns = GenericValue(Awaitable, [returns])
+                returns = make_coro_type(returns)
 
         parameters = []
         for i, parameter in enumerate(sig.parameters.values()):
             param, make_everything_pos_only = self._make_sig_parameter(
-                parameter,
-                func_globals,
-                function_object,
-                is_wrapped,
-                i,
-                is_constructor=is_constructor,
+                parameter, func_globals, function_object, is_wrapped, i
             )
             if make_everything_pos_only:
                 parameters = [
@@ -366,11 +362,11 @@ class ArgSpecCache:
             parameters,
             returns,
             impl=impl,
-            callable=function_object,
+            callable=callable_object,
             has_return_annotation=has_return_annotation,
             is_asynq=is_asynq,
             allow_call=allow_call
-            or FunctionsSafeToCall.contains(function_object, self.options),
+            or FunctionsSafeToCall.contains(callable_object, self.options),
         )
 
     def _make_sig_parameter(
@@ -380,19 +376,13 @@ class ArgSpecCache:
         function_object: Optional[object],
         is_wrapped: bool,
         index: int,
-        *,
-        is_constructor: bool,
     ) -> Tuple[SigParameter, bool]:
         """Given an inspect.Parameter, returns a Parameter object."""
         if is_wrapped:
             typ = AnyValue(AnySource.inference)
         else:
             typ = self._get_type_for_parameter(
-                parameter,
-                func_globals,
-                function_object,
-                index,
-                is_constructor=is_constructor,
+                parameter, func_globals, function_object, index
             )
         if parameter.default is inspect.Parameter.empty:
             default = None
@@ -420,18 +410,14 @@ class ArgSpecCache:
         func_globals: Optional[Mapping[str, object]],
         function_object: Optional[object],
         index: int,
-        *,
-        is_constructor: bool,
     ) -> Value:
         if parameter.annotation is not inspect.Parameter.empty:
+            kind = ParameterKind(parameter.kind)
+            ctx = AnnotationsContext(self, func_globals)
             typ = type_from_runtime(
-                parameter.annotation, ctx=AnnotationsContext(self, func_globals)
+                parameter.annotation, ctx=ctx, allow_unpack=kind.allow_unpack()
             )
-            if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
-                return GenericValue(tuple, [typ])
-            elif parameter.kind is inspect.Parameter.VAR_KEYWORD:
-                return GenericValue(dict, [TypedValue(str), typ])
-            return typ
+            return translate_vararg_type(kind, typ, self.ctx)
         # If this is the self argument of a method, try to infer the self type.
         elif index == 0 and parameter.kind in (
             inspect.Parameter.POSITIONAL_ONLY,
@@ -446,11 +432,7 @@ class ArgSpecCache:
                 and module_name in sys.modules
             ):
                 module = sys.modules[module_name]
-                if is_constructor:
-                    class_names = qualname.split(".")
-                    function_name = "__init__"
-                else:
-                    *class_names, function_name = qualname.split(".")
+                *class_names, function_name = qualname.split(".")
                 class_obj = module
                 for class_name in class_names:
                     class_obj = getattr(class_obj, class_name, None)
@@ -561,23 +543,6 @@ class ArgSpecCache:
         is_asynq: bool,
         in_overload_resolution: bool,
     ) -> MaybeSignature:
-        if not in_overload_resolution:
-            fq_name = get_fully_qualified_name(obj)
-            if fq_name is not None:
-                overloads = get_overloads(fq_name)
-                if overloads:
-                    sigs = [
-                        self._cached_get_argspec(
-                            overload, impl, is_asynq, in_overload_resolution=True
-                        )
-                        for overload in overloads
-                    ]
-                    if all_of_type(sigs, Signature):
-                        return OverloadedSignature(sigs)
-                evaluator_sig = self._maybe_make_evaluator_sig(obj, impl, is_asynq)
-                if evaluator_sig is not None:
-                    return evaluator_sig
-
         if isinstance(obj, tuple):
             return None  # lost cause
 
@@ -609,6 +574,25 @@ class ArgSpecCache:
                 obj.__func__, impl, is_asynq, in_overload_resolution
             )
             return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
+
+        # Must be after the check for bound methods, because otherwise we
+        # won't bind self correctly.
+        if not in_overload_resolution:
+            fq_name = get_fully_qualified_name(obj)
+            if fq_name is not None:
+                overloads = get_overloads(fq_name)
+                if overloads:
+                    sigs = [
+                        self._cached_get_argspec(
+                            overload, impl, is_asynq, in_overload_resolution=True
+                        )
+                        for overload in overloads
+                    ]
+                    if all_of_type(sigs, Signature):
+                        return OverloadedSignature(sigs)
+                evaluator_sig = self._maybe_make_evaluator_sig(obj, impl, is_asynq)
+                if evaluator_sig is not None:
+                    return evaluator_sig
 
         if hasattr_static(obj, "fn") or hasattr_static(obj, "original_fn"):
             is_asynq = is_asynq or hasattr_static(obj, "asynq")
@@ -701,6 +685,7 @@ class ArgSpecCache:
             return self.from_signature(
                 inspect_sig,
                 function_object=obj,
+                callable_object=obj,
                 is_async=asyncio.iscoroutinefunction(obj),
                 impl=impl,
                 is_asynq=is_asynq,
@@ -728,6 +713,7 @@ class ArgSpecCache:
                 )
                 if isinstance(override, inspect.Signature):
                     inspect_sig = override
+                    constructor = None
                 else:
                     if override is not None:
                         constructor = override
@@ -753,11 +739,11 @@ class ArgSpecCache:
 
                 signature = self.from_signature(
                     inspect_sig,
-                    function_object=obj,
+                    function_object=constructor,
+                    callable_object=obj,
                     impl=impl,
                     returns=return_type,
                     allow_call=allow_call,
-                    is_constructor=True,
                 )
             bound_sig = make_bound_method(signature, Composite(TypedValue(obj)))
             if bound_sig is None:
@@ -782,7 +768,9 @@ class ArgSpecCache:
                 return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
             inspect_sig = self._safe_get_signature(obj)
             if inspect_sig is not None:
-                return self.from_signature(inspect_sig, function_object=obj)
+                return self.from_signature(
+                    inspect_sig, function_object=obj, callable_object=obj
+                )
             return self._make_any_sig(obj)
 
         if hasattr_static(obj, "__call__"):

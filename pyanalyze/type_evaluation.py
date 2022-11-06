@@ -5,13 +5,11 @@ Implementation of type evaluation.
 """
 
 import ast
-from contextlib import contextmanager
 import contextlib
-from dataclasses import dataclass, field
 import operator
-import qcore
 import sys
-from typing_extensions import Literal
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import (
     Any,
     Callable,
@@ -26,29 +24,31 @@ from typing import (
     Union,
 )
 
+import qcore
+from typing_extensions import Literal
+
 from .predicates import IsAssignablePredicate
 from .stacked_scopes import (
+    constrain_value,
     Constraint,
     ConstraintType,
     VarnameWithOrigin,
-    constrain_value,
 )
-from .safe import all_of_type
 from .value import (
-    NO_RETURN_VALUE,
     BoundsMap,
     CanAssign,
     CanAssignContext,
     CanAssignError,
+    flatten_values,
     KnownValue,
     MultiValuedValue,
-    SequenceIncompleteValue,
-    Value,
-    flatten_values,
+    NO_RETURN_VALUE,
+    SequenceValue,
+    TypeVarMap,
     unannotate,
     unify_bounds_maps,
     unite_values,
-    TypeVarMap,
+    Value,
 )
 
 ARGS = qcore.MarkerObject("*args")
@@ -505,7 +505,7 @@ class ConditionEvaluator(ast.NodeVisitor):
                 else:
                     return self.return_invalid(
                         "Only comparisons on sys.platform and sys.version_info are"
-                        " suppoorted",
+                        " supported",
                         node.left,
                     )
                 data = _OP_TO_DATA[type(op)]
@@ -601,12 +601,8 @@ class ConditionEvaluator(ast.NodeVisitor):
 
     def evaluate_literal(self, node: ast.expr) -> Optional[KnownValue]:
         val = self.evaluator.evaluate_value(node)
-        if (
-            isinstance(val, SequenceIncompleteValue)
-            and isinstance(val.typ, type)
-            and all_of_type(val.members, KnownValue)
-        ):
-            val = KnownValue(val.typ(elt.val for elt in val.members))
+        if isinstance(val, SequenceValue):
+            val = val.make_known_value()
         if isinstance(val, KnownValue):
             return val
         self.errors.append(InvalidEvaluation("Only literals supported", node))

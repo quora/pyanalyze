@@ -1,14 +1,14 @@
 # static analysis: ignore
 from .implementation import assert_is_value
-from .value import TypedDictValue, TypedValue
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
+from .value import TypedDictValue, TypedValue
 
 
 class TestTypedDict(TestNameCheckVisitorBase):
     @assert_passes()
     def test_constructor(self):
-        from typing_extensions import TypedDict, NotRequired
+        from typing_extensions import NotRequired, TypedDict
 
         class Capybara(TypedDict):
             x: int

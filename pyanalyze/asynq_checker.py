@@ -5,24 +5,26 @@ Implementation of test_scope's asynq checks.
 """
 
 import ast
-import asynq
 import contextlib
-from dataclasses import dataclass, field
-import qcore
 import inspect
 import types
-from typing import Iterator, Any, Callable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterator, Optional
+
+import asynq
+import qcore
 
 from .error_code import ErrorCode
 from .functions import AsyncFunctionKind
 from .options import Options, PyObjectSequenceOption, StringSequenceOption
 from .safe import safe_getattr, safe_hasattr
-from .value import AnnotatedValue, Value, KnownValue, TypedValue, UnboundMethodValue
+from .value import AnnotatedValue, KnownValue, TypedValue, UnboundMethodValue, Value
 
 
 class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):
     """Normally, asynq calls to asynq functions are only enforced in functions that are already
-    asynq. In subclasses of classes listed here, all asynq functions must be called asynq."""
+    asynq. In subclasses of classes listed here, all asynq functions must be called asynq.
+    """
 
     name = "classes_checked_for_asynq"
 
@@ -135,7 +137,8 @@ class AsynqChecker:
         return self.should_check_class_for_async(self.current_class)
 
     def should_check_class_for_async(self, cls: type) -> bool:
-        """Returns whether we should perform async checks on all methods on this class."""
+        """Returns whether we should perform async checks on all methods on this class.
+        """
         for base_cls in self.options.get_value_for(ClassesCheckedForAsynq):
             try:
                 if issubclass(cls, base_cls):
@@ -189,7 +192,7 @@ def get_pure_async_equivalent(value: Value) -> str:
     """Returns the pure-async equivalent of an async function."""
     assert is_impure_async_fn(value), f"{value} is not an impure async function"
     if isinstance(value, KnownValue):
-        return "%s.asynq" % (_stringify_obj(value.val),)
+        return f"{_stringify_obj(value.val)}.asynq"
     elif isinstance(value, UnboundMethodValue):
         return _stringify_async_fn(
             UnboundMethodValue(value.attr_name, value.composite, "asynq")
@@ -220,13 +223,13 @@ def _stringify_obj(obj: Any) -> str:
     if (inspect.isbuiltin(obj) and obj.__self__ is not None) or isinstance(
         obj, types.MethodType
     ):
-        return "%s.%s" % (_stringify_obj(obj.__self__), obj.__name__)
+        return f"{_stringify_obj(obj.__self__)}.{obj.__name__}"
     elif hasattr(obj, "decorator") and hasattr(obj, "instance"):
         if hasattr(obj.instance, "__name__"):
             cls = obj.instance
         else:
             cls = type(obj.instance)
-        return "%s.%s" % (_stringify_obj(cls), obj.decorator.fn.__name__)
+        return f"{_stringify_obj(cls)}.{obj.decorator.fn.__name__}"
     elif isinstance(obj, super):
         # self might not always be correct, but it's close enough
         return "super(%s, self)" % _stringify_obj(obj.__self_class__)

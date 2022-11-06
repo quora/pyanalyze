@@ -1,44 +1,46 @@
 # static analysis: ignore
-from qcore.testing import Anything
 import collections
 import collections.abc
-from collections.abc import MutableSequence, Sequence, Collection, Reversible, Set
 import contextlib
 import io
-from pathlib import Path
 import sys
 import tempfile
 import textwrap
 import time
-from typeshed_client import Resolver, get_search_context
 import typing
-from typing import Dict, Generic, List, TypeVar, NewType, Union
-from urllib.error import HTTPError
 import urllib.parse
+from collections.abc import Collection, MutableSequence, Reversible, Sequence, Set
+from pathlib import Path
+from typing import Dict, Generic, List, NewType, TypeVar, Union
+from urllib.error import HTTPError
+
+from qcore.testing import Anything
+from typeshed_client import get_search_context, Resolver
 
 from .checker import Checker
 from .extensions import evaluated
+from .signature import OverloadedSignature, Signature, SigParameter
+from .test_arg_spec import ClassWithCall
 from .test_config import TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes
-from .signature import OverloadedSignature, SigParameter, Signature
-from .test_arg_spec import ClassWithCall
+from .test_node_visitor import assert_passes, skip_before
+from .tests import make_simple_sequence
 from .typeshed import TypeshedFinder
 from .value import (
-    CallableValue,
-    SubclassValue,
-    TypedDictValue,
-    assert_is_value,
     AnySource,
     AnyValue,
-    KnownValue,
-    NewTypeValue,
-    TypedValue,
+    assert_is_value,
+    CallableValue,
+    DictIncompleteValue,
     GenericValue,
-    make_weak,
+    KnownValue,
+    KVPair,
+    NewTypeValue,
+    SubclassValue,
+    TypedDictValue,
+    TypedValue,
     TypeVarValue,
     UNINITIALIZED_VALUE,
-    SequenceIncompleteValue,
     Value,
 )
 
@@ -130,7 +132,9 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         def capybara(x: Dict[int, str]):
             assert_is_value(
                 {k: v for k, v in x.items()},
-                make_weak(GenericValue(dict, [TypedValue(int), TypedValue(str)])),
+                DictIncompleteValue(
+                    dict, [KVPair(TypedValue(int), TypedValue(str), is_many=True)]
+                ),
             )
 
     @assert_passes()
@@ -179,10 +183,10 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     def test_import_aliases(self):
         def capybara():
             from _pyanalyze_tests.aliases import (
-                constant,
                 aliased_constant,
-                explicitly_aliased_constant,
+                constant,
                 ExplicitAlias,
+                explicitly_aliased_constant,
             )
 
             assert_is_value(ExplicitAlias, KnownValue(int))
@@ -211,10 +215,42 @@ class TestBundledStubs(TestNameCheckVisitorBase):
         for name, expected in _EXPECTED_TYPED_DICTS.items():
             assert tsf.resolve_name(mod, name) == SubclassValue(expected, exactly=True)
 
+    # PickleBuffer is new in 3.8
+    @skip_before((3, 8))
+    @assert_passes()
+    def test_cdata(self):
+        import array
+        import mmap
+        import pickle
+
+        def capybara():
+            from _typeshed import ReadableBuffer
+
+            def inner(b: ReadableBuffer):
+                assert_is_value(
+                    b,
+                    TypedValue(bytes)
+                    | TypedValue(bytearray)
+                    | TypedValue(memoryview)
+                    | GenericValue(array.array, [AnyValue(AnySource.explicit)])
+                    | TypedValue(mmap.mmap)
+                    | TypedValue("ctypes._CData")
+                    | TypedValue(pickle.PickleBuffer),
+                )
+
+    @assert_passes()
+    def test_ast(self):
+        import ast
+
+        def capybara(x: ast.Yield):
+            assert_is_value(x, TypedValue(ast.Yield))
+            assert_is_value(x.value, TypedValue(ast.expr) | KnownValue(None))
+
     @assert_passes()
     def test_import_typeddicts(self):
         def capybara():
-            from _pyanalyze_tests.typeddict import TD1, TD2, PEP655, Inherited
+            from _pyanalyze_tests.typeddict import Inherited, PEP655, TD1, TD2
+
             from pyanalyze.test_typeshed import _EXPECTED_TYPED_DICTS
 
             def nested(td1: TD1, td2: TD2, pep655: PEP655, inherited: Inherited):
@@ -233,8 +269,9 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     @assert_passes()
     def test_evaluated_import(self):
         def capybara(unannotated):
+            from typing import BinaryIO, IO, TextIO
+
             from _pyanalyze_tests.evaluated import open, open2
-            from typing import TextIO, BinaryIO, IO
 
             assert_is_value(open("r"), TypedValue(TextIO))
             assert_is_value(open("rb"), TypedValue(BinaryIO))
@@ -271,6 +308,35 @@ class TestBundledStubs(TestNameCheckVisitorBase):
 
             return f
 
+    @assert_passes()
+    def test_args_kwargs(self):
+        def capybara():
+            from _pyanalyze_tests.args import f, g, h, i
+
+            f(1)  # E: incompatible_call
+            f(1, "x")
+            g(x=1)  # E: incompatible_call
+            g(x=1, y="x")
+            h("x")  # E: incompatible_argument
+            h()
+            h(1)
+            i(x=3)  # E: incompatible_argument
+            i(x="x")
+            i()
+
+    @assert_passes()
+    def test_stub_context_manager(self):
+        from typing_extensions import assert_type, Literal
+
+        def capybara():
+            from _pyanalyze_tests.contextmanager import cm
+
+            with cm() as f:
+                assert_type(f, int)
+                x = 3
+
+            assert_type(x, Literal[3])
+
 
 class TestConstructors(TestNameCheckVisitorBase):
     @assert_passes()
@@ -278,10 +344,10 @@ class TestConstructors(TestNameCheckVisitorBase):
         def capybara():
             from _pyanalyze_tests.initnew import (
                 my_enumerate,
-                simple,
                 overloadinit,
-                simplenew,
                 overloadnew,
+                simple,
+                simplenew,
             )
 
             simple()  # E: incompatible_call
@@ -390,7 +456,7 @@ class TestGetGenericBases:
     def test_dict_items(self):
         TInt = TypedValue(int)
         TStr = TypedValue(str)
-        TTuple = SequenceIncompleteValue(tuple, [TInt, TStr])
+        TTuple = make_simple_sequence(tuple, [TInt, TStr])
         self.check(
             {
                 "_collections_abc.dict_items": [TInt, TStr],
@@ -418,6 +484,7 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [TypedValue(int)],
                 collections.abc.Sequence: [TypedValue(int)],
                 collections.abc.Container: [TypedValue(int)],
+                collections.abc.Sized: [],
             }
         else:
             expected = {
@@ -429,6 +496,7 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [TypedValue(int)],
                 collections.abc.Sequence: [TypedValue(int)],
                 collections.abc.Container: [TypedValue(int)],
+                collections.abc.Sized: [],
             }
         self.check(expected, time.struct_time)
 
@@ -439,22 +507,23 @@ class TestGetGenericBases:
             contextlib.AbstractContextManager,
             [int_tv],
         )
-        if sys.version_info >= (3, 7):
-            self.check(
-                {contextlib.AbstractAsyncContextManager: [int_tv]},
-                contextlib.AbstractAsyncContextManager,
-                [int_tv],
-            )
+        self.check(
+            {contextlib.AbstractAsyncContextManager: [int_tv]},
+            contextlib.AbstractAsyncContextManager,
+            [int_tv],
+        )
 
     def test_collections(self):
         int_tv = TypedValue(int)
         str_tv = TypedValue(str)
-        int_str_tuple = SequenceIncompleteValue(tuple, [int_tv, str_tv])
+        int_str_tuple = make_simple_sequence(tuple, [int_tv, str_tv])
         self.check(
             {
                 collections.abc.ValuesView: [int_tv],
                 collections.abc.MappingView: [],
                 collections.abc.Iterable: [int_tv],
+                collections.abc.Collection: [int_tv],
+                collections.abc.Container: [int_tv],
                 collections.abc.Sized: [],
             },
             collections.abc.ValuesView,
@@ -483,6 +552,7 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Sequence: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             collections.deque,
             [int_tv],
@@ -496,6 +566,7 @@ class TestGetGenericBases:
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             collections.defaultdict,
             [int_tv, str_tv],
@@ -513,6 +584,7 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Sequence: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             list,
             [int_tv],
@@ -525,6 +597,7 @@ class TestGetGenericBases:
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             set,
             [int_tv],
@@ -537,6 +610,7 @@ class TestGetGenericBases:
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             dict,
             [int_tv, str_tv],
@@ -564,6 +638,7 @@ class TestGetGenericBases:
                 collections.abc.Container: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Collection: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Sized: [],
                 urllib.parse.ParseResult: [],
                 urllib.parse._ParseResultBase: [],
                 "urllib.parse._ResultMixinBase": [TypedValue(str)],
@@ -622,11 +697,12 @@ class TestParamSpec(TestNameCheckVisitorBase):
             wrapped("x")  # E: incompatible_argument
 
 
-class TestOpen(TestNameCheckVisitorBase):
+class TestIntegration(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_basic(self):
+    def test_open(self):
         import io
-        from typing import BinaryIO, IO, Any
+        from typing import Any, BinaryIO, IO
+
         from pyanalyze.extensions import assert_type
 
         def capybara(buffering: int, mode: str):
@@ -636,3 +712,12 @@ class TestOpen(TestNameCheckVisitorBase):
             assert_type(open("x", "rb", buffering=0), io.FileIO)
             assert_type(open("x", "rb", buffering=buffering), BinaryIO)
             assert_type(open("x", mode, buffering=buffering), IO[Any])
+
+    @assert_passes()
+    def test_itertools_count(self):
+        import itertools
+
+        def capybara():
+            assert_is_value(
+                itertools.count(1), GenericValue(itertools.count, [TypedValue(int)])
+            )

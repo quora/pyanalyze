@@ -23,32 +23,34 @@ These functions all use :class:`Context` objects to resolve names and
 show errors.
 
 """
-import contextlib
-from dataclasses import dataclass, InitVar, field
-import typing
-
-import typing_inspect
-import qcore
 import ast
 import builtins
-from collections.abc import Callable, Iterable, Hashable
-import sys
+import contextlib
+import typing
+from collections.abc import Callable, Hashable, Iterable
+from dataclasses import dataclass, field, InitVar
 from typing import (
     Any,
-    Container,
-    NamedTuple,
     cast,
-    TypeVar,
+    Container,
     ContextManager,
     Mapping,
+    NamedTuple,
     NewType,
-    Sequence,
     Optional,
+    Sequence,
     Tuple,
-    Union,
     TYPE_CHECKING,
+    TypeVar,
+    Union,
 )
+
+import qcore
+
+import typing_inspect
 from typing_extensions import ParamSpec, TypedDict
+
+from . import type_evaluation
 
 from .error_code import ErrorCode
 from .extensions import (
@@ -63,45 +65,52 @@ from .extensions import (
 from .find_unused import used
 from .functions import FunctionDefNode
 from .node_visitor import ErrorContext
-from .signature import ELLIPSIS_PARAM, SigParameter, Signature, ParameterKind
-from .safe import is_typing_name, is_instance_of_typing_name
-from . import type_evaluation
+from .safe import is_instance_of_typing_name, is_typing_name
+from .signature import (
+    ELLIPSIS_PARAM,
+    InvalidSignature,
+    ParameterKind,
+    Signature,
+    SigParameter,
+)
 from .value import (
+    _HashableValue,
+    annotate_value,
     AnnotatedValue,
     AnySource,
     AnyValue,
     CallableValue,
     CustomCheckExtension,
     Extension,
+    GenericValue,
     HasAttrGuardExtension,
     KnownValue,
     MultiValuedValue,
+    NewTypeValue,
     NO_RETURN_VALUE,
     NoReturnGuardExtension,
+    ParameterTypeGuardExtension,
     ParamSpecArgsValue,
     ParamSpecKwargsValue,
-    ParameterTypeGuardExtension,
     SelfTVV,
-    TypeGuardExtension,
-    TypedValue,
-    SequenceIncompleteValue,
-    annotate_value,
-    unite_values,
-    Value,
-    GenericValue,
+    SequenceValue,
     SubclassValue,
     TypedDictValue,
-    NewTypeValue,
+    TypedValue,
+    TypeGuardExtension,
+    TypeVarLike,
     TypeVarValue,
-    _HashableValue,
+    unite_values,
+    UnpackedValue,
+    Value,
 )
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
 
 try:
-    from typing import get_origin, get_args  # Python 3.9
     from types import GenericAlias
+    from typing import get_args, get_origin  # Python 3.9
 except ImportError:
     GenericAlias = None
 
@@ -113,15 +122,10 @@ except ImportError:
 
 
 CONTEXT_MANAGER_TYPES = (typing.ContextManager, contextlib.AbstractContextManager)
-if sys.version_info >= (3, 7):
-    ASYNC_CONTEXT_MANAGER_TYPES = (
-        typing.AsyncContextManager,
-        # Doesn't exist on 3.6
-        # static analysis: ignore[undefined_attribute]
-        contextlib.AbstractAsyncContextManager,
-    )
-else:
-    ASYNC_CONTEXT_MANAGER_TYPES = (typing.AsyncContextManager,)
+ASYNC_CONTEXT_MANAGER_TYPES = (
+    typing.AsyncContextManager,
+    contextlib.AbstractAsyncContextManager,
+)
 
 
 @dataclass
@@ -166,6 +170,19 @@ class Context:
         elif hasattr(builtins, name):
             return KnownValue(getattr(builtins, name))
         return self.handle_undefined_name(name)
+
+    def get_attribute(self, root_value: Value, node: ast.Attribute) -> Value:
+        if isinstance(root_value, KnownValue):
+            try:
+                return KnownValue(getattr(root_value.val, node.attr))
+            except AttributeError:
+                self.show_error(
+                    f"{root_value.val!r} has no attribute {node.attr!r}", node=node
+                )
+                return AnyValue(AnySource.error)
+        elif not isinstance(root_value, AnyValue):
+            self.show_error(f"Cannot resolve annotation {root_value}", node=node)
+        return AnyValue(AnySource.error)
 
 
 @dataclass
@@ -272,6 +289,8 @@ def type_from_runtime(
     node: Optional[ast.AST] = None,
     globals: Optional[Mapping[str, object]] = None,
     ctx: Optional[Context] = None,
+    *,
+    allow_unpack: bool = False,
 ) -> Value:
     """Given a runtime annotation object, return a
     :class:`Value <pyanalyze.value.Value>`.
@@ -291,11 +310,13 @@ def type_from_runtime(
 
     :param ctx: :class:`Context` to use for evaluation.
 
+    :param allow_unpack: Whether to allow `Unpack` types.
+
     """
 
     if ctx is None:
         ctx = _DefaultContext(visitor, node, globals)
-    return _type_from_runtime(val, ctx)
+    return _type_from_runtime(val, ctx, allow_unpack=allow_unpack)
 
 
 def type_from_value(
@@ -303,7 +324,9 @@ def type_from_value(
     visitor: Optional["NameCheckVisitor"] = None,
     node: Optional[ast.AST] = None,
     ctx: Optional[Context] = None,
+    *,
     is_typeddict: bool = False,
+    allow_unpack: bool = False,
 ) -> Value:
     """Given a :class:`Value <pyanalyze.value.Value` representing an annotation,
     return a :class:`Value <pyanalyze.value.Value>` representing the type.
@@ -330,7 +353,9 @@ def type_from_value(
     """
     if ctx is None:
         ctx = _DefaultContext(visitor, node)
-    return _type_from_value(value, ctx, is_typeddict=is_typeddict)
+    return _type_from_value(
+        value, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
+    )
 
 
 def value_from_ast(
@@ -344,34 +369,34 @@ def value_from_ast(
     return val
 
 
-def _type_from_ast(node: ast.AST, ctx: Context, is_typeddict: bool = False) -> Value:
+def _type_from_ast(
+    node: ast.AST,
+    ctx: Context,
+    *,
+    is_typeddict: bool = False,
+    allow_unpack: bool = False,
+) -> Value:
     val = value_from_ast(node, ctx)
-    return _type_from_value(val, ctx, is_typeddict=is_typeddict)
+    return _type_from_value(
+        val, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
+    )
 
 
-def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Value:
+def _type_from_runtime(
+    val: Any, ctx: Context, *, is_typeddict: bool = False, allow_unpack: bool = False
+) -> Value:
     if isinstance(val, str):
-        return _eval_forward_ref(val, ctx, is_typeddict=is_typeddict)
-    elif isinstance(val, tuple):
-        # This happens under some Python versions for types
-        # nested in tuples, e.g. on 3.6:
-        # > typing_inspect.get_args(Union[Set[int], List[str]])
-        # ((typing.Set, int), (typing.List, str))
-        if not val:
-            # from Tuple[()]
-            return KnownValue(())
-        origin = val[0]
-        if len(val) == 2:
-            args = (val[1],)
-        else:
-            args = val[1:]
-        return _value_of_origin_args(origin, args, val, ctx)
+        return _eval_forward_ref(
+            val, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
+        )
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
         args = get_args(val)
         if origin is tuple and not args:
-            return SequenceIncompleteValue(tuple, [])
-        return _value_of_origin_args(origin, args, val, ctx)
+            return SequenceValue(tuple, [])
+        return _value_of_origin_args(
+            origin, args, val, ctx, allow_unpack=origin is tuple
+        )
     elif typing_inspect.is_literal_type(val):
         args = typing_inspect.get_args(val)
         if len(args) == 0:
@@ -384,14 +409,20 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
     elif typing_inspect.is_tuple_type(val):
         args = typing_inspect.get_args(val)
         if not args:
-            return TypedValue(tuple)
+            if val is tuple or val is Tuple:
+                return TypedValue(tuple)
+            else:
+                return SequenceValue(tuple, [])
         elif len(args) == 2 and args[1] is Ellipsis:
             return GenericValue(tuple, [_type_from_runtime(args[0], ctx)])
         elif len(args) == 1 and args[0] == ():
-            return SequenceIncompleteValue(tuple, [])  # empty tuple
+            return SequenceValue(tuple, [])  # empty tuple
         else:
-            args_vals = [_type_from_runtime(arg, ctx) for arg in args]
-            return SequenceIncompleteValue(tuple, args_vals)
+            return _make_sequence_value(
+                tuple,
+                [_type_from_runtime(arg, ctx, allow_unpack=True) for arg in args],
+                ctx,
+            )
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
         required_keys = getattr(val, "__required_keys__", None)
         # 3.8's typing.TypedDict doesn't have __required_keys__. With
@@ -413,12 +444,6 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         # InitVar instances aren't being created
         # static analysis: ignore[undefined_attribute]
         return type_from_runtime(val.type)
-    elif is_instance_of_typing_name(val, "AnnotatedMeta"):
-        # Annotated in 3.6's typing_extensions
-        origin, metadata = val.__args__
-        return _make_annotated(
-            _type_from_runtime(origin, ctx), [KnownValue(v) for v in metadata], ctx
-        )
     elif is_instance_of_typing_name(val, "_AnnotatedAlias"):
         # Annotated in typing and newer typing_extensions
         return _make_annotated(
@@ -431,12 +456,21 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         args = typing_inspect.get_args(val)
         if getattr(val, "_special", False):
             args = []  # distinguish List from List[T] on 3.7 and 3.8
-        return _value_of_origin_args(origin, args, val, ctx, is_typeddict=is_typeddict)
+        return _value_of_origin_args(
+            origin,
+            args,
+            val,
+            ctx,
+            is_typeddict=is_typeddict,
+            allow_unpack=allow_unpack or origin is tuple or origin is Tuple,
+        )
     elif typing_inspect.is_callable_type(val):
         args = typing_inspect.get_args(val)
         return _value_of_origin_args(Callable, args, val, ctx)
     elif val is AsynqCallable:
         return CallableValue(Signature.make([ELLIPSIS_PARAM], is_asynq=True))
+    elif val is typing.Any:
+        return AnyValue(AnySource.explicit)
     elif isinstance(val, type):
         return _maybe_typed_value(val)
     elif val is None:
@@ -445,8 +479,8 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return NO_RETURN_VALUE
     elif is_typing_name(val, "Self"):
         return SelfTVV
-    elif val is typing.Any:
-        return AnyValue(AnySource.explicit)
+    elif is_typing_name(val, "LiteralString"):
+        return TypedValue(str, literal_only=True)
     elif hasattr(val, "__supertype__"):
         if isinstance(val.__supertype__, type):
             # NewType
@@ -469,12 +503,7 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
     elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):
-        if hasattr(val, "__type__"):
-            # 3.6
-            typ = val.__type__
-        else:
-            # 3.7+
-            typ = val.__args__[0]
+        typ = val.__args__[0]
         return _type_from_runtime(typ, ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
         val, "ForwardRef"
@@ -501,12 +530,6 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             TypedValue(bool),
             [TypeGuardExtension(_type_from_runtime(val.guarded_type, ctx))],
         )
-    elif is_instance_of_typing_name(val, "_TypeGuard"):
-        # 3.6 only
-        return AnnotatedValue(
-            TypedValue(bool),
-            [TypeGuardExtension(_type_from_runtime(val.__type__, ctx))],
-        )
     elif isinstance(val, AsynqCallable):
         params = _callable_args_from_runtime(val.args, "AsynqCallable", ctx)
         sig = Signature.make(
@@ -520,16 +543,6 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
             ctx.show_error(f"Cannot resolve type {val.type_path!r}")
             return AnyValue(AnySource.error)
         return _type_from_runtime(typ, ctx)
-    # Python 3.6 only (on later versions Required/NotRequired match
-    # is_generic_type).
-    elif is_instance_of_typing_name(val, "_MaybeRequired"):
-        required = is_instance_of_typing_name(val, "_Required")
-        if is_typeddict:
-            return Pep655Value(required, _type_from_runtime(val.__type__, ctx))
-        else:
-            cls = "Required" if required else "NotRequired"
-            ctx.show_error(f"{cls}[] used in unsupported context")
-            return AnyValue(AnySource.error)
     elif is_typing_name(val, "TypeAlias"):
         return AnyValue(AnySource.incomplete_annotation)
     elif is_typing_name(val, "TypedDict"):
@@ -544,12 +557,12 @@ def _type_from_runtime(val: Any, ctx: Context, is_typeddict: bool = False) -> Va
         return AnyValue(AnySource.error)
 
 
-def make_type_var_value(tv: TypeVar, ctx: Context) -> TypeVarValue:
+def make_type_var_value(tv: TypeVarLike, ctx: Context) -> TypeVarValue:
     if tv.__bound__ is not None:
         bound = _type_from_runtime(tv.__bound__, ctx)
     else:
         bound = None
-    if tv.__constraints__:
+    if isinstance(tv, TypeVar) and tv.__constraints__:
         constraints = tuple(
             _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
         )
@@ -579,7 +592,7 @@ def _callable_args_from_runtime(
         types = [_type_from_runtime(arg, ctx) for arg in arg_types]
         params = [
             SigParameter(
-                f"__arg{i}",
+                f"@{i}",
                 kind=ParameterKind.PARAM_SPEC
                 if isinstance(typ, TypeVarValue) and typ.is_paramspec
                 else ParameterKind.POSITIONAL_ONLY,
@@ -605,7 +618,7 @@ def _args_from_concatenate(concatenate: Any, ctx: Context) -> Sequence[SigParame
     types = [_type_from_runtime(arg, ctx) for arg in concatenate.__args__]
     params = [
         SigParameter(
-            f"__arg{i}",
+            f"@{i}",
             kind=ParameterKind.PARAM_SPEC
             if i == len(types) - 1
             else ParameterKind.POSITIONAL_ONLY,
@@ -633,28 +646,51 @@ def _get_typeddict_value(
     return required, val
 
 
-def _eval_forward_ref(val: str, ctx: Context, is_typeddict: bool = False) -> Value:
+def _eval_forward_ref(
+    val: str, ctx: Context, *, is_typeddict: bool = False, allow_unpack: bool = False
+) -> Value:
     try:
         tree = ast.parse(val, mode="eval")
     except SyntaxError:
         ctx.show_error(f"Syntax error in type annotation: {val}")
         return AnyValue(AnySource.error)
     else:
-        return _type_from_ast(tree.body, ctx, is_typeddict=is_typeddict)
+        return _type_from_ast(
+            tree.body, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
+        )
 
 
-def _type_from_value(value: Value, ctx: Context, is_typeddict: bool = False) -> Value:
+def _type_from_value(
+    value: Value,
+    ctx: Context,
+    *,
+    is_typeddict: bool = False,
+    allow_unpack: bool = False,
+) -> Value:
     if isinstance(value, KnownValue):
-        return _type_from_runtime(value.val, ctx, is_typeddict=is_typeddict)
+        return _type_from_runtime(
+            value.val, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
+        )
     elif isinstance(value, TypeVarValue):
         return value
     elif isinstance(value, MultiValuedValue):
-        return unite_values(*[_type_from_value(val, ctx) for val in value.vals])
+        return unite_values(
+            *[
+                _type_from_value(
+                    val, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
+                )
+                for val in value.vals
+            ]
+        )
     elif isinstance(value, AnnotatedValue):
         return _type_from_value(value.value, ctx)
     elif isinstance(value, _SubscriptedValue):
         return _type_from_subscripted_value(
-            value.root, value.members, ctx, is_typeddict=is_typeddict
+            value.root,
+            value.members,
+            ctx,
+            is_typeddict=is_typeddict,
+            allow_unpack=allow_unpack,
         )
     elif isinstance(value, AnyValue):
         return value
@@ -672,7 +708,9 @@ def _type_from_subscripted_value(
     root: Optional[Value],
     members: Sequence[Value],
     ctx: Context,
+    *,
     is_typeddict: bool = False,
+    allow_unpack: bool = False,
 ) -> Value:
     if isinstance(root, GenericValue):
         if len(root.args) == len(members):
@@ -685,7 +723,13 @@ def _type_from_subscripted_value(
     elif isinstance(root, MultiValuedValue):
         return unite_values(
             *[
-                _type_from_subscripted_value(subval, members, ctx, is_typeddict)
+                _type_from_subscripted_value(
+                    subval,
+                    members,
+                    ctx,
+                    is_typeddict=is_typeddict,
+                    allow_unpack=allow_unpack,
+                )
                 for subval in root.vals
             ]
         )
@@ -722,10 +766,12 @@ def _type_from_subscripted_value(
         if len(members) == 2 and members[1] == KnownValue(Ellipsis):
             return GenericValue(tuple, [_type_from_value(members[0], ctx)])
         elif len(members) == 1 and members[0] == KnownValue(()):
-            return SequenceIncompleteValue(tuple, [])
+            return SequenceValue(tuple, [])
         else:
-            return SequenceIncompleteValue(
-                tuple, [_type_from_value(arg, ctx) for arg in members]
+            return _make_sequence_value(
+                tuple,
+                [_type_from_value(arg, ctx, allow_unpack=True) for arg in members],
+                ctx,
             )
     elif root is typing.Optional:
         if len(members) != 1:
@@ -764,6 +810,14 @@ def _type_from_subscripted_value(
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
         return Pep655Value(False, _type_from_value(members[0], ctx))
+    elif is_typing_name(root, "Unpack"):
+        if not allow_unpack:
+            ctx.show_error("Unpack[] used in unsupported context")
+            return AnyValue(AnySource.error)
+        if len(members) != 1:
+            ctx.show_error("Unpack requires a single argument")
+            return AnyValue(AnySource.error)
+        return UnpackedValue(_type_from_value(members[0], ctx))
     elif root is Callable or root is typing.Callable:
         if len(members) == 2:
             args, return_value = members
@@ -800,9 +854,9 @@ def _maybe_get_extra(origin: type) -> Union[type, str]:
     # ContextManager is defined oddly and we lose the Protocol if we don't use
     # synthetic types.
     if any(origin is cls for cls in CONTEXT_MANAGER_TYPES):
-        return "typing.ContextManager"
+        return "contextlib.AbstractContextManager"
     elif any(origin is cls for cls in ASYNC_CONTEXT_MANAGER_TYPES):
-        return "typing.AsyncContextManager"
+        return "contextlib.AbstractAsyncContextManager"
     else:
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
@@ -885,33 +939,27 @@ class _Visitor(ast.NodeVisitor):
     def visit_Subscript(self, node: ast.Subscript) -> Value:
         value = self.visit(node.value)
         index = self.visit(node.slice)
-        if isinstance(index, SequenceIncompleteValue):
-            members = index.members
+        if isinstance(index, SequenceValue):
+            members = index.get_member_sequence()
+            if members is None:
+                # TODO support unpacking here
+                return AnyValue(AnySource.inference)
+            members = tuple(members)
         else:
             members = (index,)
         return _SubscriptedValue(value, members)
 
     def visit_Attribute(self, node: ast.Attribute) -> Optional[Value]:
         root_value = self.visit(node.value)
-        if isinstance(root_value, KnownValue):
-            try:
-                return KnownValue(getattr(root_value.val, node.attr))
-            except AttributeError:
-                self.ctx.show_error(
-                    f"{root_value.val!r} has no attribute {node.attr!r}", node=node
-                )
-                return AnyValue(AnySource.error)
-        elif not isinstance(root_value, AnyValue):
-            self.ctx.show_error(f"Cannot resolve annotation {root_value}", node=node)
-        return AnyValue(AnySource.error)
+        return self.ctx.get_attribute(root_value, node)
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
-        elts = [self.visit(elt) for elt in node.elts]
-        return SequenceIncompleteValue(tuple, elts)
+        elts = [(False, self.visit(elt)) for elt in node.elts]
+        return SequenceValue(tuple, elts)
 
     def visit_List(self, node: ast.List) -> Value:
-        elts = [self.visit(elt) for elt in node.elts]
-        return SequenceIncompleteValue(list, elts)
+        elts = [(False, self.visit(elt)) for elt in node.elts]
+        return SequenceValue(list, elts)
 
     def visit_Index(self, node: ast.Index) -> Value:
         # class is unused in 3.9
@@ -1042,7 +1090,9 @@ def _value_of_origin_args(
     args: Sequence[object],
     val: object,
     ctx: Context,
+    *,
     is_typeddict: bool = False,
+    allow_unpack: bool = False,
 ) -> Value:
     if origin is typing.Type or origin is type:
         if not args:
@@ -1054,10 +1104,12 @@ def _value_of_origin_args(
         elif len(args) == 2 and args[1] is Ellipsis:
             return GenericValue(tuple, [_type_from_runtime(args[0], ctx)])
         elif len(args) == 1 and args[0] == ():
-            return SequenceIncompleteValue(tuple, [])
+            return SequenceValue(tuple, [])
         else:
-            args_vals = [_type_from_runtime(arg, ctx) for arg in args]
-            return SequenceIncompleteValue(tuple, args_vals)
+            args_vals = [
+                _type_from_runtime(arg, ctx, allow_unpack=True) for arg in args
+            ]
+            return _make_sequence_value(tuple, args_vals, ctx)
     elif origin is typing.Union:
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
     elif origin is Callable or origin is typing.Callable:
@@ -1121,6 +1173,14 @@ def _value_of_origin_args(
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
         return Pep655Value(False, _type_from_runtime(args[0], ctx))
+    elif is_typing_name(origin, "Unpack"):
+        if not allow_unpack:
+            ctx.show_error("Invalid usage of Unpack")
+            return AnyValue(AnySource.error)
+        if len(args) != 1:
+            ctx.show_error("Unpack requires a single argument")
+            return AnyValue(AnySource.error)
+        return UnpackedValue(_type_from_runtime(args[0], ctx))
     elif origin is None and isinstance(val, type):
         # This happens for SupportsInt in 3.7.
         return _maybe_typed_value(val)
@@ -1139,6 +1199,22 @@ def _maybe_typed_value(val: Union[type, str]) -> Value:
     return TypedValue(val)
 
 
+def _make_sequence_value(
+    typ: type, members: Sequence[Value], ctx: Context
+) -> SequenceValue:
+    pairs = []
+    for val in members:
+        if isinstance(val, UnpackedValue):
+            elements = val.get_elements()
+            if elements is None:
+                ctx.show_error(f"Invalid usage of Unpack with {val}")
+                elements = [(True, AnyValue(AnySource.error))]
+            pairs += elements
+        else:
+            pairs.append((False, val))
+    return SequenceValue(typ, pairs)
+
+
 def _make_callable_from_value(
     args: Value, return_value: Value, ctx: Context, is_asynq: bool = False
 ) -> Value:
@@ -1149,16 +1225,26 @@ def _make_callable_from_value(
                 [ELLIPSIS_PARAM], return_annotation=return_annotation, is_asynq=is_asynq
             )
         )
-    elif isinstance(args, SequenceIncompleteValue):
-        params = [
-            SigParameter(
-                f"__arg{i}",
-                kind=ParameterKind.POSITIONAL_ONLY,
-                annotation=_type_from_value(arg, ctx),
-            )
-            for i, arg in enumerate(args.members)
-        ]
-        sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+    elif isinstance(args, SequenceValue):
+        params = []
+        for i, (is_many, arg) in enumerate(args.members):
+            annotation = _type_from_value(arg, ctx)
+            if is_many:
+                param = SigParameter(
+                    f"@{i}",
+                    kind=ParameterKind.VAR_POSITIONAL,
+                    annotation=GenericValue(tuple, [annotation]),
+                )
+            else:
+                param = SigParameter(
+                    f"@{i}", kind=ParameterKind.POSITIONAL_ONLY, annotation=annotation
+                )
+            params.append(param)
+        try:
+            sig = Signature.make(params, return_annotation, is_asynq=is_asynq)
+        except InvalidSignature as e:
+            ctx.show_error(str(e))
+            return AnyValue(AnySource.error)
         return CallableValue(sig)
     elif isinstance(args, KnownValue) and is_instance_of_typing_name(
         args.val, "ParamSpec"
@@ -1181,7 +1267,7 @@ def _make_callable_from_value(
         annotations = [_type_from_value(arg, ctx) for arg in args.members]
         params = [
             SigParameter(
-                f"__arg{i}",
+                f"@{i}",
                 kind=ParameterKind.PARAM_SPEC
                 if i == len(annotations) - 1
                 else ParameterKind.POSITIONAL_ONLY,
@@ -1220,3 +1306,17 @@ def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
         elif isinstance(entry.val, CustomCheck):
             return CustomCheckExtension(entry.val)
     return entry
+
+
+_CONTEXT_MANAGER_TYPES = {
+    "typing.AsyncContextManager",
+    "typing.ContextManager",
+    "contextlib.AbstractContextManager",
+    "contextlib.AbstractAsyncContextManager",
+    *CONTEXT_MANAGER_TYPES,
+    *ASYNC_CONTEXT_MANAGER_TYPES,
+}
+
+
+def is_context_manager_type(typ: Union[str, type]) -> bool:
+    return typ in _CONTEXT_MANAGER_TYPES

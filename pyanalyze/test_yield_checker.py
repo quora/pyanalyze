@@ -1,9 +1,10 @@
 # static analysis: ignore
 import ast
 
-from .yield_checker import VarnameGenerator, _camel_case_to_snake_case
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
+
+from .yield_checker import _camel_case_to_snake_case, VarnameGenerator
 
 
 class TestUnnecessaryYield(TestNameCheckVisitorBase):
@@ -59,8 +60,9 @@ class TestUnnecessaryYield(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_if(self):
-        from pyanalyze.tests import PropertyObject
         from asynq import asynq, result
+
+        from pyanalyze.tests import PropertyObject
 
         @asynq()
         def capybara(qid, include_deleted):
@@ -72,9 +74,10 @@ class TestUnnecessaryYield(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_nested(self):
-        from pyanalyze.tests import PropertyObject, async_fn
         from asynq import asynq, result
         from asynq.tools import afilter
+
+        from pyanalyze.tests import async_fn, PropertyObject
 
         @asynq()
         def capybara(qids, t):
@@ -88,8 +91,9 @@ class TestUnnecessaryYield(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_usage_in_nested_function(self):
-        from pyanalyze.tests import async_fn, cached_fn
         from asynq import asynq, result
+
+        from pyanalyze.tests import async_fn, cached_fn
 
         @asynq()
         def capybara(oid):
@@ -236,6 +240,27 @@ class TestBatchingYields(TestNameCheckVisitorBase):
                 result(val1 + val2 + val4)
             """,
             repeat=True,
+        )
+
+    def test_lots_of_underscores(self):
+        self.assert_is_changed(
+            """
+            from asynq import asynq
+            from pyanalyze.tests import async_fn
+
+            @asynq()
+            def capybara(oid, oid2):
+                _ = yield async_fn.asynq(oid)
+                _ = yield async_fn.asynq(oid2)
+            """,
+            """
+            from asynq import asynq
+            from pyanalyze.tests import async_fn
+
+            @asynq()
+            def capybara(oid, oid2):
+                yield async_fn.asynq(oid), async_fn.asynq(oid2)
+            """,
         )
 
     def test_target_tuple(self):
@@ -430,8 +455,9 @@ class TestBatchingYields(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_in_except_handler(self):
-        from pyanalyze.tests import async_fn
         from asynq import asynq, result
+
+        from pyanalyze.tests import async_fn
 
         @asynq()
         def capybara():
@@ -444,10 +470,11 @@ class TestBatchingYields(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_no_assignment(self):
+        from asynq import asynq, result
+
         # if the result value isn't assigned, we assume it's a side-effecting operation that can't
         # be batched
         from pyanalyze.tests import async_fn
-        from asynq import asynq, result
 
         @asynq()
         def f():
@@ -459,16 +486,41 @@ class TestBatchingYields(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_augassign_used(self):
+        from asynq import asynq
+
         # if the result value isn't assigned, we assume it's a side-effecting operation that can't
         # be batched
         from pyanalyze.tests import async_fn
-        from asynq import asynq
 
         @asynq()
         def f():
             x = 0
             x += yield async_fn.asynq(1)
             yield async_fn.asynq(x)
+
+    @assert_passes()
+    def test_combine_in_try(self):
+        from asynq import asynq
+
+        from pyanalyze.tests import async_fn
+
+        @asynq()
+        def capybara():
+            x = yield async_fn.asynq(2)
+            try:
+                y = yield async_fn.asynq(1)  # E: unnecessary_yield
+            except OverflowError:
+                y = 3
+            return (x, y)
+
+        @asynq()
+        def pacarana():
+            try:
+                y = yield async_fn.asynq(1)
+            except OverflowError:
+                y = 3
+            x = yield async_fn.asynq(2)
+            return (x, y)
 
 
 class TestMissingAsync(TestNameCheckVisitorBase):
@@ -584,11 +636,23 @@ class TestMissingAsync(TestNameCheckVisitorBase):
             )
             return objs
 
+    @assert_passes()
+    def test_coverage(self):
+        from pyanalyze.tests import async_fn
+
+        func = async_fn.asynq
+
+        def capybara(obj: str, unannotated):
+            yield obj.title()
+            yield unannotated()
+            yield func(1)  # E: missing_asynq
+
 
 class TestDuplicateYield(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_dupe_none(self):
+    def test_duplicate(self):
         from asynq import asynq
+
         from pyanalyze.tests import async_fn
 
         @asynq()
@@ -596,8 +660,25 @@ class TestDuplicateYield(TestNameCheckVisitorBase):
             yield None, None  # E: duplicate_yield
 
         @asynq()
+        def extraneous():
+            yield None, None  # E: duplicate_yield
+            return 3
+
+        @asynq()
         def dupe_call(oid):
             yield async_fn.asynq(oid), async_fn.asynq(oid)  # E: duplicate_yield
+
+        @asynq()
+        def way_too_many(oid, oid2):
+            yield async_fn.asynq(oid), async_fn.asynq(  # E: duplicate_yield
+                oid
+            ), async_fn.asynq(oid2)
+            len((yield async_fn.asynq(oid), async_fn.asynq(oid)))  # E: duplicate_yield
+
+        @asynq()
+        def too_many_assignments():
+            a = b = yield None, None  # E: duplicate_yield
+            return (a, b)
 
     @assert_passes()
     def test_not_async(self):
@@ -638,6 +719,25 @@ class TestDuplicateYield(TestNameCheckVisitorBase):
             @asynq()
             def capybara(oid):
                 a = yield async_fn.asynq(oid)
+                b = a
+            """,
+        )
+        self.assert_is_changed(
+            """
+            from asynq import asynq
+            from pyanalyze.tests import async_fn
+
+            @asynq()
+            def capybara(oid):
+                a, b, c = yield async_fn.asynq(oid), async_fn.asynq(oid), async_fn.asynq(oid + 1)
+            """,
+            """
+            from asynq import asynq
+            from pyanalyze.tests import async_fn
+
+            @asynq()
+            def capybara(oid):
+                a, c = yield async_fn.asynq(oid), async_fn.asynq(oid + 1)
                 b = a
             """,
         )
@@ -691,6 +791,9 @@ class TestVarnameGenerator(object):
 
     def test_strip_underscore(self):
         self.check("_capybara", "capybara_result")
+
+    def test_subscript(self):
+        self.check("futures[0]", "autogenerated_var")
 
 
 def test_camel_case_to_snake_case():

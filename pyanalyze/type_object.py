@@ -3,24 +3,24 @@
 An object that represents a type.
 
 """
-from dataclasses import dataclass, field
 import inspect
-from typing import Container, Dict, Set, Sequence, Union
+from dataclasses import dataclass, field
+from typing import Container, Dict, Sequence, Set, Union
 from unittest import mock
 
-from .safe import safe_isinstance, safe_issubclass, safe_in
+from .safe import safe_in, safe_isinstance, safe_issubclass
 from .value import (
-    UNINITIALIZED_VALUE,
     BoundsMap,
     CanAssign,
     CanAssignContext,
     CanAssignError,
     KnownValue,
+    stringify_object,
     SubclassValue,
     TypedValue,
-    Value,
-    stringify_object,
     unify_bounds_maps,
+    UNINITIALIZED_VALUE,
+    Value,
 )
 
 

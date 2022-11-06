@@ -3,18 +3,20 @@
 Implementation of unused object detection.
 
 """
-from collections import defaultdict
-from dataclasses import dataclass, field
-import enum
-import inspect
-from typing import Set, List, Dict, Type, Iterable, Optional, TypeVar
-import qcore
-from types import ModuleType, TracebackType
 import __future__
 
+import enum
+import inspect
+from collections import defaultdict
+from dataclasses import dataclass, field
+from types import ModuleType, TracebackType
+from typing import Dict, Iterable, List, Optional, Set, Type, TypeVar
+
+import qcore
+
 import pyanalyze
-from .safe import safe_in
 from . import extensions
+from .safe import safe_in
 
 T = TypeVar("T")
 
@@ -150,8 +152,7 @@ class UnusedObjectFinder:
 
     def get_unused_objects(self) -> Iterable[UnusedObject]:
         for module in sorted(self.visited_modules, key=lambda mod: mod.__name__):
-            for obj in self._get_unused_from_module(module):
-                yield obj
+            yield from self._get_unused_from_module(module)
 
     def _get_unused_from_module(self, module: ModuleType) -> Iterable[UnusedObject]:
         is_test_module = any(

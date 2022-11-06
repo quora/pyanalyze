@@ -2,26 +2,26 @@
 from .error_code import ErrorCode
 from .format_strings import (
     ConversionSpecifier,
-    PercentFormatString,
-    StarConversionSpecifier,
     FormatString,
-    ReplacementField,
     IndexOrAttribute,
     parse_format_string,
+    PercentFormatString,
+    ReplacementField,
+    StarConversionSpecifier,
 )
+from .test_name_check_visitor import TestNameCheckVisitorBase
+from .test_node_visitor import assert_passes
+from .test_value import CTX
+from .tests import make_simple_sequence
 from .value import (
-    KVPair,
-    assert_is_value,
     AnySource,
     AnyValue,
-    KnownValue,
+    assert_is_value,
     DictIncompleteValue,
-    SequenceIncompleteValue,
+    KnownValue,
+    KVPair,
     TypedValue,
 )
-from .test_node_visitor import assert_passes
-from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_value import CTX
 
 
 PERCENT_TESTCASES = [
@@ -328,12 +328,12 @@ class TestAccept(object):
         )
         self.assert_errors(
             PercentFormatString.from_pattern("%s%s"),
-            SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+            make_simple_sequence(list, [KnownValue(1), KnownValue(2)]),
             [too_few],
         )
         self.assert_errors(
             PercentFormatString.from_pattern("%s%s"),
-            SequenceIncompleteValue(tuple, [KnownValue(1)]),
+            make_simple_sequence(tuple, [KnownValue(1)]),
             [too_few],
         )
 
@@ -343,7 +343,7 @@ class TestAccept(object):
         )
         self.assert_errors(
             PercentFormatString.from_pattern("%s"),
-            SequenceIncompleteValue(tuple, [KnownValue(1), KnownValue(2)]),
+            make_simple_sequence(tuple, [KnownValue(1), KnownValue(2)]),
             [too_many],
         )
 
@@ -355,12 +355,12 @@ class TestAccept(object):
         self.assert_errors(PercentFormatString.from_pattern("%s%%"), KnownValue(1), [])
         self.assert_errors(
             PercentFormatString.from_pattern("%s"),
-            SequenceIncompleteValue(list, [KnownValue(1), KnownValue(2)]),
+            make_simple_sequence(list, [KnownValue(1), KnownValue(2)]),
             [],
         )
         self.assert_errors(
             PercentFormatString.from_pattern("%s"),
-            SequenceIncompleteValue(tuple, [KnownValue(1)]),
+            make_simple_sequence(tuple, [KnownValue(1)]),
             [],
         )
 

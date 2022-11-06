@@ -3,6 +3,67 @@
 ## Unreleased
 
 - Detect unused nested function and class definitions (#510)
+
+## Version 0.8.0 (November 5, 2022)
+
+Release highlights:
+- Support for Python 3.11
+- Drop support for Python 3.6
+- Support for PEP 692 (``Unpack`` on ``**kwargs``)
+
+Full changelog:
+- Infer `async def` functions as returning `Coroutine`, not
+  `Awaitable` (#557, #559)
+- Drop support for Python 3.6 (#554)
+- Require `typeshed_client>=2.1.0`. Older versions will throw
+  false-positive errors around context managers when
+  `typeshed_client` 2.1.0 is installed. (#554)
+- Fix false positive error certain method calls on literals (#548)
+- Preserve `Annotated` annotations on access to methods of
+  literals (#541)
+- `allow_call` callables are now also called if the arguments
+  are literals wrapped in `Annotated` (#540)
+- Support Python 3.11 (#537)
+- Fix type checking of binary operators involving unions (#531)
+- Improve `TypeVar` solution heuristic for constrained
+  typevars with multiple solutions (#532)
+- Fix resolution of stringified annotations in `__init__` methods (#530)
+- Type check `yield`, `yield from`, and `return` nodes in generators (#529)
+- Type check calls to comparison operators (#527)
+- Retrieve attributes from stubs even when a runtime
+  equivalent exists (#526)
+- Fix attribute access to stub-only names (#525)
+- Remove a number of unnecessary special-cased signatures
+  (#499)
+- Add support for use of the `Unpack` operator to
+  annotate heterogeneous `*args` and `**kwargs` parameters (#523)
+- Detect incompatible types for some calls to `list.append`,
+  `list.extend`, `list.__add__`, and `set.add` (#522)
+- Optimize local variables with very complex inferred types (#521)
+
+## Version 0.7.0 (April 13, 2022)
+
+Release highlights:
+- Support for PEP 673 (`Self`)
+- Support for PEP 675 (`LiteralString`)
+- Support for `assert_type` and other additions to `typing` in Python 3.11
+
+Full changelog:
+- Remove `SequenceIncompleteValue` (#519)
+- Add implementation function for `dict.pop` (#517)
+- Remove `WeakExtension` (#517)
+- Fix propagation of no-return-unless constraints from calls
+  to unions (#518)
+- Initial support for variable-length heterogeneous sequences
+  (required for PEP 646). More precise types are now inferred
+  for heterogeneous sequences containing variable-length
+  objects. (#515, #516)
+- Support `LiteralString` (PEP 675) (#514)
+- Add `unused_assignment` error code, separated out from
+  `unused_variable`. Enable these error codes and
+  `possibly_undefined_name` by default (#511)
+- Fix handling of overloaded methods called on literals (#513)
+- Partial support for running on Python 3.11 (#512)
 - Basic support for checking `Final` and for checking re-assignments
   to variables declared with a specific type (#505)
 - Correctly check the `self` argument to `@property` getters (#506)

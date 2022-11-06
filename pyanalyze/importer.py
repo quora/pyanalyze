@@ -4,13 +4,13 @@ Module responsible for importing files.
 
 """
 
-from functools import lru_cache
 import importlib
 import importlib.util
-from pathlib import Path
 import sys
-from typing import Optional, Sequence, cast, Tuple
+from functools import lru_cache
+from pathlib import Path
 from types import ModuleType
+from typing import cast, Optional, Sequence, Tuple
 
 
 @lru_cache()

@@ -8,11 +8,10 @@ Several type system extensions are used with the ``Annotated`` type from
 be gracefully ignored by other type checkers.
 
 """
+import typing
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-import typing_extensions
-import pyanalyze
 from typing import (
     Any,
     Callable,
@@ -20,22 +19,25 @@ from typing import (
     Dict,
     Iterable,
     Iterator,
+    List,
     Optional,
+    overload as real_overload,
     Sequence,
     Tuple,
-    List,
-    Union,
-    TypeVar,
     TYPE_CHECKING,
-    overload as real_overload,
+    TypeVar,
+    Union,
 )
+
+import typing_extensions
 from typing_extensions import Literal, NoReturn
-import typing
+
+import pyanalyze
 
 from .safe import get_fully_qualified_name
 
 if TYPE_CHECKING:
-    from .value import Value, CanAssign, CanAssignContext, TypeVarMap, AnySource
+    from .value import AnySource, CanAssign, CanAssignContext, TypeVarMap, Value
 
 
 class CustomCheck:
