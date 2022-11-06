@@ -26,7 +26,6 @@ show errors.
 import ast
 import builtins
 import contextlib
-import sys
 import typing
 from collections.abc import Callable, Hashable, Iterable
 from dataclasses import dataclass, field, InitVar
