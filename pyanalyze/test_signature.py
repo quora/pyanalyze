@@ -887,7 +887,8 @@ class TestAllowCall(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_annotated_known(self):
-        from typing_extensions import Literal, Annotated
+        from typing_extensions import Annotated, Literal
+
         from pyanalyze.extensions import LiteralOnly
 
         def capybara():

@@ -21,7 +21,6 @@ these subclasses and some related utilities.
 
 import collections.abc
 import enum
-import inspect
 import textwrap
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field, InitVar
@@ -544,17 +543,20 @@ class UnboundMethodValue(Value):
     def get_method(self) -> Optional[Any]:
         """Return the runtime callable for this ``UnboundMethodValue``, or
         None if it cannot be found."""
+        root = self.composite.value
+        if isinstance(root, AnnotatedValue):
+            root = root.value
+        if isinstance(root, KnownValue):
+            typ = root.val
+        else:
+            typ = root.get_type()
         try:
-            typ = self.composite.value.get_type()
             method = getattr(typ, self.attr_name)
             if self.secondary_attr_name is not None:
                 method = getattr(method, self.secondary_attr_name)
-            # don't use unbound methods in py2
-            if inspect.ismethod(method) and method.__self__ is None:
-                method = method.__func__
-            return method
         except AttributeError:
             return None
+        return method
 
     def is_type(self, typ: type) -> bool:
         return isinstance(self.get_method(), typ)
@@ -1139,7 +1141,8 @@ class DictIncompleteValue(GenericValue):
 
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
-    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys."""
+    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys.
+    """
 
     items: Dict[str, Tuple[bool, Value]]
     """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
@@ -2655,3 +2658,10 @@ def make_owned(typ: Value) -> Value:
 
 def is_owned(val: Value) -> bool:
     return isinstance(val, AnnotatedValue) and any(val.get_custom_check_of_type(Owned))
+
+
+def make_coro_type(return_type: Value) -> GenericValue:
+    return GenericValue(
+        collections.abc.Coroutine,
+        [AnyValue(AnySource.inference), AnyValue(AnySource.inference), return_type],
+    )

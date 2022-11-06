@@ -239,8 +239,8 @@ class ConstraintType(enum.Enum):
     all_of = 5
     """All of several other constraints on `varname` are true."""
     is_value_object = 6
-    """`constraint.varname` should be typed as a :class:`pyanalyze.value.Value` object. Naming of this
-    and `is_value` is confusing, and ideally we'd come up with better names."""
+    """`constraint.varname` should be typed as a :class:`pyanalyze.value.Value` object. Naming of
+    this and `is_value` is confusing, and ideally we'd come up with better names."""
     predicate = 7
     """`constraint.value` is a `PredicateFunc`."""
     add_annotation = 8
@@ -263,7 +263,8 @@ class AbstractConstraint:
     """
 
     def apply(self) -> Iterable["Constraint"]:
-        """Yields concrete constraints that are active when this constraint is applied."""
+        """Yields concrete constraints that are active when this constraint is applied.
+        """
         raise NotImplementedError
 
     def invert(self) -> "AbstractConstraint":
@@ -854,7 +855,8 @@ class Scope:
             return value
 
     def scope_used_as_parent(self) -> "Scope":
-        """Class scopes are skipped in scope lookup, so don't set them as parent scopes."""
+        """Class scopes are skipped in scope lookup, so don't set them as parent scopes.
+        """
         if self.scope_type == ScopeType.class_scope:
             assert (
                 self.parent_scope is not None
