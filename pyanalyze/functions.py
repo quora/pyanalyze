@@ -33,6 +33,7 @@ from .value import (
     GenericValue,
     get_tv_map,
     KnownValue,
+    make_coro_type,
     SubclassValue,
     TypedValue,
     TypeVarValue,
@@ -409,7 +410,7 @@ class IsGeneratorVisitor(ast.NodeVisitor):
     """Determine whether an async function is a generator.
 
     This is important because the return type of async generators
-    should not be wrapped in Awaitable.
+    should not be wrapped in Coroutine.
 
     We avoid recursing into nested functions, which is why we can't
     just use ast.walk.
@@ -449,10 +450,7 @@ def compute_value_of_function(
             if visitor.is_generator:
                 break
         if not visitor.is_generator:
-            result = GenericValue(
-                collections.abc.Coroutine,
-                [AnyValue(AnySource.inference), AnyValue(AnySource.inference), result],
-            )
+            result = make_coro_type(result)
     sig = Signature.make(
         [param_info.param for param_info in info.params],
         result,

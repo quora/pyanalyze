@@ -7,12 +7,12 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
-    UnboundMethodValue,
     assert_is_value,
     GenericValue,
     KnownValue,
     MultiValuedValue,
     TypedValue,
+    UnboundMethodValue,
 )
 
 _global_dict: Dict[Union[int, str], float] = {}
@@ -173,11 +173,12 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_annotated_known(self):
+        from qcore.testing import Anything
         from typing_extensions import Annotated, Literal
+
         from pyanalyze.extensions import LiteralOnly
         from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
         from pyanalyze.value import CustomCheckExtension
-        from qcore.testing import Anything
 
         origin = VarnameWithOrigin("encoding", Anything)  # E: incompatible_argument
 

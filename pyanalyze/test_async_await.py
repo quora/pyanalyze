@@ -27,7 +27,7 @@ class TestAsyncDef(TestNameCheckVisitorBase):
 class TestAsyncAwait(TestNameCheckVisitorBase):
     @assert_passes()
     def test_type_inference(self):
-        from collections.abc import Awaitable
+        from pyanalyze.value import make_coro_type
 
         async def capybara(x):
             assert_is_value(x, AnyValue(AnySource.unannotated))
@@ -35,7 +35,7 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
 
         async def kerodon(x):
             task = capybara(x)
-            assert_is_value(task, GenericValue(Awaitable, [KnownValue("hydrochoerus")]))
+            assert_is_value(task, make_coro_type(KnownValue("hydrochoerus")))
             val = await task
             assert_is_value(val, KnownValue("hydrochoerus"))
 
@@ -214,7 +214,8 @@ class TestArgSpec(TestNameCheckVisitorBase):
     @assert_passes()
     def test_asyncio_coroutine(self):
         import asyncio
-        from collections.abc import Awaitable
+
+        from pyanalyze.value import make_coro_type
 
         @asyncio.coroutine
         def f():
@@ -223,49 +224,45 @@ class TestArgSpec(TestNameCheckVisitorBase):
 
         @asyncio.coroutine
         def g():
-            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
+            assert_is_value(f(), make_coro_type(KnownValue(42)))
 
     @assert_passes()
     def test_coroutine_from_typeshed(self):
         import asyncio
-        import collections.abc
+
+        from pyanalyze.value import make_coro_type
 
         async def capybara():
-            assert_is_value(
-                asyncio.sleep(3),
-                GenericValue(collections.abc.Awaitable, [KnownValue(None)]),
-            )
+            assert_is_value(asyncio.sleep(3), make_coro_type(KnownValue(None)))
             return 42
 
     @assert_passes()
     def test_async_def_from_typeshed(self):
         from asyncio.streams import open_connection, StreamReader, StreamWriter
-        from collections.abc import Awaitable
+
+        from pyanalyze.value import make_coro_type
 
         async def capybara():
             # annotated as async def in typeshed
             assert_is_value(
                 open_connection(),
-                GenericValue(
-                    Awaitable,
-                    [
-                        make_simple_sequence(
-                            tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
-                        )
-                    ],
+                make_coro_type(
+                    make_simple_sequence(
+                        tuple, [TypedValue(StreamReader), TypedValue(StreamWriter)]
+                    )
                 ),
             )
             return 42
 
     @assert_passes()
     def test_async_def(self):
-        from collections.abc import Awaitable
+        from pyanalyze.value import make_coro_type
 
         async def f():
             return 42
 
         async def g():
-            assert_is_value(f(), GenericValue(Awaitable, [KnownValue(42)]))
+            assert_is_value(f(), make_coro_type(KnownValue(42)))
 
 
 class TestNoReturn(TestNameCheckVisitorBase):
