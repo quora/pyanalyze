@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Infer `async def` functions as returning `Coroutine`, not
+  `Awaitable` (#557)
 - Drop support for Python 3.6 (#554)
 - Require `typeshed_client>=2.1.0`. Older versions will throw
   false-positive errors around context managers when

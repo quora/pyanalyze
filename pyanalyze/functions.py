@@ -449,7 +449,10 @@ def compute_value_of_function(
             if visitor.is_generator:
                 break
         if not visitor.is_generator:
-            result = GenericValue(collections.abc.Awaitable, [result])
+            result = GenericValue(
+                collections.abc.Coroutine,
+                [AnyValue(AnySource.inference), AnyValue(AnySource.inference), result],
+            )
     sig = Signature.make(
         [param_info.param for param_info in info.params],
         result,
