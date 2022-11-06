@@ -61,6 +61,7 @@ from typing_extensions import Annotated, Protocol
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
 from .annotations import (
+    is_context_manager_type,
     is_instance_of_typing_name,
     is_typing_name,
     SyntheticEvaluator,
@@ -3712,12 +3713,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             exit_boolability = get_boolability(exit_assigned)
             can_suppress = not exit_boolability.is_safely_false()
             if isinstance(exit_assigned, AnyValue) or (
-                isinstance(context, TypedValue)
-                and context.typ
-                in [
-                    "contextlib.AbstractContextManager",
-                    "contextlib.AbstractAsyncContextManager",
-                ]
+                isinstance(context, TypedValue) and is_context_manager_type(context.typ)
             ):
                 # cannot easily infer what the context manager will do,
                 # assume it does not suppress exceptions.

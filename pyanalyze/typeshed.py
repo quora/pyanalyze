@@ -18,7 +18,6 @@ from collections.abc import (
     Set as AbstractSet,
     Sized,
 )
-from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from enum import Enum, EnumMeta
 from types import GeneratorType, ModuleType
@@ -80,13 +79,6 @@ from .value import (
     UNINITIALIZED_VALUE,
     Value,
 )
-
-
-try:
-    # 3.7+
-    from contextlib import AbstractAsyncContextManager
-except ImportError:
-    AbstractAsyncContextManager = None
 
 
 T_co = TypeVar("T_co", covariant=True)
@@ -275,11 +267,9 @@ class TypeshedFinder:
             if isinstance(val.typ, type):
                 typ = val.typ
                 # The way AbstractSet/Set is handled between collections and typing is
-                # too confusing, just hardcode it. Same for (Abstract)ContextManager.
+                # too confusing, just hardcode it.
                 if typ is AbstractSet:
                     return [GenericValue(Collection, (TypeVarValue(T_co),))]
-                if typ is AbstractContextManager or typ is AbstractAsyncContextManager:
-                    return [GenericValue(Protocol, (TypeVarValue(T_co),))]
                 if typ is Callable or typ is collections.abc.Callable:
                     return None
                 if typ is TypedDict:
