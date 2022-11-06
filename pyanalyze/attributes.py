@@ -9,7 +9,7 @@ import sys
 import types
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Generic, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 import asynq
 import qcore
@@ -438,16 +438,6 @@ def _get_attribute_from_mro(
         pass
     else:
         for base_cls in mro:
-            # On 3.6 (before PEP 560), the MRO for classes inheriting from typing generics
-            # includes a bunch of classes in the typing module that
-            # don't have any attributes we care about.
-            if (
-                sys.version_info < (3, 7)
-                and isinstance(base_cls, type)
-                and base_cls.__module__ == "typing"
-                and Generic in base_cls.mro()
-            ):
-                continue
             if ctx.skip_mro and base_cls is not typ:
                 continue
 

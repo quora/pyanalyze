@@ -2585,7 +2585,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _maybe_show_missing_f_error(self, node: ast.AST, s: Union[str, bytes]) -> None:
         """Show an error if this string was probably meant to be an f-string."""
-        if sys.version_info < (3, 6) or isinstance(s, bytes):
+        if isinstance(s, bytes):
             return
         if "{" not in s:
             return
@@ -4171,7 +4171,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         [root_composite, index_composite],
                         allow_call=True,
                     )
-                elif sys.version_info >= (3, 7):
+                else:
                     # If there was no __getitem__, try __class_getitem__ in 3.7+
                     cgi = self.get_attribute(
                         Composite(value), "__class_getitem__", node.value
@@ -4187,13 +4187,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         return_value = self.check_call(
                             node.value, cgi, [index_composite], allow_call=True
                         )
-                else:
-                    self._show_error_if_checking(
-                        node,
-                        f"Object {value} does not support subscripting",
-                        error_code=ErrorCode.unsupported_operation,
-                    )
-                    return_value = AnyValue(AnySource.error)
 
                 if (
                     self._should_use_varname_value(return_value)

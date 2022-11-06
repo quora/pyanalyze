@@ -1280,8 +1280,7 @@ class TestCustomCheck(TestNameCheckVisitorBase):
 
         @dataclass(frozen=True)
         class GreaterThan(CustomCheck):
-            # Must be quoted in 3.6 because otherwise the runtime explodes.
-            value: Union[int, "TypeVar"]
+            value: Union[int, TypeVar]
 
             def _can_assign_inner(self, value: Value) -> CanAssign:
                 if isinstance(value, KnownValue):
@@ -1582,42 +1581,37 @@ class TestParamSpec(TestNameCheckVisitorBase):
             assert_is_value(quoted_refined(1), GenericValue(list, [TypedValue(str)]))
             quoted_refined("too", "many", "arguments")  # E: incompatible_call
 
+    @assert_passes()
     def test_concatenate(self):
-        # putting this in an @assert_passes() function crashes GitHub Actions on 3.6
-        # for unclear reasons
-        self.assert_passes(
-            """
-            from typing_extensions import ParamSpec, Concatenate
-            from typing import Callable, TypeVar, List
+        from typing_extensions import ParamSpec, Concatenate
+        from typing import Callable, TypeVar, List
 
-            P = ParamSpec("P")
-            T = TypeVar("T")
+        P = ParamSpec("P")
+        T = TypeVar("T")
 
-            def wrapped(a: int) -> str:
-                return str(a)
+        def wrapped(a: int) -> str:
+            return str(a)
 
-            def wrapper(c: Callable[P, T]) -> Callable[Concatenate[str, P], List[T]]:
-                raise NotImplementedError
+        def wrapper(c: Callable[P, T]) -> Callable[Concatenate[str, P], List[T]]:
+            raise NotImplementedError
 
-            def quoted_wrapper(
-                c: "Callable[P, T]",
-            ) -> "Callable[Concatenate[str, P], List[T]]":
-                raise NotImplementedError
+        def quoted_wrapper(
+            c: "Callable[P, T]",
+        ) -> "Callable[Concatenate[str, P], List[T]]":
+            raise NotImplementedError
 
-            def capybara() -> None:
-                assert_is_value(wrapped(1), TypedValue(str))
+        def capybara() -> None:
+            assert_is_value(wrapped(1), TypedValue(str))
 
-                refined = wrapper(wrapped)
-                assert_is_value(refined("x", 1), GenericValue(list, [TypedValue(str)]))
-                refined(1)  # E: incompatible_call
+            refined = wrapper(wrapped)
+            assert_is_value(refined("x", 1), GenericValue(list, [TypedValue(str)]))
+            refined(1)  # E: incompatible_call
 
-                quoted_refined = quoted_wrapper(wrapped)
-                assert_is_value(
-                    quoted_refined("x", 1), GenericValue(list, [TypedValue(str)])
-                )
-                quoted_refined(1)  # E: incompatible_call
-            """
-        )
+            quoted_refined = quoted_wrapper(wrapped)
+            assert_is_value(
+                quoted_refined("x", 1), GenericValue(list, [TypedValue(str)])
+            )
+            quoted_refined(1)  # E: incompatible_call
 
     @assert_passes()
     def test_match_any(self):
