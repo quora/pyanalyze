@@ -2,8 +2,9 @@
 from typing import Dict, Union
 
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes
+from .test_node_visitor import assert_passes, only_before
 from .value import (
+    AnnotatedValue,
     AnySource,
     AnyValue,
     assert_is_value,
@@ -11,6 +12,7 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     TypedValue,
+    UnboundMethodValue,
 )
 
 _global_dict: Dict[Union[int, str], float] = {}
@@ -142,7 +144,6 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_tuple_subclass_with_getattr(self):
-
         # Inspired by pyspark.sql.types.Row
         class Row(tuple):
             def __getattr__(self, attr):
@@ -168,6 +169,32 @@ class TestAttributes(TestNameCheckVisitorBase):
         def test(x: Union[Capybara, Paca]) -> None:
             assert_is_value(
                 x.attr, MultiValuedValue([TypedValue(int), TypedValue(str)])
+            )
+
+    @assert_passes()
+    def test_annotated_known(self):
+        from qcore.testing import Anything
+        from typing_extensions import Annotated, Literal
+
+        from pyanalyze.extensions import LiteralOnly
+        from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
+        from pyanalyze.value import CustomCheckExtension
+
+        origin = VarnameWithOrigin("encoding", Anything)  # E: incompatible_argument
+
+        def capybara():
+            encoding: Annotated[Literal["ascii"], LiteralOnly()] = "ascii"
+            assert_is_value(
+                encoding.encode,
+                UnboundMethodValue(
+                    "encode",
+                    Composite(
+                        AnnotatedValue(
+                            KnownValue("ascii"), [CustomCheckExtension(LiteralOnly())]
+                        ),
+                        origin,
+                    ),
+                ),
             )
 
     @assert_passes()
@@ -219,6 +246,8 @@ class TestAttributes(TestNameCheckVisitorBase):
             f.attr = 42
             print(f.attr)
 
+    # TODO: Doesn't trigger incompatible_override on 3.11 for some reason.
+    @only_before((3, 11))
     @assert_passes()
     def test_enum_name(self):
         import enum
@@ -323,3 +352,15 @@ class TestHasAttrExtension(TestNameCheckVisitorBase):
             if hasattr(x, "a") and hasattr(x, "b"):
                 assert_is_value(x.a, AnyValue(AnySource.inference))
                 assert_is_value(x.b, AnyValue(AnySource.inference))
+
+    @assert_passes()
+    def test_hasattr_plus_call(self):
+        class X:
+            @classmethod
+            def types(cls):
+                return []
+
+        def capybara(x: X) -> None:
+            cls = X
+            if hasattr(cls, "types"):  # E: value_always_true
+                assert_is_value(cls.types(), AnyValue(AnySource.unannotated))

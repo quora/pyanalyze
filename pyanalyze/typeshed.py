@@ -11,16 +11,9 @@ import inspect
 import sys
 
 from abc import abstractmethod
-from collections.abc import (
-    Awaitable,
-    Collection,
-    MutableMapping,
-    Set as AbstractSet,
-    Sized,
-)
-from contextlib import AbstractContextManager
+from collections.abc import Collection, MutableMapping, Set as AbstractSet, Sized
 from dataclasses import dataclass, field, replace
-from enum import Enum
+from enum import Enum, EnumMeta
 from types import GeneratorType, ModuleType
 from typing import (
     Any,
@@ -73,6 +66,7 @@ from .value import (
     extract_typevars,
     GenericValue,
     KnownValue,
+    make_coro_type,
     SubclassValue,
     TypedDictValue,
     TypedValue,
@@ -80,13 +74,6 @@ from .value import (
     UNINITIALIZED_VALUE,
     Value,
 )
-
-
-try:
-    # 3.7+
-    from contextlib import AbstractAsyncContextManager
-except ImportError:
-    AbstractAsyncContextManager = None
 
 
 T_co = TypeVar("T_co", covariant=True)
@@ -227,7 +214,12 @@ class TypeshedFinder:
             and "." in obj.__qualname__
         ):
             parent_name, own_name = obj.__qualname__.rsplit(".", maxsplit=1)
-            parent_fqn = f"{obj.__module__}.{parent_name}"
+            # Work around the stub using the wrong name.
+            # TODO we should be able to resolve this anyway.
+            if parent_name == "EnumType" and obj.__module__ == "enum":
+                parent_fqn = "enum.EnumMeta"
+            else:
+                parent_fqn = f"{obj.__module__}.{parent_name}"
             parent_info = self._get_info_for_name(parent_fqn)
             if parent_info is not None:
                 maybe_info = self._get_child_info(parent_info, own_name, obj.__module__)
@@ -270,11 +262,9 @@ class TypeshedFinder:
             if isinstance(val.typ, type):
                 typ = val.typ
                 # The way AbstractSet/Set is handled between collections and typing is
-                # too confusing, just hardcode it. Same for (Abstract)ContextManager.
+                # too confusing, just hardcode it.
                 if typ is AbstractSet:
                     return [GenericValue(Collection, (TypeVarValue(T_co),))]
-                if typ is AbstractContextManager or typ is AbstractAsyncContextManager:
-                    return [GenericValue(Protocol, (TypeVarValue(T_co),))]
                 if typ is Callable or typ is collections.abc.Callable:
                     return None
                 if typ is TypedDict:
@@ -283,6 +273,10 @@ class TypeshedFinder:
                             MutableMapping, [TypedValue(str), TypedValue(object)]
                         )
                     ]
+                # In 3.11 it's named EnumType and EnumMeta is an alias, but the
+                # stubs have it the other way around. We can't deal with that for now.
+                if typ is EnumMeta:
+                    return [TypedValue(type)]
                 fq_name = self._get_fq_name(typ)
                 if fq_name is None:
                     return None
@@ -335,7 +329,7 @@ class TypeshedFinder:
     def get_bases_for_fq_name(self, fq_name: str) -> Optional[List[Value]]:
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
-        return self._get_bases_from_info(info, mod)
+        return self._get_bases_from_info(info, mod, fq_name)
 
     def get_attribute(self, typ: type, attr: str, *, on_class: bool) -> Value:
         """Return the stub for this attribute.
@@ -592,22 +586,28 @@ class TypeshedFinder:
         return False
 
     def _get_bases_from_info(
-        self, info: typeshed_client.resolver.ResolvedName, mod: str
+        self, info: typeshed_client.resolver.ResolvedName, mod: str, fq_name: str
     ) -> Optional[List[Value]]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
-            return self._get_bases_from_info(info.info, ".".join(info.source_module))
+            return self._get_bases_from_info(
+                info.info, ".".join(info.source_module), fq_name
+            )
         elif isinstance(info, typeshed_client.NameInfo):
             if isinstance(info.ast, ast.ClassDef):
                 bases = info.ast.bases
                 return [self._parse_type(base, mod) for base in bases]
             elif isinstance(info.ast, ast.Assign):
-                val = self._parse_type(info.ast.value, mod)
+                val = self._parse_expr(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
+                    new_fq_name = self._get_fq_name(val.val)
+                    if fq_name == new_fq_name:
+                        # prevent infinite recursion
+                        return [AnyValue(AnySource.inference)]
                     return self.get_bases(val.val)
                 else:
-                    return [val]
+                    return [AnyValue(AnySource.inference)]
             elif isinstance(
                 info.ast,
                 (
@@ -871,7 +871,7 @@ class TypeshedFinder:
         return Signature.make(
             cleaned_arguments,
             callable=obj,
-            return_annotation=GenericValue(Awaitable, [return_value])
+            return_annotation=make_coro_type(return_value)
             if isinstance(node, ast.AsyncFunctionDef)
             else return_value,
             allow_call=allow_call,
@@ -984,7 +984,7 @@ class TypeshedFinder:
 
     def make_synthetic_type(self, module: str, info: typeshed_client.NameInfo) -> Value:
         fq_name = f"{module}.{info.name}"
-        bases = self._get_bases_from_info(info, module)
+        bases = self._get_bases_from_info(info, module, fq_name)
         typ = TypedValue(fq_name)
         if bases is not None:
             if any(

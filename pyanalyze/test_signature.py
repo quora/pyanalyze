@@ -885,6 +885,18 @@ class TestAllowCall(TestNameCheckVisitorBase):
 
             s.encode("not an encoding")  # E: incompatible_call
 
+    @assert_passes()
+    def test_annotated_known(self):
+        from typing_extensions import Annotated, Literal
+
+        from pyanalyze.extensions import LiteralOnly
+
+        def capybara():
+            encoding: Annotated[Literal["ascii"], LiteralOnly()] = "ascii"
+
+            s = "x"
+            assert_is_value(s.encode(encoding), KnownValue(b"x"))
+
 
 class TestOverload(TestNameCheckVisitorBase):
     @assert_passes()

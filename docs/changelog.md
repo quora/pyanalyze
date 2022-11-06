@@ -1,7 +1,25 @@
 # Changelog
 
-## Unreleased
+## Version 0.8.0 (November 5, 2022)
 
+Release highlights:
+- Support for Python 3.11
+- Drop support for Python 3.6
+- Support for PEP 692 (``Unpack`` on ``**kwargs``)
+
+Full changelog:
+- Infer `async def` functions as returning `Coroutine`, not
+  `Awaitable` (#557, #559)
+- Drop support for Python 3.6 (#554)
+- Require `typeshed_client>=2.1.0`. Older versions will throw
+  false-positive errors around context managers when
+  `typeshed_client` 2.1.0 is installed. (#554)
+- Fix false positive error certain method calls on literals (#548)
+- Preserve `Annotated` annotations on access to methods of
+  literals (#541)
+- `allow_call` callables are now also called if the arguments
+  are literals wrapped in `Annotated` (#540)
+- Support Python 3.11 (#537)
 - Fix type checking of binary operators involving unions (#531)
 - Improve `TypeVar` solution heuristic for constrained
   typevars with multiple solutions (#532)

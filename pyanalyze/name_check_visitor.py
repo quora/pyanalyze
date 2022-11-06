@@ -61,6 +61,7 @@ from typing_extensions import Annotated, Protocol
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
 from .annotations import (
+    is_context_manager_type,
     is_instance_of_typing_name,
     is_typing_name,
     SyntheticEvaluator,
@@ -172,6 +173,7 @@ from .value import (
     KnownValue,
     kv_pairs_from_mapping,
     KVPair,
+    make_coro_type,
     MultiValuedValue,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
@@ -291,6 +293,7 @@ COMPARATOR_TO_OPERATOR = {
 
 SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL = [KnownValue(asynq.asynq), KnownValue(property)]
 if sys.version_info < (3, 11):
+    # static analysis: ignore[undefined_attribute]
     SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL.append(KnownValue(asyncio.coroutine))
 
 
@@ -582,7 +585,8 @@ class IgnoredTypesForAttributeChecking(PyObjectSequenceOption[type]):
     """Used in the check for object attributes that are accessed but not set. In general, the check
     will only alert about attributes that don't exist when it has visited all the base classes of
     the class with the possibly missing attribute. However, these classes are never going to be
-    visited (since they're builtin), but they don't set any attributes that we rely on."""
+    visited (since they're builtin), but they don't set any attributes that we rely on.
+    """
 
     name = "ignored_types_for_attribute_checking"
     default_value = [object, abc.ABC]
@@ -1002,7 +1006,8 @@ class CallSiteCollector:
 
 
 class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
-    """Visitor class that infers the type and value of Python objects and detects errors."""
+    """Visitor class that infers the type and value of Python objects and detects errors.
+    """
 
     error_code_enum = ErrorCode
     config_filename: ClassVar[Optional[str]] = None
@@ -1366,7 +1371,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         detail: Optional[str] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """We usually should show errors only in the check_names state to avoid duplicate errors."""
+        """We usually should show errors only in the check_names state to avoid duplicate errors.
+        """
         if self._is_checking():
             self.show_error(
                 node,
@@ -1796,7 +1802,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return_value = AsyncTaskIncompleteValue(task_cls, return_value)
 
         if isinstance(info.node, ast.AsyncFunctionDef) or info.is_decorated_coroutine:
-            return_value = GenericValue(collections.abc.Awaitable, [return_value])
+            return_value = make_coro_type(return_value)
 
         if isinstance(val, KnownValue) and isinstance(val.val, property):
             fget = val.val.fget
@@ -2579,7 +2585,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _maybe_show_missing_f_error(self, node: ast.AST, s: Union[str, bytes]) -> None:
         """Show an error if this string was probably meant to be an f-string."""
-        if sys.version_info < (3, 6) or isinstance(s, bytes):
+        if isinstance(s, bytes):
             return
         if "{" not in s:
             return
@@ -3708,9 +3714,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             exit_boolability = get_boolability(exit_assigned)
             can_suppress = not exit_boolability.is_safely_false()
             if isinstance(exit_assigned, AnyValue) or (
-                isinstance(context, TypedValue)
-                and context.typ
-                in ["typing.ContextManager", "typing.AsyncContextManager"]
+                isinstance(context, TypedValue) and is_context_manager_type(context.typ)
             ):
                 # cannot easily infer what the context manager will do,
                 # assume it does not suppress exceptions.
@@ -4167,7 +4171,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         [root_composite, index_composite],
                         allow_call=True,
                     )
-                elif sys.version_info >= (3, 7):
+                else:
                     # If there was no __getitem__, try __class_getitem__ in 3.7+
                     cgi = self.get_attribute(
                         Composite(value), "__class_getitem__", node.value
@@ -4183,13 +4187,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         return_value = self.check_call(
                             node.value, cgi, [index_composite], allow_call=True
                         )
-                else:
-                    self._show_error_if_checking(
-                        node,
-                        f"Object {value} does not support subscripting",
-                        error_code=ErrorCode.unsupported_operation,
-                    )
-                    return_value = AnyValue(AnySource.error)
 
                 if (
                     self._should_use_varname_value(return_value)
@@ -5129,7 +5126,8 @@ def _all_names_unused(
 
 
 def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
-    """Given a list of assignment targets (elts), return whether it contains the given Name node."""
+    """Given a list of assignment targets (elts), return whether it contains the given Name node.
+    """
     for elt in elts:
         if isinstance(elt, (ast.List, ast.Tuple)):
             if _contains_node(elt.elts, node):
@@ -5140,7 +5138,8 @@ def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
-    """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
+    """Returns whether this value has the given attribute, ignoring __getattr__ overrides.
+    """
     try:
         object.__getattribute__(value, attr)
     except AttributeError:

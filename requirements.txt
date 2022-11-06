@@ -1,6 +1,5 @@
 # Needed for ReadTheDocs
 asynq
-dataclasses; python_version < '3.7'
 qcore>=0.5.1
 ast_decompiler>=0.4.0
 typeshed_client>=2.0.0
@@ -8,8 +7,8 @@ typing_inspect>=0.5.0
 typing_extensions>=4.1.1
 aenum>=2.2.3
 codemod
-myst-parser==0.15.1
-Sphinx==4.2.0
-black==22.3.0
-flake8==4.0.1
-usort==1.0.2
+myst-parser==0.18.1
+Sphinx==5.3.0
+black==22.10.0
+flake8==5.0.4
+usort==1.0.5

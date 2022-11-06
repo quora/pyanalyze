@@ -362,9 +362,9 @@ class TestHashable(TestNameCheckVisitorBase):
             want_hash(A)
 
             # TODO these errors are wrong
-            want_myhash(t1)  # E: incompatible_argument
+            want_myhash(t1)
             want_myhash(t2)
-            want_myhash(int)  # E: incompatible_argument
+            want_myhash(int)
             want_myhash(A)  # E: incompatible_argument
 
             {t1: 0}

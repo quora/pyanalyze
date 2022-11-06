@@ -505,7 +505,7 @@ class ConditionEvaluator(ast.NodeVisitor):
                 else:
                     return self.return_invalid(
                         "Only comparisons on sys.platform and sys.version_info are"
-                        " suppoorted",
+                        " supported",
                         node.left,
                     )
                 data = _OP_TO_DATA[type(op)]

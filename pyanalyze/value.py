@@ -21,7 +21,6 @@ these subclasses and some related utilities.
 
 import collections.abc
 import enum
-import inspect
 import textwrap
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field, InitVar
@@ -50,6 +49,7 @@ import qcore
 from typing_extensions import Literal, ParamSpec, Protocol
 
 import pyanalyze
+from pyanalyze.error_code import ErrorCode
 from pyanalyze.extensions import CustomCheck
 
 from .safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
@@ -269,6 +269,7 @@ class CanAssignError:
 
     message: str = ""
     children: List["CanAssignError"] = field(default_factory=list)
+    error_code: Optional[ErrorCode] = None
 
     def display(self, depth: int = 2) -> str:
         """Display all errors in a human-readable format."""
@@ -280,6 +281,14 @@ class CanAssignError:
             return f"{message}\n{child_result}"
         else:
             return child_result
+
+    def get_error_code(self) -> Optional[ErrorCode]:
+        errors = {child.get_error_code() for child in self.children}
+        if self.error_code:
+            errors.add(self.error_code)
+        if len(errors) == 1:
+            return next(iter(errors))
+        return None
 
     def __str__(self) -> str:
         return self.display()
@@ -534,17 +543,20 @@ class UnboundMethodValue(Value):
     def get_method(self) -> Optional[Any]:
         """Return the runtime callable for this ``UnboundMethodValue``, or
         None if it cannot be found."""
+        root = self.composite.value
+        if isinstance(root, AnnotatedValue):
+            root = root.value
+        if isinstance(root, KnownValue):
+            typ = root.val
+        else:
+            typ = root.get_type()
         try:
-            typ = self.composite.value.get_type()
             method = getattr(typ, self.attr_name)
             if self.secondary_attr_name is not None:
                 method = getattr(method, self.secondary_attr_name)
-            # don't use unbound methods in py2
-            if inspect.ismethod(method) and method.__self__ is None:
-                method = method.__func__
-            return method
         except AttributeError:
             return None
+        return method
 
     def is_type(self, typ: type) -> bool:
         return isinstance(self.get_method(), typ)
@@ -1129,7 +1141,8 @@ class DictIncompleteValue(GenericValue):
 
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
-    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys."""
+    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys.
+    """
 
     items: Dict[str, Tuple[bool, Value]]
     """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
@@ -2637,3 +2650,10 @@ def can_assign_and_used_any(
 
 def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
     return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)
+
+
+def make_coro_type(return_type: Value) -> GenericValue:
+    return GenericValue(
+        collections.abc.Coroutine,
+        [AnyValue(AnySource.inference), AnyValue(AnySource.inference), return_type],
+    )
