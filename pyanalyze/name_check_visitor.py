@@ -3714,7 +3714,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if isinstance(exit_assigned, AnyValue) or (
                 isinstance(context, TypedValue)
                 and context.typ
-                in ["typing.ContextManager", "typing.AsyncContextManager"]
+                in [
+                    "contextlib.AbstractContextManager",
+                    "contextlib.AbstractAsyncContextManager",
+                ]
             ):
                 # cannot easily infer what the context manager will do,
                 # assume it does not suppress exceptions.
