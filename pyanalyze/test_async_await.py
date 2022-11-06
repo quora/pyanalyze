@@ -233,9 +233,7 @@ class TestArgSpec(TestNameCheckVisitorBase):
         async def capybara():
             assert_is_value(
                 asyncio.sleep(3),
-                GenericValue(
-                    collections.abc.Awaitable, [AnyValue(AnySource.unannotated)]
-                ),
+                GenericValue(collections.abc.Awaitable, [KnownValue(None)]),
             )
             return 42
 
