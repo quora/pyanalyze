@@ -165,7 +165,8 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
         def capybara():
             assert_is_value(
-                f(), GenericValue("typing.ContextManager", [TypedValue(int)])
+                f(),
+                GenericValue("contextlib.AbstractContextManager", [TypedValue(int)]),
             )
             with f() as x:
                 assert_is_value(x, TypedValue(int))
