@@ -320,6 +320,19 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             i(x="x")
             i()
 
+    @assert_passes()
+    def test_stub_context_manager(self):
+        from typing_extensions import assert_type, Literal
+
+        def capybara():
+            from _pyanalyze_tests.contextmanager import cm
+
+            with cm() as f:
+                assert_type(f, int)
+                x = 3
+
+            assert_type(x, Literal[3])
+
 
 class TestConstructors(TestNameCheckVisitorBase):
     @assert_passes()

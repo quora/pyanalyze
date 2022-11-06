@@ -1,0 +1,3 @@
+from typing import ContextManager
+
+def cm() -> ContextManager[int]: ...

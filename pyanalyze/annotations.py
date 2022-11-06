@@ -1360,3 +1360,17 @@ def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
         elif isinstance(entry.val, CustomCheck):
             return CustomCheckExtension(entry.val)
     return entry
+
+
+_CONTEXT_MANAGER_TYPES = {
+    "typing.AsyncContextManager",
+    "typing.ContextManager",
+    "contextlib.AbstractContextManager",
+    "contextlib.AbstractAsyncContextManager",
+    *CONTEXT_MANAGER_TYPES,
+    *ASYNC_CONTEXT_MANAGER_TYPES,
+}
+
+
+def is_context_manager_type(typ: Union[str, type]) -> bool:
+    return typ in _CONTEXT_MANAGER_TYPES
