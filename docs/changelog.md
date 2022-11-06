@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Detect unused nested function and class definitions (#510)
+
 ## Version 0.8.0 (November 5, 2022)
 
 Release highlights:

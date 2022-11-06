@@ -2019,14 +2019,23 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         )
         all_unused_nodes = all_def_nodes - all_used_def_nodes
         for unused in all_unused_nodes:
-            # Ignore names not defined through a Name node (e.g., function arguments)
-            if not isinstance(unused, ast.Name) or not self._is_write_ctx(unused.ctx):
+            if isinstance(unused, ast.Name):
+                if not self._is_write_ctx(unused.ctx):
+                    continue
+                name = unused.id
+            elif isinstance(
+                unused, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            ):
+                name = unused.name
+            else:
+                # Ignore function arguments and other unusual definition nodes
                 continue
+
             # Ignore names that are meant to be ignored
-            if unused.id.startswith("_"):
+            if name.startswith("_"):
                 continue
             # Ignore names involved in global and similar declarations
-            if unused.id in scope.accessed_from_special_nodes:
+            if name in scope.accessed_from_special_nodes:
                 continue
             replacement = None
             if self._name_node_to_statement is not None:
