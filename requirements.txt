@@ -8,7 +8,7 @@ typing_inspect>=0.5.0
 typing_extensions>=4.1.1
 aenum>=2.2.3
 codemod
-myst-parser==0.15.1
+myst-parser==0.18.1
 Sphinx==4.2.0
 black==22.10.0
 flake8==5.0.4
