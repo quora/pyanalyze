@@ -219,6 +219,7 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     def test_cdata(self):
         import array
         import mmap
+        import pickle
 
         def capybara():
             from _typeshed import ReadableBuffer
@@ -231,7 +232,8 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                     | TypedValue(memoryview)
                     | GenericValue(array.array, [AnyValue(AnySource.explicit)])
                     | TypedValue(mmap.mmap)
-                    | TypedValue("ctypes._CData"),
+                    | TypedValue("ctypes._CData")
+                    | TypedValue(pickle.PickleBuffer),
                 )
 
     @assert_passes()
@@ -463,6 +465,7 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [TypedValue(int)],
                 collections.abc.Sequence: [TypedValue(int)],
                 collections.abc.Container: [TypedValue(int)],
+                collections.abc.Sized: [],
             }
         else:
             expected = {
@@ -474,6 +477,7 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [TypedValue(int)],
                 collections.abc.Sequence: [TypedValue(int)],
                 collections.abc.Container: [TypedValue(int)],
+                collections.abc.Sized: [],
             }
         self.check(expected, time.struct_time)
 
@@ -500,6 +504,8 @@ class TestGetGenericBases:
                 collections.abc.ValuesView: [int_tv],
                 collections.abc.MappingView: [],
                 collections.abc.Iterable: [int_tv],
+                collections.abc.Collection: [int_tv],
+                collections.abc.Container: [int_tv],
                 collections.abc.Sized: [],
             },
             collections.abc.ValuesView,
@@ -528,6 +534,7 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Sequence: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             collections.deque,
             [int_tv],
@@ -541,6 +548,7 @@ class TestGetGenericBases:
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             collections.defaultdict,
             [int_tv, str_tv],
@@ -558,6 +566,7 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Sequence: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             list,
             [int_tv],
@@ -570,6 +579,7 @@ class TestGetGenericBases:
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             set,
             [int_tv],
@@ -582,6 +592,7 @@ class TestGetGenericBases:
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
+                collections.abc.Sized: [],
             },
             dict,
             [int_tv, str_tv],
@@ -609,6 +620,7 @@ class TestGetGenericBases:
                 collections.abc.Container: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Collection: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Sized: [],
                 urllib.parse.ParseResult: [],
                 urllib.parse._ParseResultBase: [],
                 "urllib.parse._ResultMixinBase": [TypedValue(str)],
