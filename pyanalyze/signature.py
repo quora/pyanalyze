@@ -58,7 +58,6 @@ from .type_evaluation import (
 )
 from .typevar import resolve_bounds_map
 from .value import (
-    TypeVarLike,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -95,6 +94,7 @@ from .value import (
     TypedDictValue,
     TypedValue,
     TypeGuardExtension,
+    TypeVarLike,
     TypeVarMap,
     TypeVarValue,
     unannotate,

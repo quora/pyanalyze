@@ -11,7 +11,6 @@ import enum
 import inspect
 import sys
 import textwrap
-from collections.abc import Awaitable
 from dataclasses import dataclass, replace
 from types import FunctionType, MethodType, ModuleType
 from typing import (
@@ -75,6 +74,7 @@ from .value import (
     GenericValue,
     KnownValue,
     KVPair,
+    make_coro_type,
     NewTypeValue,
     SubclassValue,
     TypedDictValue,
@@ -344,7 +344,7 @@ class ArgSpecCache:
                 )
                 has_return_annotation = True
             if is_async:
-                returns = GenericValue(Awaitable, [returns])
+                returns = make_coro_type(returns)
 
         parameters = []
         for i, parameter in enumerate(sig.parameters.values()):

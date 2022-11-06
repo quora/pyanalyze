@@ -2650,3 +2650,10 @@ def can_assign_and_used_any(
 
 def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
     return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)
+
+
+def make_coro_type(return_type: Value) -> GenericValue:
+    return GenericValue(
+        collections.abc.Coroutine,
+        [AnyValue(AnySource.inference), AnyValue(AnySource.inference), return_type],
+    )

@@ -76,7 +76,6 @@ from .signature import (
 )
 from .value import (
     _HashableValue,
-    TypeVarLike,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -100,6 +99,7 @@ from .value import (
     TypedDictValue,
     TypedValue,
     TypeGuardExtension,
+    TypeVarLike,
     TypeVarValue,
     unite_values,
     UnpackedValue,

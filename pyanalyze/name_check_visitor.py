@@ -173,6 +173,7 @@ from .value import (
     KnownValue,
     kv_pairs_from_mapping,
     KVPair,
+    make_coro_type,
     MultiValuedValue,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
@@ -1801,7 +1802,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return_value = AsyncTaskIncompleteValue(task_cls, return_value)
 
         if isinstance(info.node, ast.AsyncFunctionDef) or info.is_decorated_coroutine:
-            return_value = GenericValue(collections.abc.Awaitable, [return_value])
+            return_value = make_coro_type(return_value)
 
         if isinstance(val, KnownValue) and isinstance(val.val, property):
             fget = val.val.fget

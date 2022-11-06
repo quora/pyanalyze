@@ -501,6 +501,7 @@ class TestBatchingYields(TestNameCheckVisitorBase):
     @assert_passes()
     def test_combine_in_try(self):
         from asynq import asynq
+
         from pyanalyze.tests import async_fn
 
         @asynq()

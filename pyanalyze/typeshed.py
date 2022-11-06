@@ -11,13 +11,7 @@ import inspect
 import sys
 
 from abc import abstractmethod
-from collections.abc import (
-    Awaitable,
-    Collection,
-    MutableMapping,
-    Set as AbstractSet,
-    Sized,
-)
+from collections.abc import Collection, MutableMapping, Set as AbstractSet, Sized
 from dataclasses import dataclass, field, replace
 from enum import Enum, EnumMeta
 from types import GeneratorType, ModuleType
@@ -72,6 +66,7 @@ from .value import (
     extract_typevars,
     GenericValue,
     KnownValue,
+    make_coro_type,
     SubclassValue,
     TypedDictValue,
     TypedValue,
@@ -876,7 +871,7 @@ class TypeshedFinder:
         return Signature.make(
             cleaned_arguments,
             callable=obj,
-            return_annotation=GenericValue(Awaitable, [return_value])
+            return_annotation=make_coro_type(return_value)
             if isinstance(node, ast.AsyncFunctionDef)
             else return_value,
             allow_call=allow_call,
