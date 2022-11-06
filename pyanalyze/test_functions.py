@@ -58,7 +58,15 @@ class TestNestedFunction(TestNameCheckVisitorBase):
                 return 1
 
             assert_is_value(
-                nested(), GenericValue(collections.abc.Awaitable, [TypedValue(int)])
+                nested(),
+                GenericValue(
+                    collections.abc.Coroutine,
+                    [
+                        AnyValue(AnySource.inference),
+                        AnyValue(AnySource.inference),
+                        TypedValue(int),
+                    ],
+                ),
             )
 
     @assert_passes()
