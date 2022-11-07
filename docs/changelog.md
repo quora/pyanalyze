@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add concept of ownership: only containers owned by calling
+  code may be mutated (#542)
+
 ## Version 0.8.0 (November 5, 2022)
 
 Release highlights:

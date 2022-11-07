@@ -113,6 +113,7 @@ from .signature import (
     KWARGS,
     MaybeSignature,
     OverloadedSignature,
+    ParameterKind,
     Signature,
     SigParameter,
 )
@@ -179,6 +180,7 @@ from .value import (
     NoReturnConstraintExtension,
     ReferencingValue,
     SequenceValue,
+    make_mutable,
     set_self,
     SubclassValue,
     TypedValue,
@@ -1918,11 +1920,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         "%first_arg",
                         VisitorState.check_names,
                     )
+                if info.param.kind is ParameterKind.VAR_KEYWORD:
+                    annotation = make_mutable(info.param.annotation)
+                else:
+                    annotation = info.param.annotation
                 self.scopes.set(
-                    info.param.name,
-                    info.param.annotation,
-                    info.node,
-                    VisitorState.check_names,
+                    info.param.name, annotation, info.node, VisitorState.check_names
                 )
 
             with qcore.override(
@@ -2400,13 +2403,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     # Comprehensions
 
     def visit_DictComp(self, node: ast.DictComp) -> Value:
-        return self._visit_sequence_comp(node, dict)
+        return make_mutable(self._visit_sequence_comp(node, dict))
 
     def visit_ListComp(self, node: ast.ListComp) -> Value:
-        return self._visit_sequence_comp(node, list)
+        return make_mutable(self._visit_sequence_comp(node, list))
 
     def visit_SetComp(self, node: ast.SetComp) -> Value:
-        return self._visit_sequence_comp(node, set)
+        return make_mutable(self._visit_sequence_comp(node, set))
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> Value:
         return self._visit_sequence_comp(node, types.GeneratorType)
@@ -2660,7 +2663,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         ErrorCode.unsupported_operation,
                         detail=str(new_pairs),
                     )
-                    return TypedValue(dict)
+                    return make_mutable(TypedValue(dict))
                 all_pairs += new_pairs
                 continue
             key_val = self.visit(key_node)
@@ -2700,15 +2703,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             ret[key] = value
 
         if has_non_literal:
-            return DictIncompleteValue(dict, all_pairs)
+            return make_mutable(DictIncompleteValue(dict, all_pairs))
         else:
-            return KnownValue(ret)
+            return make_mutable(KnownValue(ret))
 
     def visit_Set(self, node: ast.Set) -> Value:
-        return self._visit_display_read(node, set)
+        return make_mutable(self._visit_display_read(node, set))
 
     def visit_List(self, node: ast.List) -> Optional[Value]:
-        return self._visit_display(node, list)
+        val = self._visit_display(node, list)
+        if val is not None:
+            return make_mutable(val)
+        return None
 
     def visit_Tuple(self, node: ast.Tuple) -> Optional[Value]:
         return self._visit_display(node, tuple)
@@ -3986,7 +3992,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     )
                 # We set the declared type on initial assignment, so that the
                 # annotation can be used to adjust pyanalyze's type inference.
-                value = expected_type
+                if isinstance(value, AnnotatedValue):
+                    value = annotate_value(expected_type, value.metadata)
+                else:
+                    value = expected_type
 
         else:
             is_yield = False
@@ -4330,12 +4339,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     composite.get_varname(), self.being_assigned, node, self.state
                 )
 
-            if isinstance(root_composite.value, TypedValue):
-                typ = root_composite.value.typ
-                if isinstance(typ, type):
-                    self._record_type_attr_set(
-                        typ, node.attr, node, self.being_assigned
-                    )
+            for root_val in flatten_values(root_composite.value, unwrap_annotated=True):
+                if isinstance(root_val, TypedValue):
+                    typ = root_val.typ
+                    if isinstance(typ, type):
+                        self._record_type_attr_set(
+                            typ, node.attr, node, self.being_assigned
+                        )
             return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):
             if self._is_checking():
