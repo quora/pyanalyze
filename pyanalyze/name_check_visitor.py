@@ -178,6 +178,7 @@ from .value import (
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
     ReferencingValue,
+    replace_known_sequence_value,
     SequenceValue,
     set_self,
     SubclassValue,
@@ -204,6 +205,20 @@ try:
 except ImportError:
     # 3.9 and lower
     Match = Any
+
+try:
+    from ast import TryStar
+    from builtins import BaseExceptionGroup, ExceptionGroup
+except ImportError:
+    # 3.10 and lower
+    TryStar = Any
+
+    class BaseExceptionGroup:
+        pass
+
+    class ExceptionGroup:
+        pass
+
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -3724,7 +3739,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self.visit(node.optional_vars)
         return can_suppress
 
-    def visit_try_except(self, node: ast.Try) -> None:
+    def visit_try_except(
+        self, node: Union[ast.Try, TryStar], *, is_try_star: bool = False
+    ) -> None:
         with self.scopes.subscope():
             with self.scopes.subscope() as dummy_scope:
                 pass
@@ -3745,17 +3762,25 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     # reset yield checks between branches to avoid incorrect errors when we yield
                     # both in the try and the except block
                     self.yield_checker.reset_yield_checks()
-                    self.scopes.combine_subscopes([dummy_scope, failure_scope])
+                    # With except*, multiple except* blocks may run, so we need
+                    # to combine not just the failure scope, but also the previous
+                    # except_scopes.
+                    if is_try_star:
+                        subscopes = [dummy_scope, failure_scope, *except_scopes]
+                    else:
+                        subscopes = [dummy_scope, failure_scope]
+                    self.scopes.combine_subscopes(subscopes)
                     self.visit(handler)
 
         self.scopes.combine_subscopes([else_scope, *except_scopes])
 
-    def visit_Try(self, node: ast.Try) -> None:
-        # py3 combines the Try and Try/Finally nodes
+    def visit_Try(
+        self, node: Union[ast.Try, TryStar], *, is_try_star: bool = False
+    ) -> None:
         if node.finalbody:
             with self.scopes.subscope() as failure_scope:
                 with self.scopes.suppressing_subscope() as success_scope:
-                    self.visit_try_except(node)
+                    self.visit_try_except(node, is_try_star=is_try_star)
 
             # If the try block fails
             with self.scopes.subscope():
@@ -3767,43 +3792,79 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._generic_visit_list(node.finalbody)
         else:
             # Life is much simpler without finally
-            self.visit_try_except(node)
+            self.visit_try_except(node, is_try_star=is_try_star)
         self.yield_checker.reset_yield_checks()
+
+    def visit_TryStar(self, node: TryStar) -> None:
+        self.visit_Try(node, is_try_star=True)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.type is not None:
             typ = self.visit(node.type)
-            if isinstance(typ, KnownValue):
-                val = typ.val
-                if isinstance(val, tuple):
-                    if all(self._check_valid_exception_class(cls, node) for cls in val):
-                        to_assign = unite_values(*[TypedValue(cls) for cls in val])
-                    else:
-                        to_assign = TypedValue(BaseException)
-                else:
-                    if self._check_valid_exception_class(val, node):
-                        to_assign = TypedValue(val)
-                    else:
-                        to_assign = TypedValue(BaseException)
-            else:
-                # maybe this should be an error, exception classes should virtually always be
-                # statically findable
-                to_assign = TypedValue(BaseException)
+            is_try_star = not isinstance(self.node_context.contexts[-2], ast.Try)
+            possible_types = self._extract_exception_types(
+                typ, node, is_try_star=is_try_star
+            )
             if node.name is not None:
+                to_assign = unite_values(*[typ for _, typ in possible_types])
+                if is_try_star:
+                    if all(is_exception for is_exception, _ in possible_types):
+                        base = ExceptionGroup
+                    else:
+                        base = BaseExceptionGroup
+                    to_assign = GenericValue(base, [to_assign])
                 self._set_name_in_scope(node.name, node, value=to_assign, private=True)
 
         self._generic_visit_list(node.body)
 
-    def _check_valid_exception_class(self, val: object, node: ast.AST) -> bool:
-        if not (isinstance(val, type) and issubclass(val, BaseException)):
-            self._show_error_if_checking(
-                node,
-                f"{val!r} is not an exception class",
-                error_code=ErrorCode.bad_except_handler,
-            )
-            return False
-        else:
-            return True
+    def _extract_exception_types(
+        self, typ: Value, node: ast.AST, is_try_star: bool = False
+    ) -> List[Tuple[bool, Value]]:
+        possible_types = []
+        for subval in flatten_values(typ, unwrap_annotated=True):
+            subval = replace_known_sequence_value(subval)
+            if isinstance(subval, SequenceValue) and subval.typ is tuple:
+                for _, elt in subval.members:
+                    possible_types += self._extract_exception_types(
+                        elt, node, is_try_star=is_try_star
+                    )
+                continue
+            elif isinstance(subval, GenericValue) and subval.typ is tuple:
+                possible_types += self._extract_exception_types(
+                    subval.args[0], node, is_try_star=is_try_star
+                )
+                continue
+            elif (
+                isinstance(subval, SubclassValue)
+                and isinstance(subval.typ, TypedValue)
+                and isinstance(subval.typ.typ, type)
+            ):
+                subval = KnownValue(subval.typ.typ)
+            if isinstance(subval, KnownValue):
+                if isinstance(subval.val, type) and issubclass(
+                    subval.val, BaseException
+                ):
+                    if is_try_star and issubclass(subval.val, BaseExceptionGroup):
+                        self._show_error_if_checking(
+                            node,
+                            "ExceptionGroup cannot be used as the type in an except*"
+                            f" clause: {subval.val!r}",
+                            error_code=ErrorCode.bad_except_handler,
+                        )
+                    is_exception = issubclass(subval.val, Exception)
+                    possible_types.append((is_exception, TypedValue(subval.val)))
+                else:
+                    self._show_error_if_checking(
+                        node,
+                        f"{subval!r} is not an exception class",
+                        error_code=ErrorCode.bad_except_handler,
+                    )
+                    possible_types.append((False, TypedValue(BaseException)))
+            else:
+                # TODO consider raising an error for except classes
+                # that cannot be statically resolved.
+                possible_types.append((False, TypedValue(BaseException)))
+        return possible_types
 
     def visit_If(self, node: ast.If) -> None:
         _, constraint = self.constraint_from_condition(node.test)
