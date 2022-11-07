@@ -3770,7 +3770,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     else:
                         subscopes = [dummy_scope, failure_scope]
                     self.scopes.combine_subscopes(subscopes)
-                    self.visit_ExceptHandler(handler, is_try_star=is_try_star)
+                    self.visit(handler)
 
         self.scopes.combine_subscopes([else_scope, *except_scopes])
 
@@ -3798,11 +3798,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_TryStar(self, node: TryStar) -> None:
         self.visit_Try(node, is_try_star=True)
 
-    def visit_ExceptHandler(
-        self, node: ast.ExceptHandler, *, is_try_star: bool = False
-    ) -> None:
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.type is not None:
             typ = self.visit(node.type)
+            is_try_star = not isinstance(self.node_context.contexts[-2], ast.Try)
             possible_types = self._extract_exception_types(
                 typ, node, is_try_star=is_try_star
             )
