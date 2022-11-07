@@ -232,6 +232,17 @@ class TestCompare(TestNameCheckVisitorBase):
             s > os
 
     @assert_passes()
+    def test_contains(self):
+        class OnlyGetitem:
+            def __getitem__(self, x: int) -> int:
+                return x
+
+        def capybara(x: int, ogi: OnlyGetitem):
+            1 in x  # E: unsupported_operation
+            1 in ogi
+            "x" in ogi  # E: unsupported_operation
+
+    @assert_passes()
     def test_failing_eq(self):
         class FlakyCapybara:
             def __eq__(self, other: object) -> bool:

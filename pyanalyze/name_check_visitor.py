@@ -3175,6 +3175,32 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             type(op)
         ]
         if rmethod is None:
+            # "in" falls back to __getitem__ if __contains__ is not defined
+            if method == "__contains__":
+                with self.catch_errors() as contains_errors:
+                    contains_result = self._check_dunder_call(
+                        source_node,
+                        left_composite,
+                        method,
+                        [right_composite],
+                        allow_call=allow_call,
+                    )
+                if not contains_errors:
+                    return contains_result
+
+                with self.catch_errors() as getitem_errors:
+                    self._check_dunder_call(
+                        source_node,
+                        left_composite,
+                        "__getitem__",
+                        [right_composite],
+                        allow_call=allow_call,
+                    )
+                if not getitem_errors:
+                    return TypedValue(bool)  # Always returns a bool
+                self.show_caught_errors(contains_errors)
+                return TypedValue(bool)
+
             return self._check_dunder_call(
                 source_node,
                 left_composite,

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support `in` on objects with only `__getitem__` (#564)
 - Add support for `except*` (PEP 654) (#562)
 - Add type inference support for more constructs in `except` and `except*` (#562)
 
