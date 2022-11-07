@@ -5083,13 +5083,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return all_failures
 
     @classmethod
-    def _should_ignore_module(cls, module_name: str) -> bool:
-        """Override this to ignore some modules."""
-        # exclude test modules for now to avoid spurious failures
-        # TODO(jelle): enable for test modules too
-        return module_name.split(".")[-1].startswith("test")
-
-    @classmethod
     def check_file_in_worker(
         cls,
         filename: str,
