@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add support for `except*` (PEP 654) (#562)
+- Add type inference support for more constructs in `except` and `except*` (#562)
+
 ## Version 0.8.0 (November 5, 2022)
 
 Release highlights:
