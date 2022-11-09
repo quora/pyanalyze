@@ -34,6 +34,7 @@ from typing import (
     cast,
     Container,
     ContextManager,
+    Generator,
     Mapping,
     NamedTuple,
     NewType,
@@ -149,7 +150,7 @@ class Context:
         return id(obj) in self._being_evaluated
 
     @contextlib.contextmanager
-    def add_evaluation(self, obj: object) -> ContextManager[None]:
+    def add_evaluation(self, obj: object) -> Generator[None, None, None]:
         """Temporarily add an object to the set of objects being evaluated.
 
         This is used to prevent infinite recursion when evaluating forward references.
