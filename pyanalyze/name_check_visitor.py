@@ -2213,12 +2213,30 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:
         self.generic_visit(node)
         if self.scopes.scope_type() == ScopeType.module_scope:
-            self._handle_imports(node.names)
-
             for name in node.names:
                 self.import_name_to_node[name.name] = node
+
+        for alias in node.names:
+            varname = alias.name.split(".")[0]
+            mod = self._get_module(varname)
+            self._set_alias_in_scope(alias, mod)
+
+    def _set_alias_in_scope(self, alias: ast.alias, value: Value) -> None:
+        if alias.asname is not None:
+            self._set_name_in_scope(
+                alias.asname, alias, value, private=alias.asname != alias.name
+            )
         else:
-            self._simulate_import(node)
+            self._set_name_in_scope(
+                alias.name.split(".")[0], alias, value, private=True
+            )
+
+    def _get_module(self, name: str) -> Value:
+        if name in sys.modules:
+            return KnownValue(sys.modules[name])
+        else:
+            # TODO: Maybe get the module from stubs?
+            return AnyValue(AnySource.unresolved_import)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         self.generic_visit(node)
@@ -2236,17 +2254,97 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         self._maybe_record_usages_from_import(node)
 
-        is_star_import = len(node.names) == 1 and node.names[0].name == "*"
-        force_public = self.filename.endswith("/__init__.py") and node.level == 1
-        if force_public and node.module is not None:
-            # from .a import b implicitly sets a in the parent module's namespace.
-            # We allow relying on this behavior.
-            self._set_name_in_scope(node.module, node)
-        if self.scopes.scope_type() == ScopeType.module_scope and not is_star_import:
-            self._handle_imports(node.names, force_public=force_public)
+        # See if we can get the names from the stub instead
+        if node.module is not None and node.level == 0:
+            path = typeshed_client.ModulePath(tuple(node.module.split(".")))
+            finder = self.checker.ts_finder
+            mod = finder.resolver.get_module(path)
+            if mod.exists:
+                for alias in node.names:
+                    val = finder.resolve_name(node.module, alias.name)
+                    if val is UNINITIALIZED_VALUE:
+                        self._show_error_if_checking(
+                            node,
+                            f"Cannot import name {alias.name!r} from {node.module!r}",
+                            ErrorCode.import_failed,
+                        )
+                        val = AnyValue(AnySource.error)
+                    self._set_alias_in_scope(alias, val)
+                return
+
+        is_init = self.filename.endswith("/__init__.py")
+        source_module = self._get_import_from_module(node)
+
+        # from .a import b implicitly sets a in the parent module's namespace.
+        # We allow relying on this behavior.
+        if (
+            is_init
+            and node.module is not None
+            and "." not in node.module
+            and node.level == 1
+        ):
+            self._set_name_in_scope(node.module, node, source_module, private=True)
+
+        for alias in node.names:
+            if alias.name == "*":
+                if isinstance(source_module, KnownValue) and isinstance(
+                    source_module.val, types.ModuleType
+                ):
+                    for name, val in source_module.val.__dict__.items():
+                        if name.startswith("_"):
+                            continue
+                        self._set_name_in_scope(
+                            name, alias, KnownValue(val), private=False
+                        )
+                else:
+                    self._show_error_if_checking(
+                        node,
+                        f"Cannot import * from unresolved module {node.module!r}",
+                        ErrorCode.invalid_import,
+                    )
+                continue
+            val = self.get_attribute_from_value(source_module, alias.name)
+            if val is UNINITIALIZED_VALUE:
+                self._show_error_if_checking(
+                    node,
+                    f"Cannot import name {alias.name!r} from {node.module!r}",
+                    ErrorCode.import_failed,
+                )
+                val = AnyValue(AnySource.error)
+            self._set_alias_in_scope(alias, val)
+
+    def _get_import_from_module(self, node: ast.ImportFrom) -> Value:
+        if node.level > 0:
+            if self.module is None:
+                return AnyValue(AnySource.unresolved_import)
+            level = node.level
+            if self.filename.endswith("/__init__.py"):
+                level -= 1
+
+            current_module_path: List[str] = self.module.__name__.split(".")
+            if level >= len(current_module_path):
+                self._show_error_if_checking(
+                    node,
+                    "Attempted relative import beyond top-level package",
+                    error_code=ErrorCode.invalid_import,
+                )
+                return AnyValue(AnySource.error)
+            if level:
+                current_module_path = current_module_path[:-level]
+            if node.module is not None:
+                current_module_path.append(node.module)
+            module_name = ".".join(current_module_path)
         else:
-            # For now we always treat star imports as public. We might revisit this later.
-            self._simulate_import(node, force_public=True)
+            # Should be disallowed by the AST
+            if node.module is None:
+                self._show_error_if_checking(
+                    node,
+                    "Attempted absolute import without module name",
+                    error_code=ErrorCode.invalid_import,
+                )
+                return AnyValue(AnySource.error)
+            module_name = node.module
+        return self._get_module(module_name)
 
     def _maybe_record_usages_from_import(self, node: ast.ImportFrom) -> None:
         if self.unused_finder is None or self.module is None:
