@@ -2217,7 +2217,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self.import_name_to_node[name.name] = node
 
         for alias in node.names:
-            varname = alias.name.split(".")[0]
+            # "import a.b" sets the name "a", but "import a.b as c" sets "c" to the value "a.b"
+            varname = (
+                alias.name if alias.asname is not None else alias.name.split(".")[0]
+            )
             mod = self._get_module(varname)
             self._set_alias_in_scope(alias, mod)
 
