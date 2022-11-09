@@ -1034,7 +1034,8 @@ class TypeshedFinder:
         self, info: typeshed_client.resolver.ResolvedName, module: str
     ) -> Value:
         # This guard against infinite recursion if a type refers to itself
-        # (real-world example: os._ScandirIterator).
+        # (real-world example: os._ScandirIterator). Needs to change in
+        # order to support recursive types.
         if info in self._active_infos:
             return AnyValue(AnySource.inference)
         self._active_infos.append(info)
