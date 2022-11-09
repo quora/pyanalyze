@@ -34,11 +34,13 @@ from typing import (
     cast,
     Container,
     ContextManager,
+    Generator,
     Mapping,
     NamedTuple,
     NewType,
     Optional,
     Sequence,
+    Set,
     Tuple,
     TYPE_CHECKING,
     TypeVar,
@@ -138,10 +140,28 @@ class Context:
 
     should_suppress_undefined_names: bool = field(default=False, init=False)
     """While this is True, no errors are shown for undefined names."""
+    _being_evaluated: Set[int] = field(default_factory=set, init=False)
 
     def suppress_undefined_names(self) -> ContextManager[None]:
         """Temporarily suppress errors about undefined names."""
         return qcore.override(self, "should_suppress_undefined_names", True)
+
+    def is_being_evaluted(self, obj: object) -> bool:
+        return id(obj) in self._being_evaluated
+
+    @contextlib.contextmanager
+    def add_evaluation(self, obj: object) -> Generator[None, None, None]:
+        """Temporarily add an object to the set of objects being evaluated.
+
+        This is used to prevent infinite recursion when evaluating forward references.
+
+        """
+        obj_id = id(obj)
+        self._being_evaluated.add(obj_id)
+        try:
+            yield
+        finally:
+            self._being_evaluated.remove(obj_id)
 
     def show_error(
         self,
@@ -508,17 +528,15 @@ def _type_from_runtime(
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
         val, "ForwardRef"
     ):
-        # This has issues because the forward ref may be defined in a different file, in
-        # which case we don't know which names are valid in it.
-        with ctx.suppress_undefined_names():
-            try:
-                code = ast.parse(val.__forward_arg__)
-            except SyntaxError:
-                ctx.show_error(
-                    f"Syntax error in forward reference: {val.__forward_arg__}"
+        if ctx.is_being_evaluted(val):
+            return AnyValue(AnySource.inference)
+        with ctx.add_evaluation(val):
+            # This is necessary because the forward ref may be defined in a different file, in
+            # which case we don't know which names are valid in it.
+            with ctx.suppress_undefined_names():
+                return _eval_forward_ref(
+                    val.__forward_arg__, ctx, is_typeddict=is_typeddict
                 )
-                return AnyValue(AnySource.error)
-            return _type_from_ast(code.body[0], ctx, is_typeddict=is_typeddict)
     elif val is Ellipsis:
         # valid in Callable[..., ]
         return AnyValue(AnySource.explicit)
