@@ -10,7 +10,6 @@ the system.
 import abc
 import ast
 import asyncio
-import builtins
 import collections
 import collections.abc
 import contextlib
@@ -21,11 +20,7 @@ import operator
 import os
 import os.path
 import pickle
-import random
-import re
-import string
 import sys
-import tempfile
 import traceback
 import types
 from argparse import ArgumentParser
@@ -55,7 +50,6 @@ from typing import (
 import asynq
 import qcore
 import typeshed_client
-from ast_decompiler import decompile
 from typing_extensions import Annotated, Protocol
 
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
@@ -2258,7 +2252,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._maybe_record_usages_from_import(node)
 
         # See if we can get the names from the stub instead
-        if node.module is not None and node.level == 0:
+        if (
+            node.module is not None
+            and node.level == 0
+            # pyanalyze.extensions has a stub only for the purpose of other stubs
+            # it shouldn't be used for runtime imports
+            and node.module != "pyanalyze.extensions"
+        ):
             path = typeshed_client.ModulePath(tuple(node.module.split(".")))
             finder = self.checker.ts_finder
             mod = finder.resolver.get_module(path)
@@ -2388,130 +2388,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             # need the split if the code is "import foo.bar as bar" if foo is unimportable
             return any(name.name.split(".")[0] in unimportable for name in node.names)
-
-    def _simulate_import(
-        self, node: Union[ast.ImportFrom, ast.Import], *, force_public: bool = False
-    ) -> None:
-        """Set the names retrieved from an import node in nontrivial situations.
-
-        For simple imports (module-global imports that are not "from ... import *"), we can just
-        retrieve the imported names from the module dictionary, but this is not possible with
-        import * or when the import is within a function.
-
-        To figure out what names would be imported in these cases, we create a fake module
-        consisting of just the import statement, eval it, and set all the names in its __dict__
-        in the current module scope.
-
-        TODO: Replace this with code that just evaluates the import without going
-        through this exec shenanigans.
-
-        """
-        if self.module is None:
-            self._handle_imports(node.names, force_public=force_public)
-            return
-
-        # See if we can get the names from the stub instead
-        if (
-            isinstance(node, ast.ImportFrom)
-            and node.module is not None
-            and node.level == 0
-        ):
-            path = typeshed_client.ModulePath(tuple(node.module.split(".")))
-            finder = self.checker.ts_finder
-            mod = finder.resolver.get_module(path)
-            if mod.exists:
-                for alias in node.names:
-                    val = finder.resolve_name(node.module, alias.name)
-                    if val is UNINITIALIZED_VALUE:
-                        self._show_error_if_checking(
-                            node,
-                            f"Cannot import name {alias.name!r} from {node.module!r}",
-                            ErrorCode.import_failed,
-                        )
-                        val = AnyValue(AnySource.error)
-                    self._set_name_in_scope(
-                        alias.asname or alias.name, alias, val, private=not force_public
-                    )
-                return
-
-        source_code = decompile(node)
-
-        if self._is_unimportable_module(node):
-            self._handle_imports(node.names, force_public=force_public)
-            self.log(logging.INFO, "Ignoring import node", source_code)
-            return
-
-        # create a pseudo-module and examine its dictionary to figure out what this imports
-        # default to the current __file__ if necessary
-        module_file = safe_getattr(self.module, "__file__", __file__)
-        random_suffix = "".join(
-            random.choice(string.ascii_lowercase) for _ in range(10)
-        )
-        pseudo_module_file = re.sub(r"\.pyc?$", random_suffix + ".py", module_file)
-        is_init = os.path.basename(module_file) in ("__init__.py", "__init__.pyc")
-        if is_init:
-            pseudo_module_name = self.module.__name__ + "." + random_suffix
-        else:
-            pseudo_module_name = self.module.__name__ + random_suffix
-
-        # Apparently doing 'from file_in_package import *' in an __init__.py also adds
-        # file_in_package to the module's scope.
-        if (
-            isinstance(node, ast.ImportFrom)
-            and is_init
-            and node.module is not None
-            and "." not in node.module
-        ):  # not in the package
-            if node.level == 1 or (node.level == 0 and node.module not in sys.modules):
-                self._set_name_in_scope(
-                    node.module,
-                    node,
-                    TypedValue(types.ModuleType),
-                    private=not force_public,
-                )
-
-        with tempfile.NamedTemporaryFile(suffix=".py") as f:
-            f.write(source_code.encode("utf-8"))
-            f.flush()
-            f.seek(0)
-            try:
-                pseudo_module = importer.import_module(pseudo_module_name, Path(f.name))
-            except Exception:
-                # sets the name of the imported module to Any so we don't get further
-                # errors
-                self._handle_imports(node.names, force_public=force_public)
-                return
-            finally:
-                # clean up pyc file
-                try:
-                    os.unlink(pseudo_module_file + "c")
-                except OSError:
-                    pass
-                if pseudo_module_name in sys.modules:
-                    del sys.modules[pseudo_module_name]
-
-        for name, value in pseudo_module.__dict__.items():
-            if name.startswith("__") or (
-                hasattr(builtins, name) and value == getattr(builtins, name)
-            ):
-                continue
-            self._set_name_in_scope(
-                name,
-                node,
-                KnownValue(value),
-                private=not force_public,
-                lookup_node=(node, name),
-            )
-
-    def _handle_imports(
-        self, names: Iterable[ast.alias], *, force_public: bool = False
-    ) -> None:
-        for node in names:
-            if node.asname is not None:
-                self._set_name_in_scope(node.asname, node)
-            else:
-                varname = node.name.split(".")[0]
-                self._set_name_in_scope(varname, node, private=not force_public)
 
     # Comprehensions
 
