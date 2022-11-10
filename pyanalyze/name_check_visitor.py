@@ -2224,14 +2224,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             mod = self._get_module(varname, node)
             self._set_alias_in_scope(alias, mod)
 
-    def _set_alias_in_scope(self, alias: ast.alias, value: Value) -> None:
+    def _set_alias_in_scope(
+        self, alias: ast.alias, value: Value, force_public: bool = False
+    ) -> None:
         if alias.asname is not None:
             self._set_name_in_scope(
-                alias.asname, alias, value, private=alias.asname != alias.name
+                alias.asname,
+                alias,
+                value,
+                private=not force_public and alias.asname != alias.name,
             )
         else:
             self._set_name_in_scope(
-                alias.name.split(".")[0], alias, value, private=True
+                alias.name.split(".")[0], alias, value, private=not force_public
             )
 
     def _get_module(self, name: str, node: ast.AST) -> Value:
@@ -2321,7 +2326,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             and "." not in node.module
             and node.level == 1
         ):
-            self._set_name_in_scope(node.module, node, source_module, private=True)
+            self._set_name_in_scope(node.module, node, source_module, private=False)
 
         for alias in node.names:
             if alias.name == "*":
@@ -2342,7 +2347,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     )
                 continue
             val = self._get_import_from_value(source_module, alias.name, node)
-            self._set_alias_in_scope(alias, val)
+            self._set_alias_in_scope(
+                alias,
+                val,
+                force_public=is_init and node.level == 1 and node.module is None,
+            )
 
     def _get_import_from_value(
         self, source_module: Value, alias_name: str, node: ast.ImportFrom
