@@ -98,7 +98,13 @@ from .options import (
 from .patma import PatmaVisitor
 from .predicates import EqualsPredicate
 from .reexport import ImplicitReexportTracker
-from .safe import is_dataclass_type, is_hashable, safe_getattr, safe_issubclass
+from .safe import (
+    is_dataclass_type,
+    is_hashable,
+    safe_getattr,
+    safe_hasattr,
+    safe_issubclass,
+)
 from .shared_options import EnforceNoUnused, ImportPaths, Paths
 from .signature import (
     ANY_SIGNATURE,
@@ -2230,7 +2236,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _get_module(self, name: str) -> Value:
         if name in sys.modules:
-            return KnownValue(sys.modules[name])
+            # import a.b.c only succeeds if a.b.c is a module that
+            # exists, but it doesn't return the module a.b.c, it
+            # follows the attribute chain.
+            pieces = name.split(".")
+            base_module = sys.modules.get(pieces[0])
+            for piece in pieces[1:]:
+                if not safe_hasattr(base_module, piece):
+                    return AnyValue(AnySource.unresolved_import)
+                base_module = getattr(base_module, piece)
+            return KnownValue(base_module)
         else:
             # TODO: Maybe get the module from stubs?
             return AnyValue(AnySource.unresolved_import)
