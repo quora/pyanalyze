@@ -2240,7 +2240,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if name in sys.modules:
             # import a.b.c only succeeds if a.b.c is a module that
             # exists, but it doesn't return the module a.b.c, it
-            # follows the attribute chain.
+            # follows the attribute chain. But this isn't true for
+            # ImportFrom.
+            if isinstance(node, ast.ImportFrom):
+                return KnownValue(sys.modules[name])
             pieces = name.split(".")
             base_module = sys.modules.get(pieces[0])
             for piece in pieces[1:]:
