@@ -2221,7 +2221,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             varname = (
                 alias.name if alias.asname is not None else alias.name.split(".")[0]
             )
-            mod = self._get_module(varname)
+            mod = self._get_module(varname, node)
             self._set_alias_in_scope(alias, mod)
 
     def _set_alias_in_scope(self, alias: ast.alias, value: Value) -> None:
@@ -2234,7 +2234,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 alias.name.split(".")[0], alias, value, private=True
             )
 
-    def _get_module(self, name: str) -> Value:
+    def _get_module(self, name: str, node: ast.AST) -> Value:
+        if name not in sys.modules:
+            self._try_to_import(name)
         if name in sys.modules:
             # import a.b.c only succeeds if a.b.c is a module that
             # exists, but it doesn't return the module a.b.c, it
@@ -2243,12 +2245,27 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             base_module = sys.modules.get(pieces[0])
             for piece in pieces[1:]:
                 if not safe_hasattr(base_module, piece):
+                    self._show_error_if_checking(
+                        node,
+                        f"Cannot import {name} because {piece} is not an attribute of"
+                        f" {base_module!r}",
+                        error_code=ErrorCode.import_failed,
+                    )
                     return AnyValue(AnySource.unresolved_import)
                 base_module = getattr(base_module, piece)
             return KnownValue(base_module)
         else:
             # TODO: Maybe get the module from stubs?
+            self._show_error_if_checking(
+                node, f"Cannot import {name}", error_code=ErrorCode.import_failed
+            )
             return AnyValue(AnySource.unresolved_import)
+
+    def _try_to_import(self, module_name: str) -> None:
+        try:
+            __import__(module_name)
+        except ImportError:
+            pass
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         self.generic_visit(node)
@@ -2321,15 +2338,30 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         ErrorCode.invalid_import,
                     )
                 continue
-            val = self.get_attribute_from_value(source_module, alias.name)
-            if val is UNINITIALIZED_VALUE:
-                self._show_error_if_checking(
-                    node,
-                    f"Cannot import name {alias.name!r} from {node.module!r}",
-                    ErrorCode.import_failed,
-                )
-                val = AnyValue(AnySource.error)
+            val = self._get_import_from_value(source_module, alias.name, node)
             self._set_alias_in_scope(alias, val)
+
+    def _get_import_from_value(
+        self, source_module: Value, alias_name: str, node: ast.ImportFrom
+    ) -> Value:
+        val = self.get_attribute_from_value(source_module, alias_name)
+        if val is not UNINITIALIZED_VALUE:
+            return val
+        if isinstance(source_module, KnownValue) and isinstance(
+            source_module.val, types.ModuleType
+        ):
+            name = f"{source_module.val.__name__}.{alias_name}"
+            self._try_to_import(name)
+            val = self.get_attribute_from_value(source_module, alias_name)
+            if val is not UNINITIALIZED_VALUE:
+                return val
+
+        self._show_error_if_checking(
+            node,
+            f"Cannot import name {alias_name!r} from {node.module!r}",
+            ErrorCode.import_failed,
+        )
+        return AnyValue(AnySource.error)
 
     def _get_import_from_module(self, node: ast.ImportFrom) -> Value:
         if node.level > 0:
@@ -2362,7 +2394,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
                 return AnyValue(AnySource.error)
             module_name = node.module
-        return self._get_module(module_name)
+        return self._get_module(module_name, node)
 
     def _maybe_record_usages_from_import(self, node: ast.ImportFrom) -> None:
         if self.unused_finder is None or self.module is None:
