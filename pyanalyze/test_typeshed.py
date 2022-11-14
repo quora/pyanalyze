@@ -400,7 +400,7 @@ class GenericChild(Parent[T]):
 
 
 class TestGetGenericBases:
-    def setup(self) -> None:
+    def setup_method(self) -> None:
         checker = Checker()
         self.get_generic_bases = checker.arg_spec_cache.get_generic_bases
 
