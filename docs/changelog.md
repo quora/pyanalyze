@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Emit an error for unknown `TypedDict` keys (#567)
 - Fix crash on recursive type aliases. Recursive type aliases now fall back to `Any` (#565)
 - Support `in` on objects with only `__getitem__` (#564)
 - Add support for `except*` (PEP 654) (#562)
