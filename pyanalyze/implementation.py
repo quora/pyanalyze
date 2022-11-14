@@ -554,10 +554,10 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
                 except Exception:
                     # No error here; TypedDicts may have additional keys at runtime.
                     pass
-            # TODO strictly we should throw an error for any non-Literal or unknown key:
-            # https://www.python.org/dev/peps/pep-0589/#supported-and-unsupported-operations
-            # Don't do that yet because it may cause too much disruption.
-            return AnyValue(AnySource.inference)
+            ctx.show_error(
+                f"Unknown TypedDict key {key}", ErrorCode.invalid_typeddict_key, arg="k"
+            )
+            return AnyValue(AnySource.error)
         elif isinstance(self_value, DictIncompleteValue):
             val = self_value.get_value(key, ctx.visitor)
             if val is UNINITIALIZED_VALUE:

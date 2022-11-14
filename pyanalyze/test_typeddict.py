@@ -35,3 +35,14 @@ class TestTypedDict(TestNameCheckVisitorBase):
                     {"x": (True, TypedValue(int)), "y": (False, TypedValue(str))}
                 ),
             )
+
+    @assert_passes()
+    def test_unknown_key(self):
+        from typing_extensions import TypedDict, assert_type
+
+        class Capybara(TypedDict):
+            x: int
+
+        def user(c: Capybara):
+            assert_type(c["x"], int)
+            c["y"]  # E: invalid_typeddict_key
