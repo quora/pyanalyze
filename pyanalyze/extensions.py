@@ -551,3 +551,28 @@ def show_error(message: str, *, argument: Optional[Any] = None) -> bool:
     raise NotImplementedError(
         "show_error() may only be called in type evaluation functions"
     )
+
+
+def has_extra_keys(value_type: object = Any) -> Callable[[_T], _T]:
+    """Decorator for ``TypedDict`` types, indicating that the dict
+    has additional keys of the given type.
+
+    This is an experimental feature.
+
+    Example usage::
+
+        @has_extra_keys(str)
+        class TD(TypedDict):
+            a: int
+
+        def f(x: TD) -> None:
+            assert_type(x["a"], int)
+            assert_type(x["arbitrary_key"], str)
+
+    """
+
+    def decorator(cls: _T) -> _T:
+        cls.__extra_keys__ = value_type
+        return cls
+
+    return decorator

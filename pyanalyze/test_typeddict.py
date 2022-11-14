@@ -5,6 +5,124 @@ from .test_node_visitor import assert_passes
 from .value import TypedDictValue, TypedValue
 
 
+class TestExtraKeys(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_signature(self):
+        from pyanalyze.extensions import has_extra_keys
+        from typing_extensions import TypedDict
+
+        @has_extra_keys(int)
+        class TD(TypedDict):
+            a: str
+
+        def capybara() -> None:
+            x = TD(a="a", b=1)
+            assert_is_value(
+                x,
+                TypedDictValue(
+                    {"a": (True, TypedValue(str))}, extra_keys=TypedValue(int)
+                ),
+            )
+
+            TD(a="a", b="b")  # E: incompatible_argument
+
+    @assert_passes()
+    def test_methods(self):
+        from pyanalyze.extensions import has_extra_keys
+        from typing_extensions import TypedDict, assert_type, Literal
+        from typing import Union
+
+        @has_extra_keys(int)
+        class TD(TypedDict):
+            a: str
+
+        class NormalTD(TypedDict):
+            a: str
+
+        def getitem(td: TD, ntd: NormalTD) -> None:
+            td["b"] = 3
+            ntd["b"] = 3  # E: invalid_typeddict_key
+
+        def setitem(td: TD) -> None:
+            assert_type(td["b"], int)
+
+        def get(td: TD) -> None:
+            assert_type(td.get("b", "x"), Union[int, Literal["x"]])
+
+        def pop(td: TD) -> None:
+            assert_type(td.pop("b"), int)
+
+        def setdefault(td: TD) -> None:
+            assert_type(td.setdefault("b", "x"), Union[int, Literal["x"]])
+
+    @assert_passes()
+    def test_kwargs_annotation(self):
+        from pyanalyze.extensions import has_extra_keys
+        from typing_extensions import TypedDict, Unpack, assert_type
+
+        @has_extra_keys(int)
+        class TD(TypedDict):
+            a: str
+
+        def caller(**kwargs: Unpack[TD]) -> None:
+            assert_type(kwargs["b"], int)
+
+        def capybara() -> None:
+            caller(a="x", b=1)
+            caller(a="x", b="y")  # E: incompatible_argument
+
+    @assert_passes()
+    def test_compatibility(self):
+        from pyanalyze.extensions import has_extra_keys
+        from typing_extensions import TypedDict
+
+        @has_extra_keys(int)
+        class TD(TypedDict):
+            a: str
+
+        @has_extra_keys(bool)
+        class TD2(TypedDict):
+            a: str
+
+        @has_extra_keys(bytes)
+        class TD3(TypedDict):
+            a: str
+
+        def want_td(td: TD) -> None:
+            pass
+
+        def capybara(td: TD, td2: TD2, td3: TD3) -> None:
+            want_td(td)
+            want_td(td2)
+            want_td(td3)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_iteration(self):
+        from pyanalyze.extensions import has_extra_keys
+        from typing_extensions import TypedDict, assert_type, Literal
+        from typing import Union
+
+        @has_extra_keys(int)
+        class TD(TypedDict):
+            a: str
+
+        class TD2(TypedDict):
+            a: str
+
+        def capybara(td: TD, td2: TD2) -> None:
+            for k, v in td.items():
+                assert_type(k, Union[str, Literal["a"]])
+                assert_type(v, Union[int, str])
+            for k in td:
+                assert_type(k, Union[str, Literal["a"]])
+
+            for k, v in td2.items():
+                assert_type(k, Literal["a"])
+                assert_type(v, str)
+            for k in td2:
+                assert_type(k, Literal["a"])
+
+
 class TestTypedDict(TestNameCheckVisitorBase):
     @assert_passes()
     def test_constructor(self):

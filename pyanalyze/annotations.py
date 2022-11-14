@@ -449,11 +449,16 @@ def _type_from_runtime(
         # inheritance, this makes it apparently impossible to figure out which
         # keys are required at runtime.
         total = getattr(val, "__total__", True)
+        if hasattr(val, "__extra_keys__"):
+            extra_keys = _type_from_runtime(val.__extra_keys__, ctx)
+        else:
+            extra_keys = None
         return TypedDictValue(
             {
                 key: _get_typeddict_value(value, ctx, key, required_keys, total)
                 for key, value in val.__annotations__.items()
-            }
+            },
+            extra_keys=extra_keys,
         )
     elif val is InitVar:
         # On 3.6 and 3.7, InitVar[T] just returns InitVar at runtime, so we can't
