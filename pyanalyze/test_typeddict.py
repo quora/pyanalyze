@@ -2,7 +2,7 @@
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .value import TypedDictValue, TypedValue
+from .value import TypedDictValue, TypedValue, AnyValue, AnySource
 
 
 class TestExtraKeys(TestNameCheckVisitorBase):
@@ -164,3 +164,70 @@ class TestTypedDict(TestNameCheckVisitorBase):
         def user(c: Capybara):
             assert_type(c["x"], int)
             c["y"]  # E: invalid_typeddict_key
+
+    @assert_passes()
+    def test_basic(self):
+        from mypy_extensions import TypedDict as METypedDict
+        from typing_extensions import TypedDict as TETypedDict
+
+        T = METypedDict("T", {"a": int, "b": str})
+        T2 = TETypedDict("T2", {"a": int, "b": str})
+
+        def capybara(x: T, y: T2):
+            assert_is_value(
+                x,
+                TypedDictValue(
+                    {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
+                ),
+            )
+            assert_is_value(x["a"], TypedValue(int))
+            assert_is_value(
+                y,
+                TypedDictValue(
+                    {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
+                ),
+            )
+            assert_is_value(y["a"], TypedValue(int))
+
+    @assert_passes()
+    def test_unknown_key_unresolved(self):
+        from mypy_extensions import TypedDict
+
+        T = TypedDict("T", {"a": int, "b": str})
+
+        def capybara(x: T):
+            assert_is_value(x["not a key"], AnyValue(AnySource.inference))
+
+    @assert_passes()
+    def test_invalid_key(self):
+        from mypy_extensions import TypedDict
+
+        T = TypedDict("T", {"a": int, "b": str})
+
+        def capybara(x: T):
+            x[0]  # E: invalid_typeddict_key
+
+    @assert_passes()
+    def test_total(self):
+        from typing_extensions import TypedDict
+
+        class TD(TypedDict, total=False):
+            a: int
+            b: str
+
+        class TD2(TD):
+            c: float
+
+        def f(td: TD) -> None:
+            pass
+
+        def g(td2: TD2) -> None:
+            pass
+
+        def caller() -> None:
+            f({})
+            f({"a": 1})
+            f({"a": 1, "b": "c"})
+            f({"a": "a"})  # E: incompatible_argument
+            g({"c": 1.0})
+            g({})  # E: incompatible_argument

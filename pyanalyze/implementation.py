@@ -566,10 +566,12 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
                         return AnyValue(AnySource.error)
             if self_value.extra_keys is not None:
                 return self_value.extra_keys
-            # TODO strictly we should throw an error for any non-Literal or unknown key:
-            # https://www.python.org/dev/peps/pep-0589/#supported-and-unsupported-operations
-            # Don't do that yet because it may cause too much disruption.
-            return AnyValue(AnySource.inference)
+            ctx.show_error(
+                f"TypedDict key must be a literal, not {key}",
+                ErrorCode.invalid_typeddict_key,
+                arg="k",
+            )
+            return AnyValue(AnySource.error)
         elif isinstance(self_value, DictIncompleteValue):
             val = self_value.get_value(key, ctx.visitor)
             if val is UNINITIALIZED_VALUE:
@@ -627,8 +629,13 @@ def _dict_get_impl(ctx: CallContext) -> ImplReturn:
                 # probably KeyError, but catch anything in case it's an
                 # unhashable str subclass or something
                 except Exception:
-                    # No error here; TypedDicts may have additional keys at runtime.
-                    pass
+                    if self_value.extra_keys is None:
+                        ctx.show_error(
+                            f"Unknown TypedDict key {key.val!r}",
+                            ErrorCode.invalid_typeddict_key,
+                            arg="k",
+                        )
+                        return AnyValue(AnySource.error)
                 else:
                     if required:
                         return value
@@ -636,10 +643,12 @@ def _dict_get_impl(ctx: CallContext) -> ImplReturn:
                         return value | default
             if self_value.extra_keys is not None:
                 return self_value.extra_keys | default
-            # TODO strictly we should throw an error for any non-Literal or unknown key:
-            # https://www.python.org/dev/peps/pep-0589/#supported-and-unsupported-operations
-            # Don't do that yet because it may cause too much disruption.
-            return default
+            ctx.show_error(
+                f"TypedDict key must be a literal, not {key}",
+                ErrorCode.invalid_typeddict_key,
+                arg="k",
+            )
+            return AnyValue(AnySource.error)
         elif isinstance(self_value, DictIncompleteValue):
             val = self_value.get_value(key, ctx.visitor)
             if val is UNINITIALIZED_VALUE:
