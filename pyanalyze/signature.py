@@ -1720,6 +1720,16 @@ class Signature:
                         default=None if is_required else AnyValue(AnySource.marker),
                     )
                     i += 1
+                if param.annotation.extra_keys is not None:
+                    name = f"%kwargs{i}"
+                    param_dict[name] = SigParameter(
+                        name,
+                        ParameterKind.VAR_KEYWORD,
+                        annotation=GenericValue(
+                            dict, [TypedValue(str), param.annotation.extra_keys]
+                        ),
+                    )
+                    i += 1
             else:
                 param_dict[param.name] = param
                 i += 1
