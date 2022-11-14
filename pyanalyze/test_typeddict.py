@@ -196,7 +196,8 @@ class TestTypedDict(TestNameCheckVisitorBase):
         T = TypedDict("T", {"a": int, "b": str})
 
         def capybara(x: T):
-            assert_is_value(x["not a key"], AnyValue(AnySource.inference))
+            val = x["not a key"]  # E: invalid_typeddict_key
+            assert_is_value(val, AnyValue(AnySource.error))
 
     @assert_passes()
     def test_invalid_key(self):
