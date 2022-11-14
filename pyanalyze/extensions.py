@@ -559,7 +559,7 @@ def has_extra_keys(value_type: object = Any) -> Callable[[_T], _T]:
 
     This is an experimental feature.
 
-    Example usage:
+    Example usage::
 
         @has_extra_keys(str)
         class TD(TypedDict):
