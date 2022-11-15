@@ -1126,8 +1126,7 @@ class Signature:
         """
         if ctx.visitor is None:
             return
-        num_pos_args = sum(1 for _, kind in args if kind is None)
-        if num_pos_args < ctx.visitor.options.get_value_for(MaximumPositionalArgs):
+        if len(node.args) < ctx.visitor.options.get_value_for(MaximumPositionalArgs):
             return
         composite_to_name = {}
         for name, (kind, composite) in bound_args.items():
