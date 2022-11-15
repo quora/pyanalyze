@@ -1142,12 +1142,10 @@ class Signature:
         new_keywords = []
         for arg in node.args:
             if arg not in node_to_composite:
-                new_args.append(arg)
-                continue
+                return
             composite = node_to_composite[arg]
             if composite not in composite_to_name:
-                new_args.append(arg)
-                continue
+                return
             name = composite_to_name[composite]
             new_keywords.append(ast.keyword(arg=name, value=arg))
         new_keywords += node.keywords
