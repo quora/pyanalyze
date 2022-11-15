@@ -99,6 +99,7 @@ class ErrorCode(enum.Enum):
     invalid_annotated_assignment = 79
     unused_assignment = 80
     incompatible_yield = 81
+    too_many_positional_args = 82
 
 
 # Allow testing unannotated functions without too much fuss
@@ -119,6 +120,7 @@ DISABLED_BY_DEFAULT = {
     ErrorCode.unused_ignore,
     ErrorCode.missing_f,
     ErrorCode.bare_ignore,
+    ErrorCode.too_many_positional_args,
     # TODO: turn this on
     ErrorCode.implicit_reexport,
     ErrorCode.incompatible_override,
@@ -219,6 +221,9 @@ ERROR_DESCRIPTION = {
     ErrorCode.invalid_annotated_assignment: "Invalid annotated assignment",
     ErrorCode.unused_assignment: "Assigned value is never used",
     ErrorCode.incompatible_yield: "Incompatible yield type",
+    ErrorCode.too_many_positional_args: (
+        "Call with many positional arguments should use keyword arguments"
+    ),
 }
 
 
