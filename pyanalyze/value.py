@@ -1154,19 +1154,17 @@ class TypedDictValue(GenericValue):
         self, items: Dict[str, Tuple[bool, Value]], extra_keys: Optional[Value] = None
     ) -> None:
         value_types = []
-        key_types = []
         if items:
             value_types += [val for _, val in items.values()]
-            key_types += [KnownValue(key) for key in items.keys()]
         if extra_keys is not None:
             value_types.append(extra_keys)
-            key_types.append(TypedValue(str))
         value_type = (
             unite_values(*value_types)
             if value_types
             else AnyValue(AnySource.unreachable)
         )
-        key_type = unite_values(*key_types) if key_types else TypedValue(str)
+        # The key type must be str so dict[str, Any] is compatible with a TypedDict
+        key_type = TypedValue(str)
         super().__init__(dict, (key_type, value_type))
         self.items = items
         self.extra_keys = extra_keys

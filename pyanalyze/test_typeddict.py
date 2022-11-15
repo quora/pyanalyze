@@ -75,6 +75,7 @@ class TestExtraKeys(TestNameCheckVisitorBase):
     def test_compatibility(self):
         from pyanalyze.extensions import has_extra_keys
         from typing_extensions import TypedDict
+        from typing import Any, Dict
 
         @has_extra_keys(int)
         class TD(TypedDict):
@@ -91,10 +92,11 @@ class TestExtraKeys(TestNameCheckVisitorBase):
         def want_td(td: TD) -> None:
             pass
 
-        def capybara(td: TD, td2: TD2, td3: TD3) -> None:
+        def capybara(td: TD, td2: TD2, td3: TD3, anydict: Dict[str, Any]) -> None:
             want_td(td)
             want_td(td2)
             want_td(td3)  # E: incompatible_argument
+            want_td(anydict)
 
     @assert_passes()
     def test_iteration(self):
@@ -111,13 +113,13 @@ class TestExtraKeys(TestNameCheckVisitorBase):
 
         def capybara(td: TD, td2: TD2) -> None:
             for k, v in td.items():
-                assert_type(k, Union[str, Literal["a"]])
+                assert_type(k, str)
                 assert_type(v, Union[int, str])
             for k in td:
                 assert_type(k, Union[str, Literal["a"]])
 
             for k, v in td2.items():
-                assert_type(k, Literal["a"])
+                assert_type(k, str)
                 assert_type(v, str)
             for k in td2:
                 assert_type(k, Literal["a"])
