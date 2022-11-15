@@ -22,13 +22,13 @@ from .value import (
 
 
 # just used for its __dict__
-class Module(object):
+class Module:
     foo = 1
     bar = None
 
 
-class TestStackedScopes(object):
-    def setup(self):
+class TestStackedScopes:
+    def setup_method(self):
         self.scopes = build_stacked_scopes(Module)
 
     def test_scope_type(self):
