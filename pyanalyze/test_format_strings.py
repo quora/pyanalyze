@@ -478,3 +478,30 @@ def capybara(x):
     def test_complicated_expression(self):
         def capybara(x):
             "foo %s" % len(x)
+
+
+class TestFStringLiteral(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        from typing_extensions import Literal, assert_type
+
+        def capybara(a: Literal["a"], ab: Literal["a", "b"]):
+            assert_type(f"a{a}", Literal["aa"])
+            assert_type(f"a{ab}", Literal["aa", "ab"])
+            assert_type(f"a{ab}b{ab}", Literal["aaba", "aabb", "abba", "abbb"])
+            # Make sure we don't infer a 2**16-size union
+            assert_type(
+                f"{ab}{ab}{ab}{ab}{ab}{ab}{ab}{ab}{ab}{ab}{ab}{ab}{ab}{ab}{ab}{ab}", str
+            )
+
+    @assert_passes()
+    def test_conversions(self):
+        from typing_extensions import Literal, assert_type
+
+        def capybara(a: Literal["á"], ab: Literal["á", "ê"]):
+            assert_type(f"a{a!r}", Literal["a'á'"])
+            assert_type(f"a{ab!r}", Literal["a'á'", "a'ê'"])
+            assert_type(f"a{a!s}", Literal["aá"])
+            assert_type(f"a{ab!s}", Literal["aá", "aê"])
+            assert_type(f"a{a!a}", Literal["a'\\xe1'"])
+            assert_type(f"a{ab!a}", Literal["a'\\xe1'", "a'\\xea'"])
