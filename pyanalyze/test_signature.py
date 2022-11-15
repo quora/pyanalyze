@@ -1266,3 +1266,23 @@ class TestTooManyPosArgs(TestNameCheckVisitorBase):
                 f(a=1, b=2, c=3, d=4, e=5, f=6, g=7, h=8, i=9, j=10, k=11)
             """,
         )
+
+    def test_method(self):
+        self.assert_is_changed(
+            """
+            class X:
+                def f(self, a, b, c, d, e, f, g, h, i, j, k):
+                    pass
+
+            def capybara(x: X):
+                x.f(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+            """,
+            """
+            class X:
+                def f(self, a, b, c, d, e, f, g, h, i, j, k):
+                    pass
+
+            def capybara(x: X):
+                x.f(a=1, b=2, c=3, d=4, e=5, f=6, g=7, h=8, i=9, j=10, k=11)
+            """,
+        )

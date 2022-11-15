@@ -122,7 +122,7 @@ class MaximumPositionalArgs(IntegerOption):
     """If calls have more than this many positional arguments, attempt to
     turn them into keyword arguments."""
 
-    default_value = 5
+    default_value = 10
     name = "maximum_positional_args"
 
 
@@ -1133,18 +1133,22 @@ class Signature:
         for name, (kind, composite) in bound_args.items():
             if isinstance(kind, int):
                 composite_to_name[composite] = name
+        node_to_composite = {}
+        for unbound_arg, kind in args:
+            if kind is None and unbound_arg.node is not None:
+                node_to_composite[unbound_arg.node] = unbound_arg
 
         new_args = []
         new_keywords = []
-        for i, arg in enumerate(node.args):
-            unbound_arg, kind = args[i]
-            if kind is not None:
+        for arg in node.args:
+            if arg not in node_to_composite:
                 new_args.append(arg)
                 continue
-            if unbound_arg not in composite_to_name:
+            composite = node_to_composite[arg]
+            if composite not in composite_to_name:
                 new_args.append(arg)
                 continue
-            name = composite_to_name[unbound_arg]
+            name = composite_to_name[composite]
             new_keywords.append(ast.keyword(arg=name, value=arg))
         new_keywords += node.keywords
         new_node = ast.Call(func=node.func, args=new_args, keywords=new_keywords)
