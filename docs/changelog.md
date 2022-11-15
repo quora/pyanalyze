@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Add experimental `@has_extra_keys` decorator for `TypedDictt` types (#568)
+- Improve type inference for f-strings containing literals (#571)
+- Add experimental `@has_extra_keys` decorator for `TypedDict` types (#568)
 - Fix crash on recursive type aliases. Recursive type aliases now fall back to `Any` (#565)
 - Support `in` on objects with only `__getitem__` (#564)
 - Add support for `except*` (PEP 654) (#562)
