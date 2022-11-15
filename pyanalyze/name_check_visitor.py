@@ -2579,11 +2579,77 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     # Literals and displays
 
     def visit_JoinedStr(self, node: ast.JoinedStr) -> Value:
-        # JoinedStr is the node type for f-strings.
-        # Not too much to check here. Perhaps we can add checks that format specifiers
-        # are valid.
-        self._generic_visit_list(node.values)
-        return TypedValue(str)
+        elements = self._generic_visit_list(node.values)
+        limit = self.options.get_value_for(UnionSimplificationLimit)
+        possible_values: List[List[str]] = [[]]
+        for elt in elements:
+            subvals = list(flatten_values(elt))
+            # Bail out if the list of possible values gets too long.
+            if len(possible_values) * len(subvals) > limit:
+                return TypedValue(str)
+            to_add = []
+            for subval in subvals:
+                if not isinstance(subval, KnownValue):
+                    return TypedValue(str)
+                if not isinstance(subval.val, str):
+                    return TypedValue(str)
+                to_add.append(subval.val)
+            possible_values = [
+                lst + [new_elt] for lst in possible_values for new_elt in to_add
+            ]
+        return unite_values(*[KnownValue("".join(lst)) for lst in possible_values])
+
+    def visit_FormattedValue(self, node: ast.FormattedValue) -> Value:
+        val = self.visit(node.value)
+        format_spec_val = (
+            self.visit(node.format_spec) if node.format_spec else KnownValue("")
+        )
+        if isinstance(format_spec_val, KnownValue) and isinstance(
+            format_spec_val.val, str
+        ):
+            format_spec = format_spec_val.val
+        else:
+            # TODO: statically check whether the format specifier is valid.
+            return TypedValue(str)
+        possible_vals = []
+        for subval in flatten_values(val):
+            possible_vals.append(
+                self._visit_single_formatted_value(subval, node, format_spec)
+            )
+        return unite_and_simplify(
+            *possible_vals, limit=self.options.get_value_for(UnionSimplificationLimit)
+        )
+
+    def _visit_single_formatted_value(
+        self, val: Value, node: ast.FormattedValue, format_spec: str
+    ) -> Value:
+        if not isinstance(val, KnownValue):
+            return TypedValue(str)
+        output = val.val
+        if node.conversion != -1:
+            unsupported_conversion = False
+            try:
+                if node.conversion == ord("a"):
+                    output = ascii(output)
+                elif node.conversion == ord("s"):
+                    output = str(output)
+                elif node.conversion == ord("r"):
+                    output = repr(output)
+                else:
+                    unsupported_conversion = True
+            except Exception:
+                # str/repr/ascii failed
+                return TypedValue(str)
+            if unsupported_conversion:
+                raise NotImplementedError(
+                    f"Unsupported converion specifier {node.conversion}"
+                )
+        try:
+            output = format(output, format_spec)
+        except Exception:
+            # format failed
+            return TypedValue(str)
+        return KnownValue(output)
 
     def visit_Constant(self, node: ast.Constant) -> Value:
         # replaces Num, Str, etc. in 3.8+
