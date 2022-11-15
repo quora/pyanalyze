@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Emit an error for unknown `TypedDict` keys (#567)
 - Improve type inference for f-strings containing literals (#571)
 - Add experimental `@has_extra_keys` decorator for `TypedDict` types (#568)
 - Fix crash on recursive type aliases. Recursive type aliases now fall back to `Any` (#565)
