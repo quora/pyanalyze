@@ -37,6 +37,8 @@ from qcore.helpers import safe_str
 from typing_extensions import assert_never, Literal, Protocol, Self
 
 from .error_code import ErrorCode
+from .node_visitor import Replacement
+from .options import IntegerOption
 from .stacked_scopes import (
     AbstractConstraint,
     AndConstraint,
@@ -116,6 +118,14 @@ ELLIPSIS_COMPOSITE = Composite(AnyValue(AnySource.ellipsis_callable))
 USE_CHECK_CALL_FOR_CAN_ASSIGN = False
 
 
+class MaximumPositionalArgs(IntegerOption):
+    """If calls have more than this many positional arguments, attempt to
+    turn them into keyword arguments."""
+
+    default_value = 10
+    name = "maximum_positional_args"
+
+
 class InvalidSignature(Exception):
     """Raised when an invalid signature is encountered."""
 
@@ -153,7 +163,9 @@ BoundArgs = Dict[str, Tuple[Position, Composite]]
 
 
 class CheckCallContext(Protocol):
-    visitor: Optional["NameCheckVisitor"]
+    @property
+    def visitor(self) -> Optional["NameCheckVisitor"]:
+        raise NotImplementedError
 
     def on_error(
         self,
@@ -162,6 +174,7 @@ class CheckCallContext(Protocol):
         code: ErrorCode = ...,
         node: Optional[ast.AST] = ...,
         detail: Optional[str] = ...,
+        replacement: Optional[Replacement] = ...,
     ) -> object:
         raise NotImplementedError
 
@@ -183,6 +196,7 @@ class _CanAssignBasedContext:
         code: ErrorCode = ErrorCode.incompatible_call,
         node: Optional[ast.AST] = None,
         detail: Optional[str] = ...,
+        replacement: Optional[Replacement] = ...,
     ) -> object:
         self.errors.append(message)
         return None
@@ -204,12 +218,15 @@ class _VisitorBasedContext:
         code: ErrorCode = ErrorCode.incompatible_call,
         node: Optional[ast.AST] = None,
         detail: Optional[str] = ...,
+        replacement: Optional[Replacement] = None,
     ) -> None:
         if node is None:
             node = self.node
         if node is None:
             return
-        self.visitor.show_error(node, message, code, detail=detail)
+        self.visitor.show_error(
+            node, message, code, detail=detail, replacement=replacement
+        )
 
 
 @dataclass
@@ -1093,7 +1110,51 @@ class Signature:
         preprocessed = preprocess_args(args, ctx)
         if preprocessed is None:
             return self.get_default_return().return_value
-        return self.check_call_preprocessed(preprocessed, ctx).return_value
+        return self.check_call_preprocessed(
+            preprocessed, ctx, original_args=args, node=node
+        ).return_value
+
+    def maybe_show_too_many_pos_args_error(
+        self,
+        *,
+        args: Sequence[Argument],
+        bound_args: BoundArgs,
+        ctx: CheckCallContext,
+        node: ast.Call,
+    ) -> None:
+        """Show an error if the call to this Signature has too many positional arguments.
+        """
+        if ctx.visitor is None:
+            return
+        if len(node.args) < ctx.visitor.options.get_value_for(MaximumPositionalArgs):
+            return
+        composite_to_name = {}
+        for name, (kind, composite) in bound_args.items():
+            if isinstance(kind, int):
+                composite_to_name[composite] = name
+        node_to_composite = {}
+        for unbound_arg, kind in args:
+            if kind is None and unbound_arg.node is not None:
+                node_to_composite[unbound_arg.node] = unbound_arg
+
+        new_args = []
+        new_keywords = []
+        for arg in node.args:
+            if arg not in node_to_composite:
+                return
+            composite = node_to_composite[arg]
+            if composite not in composite_to_name:
+                return
+            name = composite_to_name[composite]
+            new_keywords.append(ast.keyword(arg=name, value=arg))
+        new_keywords += node.keywords
+        new_node = ast.Call(func=node.func, args=new_args, keywords=new_keywords)
+        ctx.visitor.show_error(
+            node,
+            f"Too many positional arguments for {stringify_object(self.callable)}",
+            error_code=ErrorCode.too_many_positional_args,
+            replacement=ctx.visitor.replace_node(node, new_node),
+        )
 
     def check_call_preprocessed(
         self,
@@ -1101,10 +1162,16 @@ class Signature:
         ctx: CheckCallContext,
         *,
         is_overload: bool = False,
+        original_args: Optional[Sequence[Argument]] = None,
+        node: Optional[ast.AST] = None,
     ) -> CallReturn:
         bound_args = self.bind_arguments(preprocessed, ctx)
         if bound_args is None:
             return self.get_default_return()
+        if original_args is not None and isinstance(node, ast.Call):
+            self.maybe_show_too_many_pos_args_error(
+                args=original_args, bound_args=bound_args, ctx=ctx, node=node
+            )
         return self.check_call_with_bound_args(
             preprocessed, bound_args, ctx, is_overload=is_overload
         )
