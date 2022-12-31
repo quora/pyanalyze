@@ -435,8 +435,10 @@ class TestCalls(TestNameCheckVisitorBase):
 
         def capybara():
             two_args(
-                "one very long string so long that it goes on its own line is this"
-                " enough",
+                (
+                    "one very long string so long that it goes on its own line is this"
+                    " enough"
+                ),
                 "not an int",  # E: incompatible_argument
             )
 
