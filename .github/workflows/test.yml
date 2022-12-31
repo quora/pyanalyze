@@ -44,7 +44,7 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
     - name: install tox
-      run: pip install --upgrade setuptools tox==3.27.0
+      run: pip install --upgrade setuptools tox==4.0.16
     - name: setup tox environment
       run: tox -e ${{ matrix.toxenv }} --notest
     - name: test

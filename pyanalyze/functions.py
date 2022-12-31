@@ -329,8 +329,10 @@ def compute_parameters(
                 if isinstance(tv_map, CanAssignError):
                     ctx.show_error(
                         arg,
-                        f"Default value for argument {arg.arg} incompatible"
-                        f" with declared type {value}",
+                        (
+                            f"Default value for argument {arg.arg} incompatible"
+                            f" with declared type {value}"
+                        ),
                         error_code=ErrorCode.incompatible_default,
                         detail=tv_map.display(),
                     )

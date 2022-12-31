@@ -652,8 +652,10 @@ class Signature:
                         if triple is not None:
                             return triple
                     ctx.on_error(
-                        f"Incompatible argument type for {param.name}: expected"
-                        f" {param_typ} but got {composite.value}",
+                        (
+                            f"Incompatible argument type for {param.name}: expected"
+                            f" {param_typ} but got {composite.value}"
+                        ),
                         code=bounds_map.get_error_code()
                         or ErrorCode.incompatible_argument,
                         node=composite.node if composite.node is not None else None,
@@ -784,8 +786,10 @@ class Signature:
                 if positional_index < len(actual_args.positionals):
                     if positional_index in actual_args.pos_or_keyword_params:
                         self.show_call_error(
-                            f"Positional parameter {positional_index} should be"
-                            " positional-or-keyword",
+                            (
+                                f"Positional parameter {positional_index} should be"
+                                " positional-or-keyword"
+                            ),
                             ctx,
                         )
                         return None
@@ -798,8 +802,10 @@ class Signature:
                         and not actual_args.ellipsis
                     ):
                         self.show_call_error(
-                            f"Parameter '{param.name}' may not be provided by this"
-                            " call",
+                            (
+                                f"Parameter '{param.name}' may not be provided by this"
+                                " call"
+                            ),
                             ctx,
                         )
                         return None
@@ -837,8 +843,10 @@ class Signature:
                         and not actual_args.ellipsis
                     ):
                         self.show_call_error(
-                            f"Parameter '{param.name}' may not be provided by this"
-                            " call",
+                            (
+                                f"Parameter '{param.name}' may not be provided by this"
+                                " call"
+                            ),
                             ctx,
                         )
                         return None
@@ -849,16 +857,20 @@ class Signature:
                             keywords_consumed.add(param.name)
                         else:
                             self.show_call_error(
-                                f"Parameter '{param.name}' provided as both a"
-                                " positional and a keyword argument",
+                                (
+                                    f"Parameter '{param.name}' provided as both a"
+                                    " positional and a keyword argument"
+                                ),
                                 ctx,
                             )
                             return None
                 elif actual_args.star_args is not None:
                     if param.name in actual_args.keywords:
                         self.show_call_error(
-                            f"Parameter '{param.name}' may be filled from both"
-                            " *args and a keyword argument",
+                            (
+                                f"Parameter '{param.name}' may be filled from both"
+                                " *args and a keyword argument"
+                            ),
                             ctx,
                         )
                         return None
@@ -885,8 +897,10 @@ class Signature:
                         and not actual_args.ellipsis
                     ):
                         self.show_call_error(
-                            f"Parameter '{param.name}' may not be provided by this"
-                            " call",
+                            (
+                                f"Parameter '{param.name}' may not be provided by this"
+                                " call"
+                            ),
                             ctx,
                         )
                         return None
@@ -914,8 +928,10 @@ class Signature:
                 if param.name in actual_args.keywords:
                     if param.name in actual_args.pos_or_keyword_params:
                         self.show_call_error(
-                            f"Keyword parameter {param.name} should be"
-                            " positional-or-keyword",
+                            (
+                                f"Keyword parameter {param.name} should be"
+                                " positional-or-keyword"
+                            ),
                             ctx,
                         )
                         return None
@@ -926,8 +942,10 @@ class Signature:
                         and not actual_args.ellipsis
                     ):
                         self.show_call_error(
-                            f"Parameter '{param.name}' may not be provided by this"
-                            " call",
+                            (
+                                f"Parameter '{param.name}' may not be provided by this"
+                                " call"
+                            ),
                             ctx,
                         )
                         return None
@@ -1045,8 +1063,10 @@ class Signature:
 
         if not star_args_consumed and positional_index != len(actual_args.positionals):
             self.show_call_error(
-                f"Takes {positional_index} positional arguments but"
-                f" {len(actual_args.positionals)} were given",
+                (
+                    f"Takes {positional_index} positional arguments but"
+                    f" {len(actual_args.positionals)} were given"
+                ),
                 ctx,
             )
             return None
@@ -1447,8 +1467,10 @@ class Signature:
                     tv_map = their_annotation.can_assign(my_annotation, ctx)
                     if isinstance(tv_map, CanAssignError):
                         return CanAssignError(
-                            "type of positional-only parameter"
-                            f" {my_param.name!r} is incompatible",
+                            (
+                                "type of positional-only parameter"
+                                f" {my_param.name!r} is incompatible"
+                            ),
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
@@ -1562,8 +1584,10 @@ class Signature:
                     tv_map = extra_param.get_annotation().can_assign(my_annotation, ctx)
                     if isinstance(tv_map, CanAssignError):
                         return CanAssignError(
-                            f"type of param {extra_param.name!r} is incompatible"
-                            " with *args type",
+                            (
+                                f"type of param {extra_param.name!r} is incompatible"
+                                " with *args type"
+                            ),
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
@@ -1585,8 +1609,10 @@ class Signature:
                     tv_map = extra_param.get_annotation().can_assign(my_annotation, ctx)
                     if isinstance(tv_map, CanAssignError):
                         return CanAssignError(
-                            f"type of param {extra_param.name!r} is incompatible"
-                            " with **kwargs type",
+                            (
+                                f"type of param {extra_param.name!r} is incompatible"
+                                " with **kwargs type"
+                            ),
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
@@ -2508,8 +2534,10 @@ def can_assign_var_positional(
             can_assign = their_annotation.can_assign(my_annotation, ctx)
             if isinstance(can_assign, CanAssignError):
                 return CanAssignError(
-                    f"type of parameter {my_param.name!r} is incompatible:"
-                    f" *args[{idx}] type is incompatible",
+                    (
+                        f"type of parameter {my_param.name!r} is incompatible:"
+                        f" *args[{idx}] type is incompatible"
+                    ),
                     [can_assign],
                 )
             return [can_assign]
@@ -2521,8 +2549,10 @@ def can_assign_var_positional(
     bounds_map = iterable_arg.can_assign(my_annotation, ctx)
     if isinstance(bounds_map, CanAssignError):
         return CanAssignError(
-            f"type of parameter {my_param.name!r} is incompatible: "
-            "*args type is incompatible",
+            (
+                f"type of parameter {my_param.name!r} is incompatible: "
+                "*args type is incompatible"
+            ),
             [bounds_map],
         )
     return [bounds_map]
@@ -2542,8 +2572,10 @@ def can_assign_var_keyword(
         can_assign = their_annotation.can_assign(my_annotation, ctx)
         if isinstance(can_assign, CanAssignError):
             return CanAssignError(
-                f"type of parameter {my_param.name!r} is incompatible:"
-                f" *kwargs[{my_param.name!r}] type is incompatible",
+                (
+                    f"type of parameter {my_param.name!r} is incompatible:"
+                    f" *kwargs[{my_param.name!r}] type is incompatible"
+                ),
                 [can_assign],
             )
         bounds_maps.append(can_assign)
@@ -2565,8 +2597,10 @@ def can_assign_var_keyword(
         can_assign = value_arg.can_assign(my_annotation, ctx)
         if isinstance(can_assign, CanAssignError):
             return CanAssignError(
-                f"type of parameter {my_param.name!r} is incompatible: **kwargs"
-                " type is incompatible",
+                (
+                    f"type of parameter {my_param.name!r} is incompatible: **kwargs"
+                    " type is incompatible"
+                ),
                 [can_assign],
             )
         bounds_maps.append(can_assign)
