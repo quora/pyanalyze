@@ -2277,7 +2277,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _try_to_import(self, module_name: str) -> None:
         try:
             __import__(module_name)
-        except ImportError:
+        except Exception:
             pass
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
