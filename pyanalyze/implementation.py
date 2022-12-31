@@ -786,10 +786,8 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
                 tv_map = expected_type.can_assign(default, ctx.visitor)
                 if isinstance(tv_map, CanAssignError):
                     ctx.show_error(
-                        (
-                            f"TypedDict key {key.val} expected value of type"
-                            f" {expected_type}, not {default}"
-                        ),
+                        f"TypedDict key {key.val} expected value of type"
+                        f" {expected_type}, not {default}",
                         ErrorCode.incompatible_argument,
                         arg="default",
                     )
@@ -1116,10 +1114,8 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
     expected_value = ctx.vars["value"]
     if not isinstance(expected_value, KnownValue):
         ctx.show_error(
-            (
-                "Value argument to assert_is_value must be a KnownValue (got"
-                f" {expected_value!r}; object is {obj!r})"
-            ),
+            "Value argument to assert_is_value must be a KnownValue (got"
+            f" {expected_value!r}; object is {obj!r})",
             ErrorCode.inference_failure,
             arg="value",
         )
@@ -1211,10 +1207,8 @@ def _str_format_impl(ctx: CallContext) -> Value:
         if field.arg_name is None:
             if current_index >= len(args):
                 ctx.show_error(
-                    (
-                        "Too few arguments to format string (expected at least"
-                        f" {current_index})"
-                    ),
+                    "Too few arguments to format string (expected at least"
+                    f" {current_index})",
                     error_code=ErrorCode.incompatible_call,
                 )
             used_indices.add(current_index)

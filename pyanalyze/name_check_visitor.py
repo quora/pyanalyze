@@ -1427,10 +1427,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if isinstance(can_assign, CanAssignError):
                     self._show_error_if_checking(
                         node,
-                        (
-                            f"Incompatible assignment: expected {declared_type}, got"
-                            f" {value}"
-                        ),
+                        f"Incompatible assignment: expected {declared_type}, got"
+                        f" {value}",
                         error_code=ErrorCode.incompatible_assignment,
                         detail=can_assign.display(),
                     )
@@ -2258,10 +2256,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if not safe_hasattr(base_module, piece):
                     self._show_error_if_checking(
                         node,
-                        (
-                            f"Cannot import {name} because {piece} is not an attribute"
-                            f" of {base_module!r}"
-                        ),
+                        f"Cannot import {name} because {piece} is not an attribute"
+                        f" of {base_module!r}",
                         error_code=ErrorCode.import_failed,
                     )
                     return AnyValue(AnySource.unresolved_import)
@@ -3452,10 +3448,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     node,
-                    (
-                        f"Cannot send {send_type} to a generator (expected"
-                        f" {expected_send})"
-                    ),
+                    f"Cannot send {send_type} to a generator (expected"
+                    f" {expected_send})",
                     error_code=ErrorCode.incompatible_yield,
                     detail=can_assign.display(),
                 )
@@ -3495,10 +3489,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(can_assign, CanAssignError):
             self._show_error_if_checking(
                 node,
-                (
-                    f"Cannot assign value of type {value} to yield expression of type"
-                    f" {yield_type}"
-                ),
+                f"Cannot assign value of type {value} to yield expression of type"
+                f" {yield_type}",
                 error_code=ErrorCode.incompatible_yield,
                 detail=can_assign.display(),
             )
@@ -3599,10 +3591,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     node,
-                    (
-                        f"Declared return type {self.expected_return_value} is"
-                        f" incompatible with actual return type {value}"
-                    ),
+                    f"Declared return type {self.expected_return_value} is"
+                    f" incompatible with actual return type {value}",
                     error_code=ErrorCode.incompatible_return_value,
                     detail=can_assign.display(),
                 )
@@ -3986,10 +3976,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     if is_try_star and issubclass(subval.val, BaseExceptionGroup):
                         self._show_error_if_checking(
                             node,
-                            (
-                                "ExceptionGroup cannot be used as the type in an"
-                                f" except* clause: {subval.val!r}"
-                            ),
+                            "ExceptionGroup cannot be used as the type in an"
+                            f" except* clause: {subval.val!r}",
                             error_code=ErrorCode.bad_except_handler,
                         )
                     is_exception = issubclass(subval.val, Exception)
@@ -4181,10 +4169,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if isinstance(can_assign, CanAssignError):
                     self._show_error_if_checking(
                         node,
-                        (
-                            f"Incompatible assignment: expected {expected_type}, got"
-                            f" {value}"
-                        ),
+                        f"Incompatible assignment: expected {expected_type}, got"
+                        f" {value}",
                         error_code=ErrorCode.incompatible_assignment,
                         detail=can_assign.display(),
                     )
