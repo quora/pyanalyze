@@ -2349,9 +2349,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 continue
             val = self._get_import_from_value(source_module, alias.name, node)
             self._set_alias_in_scope(
-                alias,
-                val,
-                force_public=is_init and node.level == 1 and node.module is None,
+                alias, val, force_public=is_init and node.level == 1
             )
 
     def _get_import_from_value(
