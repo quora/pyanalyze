@@ -359,6 +359,8 @@ class AnySource(enum.Enum):
     """Multiple matching overloads."""
     ellipsis_callable = 13
     """Callable using an ellipsis."""
+    unresolved_import = 14
+    """An unresolved import."""
 
 
 @dataclass(frozen=True)

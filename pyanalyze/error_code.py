@@ -99,7 +99,8 @@ class ErrorCode(enum.Enum):
     invalid_annotated_assignment = 79
     unused_assignment = 80
     incompatible_yield = 81
-    too_many_positional_args = 82
+    invalid_import = 82
+    too_many_positional_args = 83
 
 
 # Allow testing unannotated functions without too much fuss
@@ -221,6 +222,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.invalid_annotated_assignment: "Invalid annotated assignment",
     ErrorCode.unused_assignment: "Assigned value is never used",
     ErrorCode.incompatible_yield: "Incompatible yield type",
+    ErrorCode.invalid_import: "Invalid import",
     ErrorCode.too_many_positional_args: (
         "Call with many positional arguments should use keyword arguments"
     ),

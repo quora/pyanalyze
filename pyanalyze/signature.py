@@ -857,8 +857,8 @@ class Signature:
                 elif actual_args.star_args is not None:
                     if param.name in actual_args.keywords:
                         self.show_call_error(
-                            f"Parameter '{param.name}' may be filled from both *args"
-                            " and a keyword argument",
+                            f"Parameter '{param.name}' may be filled from both"
+                            " *args and a keyword argument",
                             ctx,
                         )
                         return None
@@ -1447,8 +1447,8 @@ class Signature:
                     tv_map = their_annotation.can_assign(my_annotation, ctx)
                     if isinstance(tv_map, CanAssignError):
                         return CanAssignError(
-                            f"type of positional-only parameter {my_param.name!r} is"
-                            " incompatible",
+                            "type of positional-only parameter"
+                            f" {my_param.name!r} is incompatible",
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
@@ -1562,8 +1562,8 @@ class Signature:
                     tv_map = extra_param.get_annotation().can_assign(my_annotation, ctx)
                     if isinstance(tv_map, CanAssignError):
                         return CanAssignError(
-                            f"type of param {extra_param.name!r} is incompatible with "
-                            "*args type",
+                            f"type of param {extra_param.name!r} is incompatible"
+                            " with *args type",
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
@@ -1585,8 +1585,8 @@ class Signature:
                     tv_map = extra_param.get_annotation().can_assign(my_annotation, ctx)
                     if isinstance(tv_map, CanAssignError):
                         return CanAssignError(
-                            f"type of param {extra_param.name!r} is incompatible with "
-                            "**kwargs type",
+                            f"type of param {extra_param.name!r} is incompatible"
+                            " with **kwargs type",
                             [tv_map],
                         )
                     tv_maps.append(tv_map)
@@ -2508,8 +2508,8 @@ def can_assign_var_positional(
             can_assign = their_annotation.can_assign(my_annotation, ctx)
             if isinstance(can_assign, CanAssignError):
                 return CanAssignError(
-                    f"type of parameter {my_param.name!r} is incompatible: *args[{idx}]"
-                    " type is incompatible",
+                    f"type of parameter {my_param.name!r} is incompatible:"
+                    f" *args[{idx}] type is incompatible",
                     [can_assign],
                 )
             return [can_assign]
@@ -2565,8 +2565,8 @@ def can_assign_var_keyword(
         can_assign = value_arg.can_assign(my_annotation, ctx)
         if isinstance(can_assign, CanAssignError):
             return CanAssignError(
-                f"type of parameter {my_param.name!r} is incompatible: **kwargs type"
-                " is incompatible",
+                f"type of parameter {my_param.name!r} is incompatible: **kwargs"
+                " type is incompatible",
                 [can_assign],
             )
         bounds_maps.append(can_assign)

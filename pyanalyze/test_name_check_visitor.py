@@ -292,10 +292,7 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_mock_attr(self):
-        try:
-            from unittest import mock
-        except ImportError:
-            import mock
+        from unittest import mock
 
         class X:
             a = mock.MagicMock()
