@@ -653,6 +653,15 @@ class ArgSpecCache:
                     )
                     for key, (required, value) in td_type.items.items()
                 ]
+                if td_type.extra_keys is not None:
+                    annotation = GenericValue(
+                        dict, [TypedValue(str), td_type.extra_keys]
+                    )
+                    params.append(
+                        SigParameter(
+                            "%kwargs", ParameterKind.VAR_KEYWORD, annotation=annotation
+                        )
+                    )
                 return Signature.make(params, td_type)
 
         if is_newtype(obj):

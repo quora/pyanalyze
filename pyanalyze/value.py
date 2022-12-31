@@ -1149,14 +1149,27 @@ class TypedDictValue(GenericValue):
     items: Dict[str, Tuple[bool, Value]]
     """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
     ones as (False, value)."""
+    extra_keys: Optional[Value] = None
+    """The type of unknown keys, if any."""
 
-    def __init__(self, items: Dict[str, Tuple[bool, Value]]) -> None:
+    def __init__(
+        self, items: Dict[str, Tuple[bool, Value]], extra_keys: Optional[Value] = None
+    ) -> None:
+        value_types = []
         if items:
-            value_type = unite_values(*[val for _, val in items.values()])
-        else:
-            value_type = AnyValue(AnySource.unreachable)
-        super().__init__(dict, (TypedValue(str), value_type))
+            value_types += [val for _, val in items.values()]
+        if extra_keys is not None:
+            value_types.append(extra_keys)
+        value_type = (
+            unite_values(*value_types)
+            if value_types
+            else AnyValue(AnySource.unreachable)
+        )
+        # The key type must be str so dict[str, Any] is compatible with a TypedDict
+        key_type = TypedValue(str)
+        super().__init__(dict, (key_type, value_type))
         self.items = items
+        self.extra_keys = extra_keys
 
     def num_required_keys(self) -> int:
         return sum(1 for required, _ in self.items.values() if required)
@@ -1195,6 +1208,14 @@ class TypedDictValue(GenericValue):
                             children=[can_assign],
                         )
                     bounds_maps.append(can_assign)
+            # TODO: What if only one of the two has extra keys?
+            if self.extra_keys is not None and other.extra_keys is not None:
+                can_assign = self.extra_keys.can_assign(other.extra_keys, ctx)
+                if isinstance(can_assign, CanAssignError):
+                    return CanAssignError(
+                        "Types for extra keys are incompatible", children=[can_assign]
+                    )
+                bounds_maps.append(can_assign)
             return unify_bounds_maps(bounds_maps)
         elif isinstance(other, KnownValue) and isinstance(other.val, dict):
             bounds_maps = []
@@ -1218,7 +1239,10 @@ class TypedDictValue(GenericValue):
             {
                 key: (is_required, value.substitute_typevars(typevars))
                 for key, (is_required, value) in self.items.items()
-            }
+            },
+            extra_keys=self.extra_keys.substitute_typevars(typevars)
+            if self.extra_keys is not None
+            else None,
         )
 
     def __str__(self) -> str:
@@ -2290,9 +2314,14 @@ def concrete_values_from_iterable(
             return value.args[0]
         return members
     elif isinstance(value, TypedDictValue):
-        if all(required for required, _ in value.items.items()):
+        if value.extra_keys is None and all(
+            required for required, _ in value.items.items()
+        ):
             return [KnownValue(key) for key in value.items]
-        return MultiValuedValue([KnownValue(key) for key in value.items])
+        possibilities = [KnownValue(key) for key in value.items]
+        if value.extra_keys is not None:
+            possibilities.append(TypedValue(str))
+        return MultiValuedValue(possibilities)
     elif isinstance(value, DictIncompleteValue):
         if all(pair.is_required and not pair.is_many for pair in value.kv_pairs):
             return [pair.key for pair in value.kv_pairs]
@@ -2373,10 +2402,20 @@ def kv_pairs_from_mapping(
     if isinstance(value_val, DictIncompleteValue):
         return value_val.kv_pairs
     elif isinstance(value_val, TypedDictValue):
-        return [
+        pairs = [
             KVPair(KnownValue(key), value, is_required=required)
             for key, (required, value) in value_val.items.items()
         ]
+        if value_val.extra_keys is not None:
+            pairs.append(
+                KVPair(
+                    TypedValue(str),
+                    value_val.extra_keys,
+                    is_many=True,
+                    is_required=False,
+                )
+            )
+        return pairs
     else:
         # Ideally we should only need to check ProtocolMappingValue, but if
         # we do that we can't infer the right types for dict, so try the
