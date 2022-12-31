@@ -653,7 +653,7 @@ class ArgSpecCache:
                     )
                     for key, (required, value) in td_type.items.items()
                 ]
-                return Signature.make(params, td_type)
+                return Signature.make(params, td_type, callable=obj)
 
         if is_newtype(obj):
             assert hasattr(obj, "__supertype__")

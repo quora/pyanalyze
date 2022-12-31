@@ -383,7 +383,7 @@ def reveal_type(value: _T) -> _T:
 
     This is automatically exposed as a global during type checking, so in
     code that is not run at import, `reveal_type()` can be used without
-    being impoorted.
+    being imported.
 
     Example::
 
@@ -498,7 +498,7 @@ else:
         """A version of `typing.overload` that is inspectable at runtime.
 
         If this decorator is used for a function `some_module.some_function`, calling
-        :func:`pyanalyze.extensiions.get_overloads("some_module.some_function")` will
+        :func:`pyanalyze.extensions.get_overloads("some_module.some_function")` will
         return all the runtime overloads.
 
         """

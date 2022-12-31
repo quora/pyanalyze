@@ -62,6 +62,7 @@ from .extensions import (
     NoReturnGuard,
     ParameterTypeGuard,
     TypeGuard,
+    deprecated,
 )
 from .find_unused import used
 from .functions import FunctionDefNode
@@ -980,6 +981,12 @@ class Pep655Value(Value):
     value: Value
 
 
+@dataclass
+class DecoratorValue(Value):
+    decorator: object
+    args: Tuple[Value, ...]
+
+
 class _Visitor(ast.NodeVisitor):
     def __init__(self, ctx: Context) -> None:
         self.ctx = ctx
@@ -1131,6 +1138,14 @@ class _Visitor(ast.NodeVisitor):
                 return None
             tv = ParamSpec(name_val.val)
             return TypeVarValue(tv, is_paramspec=True)
+        elif is_typing_name(func.val, "deprecated") or func.val is deprecated:
+            if node.keywords:
+                self.ctx.show_error(
+                    "deprecated() does not accept keyword arguments", node=node
+                )
+                return None
+            arg_values = [self.visit(arg) for arg in node.args]
+            return DecoratorValue(deprecated, arg_values)
         elif isinstance(func.val, type):
             if func.val is object:
                 return AnyValue(AnySource.inference)

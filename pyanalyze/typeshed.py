@@ -46,13 +46,19 @@ from .analysis_lib import is_positional_only_arg_name
 from .annotations import (
     Context,
     make_type_var_value,
+    DecoratorValue,
     Pep655Value,
     SyntheticEvaluator,
     type_from_value,
     value_from_ast,
 )
 from .error_code import ErrorCode
-from .extensions import evaluated, overload, real_overload
+from .extensions import (
+    evaluated,
+    overload,
+    real_overload,
+    deprecated as deprecated_decorator,
+)
 from .node_visitor import Failure
 from .options import Options, PathSequenceOption
 from .safe import all_of_type, hasattr_static, is_typing_name, safe_isinstance
@@ -810,6 +816,7 @@ class TypeshedFinder:
         allow_call: bool = False,
     ) -> Optional[Signature]:
         is_classmethod = is_staticmethod = is_evaluated = False
+        deprecated = None
         for decorator_ast in node.decorator_list:
             decorator = self._parse_expr(decorator_ast, mod)
             if (
@@ -829,8 +836,14 @@ class TypeshedFinder:
             elif decorator == KnownValue(evaluated):
                 is_evaluated = True
                 continue
-            # might be @overload or something else we don't recognize
-            return None
+            elif (
+                isinstance(decorator, DecoratorValue)
+                and decorator.decorator is deprecated_decorator
+            ):
+                arg = decorator.args[0]
+                if isinstance(arg, KnownValue) and isinstance(arg.val, str):
+                    deprecated = arg.val
+            # something we don't recognize; ignore it
         if node.returns is None:
             return_value = AnyValue(AnySource.unannotated)
         else:
@@ -891,6 +904,7 @@ class TypeshedFinder:
             else return_value,
             allow_call=allow_call,
             evaluator=evaluator,
+            deprecated=deprecated,
         )
 
     def _parse_param_list(
