@@ -1,17 +1,15 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes
+from .test_node_visitor import assert_passes, skip_before
 
 
 class TestStub(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
         def capybara():
-            from _pyanalyze_tests.deprecated import (
-                deprecated_overload,
-                deprecated_function,  # E: deprecated
-                DeprecatedCapybara,  # E: deprecated
-            )
+            from _pyanalyze_tests.deprecated import deprecated_overload
+            from _pyanalyze_tests.deprecated import deprecated_function  # E: deprecated
+            from _pyanalyze_tests.deprecated import DeprecatedCapybara  # E: deprecated
 
             deprecated_overload(1)  # E: deprecated
             deprecated_overload("x")
@@ -20,6 +18,18 @@ class TestStub(TestNameCheckVisitorBase):
             print(deprecated_function)
             DeprecatedCapybara()
             print(DeprecatedCapybara)
+
+    @skip_before((3, 10))
+    @assert_passes()
+    def test_multiline_import(self):
+        def capybara():
+            from _pyanalyze_tests.deprecated import (
+                deprecated_overload,
+                deprecated_function,  # E: deprecated
+                DeprecatedCapybara,  # E: deprecated
+            )
+
+            return [deprecated_function, deprecated_overload, DeprecatedCapybara]
 
 
 class TestRuntime(TestNameCheckVisitorBase):

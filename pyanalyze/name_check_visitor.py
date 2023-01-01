@@ -2268,12 +2268,22 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 alias.name if alias.asname is not None else alias.name.split(".")[0]
             )
             mod = self._get_module(varname, node)
-            self._set_alias_in_scope(alias, mod)
+            self._set_alias_in_scope(alias, mod, node=node)
 
     def _set_alias_in_scope(
-        self, alias: ast.alias, value: Value, force_public: bool = False
+        self,
+        alias: ast.alias,
+        value: Value,
+        *,
+        force_public: bool = False,
+        node: ast.AST,
     ) -> None:
-        if self.check_deprecation(alias, value):
+        # aliases only have a lineno attached in 3.10+
+        if sys.version_info >= (3, 10):
+            error_node = alias
+        else:
+            error_node = node
+        if self.check_deprecation(error_node, value):
             value = annotate_value(value, [SkipDeprecatedExtension()])
         if alias.asname is not None:
             self._set_name_in_scope(
@@ -2362,7 +2372,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                             ErrorCode.import_failed,
                         )
                         val = AnyValue(AnySource.error)
-                    self._set_alias_in_scope(alias, val)
+                    self._set_alias_in_scope(alias, val, node=node)
                 return
 
         is_init = self.filename.endswith("/__init__.py")
@@ -2398,7 +2408,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 continue
             val = self._get_import_from_value(source_module, alias.name, node)
             self._set_alias_in_scope(
-                alias, val, force_public=is_init and node.level == 1
+                alias, val, force_public=is_init and node.level == 1, node=node
             )
 
     def _get_import_from_value(
