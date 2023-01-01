@@ -448,7 +448,9 @@ def assert_error() -> Iterator[None]:
 
 def deprecated(__msg: str) -> typing.Callable[[_T], _T]:
     """Indicate that a class, function or overload is deprecated.
+
     Usage:
+
         @deprecated("Use B instead")
         class A:
             pass
@@ -460,11 +462,14 @@ def deprecated(__msg: str) -> typing.Callable[[_T], _T]:
         def g(x: int) -> int: ...
         @overload
         def g(x: str) -> int: ...
+
     When this decorator is applied to an object, the type checker
     will generate a diagnostic on usage of the deprecated object.
+
     No runtime warning is issued. The decorator sets the ``__deprecated__``
     attribute on the decorated object to the deprecation message
     passed to the decorator.
+
     See PEP 702 for details.
     """
 
