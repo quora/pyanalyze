@@ -103,6 +103,7 @@ from .safe import (
     is_hashable,
     safe_getattr,
     safe_hasattr,
+    safe_isinstance,
     safe_issubclass,
 )
 from .shared_options import EnforceNoUnused, ImportPaths, Paths
@@ -2241,6 +2242,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if deprecated is None:
                 return False
         else:
+            return False
+        if not safe_isinstance(deprecated, str):
+            # happens with Mock objects
             return False
         self._show_error_if_checking(
             node,

@@ -449,7 +449,7 @@ def assert_error() -> Iterator[None]:
 def deprecated(__msg: str) -> typing.Callable[[_T], _T]:
     """Indicate that a class, function or overload is deprecated.
 
-    Usage:
+    Usage::
 
         @deprecated("Use B instead")
         class A:

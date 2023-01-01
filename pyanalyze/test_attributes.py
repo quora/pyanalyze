@@ -147,6 +147,8 @@ class TestAttributes(TestNameCheckVisitorBase):
         # Inspired by pyspark.sql.types.Row
         class Row(tuple):
             def __getattr__(self, attr):
+                if attr.startswith("__"):
+                    raise AttributeError(attr)
                 return attr.upper()
 
         def capybara():

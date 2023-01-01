@@ -1113,7 +1113,7 @@ class _Visitor(ast.NodeVisitor):
                     "deprecated() does not accept keyword arguments", node=node
                 )
                 return None
-            arg_values = [self.visit(arg) for arg in node.args]
+            arg_values = tuple(self.visit(arg) for arg in node.args)
             return DecoratorValue(deprecated, arg_values)
         elif isinstance(func.val, type):
             if func.val is object:
