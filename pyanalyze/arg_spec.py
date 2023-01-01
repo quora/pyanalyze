@@ -11,7 +11,6 @@ import enum
 import inspect
 import sys
 import textwrap
-from collections.abc import Awaitable
 from dataclasses import dataclass, replace
 from types import FunctionType, MethodType, ModuleType
 from typing import (
@@ -75,6 +74,7 @@ from .value import (
     GenericValue,
     KnownValue,
     KVPair,
+    make_coro_type,
     NewTypeValue,
     SubclassValue,
     TypedDictValue,
@@ -344,7 +344,7 @@ class ArgSpecCache:
                 )
                 has_return_annotation = True
             if is_async:
-                returns = GenericValue(Awaitable, [returns])
+                returns = make_coro_type(returns)
 
         parameters = []
         for i, parameter in enumerate(sig.parameters.values()):
@@ -653,6 +653,15 @@ class ArgSpecCache:
                     )
                     for key, (required, value) in td_type.items.items()
                 ]
+                if td_type.extra_keys is not None:
+                    annotation = GenericValue(
+                        dict, [TypedValue(str), td_type.extra_keys]
+                    )
+                    params.append(
+                        SigParameter(
+                            "%kwargs", ParameterKind.VAR_KEYWORD, annotation=annotation
+                        )
+                    )
                 return Signature.make(params, td_type, callable=obj)
 
         if is_newtype(obj):

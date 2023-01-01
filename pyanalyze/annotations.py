@@ -26,7 +26,6 @@ show errors.
 import ast
 import builtins
 import contextlib
-import sys
 import typing
 from collections.abc import Callable, Hashable, Iterable
 from dataclasses import dataclass, field, InitVar
@@ -35,11 +34,13 @@ from typing import (
     cast,
     Container,
     ContextManager,
+    Generator,
     Mapping,
     NamedTuple,
     NewType,
     Optional,
     Sequence,
+    Set,
     Tuple,
     TYPE_CHECKING,
     TypeVar,
@@ -77,7 +78,6 @@ from .signature import (
 )
 from .value import (
     _HashableValue,
-    TypeVarLike,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -101,6 +101,7 @@ from .value import (
     TypedDictValue,
     TypedValue,
     TypeGuardExtension,
+    TypeVarLike,
     TypeVarValue,
     unite_values,
     UnpackedValue,
@@ -124,15 +125,10 @@ except ImportError:
 
 
 CONTEXT_MANAGER_TYPES = (typing.ContextManager, contextlib.AbstractContextManager)
-if sys.version_info >= (3, 7):
-    ASYNC_CONTEXT_MANAGER_TYPES = (
-        typing.AsyncContextManager,
-        # Doesn't exist on 3.6
-        # static analysis: ignore[undefined_attribute]
-        contextlib.AbstractAsyncContextManager,
-    )
-else:
-    ASYNC_CONTEXT_MANAGER_TYPES = (typing.AsyncContextManager,)
+ASYNC_CONTEXT_MANAGER_TYPES = (
+    typing.AsyncContextManager,
+    contextlib.AbstractAsyncContextManager,
+)
 
 
 @dataclass
@@ -145,10 +141,28 @@ class Context:
 
     should_suppress_undefined_names: bool = field(default=False, init=False)
     """While this is True, no errors are shown for undefined names."""
+    _being_evaluated: Set[int] = field(default_factory=set, init=False)
 
     def suppress_undefined_names(self) -> ContextManager[None]:
         """Temporarily suppress errors about undefined names."""
         return qcore.override(self, "should_suppress_undefined_names", True)
+
+    def is_being_evaluted(self, obj: object) -> bool:
+        return id(obj) in self._being_evaluated
+
+    @contextlib.contextmanager
+    def add_evaluation(self, obj: object) -> Generator[None, None, None]:
+        """Temporarily add an object to the set of objects being evaluated.
+
+        This is used to prevent infinite recursion when evaluating forward references.
+
+        """
+        obj_id = id(obj)
+        self._being_evaluated.add(obj_id)
+        try:
+            yield
+        finally:
+            self._being_evaluated.remove(obj_id)
 
     def show_error(
         self,
@@ -396,20 +410,6 @@ def _type_from_runtime(
         return _eval_forward_ref(
             val, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
         )
-    elif isinstance(val, tuple):
-        # This happens under some Python versions for types
-        # nested in tuples, e.g. on 3.6:
-        # > typing_inspect.get_args(Union[Set[int], List[str]])
-        # ((typing.Set, int), (typing.List, str))
-        if not val:
-            # from Tuple[()]
-            return KnownValue(())
-        origin = val[0]
-        if len(val) == 2:
-            args = (val[1],)
-        else:
-            args = val[1:]
-        return _value_of_origin_args(origin, args, val, ctx, allow_unpack=allow_unpack)
     elif GenericAlias is not None and isinstance(val, GenericAlias):
         origin = get_origin(val)
         args = get_args(val)
@@ -450,11 +450,16 @@ def _type_from_runtime(
         # inheritance, this makes it apparently impossible to figure out which
         # keys are required at runtime.
         total = getattr(val, "__total__", True)
+        if hasattr(val, "__extra_keys__"):
+            extra_keys = _type_from_runtime(val.__extra_keys__, ctx)
+        else:
+            extra_keys = None
         return TypedDictValue(
             {
                 key: _get_typeddict_value(value, ctx, key, required_keys, total)
                 for key, value in val.__annotations__.items()
-            }
+            },
+            extra_keys=extra_keys,
         )
     elif val is InitVar:
         # On 3.6 and 3.7, InitVar[T] just returns InitVar at runtime, so we can't
@@ -465,12 +470,6 @@ def _type_from_runtime(
         # InitVar instances aren't being created
         # static analysis: ignore[undefined_attribute]
         return type_from_runtime(val.type)
-    elif is_instance_of_typing_name(val, "AnnotatedMeta"):
-        # Annotated in 3.6's typing_extensions
-        origin, metadata = val.__args__
-        return _make_annotated(
-            _type_from_runtime(origin, ctx), [KnownValue(v) for v in metadata], ctx
-        )
     elif is_instance_of_typing_name(val, "_AnnotatedAlias"):
         # Annotated in typing and newer typing_extensions
         return _make_annotated(
@@ -530,27 +529,20 @@ def _type_from_runtime(
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
     elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):
-        if hasattr(val, "__type__"):
-            # 3.6
-            typ = val.__type__
-        else:
-            # 3.7+
-            typ = val.__args__[0]
+        typ = val.__args__[0]
         return _type_from_runtime(typ, ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
         val, "ForwardRef"
     ):
-        # This has issues because the forward ref may be defined in a different file, in
-        # which case we don't know which names are valid in it.
-        with ctx.suppress_undefined_names():
-            try:
-                code = ast.parse(val.__forward_arg__)
-            except SyntaxError:
-                ctx.show_error(
-                    f"Syntax error in forward reference: {val.__forward_arg__}"
+        if ctx.is_being_evaluted(val):
+            return AnyValue(AnySource.inference)
+        with ctx.add_evaluation(val):
+            # This is necessary because the forward ref may be defined in a different file, in
+            # which case we don't know which names are valid in it.
+            with ctx.suppress_undefined_names():
+                return _eval_forward_ref(
+                    val.__forward_arg__, ctx, is_typeddict=is_typeddict
                 )
-                return AnyValue(AnySource.error)
-            return _type_from_ast(code.body[0], ctx, is_typeddict=is_typeddict)
     elif val is Ellipsis:
         # valid in Callable[..., ]
         return AnyValue(AnySource.explicit)
@@ -561,12 +553,6 @@ def _type_from_runtime(
         return AnnotatedValue(
             TypedValue(bool),
             [TypeGuardExtension(_type_from_runtime(val.guarded_type, ctx))],
-        )
-    elif is_instance_of_typing_name(val, "_TypeGuard"):
-        # 3.6 only
-        return AnnotatedValue(
-            TypedValue(bool),
-            [TypeGuardExtension(_type_from_runtime(val.__type__, ctx))],
         )
     elif isinstance(val, AsynqCallable):
         params = _callable_args_from_runtime(val.args, "AsynqCallable", ctx)
@@ -581,23 +567,6 @@ def _type_from_runtime(
             ctx.show_error(f"Cannot resolve type {val.type_path!r}")
             return AnyValue(AnySource.error)
         return _type_from_runtime(typ, ctx)
-    # Python 3.6 only (on later versions Required/NotRequired match
-    # is_generic_type).
-    elif is_instance_of_typing_name(val, "_MaybeRequired"):
-        required = is_instance_of_typing_name(val, "_Required")
-        if is_typeddict:
-            return Pep655Value(required, _type_from_runtime(val.__type__, ctx))
-        else:
-            cls = "Required" if required else "NotRequired"
-            ctx.show_error(f"{cls}[] used in unsupported context")
-            return AnyValue(AnySource.error)
-    # Also 3.6 only.
-    elif is_instance_of_typing_name(val, "_Unpack"):
-        if allow_unpack:
-            return UnpackedValue(_type_from_runtime(val.__type__, ctx))
-        else:
-            ctx.show_error("Unpack[] used in unsupported context")
-            return AnyValue(AnySource.error)
     elif is_typing_name(val, "TypeAlias"):
         return AnyValue(AnySource.incomplete_annotation)
     elif is_typing_name(val, "TypedDict"):
@@ -909,9 +878,9 @@ def _maybe_get_extra(origin: type) -> Union[type, str]:
     # ContextManager is defined oddly and we lose the Protocol if we don't use
     # synthetic types.
     if any(origin is cls for cls in CONTEXT_MANAGER_TYPES):
-        return "typing.ContextManager"
+        return "contextlib.AbstractContextManager"
     elif any(origin is cls for cls in ASYNC_CONTEXT_MANAGER_TYPES):
-        return "typing.AsyncContextManager"
+        return "contextlib.AbstractAsyncContextManager"
     else:
         # turn typing.List into list in some Python versions
         # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
@@ -1375,3 +1344,17 @@ def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
         elif isinstance(entry.val, CustomCheck):
             return CustomCheckExtension(entry.val)
     return entry
+
+
+_CONTEXT_MANAGER_TYPES = {
+    "typing.AsyncContextManager",
+    "typing.ContextManager",
+    "contextlib.AbstractContextManager",
+    "contextlib.AbstractAsyncContextManager",
+    *CONTEXT_MANAGER_TYPES,
+    *ASYNC_CONTEXT_MANAGER_TYPES,
+}
+
+
+def is_context_manager_type(typ: Union[str, type]) -> bool:
+    return typ in _CONTEXT_MANAGER_TYPES

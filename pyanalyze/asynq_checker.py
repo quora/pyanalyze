@@ -23,7 +23,8 @@ from .value import AnnotatedValue, KnownValue, TypedValue, UnboundMethodValue, V
 
 class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):
     """Normally, asynq calls to asynq functions are only enforced in functions that are already
-    asynq. In subclasses of classes listed here, all asynq functions must be called asynq."""
+    asynq. In subclasses of classes listed here, all asynq functions must be called asynq.
+    """
 
     name = "classes_checked_for_asynq"
 
@@ -136,7 +137,8 @@ class AsynqChecker:
         return self.should_check_class_for_async(self.current_class)
 
     def should_check_class_for_async(self, cls: type) -> bool:
-        """Returns whether we should perform async checks on all methods on this class."""
+        """Returns whether we should perform async checks on all methods on this class.
+        """
         for base_cls in self.options.get_value_for(ClassesCheckedForAsynq):
             try:
                 if issubclass(cls, base_cls):

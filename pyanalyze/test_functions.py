@@ -51,15 +51,13 @@ class TestNestedFunction(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_async_def(self):
-        import collections.abc
+        from pyanalyze.value import make_coro_type
 
         def capybara():
             async def nested() -> int:
                 return 1
 
-            assert_is_value(
-                nested(), GenericValue(collections.abc.Awaitable, [TypedValue(int)])
-            )
+            assert_is_value(nested(), make_coro_type(TypedValue(int)))
 
     @assert_passes()
     def test_bad_decorator(self):
@@ -190,7 +188,7 @@ class TestDecorators(TestNameCheckVisitorBase):
 class TestAsyncGenerator(TestNameCheckVisitorBase):
     @assert_passes()
     def test_not_a_generator(self):
-        from collections.abc import Awaitable
+        from pyanalyze.value import make_coro_type
 
         async def capybara() -> None:
             async def agen():
@@ -203,7 +201,7 @@ class TestAsyncGenerator(TestNameCheckVisitorBase):
 
         def caller() -> None:
             x = capybara()
-            assert_is_value(x, GenericValue(Awaitable, [KnownValue(None)]))
+            assert_is_value(x, make_coro_type(KnownValue(None)))
 
     @assert_passes()
     def test_is_a_generator(self):

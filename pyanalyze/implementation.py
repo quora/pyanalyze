@@ -479,22 +479,27 @@ def _typeddict_setitem(
             ErrorCode.invalid_typeddict_key,
             arg="k",
         )
-    elif key.val not in self_value.items:
-        ctx.show_error(
-            f"Key {key.val!r} does not exist in {self_value}",
-            ErrorCode.invalid_typeddict_key,
-            arg="k",
-        )
+        return
+    if key.val not in self_value.items:
+        if self_value.extra_keys is None:
+            ctx.show_error(
+                f"Key {key.val!r} does not exist in {self_value}",
+                ErrorCode.invalid_typeddict_key,
+                arg="k",
+            )
+            return
+        else:
+            expected_type = self_value.extra_keys
     else:
         _, expected_type = self_value.items[key.val]
-        tv_map = expected_type.can_assign(value, ctx.visitor)
-        if isinstance(tv_map, CanAssignError):
-            ctx.show_error(
-                f"Value for key {key.val!r} must be {expected_type}, not {value}",
-                ErrorCode.incompatible_argument,
-                arg="v",
-                detail=str(tv_map),
-            )
+    tv_map = expected_type.can_assign(value, ctx.visitor)
+    if isinstance(tv_map, CanAssignError):
+        ctx.show_error(
+            f"Value for key {key.val!r} must be {expected_type}, not {value}",
+            ErrorCode.incompatible_argument,
+            arg="v",
+            detail=str(tv_map),
+        )
 
 
 def _check_dict_key_hashability(key: Value, ctx: CallContext, arg: str) -> bool:
@@ -552,12 +557,21 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
                 # probably KeyError, but catch anything in case it's an
                 # unhashable str subclass or something
                 except Exception:
-                    # No error here; TypedDicts may have additional keys at runtime.
-                    pass
-            # TODO strictly we should throw an error for any non-Literal or unknown key:
-            # https://www.python.org/dev/peps/pep-0589/#supported-and-unsupported-operations
-            # Don't do that yet because it may cause too much disruption.
-            return AnyValue(AnySource.inference)
+                    if self_value.extra_keys is None:
+                        ctx.show_error(
+                            f"Unknown TypedDict key {key}",
+                            ErrorCode.invalid_typeddict_key,
+                            arg="k",
+                        )
+                        return AnyValue(AnySource.error)
+            if self_value.extra_keys is not None:
+                return self_value.extra_keys
+            ctx.show_error(
+                f"TypedDict key must be a literal, not {key}",
+                ErrorCode.invalid_typeddict_key,
+                arg="k",
+            )
+            return AnyValue(AnySource.error)
         elif isinstance(self_value, DictIncompleteValue):
             val = self_value.get_value(key, ctx.visitor)
             if val is UNINITIALIZED_VALUE:
@@ -615,17 +629,26 @@ def _dict_get_impl(ctx: CallContext) -> ImplReturn:
                 # probably KeyError, but catch anything in case it's an
                 # unhashable str subclass or something
                 except Exception:
-                    # No error here; TypedDicts may have additional keys at runtime.
-                    pass
+                    if self_value.extra_keys is None:
+                        ctx.show_error(
+                            f"Unknown TypedDict key {key.val!r}",
+                            ErrorCode.invalid_typeddict_key,
+                            arg="k",
+                        )
+                        return AnyValue(AnySource.error)
                 else:
                     if required:
                         return value
                     else:
                         return value | default
-            # TODO strictly we should throw an error for any non-Literal or unknown key:
-            # https://www.python.org/dev/peps/pep-0589/#supported-and-unsupported-operations
-            # Don't do that yet because it may cause too much disruption.
-            return default
+            if self_value.extra_keys is not None:
+                return self_value.extra_keys | default
+            ctx.show_error(
+                f"TypedDict key must be a literal, not {key}",
+                ErrorCode.invalid_typeddict_key,
+                arg="k",
+            )
+            return AnyValue(AnySource.error)
         elif isinstance(self_value, DictIncompleteValue):
             val = self_value.get_value(key, ctx.visitor)
             if val is UNINITIALIZED_VALUE:
@@ -681,6 +704,8 @@ def _dict_pop_impl(ctx: CallContext) -> ImplReturn:
                         arg="key",
                     )
                 return ImplReturn(_maybe_unite(expected_type, default))
+        if self_value.extra_keys is not None:
+            return ImplReturn(_maybe_unite(self_value.extra_keys, default))
         ctx.show_error(
             f"Key {key} does not exist in TypedDict",
             ErrorCode.invalid_typeddict_key,
@@ -761,12 +786,16 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
                 tv_map = expected_type.can_assign(default, ctx.visitor)
                 if isinstance(tv_map, CanAssignError):
                     ctx.show_error(
-                        f"TypedDict key {key.val} expected value of type"
-                        f" {expected_type}, not {default}",
+                        (
+                            f"TypedDict key {key.val} expected value of type"
+                            f" {expected_type}, not {default}"
+                        ),
                         ErrorCode.incompatible_argument,
                         arg="default",
                     )
                 return ImplReturn(expected_type)
+        if self_value.extra_keys is not None:
+            return ImplReturn(self_value.extra_keys | default)
         ctx.show_error(
             f"Key {key} does not exist in TypedDict",
             ErrorCode.invalid_typeddict_key,
@@ -1087,8 +1116,10 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
     expected_value = ctx.vars["value"]
     if not isinstance(expected_value, KnownValue):
         ctx.show_error(
-            "Value argument to assert_is_value must be a KnownValue (got"
-            f" {expected_value!r}; object is {obj!r})",
+            (
+                "Value argument to assert_is_value must be a KnownValue (got"
+                f" {expected_value!r}; object is {obj!r})"
+            ),
             ErrorCode.inference_failure,
             arg="value",
         )
@@ -1180,8 +1211,10 @@ def _str_format_impl(ctx: CallContext) -> Value:
         if field.arg_name is None:
             if current_index >= len(args):
                 ctx.show_error(
-                    "Too few arguments to format string (expected at least"
-                    f" {current_index})",
+                    (
+                        "Too few arguments to format string (expected at least"
+                        f" {current_index})"
+                    ),
                     error_code=ErrorCode.incompatible_call,
                 )
             used_indices.add(current_index)

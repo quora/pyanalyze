@@ -99,7 +99,9 @@ class ErrorCode(enum.Enum):
     invalid_annotated_assignment = 79
     unused_assignment = 80
     incompatible_yield = 81
-    deprecated = 82
+    invalid_import = 82
+    too_many_positional_args = 83
+    deprecated = 84
 
 
 # Allow testing unannotated functions without too much fuss
@@ -120,6 +122,7 @@ DISABLED_BY_DEFAULT = {
     ErrorCode.unused_ignore,
     ErrorCode.missing_f,
     ErrorCode.bare_ignore,
+    ErrorCode.too_many_positional_args,
     # TODO: turn this on
     ErrorCode.implicit_reexport,
     ErrorCode.incompatible_override,
@@ -221,6 +224,10 @@ ERROR_DESCRIPTION = {
     ErrorCode.unused_assignment: "Assigned value is never used",
     ErrorCode.incompatible_yield: "Incompatible yield type",
     ErrorCode.deprecated: "Use of deprecated feature",
+    ErrorCode.invalid_import: "Invalid import",
+    ErrorCode.too_many_positional_args: (
+        "Call with many positional arguments should use keyword arguments"
+    ),
 }
 
 

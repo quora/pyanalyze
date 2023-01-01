@@ -435,8 +435,10 @@ class TestCalls(TestNameCheckVisitorBase):
 
         def capybara():
             two_args(
-                "one very long string so long that it goes on its own line is this"
-                " enough",
+                (
+                    "one very long string so long that it goes on its own line is this"
+                    " enough"
+                ),
                 "not an int",  # E: incompatible_argument
             )
 
@@ -887,7 +889,8 @@ class TestAllowCall(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_annotated_known(self):
-        from typing_extensions import Literal, Annotated
+        from typing_extensions import Annotated, Literal
+
         from pyanalyze.extensions import LiteralOnly
 
         def capybara():
@@ -1245,3 +1248,43 @@ class TestUnpack(TestNameCheckVisitorBase):
 
         def bad_kwargs(**kwargs: Unpack[None]) -> None:  # E: invalid_annotation
             assert_is_value(kwargs, AnyValue(AnySource.error))
+
+
+class TestTooManyPosArgs(TestNameCheckVisitorBase):
+    def test_basic(self):
+        self.assert_is_changed(
+            """
+            def f(a, b, c, d, e, f, g, h, i, j, k):
+                pass
+
+            def capybara():
+                f(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+            """,
+            """
+            def f(a, b, c, d, e, f, g, h, i, j, k):
+                pass
+
+            def capybara():
+                f(a=1, b=2, c=3, d=4, e=5, f=6, g=7, h=8, i=9, j=10, k=11)
+            """,
+        )
+
+    def test_method(self):
+        self.assert_is_changed(
+            """
+            class X:
+                def f(self, a, b, c, d, e, f, g, h, i, j, k):
+                    pass
+
+            def capybara(x: X):
+                x.f(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+            """,
+            """
+            class X:
+                def f(self, a, b, c, d, e, f, g, h, i, j, k):
+                    pass
+
+            def capybara(x: X):
+                x.f(a=1, b=2, c=3, d=4, e=5, f=6, g=7, h=8, i=9, j=10, k=11)
+            """,
+        )

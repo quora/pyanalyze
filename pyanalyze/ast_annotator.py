@@ -77,7 +77,8 @@ def annotate_file(
     dump: bool = False,
     show_errors: bool = False,
 ) -> ast.AST:
-    """Annotate the code in a Python source file. Return an AST with extra `inferred_value` attributes.
+    """Annotate the code in a Python source file. Return an AST with extra `inferred_value`
+    attributes.
 
     Example usage::
 

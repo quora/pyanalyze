@@ -278,6 +278,7 @@ class TestSolve(TestNameCheckVisitorBase):
     @assert_passes()
     def test_redundant_constraints(self):
         from typing import TypeVar
+
         from typing_extensions import SupportsIndex
 
         T = TypeVar("T", int, float, SupportsIndex)
@@ -293,6 +294,7 @@ class TestSolve(TestNameCheckVisitorBase):
     @assert_passes()
     def test_lots_of_constraints(self):
         from typing import TypeVar, Union
+
         from typing_extensions import SupportsIndex
 
         T = TypeVar(

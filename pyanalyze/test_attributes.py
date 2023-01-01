@@ -7,12 +7,12 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
-    UnboundMethodValue,
     assert_is_value,
     GenericValue,
     KnownValue,
     MultiValuedValue,
     TypedValue,
+    UnboundMethodValue,
 )
 
 _global_dict: Dict[Union[int, str], float] = {}
@@ -144,7 +144,6 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_tuple_subclass_with_getattr(self):
-
         # Inspired by pyspark.sql.types.Row
         class Row(tuple):
             def __getattr__(self, attr):
@@ -174,11 +173,12 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_annotated_known(self):
+        from qcore.testing import Anything
         from typing_extensions import Annotated, Literal
+
         from pyanalyze.extensions import LiteralOnly
         from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
         from pyanalyze.value import CustomCheckExtension
-        from qcore.testing import Anything
 
         origin = VarnameWithOrigin("encoding", Anything)  # E: incompatible_argument
 
@@ -352,3 +352,15 @@ class TestHasAttrExtension(TestNameCheckVisitorBase):
             if hasattr(x, "a") and hasattr(x, "b"):
                 assert_is_value(x.a, AnyValue(AnySource.inference))
                 assert_is_value(x.b, AnyValue(AnySource.inference))
+
+    @assert_passes()
+    def test_hasattr_plus_call(self):
+        class X:
+            @classmethod
+            def types(cls):
+                return []
+
+        def capybara(x: X) -> None:
+            cls = X
+            if hasattr(cls, "types"):  # E: value_always_true
+                assert_is_value(cls.types(), AnyValue(AnySource.unannotated))

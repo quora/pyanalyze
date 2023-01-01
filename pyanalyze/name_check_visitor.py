@@ -10,7 +10,6 @@ the system.
 import abc
 import ast
 import asyncio
-import builtins
 import collections
 import collections.abc
 import contextlib
@@ -21,11 +20,7 @@ import operator
 import os
 import os.path
 import pickle
-import random
-import re
-import string
 import sys
-import tempfile
 import traceback
 import types
 from argparse import ArgumentParser
@@ -55,12 +50,12 @@ from typing import (
 import asynq
 import qcore
 import typeshed_client
-from ast_decompiler import decompile
 from typing_extensions import Annotated, Protocol
 
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
 from .annotations import (
+    is_context_manager_type,
     is_instance_of_typing_name,
     is_typing_name,
     SyntheticEvaluator,
@@ -103,7 +98,13 @@ from .options import (
 from .patma import PatmaVisitor
 from .predicates import EqualsPredicate
 from .reexport import ImplicitReexportTracker
-from .safe import is_dataclass_type, is_hashable, safe_getattr, safe_issubclass
+from .safe import (
+    is_dataclass_type,
+    is_hashable,
+    safe_getattr,
+    safe_hasattr,
+    safe_issubclass,
+)
 from .shared_options import EnforceNoUnused, ImportPaths, Paths
 from .signature import (
     ANY_SIGNATURE,
@@ -172,10 +173,12 @@ from .value import (
     KnownValue,
     kv_pairs_from_mapping,
     KVPair,
+    make_coro_type,
     MultiValuedValue,
     NO_RETURN_VALUE,
     NoReturnConstraintExtension,
     ReferencingValue,
+    replace_known_sequence_value,
     SequenceValue,
     set_self,
     SubclassValue,
@@ -202,6 +205,20 @@ try:
 except ImportError:
     # 3.9 and lower
     Match = Any
+
+try:
+    from ast import TryStar
+    from builtins import BaseExceptionGroup, ExceptionGroup
+except ImportError:
+    # 3.10 and lower
+    TryStar = Any
+
+    class BaseExceptionGroup:
+        pass
+
+    class ExceptionGroup:
+        pass
+
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -583,7 +600,8 @@ class IgnoredTypesForAttributeChecking(PyObjectSequenceOption[type]):
     """Used in the check for object attributes that are accessed but not set. In general, the check
     will only alert about attributes that don't exist when it has visited all the base classes of
     the class with the possibly missing attribute. However, these classes are never going to be
-    visited (since they're builtin), but they don't set any attributes that we rely on."""
+    visited (since they're builtin), but they don't set any attributes that we rely on.
+    """
 
     name = "ignored_types_for_attribute_checking"
     default_value = [object, abc.ABC]
@@ -1003,7 +1021,8 @@ class CallSiteCollector:
 
 
 class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
-    """Visitor class that infers the type and value of Python objects and detects errors."""
+    """Visitor class that infers the type and value of Python objects and detects errors.
+    """
 
     error_code_enum = ErrorCode
     config_filename: ClassVar[Optional[str]] = None
@@ -1367,7 +1386,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         detail: Optional[str] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """We usually should show errors only in the check_names state to avoid duplicate errors."""
+        """We usually should show errors only in the check_names state to avoid duplicate errors.
+        """
         if self._is_checking():
             self.show_error(
                 node,
@@ -1407,8 +1427,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if isinstance(can_assign, CanAssignError):
                     self._show_error_if_checking(
                         node,
-                        f"Incompatible assignment: expected {declared_type}, got"
-                        f" {value}",
+                        (
+                            f"Incompatible assignment: expected {declared_type}, got"
+                            f" {value}"
+                        ),
                         error_code=ErrorCode.incompatible_assignment,
                         detail=can_assign.display(),
                     )
@@ -1797,7 +1819,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return_value = AsyncTaskIncompleteValue(task_cls, return_value)
 
         if isinstance(info.node, ast.AsyncFunctionDef) or info.is_decorated_coroutine:
-            return_value = GenericValue(collections.abc.Awaitable, [return_value])
+            return_value = make_coro_type(return_value)
 
         if isinstance(val, KnownValue) and isinstance(val.val, property):
             fget = val.val.fget
@@ -2193,12 +2215,70 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:
         self.generic_visit(node)
         if self.scopes.scope_type() == ScopeType.module_scope:
-            self._handle_imports(node.names)
-
             for name in node.names:
                 self.import_name_to_node[name.name] = node
+
+        for alias in node.names:
+            self._try_to_import(alias.name)
+            # "import a.b" sets the name "a", but "import a.b as c" sets "c" to the value "a.b"
+            varname = (
+                alias.name if alias.asname is not None else alias.name.split(".")[0]
+            )
+            mod = self._get_module(varname, node)
+            self._set_alias_in_scope(alias, mod)
+
+    def _set_alias_in_scope(
+        self, alias: ast.alias, value: Value, force_public: bool = False
+    ) -> None:
+        if alias.asname is not None:
+            self._set_name_in_scope(
+                alias.asname,
+                alias,
+                value,
+                private=not force_public and alias.asname != alias.name,
+            )
         else:
-            self._simulate_import(node)
+            self._set_name_in_scope(
+                alias.name.split(".")[0], alias, value, private=not force_public
+            )
+
+    def _get_module(self, name: str, node: ast.AST) -> Value:
+        if name not in sys.modules:
+            self._try_to_import(name)
+        if name in sys.modules:
+            # import a.b.c only succeeds if a.b.c is a module that
+            # exists, but it doesn't return the module a.b.c, it
+            # follows the attribute chain. But this isn't true for
+            # ImportFrom.
+            if isinstance(node, ast.ImportFrom):
+                return KnownValue(sys.modules[name])
+            pieces = name.split(".")
+            base_module = sys.modules.get(pieces[0])
+            for piece in pieces[1:]:
+                if not safe_hasattr(base_module, piece):
+                    self._show_error_if_checking(
+                        node,
+                        (
+                            f"Cannot import {name} because {piece} is not an attribute"
+                            f" of {base_module!r}"
+                        ),
+                        error_code=ErrorCode.import_failed,
+                    )
+                    return AnyValue(AnySource.unresolved_import)
+                base_module = getattr(base_module, piece)
+            return KnownValue(base_module)
+        else:
+            # TODO: Maybe get the module from stubs?
+            self._show_error_if_checking(
+                node, f"Cannot import {name}", error_code=ErrorCode.import_failed
+            )
+            return AnyValue(AnySource.unresolved_import)
+
+    def _try_to_import(self, module_name: str) -> None:
+        try:
+            __import__(module_name)
+        except ImportError:
+            pass
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         self.generic_visit(node)
@@ -2216,17 +2296,120 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         self._maybe_record_usages_from_import(node)
 
-        is_star_import = len(node.names) == 1 and node.names[0].name == "*"
-        force_public = self.filename.endswith("/__init__.py") and node.level == 1
-        if force_public and node.module is not None:
-            # from .a import b implicitly sets a in the parent module's namespace.
-            # We allow relying on this behavior.
-            self._set_name_in_scope(node.module, node)
-        if self.scopes.scope_type() == ScopeType.module_scope and not is_star_import:
-            self._handle_imports(node.names, force_public=force_public)
+        # See if we can get the names from the stub instead
+        if (
+            node.module is not None
+            and node.level == 0
+            # pyanalyze.extensions has a stub only for the purpose of other stubs
+            # it shouldn't be used for runtime imports
+            and node.module != "pyanalyze.extensions"
+        ):
+            path = typeshed_client.ModulePath(tuple(node.module.split(".")))
+            finder = self.checker.ts_finder
+            mod = finder.resolver.get_module(path)
+            if mod.exists:
+                for alias in node.names:
+                    val = finder.resolve_name(node.module, alias.name)
+                    if val is UNINITIALIZED_VALUE:
+                        self._show_error_if_checking(
+                            node,
+                            f"Cannot import name {alias.name!r} from {node.module!r}",
+                            ErrorCode.import_failed,
+                        )
+                        val = AnyValue(AnySource.error)
+                    self._set_alias_in_scope(alias, val)
+                return
+
+        is_init = self.filename.endswith("/__init__.py")
+        source_module = self._get_import_from_module(node)
+
+        # from .a import b implicitly sets a in the parent module's namespace.
+        # We allow relying on this behavior.
+        if (
+            is_init
+            and node.module is not None
+            and "." not in node.module
+            and node.level == 1
+        ):
+            self._set_name_in_scope(node.module, node, source_module, private=False)
+
+        for alias in node.names:
+            if alias.name == "*":
+                if isinstance(source_module, KnownValue) and isinstance(
+                    source_module.val, types.ModuleType
+                ):
+                    for name, val in source_module.val.__dict__.items():
+                        if name.startswith("_"):
+                            continue
+                        self._set_name_in_scope(
+                            name, alias, KnownValue(val), private=False
+                        )
+                else:
+                    self._show_error_if_checking(
+                        node,
+                        f"Cannot import * from unresolved module {node.module!r}",
+                        ErrorCode.invalid_import,
+                    )
+                continue
+            val = self._get_import_from_value(source_module, alias.name, node)
+            self._set_alias_in_scope(
+                alias, val, force_public=is_init and node.level == 1
+            )
+
+    def _get_import_from_value(
+        self, source_module: Value, alias_name: str, node: ast.ImportFrom
+    ) -> Value:
+        val = self.get_attribute_from_value(source_module, alias_name)
+        if val is not UNINITIALIZED_VALUE:
+            return val
+        if isinstance(source_module, KnownValue) and isinstance(
+            source_module.val, types.ModuleType
+        ):
+            name = f"{source_module.val.__name__}.{alias_name}"
+            self._try_to_import(name)
+            val = self.get_attribute_from_value(source_module, alias_name)
+            if val is not UNINITIALIZED_VALUE:
+                return val
+
+        self._show_error_if_checking(
+            node,
+            f"Cannot import name {alias_name!r} from {node.module!r}",
+            ErrorCode.import_failed,
+        )
+        return AnyValue(AnySource.error)
+
+    def _get_import_from_module(self, node: ast.ImportFrom) -> Value:
+        if node.level > 0:
+            if self.module is None:
+                return AnyValue(AnySource.unresolved_import)
+            level = node.level
+            if self.filename.endswith("/__init__.py"):
+                level -= 1
+
+            current_module_path: List[str] = self.module.__name__.split(".")
+            if level >= len(current_module_path):
+                self._show_error_if_checking(
+                    node,
+                    "Attempted relative import beyond top-level package",
+                    error_code=ErrorCode.invalid_import,
+                )
+                return AnyValue(AnySource.error)
+            if level:
+                current_module_path = current_module_path[:-level]
+            if node.module is not None:
+                current_module_path.append(node.module)
+            module_name = ".".join(current_module_path)
         else:
-            # For now we always treat star imports as public. We might revisit this later.
-            self._simulate_import(node, force_public=True)
+            # Should be disallowed by the AST
+            if node.module is None:
+                self._show_error_if_checking(
+                    node,
+                    "Attempted absolute import without module name",
+                    error_code=ErrorCode.invalid_import,
+                )
+                return AnyValue(AnySource.error)
+            module_name = node.module
+        return self._get_module(module_name, node)
 
     def _maybe_record_usages_from_import(self, node: ast.ImportFrom) -> None:
         if self.unused_finder is None or self.module is None:
@@ -2267,130 +2450,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             # need the split if the code is "import foo.bar as bar" if foo is unimportable
             return any(name.name.split(".")[0] in unimportable for name in node.names)
-
-    def _simulate_import(
-        self, node: Union[ast.ImportFrom, ast.Import], *, force_public: bool = False
-    ) -> None:
-        """Set the names retrieved from an import node in nontrivial situations.
-
-        For simple imports (module-global imports that are not "from ... import *"), we can just
-        retrieve the imported names from the module dictionary, but this is not possible with
-        import * or when the import is within a function.
-
-        To figure out what names would be imported in these cases, we create a fake module
-        consisting of just the import statement, eval it, and set all the names in its __dict__
-        in the current module scope.
-
-        TODO: Replace this with code that just evaluates the import without going
-        through this exec shenanigans.
-
-        """
-        if self.module is None:
-            self._handle_imports(node.names, force_public=force_public)
-            return
-
-        # See if we can get the names from the stub instead
-        if (
-            isinstance(node, ast.ImportFrom)
-            and node.module is not None
-            and node.level == 0
-        ):
-            path = typeshed_client.ModulePath(tuple(node.module.split(".")))
-            finder = self.checker.ts_finder
-            mod = finder.resolver.get_module(path)
-            if mod.exists:
-                for alias in node.names:
-                    val = finder.resolve_name(node.module, alias.name)
-                    if val is UNINITIALIZED_VALUE:
-                        self._show_error_if_checking(
-                            node,
-                            f"Cannot import name {alias.name!r} from {node.module!r}",
-                            ErrorCode.import_failed,
-                        )
-                        val = AnyValue(AnySource.error)
-                    self._set_name_in_scope(
-                        alias.asname or alias.name, alias, val, private=not force_public
-                    )
-                return
-
-        source_code = decompile(node)
-
-        if self._is_unimportable_module(node):
-            self._handle_imports(node.names, force_public=force_public)
-            self.log(logging.INFO, "Ignoring import node", source_code)
-            return
-
-        # create a pseudo-module and examine its dictionary to figure out what this imports
-        # default to the current __file__ if necessary
-        module_file = safe_getattr(self.module, "__file__", __file__)
-        random_suffix = "".join(
-            random.choice(string.ascii_lowercase) for _ in range(10)
-        )
-        pseudo_module_file = re.sub(r"\.pyc?$", random_suffix + ".py", module_file)
-        is_init = os.path.basename(module_file) in ("__init__.py", "__init__.pyc")
-        if is_init:
-            pseudo_module_name = self.module.__name__ + "." + random_suffix
-        else:
-            pseudo_module_name = self.module.__name__ + random_suffix
-
-        # Apparently doing 'from file_in_package import *' in an __init__.py also adds
-        # file_in_package to the module's scope.
-        if (
-            isinstance(node, ast.ImportFrom)
-            and is_init
-            and node.module is not None
-            and "." not in node.module
-        ):  # not in the package
-            if node.level == 1 or (node.level == 0 and node.module not in sys.modules):
-                self._set_name_in_scope(
-                    node.module,
-                    node,
-                    TypedValue(types.ModuleType),
-                    private=not force_public,
-                )
-
-        with tempfile.NamedTemporaryFile(suffix=".py") as f:
-            f.write(source_code.encode("utf-8"))
-            f.flush()
-            f.seek(0)
-            try:
-                pseudo_module = importer.import_module(pseudo_module_name, Path(f.name))
-            except Exception:
-                # sets the name of the imported module to Any so we don't get further
-                # errors
-                self._handle_imports(node.names, force_public=force_public)
-                return
-            finally:
-                # clean up pyc file
-                try:
-                    os.unlink(pseudo_module_file + "c")
-                except OSError:
-                    pass
-                if pseudo_module_name in sys.modules:
-                    del sys.modules[pseudo_module_name]
-
-        for name, value in pseudo_module.__dict__.items():
-            if name.startswith("__") or (
-                hasattr(builtins, name) and value == getattr(builtins, name)
-            ):
-                continue
-            self._set_name_in_scope(
-                name,
-                node,
-                KnownValue(value),
-                private=not force_public,
-                lookup_node=(node, name),
-            )
-
-    def _handle_imports(
-        self, names: Iterable[ast.alias], *, force_public: bool = False
-    ) -> None:
-        for node in names:
-            if node.asname is not None:
-                self._set_name_in_scope(node.asname, node)
-            else:
-                varname = node.name.split(".")[0]
-                self._set_name_in_scope(varname, node, private=not force_public)
 
     # Comprehensions
 
@@ -2559,11 +2618,77 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     # Literals and displays
 
     def visit_JoinedStr(self, node: ast.JoinedStr) -> Value:
-        # JoinedStr is the node type for f-strings.
-        # Not too much to check here. Perhaps we can add checks that format specifiers
-        # are valid.
-        self._generic_visit_list(node.values)
-        return TypedValue(str)
+        elements = self._generic_visit_list(node.values)
+        limit = self.options.get_value_for(UnionSimplificationLimit)
+        possible_values: List[List[str]] = [[]]
+        for elt in elements:
+            subvals = list(flatten_values(elt))
+            # Bail out if the list of possible values gets too long.
+            if len(possible_values) * len(subvals) > limit:
+                return TypedValue(str)
+            to_add = []
+            for subval in subvals:
+                if not isinstance(subval, KnownValue):
+                    return TypedValue(str)
+                if not isinstance(subval.val, str):
+                    return TypedValue(str)
+                to_add.append(subval.val)
+            possible_values = [
+                lst + [new_elt] for lst in possible_values for new_elt in to_add
+            ]
+        return unite_values(*[KnownValue("".join(lst)) for lst in possible_values])
+
+    def visit_FormattedValue(self, node: ast.FormattedValue) -> Value:
+        val = self.visit(node.value)
+        format_spec_val = (
+            self.visit(node.format_spec) if node.format_spec else KnownValue("")
+        )
+        if isinstance(format_spec_val, KnownValue) and isinstance(
+            format_spec_val.val, str
+        ):
+            format_spec = format_spec_val.val
+        else:
+            # TODO: statically check whether the format specifier is valid.
+            return TypedValue(str)
+        possible_vals = []
+        for subval in flatten_values(val):
+            possible_vals.append(
+                self._visit_single_formatted_value(subval, node, format_spec)
+            )
+        return unite_and_simplify(
+            *possible_vals, limit=self.options.get_value_for(UnionSimplificationLimit)
+        )
+
+    def _visit_single_formatted_value(
+        self, val: Value, node: ast.FormattedValue, format_spec: str
+    ) -> Value:
+        if not isinstance(val, KnownValue):
+            return TypedValue(str)
+        output = val.val
+        if node.conversion != -1:
+            unsupported_conversion = False
+            try:
+                if node.conversion == ord("a"):
+                    output = ascii(output)
+                elif node.conversion == ord("s"):
+                    output = str(output)
+                elif node.conversion == ord("r"):
+                    output = repr(output)
+                else:
+                    unsupported_conversion = True
+            except Exception:
+                # str/repr/ascii failed
+                return TypedValue(str)
+            if unsupported_conversion:
+                raise NotImplementedError(
+                    f"Unsupported converion specifier {node.conversion}"
+                )
+        try:
+            output = format(output, format_spec)
+        except Exception:
+            # format failed
+            return TypedValue(str)
+        return KnownValue(output)
 
     def visit_Constant(self, node: ast.Constant) -> Value:
         # replaces Num, Str, etc. in 3.8+
@@ -2580,7 +2705,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _maybe_show_missing_f_error(self, node: ast.AST, s: Union[str, bytes]) -> None:
         """Show an error if this string was probably meant to be an f-string."""
-        if sys.version_info < (3, 6) or isinstance(s, bytes):
+        if isinstance(s, bytes):
             return
         if "{" not in s:
             return
@@ -3155,6 +3280,32 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             type(op)
         ]
         if rmethod is None:
+            # "in" falls back to __getitem__ if __contains__ is not defined
+            if method == "__contains__":
+                with self.catch_errors() as contains_errors:
+                    contains_result = self._check_dunder_call(
+                        source_node,
+                        left_composite,
+                        method,
+                        [right_composite],
+                        allow_call=allow_call,
+                    )
+                if not contains_errors:
+                    return contains_result
+
+                with self.catch_errors() as getitem_errors:
+                    self._check_dunder_call(
+                        source_node,
+                        left_composite,
+                        "__getitem__",
+                        [right_composite],
+                        allow_call=allow_call,
+                    )
+                if not getitem_errors:
+                    return TypedValue(bool)  # Always returns a bool
+                self.show_caught_errors(contains_errors)
+                return TypedValue(bool)
+
             return self._check_dunder_call(
                 source_node,
                 left_composite,
@@ -3299,8 +3450,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     node,
-                    f"Cannot send {send_type} to a generator (expected"
-                    f" {expected_send})",
+                    (
+                        f"Cannot send {send_type} to a generator (expected"
+                        f" {expected_send})"
+                    ),
                     error_code=ErrorCode.incompatible_yield,
                     detail=can_assign.display(),
                 )
@@ -3340,8 +3493,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(can_assign, CanAssignError):
             self._show_error_if_checking(
                 node,
-                f"Cannot assign value of type {value} to yield expression of type"
-                f" {yield_type}",
+                (
+                    f"Cannot assign value of type {value} to yield expression of type"
+                    f" {yield_type}"
+                ),
                 error_code=ErrorCode.incompatible_yield,
                 detail=can_assign.display(),
             )
@@ -3442,8 +3597,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     node,
-                    f"Declared return type {self.expected_return_value} is incompatible"
-                    f" with actual return type {value}",
+                    (
+                        f"Declared return type {self.expected_return_value} is"
+                        f" incompatible with actual return type {value}"
+                    ),
                     error_code=ErrorCode.incompatible_return_value,
                     detail=can_assign.display(),
                 )
@@ -3709,9 +3866,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             exit_boolability = get_boolability(exit_assigned)
             can_suppress = not exit_boolability.is_safely_false()
             if isinstance(exit_assigned, AnyValue) or (
-                isinstance(context, TypedValue)
-                and context.typ
-                in ["typing.ContextManager", "typing.AsyncContextManager"]
+                isinstance(context, TypedValue) and is_context_manager_type(context.typ)
             ):
                 # cannot easily infer what the context manager will do,
                 # assume it does not suppress exceptions.
@@ -3721,7 +3876,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self.visit(node.optional_vars)
         return can_suppress
 
-    def visit_try_except(self, node: ast.Try) -> None:
+    def visit_try_except(
+        self, node: Union[ast.Try, TryStar], *, is_try_star: bool = False
+    ) -> None:
         with self.scopes.subscope():
             with self.scopes.subscope() as dummy_scope:
                 pass
@@ -3742,17 +3899,25 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     # reset yield checks between branches to avoid incorrect errors when we yield
                     # both in the try and the except block
                     self.yield_checker.reset_yield_checks()
-                    self.scopes.combine_subscopes([dummy_scope, failure_scope])
+                    # With except*, multiple except* blocks may run, so we need
+                    # to combine not just the failure scope, but also the previous
+                    # except_scopes.
+                    if is_try_star:
+                        subscopes = [dummy_scope, failure_scope, *except_scopes]
+                    else:
+                        subscopes = [dummy_scope, failure_scope]
+                    self.scopes.combine_subscopes(subscopes)
                     self.visit(handler)
 
         self.scopes.combine_subscopes([else_scope, *except_scopes])
 
-    def visit_Try(self, node: ast.Try) -> None:
-        # py3 combines the Try and Try/Finally nodes
+    def visit_Try(
+        self, node: Union[ast.Try, TryStar], *, is_try_star: bool = False
+    ) -> None:
         if node.finalbody:
             with self.scopes.subscope() as failure_scope:
                 with self.scopes.suppressing_subscope() as success_scope:
-                    self.visit_try_except(node)
+                    self.visit_try_except(node, is_try_star=is_try_star)
 
             # If the try block fails
             with self.scopes.subscope():
@@ -3764,43 +3929,81 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._generic_visit_list(node.finalbody)
         else:
             # Life is much simpler without finally
-            self.visit_try_except(node)
+            self.visit_try_except(node, is_try_star=is_try_star)
         self.yield_checker.reset_yield_checks()
+
+    def visit_TryStar(self, node: TryStar) -> None:
+        self.visit_Try(node, is_try_star=True)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.type is not None:
             typ = self.visit(node.type)
-            if isinstance(typ, KnownValue):
-                val = typ.val
-                if isinstance(val, tuple):
-                    if all(self._check_valid_exception_class(cls, node) for cls in val):
-                        to_assign = unite_values(*[TypedValue(cls) for cls in val])
-                    else:
-                        to_assign = TypedValue(BaseException)
-                else:
-                    if self._check_valid_exception_class(val, node):
-                        to_assign = TypedValue(val)
-                    else:
-                        to_assign = TypedValue(BaseException)
-            else:
-                # maybe this should be an error, exception classes should virtually always be
-                # statically findable
-                to_assign = TypedValue(BaseException)
+            is_try_star = not isinstance(self.node_context.contexts[-2], ast.Try)
+            possible_types = self._extract_exception_types(
+                typ, node, is_try_star=is_try_star
+            )
             if node.name is not None:
+                to_assign = unite_values(*[typ for _, typ in possible_types])
+                if is_try_star:
+                    if all(is_exception for is_exception, _ in possible_types):
+                        base = ExceptionGroup
+                    else:
+                        base = BaseExceptionGroup
+                    to_assign = GenericValue(base, [to_assign])
                 self._set_name_in_scope(node.name, node, value=to_assign, private=True)
 
         self._generic_visit_list(node.body)
 
-    def _check_valid_exception_class(self, val: object, node: ast.AST) -> bool:
-        if not (isinstance(val, type) and issubclass(val, BaseException)):
-            self._show_error_if_checking(
-                node,
-                f"{val!r} is not an exception class",
-                error_code=ErrorCode.bad_except_handler,
-            )
-            return False
-        else:
-            return True
+    def _extract_exception_types(
+        self, typ: Value, node: ast.AST, is_try_star: bool = False
+    ) -> List[Tuple[bool, Value]]:
+        possible_types = []
+        for subval in flatten_values(typ, unwrap_annotated=True):
+            subval = replace_known_sequence_value(subval)
+            if isinstance(subval, SequenceValue) and subval.typ is tuple:
+                for _, elt in subval.members:
+                    possible_types += self._extract_exception_types(
+                        elt, node, is_try_star=is_try_star
+                    )
+                continue
+            elif isinstance(subval, GenericValue) and subval.typ is tuple:
+                possible_types += self._extract_exception_types(
+                    subval.args[0], node, is_try_star=is_try_star
+                )
+                continue
+            elif (
+                isinstance(subval, SubclassValue)
+                and isinstance(subval.typ, TypedValue)
+                and isinstance(subval.typ.typ, type)
+            ):
+                subval = KnownValue(subval.typ.typ)
+            if isinstance(subval, KnownValue):
+                if isinstance(subval.val, type) and issubclass(
+                    subval.val, BaseException
+                ):
+                    if is_try_star and issubclass(subval.val, BaseExceptionGroup):
+                        self._show_error_if_checking(
+                            node,
+                            (
+                                "ExceptionGroup cannot be used as the type in an"
+                                f" except* clause: {subval.val!r}"
+                            ),
+                            error_code=ErrorCode.bad_except_handler,
+                        )
+                    is_exception = issubclass(subval.val, Exception)
+                    possible_types.append((is_exception, TypedValue(subval.val)))
+                else:
+                    self._show_error_if_checking(
+                        node,
+                        f"{subval!r} is not an exception class",
+                        error_code=ErrorCode.bad_except_handler,
+                    )
+                    possible_types.append((False, TypedValue(BaseException)))
+            else:
+                # TODO consider raising an error for except classes
+                # that cannot be statically resolved.
+                possible_types.append((False, TypedValue(BaseException)))
+        return possible_types
 
     def visit_If(self, node: ast.If) -> None:
         _, constraint = self.constraint_from_condition(node.test)
@@ -3976,8 +4179,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if isinstance(can_assign, CanAssignError):
                     self._show_error_if_checking(
                         node,
-                        f"Incompatible assignment: expected {expected_type}, got"
-                        f" {value}",
+                        (
+                            f"Incompatible assignment: expected {expected_type}, got"
+                            f" {value}"
+                        ),
                         error_code=ErrorCode.incompatible_assignment,
                         detail=can_assign.display(),
                     )
@@ -4168,7 +4373,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         [root_composite, index_composite],
                         allow_call=True,
                     )
-                elif sys.version_info >= (3, 7):
+                else:
                     # If there was no __getitem__, try __class_getitem__ in 3.7+
                     cgi = self.get_attribute(
                         Composite(value), "__class_getitem__", node.value
@@ -4184,13 +4389,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         return_value = self.check_call(
                             node.value, cgi, [index_composite], allow_call=True
                         )
-                else:
-                    self._show_error_if_checking(
-                        node,
-                        f"Object {value} does not support subscripting",
-                        error_code=ErrorCode.unsupported_operation,
-                    )
-                    return_value = AnyValue(AnySource.error)
 
                 if (
                     self._should_use_varname_value(return_value)
@@ -5026,13 +5224,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return all_failures
 
     @classmethod
-    def _should_ignore_module(cls, module_name: str) -> bool:
-        """Override this to ignore some modules."""
-        # exclude test modules for now to avoid spurious failures
-        # TODO(jelle): enable for test modules too
-        return module_name.split(".")[-1].startswith("test")
-
-    @classmethod
     def check_file_in_worker(
         cls,
         filename: str,
@@ -5130,7 +5321,8 @@ def _all_names_unused(
 
 
 def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
-    """Given a list of assignment targets (elts), return whether it contains the given Name node."""
+    """Given a list of assignment targets (elts), return whether it contains the given Name node.
+    """
     for elt in elts:
         if isinstance(elt, (ast.List, ast.Tuple)):
             if _contains_node(elt.elts, node):
@@ -5141,7 +5333,8 @@ def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
-    """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
+    """Returns whether this value has the given attribute, ignoring __getattr__ overrides.
+    """
     try:
         object.__getattribute__(value, attr)
     except AttributeError:

@@ -11,14 +11,7 @@ import inspect
 import sys
 
 from abc import abstractmethod
-from collections.abc import (
-    Awaitable,
-    Collection,
-    MutableMapping,
-    Set as AbstractSet,
-    Sized,
-)
-from contextlib import AbstractContextManager
+from collections.abc import Collection, MutableMapping, Set as AbstractSet, Sized
 from dataclasses import dataclass, field, replace
 from enum import Enum, EnumMeta
 from types import GeneratorType, ModuleType
@@ -79,6 +72,7 @@ from .value import (
     extract_typevars,
     GenericValue,
     KnownValue,
+    make_coro_type,
     SubclassValue,
     TypedDictValue,
     TypedValue,
@@ -86,13 +80,6 @@ from .value import (
     UNINITIALIZED_VALUE,
     Value,
 )
-
-
-try:
-    # 3.7+
-    from contextlib import AbstractAsyncContextManager
-except ImportError:
-    AbstractAsyncContextManager = None
 
 
 T_co = TypeVar("T_co", covariant=True)
@@ -281,11 +268,9 @@ class TypeshedFinder:
             if isinstance(val.typ, type):
                 typ = val.typ
                 # The way AbstractSet/Set is handled between collections and typing is
-                # too confusing, just hardcode it. Same for (Abstract)ContextManager.
+                # too confusing, just hardcode it.
                 if typ is AbstractSet:
                     return [GenericValue(Collection, (TypeVarValue(T_co),))]
-                if typ is AbstractContextManager or typ is AbstractAsyncContextManager:
-                    return [GenericValue(Protocol, (TypeVarValue(T_co),))]
                 if typ is Callable or typ is collections.abc.Callable:
                     return None
                 if typ is TypedDict:
@@ -899,7 +884,7 @@ class TypeshedFinder:
         return Signature.make(
             cleaned_arguments,
             callable=obj,
-            return_annotation=GenericValue(Awaitable, [return_value])
+            return_annotation=make_coro_type(return_value)
             if isinstance(node, ast.AsyncFunctionDef)
             else return_value,
             allow_call=allow_call,
@@ -1063,7 +1048,8 @@ class TypeshedFinder:
         self, info: typeshed_client.resolver.ResolvedName, module: str
     ) -> Value:
         # This guard against infinite recursion if a type refers to itself
-        # (real-world example: os._ScandirIterator).
+        # (real-world example: os._ScandirIterator). Needs to change in
+        # order to support recursive types.
         if info in self._active_infos:
             return AnyValue(AnySource.inference)
         self._active_infos.append(info)

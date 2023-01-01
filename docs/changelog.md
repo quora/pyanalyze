@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Simplify import handling; stop trying to import modules at type checking time (#566)
+- Suggest using keyword arguments on calls with too many positional arguments (#572)
+- Emit an error for unknown `TypedDict` keys (#567)
+- Improve type inference for f-strings containing literals (#571)
+- Add experimental `@has_extra_keys` decorator for `TypedDict` types (#568)
+- Fix crash on recursive type aliases. Recursive type aliases now fall back to `Any` (#565)
+- Support `in` on objects with only `__getitem__` (#564)
+- Add support for `except*` (PEP 654) (#562)
+- Add type inference support for more constructs in `except` and `except*` (#562)
+
+## Version 0.8.0 (November 5, 2022)
+
+Release highlights:
+- Support for Python 3.11
+- Drop support for Python 3.6
+- Support for PEP 692 (``Unpack`` on ``**kwargs``)
+
+Full changelog:
+- Infer `async def` functions as returning `Coroutine`, not
+  `Awaitable` (#557, #559)
+- Drop support for Python 3.6 (#554)
+- Require `typeshed_client>=2.1.0`. Older versions will throw
+  false-positive errors around context managers when
+  `typeshed_client` 2.1.0 is installed. (#554)
+- Fix false positive error certain method calls on literals (#548)
 - Preserve `Annotated` annotations on access to methods of
   literals (#541)
 - `allow_call` callables are now also called if the arguments
