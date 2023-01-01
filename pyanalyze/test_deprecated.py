@@ -18,6 +18,8 @@ class TestStub(TestNameCheckVisitorBase):
 
             deprecated_function(1)
             print(deprecated_function)
+            DeprecatedCapybara()
+            print(DeprecatedCapybara)
 
 
 class TestRuntime(TestNameCheckVisitorBase):
