@@ -383,7 +383,7 @@ def reveal_type(value: _T) -> _T:
 
     This is automatically exposed as a global during type checking, so in
     code that is not run at import, `reveal_type()` can be used without
-    being impoorted.
+    being imported.
 
     Example::
 
@@ -446,6 +446,40 @@ def assert_error() -> Iterator[None]:
     yield
 
 
+def deprecated(__msg: str) -> typing.Callable[[_T], _T]:
+    """Indicate that a class, function or overload is deprecated.
+
+    Usage::
+
+        @deprecated("Use B instead")
+        class A:
+            pass
+        @deprecated("Use g instead")
+        def f():
+            pass
+        @deprecated("int support is deprecated")
+        @overload
+        def g(x: int) -> int: ...
+        @overload
+        def g(x: str) -> int: ...
+
+    When this decorator is applied to an object, the type checker
+    will generate a diagnostic on usage of the deprecated object.
+
+    No runtime warning is issued. The decorator sets the ``__deprecated__``
+    attribute on the decorated object to the deprecation message
+    passed to the decorator.
+
+    See PEP 702 for details.
+    """
+
+    def decorator(__arg: _T) -> _T:
+        __arg.__deprecated__ = __msg
+        return __arg
+
+    return decorator
+
+
 _overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
 _type_evaluations: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
 
@@ -469,7 +503,7 @@ else:
         """A version of `typing.overload` that is inspectable at runtime.
 
         If this decorator is used for a function `some_module.some_function`, calling
-        :func:`pyanalyze.extensiions.get_overloads("some_module.some_function")` will
+        :func:`pyanalyze.extensions.get_overloads("some_module.some_function")` will
         return all the runtime overloads.
 
         """

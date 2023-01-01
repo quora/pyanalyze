@@ -37,6 +37,7 @@ from qcore.helpers import safe_str
 from typing_extensions import assert_never, Literal, Protocol, Self
 
 from .error_code import ErrorCode
+from .safe import safe_getattr
 from .node_visitor import Replacement
 from .options import IntegerOption
 from .stacked_scopes import (
@@ -261,6 +262,8 @@ class CallReturn(NamedTuple):
 
     return_value: Value
     """The return value of the function."""
+    sig: "Signature"
+    """Signature that was used for this call."""
     is_error: bool = False
     """Whether there was an error in this call. Used only for overload resolutioon."""
     used_any_for_match: bool = False
@@ -539,6 +542,8 @@ class Signature:
     """Whether type checking can call the actual function to retrieve a precise return value."""
     evaluator: Optional[Evaluator] = None
     """Type evaluator for this function."""
+    deprecated: Optional[str] = None
+    """Deprecation message for this callable."""
     typevars_of_params: Dict[str, List[TypeVarLike]] = field(
         init=False, default_factory=dict, repr=False, compare=False, hash=False
     )
@@ -1111,7 +1116,7 @@ class Signature:
         if self._return_key in self.typevars_of_params:
             typevar_values = {tv: AnyValue(source) for tv in self.all_typevars}
             return_value = return_value.substitute_typevars(typevar_values)
-        return CallReturn(return_value, is_error=True)
+        return CallReturn(return_value, is_error=True, sig=self)
 
     def check_call(
         self,
@@ -1330,6 +1335,7 @@ class Signature:
             is_error=had_error,
             used_any_for_match=used_any,
             remaining_arguments=new_args,
+            sig=self,
         )
 
     def _maybe_perform_call(
@@ -1774,6 +1780,7 @@ class Signature:
         is_asynq: bool = False,
         allow_call: bool = False,
         evaluator: Optional[Evaluator] = None,
+        deprecated: Optional[str] = None,
     ) -> "Signature":
         """Create a :class:`Signature` object.
 
@@ -1826,6 +1833,8 @@ class Signature:
             else:
                 param_dict[param.name] = param
                 i += 1
+        if deprecated is None and callable is not None:
+            deprecated = safe_getattr(callable, "__deprecated__", None)
         return cls(
             param_dict,
             return_value=return_annotation,
@@ -1835,6 +1844,7 @@ class Signature:
             is_asynq=is_asynq,
             allow_call=allow_call,
             evaluator=evaluator,
+            deprecated=deprecated,
         )
 
     def __str__(self) -> str:
@@ -2303,13 +2313,22 @@ class OverloadedSignature:
                 any_rets.append(ret)
             else:
                 # We got a clean match!
-                return self._unite_rets(any_rets, union_and_any_rets, union_rets, ret)
+                return self._unite_rets(
+                    any_rets,
+                    union_and_any_rets,
+                    union_rets,
+                    ret,
+                    visitor=visitor,
+                    node=node,
+                )
 
         if any_rets:
             # We don't do this if we have union_rets, because if we got here, we
             # didn't get any clean matches. Therefore, we must have some remaining
             # union members we haven't handled.
-            return self._unite_rets(any_rets, union_and_any_rets, union_rets)
+            return self._unite_rets(
+                any_rets, union_and_any_rets, union_rets, visitor=visitor, node=node
+            )
 
         # None of the signatures matched
         errors = list(itertools.chain.from_iterable(errors_per_overload))
@@ -2330,6 +2349,9 @@ class OverloadedSignature:
         union_and_any_rets: Sequence[CallReturn],
         union_rets: Sequence[CallReturn],
         clean_ret: Optional[CallReturn] = None,
+        *,
+        visitor: "NameCheckVisitor",
+        node: Optional[ast.AST],
     ) -> Value:
         if any_rets or union_and_any_rets:
             deduped = {ret.return_value for ret in any_rets}
@@ -2339,16 +2361,25 @@ class OverloadedSignature:
                 and not union_and_any_rets
                 and clean_ret is None
             ):
-                return any_rets[0].return_value
-            return AnyValue(AnySource.multiple_overload_matches)
+                rets = any_rets
+            else:
+                return AnyValue(AnySource.multiple_overload_matches)
         elif union_rets:
             if clean_ret is not None:
                 rets = [*union_rets, clean_ret]
             else:
                 rets = union_rets
-            return unite_values(*[r.return_value for r in rets])
-        assert clean_ret is not None
-        return clean_ret.return_value
+        else:
+            assert clean_ret is not None
+            rets = [clean_ret]
+        for ret in rets:
+            if ret.sig.deprecated is not None:
+                visitor.show_error(
+                    node,
+                    f"Use of deprecated overload {ret.sig}: {ret.sig.deprecated}",
+                    ErrorCode.deprecated,
+                )
+        return unite_values(*[r.return_value for r in rets])
 
     def _make_detail(
         self,

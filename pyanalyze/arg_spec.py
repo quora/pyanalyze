@@ -662,7 +662,7 @@ class ArgSpecCache:
                             "%kwargs", ParameterKind.VAR_KEYWORD, annotation=annotation
                         )
                     )
-                return Signature.make(params, td_type)
+                return Signature.make(params, td_type, callable=obj)
 
         if is_newtype(obj):
             assert hasattr(obj, "__supertype__")

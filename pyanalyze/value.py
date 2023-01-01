@@ -1926,6 +1926,18 @@ class AssertErrorExtension(Extension):
 
 
 @dataclass(frozen=True)
+class SkipDeprecatedExtension(Extension):
+    """Indicates that use of this value should not trigger deprecation errors."""
+
+
+@dataclass(frozen=True)
+class DeprecatedExtension(Extension):
+    """Indicates that use of this value should trigger a deprecation error."""
+
+    deprecation_message: str
+
+
+@dataclass(frozen=True)
 class AnnotatedValue(Value):
     """Value representing a `PEP 593 <https://www.python.org/dev/peps/pep-0593/>`_ Annotated object.
 
