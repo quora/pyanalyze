@@ -69,6 +69,9 @@ from .value import (
     AnyValue,
     CallableValue,
     CanAssignContext,
+    DeprecatedExtension,
+    Extension,
+    annotate_value,
     extract_typevars,
     GenericValue,
     KnownValue,
@@ -996,10 +999,27 @@ class TypeshedFinder:
         ctx = _AnnotationContext(finder=self, module=module)
         return value_from_ast(info.ast.value, ctx=ctx)
 
+    def _extract_metadata(self, module: str, node: ast.ClassDef) -> Sequence[Extension]:
+        metadata = []
+        for decorator in node.decorator_list:
+            decorator_val = self._parse_expr(decorator, module)
+            if (
+                isinstance(decorator_val, DecoratorValue)
+                and decorator_val.decorator is deprecated_decorator
+            ):
+                arg = decorator_val.args[0]
+                if isinstance(arg, KnownValue) and isinstance(arg.val, str):
+                    metadata.append(DeprecatedExtension(arg.val))
+        return metadata
+
     def make_synthetic_type(self, module: str, info: typeshed_client.NameInfo) -> Value:
         fq_name = f"{module}.{info.name}"
         bases = self._get_bases_from_info(info, module, fq_name)
         typ = TypedValue(fq_name)
+        if isinstance(info.ast, ast.ClassDef):
+            metadata = self._extract_metadata(module, info.ast)
+        else:
+            metadata = []
         if bases is not None:
             if any(
                 (isinstance(base, KnownValue) and is_typing_name(base.val, "TypedDict"))
@@ -1007,7 +1027,10 @@ class TypeshedFinder:
                 for base in bases
             ):
                 typ = self._make_typeddict(module, info, bases)
-        return SubclassValue(typ, exactly=True)
+        val = SubclassValue(typ, exactly=True)
+        if metadata:
+            return annotate_value(val, metadata)
+        return val
 
     def _make_typeddict(
         self, module: str, info: typeshed_client.NameInfo, bases: Sequence[Value]

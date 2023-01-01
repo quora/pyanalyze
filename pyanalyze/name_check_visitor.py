@@ -153,12 +153,15 @@ from .suggested_type import (
 from .type_object import get_mro, TypeObject
 from .value import (
     AlwaysPresentExtension,
+    DeprecatedExtension,
+    SkipDeprecatedExtension,
     annotate_value,
     AnnotatedValue,
     AnySource,
     AnyValue,
     AssertErrorExtension,
     AsyncTaskIncompleteValue,
+    CallableValue,
     CanAssign,
     CanAssignError,
     check_hashability,
@@ -2210,6 +2213,42 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 defining_scope = self.scopes.module_scope()
             self._set_name_in_scope(name, node, ReferencingValue(defining_scope, name))
 
+    def check_deprecation(self, node: ast.AST, value: Value) -> bool:
+        if isinstance(value, AnnotatedValue):
+            if value.has_metadata_of_type(SkipDeprecatedExtension):
+                return False
+            for metadata in value.get_metadata_of_type(DeprecatedExtension):
+                self._show_error_if_checking(
+                    node,
+                    f"{value} is deprecated: {metadata.deprecation_message}",
+                    error_code=ErrorCode.deprecated,
+                )
+                return True
+            return self.check_deprecation(node, value.value)
+        if isinstance(value, UnboundMethodValue):
+            method = value.get_method()
+            if method is None:
+                return False
+            return self.check_deprecation(node, KnownValue(method))
+        if isinstance(value, CallableValue):
+            if not isinstance(value.signature, Signature):
+                return False
+            if value.signature.deprecated is None:
+                return False
+            deprecated = value.signature.deprecated
+        elif isinstance(value, KnownValue):
+            deprecated = safe_getattr(value.val, "__deprecated__", None)
+            if deprecated is None:
+                return False
+        else:
+            return False
+        self._show_error_if_checking(
+            node,
+            f"{value} is deprecated: {deprecated}",
+            error_code=ErrorCode.deprecated,
+        )
+        return True
+
     # Imports
 
     def visit_Import(self, node: ast.Import) -> None:
@@ -2230,6 +2269,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _set_alias_in_scope(
         self, alias: ast.alias, value: Value, force_public: bool = False
     ) -> None:
+        if self.check_deprecation(alias, value):
+            value = annotate_value(value, [SkipDeprecatedExtension()])
         if alias.asname is not None:
             self._set_name_in_scope(
                 alias.asname,
@@ -4232,6 +4273,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             varname_value = self.checker.maybe_get_variable_name_value(node.id)
             if varname_value is not None and self._should_use_varname_value(value):
                 value = varname_value
+            self.check_deprecation(node, value)
             return Composite(value, VarnameWithOrigin(node.id, origin), node)
         elif self._is_write_ctx(node.ctx):
             if self._name_node_to_statement is not None:
@@ -4556,6 +4598,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 use_fallback=True,
                 ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
             )
+            print("VAL", value, repr(value))
+            self.check_deprecation(node, value)
             if self._should_use_varname_value(value):
                 varname_value = self.checker.maybe_get_variable_name_value(node.attr)
                 if varname_value is not None:

@@ -1,21 +1,28 @@
 # static analysis: ignore
-from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .value import AnySource, AnyValue, KnownValue, SubclassValue, TypedValue
 
 
-class TestOverload(TestNameCheckVisitorBase):
+class TestStub(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_stub(self):
+    def test(self):
         def capybara():
-            from _pyanalyze_tests.deprecated import deprecated_overload, y
+            from _pyanalyze_tests.deprecated import (
+                deprecated_overload,
+                deprecated_function,  # E: deprecated
+                DeprecatedCapybara,  # E: deprecated
+            )
 
             deprecated_overload(1)  # E: deprecated
             deprecated_overload("x")
 
+            deprecated_function(1)
+            print(deprecated_function)
+
+
+class TestRuntime(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_runtime(self):
+    def test_overload(self):
         from pyanalyze.extensions import deprecated, overload
 
         @overload
@@ -33,3 +40,40 @@ class TestOverload(TestNameCheckVisitorBase):
         def capybara():
             deprecated_overload(1)  # E: deprecated
             deprecated_overload("x")
+
+    @assert_passes()
+    def test_function(self):
+        from pyanalyze.extensions import deprecated
+
+        @deprecated("no functioning capybaras")
+        def deprecated_function(x: int) -> int:
+            return x
+
+        def capybara():
+            print(deprecated_function)  # E: deprecated
+            deprecated_function(1)  # E: deprecated
+
+    @assert_passes()
+    def test_method(self):
+        from pyanalyze.extensions import deprecated
+
+        class Cls:
+            @deprecated("no methodical capybaras")
+            def deprecated_method(self, x: int) -> int:
+                return x
+
+        def capybara():
+            Cls().deprecated_method(1)  # E: deprecated
+            print(Cls.deprecated_method)  # E: deprecated
+
+    @assert_passes()
+    def test_class(self):
+        from pyanalyze.extensions import deprecated
+
+        @deprecated("no classy capybaras")
+        class DeprecatedClass:
+            pass
+
+        def capybara():
+            print(DeprecatedClass)  # E: deprecated
+            return DeprecatedClass()  # E: deprecated
