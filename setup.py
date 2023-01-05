@@ -35,7 +35,7 @@ if __name__ == "__main__":
             "ast_decompiler>=0.4.0",
             "typeshed_client>=2.1.0",
             "typing_inspect>=0.7.0",
-            "typing_extensions>=4.0.0",
+            "typing_extensions>=4.1.0",
             "aenum>=2.2.3",
             "codemod",
             "tomli>=1.1.0",
