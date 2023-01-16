@@ -367,7 +367,11 @@ class TestAnnotations(TestNameCheckVisitorBase):
     @skip_before((3, 9))
     @assert_passes()
     def test_builtin_tuples(self):
+        from collections.abc import Iterable
         from typing import Union
+
+        def returner() -> Iterable[tuple[str, int]]:
+            yield ("a", 1)
 
         def capybara(
             x: tuple[int, ...],
@@ -375,6 +379,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             z: tuple[str, int],
             omega: Union[tuple[str, int], None],
             empty: tuple[()],
+            kappa: Iterable[tuple[str, int]],
         ) -> None:
             assert_is_value(x, GenericValue(tuple, [TypedValue(int)]))
             assert_is_value(y, make_simple_sequence(tuple, [TypedValue(int)]))
@@ -382,6 +387,42 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(z, t_str_int)
             assert_is_value(omega, t_str_int | KnownValue(None))
             assert_is_value(empty, SequenceValue(tuple, []))
+            for t in kappa:
+                assert_is_value(t, t_str_int)
+            for elt in returner():
+                assert_is_value(elt, t_str_int)
+
+    @skip_before((3, 9))
+    def test_builtin_tuples_string(self):
+        self.assert_passes(
+            """
+            from __future__ import annotations
+            from collections.abc import Iterable
+            from typing import Union
+
+            def returner() -> Iterable[tuple[str, int]]:
+                yield ("a", 1)
+
+            def capybara(
+                x: tuple[int, ...],
+                y: tuple[int],
+                z: tuple[str, int],
+                omega: Union[tuple[str, int], None],
+                empty: tuple[()],
+                kappa: Iterable[tuple[str, int]],
+            ) -> None:
+                assert_is_value(x, GenericValue(tuple, [TypedValue(int)]))
+                assert_is_value(y, make_simple_sequence(tuple, [TypedValue(int)]))
+                t_str_int = make_simple_sequence(tuple, [TypedValue(str), TypedValue(int)])
+                assert_is_value(z, t_str_int)
+                assert_is_value(omega, t_str_int | KnownValue(None))
+                assert_is_value(empty, SequenceValue(tuple, []))
+                for t in kappa:
+                    assert_is_value(t, t_str_int)
+                for elt in returner():
+                    assert_is_value(elt, t_str_int)
+            """
+        )
 
     @assert_passes()
     def test_invalid_annotation(self):
