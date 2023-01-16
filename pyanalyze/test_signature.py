@@ -912,7 +912,7 @@ class TestOverload(TestNameCheckVisitorBase):
             overloaded("x", "y")  # E: incompatible_call
 
     @assert_passes()
-    def test_runtime(self):
+    def test_pyanalyze_extensions(self):
         from typing import Union
 
         from pyanalyze.extensions import overload
@@ -936,7 +936,35 @@ class TestOverload(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(overloaded(), TypedValue(int))
             assert_is_value(overloaded("x"), TypedValue(str))
-            overloaded(1)  # E: incompatible_call
+            overloaded(1)  # E: incompatible_argument
+            overloaded("a", "b")  # E: incompatible_call
+
+    @assert_passes()
+    def test_typing_extensions(self):
+        from typing import Union
+
+        from typing_extensions import overload
+
+        @overload
+        def overloaded() -> int:
+            raise NotImplementedError
+
+        @overload
+        def overloaded(x: str) -> str:
+            raise NotImplementedError
+
+        def overloaded(*args: str) -> Union[int, str]:
+            if not args:
+                return 0
+            elif len(args) == 1:
+                return args[0]
+            else:
+                raise TypeError("too many arguments")
+
+        def capybara():
+            assert_is_value(overloaded(), TypedValue(int))
+            assert_is_value(overloaded("x"), TypedValue(str))
+            overloaded(1)  # E: incompatible_argument
             overloaded("a", "b")  # E: incompatible_call
 
     @assert_passes()

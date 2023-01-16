@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support `typing_extensions.get_overloads` and `typing.get_overloads` (#589)
 - Support `in` on objects with only `__iter__` (#588)
 - Do not call `.mro()` method on non-types (#587)
 - Add `class_attribute_transformers` hook (#585)
