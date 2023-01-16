@@ -194,7 +194,7 @@ class TreatClassAttributeAsAny(PyObjectSequenceOption[_TCAA]):
 _CAT = Callable[[object], Optional[Tuple[Value, Value]]]
 
 
-class ClassAttributeTransformer(PyObjectSequenceOption[_TCAA]):
+class ClassAttributeTransformer(PyObjectSequenceOption[_CAT]):
     """Transform certain class attributes.
 
     Instances of this option are callables that take an object found among
