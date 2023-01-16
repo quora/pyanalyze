@@ -100,6 +100,8 @@ except ImportError:
 else:
     _GET_OVERLOADS.append(get_overloads)
 if sys.version_info >= (3, 11):
+    # TODO: support version checks
+    # static analysis: ignore[undefined_attribute]
     _GET_OVERLOADS.append(typing.get_overloads)
 
 # types.MethodWrapperType in 3.7+
@@ -599,7 +601,9 @@ class ArgSpecCache:
         if not in_overload_resolution:
             for get_overloads_func in _GET_OVERLOADS:
                 inner_obj = safe_getattr(obj, "__func__", obj)
-                if safe_hasattr(inner_obj, "__module__"):
+                if safe_hasattr(inner_obj, "__module__") and safe_hasattr(
+                    inner_obj, "__qualname__"
+                ):
                     sig = self._maybe_make_overloaded_signature(
                         get_overloads_func(inner_obj), impl, is_asynq
                     )
