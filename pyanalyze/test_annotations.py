@@ -514,6 +514,24 @@ class TestAnnotations(TestNameCheckVisitorBase):
             def capybara(x: int | None, y: int | str) -> None:
                 assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
                 assert_is_value(y, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+
+            def caller():
+                capybara(1, 2)
+                capybara(None, "x")
+            """
+        )
+
+    @skip_before((3, 10))
+    def test_pep604_runtime(self):
+        self.assert_passes(
+            """
+            def capybara(x: int | None, y: int | str) -> None:
+                assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
+                assert_is_value(y, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+
+            def caller():
+                capybara(1, 2)
+                capybara(None, "x")
             """
         )
 
