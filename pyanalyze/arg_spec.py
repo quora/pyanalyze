@@ -13,6 +13,7 @@ import sys
 import textwrap
 from dataclasses import dataclass, replace
 from types import FunctionType, MethodType, ModuleType
+import typing
 from typing import (
     Any,
     Callable,
@@ -36,7 +37,12 @@ import pyanalyze
 from . import implementation
 from .analysis_lib import is_positional_only_arg_name
 from .annotations import Context, RuntimeEvaluator, type_from_runtime
-from .extensions import CustomCheck, get_overloads, get_type_evaluations, TypeGuard
+from .extensions import (
+    CustomCheck,
+    get_overloads as pyanalyze_get_overloads,
+    get_type_evaluations,
+    TypeGuard,
+)
 from .find_unused import used
 from .functions import translate_vararg_type
 from .options import Options, PyObjectSequenceOption
@@ -47,6 +53,8 @@ from .safe import (
     is_newtype,
     is_typing_name,
     safe_equals,
+    safe_getattr,
+    safe_hasattr,
     safe_isinstance,
     safe_issubclass,
 )
@@ -82,6 +90,19 @@ from .value import (
     TypeVarValue,
     Value,
 )
+
+_GET_OVERLOADS = []
+
+try:
+    from typing_extensions import get_overloads
+except ImportError:
+    pass
+else:
+    _GET_OVERLOADS.append(get_overloads)
+if sys.version_info >= (3, 11):
+    # TODO: support version checks
+    # static analysis: ignore[undefined_attribute]
+    _GET_OVERLOADS.append(typing.get_overloads)
 
 # types.MethodWrapperType in 3.7+
 MethodWrapperType = type(object().__str__)
@@ -578,18 +599,23 @@ class ArgSpecCache:
         # Must be after the check for bound methods, because otherwise we
         # won't bind self correctly.
         if not in_overload_resolution:
+            for get_overloads_func in _GET_OVERLOADS:
+                inner_obj = safe_getattr(obj, "__func__", obj)
+                if safe_hasattr(inner_obj, "__module__") and safe_hasattr(
+                    inner_obj, "__qualname__"
+                ):
+                    sig = self._maybe_make_overloaded_signature(
+                        get_overloads_func(inner_obj), impl, is_asynq
+                    )
+                    if sig is not None:
+                        return sig
             fq_name = get_fully_qualified_name(obj)
             if fq_name is not None:
-                overloads = get_overloads(fq_name)
-                if overloads:
-                    sigs = [
-                        self._cached_get_argspec(
-                            overload, impl, is_asynq, in_overload_resolution=True
-                        )
-                        for overload in overloads
-                    ]
-                    if all_of_type(sigs, Signature):
-                        return OverloadedSignature(sigs)
+                sig = self._maybe_make_overloaded_signature(
+                    pyanalyze_get_overloads(fq_name), impl, is_asynq
+                )
+                if sig is not None:
+                    return sig
                 evaluator_sig = self._maybe_make_evaluator_sig(obj, impl, is_asynq)
                 if evaluator_sig is not None:
                     return evaluator_sig
@@ -789,6 +815,24 @@ class ArgSpecCache:
             return self._make_any_sig(obj)
 
         return None
+
+    def _maybe_make_overloaded_signature(
+        self,
+        overloads: Sequence[Callable[..., Any]],
+        impl: Optional[Impl],
+        is_asynq: bool,
+    ) -> Optional[OverloadedSignature]:
+        if not overloads:
+            return None
+        sigs = [
+            self._cached_get_argspec(
+                overload, impl, is_asynq, in_overload_resolution=True
+            )
+            for overload in overloads
+        ]
+        if not all_of_type(sigs, Signature):
+            return None
+        return OverloadedSignature(sigs)
 
     def _make_any_sig(self, obj: object) -> Signature:
         if FunctionsSafeToCall.contains(obj, self.options):
