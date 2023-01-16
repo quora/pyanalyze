@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## Version 0.9.0 (January 16, 2023)
 
+Release highlights:
+- Support for PEP 702 (`@typing.deprecated`) (#578)
+- Add experimental `@has_extra_keys` decorator for `TypedDict` types
+- Support more Python 3.11 features (`except*` and `get_overloads`)
+
+Full changelog:
 - Support `typing_extensions.get_overloads` and `typing.get_overloads` (#589)
 - Support `in` on objects with only `__iter__` (#588)
 - Do not call `.mro()` method on non-types (#587)
