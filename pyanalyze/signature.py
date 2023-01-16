@@ -91,6 +91,7 @@ from .value import (
     ParameterTypeGuardExtension,
     ParamSpecArgsValue,
     ParamSpecKwargsValue,
+    is_iterable,
     replace_known_sequence_value,
     SequenceValue,
     stringify_object,
@@ -2541,8 +2542,6 @@ def make_bound_method(
         assert_never(argspec)
 
 
-T = TypeVar("T")
-IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
 K = TypeVar("K")
 V = TypeVar("V")
 MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarValue(V)])
@@ -2573,10 +2572,11 @@ def can_assign_var_positional(
                 )
             return [can_assign]
 
-    tv_map = get_tv_map(IterableValue, args_annotation, ctx)
-    if isinstance(tv_map, CanAssignError):
-        return CanAssignError(f"{args_annotation} is not an iterable type", [tv_map])
-    iterable_arg = tv_map.get(T, AnyValue(AnySource.generic_argument))
+    iterable_arg = is_iterable(args_annotation, ctx)
+    if isinstance(iterable_arg, CanAssignError):
+        return CanAssignError(
+            f"{args_annotation} is not an iterable type", [iterable_arg]
+        )
     bounds_map = iterable_arg.can_assign(my_annotation, ctx)
     if isinstance(bounds_map, CanAssignError):
         return CanAssignError(

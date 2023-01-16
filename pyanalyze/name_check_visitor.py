@@ -79,7 +79,6 @@ from .functions import (
     FunctionResult,
     GeneratorValue,
     IMPLICIT_CLASSMETHODS,
-    IterableValue,
     ReturnT,
     SendT,
     YieldT,
@@ -173,6 +172,7 @@ from .value import (
     GenericBases,
     GenericValue,
     get_tv_map,
+    is_iterable,
     is_union,
     KnownValue,
     kv_pairs_from_mapping,
@@ -3335,7 +3335,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             type(op)
         ]
         if rmethod is None:
-            # "in" falls back to __getitem__ if __contains__ is not defined
+            # "in" falls back to __iter__ and then to __getitem__ if __contains__ is not defined
             if method == "__contains__":
                 with self.catch_errors() as contains_errors:
                     contains_result = self._check_dunder_call(
@@ -3347,6 +3347,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     )
                 if not contains_errors:
                     return contains_result
+
+                iterable_type = is_iterable(left, self)
+                if isinstance(iterable_type, Value):
+                    can_assign = iterable_type.can_assign(right, self)
+                    if isinstance(can_assign, CanAssignError):
+                        self._show_error_if_checking(
+                            source_node,
+                            "Unsupported operand for 'in'",
+                            ErrorCode.incompatible_argument,
+                            detail=str(can_assign),
+                        )
+                        return TypedValue(bool)
+                    else:
+                        return TypedValue(bool)
 
                 with self.catch_errors() as getitem_errors:
                     self._check_dunder_call(
@@ -3473,8 +3487,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     ReturnT: can_assign.get(T, AnyValue(AnySource.generic_argument))
                 }
             else:
-                can_assign = get_tv_map(IterableValue, value, self)
-                if isinstance(can_assign, CanAssignError):
+                iterable_type = is_iterable(value, self)
+                if isinstance(iterable_type, CanAssignError):
                     self._show_error_if_checking(
                         node,
                         f"Cannot use {value} in yield from",
@@ -3483,9 +3497,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     )
                     tv_map = {ReturnT: AnyValue(AnySource.error)}
                 else:
-                    tv_map = {
-                        YieldT: can_assign.get(T, AnyValue(AnySource.generic_argument))
-                    }
+                    tv_map = {YieldT: iterable_type}
 
         if self.current_function_info is not None:
             expected_yield = self.current_function_info.get_generator_yield_type(self)

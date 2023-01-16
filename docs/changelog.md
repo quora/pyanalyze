@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support `in` on objects with only `__iter__` (#588)
 - Do not call `.mro()` method on non-types (#587)
 - Add `class_attribute_transformers` hook (#585)
 - Support for PEP 702 (`@typing.deprecated`) (#578)
