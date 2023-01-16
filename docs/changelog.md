@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `class_attribute_transformers` hook (#585)
 - Support for PEP 702 (`@typing.deprecated`) (#578)
 - Simplify import handling; stop trying to import modules at type checking time (#566)
 - Suggest using keyword arguments on calls with too many positional arguments (#572)

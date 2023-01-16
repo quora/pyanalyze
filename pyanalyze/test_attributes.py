@@ -366,3 +366,15 @@ class TestHasAttrExtension(TestNameCheckVisitorBase):
             cls = X
             if hasattr(cls, "types"):  # E: value_always_true
                 assert_is_value(cls.types(), AnyValue(AnySource.unannotated))
+
+
+class TestClassAttributeTransformer(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from pyanalyze.test_config import StringField
+
+        class Capybara:
+            foo = StringField()
+
+        def capybara(c: Capybara):
+            assert_is_value(c.foo, TypedValue(str))

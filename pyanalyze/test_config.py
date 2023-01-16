@@ -4,7 +4,9 @@ Configuration file specific to tests.
 
 """
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
+
+import qcore
 
 from . import tests, value
 from .arg_spec import ArgSpecCache
@@ -110,6 +112,20 @@ def unwrap_class(cls: type) -> type:
     ):
         return cls.base
     return cls
+
+
+class StringField:
+    pass
+
+
+@used  # in test.toml
+def transform_class_attribute(
+    attr: object,
+) -> Optional[Tuple[value.Value, value.Value]]:
+    """Transforms a StringField attribute."""
+    if isinstance(attr, StringField):
+        return value.TypedValue(str), value.NO_RETURN_VALUE
+    return None
 
 
 CONFIG_PATH = Path(__file__).parent / "test.toml"
