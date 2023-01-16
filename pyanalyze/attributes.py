@@ -191,6 +191,36 @@ class TreatClassAttributeAsAny(PyObjectSequenceOption[_TCAA]):
         return any(func(val) for func in option_value)
 
 
+_CAT = Callable[[object], Optional[Tuple[Value, Value]]]
+
+
+class ClassAttributeTransformer(PyObjectSequenceOption[_CAT]):
+    """Transform certain class attributes.
+
+    Instances of this option are callables that take an object found among
+    a class's attributes and return either None (if the value should not
+    be transformed) or a pair of a get and set type. To disallow setting
+    the value, return :data:`pyanalyze.value.NO_RETURN_VALUE`.
+
+    If multiple transformers match an object, the first one is used.
+
+    TODO: The set type is currently ignored.
+
+    """
+
+    default_value: Sequence[_CAT] = []
+    name = "class_attribute_transformers"
+
+    @classmethod
+    def transform_attribute(cls, val: object, options: Options) -> Optional[Value]:
+        option_value = options.get_value_for(cls)
+        for transformer in option_value:
+            result = transformer(val)
+            if result is not None:
+                return result[0]
+        return None
+
+
 def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
     if not isinstance(result, KnownValue) or ctx.skip_unwrap:
         return result
@@ -215,6 +245,11 @@ def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
     elif TreatClassAttributeAsAny.should_treat_as_any(cls_val, ctx.options):
         return AnyValue(AnySource.error)
     else:
+        transformed = ClassAttributeTransformer.transform_attribute(
+            cls_val, ctx.options
+        )
+        if transformed is not None:
+            return transformed
         return KnownValue(cls_val)
 
 
@@ -328,6 +363,11 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
     elif TreatClassAttributeAsAny.should_treat_as_any(cls_val, ctx.options):
         return AnyValue(AnySource.error)
     else:
+        transformed = ClassAttributeTransformer.transform_attribute(
+            cls_val, ctx.options
+        )
+        if transformed is not None:
+            return transformed
         return result
 
 

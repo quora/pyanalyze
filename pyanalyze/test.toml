@@ -10,3 +10,6 @@ functions_safe_to_call = [
     "pyanalyze.tests.make_simple_sequence",
     "pyanalyze.value.make_coro_type",
 ]
+class_attribute_transformers = [
+    "pyanalyze.test_config.transform_class_attribute"
+]
