@@ -44,6 +44,8 @@ from typing_extensions import NotRequired, Protocol, TypedDict
 
 from . import analysis_lib
 
+Error = Dict[str, Any]
+
 
 @dataclass(frozen=True)
 class _FakeNode:
@@ -541,12 +543,12 @@ class BaseNodeVisitor(ast.NodeVisitor):
             }
 
     @contextmanager
-    def catch_errors(self) -> Iterator[List[Dict[str, Any]]]:
+    def catch_errors(self) -> Iterator[List[Error]]:
         caught_errors = []
         with qcore.override(self, "caught_errors", caught_errors):
             yield caught_errors
 
-    def show_caught_errors(self, errors: Iterable[Dict[str, Any]]) -> None:
+    def show_caught_errors(self, errors: Iterable[Error]) -> None:
         for error in errors:
             self.show_error(**error)
 

@@ -246,7 +246,7 @@ class TestCompare(TestNameCheckVisitorBase):
         def capybara(x: int, ogi: OnlyGetitem, oi: OnlyIter, it: Iterable[int]):
             1 in x  # E: unsupported_operation
             1 in ogi
-            "x" in ogi  # E: unsupported_operation
+            "x" in ogi  # E: incompatible_argument
             1 in oi
             "1" in oi  # E: incompatible_argument
             1 in it
