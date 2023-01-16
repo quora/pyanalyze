@@ -6,8 +6,6 @@ Configuration file specific to tests.
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-import qcore
-
 from . import tests, value
 from .arg_spec import ArgSpecCache
 from .error_code import ErrorCode, register_error_code
