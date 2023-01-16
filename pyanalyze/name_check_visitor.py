@@ -79,7 +79,6 @@ from .functions import (
     FunctionResult,
     GeneratorValue,
     IMPLICIT_CLASSMETHODS,
-    IterableValue,
     ReturnT,
     SendT,
     YieldT,
@@ -173,6 +172,7 @@ from .value import (
     GenericBases,
     GenericValue,
     get_tv_map,
+    is_iterable,
     is_union,
     KnownValue,
     kv_pairs_from_mapping,
@@ -3234,7 +3234,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             operand = self.composite_from_node(node.operand)
             _, method = UNARY_OPERATION_TO_DESCRIPTION_AND_METHOD[type(node.op)]
-            val = self._check_dunder_call(node, operand, method, [], allow_call=True)
+            val, _ = self._check_dunder_call(node, operand, method, [], allow_call=True)
             return val
 
     def visit_BinOp(self, node: ast.BinOp) -> Value:
@@ -3299,7 +3299,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if is_inplace:
             assert imethod is not None, f"no inplace method available for {op}"
             with self.catch_errors() as inplace_errors:
-                inplace_result = self._check_dunder_call(
+                # Not _check_dunder_call_or_catch because if the call doesn't
+                # typecheck it normally returns NotImplemented and we try the
+                # non-inplace method next.
+                inplace_result, _ = self._check_dunder_call(
                     source_node,
                     left_composite,
                     imethod,
@@ -3335,42 +3338,55 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             type(op)
         ]
         if rmethod is None:
-            # "in" falls back to __getitem__ if __contains__ is not defined
+            # "in" falls back to __iter__ and then to __getitem__ if __contains__ is not defined
             if method == "__contains__":
-                with self.catch_errors() as contains_errors:
-                    contains_result = self._check_dunder_call(
-                        source_node,
-                        left_composite,
-                        method,
-                        [right_composite],
-                        allow_call=allow_call,
-                    )
-                if not contains_errors:
-                    return contains_result
+                contains_result_or_errors = self._check_dunder_call_or_catch(
+                    source_node,
+                    left_composite,
+                    method,
+                    [right_composite],
+                    allow_call=allow_call,
+                )
+                if isinstance(contains_result_or_errors, Value):
+                    return contains_result_or_errors
 
-                with self.catch_errors() as getitem_errors:
-                    self._check_dunder_call(
-                        source_node,
-                        left_composite,
-                        "__getitem__",
-                        [right_composite],
-                        allow_call=allow_call,
-                    )
-                if not getitem_errors:
+                iterable_type = is_iterable(left, self)
+                if isinstance(iterable_type, Value):
+                    can_assign = iterable_type.can_assign(right, self)
+                    if isinstance(can_assign, CanAssignError):
+                        self._show_error_if_checking(
+                            source_node,
+                            "Unsupported operand for 'in'",
+                            ErrorCode.incompatible_argument,
+                            detail=str(can_assign),
+                        )
+                        return TypedValue(bool)
+                    else:
+                        return TypedValue(bool)
+
+                getitem_result = self._check_dunder_call_or_catch(
+                    source_node,
+                    left_composite,
+                    "__getitem__",
+                    [right_composite],
+                    allow_call=allow_call,
+                )
+                if isinstance(getitem_result, Value):
                     return TypedValue(bool)  # Always returns a bool
-                self.show_caught_errors(contains_errors)
+                self.show_caught_errors(contains_result_or_errors)
                 return TypedValue(bool)
 
-            return self._check_dunder_call(
+            result, _ = self._check_dunder_call(
                 source_node,
                 left_composite,
                 method,
                 [right_composite],
                 allow_call=allow_call,
             )
+            return result
 
         with self.catch_errors() as left_errors:
-            left_result = self._check_dunder_call(
+            left_result, _ = self._check_dunder_call(
                 source_node,
                 left_composite,
                 method,
@@ -3379,7 +3395,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
 
         with self.catch_errors() as right_errors:
-            right_result = self._check_dunder_call(
+            right_result, _ = self._check_dunder_call(
                 source_node,
                 right_composite,
                 rmethod,
@@ -3458,7 +3474,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def unpack_awaitable(self, composite: Composite, node: ast.AST) -> Value:
         tv_map = get_tv_map(AwaitableValue, composite.value, self)
         if isinstance(tv_map, CanAssignError):
-            return self._check_dunder_call(node, composite, "__await__", [])
+            result, _ = self._check_dunder_call(node, composite, "__await__", [])
+            return result
         else:
             return tv_map.get(T, AnyValue(AnySource.generic_argument))
 
@@ -3473,8 +3490,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     ReturnT: can_assign.get(T, AnyValue(AnySource.generic_argument))
                 }
             else:
-                can_assign = get_tv_map(IterableValue, value, self)
-                if isinstance(can_assign, CanAssignError):
+                iterable_type = is_iterable(value, self)
+                if isinstance(iterable_type, CanAssignError):
                     self._show_error_if_checking(
                         node,
                         f"Cannot use {value} in yield from",
@@ -3483,9 +3500,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     )
                     tv_map = {ReturnT: AnyValue(AnySource.error)}
                 else:
-                    tv_map = {
-                        YieldT: can_assign.get(T, AnyValue(AnySource.generic_argument))
-                    }
+                    tv_map = {YieldT: iterable_type}
 
         if self.current_function_info is not None:
             expected_yield = self.current_function_info.get_generator_yield_type(self)
@@ -3838,8 +3853,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """
         composite = self.composite_from_node(node)
         if is_async:
-            iterator = self._check_dunder_call(node, composite, "__aiter__", [])
-            anext = self._check_dunder_call(
+            iterator, _ = self._check_dunder_call(node, composite, "__aiter__", [])
+            anext, _ = self._check_dunder_call(
                 node, Composite(iterator, None, node), "__anext__", []
             )
             return self.unpack_awaitable(Composite(anext), node)
@@ -4468,9 +4483,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     return_value = local_value
             return return_value
         elif isinstance(node.ctx, ast.Del):
-            return self._check_dunder_call(
+            result, _ = self._check_dunder_call(
                 node.value, root_composite, "__delitem__", [index_composite]
             )
+            return result
         else:
             self.show_error(
                 node,
@@ -4495,6 +4511,37 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
         return method_object
 
+    def _check_dunder_call_or_catch(
+        self,
+        node: ast.AST,
+        callee_composite: Composite,
+        method_name: str,
+        args: Iterable[Composite],
+        allow_call: bool = False,
+    ) -> Union[Value, List[node_visitor.Error]]:
+        """Use this for checking a dunder call that may fall back to another.
+
+        There are three cases:
+        - The dunder does not exist. We want to defer the error, in case the fallback
+          exists.
+        - The dunder exists and the call typechecks. We want to return its result.
+        - The dunder exists, but the call doesn't typecheck. We want to show the error
+          immediately and return Any.
+
+        """
+        with self.catch_errors() as errors:
+            result, exists = self._check_dunder_call(
+                node, callee_composite, method_name, args, allow_call=allow_call
+            )
+        if not errors:
+            return result
+        elif exists:
+            # Inplace method exists, but it doesn't accept these arguments
+            self.show_caught_errors(errors)
+            return result
+        else:
+            return errors
+
     def _check_dunder_call(
         self,
         node: ast.AST,
@@ -4502,21 +4549,27 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         method_name: str,
         args: Iterable[Composite],
         allow_call: bool = False,
-    ) -> Value:
+    ) -> Tuple[Value, bool]:
         if isinstance(callee_composite.value, MultiValuedValue):
             composites = [
                 Composite(val, callee_composite.varname, callee_composite.node)
                 for val in callee_composite.value.vals
             ]
             with qcore.override(self, "in_union_decomposition", True):
-                values = [
+                values_and_exists = [
                     self._check_dunder_call_no_mvv(
                         node, composite, method_name, args, allow_call
                     )
                     for composite in composites
                 ]
-            return unite_and_simplify(
-                *values, limit=self.options.get_value_for(UnionSimplificationLimit)
+            values = [value for value, _ in values_and_exists]
+            # TODO: We should do something more complex when unions are involved.
+            exists = all(exists for _, exists in values_and_exists)
+            return (
+                unite_and_simplify(
+                    *values, limit=self.options.get_value_for(UnionSimplificationLimit)
+                ),
+                exists,
             )
         return self._check_dunder_call_no_mvv(
             node, callee_composite, method_name, args, allow_call
@@ -4529,14 +4582,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         method_name: str,
         args: Iterable[Composite],
         allow_call: bool = False,
-    ) -> Value:
+    ) -> Tuple[Value, bool]:
         method_object = self._get_dunder(node, callee_composite.value, method_name)
         if method_object is UNINITIALIZED_VALUE:
-            return AnyValue(AnySource.error)
+            return AnyValue(AnySource.error), False
         return_value = self.check_call(
             node, method_object, [callee_composite, *args], allow_call=allow_call
         )
-        return return_value
+        return return_value, True
 
     def _get_composite(self, composite: Varname, node: ast.AST, value: Value) -> Value:
         local_value, _ = self.scopes.current_scope().get_local(

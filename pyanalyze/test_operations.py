@@ -233,14 +233,24 @@ class TestCompare(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_contains(self):
+        from typing import Iterator, Iterable
+
         class OnlyGetitem:
             def __getitem__(self, x: int) -> int:
                 return x
 
-        def capybara(x: int, ogi: OnlyGetitem):
+        class OnlyIter:
+            def __iter__(self) -> Iterator[int]:
+                yield 1
+
+        def capybara(x: int, ogi: OnlyGetitem, oi: OnlyIter, it: Iterable[int]):
             1 in x  # E: unsupported_operation
             1 in ogi
-            "x" in ogi  # E: unsupported_operation
+            "x" in ogi  # E: incompatible_argument
+            1 in oi
+            "1" in oi  # E: incompatible_argument
+            1 in it
+            "1" in it  # E: incompatible_argument
 
     @assert_passes()
     def test_failing_eq(self):

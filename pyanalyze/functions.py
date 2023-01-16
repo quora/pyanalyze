@@ -23,7 +23,6 @@ from .node_visitor import ErrorContext
 from .options import Options, PyObjectSequenceOption
 from .signature import ParameterKind, Signature, SigParameter
 from .stacked_scopes import Composite
-from .typevar import resolve_bounds_map
 from .value import (
     AnySource,
     AnyValue,
@@ -33,6 +32,7 @@ from .value import (
     GenericValue,
     get_tv_map,
     KnownValue,
+    is_iterable,
     make_coro_type,
     SubclassValue,
     TypedValue,
@@ -49,7 +49,6 @@ IMPLICIT_CLASSMETHODS = ("__init_subclass__", "__new__")
 YieldT = TypeVar("YieldT")
 SendT = TypeVar("SendT")
 ReturnT = TypeVar("ReturnT")
-IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(YieldT)])
 GeneratorValue = GenericValue(
     collections.abc.Generator,
     [TypeVarValue(YieldT), TypeVarValue(SendT), TypeVarValue(ReturnT)],
@@ -93,11 +92,10 @@ class FunctionInfo:
     def get_generator_yield_type(self, ctx: CanAssignContext) -> Value:
         if self.return_annotation is None:
             return AnyValue(AnySource.unannotated)
-        can_assign = IterableValue.can_assign(self.return_annotation, ctx)
-        if isinstance(can_assign, CanAssignError):
+        iterable_val = is_iterable(self.return_annotation, ctx)
+        if isinstance(iterable_val, CanAssignError):
             return AnyValue(AnySource.error)
-        tv_map, _ = resolve_bounds_map(can_assign, ctx)
-        return tv_map.get(YieldT, AnyValue(AnySource.generic_argument))
+        return iterable_val
 
     def get_generator_send_type(self, ctx: CanAssignContext) -> Value:
         if self.return_annotation is None:
@@ -107,8 +105,8 @@ class FunctionInfo:
             return tv_map.get(SendT, AnyValue(AnySource.generic_argument))
         # If the return annotation is a non-Generator Iterable, assume the send
         # type is None.
-        can_assign = IterableValue.can_assign(self.return_annotation, ctx)
-        if isinstance(can_assign, CanAssignError):
+        iterable_val = is_iterable(self.return_annotation, ctx)
+        if isinstance(iterable_val, CanAssignError):
             return AnyValue(AnySource.error)
         return KnownValue(None)
 
@@ -120,8 +118,8 @@ class FunctionInfo:
             return tv_map.get(ReturnT, AnyValue(AnySource.generic_argument))
         # If the return annotation is a non-Generator Iterable, assume the return
         # type is None.
-        can_assign = IterableValue.can_assign(self.return_annotation, ctx)
-        if isinstance(can_assign, CanAssignError):
+        iterable_val = is_iterable(self.return_annotation, ctx)
+        if isinstance(iterable_val, CanAssignError):
             return AnyValue(AnySource.error)
         return KnownValue(None)
 

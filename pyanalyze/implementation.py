@@ -375,7 +375,7 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
             return AnyValue(AnySource.error)  # shouldn't happen
         key = replace_known_sequence_value(key)
         if not TypedValue(slice).is_assignable(key, ctx.visitor):
-            key = ctx.visitor._check_dunder_call(
+            key, _ = ctx.visitor._check_dunder_call(
                 ctx.ast_for_arg("obj"), Composite(key), "__index__", [], allow_call=True
             )
 

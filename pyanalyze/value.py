@@ -2344,9 +2344,9 @@ def concrete_values_from_iterable(
             is_nonempty = True
     elif value is NO_RETURN_VALUE:
         return NO_RETURN_VALUE
-    iter_tv_map = get_tv_map(IterableValue, value, ctx)
-    if not isinstance(iter_tv_map, CanAssignError):
-        val = iter_tv_map.get(T, AnyValue(AnySource.generic_argument))
+    iterable_type = is_iterable(value, ctx)
+    if isinstance(iterable_type, Value):
+        val = iterable_type
     else:
         getitem_tv_map = get_tv_map(GetItemProtoValue, value, ctx)
         if not isinstance(getitem_tv_map, CanAssignError):
@@ -2363,7 +2363,7 @@ def concrete_values_from_iterable(
         else:
             # We return the error from the __iter__ check because the __getitem__
             # check is more arcane.
-            return iter_tv_map
+            return iterable_type
     if is_nonempty:
         return annotate_value(val, [AlwaysPresentExtension()])
     return val
@@ -2543,11 +2543,18 @@ def unpack_values(
             if not isinstance(vals, CanAssignError):
                 return vals
 
+    iterable_type = is_iterable(value, ctx)
+    if isinstance(iterable_type, CanAssignError):
+        return iterable_type
+    return _create_unpacked_list(iterable_type, target_length, post_starred_length)
+
+
+def is_iterable(value: Value, ctx: CanAssignContext) -> Union[CanAssignError, Value]:
+    """Check whether a value is iterable."""
     tv_map = get_tv_map(IterableValue, value, ctx)
     if isinstance(tv_map, CanAssignError):
         return tv_map
-    iterable_type = tv_map.get(T, AnyValue(AnySource.generic_argument))
-    return _create_unpacked_list(iterable_type, target_length, post_starred_length)
+    return tv_map.get(T, AnyValue(AnySource.generic_argument))
 
 
 def _create_unpacked_list(
