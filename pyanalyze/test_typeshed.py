@@ -457,12 +457,12 @@ class TestGetGenericBases:
             {
                 "_collections_abc.dict_items": [TInt, TStr],
                 collections.abc.Iterable: [TTuple],
-                collections.abc.Sized: [],
                 collections.abc.Container: [TTuple],
                 collections.abc.Collection: [TTuple],
                 collections.abc.Set: [TTuple],
                 collections.abc.MappingView: [],
                 collections.abc.ItemsView: [TInt, TStr],
+                collections.abc.Sized: [],
             },
             "_collections_abc.dict_items",
             [TInt, TStr],
@@ -480,7 +480,6 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [TypedValue(int)],
                 collections.abc.Sequence: [TypedValue(int)],
                 collections.abc.Container: [TypedValue(int)],
-                collections.abc.Sized: [],
             }
         else:
             expected = {
@@ -492,7 +491,6 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [TypedValue(int)],
                 collections.abc.Sequence: [TypedValue(int)],
                 collections.abc.Container: [TypedValue(int)],
-                collections.abc.Sized: [],
             }
         self.check(expected, time.struct_time)
 
@@ -529,11 +527,11 @@ class TestGetGenericBases:
             {
                 collections.abc.ItemsView: [int_tv, str_tv],
                 collections.abc.MappingView: [],
-                collections.abc.Sized: [],
                 collections.abc.Set: [int_str_tuple],
                 collections.abc.Collection: [int_str_tuple],
                 collections.abc.Iterable: [int_str_tuple],
                 collections.abc.Container: [int_str_tuple],
+                collections.abc.Sized: [],
             },
             collections.abc.ItemsView,
             [int_tv, str_tv],
@@ -548,7 +546,6 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Sequence: [int_tv],
                 collections.abc.Container: [int_tv],
-                collections.abc.Sized: [],
             },
             collections.deque,
             [int_tv],
@@ -562,7 +559,6 @@ class TestGetGenericBases:
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
-                collections.abc.Sized: [],
             },
             collections.defaultdict,
             [int_tv, str_tv],
@@ -580,7 +576,6 @@ class TestGetGenericBases:
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Sequence: [int_tv],
                 collections.abc.Container: [int_tv],
-                collections.abc.Sized: [],
             },
             list,
             [int_tv],
@@ -593,7 +588,6 @@ class TestGetGenericBases:
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
-                collections.abc.Sized: [],
             },
             set,
             [int_tv],
@@ -606,7 +600,6 @@ class TestGetGenericBases:
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Container: [int_tv],
-                collections.abc.Sized: [],
             },
             dict,
             [int_tv, str_tv],
@@ -634,7 +627,6 @@ class TestGetGenericBases:
                 collections.abc.Container: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Collection: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Sized: [],
                 urllib.parse.ParseResult: [],
                 urllib.parse._ParseResultBase: [],
                 "urllib.parse._ResultMixinBase": [TypedValue(str)],
