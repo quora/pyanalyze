@@ -2273,6 +2273,7 @@ def unite_values(*values: Value) -> Value:
 
 T = TypeVar("T")
 IterableValue = GenericValue(collections.abc.Iterable, [TypeVarValue(T)])
+AsyncIterableValue = GenericValue(collections.abc.AsyncIterable, [TypeVarValue(T)])
 
 
 class GetItemProto(Protocol[T]):
@@ -2552,6 +2553,16 @@ def unpack_values(
 def is_iterable(value: Value, ctx: CanAssignContext) -> Union[CanAssignError, Value]:
     """Check whether a value is iterable."""
     tv_map = get_tv_map(IterableValue, value, ctx)
+    if isinstance(tv_map, CanAssignError):
+        return tv_map
+    return tv_map.get(T, AnyValue(AnySource.generic_argument))
+
+
+def is_async_iterable(
+    value: Value, ctx: CanAssignContext
+) -> Union[CanAssignError, Value]:
+    """Check whether a value is an async iterable."""
+    tv_map = get_tv_map(AsyncIterableValue, value, ctx)
     if isinstance(tv_map, CanAssignError):
         return tv_map
     return tv_map.get(T, AnyValue(AnySource.generic_argument))

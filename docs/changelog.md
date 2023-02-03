@@ -1,13 +1,19 @@
+# Unreleased
+
+- Better typechecking support for async generators (#594)
+
 # Changelog
 
 ## Version 0.9.0 (January 16, 2023)
 
 Release highlights:
+
 - Support for PEP 702 (`@typing.deprecated`) (#578)
 - Add experimental `@has_extra_keys` decorator for `TypedDict` types
 - Support more Python 3.11 features (`except*` and `get_overloads`)
 
 Full changelog:
+
 - Support `typing_extensions.get_overloads` and `typing.get_overloads` (#589)
 - Support `in` on objects with only `__iter__` (#588)
 - Do not call `.mro()` method on non-types (#587)
@@ -26,11 +32,13 @@ Full changelog:
 ## Version 0.8.0 (November 5, 2022)
 
 Release highlights:
+
 - Support for Python 3.11
 - Drop support for Python 3.6
-- Support for PEP 692 (``Unpack`` on ``**kwargs``)
+- Support for PEP 692 (`Unpack` on `**kwargs`)
 
 Full changelog:
+
 - Infer `async def` functions as returning `Coroutine`, not
   `Awaitable` (#557, #559)
 - Drop support for Python 3.6 (#554)
@@ -63,11 +71,13 @@ Full changelog:
 ## Version 0.7.0 (April 13, 2022)
 
 Release highlights:
+
 - Support for PEP 673 (`Self`)
 - Support for PEP 675 (`LiteralString`)
 - Support for `assert_type` and other additions to `typing` in Python 3.11
 
 Full changelog:
+
 - Remove `SequenceIncompleteValue` (#519)
 - Add implementation function for `dict.pop` (#517)
 - Remove `WeakExtension` (#517)
@@ -115,7 +125,7 @@ Full changelog:
 - Do not treat attributes that raise an exception on access
   as nonexistent (#481)
 - Improve detection of unhashable dict keys and set members (#469)
-- The `in` and `not in` operators always return 
+- The `in` and `not in` operators always return
   booleans (#480)
 - Allow `NotImplemented` to be returned from special
   methods that support it (#479)
@@ -166,13 +176,14 @@ Full changelog:
 - Handle `NoReturn` in `async def` functions (#427)
 - Support PEP 673 (`typing_extensions.Self`) (#423)
 - Updates for compatibility with recent changes in typeshed (#421):
-  - Fix override compatibility check for unknown callables 
+  - Fix override compatibility check for unknown callables
   - Fix usage of removed type `_typeshed.SupportsLessThan`
 - Remove old configuration abstraction (#414)
 
 ## Version 0.6.0 (January 12, 2022)
 
 Release highlights:
+
 - Support for configuration through `pyproject.toml`. The old
   configuration mechanism will be removed in the next release.
 - Support for experimental new type evaluation mechanism, providing
@@ -180,6 +191,7 @@ Release highlights:
 - Support for suggesting annotations for unannotated code.
 
 Full changelog:
+
 - Support generic type evaluators (#409)
 - Implement return annotation behavior for type evaluation
   functions (#408)

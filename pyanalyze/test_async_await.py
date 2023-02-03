@@ -59,7 +59,12 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_async_comprehension(self):
+        from typing_extensions import Self
+
         class ANext:
+            def __aiter__(self) -> Self:
+                return self
+
             async def __anext__(self) -> int:
                 return 42
 
@@ -70,27 +75,6 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
         async def f():
             x = [y async for y in AIter()]
             assert_is_value(x, SequenceValue(list, [(True, TypedValue(int))]))
-
-    @assert_passes()
-    def test_async_generator(self):
-        import collections.abc
-        from typing import AsyncIterator
-
-        async def f() -> AsyncIterator[int]:
-            yield 1
-            yield 2
-
-        async def capybara():
-            x = f()
-            assert_is_value(
-                x, GenericValue(collections.abc.AsyncIterator, [TypedValue(int)])
-            )
-            ints = [i async for i in x]
-            # TODO should be list[int] but we lose the type argument somewhere
-            assert_is_value(
-                ints,
-                SequenceValue(list, [(True, AnyValue(AnySource.generic_argument))]),
-            )
 
     @assert_passes()
     def test_bad_async_comprehension(self):
@@ -293,17 +277,62 @@ class TestNoReturn(TestNameCheckVisitorBase):
 
 class TestAsyncGenerator(TestNameCheckVisitorBase):
     @assert_passes()
-    def test_async_gen(self):
+    def test_async_iterator(self):
         import collections.abc
         from typing import AsyncIterator
 
         async def gen() -> AsyncIterator[int]:
             yield 3
+            yield "not an int"  # E: incompatible_yield
 
         async def capybara() -> None:
             assert_is_value(
                 gen(), GenericValue(collections.abc.AsyncIterator, [TypedValue(int)])
             )
             async for i in gen():
-                # TODO should be int
-                assert_is_value(i, AnyValue(AnySource.generic_argument))
+                assert_is_value(i, TypedValue(int))
+
+    @assert_passes()
+    def test_async_generator(self):
+        import collections.abc
+        from typing import AsyncGenerator
+
+        async def gen() -> AsyncGenerator[int, None]:
+            yield 3
+            yield "not an int"  # E: incompatible_yield
+
+        async def capybara() -> None:
+            assert_is_value(
+                gen(),
+                GenericValue(
+                    collections.abc.AsyncGenerator, [TypedValue(int), KnownValue(None)]
+                ),
+            )
+            async for i in gen():
+                assert_is_value(i, TypedValue(int))
+
+    @assert_passes()
+    def test_async_comprehension_over_generator(self):
+        import collections.abc
+        from typing import AsyncIterator
+
+        async def f() -> AsyncIterator[int]:
+            yield 1
+            yield 2
+
+        async def capybara():
+            x = f()
+            assert_is_value(
+                x, GenericValue(collections.abc.AsyncIterator, [TypedValue(int)])
+            )
+            ints = [i async for i in x]
+            assert_is_value(ints, SequenceValue(list, [(True, TypedValue(int))]))
+
+    @assert_passes()
+    def test_send_type(self):
+        from typing import AsyncGenerator
+
+        async def capybara() -> AsyncGenerator[int, str]:
+            x = yield 1
+            assert_is_value(x, TypedValue(str))
+            yield x  # E: incompatible_yield
