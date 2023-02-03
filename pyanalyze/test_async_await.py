@@ -59,7 +59,12 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_async_comprehension(self):
+        from typing_extensions import Self
+
         class ANext:
+            def __aiter__(self) -> Self:
+                return self
+
             async def __anext__(self) -> int:
                 return 42
 
@@ -307,7 +312,7 @@ class TestAsyncGenerator(TestNameCheckVisitorBase):
                 assert_is_value(i, TypedValue(int))
 
     @assert_passes()
-    def test_async_comprehension(self):
+    def test_async_comprehension_over_generator(self):
         import collections.abc
         from typing import AsyncIterator
 
