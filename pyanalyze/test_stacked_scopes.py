@@ -889,8 +889,10 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(y, KnownValue(True))
             else:
                 assert_is_value(y, KnownValue(False))
-            assert_is_value(y, KnownValue(True)) if y else assert_is_value(
-                y, KnownValue(False)
+            (
+                assert_is_value(y, KnownValue(True))
+                if y
+                else assert_is_value(y, KnownValue(False))
             )
 
     @assert_passes()

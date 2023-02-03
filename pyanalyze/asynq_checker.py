@@ -137,8 +137,7 @@ class AsynqChecker:
         return self.should_check_class_for_async(self.current_class)
 
     def should_check_class_for_async(self, cls: type) -> bool:
-        """Returns whether we should perform async checks on all methods on this class.
-        """
+        """Returns whether we should perform async checks on all methods on this class."""
         for base_cls in self.options.get_value_for(ClassesCheckedForAsynq):
             try:
                 if issubclass(cls, base_cls):

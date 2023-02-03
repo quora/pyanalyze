@@ -224,8 +224,7 @@ class Checker:
     def assume_compatibility(
         self, left: TypeObject, right: TypeObject
     ) -> Iterator[None]:
-        """Context manager that notes that left and right can be assumed to be compatible.
-        """
+        """Context manager that notes that left and right can be assumed to be compatible."""
         pair = (left, right)
         self.assumed_compatibilities.append(pair)
         try:

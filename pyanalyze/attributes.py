@@ -546,8 +546,7 @@ def _get_attribute_from_mro(
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
-    """Returns whether this value has the given attribute, ignoring __getattr__ overrides.
-    """
+    """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
     try:
         object.__getattribute__(value, attr)
     except AttributeError:

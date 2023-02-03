@@ -263,8 +263,7 @@ class AbstractConstraint:
     """
 
     def apply(self) -> Iterable["Constraint"]:
-        """Yields concrete constraints that are active when this constraint is applied.
-        """
+        """Yields concrete constraints that are active when this constraint is applied."""
         raise NotImplementedError
 
     def invert(self) -> "AbstractConstraint":
@@ -855,8 +854,7 @@ class Scope:
             return value
 
     def scope_used_as_parent(self) -> "Scope":
-        """Class scopes are skipped in scope lookup, so don't set them as parent scopes.
-        """
+        """Class scopes are skipped in scope lookup, so don't set them as parent scopes."""
         if self.scope_type == ScopeType.class_scope:
             assert (
                 self.parent_scope is not None
@@ -1339,9 +1337,11 @@ class FunctionScope(Scope):
             or isinstance(self.referencing_value_vars[ctx.varname], ReferencingValue)
         )
         values = [
-            UNINITIALIZED_VALUE
-            if node is _UNINITIALIZED and not should_use_unconstrained
-            else self._resolve_value(self.definition_node_to_value[node], ctx)
+            (
+                UNINITIALIZED_VALUE
+                if node is _UNINITIALIZED and not should_use_unconstrained
+                else self._resolve_value(self.definition_node_to_value[node], ctx)
+            )
             for node in nodes
         ]
         return _constrain_value(
