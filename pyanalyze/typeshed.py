@@ -887,9 +887,11 @@ class TypeshedFinder:
         return Signature.make(
             cleaned_arguments,
             callable=obj,
-            return_annotation=make_coro_type(return_value)
-            if isinstance(node, ast.AsyncFunctionDef)
-            else return_value,
+            return_annotation=(
+                make_coro_type(return_value)
+                if isinstance(node, ast.AsyncFunctionDef)
+                else return_value
+            ),
             allow_call=allow_call,
             evaluator=evaluator,
             deprecated=deprecated,

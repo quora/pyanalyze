@@ -104,9 +104,9 @@ class ConversionSpecifier:
             precision = cls._parse_int_field(precision[1:])
         return cls(
             conversion_type=cls._maybe_decode(conversion_type),
-            mapping_key=cls._maybe_decode(mapping_key)
-            if mapping_key is not None
-            else None,
+            mapping_key=(
+                cls._maybe_decode(mapping_key) if mapping_key is not None else None
+            ),
             conversion_flags=cls._maybe_decode(match.group("conversion_flags")),
             field_width=field_width,
             precision=precision,
@@ -116,8 +116,7 @@ class ConversionSpecifier:
 
     @classmethod
     def _maybe_decode(cls, string: Union[str, bytes]) -> str:
-        """We want to treat all fields as text even on a bytes pattern for simplicity.
-        """
+        """We want to treat all fields as text even on a bytes pattern for simplicity."""
         if isinstance(string, bytes):
             return string.decode("ascii")
         else:
@@ -203,8 +202,7 @@ class ConversionSpecifier:
 
 
 class StarConversionSpecifier:
-    """Fake conversion specifier for the '*' special cases for field width and precision.
-    """
+    """Fake conversion specifier for the '*' special cases for field width and precision."""
 
     def accept(self, arg: Value, ctx: CanAssignContext) -> Iterable[str]:
         if not TypedValue(int).is_assignable(arg, ctx):
@@ -306,8 +304,7 @@ class PercentFormatString:
             yield from self.accept_tuple_args(args, ctx)
 
     def get_specifier_mapping(self) -> Dict[str, List[ConversionSpecifier]]:
-        """Return a mapping from mapping key to conversion specifiers for that mapping key.
-        """
+        """Return a mapping from mapping key to conversion specifiers for that mapping key."""
         out = defaultdict(list)
         for specifier in self.specifiers:
             if specifier.conversion_type != "%":

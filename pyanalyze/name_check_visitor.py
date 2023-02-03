@@ -1025,8 +1025,7 @@ class CallSiteCollector:
 
 
 class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
-    """Visitor class that infers the type and value of Python objects and detects errors.
-    """
+    """Visitor class that infers the type and value of Python objects and detects errors."""
 
     error_code_enum = ErrorCode
     config_filename: ClassVar[Optional[str]] = None
@@ -1390,8 +1389,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         detail: Optional[str] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """We usually should show errors only in the check_names state to avoid duplicate errors.
-        """
+        """We usually should show errors only in the check_names state to avoid duplicate errors."""
         if self._is_checking():
             self.show_error(
                 node,
@@ -1602,9 +1600,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
                 new_mvv = MultiValuedValue(
                     [
-                        AnyValue(AnySource.error)
-                        if subval is UNINITIALIZED_VALUE
-                        else subval
+                        (
+                            AnyValue(AnySource.error)
+                            if subval is UNINITIALIZED_VALUE
+                            else subval
+                        )
                         for subval in subvals
                     ]
                 )
@@ -1706,9 +1706,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # If we set the current_class in the collecting phase,
             # the self argument of nested methods with an unannotated
             # first argument is incorrectly inferred.
-            enclosing_class=TypedValue(self.current_class)
-            if self.current_class is not None and self._is_checking()
-            else None,
+            enclosing_class=(
+                TypedValue(self.current_class)
+                if self.current_class is not None and self._is_checking()
+                else None
+            ),
             is_nested_in_class=self.node_context.includes(ast.ClassDef),
             potential_function=potential_function,
         )
@@ -5008,9 +5010,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         else:
             arguments = [
-                (Composite(arg.value.value, arg.varname, arg.node), ARGS)
-                if isinstance(arg.value, _StarredValue)
-                else (arg, None)
+                (
+                    (Composite(arg.value.value, arg.varname, arg.node), ARGS)
+                    if isinstance(arg.value, _StarredValue)
+                    else (arg, None)
+                )
                 for arg in args
             ] + [
                 (value, KWARGS) if keyword is None else (value, keyword)
@@ -5308,9 +5312,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             with unused_finder as inner_unused_finder:
                 all_failures = super()._run_on_files(
                     files,
-                    attribute_checker=attribute_checker
-                    if attribute_checker is not None
-                    else inner_attribute_checker,
+                    attribute_checker=(
+                        attribute_checker
+                        if attribute_checker is not None
+                        else inner_attribute_checker
+                    ),
                     unused_finder=inner_unused_finder,
                     checker=checker,
                     **kwargs,
@@ -5431,8 +5437,7 @@ def _all_names_unused(
 
 
 def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
-    """Given a list of assignment targets (elts), return whether it contains the given Name node.
-    """
+    """Given a list of assignment targets (elts), return whether it contains the given Name node."""
     for elt in elts:
         if isinstance(elt, (ast.List, ast.Tuple)):
             if _contains_node(elt.elts, node):
@@ -5443,8 +5448,7 @@ def _contains_node(elts: Iterable[ast.AST], node: ast.AST) -> bool:
 
 
 def _static_hasattr(value: object, attr: str) -> bool:
-    """Returns whether this value has the given attribute, ignoring __getattr__ overrides.
-    """
+    """Returns whether this value has the given attribute, ignoring __getattr__ overrides."""
     try:
         object.__getattribute__(value, attr)
     except AttributeError:

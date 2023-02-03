@@ -590,9 +590,9 @@ class UnboundMethodValue(Value):
             self.attr_name,
             self.composite.substitute_typevars(typevars),
             self.secondary_attr_name,
-            typevars=typevars
-            if self.typevars is None
-            else {**self.typevars, **typevars},
+            typevars=(
+                typevars if self.typevars is None else {**self.typevars, **typevars}
+            ),
         )
 
     def __str__(self) -> str:
@@ -1143,8 +1143,7 @@ class DictIncompleteValue(GenericValue):
 
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
-    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys.
-    """
+    """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys."""
 
     items: Dict[str, Tuple[bool, Value]]
     """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
@@ -1240,9 +1239,11 @@ class TypedDictValue(GenericValue):
                 key: (is_required, value.substitute_typevars(typevars))
                 for key, (is_required, value) in self.items.items()
             },
-            extra_keys=self.extra_keys.substitute_typevars(typevars)
-            if self.extra_keys is not None
-            else None,
+            extra_keys=(
+                self.extra_keys.substitute_typevars(typevars)
+                if self.extra_keys is not None
+                else None
+            ),
         )
 
     def __str__(self) -> str:
@@ -2151,9 +2152,11 @@ def intersect_bounds_maps(bounds_maps: Sequence[BoundsMap]) -> BoundsMap:
         for tv, bounds in bounds_map.items():
             intermediate.setdefault(tv, set()).add(tuple(bounds))
     return {
-        tv: [OrBound(tuple(bound_lists))]
-        if len(bound_lists) > 1
-        else next(iter(bound_lists))
+        tv: (
+            [OrBound(tuple(bound_lists))]
+            if len(bound_lists) > 1
+            else next(iter(bound_lists))
+        )
         for tv, bound_lists in intermediate.items()
         if all(tv in bounds_map for bounds_map in bounds_maps)
     }
@@ -2510,9 +2513,11 @@ def unpack_values(
             good_subvals.append(subval)
         if not good_subvals:
             return _create_unpacked_list(
-                AnyValue(AnySource.error)
-                if subvals
-                else AnyValue(AnySource.unreachable),
+                (
+                    AnyValue(AnySource.error)
+                    if subvals
+                    else AnyValue(AnySource.unreachable)
+                ),
                 target_length,
                 post_starred_length,
             )

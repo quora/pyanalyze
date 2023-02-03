@@ -160,8 +160,7 @@ class ErrorContext(Protocol):
 
 
 class BaseNodeVisitor(ast.NodeVisitor):
-    """Base Visitor class that can run on all files in a/ and show detailed error messages.
-    """
+    """Base Visitor class that can run on all files in a/ and show detailed error messages."""
 
     # Number of context lines to show around errors
     CONTEXT_LINES: int = 3
@@ -319,8 +318,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     def check_all_files(
         cls, include_tests: bool = False, assert_passes: bool = True, **kwargs: Any
     ) -> List[Failure]:
-        """Runs the check for all files in scope or changed files if we are test-local.
-        """
+        """Runs the check for all files in scope or changed files if we are test-local."""
         if "settings" not in kwargs:
             kwargs["settings"] = cls._get_default_settings()
         kwargs = cls.prepare_constructor_kwargs(kwargs)
@@ -361,8 +359,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def main(cls) -> int:
-        """Can be used as a main function. Calls the checker on files given on the command line.
-        """
+        """Can be used as a main function. Calls the checker on files given on the command line."""
         args = cls._get_argument_parser().parse_args()
 
         if cls.error_code_enum is not None:

@@ -431,21 +431,21 @@ class SigParameter:
 
     # For compatibility
     empty: ClassVar[Literal[EMPTY]] = EMPTY
-    POSITIONAL_ONLY: ClassVar[
-        Literal[ParameterKind.POSITIONAL_ONLY]
-    ] = ParameterKind.POSITIONAL_ONLY
-    POSITIONAL_OR_KEYWORD: ClassVar[
-        Literal[ParameterKind.POSITIONAL_OR_KEYWORD]
-    ] = ParameterKind.POSITIONAL_OR_KEYWORD
-    VAR_POSITIONAL: ClassVar[
-        Literal[ParameterKind.VAR_POSITIONAL]
-    ] = ParameterKind.VAR_POSITIONAL
-    KEYWORD_ONLY: ClassVar[
-        Literal[ParameterKind.KEYWORD_ONLY]
-    ] = ParameterKind.KEYWORD_ONLY
-    VAR_KEYWORD: ClassVar[
-        Literal[ParameterKind.VAR_KEYWORD]
-    ] = ParameterKind.VAR_KEYWORD
+    POSITIONAL_ONLY: ClassVar[Literal[ParameterKind.POSITIONAL_ONLY]] = (
+        ParameterKind.POSITIONAL_ONLY
+    )
+    POSITIONAL_OR_KEYWORD: ClassVar[Literal[ParameterKind.POSITIONAL_OR_KEYWORD]] = (
+        ParameterKind.POSITIONAL_OR_KEYWORD
+    )
+    VAR_POSITIONAL: ClassVar[Literal[ParameterKind.VAR_POSITIONAL]] = (
+        ParameterKind.VAR_POSITIONAL
+    )
+    KEYWORD_ONLY: ClassVar[Literal[ParameterKind.KEYWORD_ONLY]] = (
+        ParameterKind.KEYWORD_ONLY
+    )
+    VAR_KEYWORD: ClassVar[Literal[ParameterKind.VAR_KEYWORD]] = (
+        ParameterKind.VAR_KEYWORD
+    )
 
     def __post_init__(self) -> None:
         # backward compatibility
@@ -1148,8 +1148,7 @@ class Signature:
         ctx: CheckCallContext,
         node: ast.Call,
     ) -> None:
-        """Show an error if the call to this Signature has too many positional arguments.
-        """
+        """Show an error if the call to this Signature has too many positional arguments."""
         if ctx.visitor is None:
             return
         if len(node.args) < ctx.visitor.options.get_value_for(MaximumPositionalArgs):
@@ -1250,17 +1249,15 @@ class Signature:
         new_args = None
         for name, (position, composite) in bound_args.items():
             param = self.parameters[name]
-            (
-                tv_map,
-                param_used_any,
-                remaining_value,
-            ) = self._check_param_type_compatibility(
-                param,
-                composite,
-                ctx,
-                typevar_values,
-                # If position is None we can't narrow so don't bother.
-                is_overload=is_overload and position is not None,
+            (tv_map, param_used_any, remaining_value) = (
+                self._check_param_type_compatibility(
+                    param,
+                    composite,
+                    ctx,
+                    typevar_values,
+                    # If position is None we can't narrow so don't bother.
+                    is_overload=is_overload and position is not None,
+                )
             )
             if tv_map is None:
                 had_error = True
@@ -2513,9 +2510,11 @@ class BoundMethodSignature:
         return BoundMethodSignature(
             self.signature.substitute_typevars(typevars),
             self.self_composite.substitute_typevars(typevars),
-            self.return_override.substitute_typevars(typevars)
-            if self.return_override is not None
-            else None,
+            (
+                self.return_override.substitute_typevars(typevars)
+                if self.return_override is not None
+                else None
+            ),
         )
 
     def __str__(self) -> str:
