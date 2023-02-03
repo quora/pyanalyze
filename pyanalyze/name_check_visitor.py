@@ -172,6 +172,7 @@ from .value import (
     GenericBases,
     GenericValue,
     get_tv_map,
+    is_async_iterable,
     is_iterable,
     is_union,
     KnownValue,
@@ -3853,11 +3854,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """
         composite = self.composite_from_node(node)
         if is_async:
-            iterator, _ = self._check_dunder_call(node, composite, "__aiter__", [])
-            anext, _ = self._check_dunder_call(
-                node, Composite(iterator, None, node), "__anext__", []
-            )
-            return self.unpack_awaitable(Composite(anext), node)
+            value = is_async_iterable(composite.value, self)
+            if isinstance(value, CanAssignError):
+                self._show_error_if_checking(
+                    node,
+                    f"{composite.value} is not async iterable",
+                    ErrorCode.unsupported_operation,
+                    detail=str(value),
+                )
+                return AnyValue(AnySource.error)
+            return value
         iterated = composite.value
         result = concrete_values_from_iterable(iterated, self)
         if isinstance(result, CanAssignError):

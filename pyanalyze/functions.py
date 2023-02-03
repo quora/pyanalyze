@@ -32,6 +32,7 @@ from .value import (
     GenericValue,
     get_tv_map,
     KnownValue,
+    is_async_iterable,
     is_iterable,
     make_coro_type,
     SubclassValue,
@@ -52,6 +53,9 @@ ReturnT = TypeVar("ReturnT")
 GeneratorValue = GenericValue(
     collections.abc.Generator,
     [TypeVarValue(YieldT), TypeVarValue(SendT), TypeVarValue(ReturnT)],
+)
+AsyncGeneratorValue = GenericValue(
+    collections.abc.AsyncGenerator, [TypeVarValue(YieldT), TypeVarValue(SendT)]
 )
 
 
@@ -92,23 +96,40 @@ class FunctionInfo:
     def get_generator_yield_type(self, ctx: CanAssignContext) -> Value:
         if self.return_annotation is None:
             return AnyValue(AnySource.unannotated)
-        iterable_val = is_iterable(self.return_annotation, ctx)
-        if isinstance(iterable_val, CanAssignError):
-            return AnyValue(AnySource.error)
-        return iterable_val
+        if isinstance(self.node, ast.AsyncFunctionDef):
+            iterable_val = is_async_iterable(self.return_annotation, ctx)
+            if isinstance(iterable_val, CanAssignError):
+                return AnyValue(AnySource.error)
+            return iterable_val
+        else:
+            iterable_val = is_iterable(self.return_annotation, ctx)
+            if isinstance(iterable_val, CanAssignError):
+                return AnyValue(AnySource.error)
+            return iterable_val
 
     def get_generator_send_type(self, ctx: CanAssignContext) -> Value:
         if self.return_annotation is None:
             return AnyValue(AnySource.unannotated)
-        tv_map = get_tv_map(GeneratorValue, self.return_annotation, ctx)
-        if not isinstance(tv_map, CanAssignError):
-            return tv_map.get(SendT, AnyValue(AnySource.generic_argument))
-        # If the return annotation is a non-Generator Iterable, assume the send
-        # type is None.
-        iterable_val = is_iterable(self.return_annotation, ctx)
-        if isinstance(iterable_val, CanAssignError):
-            return AnyValue(AnySource.error)
-        return KnownValue(None)
+        if isinstance(self.node, ast.AsyncFunctionDef):
+            tv_map = get_tv_map(AsyncGeneratorValue, self.return_annotation, ctx)
+            if not isinstance(tv_map, CanAssignError):
+                return tv_map.get(SendT, AnyValue(AnySource.generic_argument))
+            # If the return annotation is a non-Generator Iterable, assume the send
+            # type is None.
+            iterable_val = is_async_iterable(self.return_annotation, ctx)
+            if isinstance(iterable_val, CanAssignError):
+                return AnyValue(AnySource.error)
+            return KnownValue(None)
+        else:
+            tv_map = get_tv_map(GeneratorValue, self.return_annotation, ctx)
+            if not isinstance(tv_map, CanAssignError):
+                return tv_map.get(SendT, AnyValue(AnySource.generic_argument))
+            # If the return annotation is a non-Generator Iterable, assume the send
+            # type is None.
+            iterable_val = is_iterable(self.return_annotation, ctx)
+            if isinstance(iterable_val, CanAssignError):
+                return AnyValue(AnySource.error)
+            return KnownValue(None)
 
     def get_generator_return_type(self, ctx: CanAssignContext) -> Value:
         if self.return_annotation is None:
