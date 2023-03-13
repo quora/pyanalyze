@@ -4,6 +4,11 @@
 
 # Changelog
 
+## Unreleased
+
+- Fix bug where objects with a `__call__` method that takes `*args` instead
+  of `self` was not considered callable (#600)
+
 ## Version 0.9.0 (January 16, 2023)
 
 Release highlights:

@@ -525,6 +525,37 @@ class TestCalls(TestNameCheckVisitorBase):
             assert_is_value(obj(x), AnyValue(AnySource.unannotated))
 
     @assert_passes()
+    def test__call__annotated(self):
+        class WithCall(object):
+            def __call__(self, arg: int) -> int:
+                return arg * 2
+
+        def capybara(x: int):
+            obj = WithCall()
+            assert_is_value(obj, TypedValue(WithCall))
+            assert_is_value(obj(x), TypedValue(int))
+            obj("x")  # E: incompatible_argument
+
+    @assert_passes()
+    def test__call__starargs(self):
+        class WithCall(object):
+            def __call__(*args) -> int:  # E: method_first_arg
+                return 42
+
+        class WithWrongAnnotation(object):
+            def __call__(*args: int) -> int:  # E: method_first_arg
+                return 42
+
+        def capybara(x: int):
+            obj = WithCall()
+            assert_is_value(obj, TypedValue(WithCall))
+            assert_is_value(obj(x), TypedValue(int))
+            assert_is_value(obj("x"), TypedValue(int))
+
+            obj2 = WithWrongAnnotation()
+            obj2(1)  # E: not_callable
+
+    @assert_passes()
     def test_unbound_method(self):
         class Capybara(object):
             def hutia(self, x=None):

@@ -1892,21 +1892,30 @@ class Signature:
         if not params:
             return None
         kind = params[0].kind
-        if self_value is not None:
-            tv_map = get_tv_map(params[0].annotation, self_value, ctx)
-            if isinstance(tv_map, CanAssignError):
-                return None
-        else:
-            tv_map = {}
-        if kind is ParameterKind.ELLIPSIS:
+        if kind in (ParameterKind.ELLIPSIS, ParameterKind.VAR_POSITIONAL):
             new_params = params
+            self_tuple_annotation = params[0].annotation
+            if (
+                isinstance(self_tuple_annotation, GenericValue)
+                and self_tuple_annotation.typ is tuple
+            ):
+                self_annotation = self_tuple_annotation.args[0]
+            else:
+                self_annotation = AnyValue(AnySource.inference)
         elif kind in (
             ParameterKind.POSITIONAL_ONLY,
             ParameterKind.POSITIONAL_OR_KEYWORD,
         ):
             new_params = params[1:]
+            self_annotation = params[0].annotation
         else:
             return None
+        if self_value is not None:
+            tv_map = get_tv_map(self_annotation, self_value, ctx)
+            if isinstance(tv_map, CanAssignError):
+                return None
+        else:
+            tv_map = {}
         if tv_map:
             new_params = {
                 param.name: param.substitute_typevars(tv_map) for param in new_params
