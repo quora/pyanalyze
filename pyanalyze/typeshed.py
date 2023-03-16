@@ -842,6 +842,7 @@ class TypeshedFinder:
         args = node.args
         arguments: List[SigParameter] = []
         if sys.version_info >= (3, 8):
+            assert hasattr(args, "posonlyargs")
             num_pos_only_args = len(args.posonlyargs)
             defaults = args.defaults
             num_pos_only_defaults = len(defaults) - len(args.args)
