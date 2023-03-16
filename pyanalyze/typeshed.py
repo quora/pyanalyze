@@ -840,13 +840,34 @@ class TypeshedFinder:
         if node.decorator_list:
             objclass = None
         args = node.args
-
-        num_without_defaults = len(args.args) - len(args.defaults)
-        defaults = [None] * num_without_defaults + args.defaults
-        arguments = list(
-            self._parse_param_list(
-                args.args, defaults, mod, ParameterKind.POSITIONAL_OR_KEYWORD, objclass
+        arguments: List[SigParameter] = []
+        if sys.version_info >= (3, 8):
+            assert hasattr(args, "posonlyargs")
+            num_pos_only_args = len(args.posonlyargs)
+            defaults = args.defaults
+            num_pos_only_defaults = len(defaults) - len(args.args)
+            if num_pos_only_defaults > 0:
+                num_without_default = num_pos_only_args - num_pos_only_defaults
+                pos_only_defaults = [None] * num_without_default + defaults[
+                    num_pos_only_defaults:
+                ]
+                defaults = defaults[num_pos_only_defaults:]
+            else:
+                pos_only_defaults = [None for _ in args.posonlyargs]
+            arguments += self._parse_param_list(
+                args.posonlyargs,
+                pos_only_defaults,
+                mod,
+                ParameterKind.POSITIONAL_ONLY,
+                objclass,
             )
+        else:
+            defaults = args.defaults
+
+        num_without_defaults = len(args.args) - len(defaults)
+        defaults = [None] * num_without_defaults + defaults
+        arguments += self._parse_param_list(
+            args.args, defaults, mod, ParameterKind.POSITIONAL_OR_KEYWORD, objclass
         )
         if autobind:
             if is_classmethod or not is_staticmethod:

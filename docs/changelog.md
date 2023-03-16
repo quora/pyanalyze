@@ -6,6 +6,7 @@
 
 ## Unreleased
 
+- Fix handling of positional-only arguments using `/` syntax in stubs (#601)
 - Fix bug where objects with a `__call__` method that takes `*args` instead
   of `self` was not considered callable (#600)
 
