@@ -208,6 +208,30 @@ class TestBundledStubs(TestNameCheckVisitorBase):
         assert isinstance(val, CallableValue)
         assert isinstance(val.signature, OverloadedSignature)
 
+    @skip_before((3, 8))
+    @assert_passes()
+    def test_pos_only(self):
+        def capybara():
+            from _pyanalyze_tests.posonly import f, g, h
+
+            f(1, 2)
+            f(1, 2, 3)
+            f(1, y=2, z=3)
+            f(x=1, y=2)  # E: incompatible_call
+            f()  # E: incompatible_call
+
+            g()
+            g(1)
+            g(1, 2)
+            g(1, y=2)
+            g(x=1)  # E: incompatible_call
+
+            h()  # E: incompatible_call
+            h(1)
+            h(x=1)  # E: incompatible_call
+            h(1, y=2)
+            h(1, 2, 3)
+
     def test_typeddict(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.typeddict"
