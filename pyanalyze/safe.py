@@ -85,10 +85,14 @@ def safe_issubclass(cls: type, class_or_tuple: Union[type, Tuple[type, ...]]) ->
 def safe_isinstance(obj: object, class_or_tuple: Union[type, Tuple[type, ...]]) -> bool:
     """Safe version of ``isinstance()``.
 
-    Apart from incorrect arguments, ``isinstance(a, b)`` can throw an error
-    only if `b` has a ``__instancecheck__`` method that throws an error.
-    Therefore, it is not necessary to use ``safe_isinstance()`` if the class
-    is known to not override ``__instancecheck__``.
+    ``isinstance(a, b)`` can throw an error in the following circumstances:
+
+    - ``b`` is not a class
+    - ``b`` has an ``__instancecheck__`` method that throws an error
+    - ``a`` has a ``__class__`` property that throws an error
+
+    Therefore, ``safe_isinstance()`` must be used when doing ``isinstance`` checks
+    on arbitrary objects that come from user code.
 
     Defaults to False if ``isinstance()`` throws.
 
