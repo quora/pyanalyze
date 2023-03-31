@@ -43,6 +43,7 @@ from ast_decompiler import decompile
 from typing_extensions import NotRequired, Protocol, TypedDict
 
 from . import analysis_lib
+from .safe import safe_getattr, safe_isinstance
 
 Error = Dict[str, Any]
 
@@ -977,7 +978,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             if module is None:
                 continue
             # ignore compiled modules
-            if not getattr(module, "__file__", None) or module.__file__.endswith(".so"):
+            if not safe_isinstance(safe_getattr(module, "__file__", None), str) or module.__file__.endswith(".so"):
                 continue
             if cls._should_ignore_module(module_name):
                 continue
