@@ -910,13 +910,11 @@ class TestVariableNameValue(TestNameCheckVisitorBase):
 
 class TestImports(TestNameCheckVisitorBase):
     def test_star_import(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from qcore.asserts import *
 
             assert_eq(1, 1)
-            """
-        )
+            """)
 
     @assert_passes()
     def test_local_import(self):
@@ -1425,8 +1423,7 @@ class TestCallSiteCollection(TestNameCheckVisitorBase):
         return collector.map
 
     def test_member_function_call(self):
-        call_map = self.run_and_get_call_map(
-            """
+        call_map = self.run_and_get_call_map("""
             class TestClass(object):
                 def __init__(self):
                     self.first_function(5)
@@ -1437,8 +1434,7 @@ class TestCallSiteCollection(TestNameCheckVisitorBase):
 
                 def second_function(self, y, z):
                     print(y + z)
-            """
-        )
+            """)
 
         assert "TestClass.first_function" in call_map["TestClass.second_function"]
         assert "TestClass.__init__" in call_map["TestClass.first_function"]
@@ -1975,8 +1971,7 @@ class TestIncompatibleOverride(TestNameCheckVisitorBase):
 class TestWalrus(TestNameCheckVisitorBase):
     @skip_before((3, 8))
     def test(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from typing import Optional
 
             def opt() -> Optional[int]:
@@ -1990,13 +1985,11 @@ class TestWalrus(TestNameCheckVisitorBase):
                 if (y := opt()) is not None:
                     assert_is_value(y, TypedValue(int))
                 assert_is_value(y, TypedValue(int) | KnownValue(None))
-            """
-        )
+            """)
 
     @skip_before((3, 8))
     def test_and(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from typing import Optional
 
             def opt() -> Optional[int]:
@@ -2006,40 +1999,33 @@ class TestWalrus(TestNameCheckVisitorBase):
                 if (x := opt()) and cond:
                     assert_is_value(x, TypedValue(int))
                 assert_is_value(x, TypedValue(int) | KnownValue(None))
-            """
-        )
-        self.assert_passes(
-            """
+            """)
+        self.assert_passes("""
             from typing import Set
 
             def func(myvar: str, strset: Set[str]) -> None:
                 if (encoder_type := myvar) and myvar in strset:
                     print(encoder_type)
-            """
-        )
+            """)
 
     @skip_before((3, 8))
     def test_if_exp(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             def capybara(cond):
                 (x := 2) if cond else (x := 1)
                 assert_is_value(x, KnownValue(2) | KnownValue(1))
-            """
-        )
+            """)
 
     @skip_before((3, 8))
     def test_comprehension_scope(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from typing import List, Optional
 
             def capybara(elts: List[Optional[int]]) -> None:
                 if any((x := i) is not None for i in elts):
                     assert_is_value(x, TypedValue(int) | KnownValue(None))
                     print(i)  # E: undefined_name
-            """
-        )
+            """)
 
 
 class TestUnion(TestNameCheckVisitorBase):

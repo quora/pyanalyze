@@ -85,9 +85,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         with tempfile.TemporaryDirectory() as temp_dir_str:
             temp_dir = Path(temp_dir_str)
             (temp_dir / "typing.pyi").write_text("def NewType(a, b): pass\n")
-            (temp_dir / "newt.pyi").write_text(
-                textwrap.dedent(
-                    """
+            (temp_dir / "newt.pyi").write_text(textwrap.dedent("""
                 from typing import NewType
 
                 NT = NewType("NT", int)
@@ -95,9 +93,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
 
                 def f(x: NT, y: Alias) -> None:
                     pass
-                """
-                )
-            )
+                """))
             (temp_dir / "VERSIONS").write_text("newt: 3.5\ntyping: 3.5\n")
             (temp_dir / "@python2").mkdir()
             tsf = TypeshedFinder(Checker(), verbose=True)

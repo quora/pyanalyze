@@ -407,11 +407,7 @@ def assert_code_equal(expected, actual):
 %s
 >>> diff:
 %s
-""" % (
-            expected,
-            actual,
-            diff,
-        )
+""" % (expected, actual, diff)
         assert False, message
 
 

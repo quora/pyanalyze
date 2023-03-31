@@ -394,8 +394,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @skip_before((3, 9))
     def test_builtin_tuples_string(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from __future__ import annotations
             from collections.abc import Iterable
             from typing import Union
@@ -421,8 +420,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
                     assert_is_value(t, t_str_int)
                 for elt in returner():
                     assert_is_value(elt, t_str_int)
-            """
-        )
+            """)
 
     @assert_passes()
     def test_invalid_annotation(self):
@@ -479,16 +477,14 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @skip_before((3, 7))
     def test_future_annotations(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from __future__ import annotations
             from typing import List
 
             def f(x: int, y: List[str]):
                 assert_is_value(x, TypedValue(int))
                 assert_is_value(y, GenericValue(list, [TypedValue(str)]))
-            """
-        )
+            """)
 
     @assert_passes()
     def test_final(self):
@@ -548,8 +544,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @skip_before((3, 9))
     def test_pep604(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from __future__ import annotations
 
             def capybara(x: int | None, y: int | str) -> None:
@@ -559,13 +554,11 @@ class TestAnnotations(TestNameCheckVisitorBase):
             def caller():
                 capybara(1, 2)
                 capybara(None, "x")
-            """
-        )
+            """)
 
     @skip_before((3, 10))
     def test_pep604_runtime(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             def capybara(x: int | None, y: int | str) -> None:
                 assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
                 assert_is_value(y, MultiValuedValue([TypedValue(int), TypedValue(str)]))
@@ -573,8 +566,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
             def caller():
                 capybara(1, 2)
                 capybara(None, "x")
-            """
-        )
+            """)
 
     @assert_passes()
     def test_stringified_ops(self):
