@@ -865,8 +865,7 @@ class TestCalls(TestNameCheckVisitorBase):
 
     @skip_before((3, 8))
     def test_pos_only(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from typing import Sequence
 
             def pos_only(pos: int, /) -> None:
@@ -879,8 +878,7 @@ class TestCalls(TestNameCheckVisitorBase):
                 pos_only(pos=1)  # E: incompatible_call
                 pos_only()  # E: incompatible_call
                 pos_only(1, 2)  # E: incompatible_call
-            """
-        )
+            """)
 
     @assert_passes()
     def test_kw_only(self):

@@ -37,8 +37,7 @@ class TestExoticTry(TestNameCheckVisitorBase):
 class TestTryStar(TestNameCheckVisitorBase):
     @skip_before((3, 11))
     def test_eg_types(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from typing import assert_type
 
             def capybara():
@@ -54,13 +53,11 @@ class TestTryStar(TestNameCheckVisitorBase):
                     pass
                 except *int as eg:  # E: bad_except_handler
                     pass
-            """
-        )
+            """)
 
     @skip_before((3, 11))
     def test_variable_scope(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from typing import assert_type, Literal
 
             def capybara():
@@ -75,13 +72,11 @@ class TestTryStar(TestNameCheckVisitorBase):
                     assert_type(x, Literal[0, 1, 2])
                     x = 3
                 assert_type(x, Literal[1, 2, 3])
-            """
-        )
+            """)
 
     @skip_before((3, 11))
     def test_try_else(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from typing import assert_type, Literal
 
             def capybara():
@@ -99,13 +94,11 @@ class TestTryStar(TestNameCheckVisitorBase):
                     assert_type(x, Literal[1])
                     x = 4
                 assert_type(x, Literal[2, 3, 4])
-            """
-        )
+            """)
 
     @skip_before((3, 11))
     def test_try_finally(self):
-        self.assert_passes(
-            """
+        self.assert_passes("""
             from typing import assert_type, Literal
 
             def capybara():
@@ -123,5 +116,4 @@ class TestTryStar(TestNameCheckVisitorBase):
                     assert_type(x, Literal[0, 1, 2, 3])
                     x = 4
                 assert_type(x, Literal[4])
-            """
-        )
+            """)
