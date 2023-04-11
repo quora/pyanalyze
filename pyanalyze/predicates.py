@@ -149,10 +149,13 @@ class InPredicate:
                 if not result:
                     return None
         elif positive:
-            for pattern_val in self.pattern_vals:
-                known_self = KnownValue(pattern_val)
-                if value.is_assignable(known_self, self.ctx):
-                    return known_self
+            acceptable_values = [
+                KnownValue(pattern_val)
+                for pattern_val in self.pattern_vals
+                if value.is_assignable(KnownValue(pattern_val), self.ctx)
+            ]
+            if acceptable_values:
+                return unite_values(*acceptable_values)
             else:
                 return None
         else:
