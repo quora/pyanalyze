@@ -1,15 +1,13 @@
-# Unreleased
-
-- Better typechecking support for async generators (#594)
-
 # Changelog
 
 ## Unreleased
 
+- Fix type narrowing with `in` on enum types in the negative case (#606)
 - Fix crash when `getattr()` on a module object throws an error (#603)
 - Fix handling of positional-only arguments using `/` syntax in stubs (#601)
 - Fix bug where objects with a `__call__` method that takes `*args` instead
-  of `self` was not considered callable (#600)
+  of `self` were not considered callable (#600)
+- Better typechecking support for async generators (#594)
 
 ## Version 0.9.0 (January 16, 2023)
 

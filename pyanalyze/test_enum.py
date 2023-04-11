@@ -71,6 +71,7 @@ class TestNarrowing(TestNameCheckVisitorBase):
     @assert_passes()
     def test_exhaustive(self):
         from enum import Enum
+        from typing_extensions import assert_never
 
         class X(Enum):
             a = 1
@@ -87,6 +88,24 @@ class TestNarrowing(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(X.a))
             else:
                 assert_is_value(x, KnownValue(X.b))
+
+        def capybara_in_list(x: X):
+            if x in [X.a]:
+                assert_is_value(x, KnownValue(X.a))
+            else:
+                assert_is_value(x, KnownValue(X.b))
+
+        def capybara_in_tuple(x: X):
+            if x in (X.a,):
+                assert_is_value(x, KnownValue(X.a))
+            else:
+                assert_is_value(x, KnownValue(X.b))
+
+        def test_multi_in(x: X):
+            if x in (X.a, X.b):
+                assert_is_value(x, KnownValue(X.a) | KnownValue(X.b))
+            else:
+                assert_never(x)
 
         def whatever(x):
             if x == X.a:

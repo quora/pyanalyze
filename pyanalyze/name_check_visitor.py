@@ -95,7 +95,7 @@ from .options import (
     StringSequenceOption,
 )
 from .patma import PatmaVisitor
-from .predicates import EqualsPredicate
+from .predicates import EqualsPredicate, InPredicate
 from .reexport import ImplicitReexportTracker
 from .safe import (
     is_dataclass_type,
@@ -3149,39 +3149,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             positive = isinstance(op, ast.Eq)
             return Constraint(varname, ConstraintType.predicate, positive, predicate)
         elif isinstance(op, (ast.In, ast.NotIn)) and is_right:
-
-            def predicate_func(value: Value, positive: bool) -> Optional[Value]:
-                op = _in if positive else _not_in
-                if isinstance(value, KnownValue):
-                    try:
-                        result = op(value.val, other_val)
-                    except Exception:
-                        pass
-                    else:
-                        if not result:
-                            return None
-                elif positive:
-                    known_other = KnownValue(other_val)
-                    member_values = concrete_values_from_iterable(known_other, self)
-                    if isinstance(member_values, CanAssignError):
-                        return value
-                    elif isinstance(member_values, Value):
-                        if value.is_assignable(member_values, self):
-                            return member_values
-                        return None
-                    else:
-                        possible_values = [
-                            val
-                            for val in member_values
-                            if value.is_assignable(val, self)
-                        ]
-                        return unite_values(*possible_values)
-                return value
-
+            try:
+                predicate_vals = list(other_val)
+                predicate_types = {type(val) for val in predicate_vals}
+                if len(predicate_types) == 1:
+                    pattern_type = next(iter(predicate_types))
+                else:
+                    pattern_type = object
+            except Exception:
+                return NULL_CONSTRAINT
+            predicate = InPredicate(other_val, pattern_type, self)
             positive = isinstance(op, ast.In)
-            return Constraint(
-                varname, ConstraintType.predicate, positive, predicate_func
-            )
+            return Constraint(varname, ConstraintType.predicate, positive, predicate)
         else:
             positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
 
