@@ -88,6 +88,18 @@ class TestNarrowing(TestNameCheckVisitorBase):
             else:
                 assert_is_value(x, KnownValue(X.b))
 
+        def capybara_in_list(x: X):
+            if x in [X.a]:
+                assert_is_value(x, KnownValue(X.a))
+            else:
+                assert_is_value(x, KnownValue(X.b))
+
+        def capybara_in_tuple(x: X):
+            if x in (X.a,):
+                assert_is_value(x, KnownValue(X.a))
+            else:
+                assert_is_value(x, KnownValue(X.b))
+
         def whatever(x):
             if x == X.a:
                 assert_is_value(x, KnownValue(X.a))

@@ -6,7 +6,7 @@ Reusable predicates.
 import enum
 import operator
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence
 
 from .safe import safe_issubclass
 from .value import (
@@ -122,6 +122,51 @@ class EqualsPredicate:
                             KnownValue(val)
                             for val in pattern_type
                             if val is not self.pattern_val
+                        ]
+                    )
+        return value
+
+
+@dataclass
+class InPredicate:
+    """Predicate that filters out values that are not in pattern_vals."""
+
+    pattern_vals: Sequence[object]
+    pattern_type: type
+    ctx: CanAssignContext
+
+    def __call__(self, value: Value, positive: bool) -> Optional[Value]:
+        inner_value = unannotate(value)
+        if isinstance(inner_value, KnownValue):
+            try:
+                if positive:
+                    result = inner_value.val in self.pattern_vals
+                else:
+                    result = inner_value.val not in self.pattern_vals
+            except Exception:
+                pass
+            else:
+                if not result:
+                    return None
+        elif positive:
+            for pattern_val in self.pattern_vals:
+                known_self = KnownValue(pattern_val)
+                if value.is_assignable(known_self, self.ctx):
+                    return known_self
+            else:
+                return None
+        else:
+            if safe_issubclass(self.pattern_type, enum.Enum):
+                simplified = unannotate(value)
+                if (
+                    isinstance(simplified, TypedValue)
+                    and simplified.typ is self.pattern_type
+                ):
+                    return unite_values(
+                        *[
+                            KnownValue(val)
+                            for val in self.pattern_type
+                            if val not in self.pattern_vals
                         ]
                     )
         return value

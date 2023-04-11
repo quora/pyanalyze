@@ -80,6 +80,33 @@ class TestAssertNever(TestNameCheckVisitorBase):
             else:
                 assert_never(x)
 
+    @assert_passes()
+    def test_enum(self):
+        from typing_extensions import assert_never
+        import enum
+
+        class Capybara(enum.Enum):
+            hydrochaeris = 1
+            isthmius = 2
+
+        def capybara(x: Capybara) -> None:
+            if x in (Capybara.hydrochaeris, Capybara.isthmius):
+                pass
+            else:
+                assert_never(x)
+
+    @assert_passes()
+    def test_literal(self):
+        from typing_extensions import Literal, assert_never, assert_type
+
+        def capybara(x: Literal["a", "b", "c"]) -> None:
+            if x in ("a", "b"):
+                assert_type(x, Literal["a", "b"])
+            elif x == "c":
+                assert_type(x, Literal["c"])
+            else:
+                assert_never(x)
+
 
 class TestNeverCall(TestNameCheckVisitorBase):
     @assert_passes()
