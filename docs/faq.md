@@ -57,10 +57,9 @@ However, this approach also has some disadvantages:
   attributes are created in the `__init__` method. Currently, pyanalyze works around this
   by deferring detection of undefined attributes until the entire codebase has been checked,
   but this is fragile and not always reliable.
-- The implementation of `@typing.overload` does not provide a way to access the overloads
-  at runtime, so there is no obvious way to support overloaded functions at runtime.
-  (Note that although there is no technical blocker for supporting overloads in stub files,
-  pyanalyze does not support overloads in stubs yet either.)
+- Initially, the implementation of `@typing.overload` did not provide a way to access the
+  overloads at runtime, so there was no obvious way to support overloaded functions at runtime.
+  However, this was fixed in Python 3.11.
 
 ## When should I use pyanalyze?
 
