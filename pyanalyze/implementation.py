@@ -1351,9 +1351,6 @@ def _bool_impl(ctx: CallContext) -> Value:
 
 
 _POS_ONLY = ParameterKind.POSITIONAL_ONLY
-_ENCODING_PARAMETER = SigParameter(
-    "encoding", annotation=TypedValue(str), default=KnownValue("")
-)
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -1663,30 +1660,6 @@ def get_default_argspecs() -> Dict[object, Signature]:
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(bytes)),
-                _ENCODING_PARAMETER,
-                SigParameter(
-                    "errors", annotation=TypedValue(str), default=KnownValue("")
-                ),
-            ],
-            TypedValue(str),
-            callable=bytes.decode,
-            allow_call=True,
-        ),
-        Signature.make(
-            [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(str)),
-                _ENCODING_PARAMETER,
-                SigParameter(
-                    "errors", annotation=TypedValue(str), default=KnownValue("")
-                ),
-            ],
-            TypedValue(bytes),
-            callable=str.encode,
-            allow_call=True,
-        ),
-        Signature.make(
-            [
                 SigParameter("self", _POS_ONLY, annotation=TypedValue(str)),
                 SigParameter("args", ParameterKind.VAR_POSITIONAL),
                 SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
@@ -1784,7 +1757,6 @@ def get_default_argspecs() -> Dict[object, Signature]:
         except AttributeError:
             pass
         else:
-            # Anticipating https://bugs.python.org/issue46414
             sig = Signature.make(
                 [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
                 TypeVarValue(T),
@@ -1792,7 +1764,6 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 callable=reveal_type_func,
             )
             signatures.append(sig)
-        # Anticipating that this will be added to the stdlib
         try:
             assert_type_func = getattr(mod, "assert_type")
         except AttributeError:
