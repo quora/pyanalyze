@@ -152,10 +152,13 @@ class TestPEP673(TestNameCheckVisitorBase):
     @assert_passes()
     def test_stub(self):
         def capybara():
+            from typing_extensions import assert_type
             from _pyanalyze_tests.self import X, Y
 
             x = X()
             y = Y()
+            assert_type(x, X)
+            assert_type(y, Y)
 
             def want_x(x: X):
                 pass
