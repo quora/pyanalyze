@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improve support for Cythonized methods (#617)
+- Add support for the PEP 698 `@override` decorator (#614)
 - Add support for `__new__` methods returning `typing.Self`, fixing
   various failures with the latest release of `typeshed-client` (#615)
 - Add support for importing stub-only modules in other stubs (#615)
@@ -13,7 +15,6 @@
 - Fix bug where objects with a `__call__` method that takes `*args` instead
   of `self` were not considered callable (#600)
 - Better typechecking support for async generators (#594)
-- Add support for the PEP 698 `@override` decorator (#614)
 
 ## Version 0.9.0 (January 16, 2023)
 

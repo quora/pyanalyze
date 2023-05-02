@@ -362,6 +362,9 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
     elif asynq.is_async_fn(cls_val):
         # static or class method
         return result
+    elif _static_hasattr(cls_val, "func_code"):
+        # Cython function probably
+        return UnboundMethodValue(ctx.attr, ctx.root_composite, typevars=typevars)
     elif _static_hasattr(cls_val, "__get__"):
         typeshed_type = ctx.get_attribute_from_typeshed(typ, on_class=False)
         if typeshed_type is not UNINITIALIZED_VALUE:
@@ -417,6 +420,8 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
 def _get_attribute_from_unbound(
     root_value: UnboundMethodValue, ctx: AttrContext
 ) -> Value:
+    if root_value.secondary_attr_name is not None:
+        return AnyValue(AnySource.inference)
     method = root_value.get_method()
     if method is None:
         return AnyValue(AnySource.inference)

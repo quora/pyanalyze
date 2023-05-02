@@ -299,7 +299,7 @@ class YieldChecker:
             return
 
         duplicate_indices = {}  # index to first index
-        seen = {}  # ast.dump result to index
+        seen: Dict[str, int] = {}  # ast.dump result to index
         for i, member in enumerate(node.value.elts):
             # identical AST nodes don't compare equally, so just stringify them for comparison
             code = ast.dump(member)
@@ -620,7 +620,7 @@ class YieldChecker:
 
 def _camel_case_to_snake_case(s: str) -> str:
     """Converts a CamelCase string to snake_case."""
-    out = []
+    out: List[str] = []
     last_was_uppercase = False
     for c in s:
         if c.isupper():
