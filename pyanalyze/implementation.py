@@ -368,7 +368,7 @@ def _list_append_impl(ctx: CallContext) -> ImplReturn:
     return ImplReturn(KnownValue(None))
 
 
-def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
+def _sequence_common_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
     def inner(key: Value) -> Value:
         self_value = replace_known_sequence_value(ctx.vars["self"])
         if not isinstance(self_value, TypedValue):
@@ -386,12 +386,12 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                     if members is not None:
                         if -len(members) <= key.val < len(members):
                             return members[key.val]
-                        elif typ is list:
-                            # fall back to the common type
-                            return self_value.args[0]
-                        else:
+                        elif typ is tuple:
                             ctx.show_error(f"Tuple index out of range: {key}")
                             return AnyValue(AnySource.error)
+                        else:
+                            # fall back to the common type
+                            return self_value.args[0]
                     else:
                         # The value contains at least one unpack. We try to find a precise
                         # type if everything leading up to the index we're interested in is
@@ -431,7 +431,7 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
                         # If the value contains unpacked values, we don't attempt
                         # to resolve the slice.
                         return GenericValue(typ, self_value.args)
-                elif self_value.typ in (list, tuple):
+                elif self_value.typ in (list, tuple, collections.abc.Sequence):
                     # For generics of exactly list/tuple, return the self type.
                     return self_value
                 else:
@@ -463,11 +463,17 @@ def _sequence_getitem_impl(ctx: CallContext, typ: type) -> ImplReturn:
 
 
 def _list_getitem_impl(ctx: CallContext) -> ImplReturn:
-    return _sequence_getitem_impl(ctx, list)
+    return _sequence_common_getitem_impl(ctx, list)
 
 
 def _tuple_getitem_impl(ctx: CallContext) -> ImplReturn:
-    return _sequence_getitem_impl(ctx, tuple)
+    return _sequence_common_getitem_impl(ctx, tuple)
+
+
+# This one seems to be needed because Sequence.__getitem__ gets confused with the __getitem__
+# for various internal typing classes.
+def _sequence_getitem_impl(ctx: CallContext) -> ImplReturn:
+    return _sequence_common_getitem_impl(ctx, collections.abc.Sequence)
 
 
 def _typeddict_setitem(
@@ -1552,6 +1558,16 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=tuple.__getitem__,
             impl=_tuple_getitem_impl,
+        ),
+        Signature.make(
+            [
+                SigParameter(
+                    "self", _POS_ONLY, annotation=TypedValue(collections.abc.Sequence)
+                ),
+                SigParameter("obj", _POS_ONLY),
+            ],
+            callable=collections.abc.Sequence.__getitem__,
+            impl=_sequence_getitem_impl,
         ),
         Signature.make(
             [
