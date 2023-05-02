@@ -5,6 +5,8 @@
 - Add support for `__new__` methods returning `typing.Self`, fixing
   various failures with the latest release of `typeshed-client` (#615)
 - Add support for importing stub-only modules in other stubs (#615)
+- Fix signature compatibility bug involving `**kwargs` and positional-only
+  arguments (#615)
 - Fix type narrowing with `in` on enum types in the negative case (#606)
 - Fix crash when `getattr()` on a module object throws an error (#603)
 - Fix handling of positional-only arguments using `/` syntax in stubs (#601)
