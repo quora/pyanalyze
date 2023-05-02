@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix type inference for subscripting on `Sequence` (#618)
 - Improve support for Cythonized methods (#617)
 - Add support for the PEP 698 `@override` decorator (#614)
 - Add support for `__new__` methods returning `typing.Self`, fixing

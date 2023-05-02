@@ -358,3 +358,13 @@ class TestAnnotated(TestNameCheckVisitorBase):
         def caller(x: Annotated[int, 42]):
             assert_is_value(x, AnnotatedValue(TypedValue(int), [KnownValue(42)]))
             assert_is_value(f(x), AnnotatedValue(TypedValue(int), [KnownValue(42)]))
+
+
+class TestDunder(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_sequence(self):
+        from typing import Sequence
+        from typing_extensions import assert_type
+
+        def capybara(s: Sequence[int], t: str):
+            assert_type(s[0], int)
