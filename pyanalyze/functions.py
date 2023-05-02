@@ -21,6 +21,7 @@ from .error_code import ErrorCode
 from .extensions import evaluated, overload, real_overload
 from .node_visitor import ErrorContext
 from .options import Options, PyObjectSequenceOption
+from .safe import is_typing_name
 from .signature import ParameterKind, Signature, SigParameter
 from .stacked_scopes import Composite
 from .value import (
@@ -82,6 +83,7 @@ class FunctionInfo:
     is_staticmethod: bool  # has @staticmethod
     is_decorated_coroutine: bool  # has @asyncio.coroutine
     is_overload: bool  # typing.overload or pyanalyze.extensions.overload
+    is_override: bool  # @typing.override
     is_evaluated: bool  # @pyanalyze.extensions.evaluated
     is_abstractmethod: bool  # has @abstractmethod
     # a list of tuples of (decorator function, applied decorator function, AST node). These are
@@ -219,6 +221,7 @@ def compute_function_info(
     is_decorated_coroutine = False
     is_staticmethod = False
     is_overload = False
+    is_override = False
     is_abstractmethod = False
     is_evaluated = False
     decorators = []
@@ -242,22 +245,24 @@ def compute_function_info(
             decorators.append((callee, decorator_value, decorator))
         else:
             decorator_value = ctx.visit_expression(decorator)
-            if decorator_value == KnownValue(classmethod):
-                is_classmethod = True
-            elif decorator_value == KnownValue(staticmethod):
-                is_staticmethod = True
-            elif sys.version_info < (3, 11) and decorator_value == KnownValue(
-                asyncio.coroutine  # static analysis: ignore[undefined_attribute]
-            ):
-                is_decorated_coroutine = True
-            elif decorator_value == KnownValue(
-                real_overload
-            ) or decorator_value == KnownValue(overload):
-                is_overload = True
-            elif decorator_value == KnownValue(abstractmethod):
-                is_abstractmethod = True
-            elif decorator_value == KnownValue(evaluated):
-                is_evaluated = True
+            if isinstance(decorator_value, KnownValue):
+                val = decorator_value.val
+                if val is classmethod:
+                    is_classmethod = True
+                elif val is staticmethod:
+                    is_staticmethod = True
+                elif sys.version_info < (3, 11) and val is (
+                    asyncio.coroutine  # static analysis: ignore[undefined_attribute]
+                ):
+                    is_decorated_coroutine = True
+                elif val is real_overload or val is overload:
+                    is_overload = True
+                elif val is abstractmethod:
+                    is_abstractmethod = True
+                elif val is evaluated:
+                    is_evaluated = True
+                elif is_typing_name(val, "override"):
+                    is_override = True
             decorators.append((decorator_value, decorator_value, decorator))
     params = compute_parameters(
         node,
@@ -278,6 +283,7 @@ def compute_function_info(
         is_staticmethod=is_staticmethod,
         is_abstractmethod=is_abstractmethod,
         is_overload=is_overload,
+        is_override=is_override,
         is_evaluated=is_evaluated,
         decorators=decorators,
         node=node,
