@@ -11,11 +11,11 @@ import secrets
 import sys
 import types
 from dataclasses import dataclass
-from typing import Callable, List, Mapping, Optional, Set
+from typing import Callable, List, Mapping, Optional, Set, Union
 
 
 def _all_files(
-    root: Path, filter_function: Optional[Callable[[str], bool]] = None
+    root: Union[str, Path], filter_function: Optional[Callable[[str], bool]] = None
 ) -> Set[str]:
     """Returns the set of all files at the given root.
 
@@ -31,7 +31,9 @@ def _all_files(
     return all_files
 
 
-def files_with_extension_from_directory(extension: str, dirname: Path) -> Set[str]:
+def files_with_extension_from_directory(
+    extension: str, dirname: Union[str, Path]
+) -> Set[str]:
     """Finds all files in a given directory with this extension."""
     return _all_files(dirname, filter_function=lambda fn: fn.endswith("." + extension))
 
