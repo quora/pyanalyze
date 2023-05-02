@@ -644,12 +644,13 @@ class ArgSpecCache:
             signature = self._cached_get_argspec(
                 _ENUM_CALL, impl, is_asynq, in_overload_resolution
             )
-            bound_sig = make_bound_method(
-                signature, Composite(SubclassValue(TypedValue(obj)))
-            )
+            self_value = SubclassValue(TypedValue(obj))
+            bound_sig = make_bound_method(signature, Composite(self_value))
             if bound_sig is None:
                 return None
-            sig = bound_sig.get_signature(preserve_impl=True, ctx=self.ctx)
+            sig = bound_sig.get_signature(
+                preserve_impl=True, ctx=self.ctx, self_annotation_value=self_value
+            )
             if sig is not None:
                 return sig
             return bound_sig
@@ -739,6 +740,7 @@ class ArgSpecCache:
         if inspect.isclass(obj):
             obj = UnwrapClass.unwrap(obj, self.options)
             override = ConstructorHooks.get_constructor(obj, self.options)
+            is_dunder_new = False
             if isinstance(override, Signature):
                 signature = override
             else:
@@ -760,6 +762,7 @@ class ArgSpecCache:
                     # doesn't have a useful signature.
                     # In practice, we saw this make a difference with NamedTuples.
                     elif isinstance(obj.__new__, FunctionType):
+                        is_dunder_new = True
                         constructor = obj.__new__
                     else:
                         constructor = obj.__init__
@@ -783,7 +786,15 @@ class ArgSpecCache:
             bound_sig = make_bound_method(signature, Composite(TypedValue(obj)))
             if bound_sig is None:
                 return None
-            sig = bound_sig.get_signature(preserve_impl=True, ctx=self.ctx)
+            if is_dunder_new:
+                self_annotation_value = KnownValue(obj)
+            else:
+                self_annotation_value = TypedValue(obj)
+            sig = bound_sig.get_signature(
+                preserve_impl=True,
+                ctx=self.ctx,
+                self_annotation_value=self_annotation_value,
+            )
             if sig is not None:
                 return sig
             return bound_sig

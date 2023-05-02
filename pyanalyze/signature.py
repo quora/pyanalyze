@@ -2512,6 +2512,8 @@ class BoundMethodSignature:
         ctx: CanAssignContext,
         self_annotation_value: Optional[Value] = None,
     ) -> Optional[ConcreteSignature]:
+        if self_annotation_value is None:
+            self_annotation_value = self.self_composite.value
         return self.signature.bind_self(
             preserve_impl=preserve_impl,
             self_value=self.self_composite.value,
