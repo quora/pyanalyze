@@ -102,6 +102,8 @@ class ErrorCode(enum.Enum):
     invalid_import = 82
     too_many_positional_args = 83
     deprecated = 84
+    invalid_override_decorator = 85
+    override_does_not_override = 86
 
 
 # Allow testing unannotated functions without too much fuss
@@ -228,6 +230,8 @@ ERROR_DESCRIPTION = {
     ErrorCode.too_many_positional_args: (
         "Call with many positional arguments should use keyword arguments"
     ),
+    ErrorCode.invalid_override_decorator: "@override decorator in invalid location",
+    ErrorCode.override_does_not_override: "Method does not override any base method",
 }
 
 

@@ -8,6 +8,7 @@
 - Fix bug where objects with a `__call__` method that takes `*args` instead
   of `self` were not considered callable (#600)
 - Better typechecking support for async generators (#594)
+- Add support for the PEP 698 `@override` decorator (#614)
 
 ## Version 0.9.0 (January 16, 2023)
 

@@ -1459,12 +1459,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         origin = current_scope.set(varname, value, lookup_node, self.state)
         return value, origin
 
-    def _check_for_incompatible_overrides(
-        self, varname: str, node: ast.AST, value: Value
-    ) -> None:
+    def _get_base_class_attributes(
+        self, varname: str, node: ast.AST
+    ) -> Iterable[Tuple[Union[type, str], Value]]:
         if self.current_class is None:
-            return
-        if varname in self.options.get_value_for(IgnoredForIncompatibleOverride):
             return
         for base_class in self.get_generic_bases(self.current_class):
             if base_class is self.current_class:
@@ -1480,6 +1478,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 record_reads=False,
             )
             base_value = attributes.get_attribute(ctx)
+            if base_value is not UNINITIALIZED_VALUE:
+                yield base_class, base_value
+
+    def _check_for_incompatible_overrides(
+        self, varname: str, node: ast.AST, value: Value
+    ) -> None:
+        if self.current_class is None:
+            return
+        for base_class, base_value in self._get_base_class_attributes(varname, node):
             can_assign = self._can_assign_to_base(base_value, value)
             if isinstance(can_assign, CanAssignError):
                 error = CanAssignError(
@@ -1772,6 +1779,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 )
             else:
                 self._show_error_if_checking(node, error_code=ErrorCode.missing_return)
+
+        if info.is_override:
+            if self.current_class is None:
+                self._show_error_if_checking(
+                    node, error_code=ErrorCode.invalid_override_decorator
+                )
+            else:
+                if not any(self._get_base_class_attributes(node.name, node)):
+                    self._show_error_if_checking(
+                        node, error_code=ErrorCode.override_does_not_override
+                    )
 
         if node.returns is None:
             if (
