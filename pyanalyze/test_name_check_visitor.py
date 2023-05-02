@@ -1324,8 +1324,7 @@ class TestSubscripting(TestNameCheckVisitorBase):
 
         # Inspired by pyspark.sql.types.Row
         class LetItAllThrough(tuple):
-            # TODO: make Sequence.__getitem__ args pos-only in typeshed
-            def __getitem__(self, idx: object) -> Any:  # E: incompatible_override
+            def __getitem__(self, idx: object) -> Any:
                 if isinstance(idx, (int, slice)):
                     return super().__getitem__(idx)
                 else:
