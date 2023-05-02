@@ -61,6 +61,7 @@ from .type_evaluation import (
 )
 from .typevar import resolve_bounds_map
 from .value import (
+    SelfT,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -1914,6 +1915,7 @@ class Signature:
             tv_map = get_tv_map(self_annotation, self_value, ctx)
             if isinstance(tv_map, CanAssignError):
                 return None
+            tv_map = {**tv_map, SelfT: self_value}
         else:
             tv_map = {}
         if tv_map:

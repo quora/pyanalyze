@@ -4995,23 +4995,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return_value = AnyValue(AnySource.error)
 
         else:
-            if isinstance(callee_wrapped, AnnotatedValue):
-                callee_val = callee_wrapped.val
-            else:
-                callee_val = callee_wrapped
-            if isinstance(callee_val, KnownValue) and safe_isinstance(
-                callee_val.val, type
-            ):
-                extended_argspec = extended_argspec.substitute_typevars(
-                    {SelfT: TypedValue(callee_val.val)}
-                )
-            elif isinstance(callee_val, SubclassValue) and isinstance(
-                callee_val.typ, TypedValue
-            ):
-                extended_argspec = extended_argspec.substitute_typevars(
-                    {SelfT: TypedValue(callee_val.typ.typ)}
-                )
-
             arguments = [
                 (
                     (Composite(arg.value.value, arg.varname, arg.node), ARGS)

@@ -649,7 +649,6 @@ class TestGetGenericBases:
                 collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
                 urllib.parse.ParseResult: [],
                 urllib.parse._ParseResultBase: [],
-                "urllib.parse._ResultMixinBase": [TypedValue(str)],
                 tuple: [AnyValue(AnySource.generic_argument)],
                 urllib.parse._ResultMixinStr: [],
                 urllib.parse._NetlocResultMixinBase: [TypedValue(str)],
