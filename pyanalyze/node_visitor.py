@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import os.path
+from pathlib import Path
 import re
 import subprocess
 import sys
@@ -1116,7 +1117,7 @@ def _get_all_files(lst: Iterable[str]) -> Iterable[str]:
     for entry in lst:
         if os.path.isdir(entry):
             yield from sorted(
-                analysis_lib.files_with_extension_from_directory("py", entry)
+                analysis_lib.files_with_extension_from_directory("py", Path(entry))
             )
         else:
             yield entry
