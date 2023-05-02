@@ -301,6 +301,19 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara():
             assert_is_value(has_prop.does_it_really, AnyValue(AnySource.inference))
 
+    @assert_passes()
+    def test_cached_per_instance(self):
+        from qcore.caching import cached_per_instance
+
+        class C:
+            @cached_per_instance()
+            def f(self) -> int:
+                return 42
+
+        def capybara():
+            c = C()
+            assert_is_value(c.f(), TypedValue(int))
+
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
     @assert_passes()
