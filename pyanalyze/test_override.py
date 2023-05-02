@@ -26,5 +26,5 @@ class TestOverride(TestNameCheckVisitorBase):
                 pass
 
             @override
-            def no_base_method(self):
+            def no_base_method(self):  # E: override_does_not_override
                 pass

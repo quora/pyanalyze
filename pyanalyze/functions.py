@@ -246,21 +246,22 @@ def compute_function_info(
         else:
             decorator_value = ctx.visit_expression(decorator)
             if isinstance(decorator_value, KnownValue):
-                if decorator_value is classmethod:
+                val = decorator_value.val
+                if val is classmethod:
                     is_classmethod = True
-                elif decorator_value is staticmethod:
+                elif val is staticmethod:
                     is_staticmethod = True
-                elif sys.version_info < (3, 11) and decorator_value is (
+                elif sys.version_info < (3, 11) and val is (
                     asyncio.coroutine  # static analysis: ignore[undefined_attribute]
                 ):
                     is_decorated_coroutine = True
-                elif decorator_value is real_overload or decorator_value is overload:
+                elif val is real_overload or val is overload:
                     is_overload = True
-                elif decorator_value is abstractmethod:
+                elif val is abstractmethod:
                     is_abstractmethod = True
-                elif decorator_value is evaluated:
+                elif val is evaluated:
                     is_evaluated = True
-                elif is_typing_name(decorator_value, "override"):
+                elif is_typing_name(val, "override"):
                     is_override = True
             decorators.append((decorator_value, decorator_value, decorator))
     params = compute_parameters(
