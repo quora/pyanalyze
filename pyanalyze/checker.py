@@ -239,6 +239,8 @@ class Checker:
             sig = self.arg_spec_cache.get_argspec(value.val)
         elif isinstance(value, UnboundMethodValue):
             sig = value.get_signature(self)
+        elif isinstance(value, SubclassValue) and value.exactly:
+            sig = self.signature_from_value(value)
         else:
             sig = None
         if sig is not None:
@@ -438,6 +440,9 @@ def _extract_protocol_members(typ: type) -> Set[str]:
 @dataclass
 class CheckerAttrContext(AttrContext):
     checker: Checker
+
+    def resolve_name_from_typeshed(self, module: str, name: str) -> Value:
+        return self.checker.ts_finder.resolve_name(module, name)
 
     def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
         return self.checker.ts_finder.get_attribute(typ, self.attr, on_class=on_class)

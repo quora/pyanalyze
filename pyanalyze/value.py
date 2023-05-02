@@ -518,6 +518,13 @@ class KnownValueWithTypeVars(KnownValue):
 
 
 @dataclass(frozen=True)
+class SyntheticModuleValue(Value):
+    """Represents a module that exists only in stub files."""
+
+    module_path: Sequence[str]
+
+
+@dataclass(frozen=True)
 class UnboundMethodValue(Value):
     """Value that represents a method on an underlying :class:`Value`.
 
