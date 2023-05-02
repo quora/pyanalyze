@@ -154,7 +154,6 @@ from .type_object import get_mro, TypeObject
 from .value import (
     AlwaysPresentExtension,
     DeprecatedExtension,
-    SelfT,
     SkipDeprecatedExtension,
     annotate_value,
     AnnotatedValue,
