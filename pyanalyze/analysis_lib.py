@@ -31,7 +31,9 @@ def _all_files(
     return all_files
 
 
-def files_with_extension_from_directory(extension: str, dirname: Union[str, Path]) -> Set[str]:
+def files_with_extension_from_directory(
+    extension: str, dirname: Union[str, Path]
+) -> Set[str]:
     """Finds all files in a given directory with this extension."""
     return _all_files(dirname, filter_function=lambda fn: fn.endswith("." + extension))
 
