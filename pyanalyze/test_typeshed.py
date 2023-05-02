@@ -658,6 +658,20 @@ class TestGetGenericBases:
             urllib.parse.ParseResult,
         )
 
+    def test_buffered_reader(self):
+        self.check(
+            {
+                io.IOBase: [],
+                io.BufferedIOBase: [],
+                collections.abc.Iterable: [TypedValue(bytes)],
+                collections.abc.Iterator: [TypedValue(bytes)],
+                io.BufferedReader: [],
+                typing.BinaryIO: [],
+                typing.IO: [TypedValue(bytes)],
+            },
+            io.BufferedReader,
+        )
+
 
 class TestAttribute:
     def test_basic(self) -> None:
