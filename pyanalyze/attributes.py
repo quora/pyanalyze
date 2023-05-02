@@ -30,6 +30,7 @@ from .value import (
     KnownValue,
     KnownValueWithTypeVars,
     MultiValuedValue,
+    SyntheticModuleValue,
     set_self,
     SubclassValue,
     TypedValue,
@@ -66,6 +67,9 @@ class AttrContext:
 
     def get_property_type_from_argspec(self, obj: property) -> Value:
         return AnyValue(AnySource.inference)
+
+    def resolve_name_from_typeshed(self, module: str, name: str) -> Value:
+        return UNINITIALIZED_VALUE
 
     def get_attribute_from_typeshed(self, typ: type, *, on_class: bool) -> Value:
         return UNINITIALIZED_VALUE
@@ -130,6 +134,9 @@ def get_attribute(ctx: AttrContext) -> Value:
         attribute_value = AnyValue(AnySource.from_another)
     elif isinstance(root_value, MultiValuedValue):
         raise TypeError("caller should unwrap MultiValuedValue")
+    elif isinstance(root_value, SyntheticModuleValue):
+        module = ".".join(root_value.module_path)
+        attribute_value = ctx.resolve_name_from_typeshed(module, ctx.attr)
     else:
         attribute_value = UNINITIALIZED_VALUE
     if (
