@@ -6,6 +6,7 @@ Commonly useful components for static analysis tools.
 import ast
 import linecache
 import os
+from pathlib import Path
 import secrets
 import sys
 import types
@@ -14,7 +15,7 @@ from typing import Callable, List, Mapping, Optional, Set
 
 
 def _all_files(
-    root: str, filter_function: Optional[Callable[[str], bool]] = None
+    root: Path, filter_function: Optional[Callable[[str], bool]] = None
 ) -> Set[str]:
     """Returns the set of all files at the given root.
 
@@ -30,7 +31,7 @@ def _all_files(
     return all_files
 
 
-def files_with_extension_from_directory(extension: str, dirname: str) -> Set[str]:
+def files_with_extension_from_directory(extension: str, dirname: Path) -> Set[str]:
     """Finds all files in a given directory with this extension."""
     return _all_files(dirname, filter_function=lambda fn: fn.endswith("." + extension))
 
