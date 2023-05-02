@@ -1454,6 +1454,7 @@ class Signature:
         if their_ellipsis is not None:
             args_annotation = kwargs_annotation = AnyValue(AnySource.ellipsis_callable)
         consumed_positional = set()
+        consumed_required_pos_only = set()
         consumed_keyword = set()
         consumed_paramspec = False
         for i, my_param in enumerate(self.parameters.values()):
@@ -1480,6 +1481,8 @@ class Signature:
                         )
                     tv_maps.append(tv_map)
                     consumed_positional.add(their_params[i].name)
+                    if their_params[i].default is None:
+                        consumed_required_pos_only.add(their_params[i].name)
                 elif args_annotation is not None:
                     new_tv_maps = can_assign_var_positional(
                         my_param, args_annotation, i - their_args_index, ctx
@@ -1609,6 +1612,7 @@ class Signature:
                     if param.name not in consumed_keyword
                     and param.kind
                     in (ParameterKind.KEYWORD_ONLY, ParameterKind.POSITIONAL_OR_KEYWORD)
+                    and param.name not in consumed_required_pos_only
                 ]
                 for extra_param in extra_keyword:
                     tv_map = extra_param.get_annotation().can_assign(my_annotation, ctx)
