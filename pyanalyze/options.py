@@ -362,7 +362,9 @@ def parse_config_file(
     if path in seen_paths:
         raise InvalidConfigOption("Recursive config inclusion detected")
     with path.open("rb") as f:
-        data = tomli.load(f)
+        # tomli annotates the arg as BinaryIO, and we don't treat BufferedReader
+        # as a BinaryIO
+        data = tomli.load(f)  # static analysis: ignore[incompatible_argument]
     data = data.get("tool", {}).get("pyanalyze", {})
     yield from _parse_config_section(
         data, path=path, priority=priority, seen_paths={path, *seen_paths}

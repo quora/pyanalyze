@@ -649,7 +649,6 @@ class TestGetGenericBases:
                 collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
                 urllib.parse.ParseResult: [],
                 urllib.parse._ParseResultBase: [],
-                "urllib.parse._ResultMixinBase": [TypedValue(str)],
                 tuple: [AnyValue(AnySource.generic_argument)],
                 urllib.parse._ResultMixinStr: [],
                 urllib.parse._NetlocResultMixinBase: [TypedValue(str)],
@@ -657,6 +656,20 @@ class TestGetGenericBases:
                 urllib.parse._ResultMixinStr: [],
             },
             urllib.parse.ParseResult,
+        )
+
+    def test_buffered_reader(self):
+        self.check(
+            {
+                io.IOBase: [],
+                io.BufferedIOBase: [],
+                collections.abc.Iterable: [TypedValue(bytes)],
+                collections.abc.Iterator: [TypedValue(bytes)],
+                io.BufferedReader: [],
+                typing.BinaryIO: [],
+                typing.IO: [TypedValue(bytes)],
+            },
+            io.BufferedReader,
         )
 
 

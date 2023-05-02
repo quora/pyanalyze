@@ -71,6 +71,7 @@ from .value import (
     CanAssignContext,
     DeprecatedExtension,
     Extension,
+    SyntheticModuleValue,
     annotate_value,
     extract_typevars,
     GenericValue,
@@ -111,6 +112,8 @@ class _AnnotationContext(Context):
         if isinstance(root_value, KnownValue):
             if isinstance(root_value.val, ModuleType):
                 return self.finder.resolve_name(root_value.val.__name__, node.attr)
+        elif isinstance(root_value, SyntheticModuleValue):
+            return self.finder.resolve_name(".".join(root_value.module_path), node.attr)
         return super().get_attribute(root_value, node)
 
 
@@ -762,12 +765,15 @@ class TypeshedFinder:
                         self_val = TypedValue(typ)
                     if from_init:
                         sig = sig.replace_return_value(self_val)
+                        self_annotation_value = self_val
                     else:
-                        self_val = SubclassValue(self_val)
+                        self_annotation_value = SubclassValue(self_val)
                     bound_sig = make_bound_method(sig, Composite(self_val))
                     if bound_sig is None:
                         return None
-                    sig = bound_sig.get_signature(ctx=self.ctx)
+                    sig = bound_sig.get_signature(
+                        ctx=self.ctx, self_annotation_value=self_annotation_value
+                    )
                     return sig
 
                 return None
@@ -1162,8 +1168,7 @@ class TypeshedFinder:
                 __import__(module_path)
                 return KnownValue(sys.modules[module_path])
             except Exception:
-                self.log("Unable to import", module_path)
-                return AnyValue(AnySource.inference)
+                return SyntheticModuleValue(info)
         else:
             self.log("Ignoring info", info)
             return AnyValue(AnySource.inference)
