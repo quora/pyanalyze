@@ -1486,6 +1486,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     ) -> None:
         if self.current_class is None:
             return
+        if varname in self.options.get_value_for(IgnoredForIncompatibleOverride):
+            return
         for base_class, base_value in self._get_base_class_attributes(varname, node):
             can_assign = self._can_assign_to_base(base_value, value)
             if isinstance(can_assign, CanAssignError):
