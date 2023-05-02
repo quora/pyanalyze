@@ -420,6 +420,8 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
 def _get_attribute_from_unbound(
     root_value: UnboundMethodValue, ctx: AttrContext
 ) -> Value:
+    if root_value.secondary_attr_name is not None:
+        return AnyValue(AnySource.inference)
     method = root_value.get_method()
     if method is None:
         return AnyValue(AnySource.inference)
