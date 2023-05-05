@@ -60,7 +60,9 @@ BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 ITERATION_LIMIT = 1000
 
-TypeVarLike = Union[ExternalType["typing.TypeVar"], ExternalType["typing_extensions.ParamSpec"]]
+TypeVarLike = Union[
+    ExternalType["typing.TypeVar"], ExternalType["typing_extensions.ParamSpec"]
+]
 TypeVarMap = Mapping[TypeVarLike, ExternalType["pyanalyze.value.Value"]]
 BoundsMap = Mapping[TypeVarLike, Sequence[ExternalType["pyanalyze.value.Bound"]]]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
