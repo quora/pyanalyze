@@ -800,7 +800,14 @@ class ArgSpecCache:
             return bound_sig
 
         if inspect.isbuiltin(obj):
-            if not isinstance(obj.__self__, ModuleType):
+            if isinstance(obj.__self__, ModuleType):
+                inspect_sig = self._safe_get_signature(obj)
+                if inspect_sig is not None:
+                    return self.from_signature(
+                        inspect_sig, function_object=obj, callable_object=obj
+                    )
+                return self._make_any_sig(obj)
+            else:
                 cls = type(obj.__self__)
                 try:
                     method = getattr(cls, obj.__name__)
@@ -812,12 +819,6 @@ class ArgSpecCache:
                     method, impl, is_asynq, in_overload_resolution
                 )
                 return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
-            inspect_sig = self._safe_get_signature(obj)
-            if inspect_sig is not None:
-                return self.from_signature(
-                    inspect_sig, function_object=obj, callable_object=obj
-                )
-            return self._make_any_sig(obj)
 
         if hasattr_static(obj, "__call__"):
             # we could get an argspec here in some cases, but it's impossible to figure out

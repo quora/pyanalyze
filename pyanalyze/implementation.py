@@ -1380,22 +1380,25 @@ def get_default_argspecs() -> Dict[object, Signature]:
                     annotation=TypedValue(bool),
                 ),
             ],
-            KnownValue(None),
+            return_annotation=KnownValue(None),
             impl=_assert_is_value_impl,
             callable=assert_is_value,
         ),
         Signature.make(
             [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
-            TypeVarValue(T),
+            return_annotation=TypeVarValue(T),
             impl=_reveal_type_impl,
             callable=reveal_type,
         ),
         Signature.make(
-            [], KnownValue(None), impl=_reveal_locals_impl, callable=reveal_locals
+            [],
+            return_annotation=KnownValue(None),
+            impl=_reveal_locals_impl,
+            callable=reveal_locals,
         ),
         Signature.make(
             [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
-            TypeVarValue(T),
+            return_annotation=TypeVarValue(T),
             impl=_dump_value_impl,
             callable=dump_value,
         ),
@@ -1404,11 +1407,13 @@ def get_default_argspecs() -> Dict[object, Signature]:
             [SigParameter("self", _POS_ONLY)],
             callable=type.__subclasses__,
             impl=_subclasses_impl,
+            return_annotation=GenericValue(list, [TypedValue(type)]),
         ),
         Signature.make(
             [SigParameter("obj", _POS_ONLY), SigParameter("class_or_tuple", _POS_ONLY)],
             impl=_isinstance_impl,
             callable=isinstance,
+            return_annotation=TypedValue(bool),
         ),
         Signature.make(
             [
@@ -1423,11 +1428,13 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_issubclass_impl,
             callable=issubclass,
+            return_annotation=TypedValue(bool),
         ),
         Signature.make(
             [SigParameter("obj"), SigParameter("class_or_tuple")],
             impl=_isinstance_impl,
             callable=safe_isinstance,
+            return_annotation=TypedValue(bool),
         ),
         Signature.make(
             [
@@ -1442,6 +1449,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_issubclass_impl,
             callable=safe_issubclass,
+            return_annotation=TypedValue(bool),
         ),
         Signature.make(
             [
@@ -1449,7 +1457,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 SigParameter("name", _POS_ONLY, annotation=TypedValue(str)),
                 SigParameter("default", _POS_ONLY, default=_NO_ARG_SENTINEL),
             ],
-            AnyValue(AnySource.inference),
+            return_annotation=AnyValue(AnySource.inference),
             callable=getattr,
         ),
         Signature.make(
@@ -1459,6 +1467,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_hasattr_impl,
             callable=hasattr,
+            return_annotation=TypedValue(bool),
         ),
         Signature.make(
             [
@@ -1467,6 +1476,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_hasattr_impl,
             callable=hasattr_static,
+            return_annotation=TypedValue(bool),
         ),
         Signature.make(
             [
@@ -1476,6 +1486,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_setattr_impl,
             callable=setattr,
+            return_annotation=KnownValue(None),
         ),
         Signature.make(
             [
@@ -1484,26 +1495,25 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_super_impl,
             callable=super,
+            return_annotation=TypedValue(super),
         ),
         Signature.make(
             [SigParameter("iterable", _POS_ONLY, default=_NO_ARG_SENTINEL)],
             impl=_tuple_impl,
             callable=tuple,
-        ),
-        Signature.make(
-            [SigParameter("iterable", _POS_ONLY, default=_NO_ARG_SENTINEL)],
-            impl=_tuple_impl,
-            callable=tuple,
+            return_annotation=TypedValue(tuple),
         ),
         Signature.make(
             [SigParameter("iterable", _POS_ONLY, default=_NO_ARG_SENTINEL)],
             impl=_list_impl,
             callable=list,
+            return_annotation=TypedValue(list),
         ),
         Signature.make(
             [SigParameter("iterable", _POS_ONLY, default=_NO_ARG_SENTINEL)],
             impl=_set_impl,
             callable=set,
+            return_annotation=TypedValue(set),
         ),
         Signature.make(
             [
@@ -1512,6 +1522,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=list.append,
             impl=_list_append_impl,
+            return_annotation=KnownValue(None),
         ),
         Signature.make(
             [
@@ -1520,6 +1531,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=list.__add__,
             impl=_list_add_impl,
+            return_annotation=TypedValue(list),
         ),
         Signature.make(
             [
@@ -1530,6 +1542,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=list.__iadd__,
             impl=_list_iadd_impl,
+            return_annotation=TypedValue(list),
         ),
         Signature.make(
             [
@@ -1542,6 +1555,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=list.extend,
             impl=_list_extend_impl,
+            return_annotation=KnownValue(None),
         ),
         Signature.make(
             [
@@ -1550,6 +1564,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=list.__getitem__,
             impl=_list_getitem_impl,
+            return_annotation=AnyValue(AnySource.inference),
         ),
         Signature.make(
             [
@@ -1558,6 +1573,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=tuple.__getitem__,
             impl=_tuple_getitem_impl,
+            return_annotation=AnyValue(AnySource.inference),
         ),
         Signature.make(
             [
@@ -1568,6 +1584,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=collections.abc.Sequence.__getitem__,
             impl=_sequence_getitem_impl,
+            return_annotation=AnyValue(AnySource.inference),
         ),
         Signature.make(
             [
@@ -1576,6 +1593,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=set.add,
             impl=_set_add_impl,
+            return_annotation=KnownValue(None),
         ),
         Signature.make(
             [
@@ -1585,14 +1603,20 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=dict.__setitem__,
             impl=_dict_setitem_impl,
+            return_annotation=KnownValue(None),
         ),
         Signature.make(
             [
-                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter(
+                    "self",
+                    _POS_ONLY,
+                    annotation=GenericValue(dict, [TypeVarValue(K), TypeVarValue(V)]),
+                ),
                 SigParameter("k", _POS_ONLY),
             ],
             callable=dict.__getitem__,
             impl=_dict_getitem_impl,
+            return_annotation=TypeVarValue(V),
         ),
         Signature.make(
             [
@@ -1602,6 +1626,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=dict.get,
             impl=_dict_get_impl,
+            return_annotation=AnyValue(AnySource.inference),
         ),
         Signature.make(
             [
@@ -1611,6 +1636,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=dict.setdefault,
             impl=_dict_setdefault_impl,
+            return_annotation=AnyValue(AnySource.inference),
         ),
         Signature.make(
             [
@@ -1620,6 +1646,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=dict.pop,
             impl=_dict_pop_impl,
+            return_annotation=AnyValue(AnySource.inference),
         ),
         Signature.make(
             [
@@ -1627,7 +1654,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 SigParameter("m", _POS_ONLY, default=_NO_ARG_SENTINEL),
                 SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
             ],
-            KnownValue(None),
+            return_annotation=KnownValue(None),
             callable=dict.update,
             impl=_dict_update_impl,
         ),
@@ -1639,7 +1666,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                     annotation=GenericValue(dict, [TypeVarValue(K), TypeVarValue(V)]),
                 )
             ],
-            DictIncompleteValue(
+            return_annotation=DictIncompleteValue(
                 dict, [KVPair(TypeVarValue(K), TypeVarValue(V), is_many=True)]
             ),
             callable=dict.copy,
@@ -1685,7 +1712,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                     "errors", annotation=TypedValue(str), default=KnownValue("")
                 ),
             ],
-            TypedValue(str),
+            return_annotation=TypedValue(str),
             callable=bytes.decode,
             allow_call=True,
         ),
@@ -1697,7 +1724,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                     "errors", annotation=TypedValue(str), default=KnownValue("")
                 ),
             ],
-            TypedValue(bytes),
+            return_annotation=TypedValue(bytes),
             callable=str.encode,
             allow_call=True,
         ),
@@ -1709,6 +1736,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             impl=_str_format_impl,
             callable=str.format,
+            return_annotation=TypedValue(str),
         ),
         Signature.make(
             [SigParameter("typ", _POS_ONLY), SigParameter("val", _POS_ONLY)],
@@ -1720,7 +1748,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 SigParameter("val", _POS_ONLY, annotation=TypeVarValue(T)),
                 SigParameter("typ", _POS_ONLY),
             ],
-            TypeVarValue(T),
+            return_annotation=TypeVarValue(T),
             callable=assert_type,
             impl=_assert_type_impl,
         ),
@@ -1733,6 +1761,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=qcore.asserts.assert_is,
             impl=_assert_is_impl,
+            return_annotation=KnownValue(None),
         ),
         Signature.make(
             [
@@ -1743,6 +1772,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=qcore.asserts.assert_is_not,
             impl=_assert_is_not_impl,
+            return_annotation=KnownValue(None),
         ),
         Signature.make(
             [
@@ -1753,6 +1783,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=qcore.asserts.assert_is_instance,
             impl=_assert_is_instance_impl,
+            return_annotation=KnownValue(None),
         ),
         # Need to override this because the type for the tp parameter in typeshed is too strict
         Signature.make(
@@ -1769,6 +1800,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=len,
             impl=_len_impl,
+            return_annotation=TypedValue(int),
         ),
         Signature.make(
             [
@@ -1778,6 +1810,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             ],
             callable=bool,
             impl=_bool_impl,
+            return_annotation=TypedValue(bool),
         ),
         # Typeshed has it as TypeGuard[Callable[..., object]], which causes some
         # false positives.
@@ -1803,7 +1836,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             # Anticipating https://bugs.python.org/issue46414
             sig = Signature.make(
                 [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
-                TypeVarValue(T),
+                return_annotation=TypeVarValue(T),
                 impl=_reveal_type_impl,
                 callable=reveal_type_func,
             )
@@ -1819,7 +1852,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
                     SigParameter("val", _POS_ONLY, annotation=TypeVarValue(T)),
                     SigParameter("typ", _POS_ONLY),
                 ],
-                TypeVarValue(T),
+                return_annotation=TypeVarValue(T),
                 callable=assert_type_func,
                 impl=_assert_type_impl,
             )

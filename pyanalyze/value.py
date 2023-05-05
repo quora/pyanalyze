@@ -50,7 +50,7 @@ from typing_extensions import Literal, ParamSpec, Protocol
 
 import pyanalyze
 from pyanalyze.error_code import ErrorCode
-from pyanalyze.extensions import CustomCheck
+from pyanalyze.extensions import CustomCheck, ExternalType
 
 from .safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
 
@@ -60,9 +60,11 @@ BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 ITERATION_LIMIT = 1000
 
-TypeVarLike = Union["TypeVar", "ParamSpec"]
-TypeVarMap = Mapping[TypeVarLike, "Value"]
-BoundsMap = Mapping[TypeVarLike, Sequence["Bound"]]
+TypeVarLike = Union[
+    ExternalType["typing.TypeVar"], ExternalType["typing_extensions.ParamSpec"]
+]
+TypeVarMap = Mapping[TypeVarLike, ExternalType["pyanalyze.value.Value"]]
+BoundsMap = Mapping[TypeVarLike, Sequence[ExternalType["pyanalyze.value.Bound"]]]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
 
 

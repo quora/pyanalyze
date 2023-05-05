@@ -143,6 +143,17 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         def capybara(s: str) -> None:
             assert_is_value(s.count("x"), TypedValue(int))
 
+    @assert_passes()
+    def test_dict_fromkeys(self):
+        def capybara(i: int) -> None:
+            assert_is_value(
+                dict.fromkeys([i]),
+                GenericValue(
+                    dict,
+                    [TypedValue(int), AnyValue(AnySource.explicit) | KnownValue(None)],
+                ),
+            )
+
     def test_has_stubs(self) -> None:
         tsf = TypeshedFinder(Checker(), verbose=True)
         assert tsf.has_stubs(object)
