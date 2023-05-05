@@ -800,7 +800,7 @@ class ArgSpecCache:
             return bound_sig
 
         if inspect.isbuiltin(obj):
-            if isinstance(obj.__self__, (ModuleType, type)):
+            if isinstance(obj.__self__, ModuleType):
                 inspect_sig = self._safe_get_signature(obj)
                 if inspect_sig is not None:
                     return self.from_signature(

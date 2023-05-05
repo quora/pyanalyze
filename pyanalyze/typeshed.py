@@ -14,7 +14,7 @@ from abc import abstractmethod
 from collections.abc import Collection, MutableMapping, Set as AbstractSet, Sized
 from dataclasses import dataclass, field, replace
 from enum import Enum, EnumMeta
-from types import GeneratorType, ModuleType
+from types import GeneratorType, MethodDescriptorType, ModuleType
 from typing import (
     Any,
     Callable,
@@ -191,6 +191,19 @@ class TypeshedFinder:
             return
         print(f"{message}: {obj!r}")
 
+    def _get_sig_from_method_descriptor(
+        self, obj: MethodDescriptorType, allow_call: bool
+    ) -> Optional[ConcreteSignature]:
+        objclass = obj.__objclass__
+        fq_name = self._get_fq_name(objclass)
+        if fq_name is None:
+            return None
+        info = self._get_info_for_name(fq_name)
+        sig = self._get_method_signature_from_info(
+            info, obj, fq_name, objclass.__module__, objclass, allow_call=allow_call
+        )
+        return sig
+
     def get_argspec(
         self,
         obj: object,
@@ -204,30 +217,20 @@ class TypeshedFinder:
                 obj, obj, type_params=type_params
             )
         if inspect.ismethoddescriptor(obj) and hasattr_static(obj, "__objclass__"):
-            objclass = obj.__objclass__
-            fq_name = self._get_fq_name(objclass)
-            if fq_name is None:
-                return None
-            info = self._get_info_for_name(fq_name)
-            sig = self._get_method_signature_from_info(
-                info, obj, fq_name, objclass.__module__, objclass, allow_call=allow_call
-            )
-            return sig
+            return self._get_sig_from_method_descriptor(obj, allow_call)
         if inspect.isbuiltin(obj) and isinstance(obj.__self__, type):
-            objclass = obj.__self__
-            fq_name = self._get_fq_name(objclass)
-            if fq_name is None:
-                return None
-            info = self._get_info_for_name(fq_name)
-            sig = self._get_method_signature_from_info(
-                info, obj, fq_name, objclass.__module__, objclass, allow_call=allow_call
-            )
-            if sig is None:
-                return None
-            bound = make_bound_method(sig, Composite(KnownValue(objclass)))
-            if bound is None:
-                return None
-            return bound.get_signature(ctx=self.ctx)
+            # This covers cases like dict.fromkeys and type.__subclasses__. We
+            # want to make sure we get the underlying method descriptor object,
+            # which we can apparently only get out of the __dict__.
+            method = obj.__self__.__dict__.get(obj.__name__)
+            if method is not None and inspect.ismethoddescriptor(method):
+                sig = self._get_sig_from_method_descriptor(method, allow_call)
+                if sig is None:
+                    return None
+                bound = make_bound_method(sig, Composite(KnownValue(obj.__self__)))
+                if bound is None:
+                    return None
+                return bound.get_signature(ctx=self.ctx)
 
         if inspect.ismethod(obj):
             self.log("Ignoring method", obj)
