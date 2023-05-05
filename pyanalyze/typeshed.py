@@ -226,7 +226,7 @@ class TypeshedFinder:
             if (
                 method is not None
                 and inspect.ismethoddescriptor(method)
-                and hasattr_static(obj, "__objclass__")
+                and hasattr_static(method, "__objclass__")
             ):
                 sig = self._get_sig_from_method_descriptor(method, allow_call)
                 if sig is None:
