@@ -1654,10 +1654,9 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 SigParameter("m", _POS_ONLY, default=_NO_ARG_SENTINEL),
                 SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
             ],
-            KnownValue(None),
+            return_annotation=KnownValue(None),
             callable=dict.update,
             impl=_dict_update_impl,
-            return_annotation=KnownValue(None),
         ),
         Signature.make(
             [
