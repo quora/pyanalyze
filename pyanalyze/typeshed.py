@@ -213,6 +213,21 @@ class TypeshedFinder:
                 info, obj, fq_name, objclass.__module__, objclass, allow_call=allow_call
             )
             return sig
+        if inspect.isbuiltin(obj) and isinstance(obj.__self__, type):
+            objclass = obj.__self__
+            fq_name = self._get_fq_name(objclass)
+            if fq_name is None:
+                return None
+            info = self._get_info_for_name(fq_name)
+            sig = self._get_method_signature_from_info(
+                info, obj, fq_name, objclass.__module__, objclass, allow_call=allow_call
+            )
+            if sig is None:
+                return None
+            bound = make_bound_method(sig, Composite(KnownValue(objclass)))
+            if bound is None:
+                return None
+            return bound.get_signature(ctx=self.ctx)
 
         if inspect.ismethod(obj):
             self.log("Ignoring method", obj)

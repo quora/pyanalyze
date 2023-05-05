@@ -39,5 +39,9 @@ suggested_return_type = true
 incompatible_override = true
 
 [[tool.pyanalyze.overrides]]
+module = "pyanalyze.typevar"
+implicit_any = true
+
+[[tool.pyanalyze.overrides]]
 module = "pyanalyze.yield_checker"
 implicit_any = true

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Infer the signature for built-in static methods, such as `dict.fromkeys` (#619)
 - Fix type inference for subscripting on `Sequence` (#618)
 - Improve support for Cythonized methods (#617)
 - Add support for the PEP 698 `@override` decorator (#614)
