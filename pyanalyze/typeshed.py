@@ -223,7 +223,11 @@ class TypeshedFinder:
             # want to make sure we get the underlying method descriptor object,
             # which we can apparently only get out of the __dict__.
             method = obj.__self__.__dict__.get(obj.__name__)
-            if method is not None and inspect.ismethoddescriptor(method):
+            if (
+                method is not None
+                and inspect.ismethoddescriptor(method)
+                and hasattr_static(obj, "__objclass__")
+            ):
                 sig = self._get_sig_from_method_descriptor(method, allow_call)
                 if sig is None:
                     return None
