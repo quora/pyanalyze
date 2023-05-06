@@ -231,7 +231,7 @@ class TypeshedFinder:
                 sig = self._get_sig_from_method_descriptor(method, allow_call)
                 if sig is None:
                     return None
-                bound = make_bound_method(sig, Composite(KnownValue(obj.__self__)))
+                bound = make_bound_method(sig, Composite(TypedValue(obj.__self__)))
                 if bound is None:
                     return None
                 return bound.get_signature(ctx=self.ctx)

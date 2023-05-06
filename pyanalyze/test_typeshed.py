@@ -154,6 +154,15 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
                 ),
             )
 
+    @assert_passes()
+    def test_datetime(self):
+        from datetime import datetime
+        from typing_extensions import assert_type
+
+        def capybara(i: int):
+            dt = datetime.fromtimestamp(i)
+            assert_type(dt, datetime)
+
     def test_has_stubs(self) -> None:
         tsf = TypeshedFinder(Checker(), verbose=True)
         assert tsf.has_stubs(object)
