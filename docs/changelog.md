@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Version 0.10.0 (May 10, 2023)
 
 - Infer the signature for built-in static methods, such as `dict.fromkeys` (#619)
 - Fix type inference for subscripting on `Sequence` (#618)
