@@ -17,6 +17,7 @@ from .safe import hasattr_static, safe_isinstance, safe_issubclass
 from .signature import (
     ANY_SIGNATURE,
     CallContext,
+    Impl,
     ImplReturn,
     ParameterKind,
     Signature,
@@ -530,6 +531,34 @@ def _dict_setitem_impl(ctx: CallContext) -> ImplReturn:
     return _add_pairs_to_dict(ctx.vars["self"], [pair], ctx, varname)
 
 
+def _mapping_getitem_impl(ctx: CallContext) -> ImplReturn:
+    def inner(key: Value) -> Value:
+        self_value = ctx.vars["self"]
+        if isinstance(self_value, AnnotatedValue):
+            self_value = self_value.value
+        if not _check_dict_key_hashability(key, ctx, "k"):
+            return AnyValue(AnySource.error)
+        if isinstance(self_value, TypedValue):
+            key_type = self_value.get_generic_arg_for_type(
+                collections.abc.Mapping, ctx.visitor, 0
+            )
+            can_assign = key_type.can_assign(key, ctx.visitor)
+            if isinstance(can_assign, CanAssignError):
+                ctx.show_error(
+                    f"Mapping does not accept keys of type {key}",
+                    error_code=ErrorCode.incompatible_argument,
+                    detail=str(can_assign),
+                    arg="key",
+                )
+            return self_value.get_generic_arg_for_type(
+                collections.abc.Mapping, ctx.visitor, 1
+            )
+        else:
+            return AnyValue(AnySource.inference)
+
+    return flatten_unions(inner, ctx.vars["k"])
+
+
 def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
     def inner(key: Value) -> Value:
         self_value = ctx.vars["self"]
@@ -600,6 +629,22 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
             return AnyValue(AnySource.inference)
 
     return flatten_unions(inner, ctx.vars["k"])
+
+
+def _make_mapping_getitem_sig(typ: type, impl: Impl) -> Signature:
+    return Signature.make(
+        [
+            SigParameter(
+                "self",
+                _POS_ONLY,
+                annotation=GenericValue(typ, [TypeVarValue(K), TypeVarValue(V)]),
+            ),
+            SigParameter("k", _POS_ONLY),
+        ],
+        callable=typ.__getitem__,
+        impl=impl,
+        return_annotation=TypeVarValue(V),
+    )
 
 
 def _dict_get_impl(ctx: CallContext) -> ImplReturn:
@@ -1605,19 +1650,8 @@ def get_default_argspecs() -> Dict[object, Signature]:
             impl=_dict_setitem_impl,
             return_annotation=KnownValue(None),
         ),
-        Signature.make(
-            [
-                SigParameter(
-                    "self",
-                    _POS_ONLY,
-                    annotation=GenericValue(dict, [TypeVarValue(K), TypeVarValue(V)]),
-                ),
-                SigParameter("k", _POS_ONLY),
-            ],
-            callable=dict.__getitem__,
-            impl=_dict_getitem_impl,
-            return_annotation=TypeVarValue(V),
-        ),
+        _make_mapping_getitem_sig(dict, _dict_getitem_impl),
+        _make_mapping_getitem_sig(collections.abc.Mapping, _mapping_getitem_impl),
         Signature.make(
             [
                 SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),

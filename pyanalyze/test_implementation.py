@@ -1169,6 +1169,30 @@ class TestDictGetItem(TestNameCheckVisitorBase):
             d[int]
             d[t]
 
+    @assert_passes()
+    def test_mapping(self):
+        from typing import Mapping
+        from typing_extensions import assert_type
+
+        def capybara(m: Mapping[str, int], unannotated):
+            assert_type(m["x"], int)
+            assert_type(m[unannotated], int)
+            m[1]  # E: incompatible_argument
+            m[{}]  # E: unhashable_key
+            m["x"] = 3  # E: unsupported_operation
+
+    @assert_passes()
+    def test_mutable_mapping(self):
+        from typing import MutableMapping
+        from typing_extensions import assert_type
+
+        def capybara(m: MutableMapping[str, int], unannotated):
+            assert_type(m["x"], int)
+            assert_type(m[unannotated], int)
+            m[1]  # E: incompatible_argument
+            m[{}]  # E: unhashable_key
+            m["x"] = 3
+
 
 class TestDictSetItem(TestNameCheckVisitorBase):
     @assert_passes()
