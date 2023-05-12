@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix type inference for subscriptingon `Mapping` (#623)
+
 ## Version 0.10.0 (May 10, 2023)
 
 - Infer the signature for built-in static methods, such as `dict.fromkeys` (#619)
