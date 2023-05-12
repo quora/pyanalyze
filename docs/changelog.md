@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fix type inference for subscriptingon `Mapping`
+- Fix type inference for subscriptingon `Mapping` (#623)
 
 ## Version 0.10.0 (May 10, 2023)
 
