@@ -224,6 +224,7 @@ except ImportError:
     class ExceptionGroup:
         pass
 
+
 try:
     from types import GenericAlias
 except ImportError:
@@ -4475,9 +4476,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         )
                         # Special case to avoid "Unrecognized annotation types.GenericAlias" later;
                         # ideally we'd be more precise.
-                        if GenericAlias is not None and return_value == TypedValue(GenericAlias):
+                        if GenericAlias is not None and return_value == TypedValue(
+                            GenericAlias
+                        ):
                             return_value = self.check_call(
-                                node.value, cgi, [Composite(KnownValue(Any))], allow_call=True
+                                node.value,
+                                cgi,
+                                [Composite(KnownValue(Any))],
+                                allow_call=True,
                             )
 
                 if (
