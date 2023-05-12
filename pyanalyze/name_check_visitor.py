@@ -225,6 +225,13 @@ except ImportError:
         pass
 
 
+try:
+    from types import GenericAlias
+except ImportError:
+    # 3.8 and lower
+    GenericAlias = None
+
+
 T = TypeVar("T")
 U = TypeVar("U")
 AwaitableValue = GenericValue(collections.abc.Awaitable, [TypeVarValue(T)])
@@ -4467,6 +4474,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         return_value = self.check_call(
                             node.value, cgi, [index_composite], allow_call=True
                         )
+                        # Special case to avoid "Unrecognized annotation types.GenericAlias" later;
+                        # ideally we'd be more precise.
+                        if GenericAlias is not None and return_value == TypedValue(
+                            GenericAlias
+                        ):
+                            return_value = self.check_call(
+                                node.value,
+                                cgi,
+                                [Composite(KnownValue(Any))],
+                                allow_call=True,
+                            )
 
                 if (
                     self._should_use_varname_value(return_value)

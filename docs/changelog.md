@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fix false positive error when annotations refer to classes defined
+  inside functions (#624)
+
 ## Version 0.10.0 (May 10, 2023)
 
 - Infer the signature for built-in static methods, such as `dict.fromkeys` (#619)
