@@ -705,6 +705,19 @@ class TestAnnotated(TestNameCheckVisitorBase):
                 ),
             )
 
+    @skip_before((3, 9))
+    @assert_passes()
+    def test_genericalias_nested_class(self):
+        def capybara():
+            class Base:
+                pass
+
+            class Child:
+                attrs: list[Base]
+
+            # Ideally should not be Any, but this is better than throwing a false positive error.
+            assert_is_value(Child().attrs, AnyValue(AnySource.from_another))
+
 
 class TestCallable(TestNameCheckVisitorBase):
     @assert_passes()
