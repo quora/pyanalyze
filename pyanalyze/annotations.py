@@ -516,7 +516,7 @@ def _type_from_runtime(
         else:
             ctx.show_error(f"Invalid NewType {val}")
             return AnyValue(AnySource.error)
-    elif is_instance_of_typing_name(val, "TypeVar"):
+    elif is_typing_name(type(val), "TypeVar"):
         tv = cast(TypeVar, val)
         return make_type_var_value(tv, ctx)
     elif is_instance_of_typing_name(val, "ParamSpec"):
