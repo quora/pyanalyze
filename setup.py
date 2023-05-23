@@ -2,7 +2,7 @@ from pathlib import Path
 from setuptools import setup
 
 
-version = "0.10.0"
+version = "0.10.1"
 package_data = ["test.toml", "stubs/*/*.pyi"]
 
 
