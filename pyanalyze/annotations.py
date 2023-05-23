@@ -422,7 +422,9 @@ def _type_from_runtime(
             return KnownValue(args[0])
         else:
             return unite_values(*[KnownValue(arg) for arg in args])
-    elif is_typing_name(origin, "Union") or (UnionType is not None and origin is UnionType):
+    elif is_typing_name(origin, "Union") or (
+        UnionType is not None and origin is UnionType
+    ):
         args = get_args(val)
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
     elif origin is tuple or is_typing_name(origin, "Tuple"):
