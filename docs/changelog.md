@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Version 0.10.1 (May 22, 2023)
 
 - Fix errors with protocol matching on `typing_extensions` 4.6.0
   (#626)
