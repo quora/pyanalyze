@@ -22,7 +22,7 @@ these subclasses and some related utilities.
 import collections.abc
 import enum
 import textwrap
-from collections import deque, OrderedDict
+from collections import deque
 from dataclasses import dataclass, field, InitVar
 from itertools import chain
 from types import FunctionType
@@ -2180,7 +2180,7 @@ def annotate_value(origin: Value, metadata: Sequence[Union[Value, Extension]]) -
         origin = origin.value
     # Make sure order is consistent; conceptually this is a set but
     # sets have unpredictable iteration order.
-    hashable_vals = OrderedDict()
+    hashable_vals = {}
     unhashable_vals = []
     for item in metadata:
         try:
@@ -2247,7 +2247,7 @@ def unite_values(*values: Value) -> Value:
         return NO_RETURN_VALUE
     # Make sure order is consistent; conceptually this is a set but
     # sets have unpredictable iteration order.
-    hashable_vals = OrderedDict()
+    hashable_vals = {}
     unhashable_vals = []
     for value in values:
         if isinstance(value, MultiValuedValue):

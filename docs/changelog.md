@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix errors with protocol matching on `typing_extensions` 4.6.0
+  (#626)
 - Fix false positive error when annotations refer to classes defined
   inside functions (#624)
 

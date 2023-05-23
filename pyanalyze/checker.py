@@ -420,6 +420,8 @@ EXCLUDED_PROTOCOL_MEMBERS = {
     "__tree_hash__",
     "_gorg",
     "_is_runtime_protocol",
+    "__protocol_attrs__",
+    "__callable_proto_members_only__",
 }
 
 
