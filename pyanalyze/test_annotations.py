@@ -130,6 +130,18 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(y, MultiValuedValue([KnownValue(True), KnownValue(False)]))
 
     @assert_passes()
+    def test_literal_in_union(self):
+        from typing import Union
+
+        try:
+            from typing import Literal
+        except ImportError:
+            from typing_extensions import Literal
+
+        def capybara(x: Union[int, Literal["epoch"], None]) -> None:
+            assert_is_value(x, TypedValue(int) | KnownValue("epoch") | KnownValue(None))
+
+    @assert_passes()
     def test_contextmanager(self):
         from contextlib import contextmanager
         from typing import Iterator
