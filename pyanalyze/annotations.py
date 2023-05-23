@@ -50,7 +50,7 @@ from typing import (
 import qcore
 
 import typing_inspect
-from typing_extensions import ParamSpec, TypedDict
+from typing_extensions import ParamSpec, TypedDict, get_origin, get_args
 
 from . import type_evaluation
 
@@ -113,15 +113,12 @@ if TYPE_CHECKING:
 
 try:
     from types import GenericAlias
-    from typing import get_args, get_origin  # Python 3.9
 except ImportError:
     GenericAlias = None
-
-    def get_origin(obj: object) -> Any:
-        return None
-
-    def get_args(obj: object) -> Tuple[Any, ...]:
-        return ()
+try:
+    from types import UnionType
+except ImportError:
+    UnionType = None
 
 
 CONTEXT_MANAGER_TYPES = (typing.ContextManager, contextlib.AbstractContextManager)
@@ -418,17 +415,18 @@ def _type_from_runtime(
         return _value_of_origin_args(
             origin, args, val, ctx, allow_unpack=origin is tuple
         )
-    elif typing_inspect.is_literal_type(val):
-        args = typing_inspect.get_args(val)
-        if len(args) == 0:
+    origin = get_origin(val)
+    if is_typing_name(origin, "Literal"):
+        args = get_args(val)
+        if len(args) == 1:
             return KnownValue(args[0])
         else:
             return unite_values(*[KnownValue(arg) for arg in args])
-    elif typing_inspect.is_union_type(val):
-        args = typing_inspect.get_args(val)
+    elif is_typing_name(origin, "Union") or (UnionType is not None and origin is UnionType):
+        args = get_args(val)
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
-    elif typing_inspect.is_tuple_type(val):
-        args = typing_inspect.get_args(val)
+    elif origin is tuple or is_typing_name(origin, "Tuple"):
+        args = get_args(val)
         if not args:
             if val is tuple or val is Tuple:
                 return TypedValue(tuple)
@@ -490,8 +488,8 @@ def _type_from_runtime(
             is_typeddict=is_typeddict,
             allow_unpack=allow_unpack or origin is tuple or origin is Tuple,
         )
-    elif typing_inspect.is_callable_type(val):
-        args = typing_inspect.get_args(val)
+    elif origin is Callable or is_typing_name(origin, "Callable"):
+        args = get_args(val)
         return _value_of_origin_args(Callable, args, val, ctx)
     elif val is AsynqCallable:
         return CallableValue(Signature.make([ELLIPSIS_PARAM], is_asynq=True))
@@ -511,13 +509,14 @@ def _type_from_runtime(
         if isinstance(val.__supertype__, type):
             # NewType
             return NewTypeValue(val)
-        elif typing_inspect.is_tuple_type(val.__supertype__):
+        super_origin = get_origin(val.__supertype__)
+        if super_origin is tuple or is_typing_name(super_origin, "Tuple"):
             # TODO figure out how to make NewTypes over tuples work
             return AnyValue(AnySource.inference)
         else:
             ctx.show_error(f"Invalid NewType {val}")
             return AnyValue(AnySource.error)
-    elif typing_inspect.is_typevar(val):
+    elif is_instance_of_typing_name(val, "TypeVar"):
         tv = cast(TypeVar, val)
         return make_type_var_value(tv, ctx)
     elif is_instance_of_typing_name(val, "ParamSpec"):
@@ -528,7 +527,7 @@ def _type_from_runtime(
         return ParamSpecKwargsValue(val.__origin__)
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
-    elif typing_inspect.is_classvar(val) or typing_inspect.is_final_type(val):
+    elif is_typing_name(origin, "ClassVar") or is_typing_name(origin, "Final"):
         typ = val.__args__[0]
         return _type_from_runtime(typ, ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
@@ -571,12 +570,11 @@ def _type_from_runtime(
         return AnyValue(AnySource.incomplete_annotation)
     elif is_typing_name(val, "TypedDict"):
         return KnownValue(TypedDict)
+    elif isinstance(origin, type):
+        return _maybe_typed_value(origin)
+    elif val is NamedTuple:
+        return TypedValue(tuple)
     else:
-        origin = get_origin(val)
-        if isinstance(origin, type):
-            return _maybe_typed_value(origin)
-        elif val is NamedTuple:
-            return TypedValue(tuple)
         ctx.show_error(f"Invalid type annotation {val}")
         return AnyValue(AnySource.error)
 
