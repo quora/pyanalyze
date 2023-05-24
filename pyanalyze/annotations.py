@@ -49,7 +49,6 @@ from typing import (
 
 import qcore
 
-import typing_inspect
 from typing_extensions import ParamSpec, TypedDict, get_origin, get_args
 
 from . import type_evaluation
@@ -111,10 +110,6 @@ from .value import (
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
 
-try:
-    from types import GenericAlias
-except ImportError:
-    GenericAlias = None
 try:
     from types import UnionType
 except ImportError:
@@ -407,43 +402,17 @@ def _type_from_runtime(
         return _eval_forward_ref(
             val, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
         )
-    elif GenericAlias is not None and isinstance(val, GenericAlias):
-        origin = get_origin(val)
-        args = get_args(val)
-        if origin is tuple and not args:
-            return SequenceValue(tuple, [])
-        return _value_of_origin_args(
-            origin, args, val, ctx, allow_unpack=origin is tuple
-        )
+    elif is_instance_of_typing_name(val, "ParamSpecArgs"):
+        return ParamSpecArgsValue(get_origin(val))
+    elif is_instance_of_typing_name(val, "ParamSpecKwargs"):
+        return ParamSpecKwargsValue(get_origin(val))
     origin = get_origin(val)
-    if is_typing_name(origin, "Literal"):
+    if origin is not None:
         args = get_args(val)
-        if len(args) == 1:
-            return KnownValue(args[0])
-        else:
-            return unite_values(*[KnownValue(arg) for arg in args])
-    elif is_typing_name(origin, "Union") or (
-        UnionType is not None and origin is UnionType
-    ):
-        args = get_args(val)
-        return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
-    elif origin is tuple or is_typing_name(origin, "Tuple"):
-        args = get_args(val)
-        if not args:
-            if val is tuple or val is Tuple:
-                return TypedValue(tuple)
-            else:
-                return SequenceValue(tuple, [])
-        elif len(args) == 2 and args[1] is Ellipsis:
-            return GenericValue(tuple, [_type_from_runtime(args[0], ctx)])
-        elif len(args) == 1 and args[0] == ():
-            return SequenceValue(tuple, [])  # empty tuple
-        else:
-            return _make_sequence_value(
-                tuple,
-                [_type_from_runtime(arg, ctx, allow_unpack=True) for arg in args],
-                ctx,
-            )
+        return _value_of_origin_args(
+            origin, args, val, ctx, allow_unpack=allow_unpack,
+            is_typeddict=is_typeddict
+        )
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
         required_keys = getattr(val, "__required_keys__", None)
         # 3.8's typing.TypedDict doesn't have __required_keys__. With
@@ -477,22 +446,6 @@ def _type_from_runtime(
             [KnownValue(v) for v in val.__metadata__],
             ctx,
         )
-    elif typing_inspect.is_generic_type(val):
-        origin = typing_inspect.get_origin(val)
-        args = typing_inspect.get_args(val)
-        if getattr(val, "_special", False):
-            args = []  # distinguish List from List[T] on 3.7 and 3.8
-        return _value_of_origin_args(
-            origin,
-            args,
-            val,
-            ctx,
-            is_typeddict=is_typeddict,
-            allow_unpack=allow_unpack or origin is tuple or origin is Tuple,
-        )
-    elif origin is Callable or is_typing_name(origin, "Callable"):
-        args = get_args(val)
-        return _value_of_origin_args(Callable, args, val, ctx)
     elif val is AsynqCallable:
         return CallableValue(Signature.make([ELLIPSIS_PARAM], is_asynq=True))
     elif val is typing.Any:
@@ -523,15 +476,8 @@ def _type_from_runtime(
         return make_type_var_value(tv, ctx)
     elif is_instance_of_typing_name(val, "ParamSpec"):
         return TypeVarValue(val, is_paramspec=True)
-    elif is_instance_of_typing_name(val, "ParamSpecArgs"):
-        return ParamSpecArgsValue(val.__origin__)
-    elif is_instance_of_typing_name(val, "ParamSpecKwargs"):
-        return ParamSpecKwargsValue(val.__origin__)
     elif is_typing_name(val, "Final") or is_typing_name(val, "ClassVar"):
         return AnyValue(AnySource.incomplete_annotation)
-    elif is_typing_name(origin, "ClassVar") or is_typing_name(origin, "Final"):
-        typ = val.__args__[0]
-        return _type_from_runtime(typ, ctx)
     elif is_instance_of_typing_name(val, "_ForwardRef") or is_instance_of_typing_name(
         val, "ForwardRef"
     ):
@@ -572,8 +518,6 @@ def _type_from_runtime(
         return AnyValue(AnySource.incomplete_annotation)
     elif is_typing_name(val, "TypedDict"):
         return KnownValue(TypedDict)
-    elif isinstance(origin, type):
-        return _maybe_typed_value(origin)
     elif val is NamedTuple:
         return TypedValue(tuple)
     else:
@@ -790,7 +734,7 @@ def _type_from_subscripted_value(
         else:
             ctx.show_error(f"Arguments to Literal[] must be literals, not {members}")
             return AnyValue(AnySource.error)
-    elif root is typing.Tuple or root is tuple:
+    elif _is_tuple(root):
         if len(members) == 2 and members[1] == KnownValue(Ellipsis):
             return GenericValue(tuple, [_type_from_value(members[0], ctx)])
         elif len(members) == 1 and members[0] == KnownValue(()):
@@ -858,15 +802,11 @@ def _type_from_subscripted_value(
             return _make_callable_from_value(args, return_value, ctx, is_asynq=True)
         ctx.show_error("AsynqCallable requires exactly two arguments")
         return AnyValue(AnySource.error)
-    elif typing_inspect.is_generic_type(root):
-        origin = typing_inspect.get_origin(root)
+    elif isinstance(root, type):
+        origin = get_origin(root)
         if origin is None:
-            # On Python 3.9 at least, get_origin() of a class that inherits
-            # from Generic[T] is None.
             origin = root
         origin = _maybe_get_extra(origin)
-        return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
-    elif isinstance(root, type):
         return GenericValue(root, [_type_from_value(elt, ctx) for elt in members])
     else:
         # In Python 3.9, generics are implemented differently and typing.get_origin
@@ -1127,6 +1067,10 @@ class _Visitor(ast.NodeVisitor):
             return None
 
 
+def _is_tuple(typ: object) -> bool:
+    return typ is tuple or is_typing_name(typ, "Tuple")
+
+
 def _value_of_origin_args(
     origin: object,
     args: Sequence[object],
@@ -1140,9 +1084,9 @@ def _value_of_origin_args(
         if not args:
             return TypedValue(type)
         return SubclassValue.make(_type_from_runtime(args[0], ctx))
-    elif origin is typing.Tuple or origin is tuple:
+    elif _is_tuple(origin):
         if not args:
-            return TypedValue(tuple)
+            return SequenceValue(tuple, [])
         elif len(args) == 2 and args[1] is Ellipsis:
             return GenericValue(tuple, [_type_from_runtime(args[0], ctx)])
         elif len(args) == 1 and args[0] == ():
@@ -1152,7 +1096,9 @@ def _value_of_origin_args(
                 _type_from_runtime(arg, ctx, allow_unpack=True) for arg in args
             ]
             return _make_sequence_value(tuple, args_vals, ctx)
-    elif origin is typing.Union:
+    elif is_typing_name(origin, "Union") or (
+        UnionType is not None and origin is UnionType
+    ):
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
     elif origin is Callable or origin is typing.Callable:
         if len(args) == 0:
@@ -1164,13 +1110,9 @@ def _value_of_origin_args(
         sig = Signature.make(params, _type_from_runtime(return_type, ctx))
         return CallableValue(sig)
     elif is_typing_name(origin, "Annotated"):
-        origin, metadata = args
-        # This should never happen
-        if not isinstance(metadata, Iterable):
-            ctx.show_error("Unexpected format in Annotated")
-            return AnyValue(AnySource.error)
+        origin, *metadata = args
         return _make_annotated(
-            _type_from_runtime(origin, ctx),
+            _type_from_runtime(origin, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack),
             [KnownValue(data) for data in metadata],
             ctx,
         )
@@ -1181,6 +1123,11 @@ def _value_of_origin_args(
             return GenericValue(origin, args_vals)
         else:
             return _maybe_typed_value(origin)
+    if is_typing_name(origin, "Literal"):
+        if len(args) == 1:
+            return KnownValue(args[0])
+        else:
+            return unite_values(*[KnownValue(arg) for arg in args])
     elif is_typing_name(origin, "TypeGuard"):
         if len(args) != 1:
             ctx.show_error("TypeGuard requires a single argument")
