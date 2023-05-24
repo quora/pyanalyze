@@ -36,7 +36,6 @@ from typing import (
     ContextManager,
     Generator,
     Mapping,
-    NamedTuple,
     NewType,
     Optional,
     Sequence,
@@ -49,7 +48,13 @@ from typing import (
 
 import qcore
 
-from typing_extensions import ParamSpec, TypedDict, get_origin, get_args
+from typing_extensions import (
+    ParamSpec,
+    TypedDict,
+    get_origin,
+    get_args,
+    is_typeddict as te_is_typeddict,
+)
 
 from . import type_evaluation
 
@@ -412,7 +417,7 @@ def _type_from_runtime(
         return _value_of_origin_args(
             origin, args, val, ctx, allow_unpack=allow_unpack, is_typeddict=is_typeddict
         )
-    elif is_instance_of_typing_name(val, "_TypedDictMeta"):
+    elif te_is_typeddict(val):
         required_keys = getattr(val, "__required_keys__", None)
         # 3.8's typing.TypedDict doesn't have __required_keys__. With
         # inheritance, this makes it apparently impossible to figure out which
@@ -438,16 +443,9 @@ def _type_from_runtime(
         # InitVar instances aren't being created
         # static analysis: ignore[undefined_attribute]
         return type_from_runtime(val.type)
-    elif is_instance_of_typing_name(val, "_AnnotatedAlias"):
-        # Annotated in typing and newer typing_extensions
-        return _make_annotated(
-            _type_from_runtime(val.__origin__, ctx),
-            [KnownValue(v) for v in val.__metadata__],
-            ctx,
-        )
     elif val is AsynqCallable:
         return CallableValue(Signature.make([ELLIPSIS_PARAM], is_asynq=True))
-    elif val is typing.Any:
+    elif is_typing_name(val, "Any"):
         return AnyValue(AnySource.explicit)
     elif isinstance(val, type):
         return _maybe_typed_value(val)
@@ -492,9 +490,6 @@ def _type_from_runtime(
     elif val is Ellipsis:
         # valid in Callable[..., ]
         return AnyValue(AnySource.explicit)
-    elif is_instance_of_typing_name(val, "_TypeAlias"):
-        # typing.Pattern and Match, which are not normal generic types for some reason
-        return GenericValue(val.impl_type, [_type_from_runtime(val.type_var, ctx)])
     elif isinstance(val, TypeGuard):
         return AnnotatedValue(
             TypedValue(bool),
@@ -517,7 +512,7 @@ def _type_from_runtime(
         return AnyValue(AnySource.incomplete_annotation)
     elif is_typing_name(val, "TypedDict"):
         return KnownValue(TypedDict)
-    elif val is NamedTuple:
+    elif is_typing_name(val, "NamedTuple"):
         return TypedValue(tuple)
     else:
         ctx.show_error(f"Invalid type annotation {val}")
@@ -548,7 +543,7 @@ def _callable_args_from_runtime(
             (arg,) = arg_types
             if arg is Ellipsis:
                 return [ELLIPSIS_PARAM]
-            elif is_typing_name(getattr(arg, "__origin__", None), "Concatenate"):
+            elif is_typing_name(get_origin(arg), "Concatenate"):
                 return _args_from_concatenate(arg, ctx)
             elif is_instance_of_typing_name(arg, "ParamSpec"):
                 param_spec = TypeVarValue(arg, is_paramspec=True)
@@ -576,7 +571,7 @@ def _callable_args_from_runtime(
             "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
         )
         return [param]
-    elif is_typing_name(getattr(arg_types, "__origin__", None), "Concatenate"):
+    elif is_typing_name(get_origin(arg_types), "Concatenate"):
         return _args_from_concatenate(arg_types, ctx)
     else:
         ctx.show_error(f"Invalid arguments to {label}: {arg_types!r}")
@@ -821,11 +816,6 @@ def _maybe_get_extra(origin: type) -> Union[type, str]:
     elif any(origin is cls for cls in ASYNC_CONTEXT_MANAGER_TYPES):
         return "contextlib.AbstractAsyncContextManager"
     else:
-        # turn typing.List into list in some Python versions
-        # compare https://github.com/ilevkivskyi/typing_inspect/issues/36
-        extra_origin = getattr(origin, "__extra__", None)
-        if extra_origin is not None:
-            return extra_origin
         return origin
 
 
@@ -1095,7 +1085,7 @@ def _value_of_origin_args(
         UnionType is not None and origin is UnionType
     ):
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
-    elif origin is Callable or origin is typing.Callable:
+    elif origin is Callable or is_typing_name(origin, "Callable"):
         if len(args) == 0:
             return TypedValue(Callable)
         *arg_types, return_type = args
@@ -1167,9 +1157,6 @@ def _value_of_origin_args(
             ctx.show_error("Unpack requires a single argument")
             return AnyValue(AnySource.error)
         return UnpackedValue(_type_from_runtime(args[0], ctx))
-    elif origin is None and isinstance(val, type):
-        # This happens for SupportsInt in 3.7.
-        return _maybe_typed_value(val)
     else:
         ctx.show_error(
             f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]"
