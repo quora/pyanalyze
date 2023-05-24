@@ -27,7 +27,7 @@ import ast
 import builtins
 import contextlib
 import typing
-from collections.abc import Callable, Hashable, Iterable
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field, InitVar
 from typing import (
     Any,
