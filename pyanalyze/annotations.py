@@ -802,10 +802,6 @@ def _type_from_subscripted_value(
         ctx.show_error("AsynqCallable requires exactly two arguments")
         return AnyValue(AnySource.error)
     elif isinstance(root, type):
-        origin = get_origin(root)
-        if origin is None:
-            origin = root
-        origin = _maybe_get_extra(origin)
         return GenericValue(root, [_type_from_value(elt, ctx) for elt in members])
     else:
         # In Python 3.9, generics are implemented differently and typing.get_origin
