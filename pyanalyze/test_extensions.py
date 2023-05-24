@@ -1,8 +1,8 @@
 import sys
 from types import FunctionType
 from typing import List, Optional, TypeVar, Union
+from typing_extensions import get_args
 
-import typing_inspect
 from qcore.asserts import AssertRaises
 
 from .extensions import AsynqCallable, get_overloads, overload
@@ -14,8 +14,8 @@ U = TypeVar("U")
 
 def test_asynq_callable() -> None:
     AC = AsynqCallable[[int], str]
-    assert (AC, type(None)) == typing_inspect.get_args(Optional[AC])
-    assert (int, AC) == typing_inspect.get_args(Union[int, AC])
+    assert (AC, type(None)) == get_args(Optional[AC])
+    assert (int, AC) == get_args(Union[int, AC])
 
     GAC = AsynqCallable[[T], str]
     assert AC == GAC[int]
