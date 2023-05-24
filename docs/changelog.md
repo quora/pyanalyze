@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Remove dependency on `typing_inspect` (#629)
 - Fix use of `Literal` types with `typing_extensions` 4.6.0 (#628)
 
 ## Version 0.10.1 (May 22, 2023)
