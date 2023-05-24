@@ -48,13 +48,7 @@ from typing import (
 
 import qcore
 
-from typing_extensions import (
-    ParamSpec,
-    TypedDict,
-    get_origin,
-    get_args,
-    is_typeddict as te_is_typeddict,
-)
+from typing_extensions import ParamSpec, TypedDict, get_origin, get_args
 
 from . import type_evaluation
 
@@ -417,7 +411,9 @@ def _type_from_runtime(
         return _value_of_origin_args(
             origin, args, val, ctx, allow_unpack=allow_unpack, is_typeddict=is_typeddict
         )
-    elif te_is_typeddict(val):
+    # Can't use is_typeddict() here because we still want to support
+    # mypy_extensions.TypedDict
+    elif is_instance_of_typing_name(val, "_TypedDictMeta"):
         required_keys = getattr(val, "__required_keys__", None)
         # 3.8's typing.TypedDict doesn't have __required_keys__. With
         # inheritance, this makes it apparently impossible to figure out which
