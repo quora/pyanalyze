@@ -432,6 +432,8 @@ def _extract_protocol_members(typ: type) -> Set[str]:
         or is_typing_name(typ, "Protocol")
     ):
         return set()
+    if hasattr(typ, "__protocol_attrs__"):
+        return typ.__protocol_attrs__
     members = set(typ.__dict__) - EXCLUDED_PROTOCOL_MEMBERS
     # Starting in 3.10 __annotations__ always exists on types
     if sys.version_info >= (3, 10) or hasattr(typ, "__annotations__"):
