@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove more old special cases and improve robustness of
+  annotation parsing (#630)
 - Remove dependency on `typing_inspect` (#629)
 - Fix use of `Literal` types with `typing_extensions` 4.6.0 (#628)
 
