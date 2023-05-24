@@ -30,7 +30,6 @@ from unittest import mock
 
 import asynq
 import qcore
-import typing_inspect
 from typing_extensions import is_typeddict
 
 import pyanalyze
@@ -968,9 +967,13 @@ class ArgSpecCache:
         return generic_bases
 
     def get_runtime_bases(self, typ: type) -> Sequence[object]:
-        if typing_inspect.is_generic_type(typ):
-            return typing_inspect.get_generic_bases(typ)
-        return typ.__bases__
+        # TODO: use typing_extensions.get_orig_bases()
+        if is_typeddict(typ):
+            return (dict,)
+        try:
+            return typ.__orig_bases__
+        except AttributeError:
+            return typ.__bases__
 
 
 def _is_qcore_decorator(obj: object) -> TypeGuard[Any]:
