@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use `__protocol_attrs__` for more robust detection of
+  the members of a `Protocol` (#631)
 - Remove more old special cases and improve robustness of
   annotation parsing (#630)
 - Remove dependency on `typing_inspect` (#629)
