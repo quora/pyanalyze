@@ -410,8 +410,7 @@ def _type_from_runtime(
     if origin is not None:
         args = get_args(val)
         return _value_of_origin_args(
-            origin, args, val, ctx, allow_unpack=allow_unpack,
-            is_typeddict=is_typeddict
+            origin, args, val, ctx, allow_unpack=allow_unpack, is_typeddict=is_typeddict
         )
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
         required_keys = getattr(val, "__required_keys__", None)
@@ -1112,7 +1111,9 @@ def _value_of_origin_args(
     elif is_typing_name(origin, "Annotated"):
         origin, *metadata = args
         return _make_annotated(
-            _type_from_runtime(origin, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack),
+            _type_from_runtime(
+                origin, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
+            ),
             [KnownValue(data) for data in metadata],
             ctx,
         )
