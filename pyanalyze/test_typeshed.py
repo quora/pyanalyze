@@ -29,6 +29,7 @@ from .typeshed import TypeshedFinder
 from .value import (
     AnySource,
     AnyValue,
+    SequenceValue,
     assert_is_value,
     CallableValue,
     DictIncompleteValue,
@@ -372,6 +373,29 @@ class TestBundledStubs(TestNameCheckVisitorBase):
                 x = 3
 
             assert_type(x, Literal[3])
+
+    @assert_passes()
+    def test_stub_defaults(self):
+        def capybara():
+            from _pyanalyze_tests.defaults import many_defaults
+
+            a, b, c, d = many_defaults()
+            assert_is_value(
+                a, DictIncompleteValue(dict, [KVPair(KnownValue("a"), KnownValue(1))])
+            )
+            assert_is_value(
+                b,
+                SequenceValue(
+                    list, [(False, KnownValue(1)), (False, SequenceValue(tuple, []))]
+                ),
+            )
+            assert_is_value(
+                c,
+                SequenceValue(tuple, [(False, KnownValue(1)), (False, KnownValue(2))]),
+            )
+            assert_is_value(
+                d, SequenceValue(set, [(False, KnownValue(1)), (False, KnownValue(2))])
+            )
 
 
 class TestConstructors(TestNameCheckVisitorBase):

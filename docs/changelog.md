@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix crash on stubs that contain dict or set literals (#634)
 - Remove more old special cases and improve robustness of
   annotation parsing (#630)
 - Remove dependency on `typing_inspect` (#629)
