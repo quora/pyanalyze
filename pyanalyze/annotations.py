@@ -23,6 +23,7 @@ These functions all use :class:`Context` objects to resolve names and
 show errors.
 
 """
+from _ast import Dict
 import ast
 import builtins
 import contextlib
@@ -76,6 +77,8 @@ from .signature import (
 )
 from .value import (
     _HashableValue,
+    DictIncompleteValue,
+    KVPair,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -915,6 +918,24 @@ class _Visitor(ast.NodeVisitor):
     def visit_List(self, node: ast.List) -> Value:
         elts = [(False, self.visit(elt)) for elt in node.elts]
         return SequenceValue(list, elts)
+
+    def visit_Set(self, node: ast.Set) -> Value:
+        elts = [(False, self.visit(elt)) for elt in node.elts]
+        return SequenceValue(set, elts)
+
+    def visit_Dict(self, node: Dict) -> Any:
+        keys = [self.visit(key) if key is not None else None for key in node.keys]
+        values = [self.visit(value) for value in node.values]
+        kvpairs = []
+        for key, value in zip(keys, values):
+            if key is None:
+                # Just skip ** unpacking in stubs for now.
+                kvpairs.append(
+                    KVPair(AnyValue(AnySource.inference), AnyValue(AnySource.inference))
+                )
+            else:
+                kvpairs.append(KVPair(key, value))
+        return DictIncompleteValue(dict, kvpairs)
 
     def visit_Index(self, node: ast.Index) -> Value:
         # class is unused in 3.9
