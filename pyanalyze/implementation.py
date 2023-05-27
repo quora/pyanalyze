@@ -1144,7 +1144,7 @@ def _reveal_type_impl(ctx: CallContext) -> Value:
     value = ctx.vars["value"]
     if ctx.visitor._is_checking():
         message = f"Revealed type is {ctx.visitor.display_value(value)}"
-        ctx.show_error(message, ErrorCode.inference_failure, arg="value")
+        ctx.show_error(message, ErrorCode.reveal_type, arg="value")
     return value
 
 
@@ -1160,7 +1160,7 @@ def _reveal_locals_impl(ctx: CallContext) -> Value:
             details.append(CanAssignError(f"{varname}: {val}"))
         ctx.show_error(
             "Revealed local types are:",
-            ErrorCode.inference_failure,
+            ErrorCode.reveal_type,
             detail=str(CanAssignError(children=details)),
         )
     return KnownValue(None)
@@ -1174,7 +1174,7 @@ def _dump_value_impl(ctx: CallContext) -> Value:
             sig = ctx.visitor.arg_spec_cache.get_argspec(value.val)
             if sig is not None:
                 message += f", signature is {sig!r}"
-        ctx.show_error(message, ErrorCode.inference_failure, arg="value")
+        ctx.show_error(message, ErrorCode.reveal_type, arg="value")
     return value
 
 

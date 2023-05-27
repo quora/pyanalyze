@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add new error code `reveal_type` for `reveal_type()`
+  and similar functions, which previously emitted
+  `inference_failure` (#636)
 - Take into account additional base classes declared in stub
   files (fixing some false positives around `typing.IO`) (#635)
 - Fix crash on stubs that contain dict or set literals (#634)

@@ -11,8 +11,8 @@ class TestInferenceHelpers(TestNameCheckVisitorBase):
         from pyanalyze.value import Value
 
         def capybara(val: Value) -> None:
-            reveal_type(dump_value)  # E: inference_failure
-            dump_value(reveal_type)  # E: inference_failure
+            reveal_type(dump_value)  # E: reveal_type
+            dump_value(reveal_type)  # E: reveal_type
             assert_is_value(1, KnownValue(1))
             assert_is_value(1, KnownValue(2))  # E: inference_failure
             assert_is_value(1, val)  # E: inference_failure
@@ -22,8 +22,8 @@ class TestInferenceHelpers(TestNameCheckVisitorBase):
         from pyanalyze import assert_is_value, dump_value
 
         def capybara():
-            x = dump_value(1)  # E: inference_failure
-            y = reveal_type(1)  # E: inference_failure
+            x = dump_value(1)  # E: reveal_type
+            y = reveal_type(1)  # E: reveal_type
             assert_is_value(x, KnownValue(1))
             assert_is_value(y, KnownValue(1))
 
@@ -64,5 +64,5 @@ class TestRevealLocals(TestNameCheckVisitorBase):
         def capybara(a: object, b: str) -> None:
             c = 3
             if b == "x":
-                reveal_locals()  # E: inference_failure
+                reveal_locals()  # E: reveal_type
             print(a, b, c)
