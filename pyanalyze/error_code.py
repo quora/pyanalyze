@@ -104,6 +104,7 @@ class ErrorCode(enum.Enum):
     deprecated = 84
     invalid_override_decorator = 85
     override_does_not_override = 86
+    reveal_type = 87
 
 
 # Allow testing unannotated functions without too much fuss
@@ -165,7 +166,8 @@ ERROR_DESCRIPTION = {
     ),
     ErrorCode.bad_global: "Bad global declaration.",
     ErrorCode.condition_always_true: "Condition is always true.",
-    ErrorCode.inference_failure: "Internal error in value inference.",
+    ErrorCode.inference_failure: "Incorrectly inferred type.",
+    ErrorCode.reveal_type: "Revealed type.",
     ErrorCode.bad_format_string: "Incorrect arguments to a %-formatted string.",
     ErrorCode.yield_without_value: "yield without a value in an async function",
     ErrorCode.invalid_method_return_type: (
