@@ -78,7 +78,9 @@ class TestAnnotations(TestNameCheckVisitorBase):
     def test_generic(self):
         from typing import Any, List
 
-        def capybara(x: List[int], y: List, z: List[Any]) -> None:
+        def capybara(
+            x: List[int], y: List, z: List[Any]  # E: missing_generic_parameters
+        ) -> None:
             assert_is_value(x, GenericValue(list, [TypedValue(int)]))
             assert_is_value(y, TypedValue(list))
             assert_is_value(z, GenericValue(list, [AnyValue(AnySource.explicit)]))
@@ -1831,3 +1833,18 @@ class TestUnpack(TestNameCheckVisitorBase):
                     tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
                 ),
             )
+
+
+class TestMissinGenericParameters(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing import List
+
+        def capybara(
+            x: list,  # E: missing_generic_parameters
+            y: List,  # E: missing_generic_parameters
+            z: List[int],
+            a: set[list],  # E: missing_generic_parameters
+            b: dict[str, list],  # E: missing_generic_parameters
+        ) -> set:  # E: missing_generic_parameters
+            return {1}

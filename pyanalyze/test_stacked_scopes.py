@@ -932,7 +932,7 @@ class TestConstraints(TestNameCheckVisitorBase):
                 # Don't widen the type to A.
                 assert_is_value(x, TypedValue(B))
 
-        def kerodon(cond1, cond2, val, lst: list):
+        def kerodon(cond1, cond2, val, lst: list):  # E: missing_generic_parameters
             if cond1:
                 x = int(val)
             elif cond2:

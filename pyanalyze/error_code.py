@@ -105,6 +105,7 @@ class ErrorCode(enum.Enum):
     invalid_override_decorator = 85
     override_does_not_override = 86
     reveal_type = 87
+    missing_generic_parameters = 88
 
 
 # Allow testing unannotated functions without too much fuss
@@ -129,6 +130,7 @@ DISABLED_BY_DEFAULT = {
     # TODO: turn this on
     ErrorCode.implicit_reexport,
     ErrorCode.incompatible_override,
+    ErrorCode.missing_generic_parameters,
 }
 
 ERROR_DESCRIPTION = {
@@ -234,6 +236,7 @@ ERROR_DESCRIPTION = {
     ),
     ErrorCode.invalid_override_decorator: "@override decorator in invalid location",
     ErrorCode.override_does_not_override: "Method does not override any base method",
+    ErrorCode.missing_generic_parameters: "Missing type parameters for generic type",
 }
 
 
