@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Take into account additional base classes declared in stub
+  files (fixing some false positives around `typing.IO`) (#635)
 - Fix crash on stubs that contain dict or set literals (#634)
 - Remove more old special cases and improve robustness of
   annotation parsing (#630)
