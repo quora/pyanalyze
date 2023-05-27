@@ -374,3 +374,33 @@ class TestHashable(TestNameCheckVisitorBase):
 
             want_hash([])  # E: incompatible_argument
             want_myhash([])  # E: incompatible_argument
+
+
+class TestIO(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_text(self):
+        from typing import TextIO
+        from typing_extensions import assert_type
+        import io
+
+        def want_io(x: TextIO):
+            x.write("hello")
+
+        def capybara():
+            with open("x") as f:
+                assert_type(f, io.TextIOWrapper)
+                want_io(f)
+
+    @assert_passes()
+    def test_binary(self):
+        from typing import BinaryIO
+        from typing_extensions import assert_type
+        import io
+
+        def want_io(x: BinaryIO):
+            x.write(b"hello")
+
+        def capybara():
+            with open("x", "rb") as f:
+                assert_type(f, io.BufferedReader)
+                want_io(f)

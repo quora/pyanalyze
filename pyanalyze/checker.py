@@ -163,15 +163,16 @@ class Checker:
         elif isinstance(typ, super):
             return TypeObject(typ, self.get_additional_bases(typ))
         else:
-            additional_bases = self.get_additional_bases(typ)
+            plugin_bases = self.get_additional_bases(typ)
+            typeshed_bases = self._get_typeshed_bases(typ)
+            additional_bases = plugin_bases | typeshed_bases
             # Is it marked as a protocol in stubs? If so, use the stub definition.
             if self.ts_finder.is_protocol(typ):
-                bases = self._get_typeshed_bases(typ)
                 return TypeObject(
                     typ,
                     additional_bases,
                     is_protocol=True,
-                    protocol_members=self._get_protocol_members(bases),
+                    protocol_members=self._get_protocol_members(typeshed_bases),
                 )
             # Is it a protocol at runtime?
             if is_instance_of_typing_name(typ, "_ProtocolMeta") and safe_getattr(
