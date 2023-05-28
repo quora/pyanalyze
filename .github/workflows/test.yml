@@ -32,7 +32,7 @@ jobs:
             python: "3.11"
             toxenv: py311
           - name: py312
-            python: "3.12"
+            python: "3.12-dev"
             toxenv: py312
           - name: black
             python: "3.11"
