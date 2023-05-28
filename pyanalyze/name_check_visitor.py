@@ -24,7 +24,7 @@ import sys
 import traceback
 import types
 from argparse import ArgumentParser
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from itertools import chain
 from pathlib import Path
 from typing import (
@@ -186,6 +186,7 @@ from .value import (
     replace_known_sequence_value,
     SequenceValue,
     set_self,
+    stringify_object,
     SubclassValue,
     TypedValue,
     TypeVarValue,
@@ -2182,9 +2183,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         generic_params = self.arg_spec_cache.get_type_parameters(val)
         if not generic_params:
             return
+        if sys.version_info < (3, 8) and val is InitVar:
+            # On 3.6 and 3.7, InitVar[type] just returns InitVar
+            return
         self.show_error(
             node,
-            f"Missing type parameters for generic type {value.val.__name__}",
+            f"Missing type parameters for generic type {stringify_object(value.val)}",
             error_code=ErrorCode.missing_generic_parameters,
         )
 
