@@ -946,6 +946,33 @@ class TestCallable(TestNameCheckVisitorBase):
                 (yield amap.asynq(mapper, [1])), GenericValue(list, [TypedValue(str)])
             )
 
+    @assert_passes()
+    def test_bare_callable(self):
+        import typing
+        import collections.abc
+
+        def want_typing(c: typing.Callable) -> None:
+            pass
+
+        def want_abc(c: collections.abc.Callable) -> None:
+            pass
+
+        class MyCallable:
+            def __call__(self) -> None:
+                pass
+
+        def capybara(m: MyCallable) -> None:
+            want_typing(m)
+            want_abc(m)
+            want_typing(1)  # E: incompatible_argument
+            want_abc(1)  # E: incompatible_argument
+
+            from _pyanalyze_tests.callable import StubCallable
+
+            def inner(x: StubCallable) -> None:
+                want_typing(x)
+                want_abc(x)
+
 
 class TestTypeVar(TestNameCheckVisitorBase):
     @assert_passes()

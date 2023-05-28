@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix compatibility between stub-only callable classes
+  and the bare `Callable` annotation (#640)
 - Add new error code `missing_generic_parameters` (off by
   default) that flags missing parameters to generic types
   such as `list` (#637)
