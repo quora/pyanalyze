@@ -1838,13 +1838,22 @@ class TestUnpack(TestNameCheckVisitorBase):
 class TestMissinGenericParameters(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
-        from typing import List
+        from typing import List, Set, Dict
 
         def capybara(
             x: list,  # E: missing_generic_parameters
             y: List,  # E: missing_generic_parameters
             z: List[int],
-            a: set[list],  # E: missing_generic_parameters
-            b: dict[str, list],  # E: missing_generic_parameters
+            a: Set[list],  # E: missing_generic_parameters
+            b: Dict[str, list],  # E: missing_generic_parameters
         ) -> set:  # E: missing_generic_parameters
             return {1}
+
+    @skip_before((3, 9))
+    @assert_passes()
+    def test_with_pep_585(self):
+        def capybara(
+            a: set[list],  # E: missing_generic_parameters
+            b: dict[str, list],  # E: missing_generic_parameters
+        ) -> None:
+            pass
