@@ -1857,3 +1857,13 @@ class TestMissinGenericParameters(TestNameCheckVisitorBase):
             b: dict[str, list],  # E: missing_generic_parameters
         ) -> None:
             pass
+
+    @skip_before((3, 10))
+    @assert_passes()
+    def test_union_or(self):
+        def capybara(
+            x: list | int,  # E: missing_generic_parameters
+            y: str | list,  # E: missing_generic_parameters
+            z: float | bool | set,  # E: missing_generic_parameters
+        ) -> None:
+            pass

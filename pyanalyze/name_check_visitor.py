@@ -3314,8 +3314,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if self.in_annotation and isinstance(op, ast.BitOr):
             # Accept PEP 604 (int | None) in annotations
             if isinstance(left, KnownValue) and isinstance(right, KnownValue):
-                self.check_for_missing_generic_params(left_node, left.val)
-                self.check_for_missing_generic_params(right_node, right.val)
+                self.check_for_missing_generic_params(left_node, left)
+                self.check_for_missing_generic_params(right_node, right)
                 return KnownValue(Union[left.val, right.val])
             else:
                 self._show_error_if_checking(
