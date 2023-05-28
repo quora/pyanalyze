@@ -361,6 +361,12 @@ class TypeshedFinder:
         return bases
 
     def get_bases_for_fq_name(self, fq_name: str) -> Optional[List[Value]]:
+        if fq_name in (
+            "typing.Generic",
+            "typing.Protocol",
+            "typing_extensions.Protocol",
+        ):
+            return []
         info = self._get_info_for_name(fq_name)
         mod, _ = fq_name.rsplit(".", maxsplit=1)
         return self._get_bases_from_info(info, mod, fq_name)
