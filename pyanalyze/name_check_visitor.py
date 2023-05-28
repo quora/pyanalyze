@@ -2191,6 +2191,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # On 3.8, ast.Index has no lineno
         if not hasattr(node, "lineno"):
             if isinstance(node, ast.Index):
+                # static analysis: ignore[undefined_attribute]
                 node = node.value
             else:
                 # Slice or ExtSlice, shouldn't happen
