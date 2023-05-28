@@ -164,7 +164,7 @@ class Checker:
             return TypeObject(typ, self.get_additional_bases(typ))
         else:
             plugin_bases = self.get_additional_bases(typ)
-            typeshed_bases = self._get_typeshed_bases(typ)
+            typeshed_bases = self._get_recursive_typeshed_bases(typ)
             additional_bases = plugin_bases | typeshed_bases
             # Is it marked as a protocol in stubs? If so, use the stub definition.
             if self.ts_finder.is_protocol(typ):
@@ -189,6 +189,22 @@ class Checker:
                 )
 
             return TypeObject(typ, additional_bases)
+
+    def _get_recursive_typeshed_bases(
+        self, typ: Union[type, str]
+    ) -> Set[Union[type, str]]:
+        seen = set()
+        to_do = {typ}
+        result = set()
+        while to_do:
+            typ = to_do.pop()
+            if typ in seen:
+                continue
+            bases = self._get_typeshed_bases(typ)
+            result |= bases
+            to_do |= bases
+            seen.add(typ)
+        return result
 
     def _get_typeshed_bases(self, typ: Union[type, str]) -> Set[Union[type, str]]:
         base_values = self.ts_finder.get_bases_recursively(typ)

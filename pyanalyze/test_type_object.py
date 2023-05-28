@@ -404,3 +404,8 @@ class TestIO(TestNameCheckVisitorBase):
             with open("x", "rb") as f:
                 assert_type(f, io.BufferedReader)
                 want_io(f)
+
+        def pacarana():
+            with open("x", "w+b") as f:
+                assert_type(f, io.BufferedRandom)
+                want_io(f)

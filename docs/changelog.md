@@ -9,7 +9,7 @@
   and similar functions, which previously emitted
   `inference_failure` (#636)
 - Take into account additional base classes declared in stub
-  files (fixing some false positives around `typing.IO`) (#635)
+  files (fixing some false positives around `typing.IO`) (#635, #639)
 - Fix crash on stubs that contain dict or set literals (#634)
 - Remove more old special cases and improve robustness of
   annotation parsing (#630)
