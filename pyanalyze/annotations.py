@@ -69,6 +69,7 @@ from .functions import FunctionDefNode
 from .node_visitor import ErrorContext
 from .safe import is_instance_of_typing_name, is_typing_name
 from .signature import (
+    ANY_SIGNATURE,
     ELLIPSIS_PARAM,
     InvalidSignature,
     ParameterKind,
@@ -1104,7 +1105,7 @@ def _value_of_origin_args(
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
     elif origin is Callable or is_typing_name(origin, "Callable"):
         if len(args) == 0:
-            return TypedValue(Callable)
+            return CallableValue(ANY_SIGNATURE)
         *arg_types, return_type = args
         if len(arg_types) == 1 and isinstance(arg_types[0], list):
             arg_types = arg_types[0]
@@ -1186,6 +1187,8 @@ def _maybe_typed_value(val: Union[type, str]) -> Value:
         return KnownValue(None)
     elif val is Hashable:
         return _HashableValue(val)
+    elif val is Callable or is_typing_name(val, "Callable"):
+        return CallableValue(ANY_SIGNATURE)
     return TypedValue(val)
 
 
