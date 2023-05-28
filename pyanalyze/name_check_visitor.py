@@ -2180,6 +2180,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if val is tuple and value.val is not tuple:
                 # tuple[()]
                 return
+        if GenericAlias is not None and isinstance(val, GenericAlias):
+            return
         generic_params = self.arg_spec_cache.get_type_parameters(val)
         if not generic_params:
             return
