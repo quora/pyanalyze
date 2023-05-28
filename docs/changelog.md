@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add new error code `missing_generic_parameters` (off by
+  default) that flags missing parameters to generic types
+  such as `list` (#637)
 - Add new error code `reveal_type` for `reveal_type()`
   and similar functions, which previously emitted
   `inference_failure` (#636)

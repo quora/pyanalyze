@@ -37,6 +37,7 @@ value_always_true = true
 suggested_parameter_type = true
 suggested_return_type = true
 incompatible_override = true
+missing_generic_parameters = true
 
 [[tool.pyanalyze.overrides]]
 module = "pyanalyze.typevar"

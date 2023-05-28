@@ -24,7 +24,7 @@ import sys
 import traceback
 import types
 from argparse import ArgumentParser
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from itertools import chain
 from pathlib import Path
 from typing import (
@@ -50,7 +50,7 @@ from typing import (
 import asynq
 import qcore
 import typeshed_client
-from typing_extensions import Annotated, Protocol
+from typing_extensions import Annotated, Protocol, get_args, get_origin
 
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
@@ -186,6 +186,7 @@ from .value import (
     replace_known_sequence_value,
     SequenceValue,
     set_self,
+    stringify_object,
     SubclassValue,
     TypedValue,
     TypeVarValue,
@@ -2161,7 +2162,45 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _visit_annotation(self, node: ast.AST) -> Value:
         with qcore.override(self, "in_annotation", True):
-            return self.visit(node)
+            val = self.visit(node)
+            self.check_for_missing_generic_params(node, val)
+            return val
+
+    def check_for_missing_generic_params(self, node: ast.AST, value: Value) -> None:
+        if not isinstance(value, KnownValue):
+            return
+        val = value.val
+        if not safe_isinstance(val, type):
+            args = get_args(val)
+            if args:
+                return
+            val = get_origin(val)
+            if not safe_isinstance(val, type):
+                return
+            if val is tuple and value.val is not tuple:
+                # tuple[()]
+                return
+        if GenericAlias is not None and isinstance(val, GenericAlias):
+            return
+        generic_params = self.arg_spec_cache.get_type_parameters(val)
+        if not generic_params:
+            return
+        if sys.version_info < (3, 8) and val is InitVar:
+            # On 3.6 and 3.7, InitVar[type] just returns InitVar
+            return
+        # On 3.8, ast.Index has no lineno
+        if not hasattr(node, "lineno"):
+            if isinstance(node, ast.Index):
+                # static analysis: ignore[undefined_attribute]
+                node = node.value
+            else:
+                # Slice or ExtSlice, shouldn't happen
+                return
+        self.show_error(
+            node,
+            f"Missing type parameters for generic type {stringify_object(value.val)}",
+            error_code=ErrorCode.missing_generic_parameters,
+        )
 
     def _value_of_annotation_type(
         self,
@@ -2970,7 +3009,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _visit_display_read(
         self, node: Union[ast.Set, ast.List, ast.Tuple], typ: type
     ) -> Value:
-        elts = [self.visit(elt) for elt in node.elts]
+        if typ is tuple and self.in_annotation:
+            elts = []
+            for elt in node.elts:
+                val = self.visit(elt)
+                self.check_for_missing_generic_params(elt, val)
+                elts.append(val)
+        else:
+            elts = [self.visit(elt) for elt in node.elts]
         return self._maybe_make_sequence(typ, elts, node, elt_nodes=node.elts)
 
     def _maybe_make_sequence(
@@ -3269,6 +3315,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if self.in_annotation and isinstance(op, ast.BitOr):
             # Accept PEP 604 (int | None) in annotations
             if isinstance(left, KnownValue) and isinstance(right, KnownValue):
+                self.check_for_missing_generic_params(left_node, left)
+                self.check_for_missing_generic_params(right_node, right)
                 return KnownValue(Union[left.val, right.val])
             else:
                 self._show_error_if_checking(
@@ -4378,6 +4426,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         root_composite = self.composite_from_node(node.value)
         index_composite = self.composite_from_node(node.slice)
         index = index_composite.value
+        self.check_for_missing_generic_params(node.slice, index)
         if (
             root_composite.varname is not None
             and isinstance(index, KnownValue)
@@ -5258,7 +5307,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     @classmethod
     def prepare_constructor_kwargs(
-        cls, kwargs: Mapping[str, Any], extra_options: Sequence[ConfigOption] = ()
+        cls, kwargs: Mapping[str, Any], extra_options: Sequence[ConfigOption[Any]] = ()
     ) -> Mapping[str, Any]:
         kwargs = dict(kwargs)
         instances = [*extra_options]
@@ -5425,7 +5474,7 @@ def build_stacked_scopes(
     return StackedScopes(module_vars, module, simplification_limit=simplification_limit)
 
 
-def _get_task_cls(fn: object) -> Type[asynq.FutureBase]:
+def _get_task_cls(fn: object) -> "Type[asynq.FutureBase[Any]]":
     """Returns the task class for an async function."""
 
     if hasattr(fn, "task_cls"):

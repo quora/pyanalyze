@@ -679,7 +679,12 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             b: str
             c: NotRequired[str]
 
-        def capybara(td: TD, s: str, d: Dict[str, int], untyped: dict):
+        def capybara(
+            td: TD,
+            s: str,
+            d: Dict[str, int],
+            untyped: dict,  # E: missing_generic_parameters
+        ):
             assert_is_value(td.get("a"), TypedValue(int))
             assert_is_value(td.get("c"), TypedValue(str) | KnownValue(None))
             assert_is_value(td.get("c", 1), TypedValue(str) | KnownValue(1))
@@ -1148,7 +1153,7 @@ class TestDictGetItem(TestNameCheckVisitorBase):
             dct: Dict[str, int],
             rev: ReversedDict[str, int],
             nd: NormalDict[int, str],
-            untyped: dict,
+            untyped: dict,  # E: missing_generic_parameters
         ):
             d = {1: 2}
             assert_is_value(d[1], KnownValue(2))
@@ -1165,7 +1170,7 @@ class TestDictGetItem(TestNameCheckVisitorBase):
     def test_type_as_key(self):
         from typing import Type
 
-        def capybara(d: dict, t: Type[int]):
+        def capybara(d: dict, t: Type[int]):  # E: missing_generic_parameters
             d[int]
             d[t]
 
@@ -1237,7 +1242,7 @@ class TestDictSetItem(TestNameCheckVisitorBase):
     def test_bad_key_type(self):
         from typing import Dict
 
-        def capybara(untyped: dict) -> None:
+        def capybara(untyped: dict) -> None:  # E: missing_generic_parameters
             dct: Dict[str, int] = {}
             dct[1] = 1  # E: incompatible_argument
 

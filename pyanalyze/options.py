@@ -277,13 +277,13 @@ class PyObjectSequenceOption(ConcatenatedOption[T]):
 
 @dataclass
 class Options:
-    options: Mapping[str, Sequence[ConfigOption]]
+    options: Mapping[str, Sequence[ConfigOption[Any]]]
     module_path: ModulePath = ()
 
     @classmethod
     def from_option_list(
         cls,
-        instances: Sequence[ConfigOption] = (),
+        instances: Sequence[ConfigOption[Any]] = (),
         config_file_path: Optional[Path] = None,
     ) -> "Options":
         if config_file_path:
@@ -354,7 +354,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 def parse_config_file(
     path: Path, *, priority: int = 0, seen_paths: Collection[Path] = frozenset()
-) -> Iterable[ConfigOption]:
+) -> Iterable[ConfigOption[Any]]:
     try:
         path = path.resolve(strict=True)
     except FileNotFoundError:
@@ -378,7 +378,7 @@ def _parse_config_section(
     path: Path,
     priority: int,
     seen_paths: Collection[Path],
-) -> Iterable[ConfigOption]:
+) -> Iterable[ConfigOption[Any]]:
     if "module" in section:
         if module_path == ():
             raise InvalidConfigOption(

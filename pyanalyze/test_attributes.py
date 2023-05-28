@@ -215,12 +215,14 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_typeshed(self):
-        def capybara(c: staticmethod):
+        # missing_generic_parameters is a bit questionable here, but the
+        # class really is defined as generic in typeshed.
+        def capybara(c: staticmethod):  # E: missing_generic_parameters
             assert_is_value(c.__isabstractmethod__, TypedValue(bool))
 
     @assert_passes()
     def test_no_attribute_for_typeshed_class():
-        def capybara(c: staticmethod):
+        def capybara(c: staticmethod):  # E: missing_generic_parameters
             c.no_such_attribute  # E: undefined_attribute
 
     @assert_passes()
