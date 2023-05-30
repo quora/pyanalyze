@@ -204,29 +204,11 @@ from .value import (
 )
 from .yield_checker import YieldChecker
 
-try:
-    from ast import NamedExpr
-except ImportError:
-    NamedExpr = Any  # 3.7 and lower
 
-try:
-    from ast import Match
-except ImportError:
-    # 3.9 and lower
-    Match = Any
-
-try:
-    from ast import TryStar
-    from builtins import BaseExceptionGroup, ExceptionGroup
-except ImportError:
-    # 3.10 and lower
-    TryStar = Any
-
-    class BaseExceptionGroup:
-        pass
-
-    class ExceptionGroup:
-        pass
+if sys.version_info >= (3, 11):
+    TryNode = ast.Try | ast.TryStar
+else:
+    TryNode = ast.Try
 
 
 try:
@@ -324,7 +306,6 @@ COMPARATOR_TO_OPERATOR = {
 
 SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL = [KnownValue(asynq.asynq), KnownValue(property)]
 if sys.version_info < (3, 11):
-    # static analysis: ignore[undefined_attribute]
     SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL.append(KnownValue(asyncio.coroutine))
 
 
@@ -2192,9 +2173,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # On 3.6 and 3.7, InitVar[type] just returns InitVar
             return
         # On 3.8, ast.Index has no lineno
-        if not hasattr(node, "lineno"):
+        if sys.version_info < (3, 8) and not hasattr(node, "lineno"):
             if isinstance(node, ast.Index):
-                # static analysis: ignore[undefined_attribute]
                 node = node.value
             else:
                 # Slice or ExtSlice, shouldn't happen
@@ -3542,16 +3522,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return TypedValue(slice)
 
-    # These two are unused in 3.8 and higher, and the typeshed stubs reflect
-    # that their .dims and .value attributes don't exist.
-    def visit_ExtSlice(self, node: ast.ExtSlice) -> Value:
-        # static analysis: ignore[undefined_attribute]
-        dims = [self.visit(dim) for dim in node.dims]
-        return self._maybe_make_sequence(tuple, dims, node)
+    # These two are unused in 3.8 and higher
+    if sys.version_info < (3, 8):
 
-    def visit_Index(self, node: ast.Index) -> Value:
-        # static analysis: ignore[undefined_attribute]
-        return self.visit(node.value)
+        def visit_ExtSlice(self, node: ast.ExtSlice) -> Value:
+            dims = [self.visit(dim) for dim in node.dims]
+            return self._maybe_make_sequence(tuple, dims, node)
+
+        def visit_Index(self, node: ast.Index) -> Value:
+            return self.visit(node.value)
 
     # Control flow
 
@@ -4042,9 +4021,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self.visit(node.optional_vars)
         return can_suppress
 
-    def visit_try_except(
-        self, node: Union[ast.Try, TryStar], *, is_try_star: bool = False
-    ) -> None:
+    def visit_try_except(self, node: TryNode, *, is_try_star: bool = False) -> None:
         with self.scopes.subscope():
             with self.scopes.subscope() as dummy_scope:
                 pass
@@ -4077,9 +4054,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         self.scopes.combine_subscopes([else_scope, *except_scopes])
 
-    def visit_Try(
-        self, node: Union[ast.Try, TryStar], *, is_try_star: bool = False
-    ) -> None:
+    def visit_Try(self, node: TryNode, *, is_try_star: bool = False) -> None:
         if node.finalbody:
             with self.scopes.subscope() as failure_scope:
                 with self.scopes.suppressing_subscope() as success_scope:
@@ -4098,8 +4073,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.visit_try_except(node, is_try_star=is_try_star)
         self.yield_checker.reset_yield_checks()
 
-    def visit_TryStar(self, node: TryStar) -> None:
-        self.visit_Try(node, is_try_star=True)
+    if sys.version_info >= (3, 11):
+
+        def visit_TryStar(self, node: ast.TryStar) -> None:
+            self.visit_Try(node, is_try_star=True)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.type is not None:
@@ -4110,7 +4087,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
             if node.name is not None:
                 to_assign = unite_values(*[typ for _, typ in possible_types])
-                if is_try_star:
+                if is_try_star and sys.version_info >= (3, 11):
                     if all(is_exception for is_exception, _ in possible_types):
                         base = ExceptionGroup
                     else:
@@ -4147,7 +4124,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if isinstance(subval.val, type) and issubclass(
                     subval.val, BaseException
                 ):
-                    if is_try_star and issubclass(subval.val, BaseExceptionGroup):
+                    if (
+                        is_try_star
+                        and sys.version_info >= (3, 11)
+                        and issubclass(subval.val, BaseExceptionGroup)
+                    ):
                         self._show_error_if_checking(
                             node,
                             (
@@ -4279,19 +4260,21 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Assignments
 
-    def visit_NamedExpr(self, node: NamedExpr) -> Value:
-        composite = self.composite_from_walrus(node)
-        return composite.value
+    if sys.version_info >= (3, 8):
 
-    def composite_from_walrus(self, node: NamedExpr) -> Composite:
-        rhs = self.visit(node.value)
-        with qcore.override(self, "being_assigned", rhs):
-            if self.in_comprehension_body:
-                ctx = self.scopes.ignore_topmost_scope()
-            else:
-                ctx = qcore.empty_context
-            with ctx:
-                return self.composite_from_node(node.target)
+        def visit_NamedExpr(self, node: ast.NamedExpr) -> Value:
+            composite = self.composite_from_walrus(node)
+            return composite.value
+
+        def composite_from_walrus(self, node: ast.NamedExpr) -> Composite:
+            rhs = self.visit(node.value)
+            with qcore.override(self, "being_assigned", rhs):
+                if self.in_comprehension_body:
+                    ctx = self.scopes.ignore_topmost_scope()
+                else:
+                    ctx = qcore.empty_context
+                with ctx:
+                    return self.composite_from_node(node.target)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         is_yield = isinstance(node.value, ast.Yield)
@@ -4537,8 +4520,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 # type.__getitem__ nor type.__class_getitem__ exists at runtime. Support
                 # it directly instead.
                 if isinstance(index, KnownValue):
-                    # self-check throws an error in 3.8 and lower
-                    # static analysis: ignore[unsupported_operation]
                     return_value = KnownValue(type[index.val])
                 else:
                     return_value = AnyValue(AnySource.inference)
@@ -4953,15 +4934,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             composite = self.composite_from_name(node)
         elif isinstance(node, ast.Subscript):
             composite = self.composite_from_subscript(node)
-        elif isinstance(node, ast.Index):
-            # static analysis: ignore[undefined_attribute]
+        elif sys.version_info < (3, 8) and isinstance(node, ast.Index):
             composite = self.composite_from_node(node.value)
         elif isinstance(node, (ast.ExtSlice, ast.Slice)):
             # These don't have a .lineno attribute, which would otherwise cause trouble.
             composite = Composite(self.visit(node), None, None)
-        # We need better support for version-straddling code
-        # static analysis: ignore[value_always_true]
-        elif hasattr(ast, "NamedExpr") and isinstance(node, ast.NamedExpr):
+        elif sys.version_info >= (3, 8) and isinstance(node, ast.NamedExpr):
             composite = self.composite_from_walrus(node)
         else:
             composite = Composite(self.visit(node), None, node)
@@ -5222,44 +5200,48 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Match statements
 
-    def visit_Match(self, node: Match) -> None:
-        subject = self.composite_from_node(node.subject)
-        patma_visitor = PatmaVisitor(self)
-        with qcore.override(self, "match_subject", subject):
-            constraints_to_apply = []
-            subscopes = []
-            for case in node.cases:
-                with self.scopes.subscope() as case_scope:
-                    for constraint in constraints_to_apply:
-                        self.add_constraint(case, constraint)
-                    self.match_subject = self.match_subject._replace(
-                        value=constrain_value(
-                            self.match_subject.value,
-                            AndConstraint.make(constraints_to_apply),
+    if sys.version_info >= (3, 10):
+
+        def visit_Match(self, node: ast.Match) -> None:
+            subject = self.composite_from_node(node.subject)
+            patma_visitor = PatmaVisitor(self)
+            with qcore.override(self, "match_subject", subject):
+                constraints_to_apply = []
+                subscopes = []
+                for case in node.cases:
+                    with self.scopes.subscope() as case_scope:
+                        for constraint in constraints_to_apply:
+                            self.add_constraint(case, constraint)
+                        self.match_subject = self.match_subject._replace(
+                            value=constrain_value(
+                                self.match_subject.value,
+                                AndConstraint.make(constraints_to_apply),
+                            )
                         )
-                    )
 
-                    pattern_constraint = patma_visitor.visit(case.pattern)
-                    constraints = [pattern_constraint]
-                    self.add_constraint(case.pattern, pattern_constraint)
-                    if case.guard is not None:
-                        _, guard_constraint = self.constraint_from_condition(case.guard)
-                        self.add_constraint(case.guard, guard_constraint)
-                        constraints.append(guard_constraint)
+                        pattern_constraint = patma_visitor.visit(case.pattern)
+                        constraints = [pattern_constraint]
+                        self.add_constraint(case.pattern, pattern_constraint)
+                        if case.guard is not None:
+                            _, guard_constraint = self.constraint_from_condition(
+                                case.guard
+                            )
+                            self.add_constraint(case.guard, guard_constraint)
+                            constraints.append(guard_constraint)
 
-                    constraints_to_apply.append(
-                        AndConstraint.make(constraints).invert()
-                    )
-                    self._generic_visit_list(case.body)
-                    subscopes.append(case_scope)
+                        constraints_to_apply.append(
+                            AndConstraint.make(constraints).invert()
+                        )
+                        self._generic_visit_list(case.body)
+                        subscopes.append(case_scope)
 
-                self.yield_checker.reset_yield_checks()
+                    self.yield_checker.reset_yield_checks()
 
-            with self.scopes.subscope() as else_scope:
-                for constraint in constraints_to_apply:
-                    self.add_constraint(node, constraint)
-                subscopes.append(else_scope)
-            self.scopes.combine_subscopes(subscopes)
+                with self.scopes.subscope() as else_scope:
+                    for constraint in constraints_to_apply:
+                        self.add_constraint(node, constraint)
+                    subscopes.append(else_scope)
+                self.scopes.combine_subscopes(subscopes)
 
     # Attribute checking
 
