@@ -2173,7 +2173,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # On 3.6 and 3.7, InitVar[type] just returns InitVar
             return
         # On 3.8, ast.Index has no lineno
-        if sys.version_info < (3, 8) and not hasattr(node, "lineno"):
+        if sys.version_info < (3, 9) and not hasattr(node, "lineno"):
             if isinstance(node, ast.Index):
                 node = node.value
             else:
@@ -3522,8 +3522,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return TypedValue(slice)
 
-    # These two are unused in 3.8 and higher
-    if sys.version_info < (3, 8):
+    # These two are unused in 3.9 and higher
+    if sys.version_info < (3, 9):
 
         def visit_ExtSlice(self, node: ast.ExtSlice) -> Value:
             dims = [self.visit(dim) for dim in node.dims]
