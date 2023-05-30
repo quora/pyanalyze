@@ -152,7 +152,10 @@ from .suggested_type import (
 )
 from .type_object import get_mro, TypeObject
 from .value import (
+    SYS_PLATFORM_EXTENSION,
+    SYS_VERSION_INFO_EXTENSION,
     AlwaysPresentExtension,
+    DefiniteValueExtension,
     DeprecatedExtension,
     SkipDeprecatedExtension,
     annotate_value,
@@ -3096,6 +3099,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         out_constraints = []
         values = []
         constraint = NULL_CONSTRAINT
+        definite_value = None
         with stack:
             for i, condition in enumerate(node.values):
                 is_last = i == len(node.values) - 1
@@ -3109,6 +3113,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 new_value, constraint = self.constraint_from_condition(
                     condition, check_boolability=not is_last
                 )
+                new_def_val = _extract_definite_value(new_value)
+                if is_and and new_def_val is False:
+                    definite_value = False
+                    stack.enter_context(self.catch_errors())
+                elif not is_and and new_def_val is True:
+                    definite_value = True
+                    stack.enter_context(self.catch_errors())
                 out_constraints.append(constraint)
 
                 if is_last:
@@ -3121,7 +3132,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.scopes.combine_subscopes(scopes)
         constraint_cls = AndConstraint if is_and else OrConstraint
         constraint = constraint_cls.make(reversed(out_constraints))
-        return annotate_with_constraint(unite_values(*values), constraint)
+        out = unite_values(*values)
+        if definite_value is not None:
+            out = annotate_value(out, [DefiniteValueExtension(definite_value)])
+        return annotate_with_constraint(out, constraint)
 
     def visit_Compare(self, node: ast.Compare) -> Value:
         nodes = [node.left, *node.comparators]
@@ -3153,10 +3167,25 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     ) -> Value:
         lhs_constraint = extract_constraints(lhs)
         rhs_constraint = extract_constraints(rhs)
-        if isinstance(lhs, AnnotatedValue):
-            lhs = lhs.value
         if isinstance(rhs, AnnotatedValue):
             rhs = rhs.value
+        definite_value = None
+        if isinstance(lhs, AnnotatedValue):
+            if (
+                SYS_PLATFORM_EXTENSION in lhs.metadata
+                and isinstance(rhs, KnownValue)
+                and isinstance(op, (ast.Eq, ast.NotEq))
+            ):
+                op_func, _ = COMPARATOR_TO_OPERATOR[type(op)]
+                definite_value = op_func(sys.platform, rhs.val)
+            elif (
+                SYS_VERSION_INFO_EXTENSION in lhs.metadata
+                and isinstance(rhs, KnownValue)
+                and isinstance(op, (ast.Gt, ast.GtE, ast.Lt, ast.LtE))
+            ):
+                op_func, _ = COMPARATOR_TO_OPERATOR[type(op)]
+                definite_value = op_func(sys.version_info, rhs.val)
+            lhs = lhs.value
         if isinstance(lhs_constraint, PredicateProvider) and isinstance(
             rhs, KnownValue
         ):
@@ -3205,6 +3234,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 allow_call=False,
             )
 
+        if definite_value is not None:
+            val = annotate_value(val, [DefiniteValueExtension(definite_value)])
         return annotate_with_constraint(val, constraint)
 
     def _constraint_from_compare_op(
@@ -3278,6 +3309,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(node.op, ast.Not):
             # not doesn't have its own special method
             val, constraint = self.constraint_from_condition(node.operand)
+            definite_value = _extract_definite_value(val)
             boolability = get_boolability(val)
             if boolability.is_safely_true():
                 val = KnownValue(False)
@@ -3285,6 +3317,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 val = KnownValue(True)
             else:
                 val = TypedValue(bool)
+            if definite_value is not None:
+                val = annotate_value(val, [DefiniteValueExtension(not definite_value)])
             return annotate_with_constraint(val, constraint.invert())
         else:
             operand = self.composite_from_node(node.operand)
@@ -4138,31 +4172,42 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return possible_types
 
     def visit_If(self, node: ast.If) -> None:
-        _, constraint = self.constraint_from_condition(node.test)
+        val, constraint = self.constraint_from_condition(node.test)
+        definite_value = _extract_definite_value(val)
         # reset yield checks to avoid incorrect errors when we yield in both the condition and one
         # of the blocks
         self.yield_checker.reset_yield_checks()
-        with self.scopes.subscope() as body_scope:
+        with self._subscope_and_maybe_supress(definite_value is False) as body_scope:
             self.add_constraint(node, constraint)
             self._generic_visit_list(node.body)
         self.yield_checker.reset_yield_checks()
 
-        with self.scopes.subscope() as else_scope:
+        with self._subscope_and_maybe_supress(definite_value is True) as else_scope:
             self.add_constraint(node, constraint.invert())
             self._generic_visit_list(node.orelse)
         self.scopes.combine_subscopes([body_scope, else_scope])
         self.yield_checker.reset_yield_checks()
 
     def visit_IfExp(self, node: ast.IfExp) -> Value:
-        _, constraint = self.constraint_from_condition(node.test)
-        with self.scopes.subscope() as if_scope:
+        val, constraint = self.constraint_from_condition(node.test)
+        definite_value = _extract_definite_value(val)
+        with self._subscope_and_maybe_supress(definite_value is False) as if_scope:
             self.add_constraint(node, constraint)
             then_val = self.visit(node.body)
-        with self.scopes.subscope() as else_scope:
+        with self._subscope_and_maybe_supress(definite_value is True) as else_scope:
             self.add_constraint(node, constraint.invert())
             else_val = self.visit(node.orelse)
         self.scopes.combine_subscopes([if_scope, else_scope])
         return unite_values(then_val, else_val)
+
+    @contextlib.contextmanager
+    def _subscope_and_maybe_supress(self, should_suppress: bool) -> Iterator[SubScope]:
+        with self.scopes.subscope() as scope:
+            if should_suppress:
+                with self.catch_errors():
+                    yield scope
+            else:
+                yield scope
 
     def constraint_from_condition(
         self, node: ast.AST, check_boolability: bool = True
@@ -4751,6 +4796,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 local_value = self._get_composite(composite.get_varname(), node, value)
                 if local_value is not UNINITIALIZED_VALUE:
                     value = local_value
+            if root_composite.value == KnownValue(sys):
+                if node.attr == "platform":
+                    value = annotate_value(value, [SYS_PLATFORM_EXTENSION])
+                elif node.attr == "version_info":
+                    value = annotate_value(value, [SYS_VERSION_INFO_EXTENSION])
             return Composite(value, composite, node)
         else:
             self.show_error(node, "Unknown context", ErrorCode.unexpected_node)
@@ -5539,3 +5589,11 @@ def _has_annotation_for_attr(typ: type, attr: str) -> bool:
 
 def _is_asynq_future(value: Value) -> bool:
     return value.is_type(asynq.FutureBase) or value.is_type(asynq.AsyncTask)
+
+
+def _extract_definite_value(val: Value) -> Optional[bool]:
+    if isinstance(val, AnnotatedValue):
+        dv_exts = val.get_metadata_of_type(DefiniteValueExtension)
+        for dv_ext in dv_exts:
+            return dv_ext.value
+    return None

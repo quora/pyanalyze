@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add support for suppressing errors in blocks based on
+  `sys.platform` and `sys.version_info` checks (#641)
 - Fix compatibility between stub-only callable classes
   and the bare `Callable` annotation (#640)
 - Add new error code `missing_generic_parameters` (off by

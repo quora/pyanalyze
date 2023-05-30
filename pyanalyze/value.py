@@ -1948,6 +1948,30 @@ class DeprecatedExtension(Extension):
 
 
 @dataclass(frozen=True)
+class SysPlatformExtension(Extension):
+    """Used for sys.platform."""
+
+
+SYS_PLATFORM_EXTENSION = SysPlatformExtension()
+
+
+@dataclass(frozen=True)
+class SysVersionInfoExtension(Extension):
+    """Used for sys.version_info."""
+
+
+SYS_VERSION_INFO_EXTENSION = SysVersionInfoExtension()
+
+
+@dataclass(frozen=True)
+class DefiniteValueExtension(Extension):
+    """Used if a comparison has a definite value that should be used
+    to skip type checking."""
+
+    value: bool
+
+
+@dataclass(frozen=True)
 class AnnotatedValue(Value):
     """Value representing a `PEP 593 <https://www.python.org/dev/peps/pep-0593/>`_ Annotated object.
 
