@@ -4934,7 +4934,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             composite = self.composite_from_name(node)
         elif isinstance(node, ast.Subscript):
             composite = self.composite_from_subscript(node)
-        elif sys.version_info < (3, 8) and isinstance(node, ast.Index):
+        elif sys.version_info < (3, 9) and isinstance(node, ast.Index):
             composite = self.composite_from_node(node.value)
         elif isinstance(node, (ast.ExtSlice, ast.Slice)):
             # These don't have a .lineno attribute, which would otherwise cause trouble.
