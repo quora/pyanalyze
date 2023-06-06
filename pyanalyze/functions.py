@@ -376,7 +376,7 @@ def compute_parameters(
                 idx == 0 and not is_staticmethod and is_nested_in_class
             ):
                 ctx.show_error(
-                    node,
+                    arg,
                     f"Missing type annotation for parameter {arg.arg}",
                     error_code=ErrorCode.missing_parameter_annotation,
                 )

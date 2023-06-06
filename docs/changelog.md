@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improve the location where `missing_parameter_annotation`
+  errors are reported (#643)
 - Add support for suppressing errors in blocks based on
   `sys.platform` and `sys.version_info` checks (#641)
 - Fix compatibility between stub-only callable classes
