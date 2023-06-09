@@ -1397,7 +1397,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self,
         varname: str,
         node: ast.AST,
-        value: Value = AnyValue(AnySource.inference),
+        value: Optional[Value] = AnyValue(AnySource.inference),
         *,
         private: bool = False,
         lookup_node: object = None,
@@ -1417,7 +1417,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         else:
             declared_type = current_scope.get_declared_type(varname)
-            if declared_type is not None:
+            if declared_type is not None and value is not None:
                 can_assign = declared_type.can_assign(value, self)
                 if isinstance(can_assign, CanAssignError):
                     self._show_error_if_checking(
@@ -1446,8 +1446,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 value, _ = current_scope.get_local(varname, lookup_node, self.state)
                 return value, EMPTY_ORIGIN
         if scope_type == ScopeType.class_scope:
-            self._check_for_incompatible_overrides(varname, node, value)
+            if value is not None:
+                self._check_for_incompatible_overrides(varname, node, value)
             self._check_for_class_variable_redefinition(varname, node)
+        if value is None:
+            return AnyValue(AnySource.inference), EMPTY_ORIGIN
         origin = current_scope.set(varname, value, lookup_node, self.state)
         return value, origin
 
@@ -4412,10 +4415,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     value = ann_assign_type
             if value is not None:
                 self.yield_checker.record_assignment(node.id)
-                value, origin = self._set_name_in_scope(node.id, node, value=value)
-            else:
-                value = AnyValue(AnySource.inference)
-                origin = EMPTY_ORIGIN
+            value, origin = self._set_name_in_scope(node.id, node, value=value)
             varname = VarnameWithOrigin(node.id, origin)
             constraint = Constraint(varname, ConstraintType.is_truthy, True, None)
             value = annotate_with_constraint(value, constraint)
