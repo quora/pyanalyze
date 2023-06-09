@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Consider an annotated assignment without a value to be
+  an exported name (#644)
 - Improve the location where `missing_parameter_annotation`
   errors are reported (#643)
 - Add support for suppressing errors in blocks based on
