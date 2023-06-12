@@ -16,4 +16,5 @@ class_attribute_transformers = [
 disallowed_imports = [
     "getopt",
     "email.quoprimime",
+    "xml",
 ]
