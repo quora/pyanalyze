@@ -41,3 +41,26 @@ class TestImport(TestNameCheckVisitorBase):
                 assert_is_value(extensions, KnownValue(P.extensions))
                 not_a_name  # E: undefined_name
             """)
+
+
+class TestDisallowedImport(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_top_level(self):
+        import getopt  # E: disallowed_import
+
+        from getopt import getopt  # E: disallowed_import
+
+        def capybara():
+            import getopt  # E: disallowed_import
+            from getopt import getopt  # E: disallowed_import
+
+    @assert_passes()
+    def test_nested(self):
+        import pyanalyze._disallowed_test  # E: disallowed_import
+        from pyanalyze._disallowed_test import some_func  # E: disallowed_import
+        from pyanalyze import _disallowed_test  # E: disallowed_import
+
+        def capybara():
+            import pyanalyze._disallowed_test  # E: disallowed_import
+            from pyanalyze._disallowed_test import some_func  # E: disallowed_import
+            from pyanalyze import _disallowed_test  # E: disallowed_import

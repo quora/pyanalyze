@@ -426,6 +426,16 @@ class DisallowCallsToDunders(StringSequenceOption):
     name = "disallow_calls_to_dunders"
 
 
+class DisallowedImports(StringSequenceOption):
+    """List of imports that will trigger an error.
+
+    Entries may be top-level modules (e.g., "os") or dotted submodule paths (e.g., "os.path").
+
+    """
+
+    name = "disallowed_imports"
+
+
 class ForLoopAlwaysEntered(BooleanOption):
     """If True, we assume that for loops are always entered at least once,
     which affects the potentially_undefined_name check. This will miss
@@ -2310,6 +2320,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Imports
 
+    def check_for_disallowed_import(self, node: ast.AST, name: str) -> None:
+        disallowed = self.options.get_value_for(DisallowedImports)
+        if name in disallowed:
+            self._show_error_if_checking(
+                node,
+                f"Disallowed import of module {name!r}",
+                error_code=ErrorCode.disallowed_import,
+            )
+
     def visit_Import(self, node: ast.Import) -> None:
         self.generic_visit(node)
         if self.scopes.scope_type() == ScopeType.module_scope:
@@ -2317,6 +2336,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 self.import_name_to_node[name.name] = node
 
         for alias in node.names:
+            self.check_for_disallowed_import(node, alias.name)
             self._try_to_import(alias.name)
             # "import a.b" sets the name "a", but "import a.b as c" sets "c" to the value "a.b"
             varname = (
@@ -2404,6 +2424,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             for name in node.names:
                 self.future_imports.add(name.name)
 
+        if node.module is not None and node.level == 0:
+            self.check_for_disallowed_import(node, node.module)
         self._maybe_record_usages_from_import(node)
 
         # See if we can get the names from the stub instead
@@ -2465,6 +2487,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._set_alias_in_scope(
                 alias, val, force_public=is_init and node.level == 1, node=node
             )
+            if node.module is not None and node.level == 0:
+                self.check_for_disallowed_import(alias, f"{node.module}.{alias.name}")
 
     def _get_import_from_value(
         self, source_module: Value, alias_name: str, node: ast.ImportFrom

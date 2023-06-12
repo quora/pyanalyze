@@ -13,3 +13,7 @@ functions_safe_to_call = [
 class_attribute_transformers = [
     "pyanalyze.test_config.transform_class_attribute"
 ]
+disallowed_imports = [
+    "getopt",
+    "pyanalyze._disallowed_test",
+]
