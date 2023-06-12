@@ -48,11 +48,15 @@ class TestDisallowedImport(TestNameCheckVisitorBase):
     def test_top_level(self):
         import getopt  # E: disallowed_import
 
-        from getopt import getopt  # E: disallowed_import
+        from getopt import GetoptError  # E: disallowed_import
+
+        print(getopt, GetoptError)  # shut up flake8
 
         def capybara():
             import getopt  # E: disallowed_import
-            from getopt import getopt  # E: disallowed_import
+            from getopt import GetoptError  # E: disallowed_import
+
+            print(getopt, GetoptError)
 
     @assert_passes()
     def test_nested(self):
@@ -60,7 +64,11 @@ class TestDisallowedImport(TestNameCheckVisitorBase):
         from pyanalyze._disallowed_test import some_func  # E: disallowed_import
         from pyanalyze import _disallowed_test  # E: disallowed_import
 
+        print(pyanalyze, some_func, _disallowed_test)
+
         def capybara():
             import pyanalyze._disallowed_test  # E: disallowed_import
             from pyanalyze._disallowed_test import some_func  # E: disallowed_import
             from pyanalyze import _disallowed_test  # E: disallowed_import
+
+            print(pyanalyze, some_func, _disallowed_test)
