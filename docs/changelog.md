@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `disallowed_imports` configuration option to disallow
+  imports of specific modules (#645)
 - Consider an annotated assignment without a value to be
   an exported name (#644)
 - Improve the location where `missing_parameter_annotation`

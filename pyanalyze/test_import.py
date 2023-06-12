@@ -41,3 +41,44 @@ class TestImport(TestNameCheckVisitorBase):
                 assert_is_value(extensions, KnownValue(P.extensions))
                 not_a_name  # E: undefined_name
             """)
+
+
+class TestDisallowedImport(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_top_level(self):
+        import getopt  # E: disallowed_import
+
+        from getopt import GetoptError  # E: disallowed_import
+
+        print(getopt, GetoptError)  # shut up flake8
+
+        def capybara():
+            import getopt  # E: disallowed_import
+            from getopt import GetoptError  # E: disallowed_import
+
+            print(getopt, GetoptError)
+
+    @assert_passes()
+    def test_nested(self):
+        import email.quoprimime  # E: disallowed_import
+        from email.quoprimime import unquote  # E: disallowed_import
+
+        print(email, unquote)
+
+        def capybara():
+            import email.quoprimime  # E: disallowed_import
+            from email.quoprimime import unquote  # E: disallowed_import
+            from email import quoprimime  # E: disallowed_import
+
+            print(email, unquote, quoprimime)
+
+    @assert_passes()
+    def test_import_from(self):
+        from email import quoprimime  # E: disallowed_import
+
+        print(quoprimime)
+
+        def capybara():
+            from email import quoprimime  # E: disallowed_import
+
+            print(quoprimime)

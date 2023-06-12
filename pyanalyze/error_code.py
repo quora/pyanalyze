@@ -106,6 +106,7 @@ class ErrorCode(enum.Enum):
     override_does_not_override = 86
     reveal_type = 87
     missing_generic_parameters = 88
+    disallowed_import = 89
 
 
 # Allow testing unannotated functions without too much fuss
@@ -237,6 +238,7 @@ ERROR_DESCRIPTION = {
     ErrorCode.invalid_override_decorator: "@override decorator in invalid location",
     ErrorCode.override_does_not_override: "Method does not override any base method",
     ErrorCode.missing_generic_parameters: "Missing type parameters for generic type",
+    ErrorCode.disallowed_import: "Disallowed import",
 }
 
 
