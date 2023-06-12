@@ -2488,7 +2488,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 alias, val, force_public=is_init and node.level == 1, node=node
             )
             if node.module is not None and node.level == 0:
-                self.check_for_disallowed_import(alias, f"{node.module}.{alias.name}")
+                # Before 3.10 the alias doesn't have a lineno
+                if sys.version_info >= (3, 10):
+                    error_node = alias
+                else:
+                    error_node = node
+                self.check_for_disallowed_import(
+                    error_node, f"{node.module}.{alias.name}"
+                )
 
     def _get_import_from_value(
         self, source_module: Value, alias_name: str, node: ast.ImportFrom

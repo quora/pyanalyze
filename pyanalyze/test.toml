@@ -15,5 +15,5 @@ class_attribute_transformers = [
 ]
 disallowed_imports = [
     "getopt",
-    "pyanalyze._disallowed_test",
+    "email.quoprimime",
 ]

@@ -60,15 +60,15 @@ class TestDisallowedImport(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_nested(self):
-        import pyanalyze._disallowed_test  # E: disallowed_import
-        from pyanalyze._disallowed_test import some_func  # E: disallowed_import
-        from pyanalyze import _disallowed_test  # E: disallowed_import
+        import email.quoprimime  # E: disallowed_import
+        from email.quoprimime import unquote  # E: disallowed_import
+        from email import quoprimime  # E: disallowed_import
 
-        print(pyanalyze, some_func, _disallowed_test)
+        print(email, unquote, quoprimime)
 
         def capybara():
-            import pyanalyze._disallowed_test  # E: disallowed_import
-            from pyanalyze._disallowed_test import some_func  # E: disallowed_import
-            from pyanalyze import _disallowed_test  # E: disallowed_import
+            import email.quoprimime  # E: disallowed_import
+            from email.quoprimime import unquote  # E: disallowed_import
+            from email import quoprimime  # E: disallowed_import
 
-            print(pyanalyze, some_func, _disallowed_test)
+            print(email, unquote, quoprimime)
