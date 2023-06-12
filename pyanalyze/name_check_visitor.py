@@ -2320,15 +2320,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Imports
 
-    def check_for_disallowed_import(self, node: ast.AST, name: str) -> None:
-        print("CHECK", name)
+    def check_for_disallowed_import(
+        self, node: ast.AST, name: str, *, check_parents: bool = True
+    ) -> None:
         disallowed = self.options.get_value_for(DisallowedImports)
-        if name in disallowed:
-            self._show_error_if_checking(
-                node,
-                f"Disallowed import of module {name!r}",
-                error_code=ErrorCode.disallowed_import,
-            )
+        parts = name.split(".") if check_parents else [name]
+        for i in range(len(parts)):
+            name_to_check = ".".join(parts[: i + 1])
+            if name_to_check in disallowed:
+                self._show_error_if_checking(
+                    node,
+                    f"Disallowed import of module {name!r}",
+                    error_code=ErrorCode.disallowed_import,
+                )
+                break
 
     def visit_Import(self, node: ast.Import) -> None:
         self.generic_visit(node)
@@ -2434,7 +2439,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 else:
                     error_node = node
                 self.check_for_disallowed_import(
-                    error_node, f"{node.module}.{alias.name}"
+                    error_node, f"{node.module}.{alias.name}", check_parents=False
                 )
 
         self._maybe_record_usages_from_import(node)
