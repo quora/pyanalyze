@@ -62,9 +62,8 @@ class TestDisallowedImport(TestNameCheckVisitorBase):
     def test_nested(self):
         import email.quoprimime  # E: disallowed_import
         from email.quoprimime import unquote  # E: disallowed_import
-        from email import quoprimime  # E: disallowed_import
 
-        print(email, unquote, quoprimime)
+        print(email, unquote)
 
         def capybara():
             import email.quoprimime  # E: disallowed_import
@@ -72,3 +71,14 @@ class TestDisallowedImport(TestNameCheckVisitorBase):
             from email import quoprimime  # E: disallowed_import
 
             print(email, unquote, quoprimime)
+
+    @assert_passes()
+    def test_import_from(self):
+        from email import quoprimime  # E: disallowed_import
+
+        print(quoprimime)
+
+        def capybara():
+            from email import quoprimime  # E: disallowed_import
+
+            print(quoprimime)

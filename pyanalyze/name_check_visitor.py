@@ -2321,6 +2321,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     # Imports
 
     def check_for_disallowed_import(self, node: ast.AST, name: str) -> None:
+        print("CHECK", name)
         disallowed = self.options.get_value_for(DisallowedImports)
         if name in disallowed:
             self._show_error_if_checking(
@@ -2426,6 +2427,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         if node.module is not None and node.level == 0:
             self.check_for_disallowed_import(node, node.module)
+            for alias in node.names:
+                # Before 3.10 the alias doesn't have a lineno
+                if sys.version_info >= (3, 10):
+                    error_node = alias
+                else:
+                    error_node = node
+                self.check_for_disallowed_import(
+                    error_node, f"{node.module}.{alias.name}"
+                )
+
         self._maybe_record_usages_from_import(node)
 
         # See if we can get the names from the stub instead
@@ -2487,15 +2498,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._set_alias_in_scope(
                 alias, val, force_public=is_init and node.level == 1, node=node
             )
-            if node.module is not None and node.level == 0:
-                # Before 3.10 the alias doesn't have a lineno
-                if sys.version_info >= (3, 10):
-                    error_node = alias
-                else:
-                    error_node = node
-                self.check_for_disallowed_import(
-                    error_node, f"{node.module}.{alias.name}"
-                )
 
     def _get_import_from_value(
         self, source_module: Value, alias_name: str, node: ast.ImportFrom
