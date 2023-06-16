@@ -492,6 +492,7 @@ class TypeshedFinder:
                             mod,
                             is_typeddict=is_typeddict,
                             on_class=on_class,
+                            parent_name=info.ast.name,
                         )
                     assert False, repr(child_info)
                 return UNINITIALIZED_VALUE
@@ -514,6 +515,7 @@ class TypeshedFinder:
         *,
         is_typeddict: bool,
         on_class: bool,
+        parent_name: str,
     ) -> Value:
         if isinstance(node, ast.AnnAssign):
             return self._parse_type(node.annotation, mod, is_typeddict=is_typeddict)
@@ -530,12 +532,21 @@ class TypeshedFinder:
                 return AnyValue(AnySource.inference)
             else:
                 return CallableValue(sig)
+        elif isinstance(node, ast.ClassDef):
+            # should be
+            # SubclassValue(TypedValue(f"{mod}.{parent_name}.{node.name}"), exactly=True)
+            # but that doesn't currently work well
+            return AnyValue(AnySource.inference)
         elif isinstance(node, ast.Assign):
             return UNINITIALIZED_VALUE
         elif isinstance(node, typeshed_client.OverloadedName):
             vals = [
                 self._get_value_from_child_info(
-                    subnode, mod, is_typeddict=is_typeddict, on_class=on_class
+                    subnode,
+                    mod,
+                    is_typeddict=is_typeddict,
+                    on_class=on_class,
+                    parent_name=parent_name,
                 )
                 for subnode in node.definitions
             ]
@@ -1204,7 +1215,8 @@ class TypeshedFinder:
 
 def _obj_from_qualname_is(module_name: str, qualname: str, obj: object) -> bool:
     try:
-        __import__(module_name)
+        if module_name not in sys.modules:
+            __import__(module_name)
         mod = sys.modules[module_name]
         actual = mod
         for piece in qualname.split("."):

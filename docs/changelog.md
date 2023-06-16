@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix crash with nested classes in stubs. For now, `Any` is
+  inferred for such classes (#647)
 - Add `disallowed_imports` configuration option to disallow
   imports of specific modules (#645, #646)
 - Consider an annotated assignment without a value to be
