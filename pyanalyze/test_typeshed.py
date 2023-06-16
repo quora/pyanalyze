@@ -786,3 +786,33 @@ class TestIntegration(TestNameCheckVisitorBase):
             assert_is_value(
                 itertools.count(1), GenericValue(itertools.count, [TypedValue(int)])
             )
+
+
+class TestNestedClass(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_nested(self):
+        def capybara() -> None:
+            from _pyanalyze_tests.nested import Outer
+
+            Outer.Inner(1)
+
+    @assert_passes()
+    def test_with_runtime_object(self):
+        import sys
+        import types
+
+        class Inner:
+            def __init__(self, arg: int) -> None:
+                pass
+
+        # The bug here only reproduces if a class that exists at runtime contains
+        # a nested class in a stub. So we simulate that by creating a fake runtime
+        # module.
+        Outer = type("Outer", (), {"Inner": Inner})
+        Outer.__module__ = "_pyanalyze_tests.nested"
+        mod = types.ModuleType("_pyanalyze_tests.nested")
+        mod.Outer = Outer
+        sys.modules["_pyanalyze_tests.nested"] = mod
+
+        def capybara() -> None:
+            Outer.Inner(1)
