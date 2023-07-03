@@ -17,13 +17,17 @@ import typing
 from typing import (
     Any,
     Callable,
+    Dict,
     Generic,
     Iterator,
     List,
     Mapping,
     Optional,
+    Pattern,
     Sequence,
     Tuple,
+    Type,
+    TypeVar,
     Union,
 )
 from unittest import mock
@@ -297,6 +301,50 @@ class UnwrapClass(PyObjectSequenceOption[_Unwrapper]):
         return typ
 
 
+_BUILTIN_KNOWN_SIGNATURES = []
+
+try:
+    import pytest
+    import _pytest
+except ImportError:
+    # if pytest is not installed in this environment, don't use it
+    pass
+else:
+    _E = TypeVar("_E", bound=BaseException)
+
+    # pytest.raises gets imported before our @overload
+    # monkeypatch takes effect, so we need to manually
+    # specify the overloads. This will be unnecessary in 3.11+
+    # where we get to use typing.get_overloads().
+    def _raises_overload1(
+        expected_exception: Union[Type[_E], Tuple[Type[_E], ...]],
+        *,
+        match: Optional[Union[str, Pattern[str]]] = ...,
+    ) -> _pytest.python_api.RaisesContext[_E]:
+        raise NotImplementedError
+
+    # TODO use ParamSpec here
+    def _raises_overload2(
+        expected_exception: Union[Type[_E], Tuple[Type[_E], ...]],
+        func: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> _pytest._code.ExceptionInfo[_E]:
+        raise NotImplementedError
+
+    def _get_pytest_signatures(
+        arg_spec_cache: "ArgSpecCache",
+    ) -> Dict[object, ConcreteSignature]:
+        """Return hardcoded Signatures for specific pytest functions."""
+        sigs = [
+            arg_spec_cache.get_concrete_signature(_raises_overload1),
+            arg_spec_cache.get_concrete_signature(_raises_overload2),
+        ]
+        return {pytest.raises: OverloadedSignature(sigs)}
+
+    _BUILTIN_KNOWN_SIGNATURES.append(_get_pytest_signatures)
+
+
 class ArgSpecCache:
     DEFAULT_ARGSPECS = implementation.get_default_argspecs()
 
@@ -318,6 +366,8 @@ class ArgSpecCache:
         self.safe_bases = tuple(self.options.get_value_for(ClassesSafeToInstantiate))
 
         default_argspecs = dict(self.DEFAULT_ARGSPECS)
+        for provider in _BUILTIN_KNOWN_SIGNATURES:
+            default_argspecs.update(provider(self))
         for provider in options.get_value_for(KnownSignatures):
             default_argspecs.update(provider(self))
 
@@ -492,6 +542,15 @@ class ArgSpecCache:
         return self._cached_get_argspec(
             obj, impl, is_asynq, in_overload_resolution=False
         )
+
+    def get_concrete_signature(
+        self, obj: object, impl: Optional[Impl] = None, *, allow_call: bool = False
+    ) -> Signature:
+        """Return a concrete signature for an object."""
+        sig = self.get_argspec(obj, impl=impl)
+        if not isinstance(sig, Signature):
+            raise TypeError(f"failed to find a concrete signature or {obj}")
+        return replace(sig, allow_call=allow_call)
 
     def _cached_get_argspec(
         self,

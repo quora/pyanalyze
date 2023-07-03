@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add hardcoded support for `pytest.raises` to avoid false
+  positives (#651)
 - Fix crash with nested classes in stubs. For now, `Any` is
   inferred for such classes (#647)
 - Add `disallowed_imports` configuration option to disallow

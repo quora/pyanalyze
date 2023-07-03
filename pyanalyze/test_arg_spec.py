@@ -409,3 +409,20 @@ class TestBuiltinMethods(TestNameCheckVisitorBase):
             assert_is_value(
                 r.__iter__(), GenericValue(collections.abc.Iterator, [TypedValue(int)])
             )
+
+
+class TestPytestRaises(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        import pytest
+
+        def capybara():
+            pytest.raises(TypeError, len, 1)
+
+            with pytest.raises(TypeError):
+                pass
+
+            with pytest.raises(TypeError, match="no match"):
+                pass
+
+            pytest.raises()  # E: incompatible_call
