@@ -618,8 +618,6 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
 
 
 class TestSubclassValue(TestNameCheckVisitorBase):
-    # In 3.7 the behavior of Type[] changed.
-    @only_before((3, 7))
     @assert_passes()
     def test_annotations_in_arguments(self):
         from typing import Type
@@ -1184,47 +1182,6 @@ class TestIterationTarget(TestNameCheckVisitorBase):
 
 
 class TestYieldInComprehension(TestNameCheckVisitorBase):
-    # this became a syntax error in 3.8
-    @only_before((3, 8))
-    def test_list(self):
-        self.assert_fails(
-            ErrorCode.yield_in_comprehension,
-            """
-            def capybara():
-                [(yield x) for x in []]
-            """,
-        )
-
-    @only_before((3, 8))
-    def test_set(self):
-        self.assert_fails(
-            ErrorCode.yield_in_comprehension,
-            """
-            def capybara():
-                {(yield x) for x in []}
-            """,
-        )
-
-    @only_before((3, 8))
-    def test_dict(self):
-        self.assert_fails(
-            ErrorCode.yield_in_comprehension,
-            """
-            def capybara():
-                {(yield x): (yield y) for x in []}
-            """,
-        )
-
-    @only_before((3, 8))
-    def test_yield_in_condition(self):
-        self.assert_fails(
-            ErrorCode.yield_in_comprehension,
-            """
-            def capybara():
-                [x for x in [] if (yield x)]
-            """,
-        )
-
     @assert_passes()
     def test_body_only(self):
         def capybara(y):
@@ -1968,7 +1925,6 @@ class TestIncompatibleOverride(TestNameCheckVisitorBase):
 
 
 class TestWalrus(TestNameCheckVisitorBase):
-    @skip_before((3, 8))
     def test(self):
         self.assert_passes("""
             from typing import Optional
@@ -1986,7 +1942,6 @@ class TestWalrus(TestNameCheckVisitorBase):
                 assert_is_value(y, TypedValue(int) | KnownValue(None))
             """)
 
-    @skip_before((3, 8))
     def test_and(self):
         self.assert_passes("""
             from typing import Optional
@@ -2007,7 +1962,6 @@ class TestWalrus(TestNameCheckVisitorBase):
                     print(encoder_type)
             """)
 
-    @skip_before((3, 8))
     def test_if_exp(self):
         self.assert_passes("""
             def capybara(cond):
@@ -2015,7 +1969,6 @@ class TestWalrus(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(2) | KnownValue(1))
             """)
 
-    @skip_before((3, 8))
     def test_comprehension_scope(self):
         self.assert_passes("""
             from typing import List, Optional
@@ -2213,7 +2166,6 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
                 assert_is_value(c, KnownValue(None))
             assert_is_value(c, KnownValue(None))
 
-    @skip_before((3, 7))
     def test_async_contextlib_manager(self):
         import contextlib
         from typing import AsyncIterator

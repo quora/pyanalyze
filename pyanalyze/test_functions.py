@@ -108,7 +108,6 @@ class TestFunctionDefinitions(TestNameCheckVisitorBase):
         def failing_capybara(a, *, b):
             capybara(1, 2)  # E: incompatible_call
 
-    @skip_before((3, 8))
     def test_pos_only(self):
         self.assert_passes(
             """
@@ -174,7 +173,6 @@ class TestDecorators(TestNameCheckVisitorBase):
         def capybara():
             pass
 
-    @skip_before((3, 7))
     @assert_passes()
     def test_asynccontextmanager(self):
         from contextlib import asynccontextmanager

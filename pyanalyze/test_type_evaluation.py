@@ -243,18 +243,18 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
         from pyanalyze.extensions import evaluated
 
         @evaluated
-        def is_walrus_available():
-            if sys.version_info >= (3, 8):
+        def is_self_available():
+            if sys.version_info >= (3, 11):
                 return Literal[True]
             return Literal[False]
 
-        def is_walrus_available():
-            return sys.version_info >= (3, 8)
+        def is_self_available():
+            return sys.version_info >= (3, 11)
 
-        expected = is_walrus_available()
+        expected = is_self_available()
 
         def capybara():
-            assert_is_value(is_walrus_available(), KnownValue(expected))
+            assert_is_value(is_self_available(), KnownValue(expected))
 
     @assert_passes()
     def test_nested_ifs(self):

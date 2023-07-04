@@ -225,7 +225,6 @@ class TestBundledStubs(TestNameCheckVisitorBase):
         assert isinstance(val, CallableValue)
         assert isinstance(val.signature, OverloadedSignature)
 
-    @skip_before((3, 8))
     @assert_passes()
     def test_pos_only(self):
         def capybara():
@@ -256,8 +255,6 @@ class TestBundledStubs(TestNameCheckVisitorBase):
         for name, expected in _EXPECTED_TYPED_DICTS.items():
             assert tsf.resolve_name(mod, name) == SubclassValue(expected, exactly=True)
 
-    # PickleBuffer is new in 3.8
-    @skip_before((3, 8))
     @assert_passes()
     def test_cdata(self):
         import array

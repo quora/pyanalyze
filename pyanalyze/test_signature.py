@@ -863,7 +863,6 @@ class TestCalls(TestNameCheckVisitorBase):
             typed_int_kwargs = {int(x): 1 for x in arg}
             many_args(**typed_int_kwargs)  # E: incompatible_call
 
-    @skip_before((3, 8))
     def test_pos_only(self):
         self.assert_passes("""
             from typing import Sequence

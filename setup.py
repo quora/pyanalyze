@@ -21,7 +21,6 @@ if __name__ == "__main__":
         classifiers=[
             "License :: OSI Approved :: Apache Software License",
             "Programming Language :: Python",
-            "Programming Language :: Python :: 3.7",
             "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
@@ -43,5 +42,5 @@ if __name__ == "__main__":
         # These are useful for unit tests of pyanalyze extensions
         # outside the package.
         package_data={"pyanalyze": package_data},
-        python_requires=">=3.7",
+        python_requires=">=3.8",
     )
