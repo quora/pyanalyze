@@ -78,9 +78,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
             GenericValue(Reversible, (TypeVarValue(typevar=ANY),)),
             GenericValue(Generic, (TypeVarValue(typevar=ANY),)),
         ] == tsf.get_bases(Sequence)
-        assert [GenericValue(Collection, (TypeVarValue(ANY),))] == tsf.get_bases(
-            Set
-        )
+        assert [GenericValue(Collection, (TypeVarValue(ANY),))] == tsf.get_bases(Set)
 
     def test_newtype(self):
         with tempfile.TemporaryDirectory() as temp_dir_str:
