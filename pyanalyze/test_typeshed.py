@@ -23,7 +23,7 @@ from .signature import OverloadedSignature, Signature, SigParameter
 from .test_arg_spec import ClassWithCall
 from .test_config import TEST_OPTIONS
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
+from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .typeshed import TypeshedFinder
 from .value import (

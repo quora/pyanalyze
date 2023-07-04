@@ -24,7 +24,7 @@ import sys
 import traceback
 import types
 from argparse import ArgumentParser
-from dataclasses import InitVar, dataclass
+from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
 from typing import (

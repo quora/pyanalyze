@@ -11,7 +11,7 @@ from .signature import (
     SigParameter as P,
 )
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
+from .test_node_visitor import assert_passes
 from .test_value import CTX
 from .tests import make_simple_sequence
 
