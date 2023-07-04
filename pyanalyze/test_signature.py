@@ -11,7 +11,7 @@ from .signature import (
     SigParameter as P,
 )
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
+from .test_node_visitor import assert_passes
 from .test_value import CTX
 from .tests import make_simple_sequence
 
@@ -863,7 +863,6 @@ class TestCalls(TestNameCheckVisitorBase):
             typed_int_kwargs = {int(x): 1 for x in arg}
             many_args(**typed_int_kwargs)  # E: incompatible_call
 
-    @skip_before((3, 8))
     def test_pos_only(self):
         self.assert_passes("""
             from typing import Sequence

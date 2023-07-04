@@ -24,7 +24,7 @@ import sys
 import traceback
 import types
 from argparse import ArgumentParser
-from dataclasses import InitVar, dataclass
+from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
 from typing import (
@@ -2237,9 +2237,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         generic_params = self.arg_spec_cache.get_type_parameters(val)
         if not generic_params:
             return
-        if sys.version_info < (3, 8) and val is InitVar:
-            # On 3.6 and 3.7, InitVar[type] just returns InitVar
-            return
         # On 3.8, ast.Index has no lineno
         if sys.version_info < (3, 9) and not hasattr(node, "lineno"):
             if isinstance(node, ast.Index):
@@ -2899,13 +2896,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._maybe_show_missing_f_error(node, node.value)
         return KnownValue(node.value)
 
-    def visit_Num(self, node: ast.Num) -> Value:
-        return KnownValue(node.n)
-
-    def visit_Str(self, node: ast.Str) -> Value:
-        self._maybe_show_missing_f_error(node, node.s)
-        return KnownValue(node.s)
-
     def _maybe_show_missing_f_error(self, node: ast.AST, s: Union[str, bytes]) -> None:
         """Show an error if this string was probably meant to be an f-string."""
         if isinstance(s, bytes):
@@ -2958,13 +2948,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return False
         else:
             return val is not UNINITIALIZED_VALUE
-
-    def visit_Bytes(self, node: ast.Bytes) -> Value:
-        return KnownValue(node.s)
-
-    def visit_NameConstant(self, node: ast.NameConstant) -> Value:
-        # True, False, None in py3
-        return KnownValue(node.value)
 
     def visit_Dict(self, node: ast.Dict) -> Value:
         ret = {}
@@ -4355,22 +4338,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return value
 
     # Assignments
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> Value:
+        composite = self.composite_from_walrus(node)
+        return composite.value
 
-    if sys.version_info >= (3, 8):
-
-        def visit_NamedExpr(self, node: ast.NamedExpr) -> Value:
-            composite = self.composite_from_walrus(node)
-            return composite.value
-
-        def composite_from_walrus(self, node: ast.NamedExpr) -> Composite:
-            rhs = self.visit(node.value)
-            with qcore.override(self, "being_assigned", rhs):
-                if self.in_comprehension_body:
-                    ctx = self.scopes.ignore_topmost_scope()
-                else:
-                    ctx = qcore.empty_context
-                with ctx:
-                    return self.composite_from_node(node.target)
+    def composite_from_walrus(self, node: ast.NamedExpr) -> Composite:
+        rhs = self.visit(node.value)
+        with qcore.override(self, "being_assigned", rhs):
+            if self.in_comprehension_body:
+                ctx = self.scopes.ignore_topmost_scope()
+            else:
+                ctx = qcore.empty_context
+            with ctx:
+                return self.composite_from_node(node.target)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         is_yield = isinstance(node.value, ast.Yield)
@@ -5032,7 +5012,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         elif isinstance(node, (ast.ExtSlice, ast.Slice)):
             # These don't have a .lineno attribute, which would otherwise cause trouble.
             composite = Composite(self.visit(node), None, None)
-        elif sys.version_info >= (3, 8) and isinstance(node, ast.NamedExpr):
+        elif isinstance(node, ast.NamedExpr):
             composite = self.composite_from_walrus(node)
         else:
             composite = Composite(self.visit(node), None, node)
