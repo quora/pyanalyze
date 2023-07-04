@@ -394,11 +394,7 @@ class _AttrContext(CheckerAttrContext):
             self.visitor._record_type_attr_read(obj, self.attr, self.node)
 
     def get_property_type_from_argspec(self, obj: property) -> Value:
-        if obj.fget is None:
-            return UNINITIALIZED_VALUE
-
-        getter = set_self(KnownValue(obj.fget), self.root_composite.value)
-        return self.visitor.check_call(self.node, getter, [self.root_composite])
+        return self.visitor.resolve_property(obj, self.root_composite, self.node)
 
     def should_ignore_none_attributes(self) -> bool:
         return self.ignore_none
@@ -1494,7 +1490,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if varname in self.options.get_value_for(IgnoredForIncompatibleOverride):
             return
         for base_class, base_value in self._get_base_class_attributes(varname, node):
-            can_assign = self._can_assign_to_base(base_value, value)
+            can_assign = self._can_assign_to_base(base_value, value, base_class, node)
             if isinstance(can_assign, CanAssignError):
                 error = CanAssignError(
                     children=[
@@ -1513,24 +1509,83 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def display_value(self, value: Value) -> str:
         return self.checker.display_value(value)
 
-    def _can_assign_to_base(self, base_value: Value, child_value: Value) -> CanAssign:
+    def resolve_property(
+        self, obj: property, root_composite: Composite, node: Optional[ast.AST]
+    ) -> Value:
+        if obj.fget is None:
+            return UNINITIALIZED_VALUE
+
+        getter = set_self(KnownValue(obj.fget), root_composite.value)
+        return self.check_call(node, getter, [root_composite])
+
+    def _can_assign_to_base(
+        self,
+        base_value: Value,
+        child_value: Value,
+        base_class: Union[type, str],
+        node: ast.AST,
+    ) -> CanAssign:
         if base_value is UNINITIALIZED_VALUE:
             return {}
-        if isinstance(base_value, KnownValue) and callable(base_value.val):
-            base_sig = self.signature_from_value(base_value)
-            if not isinstance(base_sig, (Signature, OverloadedSignature)):
-                return {}
-            child_sig = self.signature_from_value(child_value)
-            if not isinstance(child_sig, (Signature, OverloadedSignature)):
-                return CanAssignError(f"{child_value} is not callable")
-            base_bound = base_sig.bind_self(ctx=self)
-            if base_bound is None:
-                return {}
-            child_bound = child_sig.bind_self(ctx=self)
-            if child_bound is None:
-                return CanAssignError(f"{child_value} is missing a 'self' argument")
-            return base_bound.can_assign(child_bound, self)
+        if isinstance(base_value, KnownValue):
+            if isinstance(base_value.val, property):
+                return self._can_assign_to_base_property(
+                    base_value.val, child_value, base_class, node
+                )
+            if callable(base_value.val):
+                return self._can_assign_to_base_callable(base_value, child_value)
         return base_value.can_assign(child_value, self)
+
+    def _can_assign_to_base_property(
+        self,
+        base_property: property,
+        child_value: Value,
+        base_class: Union[type, str],
+        node: ast.AST,
+    ) -> CanAssign:
+        if isinstance(child_value, KnownValue) and isinstance(
+            child_value.val, property
+        ):
+            if base_property.fset is not None and child_value.val.fset is None:
+                return CanAssignError(
+                    "Property is settable on base class but not on child class"
+                )
+            if base_property.fdel is not None and child_value.val.fdel is None:
+                return CanAssignError(
+                    "Property is settable on base class but not on child class"
+                )
+            assert self.current_class is not None
+            child_value = self.resolve_property(
+                child_value.val, Composite(TypedValue(self.current_class)), node
+            )
+        base_value = self.resolve_property(
+            base_property, Composite(TypedValue(base_class)), node
+        )
+        get_direction = base_value.can_assign(child_value, self)
+        if isinstance(get_direction, CanAssignError):
+            return get_direction
+        if base_property.fset is not None:
+            # settable properties behave invariantly, so we need to check both directions
+            return child_value.can_assign(base_value, self)
+        else:
+            return get_direction
+
+    def _can_assign_to_base_callable(
+        self, base_value: KnownValue, child_value: Value
+    ) -> CanAssign:
+        base_sig = self.signature_from_value(base_value)
+        if not isinstance(base_sig, (Signature, OverloadedSignature)):
+            return {}
+        child_sig = self.signature_from_value(child_value)
+        if not isinstance(child_sig, (Signature, OverloadedSignature)):
+            return CanAssignError(f"{child_value} is not callable")
+        base_bound = base_sig.bind_self(ctx=self)
+        if base_bound is None:
+            return {}
+        child_bound = child_sig.bind_self(ctx=self)
+        if child_bound is None:
+            return CanAssignError(f"{child_value} is missing a 'self' argument")
+        return base_bound.can_assign(child_bound, self)
 
     def _check_for_class_variable_redefinition(
         self, varname: str, node: ast.AST

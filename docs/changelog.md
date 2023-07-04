@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix treatment of `@property` by the `incompatible_override`
+  check (#653)
 - Drop support for Python 3.7 (#654)
 - Add hardcoded support for `pytest.raises` to avoid false
   positives (#651)
