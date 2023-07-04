@@ -1228,12 +1228,10 @@ class TestUnboundMethodValue(TestNameCheckVisitorBase):
     @assert_passes()
     def test_metaclass_super(self):
         from typing import Any, cast
-
-        from qcore.testing import Anything
-
+        from unittest.mock import ANY
         from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
 
-        varname = VarnameWithOrigin("self", cast(Any, Anything))
+        varname = VarnameWithOrigin("self", cast(Any, ANY))
 
         class Metaclass(type):
             def __init__(self, name, bases, attrs):

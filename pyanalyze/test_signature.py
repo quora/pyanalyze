@@ -671,7 +671,7 @@ class TestCalls(TestNameCheckVisitorBase):
         from dataclasses import dataclass
         from typing import Any, cast
 
-        from qcore.testing import Anything
+        from unittest.mock import ANY
 
         @dataclass
         class Quemisia(object):
@@ -691,7 +691,7 @@ class TestCalls(TestNameCheckVisitorBase):
             hasattr(True, False)  # E: incompatible_argument
 
         # The HasAttrGuard gets stripped.
-        inferred = AnnotatedValue(TypedValue(bool), [cast(Any, Anything)])
+        inferred = AnnotatedValue(TypedValue(bool), [cast(Any, ANY)])
 
         def only_on_class(o: object):
             val = hasattr(o, "__qualname__")
