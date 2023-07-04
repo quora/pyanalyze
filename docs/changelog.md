@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Declare support for Python 3.12. Not all new features in
+  Python 3.12 are supported yet. (#656)
 - Fix treatment of `@property` by the `incompatible_override`
   check (#653)
 - Drop support for Python 3.7 (#654)
