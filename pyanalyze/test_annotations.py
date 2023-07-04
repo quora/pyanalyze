@@ -489,7 +489,6 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def capybara(x: Pattern[str]):
             assert_is_value(x, GenericValue(_Pattern, [TypedValue(str)]))
 
-    @skip_before((3, 7))
     def test_future_annotations(self):
         self.assert_passes("""
             from __future__ import annotations
@@ -605,7 +604,6 @@ class TestAnnotations(TestNameCheckVisitorBase):
                 | GenericValue(set, [TypedValue(int)]),
             )
 
-    @skip_before((3, 8))
     @assert_passes()
     def test_initvar(self):
         from dataclasses import dataclass, InitVar
@@ -1584,7 +1582,6 @@ class TestRequired(TestNameCheckVisitorBase):
                 ),
             )
 
-    @skip_before((3, 8))
     @assert_passes()
     def test_typing(self):
         from typing import TypedDict

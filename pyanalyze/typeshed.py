@@ -11,7 +11,7 @@ import inspect
 import sys
 
 from abc import abstractmethod
-from collections.abc import Collection, MutableMapping, Set as AbstractSet, Sized
+from collections.abc import Collection, MutableMapping, Set as AbstractSet
 from dataclasses import dataclass, field, replace
 from enum import Enum, EnumMeta
 from types import GeneratorType, MethodDescriptorType, ModuleType
@@ -87,9 +87,6 @@ from .value import (
 
 
 T_co = TypeVar("T_co", covariant=True)
-
-
-IS_PRE_38: bool = sys.version_info < (3, 8)
 
 
 @dataclass
@@ -714,9 +711,6 @@ class TypeshedFinder:
         # It claims to be io.open, but typeshed puts it in builtins
         if obj is open:
             return "builtins.open"
-        if IS_PRE_38:
-            if obj is Sized:
-                return "typing.Sized"
         try:
             module_name = obj.__module__
             if module_name is None:
@@ -886,28 +880,24 @@ class TypeshedFinder:
             objclass = None
         args = node.args
         arguments: List[SigParameter] = []
-        if sys.version_info >= (3, 8):
-            assert hasattr(args, "posonlyargs")
-            num_pos_only_args = len(args.posonlyargs)
-            defaults = args.defaults
-            num_pos_only_defaults = len(defaults) - len(args.args)
-            if num_pos_only_defaults > 0:
-                num_without_default = num_pos_only_args - num_pos_only_defaults
-                pos_only_defaults = [None] * num_without_default + defaults[
-                    num_pos_only_defaults:
-                ]
-                defaults = defaults[num_pos_only_defaults:]
-            else:
-                pos_only_defaults = [None for _ in args.posonlyargs]
-            arguments += self._parse_param_list(
-                args.posonlyargs,
-                pos_only_defaults,
-                mod,
-                ParameterKind.POSITIONAL_ONLY,
-                objclass,
-            )
+        num_pos_only_args = len(args.posonlyargs)
+        defaults = args.defaults
+        num_pos_only_defaults = len(defaults) - len(args.args)
+        if num_pos_only_defaults > 0:
+            num_without_default = num_pos_only_args - num_pos_only_defaults
+            pos_only_defaults = [None] * num_without_default + defaults[
+                num_pos_only_defaults:
+            ]
+            defaults = defaults[num_pos_only_defaults:]
         else:
-            defaults = args.defaults
+            pos_only_defaults = [None for _ in args.posonlyargs]
+        arguments += self._parse_param_list(
+            args.posonlyargs,
+            pos_only_defaults,
+            mod,
+            ParameterKind.POSITIONAL_ONLY,
+            objclass,
+        )
 
         num_without_defaults = len(args.args) - len(defaults)
         defaults = [None] * num_without_defaults + defaults
@@ -1162,9 +1152,6 @@ class TypeshedFinder:
                 return self._value_from_info(
                     info, new_fq_name.rsplit(".", maxsplit=1)[0]
                 )
-            elif IS_PRE_38:
-                if fq_name in ("typing.Protocol", "typing_extensions.Protocol"):
-                    return KnownValue(Protocol)
             if isinstance(info.ast, ast.Assign):
                 key = (module, info.ast)
                 if key in self._assignment_cache:

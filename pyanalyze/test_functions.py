@@ -2,7 +2,7 @@
 from .error_code import ErrorCode
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
+from .test_node_visitor import assert_passes
 from .value import AnySource, AnyValue, GenericValue, KnownValue, TypedValue
 
 
@@ -108,7 +108,6 @@ class TestFunctionDefinitions(TestNameCheckVisitorBase):
         def failing_capybara(a, *, b):
             capybara(1, 2)  # E: incompatible_call
 
-    @skip_before((3, 8))
     def test_pos_only(self):
         self.assert_passes(
             """
@@ -174,7 +173,6 @@ class TestDecorators(TestNameCheckVisitorBase):
         def capybara():
             pass
 
-    @skip_before((3, 7))
     @assert_passes()
     def test_asynccontextmanager(self):
         from contextlib import asynccontextmanager
