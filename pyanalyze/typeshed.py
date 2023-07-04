@@ -1004,7 +1004,9 @@ class TypeshedFinder:
                         [
                             make_type_var_value(
                                 tv,
-                                _AnnotationContext(finder=self, module_name=tv.__module__),
+                                _AnnotationContext(
+                                    finder=self, module_name=tv.__module__
+                                ),
                             )
                             for tv in typevars
                         ],
