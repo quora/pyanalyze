@@ -175,14 +175,15 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_annotated_known(self):
-        from qcore.testing import Anything
+        from unittest.mock import ANY
         from typing_extensions import Annotated, Literal
+        from typing import Any, cast
 
         from pyanalyze.extensions import LiteralOnly
         from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
         from pyanalyze.value import CustomCheckExtension
 
-        origin = VarnameWithOrigin("encoding", Anything)  # E: incompatible_argument
+        origin = VarnameWithOrigin("encoding", cast(Any, ANY))
 
         def capybara():
             encoding: Annotated[Literal["ascii"], LiteralOnly()] = "ascii"

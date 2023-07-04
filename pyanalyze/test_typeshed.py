@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Dict, Generic, List, NewType, TypeVar, Union
 from urllib.error import HTTPError
 
-from qcore.testing import Anything
+from unittest.mock import ANY
 from typeshed_client import get_search_context, Resolver
 
 from .checker import Checker
@@ -70,17 +70,15 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
     def test_get_bases(self):
         tsf = TypeshedFinder(Checker(), verbose=True)
         assert [
-            GenericValue(MutableSequence, (TypeVarValue(typevar=Anything),)),
-            GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
+            GenericValue(MutableSequence, (TypeVarValue(typevar=ANY),)),
+            GenericValue(Generic, (TypeVarValue(typevar=ANY),)),
         ] == tsf.get_bases(list)
         assert [
-            GenericValue(Collection, (TypeVarValue(typevar=Anything),)),
-            GenericValue(Reversible, (TypeVarValue(typevar=Anything),)),
-            GenericValue(Generic, (TypeVarValue(typevar=Anything),)),
+            GenericValue(Collection, (TypeVarValue(typevar=ANY),)),
+            GenericValue(Reversible, (TypeVarValue(typevar=ANY),)),
+            GenericValue(Generic, (TypeVarValue(typevar=ANY),)),
         ] == tsf.get_bases(Sequence)
-        assert [GenericValue(Collection, (TypeVarValue(Anything),))] == tsf.get_bases(
-            Set
-        )
+        assert [GenericValue(Collection, (TypeVarValue(ANY),))] == tsf.get_bases(Set)
 
     def test_newtype(self):
         with tempfile.TemporaryDirectory() as temp_dir_str:
