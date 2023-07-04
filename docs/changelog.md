@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Improve handling of some string forward references (#652)
 - Add hardcoded support for `pytest.raises` to avoid false
   positives (#651)
 - Fix crash with nested classes in stubs. For now, `Any` is

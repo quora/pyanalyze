@@ -475,6 +475,33 @@ class TestAnnotations(TestNameCheckVisitorBase):
             return []
 
     @assert_passes()
+    def test_nested_forward_ref(self):
+        from typing import List
+
+        def func(x: List["int"]) -> None:
+            pass
+
+        def no_such_type(x: List["doesnt_exist"]) -> None:  # E: undefined_name
+            pass
+
+        def capybara() -> None:
+            func([1])
+            func(["x"])  # E: incompatible_argument
+
+    @skip_before((3, 9))
+    @assert_passes()
+    def test_nested_forward_ref_pep_585(self):
+        def func(x: list["int"]) -> None:
+            pass
+
+        def no_such_type(x: list["doesnt_exist"]) -> None:  # E: undefined_name
+            pass
+
+        def capybara() -> None:
+            func([1])
+            func(["x"])  # E: incompatible_argument
+
+    @assert_passes()
     def test_forward_ref_incompatible(self):
         def f() -> "int":
             return ""  # E: incompatible_return_value

@@ -23,10 +23,11 @@ These functions all use :class:`Context` objects to resolve names and
 show errors.
 
 """
-from _ast import Dict
 import ast
 import builtins
 import contextlib
+import sys
+from types import ModuleType
 import typing
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field, InitVar
@@ -135,6 +136,7 @@ class Context:
     """
 
     should_suppress_undefined_names: bool = field(default=False, init=False)
+    module: Optional[ModuleType] = field(default=None, init=False)
     """While this is True, no errors are shown for undefined names."""
     _being_evaluated: Set[int] = field(default_factory=set, init=False)
 
@@ -159,6 +161,16 @@ class Context:
         finally:
             self._being_evaluated.remove(obj_id)
 
+    @contextlib.contextmanager
+    def override_module(self, module: ModuleType) -> Generator[None, None, None]:
+        """Temporarily override the module used for name resolution."""
+        old_module = self.module
+        self.module = module
+        try:
+            yield
+        finally:
+            self.module = old_module
+
     def show_error(
         self,
         message: str,
@@ -170,6 +182,8 @@ class Context:
 
     def get_name(self, node: ast.Name) -> Value:
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
+        if self.module is not None:
+            return self.get_name_from_globals(node.id, self.module.__dict__)
         return AnyValue(AnySource.inference)
 
     def handle_undefined_name(self, name: str) -> Value:
@@ -214,6 +228,8 @@ class RuntimeEvaluator(type_evaluation.Evaluator, Context):
 
     def get_name(self, node: ast.Name) -> Value:
         """Return the :class:`Value <pyanalyze.value.Value>` corresponding to a name."""
+        if self.module is not None:
+            return self.get_name_from_globals(node.id, self.module.__dict__)
         return self.get_name_from_globals(node.id, self.globals)
 
 
@@ -481,12 +497,19 @@ def _type_from_runtime(
         if ctx.is_being_evaluted(val):
             return AnyValue(AnySource.inference)
         with ctx.add_evaluation(val):
-            # This is necessary because the forward ref may be defined in a different file, in
-            # which case we don't know which names are valid in it.
-            with ctx.suppress_undefined_names():
-                return _eval_forward_ref(
-                    val.__forward_arg__, ctx, is_typeddict=is_typeddict
-                )
+            if (
+                hasattr(val, "__forward_module__")
+                and val.__forward_module__ is not None
+            ):
+                mod = sys.modules.get(val.__forward_module__)
+                if mod is not None:
+                    with ctx.override_module(mod):
+                        return _eval_forward_ref(
+                            val.__forward_arg__, ctx, is_typeddict=is_typeddict
+                        )
+            return _eval_forward_ref(
+                val.__forward_arg__, ctx, is_typeddict=is_typeddict
+            )
     elif val is Ellipsis:
         # valid in Callable[..., ]
         return AnyValue(AnySource.explicit)
@@ -845,6 +868,8 @@ class _DefaultContext(Context):
             self.visitor.show_error(node, message, error_code)
 
     def get_name(self, node: ast.Name) -> Value:
+        if self.module is not None:
+            return self.get_name_from_globals(node.id, self.module.__dict__)
         if self.visitor is not None:
             val, _ = self.visitor.resolve_name(
                 node,
@@ -924,7 +949,7 @@ class _Visitor(ast.NodeVisitor):
         elts = [(False, self.visit(elt)) for elt in node.elts]
         return SequenceValue(set, elts)
 
-    def visit_Dict(self, node: Dict) -> Any:
+    def visit_Dict(self, node: ast.Dict) -> Any:
         keys = [self.visit(key) if key is not None else None for key in node.keys]
         values = [self.visit(value) for value in node.values]
         kvpairs = []
