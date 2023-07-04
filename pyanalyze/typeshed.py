@@ -95,7 +95,7 @@ IS_PRE_38: bool = sys.version_info < (3, 8)
 @dataclass
 class _AnnotationContext(Context):
     finder: "TypeshedFinder"
-    module: str
+    module_name: str
 
     def show_error(
         self,
@@ -106,7 +106,9 @@ class _AnnotationContext(Context):
         self.finder.log(message, ())
 
     def get_name(self, node: ast.Name) -> Value:
-        return self.finder.resolve_name(self.module, node.id)
+        if self.module is not None:
+            return self.get_name_from_globals(node.id, self.module.__dict__)
+        return self.finder.resolve_name(self.module_name, node.id)
 
     def get_attribute(self, root_value: Value, node: ast.Attribute) -> Value:
         if isinstance(root_value, KnownValue):
@@ -1002,7 +1004,7 @@ class TypeshedFinder:
                         [
                             make_type_var_value(
                                 tv,
-                                _AnnotationContext(finder=self, module=tv.__module__),
+                                _AnnotationContext(finder=self, module_name=tv.__module__),
                             )
                             for tv in typevars
                         ],
@@ -1030,7 +1032,7 @@ class TypeshedFinder:
             return SigParameter(name, kind, annotation=typ, default=default_value)
 
     def _parse_expr(self, node: ast.AST, module: str) -> Value:
-        ctx = _AnnotationContext(finder=self, module=module)
+        ctx = _AnnotationContext(finder=self, module_name=module)
         return value_from_ast(node, ctx=ctx)
 
     def _parse_type(
@@ -1042,7 +1044,7 @@ class TypeshedFinder:
         allow_unpack: bool = False,
     ) -> Value:
         val = self._parse_expr(node, module)
-        ctx = _AnnotationContext(finder=self, module=module)
+        ctx = _AnnotationContext(finder=self, module_name=module)
         typ = type_from_value(
             val, ctx=ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
         )
@@ -1064,7 +1066,7 @@ class TypeshedFinder:
             info.ast.value, ast.Call
         ):
             return AnyValue(AnySource.inference)
-        ctx = _AnnotationContext(finder=self, module=module)
+        ctx = _AnnotationContext(finder=self, module_name=module)
         return value_from_ast(info.ast.value, ctx=ctx)
 
     def _extract_metadata(self, module: str, node: ast.ClassDef) -> Sequence[Extension]:

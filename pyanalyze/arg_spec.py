@@ -191,6 +191,8 @@ class AnnotationsContext(Context):
         super().__init__()
 
     def get_name(self, node: ast.Name) -> Value:
+        if self.module is not None:
+            return self.get_name_from_globals(node.id, self.module.__dict__)
         if self.globals is not None:
             return self.get_name_from_globals(node.id, self.globals)
         return self.handle_undefined_name(node.id)
