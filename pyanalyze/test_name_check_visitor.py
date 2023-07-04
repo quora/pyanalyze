@@ -1966,6 +1966,83 @@ class TestIncompatibleOverride(TestNameCheckVisitorBase):
             def pacarana(self, b: int) -> None:
                 pass
 
+    @assert_passes()
+    def test_property_unannotated(self):
+        class Unannotated:
+            @property
+            def f(self):
+                pass
+
+        class UnannotatedChild(Unannotated):
+            @property
+            def f(self):
+                pass
+
+    @assert_passes()
+    def test_property_annotated(self):
+        class Annotated:
+            @property
+            def f(self) -> int:
+                return 0
+
+        class AnnotatedChild(Annotated):
+            @property
+            def f(self) -> int:
+                return 0
+
+        class MoreSpecificChild(Annotated):
+            @property
+            def f(self) -> bool:
+                return True
+
+        class JustPutItInTheClassChild(Annotated):
+            f: int
+
+        class BadChild(Annotated):
+            @property
+            def f(self) -> str:  # E: incompatible_override
+                return ""
+
+    @assert_passes()
+    def test_property_with_setter(self):
+        class Annotated:
+            @property
+            def f(self) -> int:
+                return 0
+
+            @f.setter
+            def f(self, value: int) -> None:
+                pass
+
+        class AnnotatedChild(Annotated):
+            @property
+            def f(self) -> int:  # E: incompatible_override
+                return 0
+
+        class AnnotatedChildWithSetter(Annotated):
+            @property
+            def f(self) -> int:
+                return 0
+
+            @f.setter
+            def f(self, value: int) -> None:
+                pass
+
+        class JustPutItInTheClassChild(Annotated):
+            f: int
+
+        class JustPutItInTheClassWithMoreSpecificType(Annotated):
+            f: bool  # E: incompatible_override
+
+        class AnnotatedChildWithMoreSpecificSetter(Annotated):
+            @property
+            def f(self) -> bool:  # E: incompatible_override
+                return False
+
+            @f.setter
+            def f(self, value: bool) -> None:  # E: incompatible_override
+                pass
+
 
 class TestWalrus(TestNameCheckVisitorBase):
     @skip_before((3, 8))

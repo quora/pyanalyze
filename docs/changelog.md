@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix treatment of `@property` by the `incompatible_override`
+  check (#653)
 - Add hardcoded support for `pytest.raises` to avoid false
   positives (#651)
 - Fix crash with nested classes in stubs. For now, `Any` is
