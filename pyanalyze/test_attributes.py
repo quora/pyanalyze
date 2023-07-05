@@ -322,12 +322,15 @@ class TestAttributes(TestNameCheckVisitorBase):
         from typing_extensions import assert_type
 
         class A:
+            __private: int
+
             def __func(self) -> int:
                 return 0
 
             def run(self) -> None:
                 assert_type(self.__func(), int)
                 assert_type(self._A__func(), int)
+                assert_type(self.__private, int)
 
     @assert_passes()
     def test_mangling_dataclass(self):
@@ -336,12 +339,15 @@ class TestAttributes(TestNameCheckVisitorBase):
 
         @dataclass
         class A:
+            __private: int
+
             def __func(self) -> str:
                 return ""
 
             def run(self) -> None:
                 assert_type(self.__func(), str)
                 assert_type(self._A__func(), str)
+                assert_type(self.__private, int)
 
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
