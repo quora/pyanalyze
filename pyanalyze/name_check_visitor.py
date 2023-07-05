@@ -1698,14 +1698,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return isinstance(ctx, (ast.Load, ast.Del))
 
     @contextlib.contextmanager
-    def _set_current_class(self, current_class: type, node: ast.ClassDef) -> Iterator[None]:
+    def _set_current_class(
+        self, current_class: type, node: ast.ClassDef
+    ) -> Iterator[None]:
         if should_check_for_duplicate_values(current_class, self.options):
             current_enum_members = {}
         else:
             current_enum_members = None
         with qcore.override(self, "current_class", current_class), qcore.override(
             self.asynq_checker, "current_class", current_class
-        ), qcore.override(self, "current_enum_members", current_enum_members), qcore.override(self, "current_class_name", node.name):
+        ), qcore.override(
+            self, "current_enum_members", current_enum_members
+        ), qcore.override(
+            self, "current_class_name", node.name
+        ):
             yield
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Value:
@@ -4791,7 +4797,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def composite_from_attribute(self, node: ast.Attribute) -> Composite:
         mangled_attr = node.attr
-        if self.current_class_name is not None and mangled_attr.startswith("__") and not mangled_attr.endswith("__"):
+        if (
+            self.current_class_name is not None
+            and mangled_attr.startswith("__")
+            and not mangled_attr.endswith("__")
+        ):
             mangled_attr = f"_{self.current_class_name}{mangled_attr}"
         if isinstance(node.value, ast.Name):
             attr_str = f"{node.value.id}.{mangled_attr}"
