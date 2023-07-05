@@ -327,18 +327,21 @@ class TestAttributes(TestNameCheckVisitorBase):
 
             def run(self) -> None:
                 assert_type(self.__func(), int)
+                assert_type(self._A__func(), int)
 
     @assert_passes()
     def test_mangling_dataclass(self):
         from dataclasses import dataclass
+        from typing_extensions import assert_type
 
         @dataclass
         class A:
-            def __func(self) -> None:
-                ...
+            def __func(self) -> str:
+                return ""
 
             def run(self) -> None:
-                self.__func()  # ERROR: Undefined attribute
+                assert_type(self.__func(), str)
+                assert_type(self._A__func(), str)
 
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
