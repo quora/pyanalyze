@@ -445,7 +445,7 @@ def _parse_config_section(
             warnings.warn(
                 "All rules were disabled but not a single one was explicitly enabled"
             )
-        error_codes_to_disable = get_all_error_codes() - enabled_error_codes
+        error_codes_to_disable = all_error_codes - enabled_error_codes
         for error_code in error_codes_to_disable:
             option_cls = ConfigOption.registry[error_code]
             yield option_cls(option_cls.parse(False, path), module_path)
