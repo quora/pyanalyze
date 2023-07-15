@@ -444,8 +444,7 @@ def _parse_config_section(
     if disable_all_default_error_codes:
         if not enabled_error_codes:
             warnings.warn(
-                "All rules were disabled but not a single one was "
-                "explicitly enabled"
+                "All rules were disabled but not a single one was explicitly enabled"
             )
         error_codes_to_disable = all_error_codes - enabled_error_codes
         for error_code in error_codes_to_disable:
