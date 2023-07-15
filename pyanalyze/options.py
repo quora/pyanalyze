@@ -394,9 +394,10 @@ def _parse_config_section(
                 "Top-level configuration should not set module option"
             )
 
+    section = dict(section)
     enabled_error_codes: Set[str] = set()
     all_error_codes: FrozenSet[str] = get_all_error_codes()
-    disable_all_default_error_codes = section.pop("disable_all", None)
+    disable_all_default_error_codes: bool = bool(section.pop("disable_all", False))
 
     for key, value in section.items():
         if key == "module":
@@ -443,7 +444,8 @@ def _parse_config_section(
     if disable_all_default_error_codes:
         if not enabled_error_codes:
             warnings.warn(
-                "All rules were disabled but not a single one was explicitly enabled"
+                "All rules were disabled but not a single one was "
+                "explicitly enabled"
             )
         error_codes_to_disable = all_error_codes - enabled_error_codes
         for error_code in error_codes_to_disable:
