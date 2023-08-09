@@ -112,6 +112,8 @@ MethodWrapperType = type(object().__str__)
 
 _ENUM_CALL = enum.Enum.__call__.__func__
 
+_SELF_PARAM = inspect.Parameter("__self", inspect.Parameter.POSITIONAL_ONLY)
+
 
 @used  # exposed as an API
 @contextlib.contextmanager
@@ -809,9 +811,20 @@ class ArgSpecCache:
                 if isinstance(override, inspect.Signature):
                     inspect_sig = override
                     constructor = None
+                elif (
+                    override is None
+                    and hasattr_static(obj, "__signature__")
+                    and safe_isinstance(obj.__signature__, inspect.Signature)
+                ):
+                    # Pydantic classes set a static __signature__ field
+                    inspect_sig = obj.__signature__.replace(
+                        parameters=[_SELF_PARAM, *obj.__signature__.parameters.values()]
+                    )
+                    constructor = obj
                 else:
                     if override is not None:
                         constructor = override
+
                     # We pick __new__ if it is implemented as a Python function only;
                     # if we picked it whenever it was overridden we'd get too many C
                     # types that have a meaningless __new__ signature. Typeshed

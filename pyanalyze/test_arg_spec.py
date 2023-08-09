@@ -364,6 +364,20 @@ class TestClassInstantiation(TestNameCheckVisitorBase):
             Capybara(3)  # E: incompatible_argument
             Capybara(pathlib.Path("x"))
 
+    @assert_passes()
+    def test_dunder_signature(self):
+        import inspect
+
+        class Cls:
+            __signature__ = inspect.Signature(
+                [inspect.Parameter("x", inspect.Parameter.KEYWORD_ONLY)]
+            )
+
+        def capybara():
+            assert_is_value(Cls(x=3), TypedValue(Cls))
+            Cls()  # E: incompatible_call
+            Cls(1)  # E: incompatible_call
+
 
 class TestFunctionsSafeToCall(TestNameCheckVisitorBase):
     @assert_passes()
