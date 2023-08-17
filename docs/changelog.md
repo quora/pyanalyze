@@ -4,7 +4,6 @@
 
 - Support classes that set a `__signature__` attribute to
   define their constructor signature (such as Pydantic models) (#665)
-- Handle mangling of private attribute names (#658)
 - Declare support for Python 3.12. Not all new features in
   Python 3.12 are supported yet. (#656)
 - Fix treatment of `@property` by the `incompatible_override`
