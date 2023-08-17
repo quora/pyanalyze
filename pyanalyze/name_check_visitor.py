@@ -1108,7 +1108,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.match_subject = Composite(AnyValue(AnySource.inference))
         # current class (for inferring the type of cls and self arguments)
         self.current_class = None
-        self.current_class_name: Optional[str] = None
         self.current_function_name = None
         self.current_function_info = None
 
@@ -1698,20 +1697,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return isinstance(ctx, (ast.Load, ast.Del))
 
     @contextlib.contextmanager
-    def _set_current_class(
-        self, current_class: type, node: ast.ClassDef
-    ) -> Iterator[None]:
+    def _set_current_class(self, current_class: type) -> Iterator[None]:
         if should_check_for_duplicate_values(current_class, self.options):
             current_enum_members = {}
         else:
             current_enum_members = None
         with qcore.override(self, "current_class", current_class), qcore.override(
             self.asynq_checker, "current_class", current_class
-        ), qcore.override(
-            self, "current_enum_members", current_enum_members
-        ), qcore.override(
-            self, "current_class_name", node.name
-        ):
+        ), qcore.override(self, "current_enum_members", current_enum_members):
             yield
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Value:
@@ -1764,7 +1757,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
             with self.scopes.add_scope(
                 ScopeType.class_scope, scope_node=None, scope_object=current_class
-            ), self._set_current_class(current_class, node):
+            ), self._set_current_class(current_class):
                 self._generic_visit_list(node.body)
 
             if isinstance(cls_obj, KnownValue):
@@ -4796,22 +4789,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return root_composite.get_extended_varname_with_origin(index, origin)
 
     def composite_from_attribute(self, node: ast.Attribute) -> Composite:
-        mangled_attr = node.attr
-        if (
-            self.current_class_name is not None
-            and mangled_attr.startswith("__")
-            and not mangled_attr.endswith("__")
-        ):
-            mangled_attr = f"_{self.current_class_name}{mangled_attr}"
         if isinstance(node.value, ast.Name):
-            attr_str = f"{node.value.id}.{mangled_attr}"
+            attr_str = f"{node.value.id}.{node.attr}"
             if self._is_write_ctx(node.ctx):
                 self.yield_checker.record_assignment(attr_str)
             else:
                 self.yield_checker.record_usage(attr_str, node)
 
         root_composite = self.composite_from_node(node.value)
-        composite = self._extend_composite(root_composite, mangled_attr, node)
+        composite = self._extend_composite(root_composite, node.attr, node)
         if self._is_write_ctx(node.ctx):
             # TODO: We should do something here if we're in an AnnAssign, e.g.
             # note the type in the class's namespace.
@@ -4832,7 +4818,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 typ = root_composite.value.typ
                 if isinstance(typ, type):
                     self._record_type_attr_set(
-                        typ, mangled_attr, node, self.being_assigned
+                        typ, node.attr, node, self.being_assigned
                     )
             return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):
@@ -4843,18 +4829,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     and root_composite.value.val.__name__ is not None
                 ):
                     self.reexport_tracker.record_attribute_accessed(
-                        root_composite.value.val.__name__, mangled_attr, node, self
+                        root_composite.value.val.__name__, node.attr, node, self
                     )
             value = self.get_attribute(
                 root_composite,
-                mangled_attr,
+                node.attr,
                 node,
                 use_fallback=True,
                 ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
             )
             self.check_deprecation(node, value)
             if self._should_use_varname_value(value):
-                varname_value = self.checker.maybe_get_variable_name_value(mangled_attr)
+                varname_value = self.checker.maybe_get_variable_name_value(node.attr)
                 if varname_value is not None:
                     return Composite(varname_value, composite, node)
             if (
@@ -4865,9 +4851,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if local_value is not UNINITIALIZED_VALUE:
                     value = local_value
             if root_composite.value == KnownValue(sys):
-                if mangled_attr == "platform":
+                if node.attr == "platform":
                     value = annotate_value(value, [SYS_PLATFORM_EXTENSION])
-                elif mangled_attr == "version_info":
+                elif node.attr == "version_info":
                     value = annotate_value(value, [SYS_VERSION_INFO_EXTENSION])
             return Composite(value, composite, node)
         else:

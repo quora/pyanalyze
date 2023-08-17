@@ -317,38 +317,6 @@ class TestAttributes(TestNameCheckVisitorBase):
             c = C()
             assert_is_value(c.f(), TypedValue(int))
 
-    @assert_passes()
-    def test_mangling(self):
-        from typing_extensions import assert_type
-
-        class A:
-            __private: int
-
-            def __func(self) -> int:
-                return 0
-
-            def run(self) -> None:
-                assert_type(self.__func(), int)
-                assert_type(self._A__func(), int)
-                assert_type(self.__private, int)
-
-    @assert_passes()
-    def test_mangling_dataclass(self):
-        from dataclasses import dataclass
-        from typing_extensions import assert_type
-
-        @dataclass
-        class A:
-            __private: int
-
-            def __func(self) -> str:
-                return ""
-
-            def run(self) -> None:
-                assert_type(self.__func(), str)
-                assert_type(self._A__func(), str)
-                assert_type(self.__private, int)
-
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):
     @assert_passes()
