@@ -365,7 +365,7 @@ class TestClassInstantiation(TestNameCheckVisitorBase):
             Capybara(pathlib.Path("x"))
 
     @assert_passes()
-    def test_dunder_signature(self):
+    def test_dunder_signature_class(self):
         import inspect
 
         class Cls:
@@ -377,6 +377,28 @@ class TestClassInstantiation(TestNameCheckVisitorBase):
             assert_is_value(Cls(x=3), TypedValue(Cls))
             Cls()  # E: incompatible_call
             Cls(1)  # E: incompatible_call
+
+    @assert_passes()
+    def test_dunder_signature_function(self):
+        import inspect
+
+        def f(*args, **kwargs):
+            return args[0] + "x" + kwargs["y"]
+
+        f.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter(
+                    "x", inspect.Parameter.POSITIONAL_ONLY, annotation=str
+                ),
+                inspect.Parameter("y", inspect.Parameter.KEYWORD_ONLY, annotation=str),
+            ],
+            return_annotation=str,
+        )
+
+        def capybara():
+            assert_is_value(f("1", y="2"), TypedValue(str))
+            f()  # E: incompatible_call
+            f(1, y="z")  # E: incompatible_argument
 
 
 class TestFunctionsSafeToCall(TestNameCheckVisitorBase):

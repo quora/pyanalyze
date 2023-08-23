@@ -627,6 +627,13 @@ class ArgSpecCache:
         if isinstance(obj, tuple):
             return None  # lost cause
 
+        if (not inspect.isclass(obj)) and hasattr_static(obj, "__signature__"):
+            sig = obj.__signature__
+            if safe_isinstance(sig, inspect.Signature):
+                return self.from_signature(
+                    sig, impl=impl, callable_object=obj, function_object=obj
+                )
+
         # Cythonized methods, e.g. fn.asynq
         if is_dot_asynq_function(obj):
             try:
