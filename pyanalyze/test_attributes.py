@@ -71,6 +71,13 @@ class TestAttributes(TestNameCheckVisitorBase):
             assert_is_value(DefiniteCapybara.capybara_id, KnownValue(3))
 
     @assert_passes()
+    def test_known_value_hook(self):
+        from pyanalyze.test_config import SPECIAL_STRING
+
+        def capybara():
+            assert_is_value(SPECIAL_STRING.special, KnownValue("special"))
+
+    @assert_passes()
     def test_generic(self):
         from typing import Generic, TypeVar
 

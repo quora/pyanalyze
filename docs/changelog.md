@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add hook for overriding the value inferred for attributes on
+  literals (#669)
 - Support classes that set a `__signature__` attribute to
   define their constructor signature (such as Pydantic models) (#665)
 - Declare support for Python 3.12. Not all new features in

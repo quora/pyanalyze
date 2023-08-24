@@ -126,5 +126,15 @@ def transform_class_attribute(
     return None
 
 
+SPECIAL_STRING = "capybara!"
+
+
+@used  # in test.toml
+def known_attribute_hook(obj: object, attr: str) -> Optional[value.Value]:
+    if obj == SPECIAL_STRING and attr == "special":
+        return value.KnownValue("special")
+    return None
+
+
 CONFIG_PATH = Path(__file__).parent / "test.toml"
 TEST_OPTIONS = Options.from_option_list(config_file_path=CONFIG_PATH)
