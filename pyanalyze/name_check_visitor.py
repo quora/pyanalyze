@@ -151,6 +151,7 @@ from .suggested_type import (
     should_suggest_type,
 )
 from .type_object import get_mro, TypeObject
+from .typeshed import TypeshedFinder
 from .value import (
     SYS_PLATFORM_EXTENSION,
     SYS_VERSION_INFO_EXTENSION,
@@ -620,6 +621,7 @@ class ClassAttributeChecker:
         should_check_unused_attributes: bool = False,
         should_serialize: bool = False,
         options: Options = Options.from_option_list(),
+        ts_finder: Optional[TypeshedFinder] = None,
     ) -> None:
         self.options = options
         # we might not have examined all parent classes when looking for attributes set
@@ -643,6 +645,7 @@ class ClassAttributeChecker:
             self.serialize_type(typ)
             for typ in self.options.get_value_for(IgnoredTypesForAttributeChecking)
         }
+        self.ts_finder = ts_finder
 
     def __enter__(self) -> Optional["ClassAttributeChecker"]:
         if self.enabled:
@@ -935,6 +938,10 @@ class ClassAttributeChecker:
                     return
 
                 base_classes_examined.add(base_cls)
+
+        # If the class has only known attributes, we already reported the error.
+        if _has_only_known_attributes(self.ts_finder, typ):
+            return
 
         message = visitor.show_error(
             node,
@@ -4947,22 +4954,24 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     return AnyValue(AnySource.inference)
 
             # Ignore objects that override __getattr__
-            if not self._has_only_known_attributes(root_value.val) and (
+            if not _has_only_known_attributes(
+                self.checker.ts_finder, root_value.val
+            ) and (
                 _static_hasattr(root_value.val, "__getattr__")
                 or self._should_ignore_val(node)
             ):
                 return AnyValue(AnySource.inference)
         elif isinstance(root_value, TypedValue):
             root_type = root_value.typ
-            if isinstance(root_type, type) and not self._has_only_known_attributes(
-                root_type
+            if isinstance(root_type, type) and not _has_only_known_attributes(
+                self.checker.ts_finder, root_type
             ):
                 return self._maybe_get_attr_value(root_type, attr)
         elif isinstance(root_value, SubclassValue):
             if isinstance(root_value.typ, TypedValue):
                 root_type = root_value.typ.typ
-                if isinstance(root_type, type) and not self._has_only_known_attributes(
-                    root_type
+                if isinstance(root_type, type) and not _has_only_known_attributes(
+                    self.checker.ts_finder, root_type
                 ):
                     return self._maybe_get_attr_value(root_type, attr)
             else:
@@ -4980,25 +4989,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             ErrorCode.undefined_attribute,
         )
         return AnyValue(AnySource.error)
-
-    def _has_only_known_attributes(self, typ: object) -> bool:
-        if not isinstance(typ, type):
-            return False
-        if issubclass(typ, tuple) and not hasattr(typ, "__getattr__"):
-            # namedtuple
-            return True
-        if issubclass(typ, enum.Enum):
-            return True
-        ts_finder = self.checker.ts_finder
-        if (
-            (ts_finder.has_stubs(typ) or is_dataclass_type(typ))
-            and not ts_finder.has_attribute(typ, "__getattr__")
-            and not ts_finder.has_attribute(typ, "__getattribute__")
-            and not attributes.may_have_dynamic_attributes(typ)
-            and not hasattr(typ, "__getattr__")
-        ):
-            return True
-        return False
 
     def composite_from_node(self, node: ast.AST) -> Composite:
         if isinstance(node, ast.Attribute):
@@ -5476,6 +5466,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 should_check_unused_attributes=find_unused_attributes,
                 should_serialize=kwargs.get("parallel", False),
                 options=checker.options,
+                ts_finder=checker.ts_finder,
             )
         else:
             inner_attribute_checker_obj = qcore.empty_context
@@ -5652,3 +5643,50 @@ def _extract_definite_value(val: Value) -> Optional[bool]:
         for dv_ext in dv_exts:
             return dv_ext.value
     return None
+
+
+try:
+    from pydantic import BaseModel
+except ImportError:
+
+    def _is_safe_pydantic_class(typ: type) -> bool:
+        return False
+
+else:
+
+    def _is_safe_pydantic_class(typ: type) -> bool:
+        if not issubclass(typ, BaseModel):
+            return False
+        # Pydantic classes have a __getattr__ that looks at two fields,
+        # __private_attributes__ and __pydantic_extra__. The latter is
+        # used only if this config is set. The former doesn't seem to have
+        # a way to detect from the class whether it will be used.
+        return typ.model_config.get("extra") != "allow"
+
+
+def _has_only_known_attributes(
+    ts_finder: Optional[TypeshedFinder], typ: object
+) -> bool:
+    if not isinstance(typ, type):
+        return False
+    if _is_safe_pydantic_class(typ) or issubclass(typ, enum.Enum):
+        return True
+    # Classes that override __getattr__ may have dynamic attributes.
+    # We don't check this for pydantic classes because they always have
+    # __getattr__, and we don't check it for enums because before 3.11,
+    # there was an EnumMeta.__getattr__.
+    if hasattr(typ, "__getattr__"):
+        return False
+    # for namedtuples
+    if is_dataclass_type(typ) or issubclass(typ, tuple):
+        return True
+    if (
+        ts_finder is not None
+        and ts_finder.has_stubs(typ)
+        and not ts_finder.has_attribute(typ, "__getattr__")
+        and not ts_finder.has_attribute(typ, "__getattribute__")
+        and not attributes.may_have_dynamic_attributes(typ)
+        and not hasattr(typ, "__getattr__")
+    ):
+        return True
+    return False

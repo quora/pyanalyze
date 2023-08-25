@@ -163,6 +163,31 @@ class TestAttributes(TestNameCheckVisitorBase):
             return x.capybaras
 
     @assert_passes()
+    def test_only_known_attributes(self):
+        from dataclasses import dataclass
+        from pydantic import BaseModel
+        from typing import NamedTuple
+
+        @dataclass
+        class DC:
+            a: int
+
+        class NT(NamedTuple):
+            a: int
+
+        class BM(BaseModel):
+            a: int
+
+        def capybara(dc: DC, nt: NT, bm: BM) -> None:
+            assert_is_value(dc.a, TypedValue(int))
+            assert_is_value(nt.a, TypedValue(int))
+            assert_is_value(bm.a, TypedValue(int))
+
+            dc.b  # E: undefined_attribute
+            nt.b  # E: undefined_attribute
+            bm.b  # E: undefined_attribute
+
+    @assert_passes()
     def test_union(self):
         from dataclasses import dataclass
         from typing import Union
