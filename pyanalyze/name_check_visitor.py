@@ -5664,19 +5664,21 @@ else:
         return typ.model_config.get("extra") != "allow"
 
 
-ONLY_KNOWN_ATTRIBUTE_BASES = (tuple, enum.Enum)  # for namedtuples
-
-
 def _has_only_known_attributes(
     ts_finder: Optional[TypeshedFinder], typ: object
 ) -> bool:
     if not isinstance(typ, type):
         return False
-    if _is_safe_pydantic_class(typ):
+    if _is_safe_pydantic_class(typ) or issubclass(typ, enum.Enum):
         return True
+    # Classes that override __getattr__ may have dynamic attributes.
+    # We don't check this for pydantic classes because they always have
+    # __getattr__, and we don't check it for enums because before 3.11,
+    # there was an EnumMeta.__getattr__.
     if hasattr(typ, "__getattr__"):
         return False
-    if is_dataclass_type(typ) or issubclass(typ, ONLY_KNOWN_ATTRIBUTE_BASES):
+    # for namedtuples
+    if is_dataclass_type(typ) or issubclass(typ, tuple):
         return True
     if (
         ts_finder is not None
