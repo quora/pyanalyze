@@ -39,7 +39,7 @@ if __name__ == "__main__":
             "codemod",
             "tomli>=1.1.0",
         ],
-        extras_require={"tests": ["pytest", "mypy_extensions", "attrs"]},
+        extras_require={"tests": ["pytest", "mypy_extensions", "attrs", "pydantic"]},
         # These are useful for unit tests of pyanalyze extensions
         # outside the package.
         package_data={"pyanalyze": package_data},

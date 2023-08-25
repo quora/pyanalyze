@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Detect undefined attributes on Pydantic models (#670)
+- Remove duplicate "attribute_is_never_set" error for classes
+  with predefined attributes (#670)
 - Add hook for overriding the value inferred for attributes on
   literals (#669)
 - Support classes that set a `__signature__` attribute to
