@@ -7,7 +7,7 @@ typing_extensions>=4.1.1
 aenum>=2.2.3
 codemod
 myst-parser==2.0.0
-Sphinx==7.1.2
+Sphinx==7.2.3
 black==23.7.0
 flake8==6.1.0
 usort==1.0.7
