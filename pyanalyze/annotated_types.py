@@ -146,7 +146,7 @@ class Ge(AnnotatedTypesCheck):
 
     def is_compatible_metadata(self, metadata: AnnotatedTypesCheck) -> bool:
         if isinstance(metadata, Gt):
-            return metadata.value > self.value
+            return metadata.value >= self.value
         elif isinstance(metadata, Ge):
             return metadata.value >= self.value
         else:
@@ -178,7 +178,7 @@ class Le(AnnotatedTypesCheck):
 
     def is_compatible_metadata(self, metadata: AnnotatedTypesCheck) -> bool:
         if isinstance(metadata, Lt):
-            return metadata.value < self.value
+            return metadata.value <= self.value
         elif isinstance(metadata, Le):
             return metadata.value <= self.value
         else:
