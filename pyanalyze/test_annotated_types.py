@@ -3,7 +3,7 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 
 
-class TestGreaterLesser(TestNameCheckVisitorBase):
+class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
     @assert_passes()
     def test_gt(self):
         from typing_extensions import Annotated
@@ -255,3 +255,25 @@ class TestGreaterLesser(TestNameCheckVisitorBase):
             takes_upper(scream)
             takes_upper("WHY DO YOU ONLY WANT UPPERCASE")
             takes_upper("lowercase")  # E: incompatible_argument
+
+
+class TestInferAnnotations(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_infer_gt(self):
+        from typing_extensions import Annotated
+        from annotated_types import Gt
+
+        def takes_gt_5(x: Annotated[int, Gt(5)]) -> None:
+            pass
+
+        def capybara(i: int) -> None:
+            takes_gt_5(i)  # E: incompatible_argument
+
+            if i > 4:
+                takes_gt_5(i)  # E: incompatible_argument
+
+            if i > 5:
+                takes_gt_5(i)
+
+            if i > 6:
+                takes_gt_5(i)

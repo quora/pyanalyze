@@ -69,7 +69,7 @@ else:
             return None
 
 
-@dataclass
+@dataclass(frozen=True)
 class AnnotatedTypesCheck(CustomCheck):
     def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
         for subval in flatten_values(value):
@@ -119,7 +119,7 @@ class AnnotatedTypesCheck(CustomCheck):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class Gt(AnnotatedTypesCheck):
     value: Any
 
@@ -135,7 +135,7 @@ class Gt(AnnotatedTypesCheck):
             return False
 
 
-@dataclass
+@dataclass(frozen=True)
 class Ge(AnnotatedTypesCheck):
     value: Any
 
@@ -151,7 +151,7 @@ class Ge(AnnotatedTypesCheck):
             return False
 
 
-@dataclass
+@dataclass(frozen=True)
 class Lt(AnnotatedTypesCheck):
     value: Any
 
@@ -167,7 +167,7 @@ class Lt(AnnotatedTypesCheck):
             return False
 
 
-@dataclass
+@dataclass(frozen=True)
 class Le(AnnotatedTypesCheck):
     value: Any
 
@@ -183,7 +183,7 @@ class Le(AnnotatedTypesCheck):
             return False
 
 
-@dataclass
+@dataclass(frozen=True)
 class MultipleOf(AnnotatedTypesCheck):
     value: Any
 
@@ -198,7 +198,7 @@ class MultipleOf(AnnotatedTypesCheck):
             return False
 
 
-@dataclass
+@dataclass(frozen=True)
 class MinLen(AnnotatedTypesCheck):
     value: Any
 
@@ -218,7 +218,7 @@ class MinLen(AnnotatedTypesCheck):
         return super().can_assign_non_literal(value)
 
 
-@dataclass
+@dataclass(frozen=True)
 class MaxLen(AnnotatedTypesCheck):
     value: Any
 
@@ -238,7 +238,7 @@ class MaxLen(AnnotatedTypesCheck):
         return super().can_assign_non_literal(value)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Timezone(AnnotatedTypesCheck):
     value: Union[str, timezone, Literal[None, ...]]
 
@@ -264,7 +264,7 @@ class Timezone(AnnotatedTypesCheck):
         return False
 
 
-@dataclass
+@dataclass(frozen=True)
 class Predicate(AnnotatedTypesCheck):
     predicate_callable: Callable[[Any], bool]
 
