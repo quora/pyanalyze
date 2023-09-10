@@ -6,7 +6,6 @@ Support for annotations from the annotated_types library.
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Optional, Union
-from typing_extensions import Literal
 
 from pyanalyze.value import CanAssign, CanAssignContext, Value, flatten_values
 
