@@ -8,10 +8,12 @@ from typing import Optional
 from pyanalyze.value import CanAssignError, KnownValue
 from .annotations import type_from_runtime
 from .checker import Checker
+from .find_unused import used
 
 _CHECKER = Checker()
 
 
+@used
 def is_compatible(typ: object, value: object) -> bool:
     """Return whether ``value`` is compatible with ``type``.
 
@@ -30,6 +32,7 @@ def is_compatible(typ: object, value: object) -> bool:
     return not isinstance(can_assign, CanAssignError)
 
 
+@used
 def get_compatibility_error(typ: object, value: object) -> Optional[str]:
     """Return an error message explaining why ``value`` is not
     compatible with ``type``, or None if they are compatible.
