@@ -23,7 +23,6 @@ These functions all use :class:`Context` objects to resolve names and
 show errors.
 
 """
-from _ast import Dict
 import ast
 import builtins
 import contextlib
@@ -36,6 +35,7 @@ from typing import (
     Container,
     ContextManager,
     Generator,
+    List,
     Mapping,
     NewType,
     Optional,
@@ -50,6 +50,8 @@ from typing import (
 import qcore
 
 from typing_extensions import ParamSpec, TypedDict, get_origin, get_args
+
+from pyanalyze.annotated_types import get_annotated_types_extension
 
 from . import type_evaluation
 
@@ -924,7 +926,7 @@ class _Visitor(ast.NodeVisitor):
         elts = [(False, self.visit(elt)) for elt in node.elts]
         return SequenceValue(set, elts)
 
-    def visit_Dict(self, node: Dict) -> Any:
+    def visit_Dict(self, node: ast.Dict) -> Any:
         keys = [self.visit(key) if key is not None else None for key in node.keys]
         values = [self.visit(value) for value in node.values]
         kvpairs = []
@@ -1278,29 +1280,43 @@ def _make_callable_from_value(
 
 
 def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:
-    metadata = [_value_from_metadata(entry, ctx) for entry in metadata]
-    return annotate_value(origin, metadata)
-
-
-def _value_from_metadata(entry: Value, ctx: Context) -> Union[Value, Extension]:
-    if isinstance(entry, KnownValue):
-        if isinstance(entry.val, ParameterTypeGuard):
-            return ParameterTypeGuardExtension(
-                entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
-            )
-        elif isinstance(entry.val, NoReturnGuard):
-            return NoReturnGuardExtension(
-                entry.val.varname, _type_from_runtime(entry.val.guarded_type, ctx)
-            )
-        elif isinstance(entry.val, HasAttrGuard):
-            return HasAttrGuardExtension(
-                entry.val.varname,
-                _type_from_runtime(entry.val.attribute_name, ctx),
-                _type_from_runtime(entry.val.attribute_type, ctx),
-            )
-        elif isinstance(entry.val, CustomCheck):
-            return CustomCheckExtension(entry.val)
-    return entry
+    metadata_objs: List[Union[Value, Extension]] = []
+    for entry in metadata:
+        if isinstance(entry, KnownValue):
+            if isinstance(entry.val, ParameterTypeGuard):
+                metadata_objs.append(
+                    ParameterTypeGuardExtension(
+                        entry.val.varname,
+                        _type_from_runtime(entry.val.guarded_type, ctx),
+                    )
+                )
+                continue
+            elif isinstance(entry.val, NoReturnGuard):
+                metadata_objs.append(
+                    NoReturnGuardExtension(
+                        entry.val.varname,
+                        _type_from_runtime(entry.val.guarded_type, ctx),
+                    )
+                )
+                continue
+            elif isinstance(entry.val, HasAttrGuard):
+                metadata_objs.append(
+                    HasAttrGuardExtension(
+                        entry.val.varname,
+                        _type_from_runtime(entry.val.attribute_name, ctx),
+                        _type_from_runtime(entry.val.attribute_type, ctx),
+                    )
+                )
+                continue
+            elif isinstance(entry.val, CustomCheck):
+                metadata_objs.append(CustomCheckExtension(entry.val))
+                continue
+            annotated_types_extensions = list(get_annotated_types_extension(entry.val))
+            if annotated_types_extensions:
+                metadata_objs.extend(annotated_types_extensions)
+            else:
+                metadata_objs.append(entry)
+    return annotate_value(origin, metadata_objs)
 
 
 _CONTEXT_MANAGER_TYPES = {

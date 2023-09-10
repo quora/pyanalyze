@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support for annotations from the `annotated-types` library (#673)
 - Detect undefined attributes on Pydantic models (#670)
 - Remove duplicate "attribute_is_never_set" error for classes
   with predefined attributes (#670)

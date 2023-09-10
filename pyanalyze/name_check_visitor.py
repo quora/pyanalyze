@@ -52,6 +52,8 @@ import qcore
 import typeshed_client
 from typing_extensions import Annotated, Protocol, get_args, get_origin
 
+from pyanalyze.annotated_types import Gt, Ge, Le, Lt
+
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
 from .annotations import (
@@ -156,6 +158,7 @@ from .value import (
     SYS_PLATFORM_EXTENSION,
     SYS_VERSION_INFO_EXTENSION,
     AlwaysPresentExtension,
+    CustomCheckExtension,
     DefiniteValueExtension,
     DeprecatedExtension,
     SkipDeprecatedExtension,
@@ -293,16 +296,16 @@ def _not_in(a: object, b: Container[object]) -> bool:
 
 
 COMPARATOR_TO_OPERATOR = {
-    ast.Eq: (operator.eq, operator.ne),
-    ast.NotEq: (operator.ne, operator.eq),
-    ast.Lt: (operator.lt, operator.ge),
-    ast.LtE: (operator.le, operator.gt),
-    ast.Gt: (operator.gt, operator.le),
-    ast.GtE: (operator.ge, operator.lt),
-    ast.Is: (operator.is_, operator.is_not),
-    ast.IsNot: (operator.is_not, operator.is_),
-    ast.In: (_in, _not_in),
-    ast.NotIn: (_not_in, _in),
+    ast.Eq: (operator.eq, operator.ne, None),
+    ast.NotEq: (operator.ne, operator.eq, None),
+    ast.Lt: (operator.lt, operator.ge, Lt),
+    ast.LtE: (operator.le, operator.gt, Le),
+    ast.Gt: (operator.gt, operator.le, Gt),
+    ast.GtE: (operator.ge, operator.lt, Ge),
+    ast.Is: (operator.is_, operator.is_not, None),
+    ast.IsNot: (operator.is_not, operator.is_, None),
+    ast.In: (_in, _not_in, None),
+    ast.NotIn: (_not_in, _in, None),
 }
 
 SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL = [KnownValue(asynq.asynq), KnownValue(property)]
@@ -3242,14 +3245,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 and isinstance(rhs, KnownValue)
                 and isinstance(op, (ast.Eq, ast.NotEq))
             ):
-                op_func, _ = COMPARATOR_TO_OPERATOR[type(op)]
+                op_func, _, _ = COMPARATOR_TO_OPERATOR[type(op)]
                 definite_value = op_func(sys.platform, rhs.val)
             elif (
                 SYS_VERSION_INFO_EXTENSION in lhs.metadata
                 and isinstance(rhs, KnownValue)
                 and isinstance(op, (ast.Gt, ast.GtE, ast.Lt, ast.LtE))
             ):
-                op_func, _ = COMPARATOR_TO_OPERATOR[type(op)]
+                op_func, _, _ = COMPARATOR_TO_OPERATOR[type(op)]
                 definite_value = op_func(sys.version_info, rhs.val)
             lhs = lhs.value
         if isinstance(lhs_constraint, PredicateProvider) and isinstance(
@@ -3332,7 +3335,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             positive = isinstance(op, ast.In)
             return Constraint(varname, ConstraintType.predicate, positive, predicate)
         else:
-            positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
+            positive_operator, negative_operator, ext = COMPARATOR_TO_OPERATOR[type(op)]
 
             def predicate_func(value: Value, positive: bool) -> Optional[Value]:
                 op = positive_operator if positive else negative_operator
@@ -3347,6 +3350,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     else:
                         if not result:
                             return None
+                    return value
+                if ext is not None and positive:
+                    return annotate_value(value, [CustomCheckExtension(ext(other_val))])
                 return value
 
             return Constraint(varname, ConstraintType.predicate, True, predicate_func)
@@ -3354,7 +3360,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _constraint_from_predicate_provider(
         self, pred: PredicateProvider, other_val: Any, op: ast.AST
     ) -> Constraint:
-        positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
+        positive_operator, negative_operator, _ = COMPARATOR_TO_OPERATOR[type(op)]
 
         def predicate_func(value: Value, positive: bool) -> Optional[Value]:
             predicate_value = pred.provider(value)
