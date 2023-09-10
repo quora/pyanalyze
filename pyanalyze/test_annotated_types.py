@@ -1,16 +1,6 @@
 # static analysis: ignore
-from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, only_before
-from .tests import make_simple_sequence
-from .value import (
-    AnySource,
-    AnyValue,
-    GenericValue,
-    KnownValue,
-    SequenceValue,
-    TypedValue,
-)
+from .test_node_visitor import assert_passes
 
 
 class TestGreaterLesser(TestNameCheckVisitorBase):
@@ -130,3 +120,138 @@ class TestGreaterLesser(TestNameCheckVisitorBase):
             takes_le_5(4)
             takes_le_5(5)
             takes_le_5(6)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_multiple_of(self):
+        from typing_extensions import Annotated
+        from annotated_types import MultipleOf
+
+        def takes_multiple_of_10(x: Annotated[int, MultipleOf(10)]) -> None:
+            pass
+
+        def capybara(
+            i: int,
+            unannotated,
+            multiple_of_2: Annotated[int, MultipleOf(2)],
+            multiple_of_10: Annotated[int, MultipleOf(10)],
+            multiple_of_20: Annotated[int, MultipleOf(20)],
+        ) -> None:
+            takes_multiple_of_10(i)  # E: incompatible_argument
+            takes_multiple_of_10(unannotated)
+            takes_multiple_of_10(multiple_of_2)  # E: incompatible_argument
+            takes_multiple_of_10(multiple_of_10)
+            takes_multiple_of_10(multiple_of_20)
+            takes_multiple_of_10(2)  # E: incompatible_argument
+            takes_multiple_of_10(10)
+            takes_multiple_of_10(50)
+
+    @assert_passes()
+    def test_min_max_len(self):
+        from typing_extensions import Annotated, TypedDict, NotRequired
+        from annotated_types import MinLen, MaxLen, Len
+
+        def takes_min_len_5(x: Annotated[object, MinLen(5)]) -> None:
+            pass
+
+        def takes_max_len_5(x: Annotated[object, MaxLen(5)]) -> None:
+            pass
+
+        def takes_3_to_5(x: Annotated[object, Len(3, 5)]) -> None:
+            pass
+
+        class TD3to5(TypedDict):
+            a: int
+            b: int
+            c: int
+            d: NotRequired[int]
+            e: NotRequired[int]
+
+        def capybara(
+            i: int,
+            min_4: Annotated[str, MinLen(4)],
+            min_6: Annotated[str, MinLen(6)],
+            max_4: Annotated[str, MaxLen(4)],
+            max_6: Annotated[str, MaxLen(6)],
+            exactly_5: Annotated[str, Len(5, 5)],
+            td: TD3to5,
+            unannotated,
+        ) -> None:
+            takes_min_len_5((1, 2, 3, 4))  # E: incompatible_argument
+            takes_min_len_5((1, 2, 3, 4, 5))
+            takes_min_len_5((1, 2, 3, 4, 5, 6))
+            takes_min_len_5((i, i, i, i))  # E: incompatible_argument
+            takes_min_len_5((i, i, i, i, i))
+            takes_min_len_5(min_4)  # E: incompatible_argument
+            takes_min_len_5(min_6)
+            takes_min_len_5(exactly_5)
+            takes_min_len_5(td)  # E: incompatible_argument
+            takes_min_len_5((i, i, i, i, i, *unannotated))
+
+            takes_max_len_5((1, 2, 3, 4, 5))
+            takes_max_len_5((1, 2, 3, 4, 5, 6))  # E: incompatible_argument
+            takes_max_len_5((i, i, i, i, i))
+            takes_max_len_5((i, i, i, i, i, i))  # E: incompatible_argument
+            takes_max_len_5(max_4)
+            takes_max_len_5(max_6)  # E: incompatible_argument
+            takes_max_len_5(exactly_5)
+            # TypedDict don't satisfy MaxLen as they're allowed to have
+            # arbitrary additional keys at runtime
+            takes_max_len_5(td)  # E: incompatible_argument
+            takes_max_len_5((i, *unannotated))  # E: incompatible_argument
+
+            takes_3_to_5((1, 2))  # E: incompatible_argument
+            takes_3_to_5((1, 2, 3))
+            takes_3_to_5(exactly_5)
+            takes_3_to_5(td)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_timezone(self):
+        from typing_extensions import Annotated
+        from annotated_types import Timezone
+        from datetime import datetime, timezone, timedelta
+
+        def takes_naive(x: Annotated[datetime, Timezone(None)]) -> None:
+            pass
+
+        def takes_aware(x: Annotated[datetime, Timezone(...)]) -> None:
+            pass
+
+        def takes_utc(x: Annotated[datetime, Timezone(timezone.utc)]) -> None:
+            pass
+
+        naive_dt = datetime.now()
+        utc_dt = datetime.now(timezone.utc)
+        non_utc_aware_dt = datetime.now(timezone(timedelta(hours=1)))
+
+        def capybara(dt: datetime) -> None:
+            takes_naive(dt)  # E: incompatible_argument
+            takes_naive(naive_dt)
+            takes_naive(utc_dt)  # E: incompatible_argument
+            takes_naive(non_utc_aware_dt)  # E: incompatible_argument
+
+            takes_aware(dt)  # E: incompatible_argument
+            takes_aware(naive_dt)  # E: incompatible_argument
+            takes_aware(utc_dt)
+            takes_aware(non_utc_aware_dt)
+
+            takes_utc(dt)  # E: incompatible_argument
+            takes_utc(naive_dt)  # E: incompatible_argument
+            takes_utc(utc_dt)
+            takes_utc(non_utc_aware_dt)  # E: incompatible_argument
+
+    @assert_passes()
+    def test_predicate(self):
+        from typing_extensions import Annotated
+        from annotated_types import Predicate
+
+        def takes_upper(x: Annotated[str, Predicate(str.isupper)]) -> None:
+            pass
+
+        def capybara(
+            s: str, unannotated, scream: Annotated[str, Predicate(str.isupper)]
+        ) -> None:
+            takes_upper(s)  # E: incompatible_argument
+            takes_upper(unannotated)
+            takes_upper(scream)
+            takes_upper("WHY DO YOU ONLY WANT UPPERCASE")
+            takes_upper("lowercase")  # E: incompatible_argument

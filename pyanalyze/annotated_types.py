@@ -33,14 +33,12 @@ except ImportError:
 else:
 
     def get_annotated_types_extension(obj: object) -> Iterable[CustomCheckExtension]:
-        if not isinstance(obj, annotated_types.BaseMetadata):
-            return
         if isinstance(obj, annotated_types.GroupedMetadata):
             for value in obj:
                 maybe_ext = _get_single_annotated_types_extension(value)
                 if maybe_ext is not None:
                     yield CustomCheckExtension(maybe_ext)
-        else:
+        elif isinstance(obj, annotated_types.BaseMetadata):
             maybe_ext = _get_single_annotated_types_extension(obj)
             if maybe_ext is not None:
                 yield CustomCheckExtension(maybe_ext)
@@ -194,8 +192,8 @@ class MultipleOf(AnnotatedTypesCheck):
 
     def is_compatible_metadata(self, metadata: AnnotatedTypesCheck) -> bool:
         if isinstance(metadata, MultipleOf):
-            # If we want a MultipleOf(10), but we're passed a MultipleOf(5), that's ok
-            return self.value % metadata.value == 0
+            # If we want a MultipleOf(5), but we're passed a MultipleOf(10), that's ok
+            return metadata.value % self.value == 0
         else:
             return False
 
