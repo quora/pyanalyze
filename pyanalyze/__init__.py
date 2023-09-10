@@ -27,6 +27,7 @@ from . import (
     predicates,
     reexport,
     safe,
+    runtime,
     shared_options,
     signature,
     stacked_scopes,
@@ -66,3 +67,4 @@ used(functions)
 used(predicates)
 used(typevar)
 used(annotated_types)
+used(runtime)
