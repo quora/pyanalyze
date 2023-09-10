@@ -275,5 +275,7 @@ class TestInferAnnotations(TestNameCheckVisitorBase):
             if i > 5:
                 takes_gt_5(i)
 
+            takes_gt_5(i)  # E: incompatible_argument
+
             if i > 6:
                 takes_gt_5(i)

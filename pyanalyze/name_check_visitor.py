@@ -3351,7 +3351,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         if not result:
                             return None
                     return value
-                if ext is not None:
+                if ext is not None and positive:
                     return annotate_value(value, [CustomCheckExtension(ext(other_val))])
                 return value
 

@@ -1494,6 +1494,31 @@ class TestConstraints(TestNameCheckVisitorBase):
                 )
 
     @assert_passes()
+    def test_hasattr_annotated_unification(self):
+        from pyanalyze.value import HasAttrExtension
+
+        ext = HasAttrExtension(KnownValue("name"), AnyValue(AnySource.inference))
+
+        def capybara(x: int) -> None:
+            assert_is_value(x, TypedValue(int))
+            if hasattr(x, "name"):
+                assert_is_value(x, AnnotatedValue(TypedValue(int), [ext]))
+            assert_is_value(x, TypedValue(int) | AnnotatedValue(TypedValue(int), [ext]))
+
+    @assert_passes()
+    def test_gt_annotated_unification(self):
+        from pyanalyze.value import CustomCheckExtension
+        from pyanalyze.annotated_types import Gt
+
+        ext = CustomCheckExtension(Gt(5))
+
+        def capybara(x: int) -> None:
+            assert_is_value(x, TypedValue(int))
+            if x > 5:
+                assert_is_value(x, AnnotatedValue(TypedValue(int), [ext]))
+            assert_is_value(x, TypedValue(int) | AnnotatedValue(TypedValue(int), [ext]))
+
+    @assert_passes()
     def test_unconstrained_composite(self):
         class Foo(object):
             def has_images(self):
