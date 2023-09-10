@@ -98,7 +98,7 @@ class CustomCheck:
 class LiteralOnly(CustomCheck):
     """Custom check that allows only values pyanalyze infers as literals.
 
-    Example:
+    Example::
 
         def func(arg: Annotated[str, LiteralOnly()]) -> None:
             ...
