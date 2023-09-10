@@ -23,7 +23,6 @@ These functions all use :class:`Context` objects to resolve names and
 show errors.
 
 """
-from _ast import Dict
 import ast
 import builtins
 import contextlib
@@ -36,6 +35,7 @@ from typing import (
     Container,
     ContextManager,
     Generator,
+    List,
     Mapping,
     NewType,
     Optional,
@@ -926,7 +926,7 @@ class _Visitor(ast.NodeVisitor):
         elts = [(False, self.visit(elt)) for elt in node.elts]
         return SequenceValue(set, elts)
 
-    def visit_Dict(self, node: Dict) -> Any:
+    def visit_Dict(self, node: ast.Dict) -> Any:
         keys = [self.visit(key) if key is not None else None for key in node.keys]
         values = [self.visit(value) for value in node.values]
         kvpairs = []
@@ -1280,7 +1280,7 @@ def _make_callable_from_value(
 
 
 def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:
-    metadata_objs: list[Union[Value, Extension]] = []
+    metadata_objs: List[Union[Value, Extension]] = []
     for entry in metadata:
         if isinstance(entry, KnownValue):
             if isinstance(entry.val, ParameterTypeGuard):

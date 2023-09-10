@@ -240,7 +240,7 @@ class MaxLen(AnnotatedTypesCheck):
 
 @dataclass(frozen=True)
 class Timezone(AnnotatedTypesCheck):
-    value: Union[str, timezone, Literal[None, ...]]
+    value: Union[str, timezone, type(...), None]
 
     def predicate(self, value: Any) -> bool:
         if not isinstance(value, datetime):
