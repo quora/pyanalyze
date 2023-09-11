@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Expose a convenience API for runtime type checking in the
+  `pyanalyze.runtime` module (#674)
 - Support for annotations from the `annotated-types` library (#673)
 - Detect undefined attributes on Pydantic models (#670)
 - Remove duplicate "attribute_is_never_set" error for classes
