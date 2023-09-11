@@ -8,6 +8,6 @@ aenum>=2.2.3
 codemod
 myst-parser==2.0.0
 Sphinx==7.1.2
-black==23.7.0
+black==23.9.1
 flake8==6.1.0
 usort==1.0.7
