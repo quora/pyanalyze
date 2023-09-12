@@ -279,3 +279,40 @@ class TestInferAnnotations(TestNameCheckVisitorBase):
 
             if i > 6:
                 takes_gt_5(i)
+
+    @assert_passes()
+    def test_len(self):
+        from typing_extensions import Annotated
+        from annotated_types import MinLen, MaxLen, Len
+
+        def takes_len_5(x: Annotated[str, Len(5)]) -> None:
+            pass
+
+        def takes_min_len_5(x: Annotated[str, MinLen(5)]) -> None:
+            pass
+
+        def takes_max_len_5(x: Annotated[str, MaxLen(5)]) -> None:
+            pass
+
+        def capybara(s: str) -> None:
+            if len(s) == 5:
+                takes_len_5(s)
+                takes_min_len_5(s)
+                takes_max_len_5(s)
+
+            if len(s) >= 6:
+                takes_min_len_5(s)
+                takes_max_len_5(s)  # E: incompatible_argument
+
+            if len(s) <= 4:
+                takes_max_len_5(s)
+                takes_min_len_5(s)  # E: incompatible_argument
+
+            if len(s) > 5:
+                takes_min_len_5(s)
+                takes_max_len_5(s)  # E: incompatible_argument
+
+            if len(s) < 5:
+                takes_max_len_5(s)
+                takes_min_len_5(s)  # E: incompatible_argument
+                takes_len_5(s)  # E: incompatible_argument
