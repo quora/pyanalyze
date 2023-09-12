@@ -52,7 +52,7 @@ import qcore
 import typeshed_client
 from typing_extensions import Annotated, Protocol, get_args, get_origin
 
-from pyanalyze.annotated_types import Gt, Ge, Le, Lt
+from .annotated_types import Gt, Ge, Le, Lt
 
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
@@ -306,6 +306,13 @@ COMPARATOR_TO_OPERATOR = {
     ast.IsNot: (operator.is_not, operator.is_, None),
     ast.In: (_in, _not_in, None),
     ast.NotIn: (_not_in, _in, None),
+}
+_NEG_OPERATOR_TO_AST = {
+    neg_op: node_cls for node_cls, (_, neg_op, _) in COMPARATOR_TO_OPERATOR.items()
+}
+AST_TO_REVERSE = {
+    node_cls: _NEG_OPERATOR_TO_AST[op]
+    for node_cls, (op, _, _) in COMPARATOR_TO_OPERATOR.items()
 }
 
 SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL = [KnownValue(asynq.asynq), KnownValue(property)]
@@ -3365,14 +3372,22 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         def predicate_func(value: Value, positive: bool) -> Optional[Value]:
             predicate_value = pred.provider(value)
             if isinstance(predicate_value, KnownValue):
-                op = positive_operator if positive else negative_operator
+                operator = positive_operator if positive else negative_operator
                 try:
-                    result = op(predicate_value.val, other_val)
+                    result = operator(predicate_value.val, other_val)
                 except Exception:
                     pass
                 else:
                     if not result:
                         return None
+            if pred.value_transformer is not None:
+                op_cls = type(op)
+                if not positive:
+                    if op_cls in AST_TO_REVERSE:
+                        op_cls = AST_TO_REVERSE[op_cls]
+                    else:
+                        return value
+                return pred.value_transformer(value, op_cls, other_val)
             return value
 
         return Constraint(pred.varname, ConstraintType.predicate, True, predicate_func)

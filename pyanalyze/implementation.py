@@ -1,9 +1,23 @@
+import ast
 import collections
 import collections.abc
 import inspect
 import typing
 from itertools import product
-from typing import Callable, cast, Dict, NewType, Optional, Sequence, TypeVar, Union
+from typing import (
+    Callable,
+    Type,
+    cast,
+    Dict,
+    NewType,
+    Optional,
+    Sequence,
+    TypeVar,
+    Union,
+)
+
+from .annotated_types import MaxLen
+from .annotated_types import MinLen
 
 import qcore
 import typing_extensions
@@ -37,6 +51,8 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
+    CustomCheckExtension,
+    annotate_value,
     assert_is_value,
     CallableValue,
     CanAssignContext,
@@ -61,7 +77,6 @@ from .value import (
     TypedDictValue,
     TypedValue,
     TypeVarValue,
-    unannotate,
     UNINITIALIZED_VALUE,
     unite_values,
     unpack_values,
@@ -1266,11 +1281,27 @@ def _cast_impl(ctx: CallContext) -> Value:
     return type_from_value(typ, visitor=ctx.visitor, node=ctx.node)
 
 
+def _recursive_unanotate(val: Value) -> Value:
+    # Maybe we should also recurse into type parameters?
+    if isinstance(val, AnnotatedValue):
+        return _recursive_unanotate(val.value)
+    elif isinstance(val, MultiValuedValue):
+        return unite_values(*[_recursive_unanotate(subval) for subval in val.vals])
+    else:
+        return val
+
+
 def _assert_type_impl(ctx: CallContext) -> Value:
-    # TODO maybe we should walk over the whole value and remove Annotated.
-    val = unannotate(ctx.vars["val"])
+    val = _recursive_unanotate(ctx.vars["val"])
     typ = ctx.vars["typ"]
     expected_type = type_from_value(typ, visitor=ctx.visitor, node=ctx.node)
+    # Can't distinguish between different kinds of Any here
+    if (
+        isinstance(val, AnyValue)
+        and isinstance(expected_type, AnyValue)
+        and expected_type.source is not AnySource.error
+    ):
+        return val
     if val != expected_type:
         ctx.show_error(
             f"Type is {val} (expected {expected_type})",
@@ -1332,12 +1363,37 @@ def len_of_value(val: Value) -> Value:
     return TypedValue(int)
 
 
+def len_transformer(val: Value, op: Type[ast.AST], comparator: object) -> Value:
+    if not isinstance(comparator, int):
+        return val
+    if isinstance(len_of_value(val), KnownValue):
+        return val  # no need to specify
+    if op is ast.Eq:
+        return annotate_value(
+            val,
+            [
+                CustomCheckExtension(MinLen(comparator)),
+                CustomCheckExtension(MaxLen(comparator)),
+            ],
+        )
+    elif op is ast.Lt:
+        return annotate_value(val, [CustomCheckExtension(MaxLen(comparator - 1))])
+    elif op is ast.LtE:
+        return annotate_value(val, [CustomCheckExtension(MaxLen(comparator))])
+    elif op is ast.Gt:
+        return annotate_value(val, [CustomCheckExtension(MinLen(comparator + 1))])
+    elif op is ast.GtE:
+        return annotate_value(val, [CustomCheckExtension(MinLen(comparator))])
+    else:
+        return val
+
+
 def _len_impl(ctx: CallContext) -> ImplReturn:
     varname = ctx.varname_for_arg("obj")
     if varname is None:
         constraint = NULL_CONSTRAINT
     else:
-        constraint = PredicateProvider(varname, len_of_value)
+        constraint = PredicateProvider(varname, len_of_value, len_transformer)
     return ImplReturn(len_of_value(ctx.vars["obj"]), constraint)
 
 

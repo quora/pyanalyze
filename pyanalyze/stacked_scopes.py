@@ -41,6 +41,7 @@ from typing import (
     Sequence,
     Set,
     Tuple,
+    Type,
     TypeVar,
     Union,
 )
@@ -510,6 +511,7 @@ class PredicateProvider(AbstractConstraint):
 
     varname: VarnameWithOrigin
     provider: Callable[[Value], Value]
+    value_transformer: Optional[Callable[[Value, Type[AST], object], Value]] = None
 
     def apply(self) -> Iterable[Constraint]:
         return []
