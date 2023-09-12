@@ -1327,3 +1327,21 @@ class TestCallableGuards(TestNameCheckVisitorBase):
             assert_is_value(o, TypedValue(object))
             if inspect.isfunction(o):
                 assert_is_value(o, TypedValue(FunctionType))
+
+
+class TestAssertType(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_assert_type(self):
+        from typing_extensions import assert_type, Literal
+        from typing import Any
+
+        def capybara(x: object, unannotated, explicit_any: Any) -> None:
+            assert_type(x, object)
+
+            val = assert_type(1, Literal[1])
+            assert_type(val, Literal[1])
+
+            assert_type(unannotated, Any)
+            assert_type(explicit_any, Any)
+
+            assert_type(x, int)  # E: inference_failure

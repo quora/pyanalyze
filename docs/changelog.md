@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix usage of `assert_type()` with `Any` and with unions of
+  `Annotated` objects (#680)
 - Support inferring `MinLen` and `MaxLen` annotations based
   on `len()` checks (#680)
 - Expose a convenience API for runtime type checking in the

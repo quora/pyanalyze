@@ -1786,13 +1786,15 @@ class TestInvalidation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_len_condition(self) -> None:
+        from typing_extensions import Any, assert_type
+
         def capybara(file_list, key, ids):
             has_bias = len(key) > 0
             data = []
             for _ in file_list:
-                assert_is_value(key, AnyValue(AnySource.unannotated))
+                assert_type(key, Any)
                 if has_bias:
-                    assert_is_value(key, AnyValue(AnySource.unannotated))
+                    assert_type(key, Any)
                     data = [ids, data[key]]
                 else:
                     data = [ids]

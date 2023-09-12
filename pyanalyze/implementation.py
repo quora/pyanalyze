@@ -1282,11 +1282,27 @@ def _cast_impl(ctx: CallContext) -> Value:
     return type_from_value(typ, visitor=ctx.visitor, node=ctx.node)
 
 
+def _recursive_unanotate(val: Value) -> Value:
+    # Maybe we should also recurse into type parameters?
+    if isinstance(val, AnnotatedValue):
+        return _recursive_unanotate(val.value)
+    elif isinstance(val, MultiValuedValue):
+        return unite_values(*[_recursive_unanotate(subval) for subval in val.vals])
+    else:
+        return val
+
+
 def _assert_type_impl(ctx: CallContext) -> Value:
-    # TODO maybe we should walk over the whole value and remove Annotated.
-    val = unannotate(ctx.vars["val"])
+    val = _recursive_unanotate(ctx.vars["val"])
     typ = ctx.vars["typ"]
     expected_type = type_from_value(typ, visitor=ctx.visitor, node=ctx.node)
+    # Can't distinguish between different kinds of Any here
+    if (
+        isinstance(val, AnyValue)
+        and isinstance(expected_type, AnyValue)
+        and expected_type.source is not AnySource.error
+    ):
+        return val
     if val != expected_type:
         ctx.show_error(
             f"Type is {val} (expected {expected_type})",
