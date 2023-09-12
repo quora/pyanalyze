@@ -77,7 +77,6 @@ from .value import (
     TypedDictValue,
     TypedValue,
     TypeVarValue,
-    unannotate,
     UNINITIALIZED_VALUE,
     unite_values,
     unpack_values,
