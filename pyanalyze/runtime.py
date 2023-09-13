@@ -5,12 +5,17 @@ Expose an interface for a runtime type checker.
 """
 
 from typing import Optional
-from pyanalyze.value import CanAssignError, KnownValue
+import pyanalyze
+from functools import lru_cache
+
+from .value import CanAssignError, KnownValue
 from .annotations import type_from_runtime
-from .checker import Checker
 from .find_unused import used
 
-_CHECKER = Checker()
+
+@lru_cache(maxsize=None)
+def _get_checker() -> "pyanalyze.checker.Checker":
+    return pyanalyze.checker.Checker()
 
 
 @used
@@ -28,7 +33,7 @@ def is_compatible(typ: object, value: object) -> bool:
 
     """
     val = type_from_runtime(typ)
-    can_assign = val.can_assign(KnownValue(value), _CHECKER)
+    can_assign = val.can_assign(KnownValue(value), _get_checker())
     return not isinstance(can_assign, CanAssignError)
 
 
@@ -50,7 +55,7 @@ def get_compatibility_error(typ: object, value: object) -> Optional[str]:
 
     """
     val = type_from_runtime(typ)
-    can_assign = val.can_assign(KnownValue(value), _CHECKER)
+    can_assign = val.can_assign(KnownValue(value), _get_checker())
     if isinstance(can_assign, CanAssignError):
         return can_assign.display(depth=0)
     return None
