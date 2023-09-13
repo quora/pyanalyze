@@ -16,8 +16,7 @@ from typing import (
     Union,
 )
 
-from .annotated_types import MaxLen
-from .annotated_types import MinLen
+from .annotated_types import MaxLen, MinLen
 
 import qcore
 import typing_extensions
@@ -27,6 +26,7 @@ from .error_code import ErrorCode
 from .extensions import assert_type, reveal_locals, reveal_type
 from .format_strings import parse_format_string
 from .predicates import IsAssignablePredicate
+from .runtime import is_compatible
 from .safe import hasattr_static, safe_isinstance, safe_issubclass
 from .signature import (
     ANY_SIGNATURE,
@@ -1155,6 +1155,20 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
     return KnownValue(None)
 
 
+def _is_compatible_impl(ctx: CallContext) -> Value:
+    typ = ctx.vars["typ"]
+    if not isinstance(typ, KnownValue):
+        return TypedValue(bool)
+    guarded_type = type_from_value(typ.val, ctx.visitor)
+    varname = ctx.varname_for_arg("value")
+    if varname is None:
+        return TypedValue(bool)
+    return annotate_with_constraint(
+        TypedValue(bool),
+        Constraint(varname, ConstraintType.is_value_object, True, guarded_type),
+    )
+
+
 def _reveal_type_impl(ctx: CallContext) -> Value:
     value = ctx.vars["value"]
     if ctx.visitor._is_checking():
@@ -1439,6 +1453,12 @@ def get_default_argspecs() -> Dict[object, Signature]:
             return_annotation=KnownValue(None),
             impl=_assert_is_value_impl,
             callable=assert_is_value,
+        ),
+        Signature.make(
+            [SigParameter("typ"), SigParameter("value")],
+            return_annotation=TypedValue(bool),
+            impl=_is_compatible_impl,
+            callable=is_compatible,
         ),
         Signature.make(
             [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],

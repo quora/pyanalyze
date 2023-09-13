@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Allow `pyanalyze.runtime.is_compatible` to be used to narrow
+  types (#681)
 - Fix usage of `assert_type()` with `Any` and with unions of
   `Annotated` objects (#680)
 - Support inferring `MinLen` and `MaxLen` annotations based
