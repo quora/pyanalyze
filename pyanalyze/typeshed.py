@@ -7,6 +7,7 @@ Code for getting annotations from typeshed (and from third-party stubs generally
 import ast
 import builtins
 import collections.abc
+import enum
 import inspect
 import sys
 
@@ -15,6 +16,7 @@ from collections.abc import Collection, MutableMapping, Set as AbstractSet
 from dataclasses import dataclass, field, replace
 from enum import Enum, EnumMeta
 from types import GeneratorType, MethodDescriptorType, ModuleType
+import types
 from typing import (
     Any,
     Callable,
@@ -84,6 +86,11 @@ from .value import (
     UNINITIALIZED_VALUE,
     Value,
 )
+
+PROPERTY_LIKE = {KnownValue(property), KnownValue(types.DynamicClassAttribute)}
+
+if sys.version_info >= (3, 11):
+    PROPERTY_LIKE.add(KnownValue(enum.property))
 
 
 T_co = TypeVar("T_co", covariant=True)
@@ -520,7 +527,7 @@ class TypeshedFinder:
             decorators = [
                 self._parse_expr(decorator, mod) for decorator in node.decorator_list
             ]
-            if node.returns and decorators == [KnownValue(property)]:
+            if node.returns and set(decorators) <= PROPERTY_LIKE:
                 return self._parse_type(node.returns, mod)
             sig = self._get_signature_from_func_def(
                 node, None, mod, autobind=not on_class

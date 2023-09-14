@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a `pyanalyze.extensions.EnumName` predicate and infer it
+  as the value for the `.name` attribute on enums. Also fix
+  type inference for enum "properties" on Python 3.11 and up. (#682)
 - Allow `pyanalyze.runtime.is_compatible` to be used to narrow
   types (#681)
 - Fix usage of `assert_type()` with `Any` and with unions of

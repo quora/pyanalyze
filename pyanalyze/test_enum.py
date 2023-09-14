@@ -112,3 +112,24 @@ class TestNarrowing(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(X.a))
                 return
             assert_is_value(x, AnyValue(AnySource.unannotated))
+
+
+class TestEnumName(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from pyanalyze.extensions import EnumName
+        import enum
+        from typing_extensions import assert_type
+
+        class Rodent(enum.IntEnum):
+            capybara = 1
+            agouti = 2
+
+        def capybara(x: EnumName[Rodent]):
+            pass
+
+        def caller(r: Rodent, s: str):
+            capybara(s)  # E: incompatible_argument
+            capybara(r)  # E: incompatible_argument
+            assert_type(r.name, str)
+            capybara(r.name)

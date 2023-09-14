@@ -5,7 +5,9 @@ Support for annotations from the annotated_types library.
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Iterable, Optional, Union
+import enum
+from typing import Any, Callable, Iterable, Optional, Union, Type
+from typing_extensions import Annotated
 
 from pyanalyze.value import CanAssign, CanAssignContext, Value, flatten_values
 
@@ -116,6 +118,19 @@ class AnnotatedTypesCheck(CustomCheck):
         return CanAssignError(
             f"Cannot determine whether {value} fulfills predicate {self}"
         )
+
+
+@dataclass(frozen=True)
+class EnumName(AnnotatedTypesCheck):
+    enum_cls: Type[enum.Enum]
+
+    def predicate(self, value: str) -> bool:
+        try:
+            self.enum_cls[value]
+        except KeyError:
+            return False
+        else:
+            return True
 
 
 @dataclass(frozen=True)
