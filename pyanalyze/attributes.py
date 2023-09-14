@@ -14,6 +14,7 @@ from typing import Any, Callable, ClassVar, Optional, Sequence, Tuple, Union
 import asynq
 import qcore
 
+from .annotated_types import EnumName
 from .annotations import Context, type_from_annotations, type_from_runtime
 from .options import Options, PyObjectSequenceOption
 from .safe import safe_isinstance, safe_issubclass
@@ -24,6 +25,7 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    CustomCheckExtension,
     GenericBases,
     GenericValue,
     HasAttrExtension,
@@ -31,6 +33,7 @@ from .value import (
     KnownValueWithTypeVars,
     MultiValuedValue,
     SyntheticModuleValue,
+    annotate_value,
     set_self,
     SubclassValue,
     TypedValue,
@@ -294,6 +297,8 @@ def _get_attribute_from_typed(
         result = _unwrap_value_from_typed(result, typ, ctx)
     ctx.record_usage(typ, result)
     result = set_self(result, ctx.root_value)
+    if ctx.attr == "name" and safe_issubclass(typ, Enum) and result == TypedValue(str):
+        return annotate_value(result, [CustomCheckExtension(EnumName(typ))])
     return result
 
 

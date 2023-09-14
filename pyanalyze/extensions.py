@@ -12,6 +12,7 @@ import typing
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+import enum
 from typing import (
     Any,
     Callable,
@@ -25,12 +26,13 @@ from typing import (
     Sequence,
     Tuple,
     TYPE_CHECKING,
+    Type,
     TypeVar,
     Union,
 )
 
 import typing_extensions
-from typing_extensions import Literal, NoReturn
+from typing_extensions import Literal, NoReturn, Annotated
 
 import pyanalyze
 
@@ -610,3 +612,19 @@ def has_extra_keys(value_type: object = Any) -> Callable[[_T], _T]:
         return cls
 
     return decorator
+
+
+class _EnumName:
+    """A type representing the names of members of an enum.
+
+    Equivalent to a Literal type, but using this will produce nicer error messages
+    for users.
+
+    """
+
+    # TODO after dropping 3.8: switch to a single class with __class_getitem__
+    def __getitem__(self, enum_cls: Type[enum.Enum]) -> Any:
+        return Annotated[str, pyanalyze.annotated_types.EnumName(enum_cls)]
+
+
+EnumName = _EnumName()

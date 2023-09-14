@@ -56,6 +56,7 @@ used(extensions.is_positional)
 used(extensions.is_of_type)
 used(extensions.show_error)
 used(extensions.has_extra_keys)
+used(extensions.EnumName)
 used(value.UNRESOLVED_VALUE)  # keeping it around for now just in case
 used(reexport)
 used(patma)
