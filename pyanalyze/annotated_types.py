@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import enum
 from typing import Any, Callable, Iterable, Optional, Union, Type
-from typing_extensions import Annotated
 
 from pyanalyze.value import CanAssign, CanAssignContext, Value, flatten_values
 

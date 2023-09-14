@@ -527,7 +527,7 @@ class TypeshedFinder:
             decorators = [
                 self._parse_expr(decorator, mod) for decorator in node.decorator_list
             ]
-            if node.returns and set(decorators) <= PROPERTY_LIKE:
+            if node.returns and set(decorators) & PROPERTY_LIKE:
                 return self._parse_type(node.returns, mod)
             sig = self._get_signature_from_func_def(
                 node, None, mod, autobind=not on_class
