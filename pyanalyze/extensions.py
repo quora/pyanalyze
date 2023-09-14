@@ -623,7 +623,7 @@ class _EnumName:
     """
 
     # TODO after dropping 3.8: switch to a single class with __class_getitem__
-    def __getitem__(self, enum_cls: Type[enum.Enum]):
+    def __getitem__(self, enum_cls: Type[enum.Enum]) -> Any:
         return Annotated[str, pyanalyze.annotated_types.EnumName(enum_cls)]
 
 
