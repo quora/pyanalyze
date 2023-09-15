@@ -86,9 +86,10 @@ class AnnotatedTypesCheck(CustomCheck):
             if isinstance(subval, KnownValue):
                 try:
                     result = self.predicate(subval.val)
-                except Exception:
+                except Exception as e:
                     return CanAssignError(
-                        f"Value {subval.val} cannot be checked against predicate {self}"
+                        f"Failed to check {subval.val} against predicate {self}",
+                        children=[CanAssignError(repr(e))],
                     )
                 else:
                     if not result:
