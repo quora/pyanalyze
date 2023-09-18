@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add command-line option `-c`/`--code` to typecheck code from
+  the command line (#685)
 - Add a `pyanalyze.extensions.EnumName` predicate and infer it
   as the value for the `.name` attribute on enums. Also fix
   type inference for enum "properties" on Python 3.11 and up. (#682)
