@@ -1104,6 +1104,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         annotate: bool = False,
         add_ignores: bool = False,
         checker: Checker,
+        is_code_only: bool = False,
     ) -> None:
         super().__init__(
             filename,
@@ -1113,6 +1114,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             fail_after_first=fail_after_first,
             verbosity=verbosity,
             add_ignores=add_ignores,
+            is_code_only=is_code_only,
         )
         self.checker = checker
 
@@ -1250,6 +1252,26 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if not self.filename:
             return None, False
         self.log(logging.INFO, "Checking file", (self.filename, os.getpid()))
+        if self.is_code_only:
+            mod_dict = {}
+            try:
+                exec(self.contents, mod_dict)
+            except KeyboardInterrupt:
+                raise
+            except BaseException as e:
+                if self.tree is not None and self.tree.body:
+                    node = self.tree.body[0]
+                else:
+                    node = None
+                self.show_error(
+                    node,
+                    f"Failed to execute code due to {e!r}",
+                    error_code=ErrorCode.import_failed,
+                )
+                return None, False
+            mod = types.ModuleType(self.filename)
+            mod.__dict__.update(mod_dict)
+            return mod, False
         import_paths = self.options.get_value_for(ImportPaths)
 
         try:
