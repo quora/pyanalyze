@@ -1345,3 +1345,12 @@ class TestAssertType(TestNameCheckVisitorBase):
             assert_type(explicit_any, Any)
 
             assert_type(x, int)  # E: inference_failure
+
+
+class TestAny(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_call(self):
+        from typing import Any
+
+        def capybara():
+            Any(42)  # E: incompatible_call

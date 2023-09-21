@@ -1426,6 +1426,12 @@ def _bool_impl(ctx: CallContext) -> Value:
     return annotate_with_constraint(TypedValue(bool), constraint)
 
 
+# Any has a __call__ method at runtime that always raises.
+def _any_impl(ctx: CallContext) -> Value:
+    ctx.show_error("Any is not callable. Maybe you meant cast(Any, ...)?")
+    return AnyValue(AnySource.error)
+
+
 _POS_ONLY = ParameterKind.POSITIONAL_ONLY
 _ENCODING_PARAMETER = SigParameter(
     "encoding", annotation=TypedValue(str), default=KnownValue("")
@@ -1887,6 +1893,15 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=bool,
             impl=_bool_impl,
             return_annotation=TypedValue(bool),
+        ),
+        Signature.make(
+            [
+                SigParameter("args", ParameterKind.VAR_POSITIONAL),
+                SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
+            ],
+            callable=typing.Any,
+            impl=_any_impl,
+            return_annotation=AnyValue(AnySource.error),
         ),
         # Typeshed has it as TypeGuard[Callable[..., object]], which causes some
         # false positives.
