@@ -2,13 +2,14 @@
 
 ## Unreleased
 
+- Show an error on calls to `typing.Any` (#688)
 - Add command-line option `-c`/`--code` to typecheck code from
   the command line (#685)
 - Add a `pyanalyze.extensions.EnumName` predicate and infer it
   as the value for the `.name` attribute on enums. Also fix
   type inference for enum "properties" on Python 3.11 and up. (#682)
 - Allow `pyanalyze.runtime.is_compatible` to be used to narrow
-  types (#681)
+  types (#681, #687)
 - Fix usage of `assert_type()` with `Any` and with unions of
   `Annotated` objects (#680)
 - Support inferring `MinLen` and `MaxLen` annotations based
