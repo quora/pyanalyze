@@ -19,16 +19,16 @@ def _get_checker() -> "pyanalyze.checker.Checker":
 
 
 @used
-def is_compatible(typ: object, value: object) -> bool:
+def is_compatible(value: object, typ: object) -> bool:
     """Return whether ``value`` is compatible with ``type``.
 
     Examples::
 
-        >>> is_compatible(list[int], 42)
+        >>> is_compatible(42, list[int])
         False
-        >>> is_compatible(list[int], [])
+        >>> is_compatible([], list[int])
         True
-        >>> is_compatible(list[int], ["x"])
+        >>> is_compatible(["x"], list[int])
         False
 
     """
@@ -38,18 +38,18 @@ def is_compatible(typ: object, value: object) -> bool:
 
 
 @used
-def get_compatibility_error(typ: object, value: object) -> Optional[str]:
+def get_compatibility_error(value: object, typ: object) -> Optional[str]:
     """Return an error message explaining why ``value`` is not
     compatible with ``type``, or None if they are compatible.
 
     Examples::
 
-        >>> print(get_compatibility_error(list[int], 42))
+        >>> print(get_compatibility_error(42, list[int]))
         Cannot assign Literal[42] to list
 
-        >>> print(get_compatibility_error(list[int], []))
+        >>> print(get_compatibility_error([], list[int]))
         None
-        >>> print(get_compatibility_error(list[int], ["x"]))
+        >>> print(get_compatibility_error(["x"], list[int]))
         In element 0
           Cannot assign Literal['x'] to int
 

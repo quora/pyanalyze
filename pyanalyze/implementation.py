@@ -1455,7 +1455,7 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=assert_is_value,
         ),
         Signature.make(
-            [SigParameter("typ"), SigParameter("value")],
+            [SigParameter("value"), SigParameter("typ")],
             return_annotation=TypedValue(bool),
             impl=_is_compatible_impl,
             callable=is_compatible,
