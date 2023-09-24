@@ -82,6 +82,8 @@ from .value import (
     _HashableValue,
     DictIncompleteValue,
     KVPair,
+    TypeAlias,
+    TypeAliasValue,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -201,6 +203,14 @@ class Context:
         elif not isinstance(root_value, AnyValue):
             self.show_error(f"Cannot resolve annotation {root_value}", node=node)
         return AnyValue(AnySource.error)
+
+    def get_type_alias(
+        self,
+        key: object,
+        evaluator: Callable[[], Value],
+        evaluate_type_params: Callable[[], Sequence[TypeVarLike]],
+    ) -> TypeAlias:
+        return TypeAlias(evaluator, evaluate_type_params)
 
 
 @dataclass
@@ -489,6 +499,13 @@ def _type_from_runtime(
                 return _eval_forward_ref(
                     val.__forward_arg__, ctx, is_typeddict=is_typeddict
                 )
+    elif is_instance_of_typing_name(val, "TypeAliasType"):
+        alias = ctx.get_type_alias(
+            val,
+            lambda: type_from_runtime(val.__value__, ctx=ctx),
+            lambda: val.__type_params__,
+        )
+        return TypeAliasValue(val.__name__, val.__module__, alias)
     elif val is Ellipsis:
         # valid in Callable[..., ]
         return AnyValue(AnySource.explicit)
@@ -868,6 +885,21 @@ class _DefaultContext(Context):
         )
         return AnyValue(AnySource.error)
 
+    def get_type_alias(
+        self,
+        key: object,
+        evaluator: Callable[[], Value],
+        evaluate_type_params: Callable[[], Sequence[TypeVarLike]],
+    ) -> TypeAlias:
+        if self.visitor is not None:
+            cache = self.visitor.checker.type_alias_cache
+            if key in cache:
+                return cache[key]
+            alias = super().get_type_alias(key, evaluator, evaluate_type_params)
+            cache[key] = alias
+            return alias
+        return super().get_type_alias(key, evaluator, evaluate_type_params)
+
 
 @dataclass(frozen=True)
 class _SubscriptedValue(Value):
@@ -1177,6 +1209,17 @@ def _value_of_origin_args(
             ctx.show_error("Unpack requires a single argument")
             return AnyValue(AnySource.error)
         return UnpackedValue(_type_from_runtime(args[0], ctx))
+    elif is_instance_of_typing_name(origin, "TypeAliasType"):
+        args_vals = [_type_from_runtime(val, ctx) for val in args]
+        alias_object = cast(Any, origin)
+        alias = ctx.get_type_alias(
+            val,
+            lambda: type_from_runtime(alias_object.__value__, ctx=ctx),
+            lambda: alias_object.__type_params__,
+        )
+        return TypeAliasValue(
+            alias_object.__name__, alias_object.__module__, alias, tuple(args_vals)
+        )
     else:
         ctx.show_error(
             f"Unrecognized annotation {origin}[{', '.join(map(repr, args))}]"

@@ -50,6 +50,7 @@ from .value import (
     AnnotatedValue,
     AnyValue,
     CallableValue,
+    TypeAlias,
     flatten_values,
     is_union,
     KnownValue,
@@ -101,6 +102,7 @@ class Checker:
         default_factory=list
     )
     vnv_map: Dict[str, VariableNameValue] = field(default_factory=dict)
+    type_alias_cache: Dict[object, TypeAlias] = field(default_factory=dict)
     _should_exclude_any: bool = False
     _has_used_any_match: bool = False
 
