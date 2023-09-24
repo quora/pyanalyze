@@ -4,6 +4,7 @@ Structured configuration options.
 
 """
 import argparse
+import functools
 import pathlib
 import sys
 from collections import defaultdict
@@ -14,11 +15,13 @@ from typing import (
     ClassVar,
     Collection,
     Dict,
+    FrozenSet,
     Generic,
     Iterable,
     Mapping,
     Optional,
     Sequence,
+    Set,
     Tuple,
     Type,
     TypeVar,
@@ -371,6 +374,11 @@ def parse_config_file(
     )
 
 
+@functools.lru_cache
+def get_all_error_codes() -> FrozenSet[str]:
+    return frozenset({error_code.name for error_code in ErrorCode})
+
+
 def _parse_config_section(
     section: Mapping[str, Any],
     module_path: ModulePath = (),
@@ -384,6 +392,11 @@ def _parse_config_section(
             raise InvalidConfigOption(
                 "Top-level configuration should not set module option"
             )
+
+    enabled_error_codes: Set[str] = set()
+    all_error_codes = get_all_error_codes()
+    disable_all_default_error_codes = False
+
     for key, value in section.items():
         if key == "module":
             if module_path == ():
@@ -417,9 +430,19 @@ def _parse_config_section(
                     priority=priority,
                     seen_paths=seen_paths,
                 )
+        elif key == "disable_all":
+            disable_all_default_error_codes = value
         else:
             try:
                 option_cls = ConfigOption.registry[key]
             except KeyError:
                 raise InvalidConfigOption(f"Invalid configuration option {key!r}")
+            if isinstance(value, bool) and key in all_error_codes and value is True:
+                enabled_error_codes.add(key)
             yield option_cls(option_cls.parse(value, path), module_path)
+
+    if disable_all_default_error_codes:
+        error_codes_to_disable = all_error_codes - enabled_error_codes
+        for error_code in error_codes_to_disable:
+            option_cls = ConfigOption.registry[error_code]
+            yield option_cls(option_cls.parse(False, path), module_path)
