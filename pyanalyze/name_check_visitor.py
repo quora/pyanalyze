@@ -52,6 +52,8 @@ import qcore
 import typeshed_client
 from typing_extensions import Annotated, Protocol, get_args, get_origin
 
+from .annotated_types import Gt, Ge, Le, Lt
+
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
 from .annotations import (
@@ -151,10 +153,12 @@ from .suggested_type import (
     should_suggest_type,
 )
 from .type_object import get_mro, TypeObject
+from .typeshed import TypeshedFinder
 from .value import (
     SYS_PLATFORM_EXTENSION,
     SYS_VERSION_INFO_EXTENSION,
     AlwaysPresentExtension,
+    CustomCheckExtension,
     DefiniteValueExtension,
     DeprecatedExtension,
     SkipDeprecatedExtension,
@@ -292,16 +296,23 @@ def _not_in(a: object, b: Container[object]) -> bool:
 
 
 COMPARATOR_TO_OPERATOR = {
-    ast.Eq: (operator.eq, operator.ne),
-    ast.NotEq: (operator.ne, operator.eq),
-    ast.Lt: (operator.lt, operator.ge),
-    ast.LtE: (operator.le, operator.gt),
-    ast.Gt: (operator.gt, operator.le),
-    ast.GtE: (operator.ge, operator.lt),
-    ast.Is: (operator.is_, operator.is_not),
-    ast.IsNot: (operator.is_not, operator.is_),
-    ast.In: (_in, _not_in),
-    ast.NotIn: (_not_in, _in),
+    ast.Eq: (operator.eq, operator.ne, None),
+    ast.NotEq: (operator.ne, operator.eq, None),
+    ast.Lt: (operator.lt, operator.ge, Lt),
+    ast.LtE: (operator.le, operator.gt, Le),
+    ast.Gt: (operator.gt, operator.le, Gt),
+    ast.GtE: (operator.ge, operator.lt, Ge),
+    ast.Is: (operator.is_, operator.is_not, None),
+    ast.IsNot: (operator.is_not, operator.is_, None),
+    ast.In: (_in, _not_in, None),
+    ast.NotIn: (_not_in, _in, None),
+}
+_NEG_OPERATOR_TO_AST = {
+    neg_op: node_cls for node_cls, (_, neg_op, _) in COMPARATOR_TO_OPERATOR.items()
+}
+AST_TO_REVERSE = {
+    node_cls: _NEG_OPERATOR_TO_AST[op]
+    for node_cls, (op, _, _) in COMPARATOR_TO_OPERATOR.items()
 }
 
 SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL = [KnownValue(asynq.asynq), KnownValue(property)]
@@ -620,6 +631,7 @@ class ClassAttributeChecker:
         should_check_unused_attributes: bool = False,
         should_serialize: bool = False,
         options: Options = Options.from_option_list(),
+        ts_finder: Optional[TypeshedFinder] = None,
     ) -> None:
         self.options = options
         # we might not have examined all parent classes when looking for attributes set
@@ -643,6 +655,7 @@ class ClassAttributeChecker:
             self.serialize_type(typ)
             for typ in self.options.get_value_for(IgnoredTypesForAttributeChecking)
         }
+        self.ts_finder = ts_finder
 
     def __enter__(self) -> Optional["ClassAttributeChecker"]:
         if self.enabled:
@@ -936,6 +949,10 @@ class ClassAttributeChecker:
 
                 base_classes_examined.add(base_cls)
 
+        # If the class has only known attributes, we already reported the error.
+        if _has_only_known_attributes(self.ts_finder, typ):
+            return
+
         message = visitor.show_error(
             node,
             f"Attribute {attr_name} of type {typ} probably does not exist",
@@ -1087,6 +1104,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         annotate: bool = False,
         add_ignores: bool = False,
         checker: Checker,
+        is_code_only: bool = False,
     ) -> None:
         super().__init__(
             filename,
@@ -1096,6 +1114,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             fail_after_first=fail_after_first,
             verbosity=verbosity,
             add_ignores=add_ignores,
+            is_code_only=is_code_only,
         )
         self.checker = checker
 
@@ -1108,7 +1127,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.match_subject = Composite(AnyValue(AnySource.inference))
         # current class (for inferring the type of cls and self arguments)
         self.current_class = None
-        self.current_class_name: Optional[str] = None
         self.current_function_name = None
         self.current_function_info = None
 
@@ -1234,6 +1252,26 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if not self.filename:
             return None, False
         self.log(logging.INFO, "Checking file", (self.filename, os.getpid()))
+        if self.is_code_only:
+            mod_dict = {}
+            try:
+                exec(self.contents, mod_dict)
+            except KeyboardInterrupt:
+                raise
+            except BaseException as e:
+                if self.tree is not None and self.tree.body:
+                    node = self.tree.body[0]
+                else:
+                    node = None
+                self.show_error(
+                    node,
+                    f"Failed to execute code due to {e!r}",
+                    error_code=ErrorCode.import_failed,
+                )
+                return None, False
+            mod = types.ModuleType(self.filename)
+            mod.__dict__.update(mod_dict)
+            return mod, False
         import_paths = self.options.get_value_for(ImportPaths)
 
         try:
@@ -1698,20 +1736,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return isinstance(ctx, (ast.Load, ast.Del))
 
     @contextlib.contextmanager
-    def _set_current_class(
-        self, current_class: type, node: ast.ClassDef
-    ) -> Iterator[None]:
+    def _set_current_class(self, current_class: type) -> Iterator[None]:
         if should_check_for_duplicate_values(current_class, self.options):
             current_enum_members = {}
         else:
             current_enum_members = None
         with qcore.override(self, "current_class", current_class), qcore.override(
             self.asynq_checker, "current_class", current_class
-        ), qcore.override(
-            self, "current_enum_members", current_enum_members
-        ), qcore.override(
-            self, "current_class_name", node.name
-        ):
+        ), qcore.override(self, "current_enum_members", current_enum_members):
             yield
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Value:
@@ -1764,7 +1796,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
             with self.scopes.add_scope(
                 ScopeType.class_scope, scope_node=None, scope_object=current_class
-            ), self._set_current_class(current_class, node):
+            ), self._set_current_class(current_class):
                 self._generic_visit_list(node.body)
 
             if isinstance(cls_obj, KnownValue):
@@ -3242,14 +3274,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 and isinstance(rhs, KnownValue)
                 and isinstance(op, (ast.Eq, ast.NotEq))
             ):
-                op_func, _ = COMPARATOR_TO_OPERATOR[type(op)]
+                op_func, _, _ = COMPARATOR_TO_OPERATOR[type(op)]
                 definite_value = op_func(sys.platform, rhs.val)
             elif (
                 SYS_VERSION_INFO_EXTENSION in lhs.metadata
                 and isinstance(rhs, KnownValue)
                 and isinstance(op, (ast.Gt, ast.GtE, ast.Lt, ast.LtE))
             ):
-                op_func, _ = COMPARATOR_TO_OPERATOR[type(op)]
+                op_func, _, _ = COMPARATOR_TO_OPERATOR[type(op)]
                 definite_value = op_func(sys.version_info, rhs.val)
             lhs = lhs.value
         if isinstance(lhs_constraint, PredicateProvider) and isinstance(
@@ -3332,7 +3364,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             positive = isinstance(op, ast.In)
             return Constraint(varname, ConstraintType.predicate, positive, predicate)
         else:
-            positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
+            positive_operator, negative_operator, ext = COMPARATOR_TO_OPERATOR[type(op)]
 
             def predicate_func(value: Value, positive: bool) -> Optional[Value]:
                 op = positive_operator if positive else negative_operator
@@ -3347,6 +3379,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     else:
                         if not result:
                             return None
+                    return value
+                if ext is not None and positive:
+                    return annotate_value(value, [CustomCheckExtension(ext(other_val))])
                 return value
 
             return Constraint(varname, ConstraintType.predicate, True, predicate_func)
@@ -3354,19 +3389,27 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _constraint_from_predicate_provider(
         self, pred: PredicateProvider, other_val: Any, op: ast.AST
     ) -> Constraint:
-        positive_operator, negative_operator = COMPARATOR_TO_OPERATOR[type(op)]
+        positive_operator, negative_operator, _ = COMPARATOR_TO_OPERATOR[type(op)]
 
         def predicate_func(value: Value, positive: bool) -> Optional[Value]:
             predicate_value = pred.provider(value)
             if isinstance(predicate_value, KnownValue):
-                op = positive_operator if positive else negative_operator
+                operator = positive_operator if positive else negative_operator
                 try:
-                    result = op(predicate_value.val, other_val)
+                    result = operator(predicate_value.val, other_val)
                 except Exception:
                     pass
                 else:
                     if not result:
                         return None
+            if pred.value_transformer is not None:
+                op_cls = type(op)
+                if not positive:
+                    if op_cls in AST_TO_REVERSE:
+                        op_cls = AST_TO_REVERSE[op_cls]
+                    else:
+                        return value
+                return pred.value_transformer(value, op_cls, other_val)
             return value
 
         return Constraint(pred.varname, ConstraintType.predicate, True, predicate_func)
@@ -4796,22 +4839,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return root_composite.get_extended_varname_with_origin(index, origin)
 
     def composite_from_attribute(self, node: ast.Attribute) -> Composite:
-        mangled_attr = node.attr
-        if (
-            self.current_class_name is not None
-            and mangled_attr.startswith("__")
-            and not mangled_attr.endswith("__")
-        ):
-            mangled_attr = f"_{self.current_class_name}{mangled_attr}"
         if isinstance(node.value, ast.Name):
-            attr_str = f"{node.value.id}.{mangled_attr}"
+            attr_str = f"{node.value.id}.{node.attr}"
             if self._is_write_ctx(node.ctx):
                 self.yield_checker.record_assignment(attr_str)
             else:
                 self.yield_checker.record_usage(attr_str, node)
 
         root_composite = self.composite_from_node(node.value)
-        composite = self._extend_composite(root_composite, mangled_attr, node)
+        composite = self._extend_composite(root_composite, node.attr, node)
         if self._is_write_ctx(node.ctx):
             # TODO: We should do something here if we're in an AnnAssign, e.g.
             # note the type in the class's namespace.
@@ -4832,7 +4868,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 typ = root_composite.value.typ
                 if isinstance(typ, type):
                     self._record_type_attr_set(
-                        typ, mangled_attr, node, self.being_assigned
+                        typ, node.attr, node, self.being_assigned
                     )
             return Composite(self.being_assigned, composite, node)
         elif self._is_read_ctx(node.ctx):
@@ -4843,18 +4879,18 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     and root_composite.value.val.__name__ is not None
                 ):
                     self.reexport_tracker.record_attribute_accessed(
-                        root_composite.value.val.__name__, mangled_attr, node, self
+                        root_composite.value.val.__name__, node.attr, node, self
                     )
             value = self.get_attribute(
                 root_composite,
-                mangled_attr,
+                node.attr,
                 node,
                 use_fallback=True,
                 ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
             )
             self.check_deprecation(node, value)
             if self._should_use_varname_value(value):
-                varname_value = self.checker.maybe_get_variable_name_value(mangled_attr)
+                varname_value = self.checker.maybe_get_variable_name_value(node.attr)
                 if varname_value is not None:
                     return Composite(varname_value, composite, node)
             if (
@@ -4865,9 +4901,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if local_value is not UNINITIALIZED_VALUE:
                     value = local_value
             if root_composite.value == KnownValue(sys):
-                if mangled_attr == "platform":
+                if node.attr == "platform":
                     value = annotate_value(value, [SYS_PLATFORM_EXTENSION])
-                elif mangled_attr == "version_info":
+                elif node.attr == "version_info":
                     value = annotate_value(value, [SYS_VERSION_INFO_EXTENSION])
             return Composite(value, composite, node)
         else:
@@ -4961,22 +4997,24 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     return AnyValue(AnySource.inference)
 
             # Ignore objects that override __getattr__
-            if not self._has_only_known_attributes(root_value.val) and (
+            if not _has_only_known_attributes(
+                self.checker.ts_finder, root_value.val
+            ) and (
                 _static_hasattr(root_value.val, "__getattr__")
                 or self._should_ignore_val(node)
             ):
                 return AnyValue(AnySource.inference)
         elif isinstance(root_value, TypedValue):
             root_type = root_value.typ
-            if isinstance(root_type, type) and not self._has_only_known_attributes(
-                root_type
+            if isinstance(root_type, type) and not _has_only_known_attributes(
+                self.checker.ts_finder, root_type
             ):
                 return self._maybe_get_attr_value(root_type, attr)
         elif isinstance(root_value, SubclassValue):
             if isinstance(root_value.typ, TypedValue):
                 root_type = root_value.typ.typ
-                if isinstance(root_type, type) and not self._has_only_known_attributes(
-                    root_type
+                if isinstance(root_type, type) and not _has_only_known_attributes(
+                    self.checker.ts_finder, root_type
                 ):
                     return self._maybe_get_attr_value(root_type, attr)
             else:
@@ -4994,25 +5032,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             ErrorCode.undefined_attribute,
         )
         return AnyValue(AnySource.error)
-
-    def _has_only_known_attributes(self, typ: object) -> bool:
-        if not isinstance(typ, type):
-            return False
-        if issubclass(typ, tuple) and not hasattr(typ, "__getattr__"):
-            # namedtuple
-            return True
-        if issubclass(typ, enum.Enum):
-            return True
-        ts_finder = self.checker.ts_finder
-        if (
-            (ts_finder.has_stubs(typ) or is_dataclass_type(typ))
-            and not ts_finder.has_attribute(typ, "__getattr__")
-            and not ts_finder.has_attribute(typ, "__getattribute__")
-            and not attributes.may_have_dynamic_attributes(typ)
-            and not hasattr(typ, "__getattr__")
-        ):
-            return True
-        return False
 
     def composite_from_node(self, node: ast.AST) -> Composite:
         if isinstance(node, ast.Attribute):
@@ -5490,6 +5509,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 should_check_unused_attributes=find_unused_attributes,
                 should_serialize=kwargs.get("parallel", False),
                 options=checker.options,
+                ts_finder=checker.ts_finder,
             )
         else:
             inner_attribute_checker_obj = qcore.empty_context
@@ -5666,3 +5686,50 @@ def _extract_definite_value(val: Value) -> Optional[bool]:
         for dv_ext in dv_exts:
             return dv_ext.value
     return None
+
+
+try:
+    from pydantic import BaseModel
+except ImportError:
+
+    def _is_safe_pydantic_class(typ: type) -> bool:
+        return False
+
+else:
+
+    def _is_safe_pydantic_class(typ: type) -> bool:
+        if not issubclass(typ, BaseModel):
+            return False
+        # Pydantic classes have a __getattr__ that looks at two fields,
+        # __private_attributes__ and __pydantic_extra__. The latter is
+        # used only if this config is set. The former doesn't seem to have
+        # a way to detect from the class whether it will be used.
+        return typ.model_config.get("extra") != "allow"
+
+
+def _has_only_known_attributes(
+    ts_finder: Optional[TypeshedFinder], typ: object
+) -> bool:
+    if not isinstance(typ, type):
+        return False
+    if _is_safe_pydantic_class(typ) or issubclass(typ, enum.Enum):
+        return True
+    # Classes that override __getattr__ may have dynamic attributes.
+    # We don't check this for pydantic classes because they always have
+    # __getattr__, and we don't check it for enums because before 3.11,
+    # there was an EnumMeta.__getattr__.
+    if hasattr(typ, "__getattr__"):
+        return False
+    # for namedtuples
+    if is_dataclass_type(typ) or issubclass(typ, tuple):
+        return True
+    if (
+        ts_finder is not None
+        and ts_finder.has_stubs(typ)
+        and not ts_finder.has_attribute(typ, "__getattr__")
+        and not ts_finder.has_attribute(typ, "__getattribute__")
+        and not attributes.may_have_dynamic_attributes(typ)
+        and not hasattr(typ, "__getattr__")
+    ):
+        return True
+    return False

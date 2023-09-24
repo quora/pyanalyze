@@ -15,11 +15,13 @@ pyanalyze: A semi-static typechecker
    typesystem
    design
    type_evaluation
+   annotated_types
    glossary
    reference/annotations
    reference/ast_annotator
    reference/extensions
    reference/name_check_visitor
+   reference/runtime
    reference/signature
    reference/stacked_scopes
    reference/value

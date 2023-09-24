@@ -2,7 +2,28 @@
 
 ## Unreleased
 
-- Handle mangling of private attribute names (#658)
+- Show an error on calls to `typing.Any` (#688)
+- Add command-line option `-c`/`--code` to typecheck code from
+  the command line (#685)
+- Add a `pyanalyze.extensions.EnumName` predicate and infer it
+  as the value for the `.name` attribute on enums. Also fix
+  type inference for enum "properties" on Python 3.11 and up. (#682)
+- Allow `pyanalyze.runtime.is_compatible` to be used to narrow
+  types (#681, #687)
+- Fix usage of `assert_type()` with `Any` and with unions of
+  `Annotated` objects (#680)
+- Support inferring `MinLen` and `MaxLen` annotations based
+  on `len()` checks (#680)
+- Expose a convenience API for runtime type checking in the
+  `pyanalyze.runtime` module (#674)
+- Support for annotations from the `annotated-types` library (#673)
+- Detect undefined attributes on Pydantic models (#670)
+- Remove duplicate "attribute_is_never_set" error for classes
+  with predefined attributes (#670)
+- Add hook for overriding the value inferred for attributes on
+  literals (#669)
+- Support classes that set a `__signature__` attribute to
+  define their constructor signature (such as Pydantic models) (#665)
 - Declare support for Python 3.12. Not all new features in
   Python 3.12 are supported yet. (#656)
 - Fix treatment of `@property` by the `incompatible_override`

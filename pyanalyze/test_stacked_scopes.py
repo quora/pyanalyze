@@ -1494,6 +1494,31 @@ class TestConstraints(TestNameCheckVisitorBase):
                 )
 
     @assert_passes()
+    def test_hasattr_annotated_unification(self):
+        from pyanalyze.value import HasAttrExtension
+
+        ext = HasAttrExtension(KnownValue("name"), AnyValue(AnySource.inference))
+
+        def capybara(x: int) -> None:
+            assert_is_value(x, TypedValue(int))
+            if hasattr(x, "name"):
+                assert_is_value(x, AnnotatedValue(TypedValue(int), [ext]))
+            assert_is_value(x, TypedValue(int) | AnnotatedValue(TypedValue(int), [ext]))
+
+    @assert_passes()
+    def test_gt_annotated_unification(self):
+        from pyanalyze.value import CustomCheckExtension
+        from pyanalyze.annotated_types import Gt
+
+        ext = CustomCheckExtension(Gt(5))
+
+        def capybara(x: int) -> None:
+            assert_is_value(x, TypedValue(int))
+            if x > 5:
+                assert_is_value(x, AnnotatedValue(TypedValue(int), [ext]))
+            assert_is_value(x, TypedValue(int) | AnnotatedValue(TypedValue(int), [ext]))
+
+    @assert_passes()
     def test_unconstrained_composite(self):
         class Foo(object):
             def has_images(self):
@@ -1761,13 +1786,15 @@ class TestInvalidation(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_len_condition(self) -> None:
+        from typing_extensions import Any, assert_type
+
         def capybara(file_list, key, ids):
             has_bias = len(key) > 0
             data = []
             for _ in file_list:
-                assert_is_value(key, AnyValue(AnySource.unannotated))
+                assert_type(key, Any)
                 if has_bias:
-                    assert_is_value(key, AnyValue(AnySource.unannotated))
+                    assert_type(key, Any)
                     data = [ids, data[key]]
                 else:
                     data = [ids]

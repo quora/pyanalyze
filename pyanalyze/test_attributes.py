@@ -71,6 +71,13 @@ class TestAttributes(TestNameCheckVisitorBase):
             assert_is_value(DefiniteCapybara.capybara_id, KnownValue(3))
 
     @assert_passes()
+    def test_known_value_hook(self):
+        from pyanalyze.test_config import SPECIAL_STRING
+
+        def capybara():
+            assert_is_value(SPECIAL_STRING.special, KnownValue("special"))
+
+    @assert_passes()
     def test_generic(self):
         from typing import Generic, TypeVar
 
@@ -154,6 +161,31 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara():
             x = Row()
             return x.capybaras
+
+    @assert_passes()
+    def test_only_known_attributes(self):
+        from dataclasses import dataclass
+        from pydantic import BaseModel
+        from typing import NamedTuple
+
+        @dataclass
+        class DC:
+            a: int
+
+        class NT(NamedTuple):
+            a: int
+
+        class BM(BaseModel):
+            a: int
+
+        def capybara(dc: DC, nt: NT, bm: BM) -> None:
+            assert_is_value(dc.a, TypedValue(int))
+            assert_is_value(nt.a, TypedValue(int))
+            assert_is_value(bm.a, TypedValue(int))
+
+            dc.b  # E: undefined_attribute
+            nt.b  # E: undefined_attribute
+            bm.b  # E: undefined_attribute
 
     @assert_passes()
     def test_union(self):
@@ -316,38 +348,6 @@ class TestAttributes(TestNameCheckVisitorBase):
         def capybara():
             c = C()
             assert_is_value(c.f(), TypedValue(int))
-
-    @assert_passes()
-    def test_mangling(self):
-        from typing_extensions import assert_type
-
-        class A:
-            __private: int
-
-            def __func(self) -> int:
-                return 0
-
-            def run(self) -> None:
-                assert_type(self.__func(), int)
-                assert_type(self._A__func(), int)
-                assert_type(self.__private, int)
-
-    @assert_passes()
-    def test_mangling_dataclass(self):
-        from dataclasses import dataclass
-        from typing_extensions import assert_type
-
-        @dataclass
-        class A:
-            __private: int
-
-            def __func(self) -> str:
-                return ""
-
-            def run(self) -> None:
-                assert_type(self.__func(), str)
-                assert_type(self._A__func(), str)
-                assert_type(self.__private, int)
 
 
 class TestHasAttrExtension(TestNameCheckVisitorBase):

@@ -8,6 +8,7 @@ pyanalyze is a package for Python static analysis.
 
 from . import (
     analysis_lib,
+    annotated_types,
     annotations,
     arg_spec,
     ast_annotator,
@@ -26,6 +27,7 @@ from . import (
     predicates,
     reexport,
     safe,
+    runtime,
     shared_options,
     signature,
     stacked_scopes,
@@ -54,6 +56,7 @@ used(extensions.is_positional)
 used(extensions.is_of_type)
 used(extensions.show_error)
 used(extensions.has_extra_keys)
+used(extensions.EnumName)
 used(value.UNRESOLVED_VALUE)  # keeping it around for now just in case
 used(reexport)
 used(patma)
@@ -64,3 +67,5 @@ used(shared_options)
 used(functions)
 used(predicates)
 used(typevar)
+used(annotated_types)
+used(runtime)

@@ -9,11 +9,12 @@ import sys
 import types
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, ClassVar, Optional, Sequence, Tuple, Union
 
 import asynq
 import qcore
 
+from .annotated_types import EnumName
 from .annotations import Context, type_from_annotations, type_from_runtime
 from .options import Options, PyObjectSequenceOption
 from .safe import safe_isinstance, safe_issubclass
@@ -24,6 +25,7 @@ from .value import (
     AnySource,
     AnyValue,
     CallableValue,
+    CustomCheckExtension,
     GenericBases,
     GenericValue,
     HasAttrExtension,
@@ -31,6 +33,7 @@ from .value import (
     KnownValueWithTypeVars,
     MultiValuedValue,
     SyntheticModuleValue,
+    annotate_value,
     set_self,
     SubclassValue,
     TypedValue,
@@ -215,7 +218,7 @@ class ClassAttributeTransformer(PyObjectSequenceOption[_CAT]):
 
     """
 
-    default_value: Sequence[_CAT] = []
+    default_value: ClassVar[Sequence[_CAT]] = []
     name = "class_attribute_transformers"
 
     @classmethod
@@ -294,6 +297,8 @@ def _get_attribute_from_typed(
         result = _unwrap_value_from_typed(result, typ, ctx)
     ctx.record_usage(typ, result)
     result = set_self(result, ctx.root_value)
+    if ctx.attr == "name" and safe_issubclass(typ, Enum) and result == TypedValue(str):
+        return annotate_value(result, [CustomCheckExtension(EnumName(typ))])
     return result
 
 
@@ -381,6 +386,37 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
         return result
 
 
+_KAH = Callable[[object, str], Optional[Value]]
+
+
+def _default_transformer(obj: object, attr: str) -> Optional[Value]:
+    # Type alias to Any
+    if obj is Any:
+        return AnyValue(AnySource.explicit)
+
+    # Avoid generating huge Union type with the actual value
+    if obj is sys and attr == "modules":
+        return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
+
+    return None
+
+
+class KnownAttributeHook(PyObjectSequenceOption[_KAH]):
+    """Allows hooking into the inferred value for an attribute on a literal."""
+
+    default_value: ClassVar[Sequence[_KAH]] = [_default_transformer]
+    name = "known_attribute_hook"
+
+    @classmethod
+    def get_attribute(cls, obj: object, attr: str, options: Options) -> Optional[Value]:
+        option_value = options.get_value_for(cls)
+        for transformer in option_value:
+            result = transformer(obj, attr)
+            if result is not None:
+                return result
+        return None
+
+
 def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
     ctx.record_attr_read(type(obj))
 
@@ -389,13 +425,9 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
         # in the module and initialized later.
         return AnyValue(AnySource.error)
 
-    # Type alias to Any
-    if obj is Any:
-        return AnyValue(AnySource.explicit)
-
-    # Avoid generating huge Union type with the actual value
-    if obj is sys and ctx.attr == "modules":
-        return GenericValue(dict, [TypedValue(str), TypedValue(types.ModuleType)])
+    hooked_value = KnownAttributeHook.get_attribute(obj, ctx.attr, ctx.options)
+    if hooked_value is not None:
+        return hooked_value
 
     result, _, _ = _get_attribute_from_mro(obj, ctx, on_class=True)
     if (

@@ -176,6 +176,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     tree: ast.Module
     all_failures: List[Failure]
+    is_code_only: bool
 
     def __init__(
         self,
@@ -187,6 +188,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         verbosity: int = logging.CRITICAL,
         collect_failures: bool = False,
         add_ignores: bool = False,
+        is_code_only: bool = False,
     ) -> None:
         """Constructor.
 
@@ -212,6 +214,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         self.seen_errors = set()  # of (node, error_code) pairs
         self.add_ignores = add_ignores
         self.caught_errors = None
+        self.is_code_only = is_code_only
 
     def check(self) -> List[Failure]:
         """Runs the class's checks on a tree."""
@@ -732,13 +735,31 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _run_on_files_or_all(
-        cls, files: Optional[Sequence[str]] = None, **kwargs: Any
+        cls,
+        files: Optional[Sequence[str]] = None,
+        code: Optional[str] = None,
+        **kwargs: Any,
     ) -> List[Failure]:
+        if code is not None:
+            return cls._run_on_code(code, **kwargs)
         files = files or cls.get_default_directories(**kwargs)
         if not files:
             return cls.check_all_files(**kwargs)
         else:
             return cls._run_on_files(_get_all_files(files), **kwargs)
+
+    @classmethod
+    def _run_on_code(cls, code: str, **kwargs: Any) -> List[Failure]:
+        try:
+            tree = ast.parse(code)
+        except Exception as e:
+            print(f"Failed to parse code: {e}", file=sys.stderr)
+            sys.exit(1)
+        kwargs.pop("parallel", False)
+        kwargs.pop("find_unused", False)
+        kwargs.pop("find_unused_attributes", False)
+        kwargs.pop("assert_passes", False)
+        return cls("<code>", code, tree, is_code_only=True, **kwargs).check()
 
     @classmethod
     def _run_on_files(cls, files: Iterable[str], **kwargs: Any) -> List[Failure]:
@@ -824,6 +845,14 @@ class BaseNodeVisitor(ast.NodeVisitor):
         parser.add_argument("files", nargs="*", help="Files or directories to check")
         parser.add_argument(
             "-v", "--verbose", help="Print more information.", action="count"
+        )
+        parser.add_argument(
+            "-c",
+            "--code",
+            help=(
+                "Typecheck the given string. Note that pyanalyze will execute the code"
+                " before attempting to typecheck it."
+            ),
         )
         parser.add_argument(
             "-f",

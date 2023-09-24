@@ -13,6 +13,9 @@ functions_safe_to_call = [
 class_attribute_transformers = [
     "pyanalyze.test_config.transform_class_attribute"
 ]
+known_attribute_hook = [
+    "pyanalyze.test_config.known_attribute_hook"
+]
 disallowed_imports = [
     "getopt",
     "email.quoprimime",
