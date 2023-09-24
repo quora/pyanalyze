@@ -7,7 +7,6 @@ import argparse
 import functools
 import pathlib
 import sys
-import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -394,10 +393,9 @@ def _parse_config_section(
                 "Top-level configuration should not set module option"
             )
 
-    section = dict(section)
     enabled_error_codes: Set[str] = set()
-    all_error_codes: FrozenSet[str] = get_all_error_codes()
-    disable_all_default_error_codes: bool = bool(section.pop("disable_all", False))
+    all_error_codes = get_all_error_codes()
+    disable_all_default_error_codes = False
 
     for key, value in section.items():
         if key == "module":
@@ -432,6 +430,8 @@ def _parse_config_section(
                     priority=priority,
                     seen_paths=seen_paths,
                 )
+        elif key == "disable_all":
+            disable_all_default_error_codes = value
         else:
             try:
                 option_cls = ConfigOption.registry[key]
@@ -442,10 +442,6 @@ def _parse_config_section(
             yield option_cls(option_cls.parse(value, path), module_path)
 
     if disable_all_default_error_codes:
-        if not enabled_error_codes:
-            warnings.warn(
-                "All rules were disabled but not a single one was explicitly enabled"
-            )
         error_codes_to_disable = all_error_codes - enabled_error_codes
         for error_code in error_codes_to_disable:
             option_cls = ConfigOption.registry[error_code]
