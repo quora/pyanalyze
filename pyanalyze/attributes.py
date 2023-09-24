@@ -33,6 +33,7 @@ from .value import (
     KnownValueWithTypeVars,
     MultiValuedValue,
     SyntheticModuleValue,
+    TypeAliasValue,
     annotate_value,
     set_self,
     SubclassValue,
@@ -94,12 +95,19 @@ class AttrContext:
         return {}
 
 
+def get_root_value(val: Value) -> Value:
+    if isinstance(val, AnnotatedValue):
+        return get_root_value(val.value)
+    elif isinstance(val, TypeAliasValue):
+        return get_root_value(val.get_value())
+    elif isinstance(val, TypeVarValue):
+        return get_root_value(val.get_fallback_value())
+    else:
+        return val
+
+
 def get_attribute(ctx: AttrContext) -> Value:
-    root_value = ctx.root_value
-    if isinstance(root_value, TypeVarValue):
-        root_value = root_value.get_fallback_value()
-    elif isinstance(root_value, AnnotatedValue):
-        root_value = root_value.value
+    root_value = get_root_value(ctx.root_value)
     if isinstance(root_value, KnownValue):
         attribute_value = _get_attribute_from_known(root_value.val, ctx)
     elif isinstance(root_value, TypedValue):

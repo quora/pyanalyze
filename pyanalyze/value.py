@@ -101,7 +101,7 @@ class Value:
                     return can_assign
                 bounds_maps.append(can_assign)
             return unify_bounds_maps(bounds_maps)
-        elif isinstance(other, (AnnotatedValue, TypeVarValue)):
+        elif isinstance(other, (AnnotatedValue, TypeVarValue, TypeAliasValue)):
             return other.can_be_assigned(self, ctx)
         elif (
             isinstance(other, UnboundMethodValue)
@@ -411,6 +411,73 @@ class VoidValue(Value):
 
 
 VOID = VoidValue()
+
+
+@dataclass
+class TypeAlias:
+    evaluator: Callable[[], Value]
+    """Callable that evaluates the value."""
+    evaluate_type_params: Callable[[], Sequence[TypeVarLike]]
+    """Callable that evaluates the type parameters."""
+    evaluated_value: Optional[Value] = None
+    """Value that the type alias evaluates to."""
+    type_params: Optional[Sequence[TypeVarLike]] = None
+    """Type parameters of the type alias."""
+
+    def get_value(self) -> Value:
+        if self.evaluated_value is None:
+            self.evaluated_value = self.evaluator()
+        return self.evaluated_value
+
+    def get_type_params(self) -> Sequence[TypeVarLike]:
+        if self.type_params is None:
+            self.type_params = self.evaluate_type_params()
+        return self.type_params
+
+
+@dataclass(frozen=True)
+class TypeAliasValue(Value):
+    """Value representing a type alias."""
+
+    name: str
+    """Name of the type alias."""
+    module: str
+    """Module where the type alias is defined."""
+    alias: TypeAlias = field(compare=False, hash=False)
+    type_arguments: Sequence[Value] = ()
+
+    def get_value(self) -> Value:
+        val = self.alias.get_value()
+        if self.type_arguments:
+            type_params = self.alias.get_type_params()
+            if len(type_params) != len(self.type_arguments):
+                # TODO this should be an error
+                return AnyValue(AnySource.inference)
+            typevars = {
+                type_param: arg
+                for type_param, arg in zip(type_params, self.type_arguments)
+            }
+            val = val.substitute_typevars(typevars)
+        return val
+
+    def is_type(self, typ: type) -> bool:
+        return self.get_value().is_type(typ)
+
+    def get_type(self) -> Optional[type]:
+        return self.get_value().get_type()
+
+    def get_type_value(self) -> Value:
+        return self.get_value().get_type_value()
+
+    def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(other, TypeAliasValue) and self.alias is other.alias:
+            return {}
+        return self.get_value().can_assign(other, ctx)
+
+    def can_be_assigned(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(other, TypeAliasValue) and self.alias is other.alias:
+            return {}
+        return other.can_assign(self.get_value(), ctx)
 
 
 @dataclass(frozen=True)
