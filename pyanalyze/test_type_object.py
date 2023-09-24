@@ -355,17 +355,22 @@ class TestHashable(TestNameCheckVisitorBase):
         class A:
             pass
 
+        class B:
+            def __hash__(self) -> int:
+                return 42
+
         def capybara(t1: Type[int], t2: type):
             want_hash(t1)
             want_hash(t2)
             want_hash(int)
             want_hash(A)
+            want_hash(B)
 
-            # TODO these errors are wrong
             want_myhash(t1)
             want_myhash(t2)
             want_myhash(int)
-            want_myhash(A)  # E: incompatible_argument
+            want_myhash(A)
+            want_myhash(B)
 
             {t1: 0}
             {t2: 0}

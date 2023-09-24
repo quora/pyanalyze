@@ -10,6 +10,9 @@ from unittest import mock
 
 from .safe import safe_in, safe_isinstance, safe_issubclass
 from .value import (
+    AnnotatedValue,
+    AnySource,
+    AnyValue,
     BoundsMap,
     CanAssign,
     CanAssignContext,
@@ -161,6 +164,18 @@ class TypeObject:
             # For __call__, we check compatibility with the other object itself.
             if member == "__call__":
                 actual = other_val
+            # Hack to allow types to be hashable. This avoids a bug where type objects
+            # don't match the Hashable protocol if they define a __hash__ method themselves:
+            # we compare against the __hash__ instance method, but compared to the protocol
+            # it has an extra parameter (self).
+            # It's a little unclear to me how this is supposed to work on protocols in
+            # general: should they match against the type or the instance? PEP 544 suggests
+            # that we should perhaps have a special case for matching against class objects
+            # and modules, but that feels odd.
+            # A better solution probably first requires a rewrite of the attribute fetching
+            # system to make it more robust.
+            elif member == "__hash__" and _should_use_permissive_dunder_hash(other_val):
+                actual = AnyValue(AnySource.inference)
             else:
                 actual = ctx.get_attribute_from_value(other_val, member)
             if actual is UNINITIALIZED_VALUE:
@@ -213,3 +228,13 @@ class TypeObject:
                 f" {', '.join(map(repr, self.protocol_members))})"
             )
         return base
+
+
+def _should_use_permissive_dunder_hash(val: Value) -> bool:
+    if isinstance(val, AnnotatedValue):
+        val = val.value
+    if isinstance(val, SubclassValue):
+        return True
+    elif isinstance(val, KnownValue) and safe_isinstance(val.val, type):
+        return True
+    return False

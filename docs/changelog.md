@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add hacky fix for bugs with hashability on type objects (#689)
 - Show an error on calls to `typing.Any` (#688)
 - Add command-line option `-c`/`--code` to typecheck code from
   the command line (#685)
