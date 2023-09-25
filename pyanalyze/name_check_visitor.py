@@ -23,6 +23,7 @@ import pickle
 import sys
 import traceback
 import types
+import typing
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from itertools import chain
@@ -162,6 +163,8 @@ from .value import (
     DefiniteValueExtension,
     DeprecatedExtension,
     SkipDeprecatedExtension,
+    TypeAlias,
+    TypeAliasValue,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -1754,22 +1757,22 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         value, _ = self._set_name_in_scope(node.name, node, value)
         return value
 
-    def _get_class_object(self, node: ast.ClassDef) -> Value:
+    def _get_local_object(self, name: str, node: ast.ClassDef) -> Value:
         if self.scopes.scope_type() == ScopeType.module_scope:
-            return self.scopes.get(node.name, node, self.state)
+            return self.scopes.get(name, node, self.state)
         elif (
             self.scopes.scope_type() == ScopeType.class_scope
             and self.current_class is not None
             and hasattr(self.current_class, "__dict__")
         ):
-            runtime_obj = self.current_class.__dict__.get(node.name)
+            runtime_obj = self.current_class.__dict__.get(name)
             if isinstance(runtime_obj, type):
                 return KnownValue(runtime_obj)
         return AnyValue(AnySource.inference)
 
     def _visit_class_and_get_value(self, node: ast.ClassDef) -> Value:
         if self._is_checking():
-            cls_obj = self._get_class_object(node)
+            cls_obj = self._get_local_object(node.name, node)
 
             module = self.module
             if isinstance(cls_obj, MultiValuedValue) and module is not None:
@@ -4505,6 +4508,92 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         ), self.yield_checker.check_yield_result_assignment(is_yield):
             # syntax like 'x = y = 0' results in multiple targets
             self.visit(node.target)
+
+    if sys.version_info >= (3, 12):
+
+        def visit_TypeAlias(self, node: ast.TypeAlias) -> None:
+            assert isinstance(node.name, ast.Name)
+            name = node.name.id
+            alias_val = self._get_local_object(name, node)
+            if isinstance(alias_val, KnownValue) and isinstance(
+                alias_val.val, typing.TypeAliasType
+            ):
+                alias_obj = alias_val.val
+            else:
+                alias_obj = None
+            type_param_values = []
+            if self._is_checking():
+                if node.type_params:
+                    with self.scopes.add_scope(
+                        ScopeType.annotation_scope,
+                        scope_node=node,
+                        scope_object=alias_obj,
+                    ):
+                        type_param_values = [
+                            self.visit(param) for param in node.type_params
+                        ]
+                        with self.scopes.add_scope(
+                            ScopeType.annotation_scope,
+                            scope_node=node,
+                            scope_object=alias_obj,
+                        ):
+                            value = self.visit(node.value)
+
+                else:
+                    with self.scopes.add_scope(
+                        ScopeType.annotation_scope,
+                        scope_node=node,
+                        scope_object=alias_obj,
+                    ):
+                        value = self.visit(node.value)
+            else:
+                value = None
+            if alias_obj is None:
+                if value is None:
+                    alias_val = AnyValue(AnySource.inference)
+                else:
+                    alias_val = TypeAliasValue(
+                        name,
+                        self.module,
+                        TypeAlias(
+                            lambda: type_from_value(value, self, node),
+                            lambda: tuple(val.typevar for val in type_param_values),
+                        ),
+                    )
+            set_value, _ = self._set_name_in_scope(name, node, alias_val)
+            return set_value
+
+        def visit_TypeVar(self, node: ast.TypeVar) -> Value:
+            bound = constraints = None
+            if node.bound is not None:
+                if isinstance(node.bound, ast.Tuple):
+                    constraints = [self.visit(elt) for elt in node.bound.elts]
+                else:
+                    bound = self.visit(node.bound)
+            tv = TypeVar(node.name)
+            typevar = TypeVarValue(
+                tv,
+                type_from_value(bound, self, node) if bound is not None else None,
+                (
+                    tuple(type_from_value(c, self, node) for c in constraints)
+                    if constraints is not None
+                    else None
+                ),
+            )
+            self._set_name_in_scope(node.name, node, typevar)
+            return typevar
+
+        def visit_ParamSpec(self, node: ast.ParamSpec) -> Value:
+            ps = typing.ParamSpec(node.name)
+            typevar = TypeVarValue(ps, is_paramspec=True)
+            self._set_name_in_scope(node.name, node, typevar)
+            return typevar
+
+        def visit_TypeVarTuple(self, node: ast.TypeVarTuple) -> Value:
+            tv = TypeVar(node.name)
+            typevar = TypeVarValue(tv, is_typevartuple=True)
+            self._set_name_in_scope(node.name, node, typevar)
+            return typevar
 
     def visit_Name(self, node: ast.Name, force_read: bool = False) -> Value:
         return self.composite_from_name(node, force_read=force_read).value

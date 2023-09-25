@@ -656,7 +656,7 @@ def _type_from_value(
         return _type_from_runtime(
             value.val, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
         )
-    elif isinstance(value, TypeVarValue):
+    elif isinstance(value, (TypeVarValue, TypeAliasValue)):
         return value
     elif isinstance(value, MultiValuedValue):
         return unite_values(

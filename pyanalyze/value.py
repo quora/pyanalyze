@@ -1737,6 +1737,7 @@ class TypeVarValue(Value):
     bound: Optional[Value] = None
     constraints: Sequence[Value] = ()
     is_paramspec: bool = False
+    is_typevartuple: bool = False  # unsupported
 
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         return typevars.get(self.typevar, self)
