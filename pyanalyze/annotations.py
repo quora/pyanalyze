@@ -207,8 +207,8 @@ class Context:
     def get_type_alias(
         self,
         key: object,
-        evaluator: Callable[[], Value],
-        evaluate_type_params: Callable[[], Sequence[TypeVarLike]],
+        evaluator: typing.Callable[[], Value],
+        evaluate_type_params: typing.Callable[[], Sequence[TypeVarLike]],
     ) -> TypeAlias:
         return TypeAlias(evaluator, evaluate_type_params)
 
@@ -888,8 +888,8 @@ class _DefaultContext(Context):
     def get_type_alias(
         self,
         key: object,
-        evaluator: Callable[[], Value],
-        evaluate_type_params: Callable[[], Sequence[TypeVarLike]],
+        evaluator: typing.Callable[[], Value],
+        evaluate_type_params: typing.Callable[[], Sequence[TypeVarLike]],
     ) -> TypeAlias:
         if self.visitor is not None:
             cache = self.visitor.checker.type_alias_cache
