@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix tests to account for new `typeshed_client` release
+  (#694)
 - Partial support for PEP 695-style type aliases (#690)
 - Add option to disable all error codes (#659)
 - Add hacky fix for bugs with hashability on type objects (#689)
