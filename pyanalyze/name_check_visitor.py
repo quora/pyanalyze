@@ -101,6 +101,7 @@ from .patma import PatmaVisitor
 from .predicates import EqualsPredicate, InPredicate
 from .reexport import ImplicitReexportTracker
 from .safe import (
+    all_of_type,
     is_dataclass_type,
     is_hashable,
     safe_getattr,
@@ -4532,6 +4533,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         type_param_values = [
                             self.visit(param) for param in node.type_params
                         ]
+                        assert all_of_type(type_param_values, TypeVarValue)
                         with self.scopes.add_scope(
                             ScopeType.annotation_scope,
                             scope_node=node,
