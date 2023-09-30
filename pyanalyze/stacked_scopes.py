@@ -91,6 +91,7 @@ class ScopeType(enum.Enum):
     module_scope = 2
     class_scope = 3
     function_scope = 4
+    annotation_scope = 5
 
 
 # Nodes as used in scopes can be any object, as long as they are hashable.

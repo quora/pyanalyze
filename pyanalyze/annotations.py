@@ -46,6 +46,7 @@ from typing import (
     TypeVar,
     Union,
 )
+import typing_extensions
 
 import qcore
 
@@ -539,11 +540,14 @@ def _type_from_runtime(
 
 
 def make_type_var_value(tv: TypeVarLike, ctx: Context) -> TypeVarValue:
-    if tv.__bound__ is not None:
+    if (
+        isinstance(tv, (TypeVar, typing_extensions.TypeVar))
+        and tv.__bound__ is not None
+    ):
         bound = _type_from_runtime(tv.__bound__, ctx)
     else:
         bound = None
-    if isinstance(tv, TypeVar) and tv.__constraints__:
+    if isinstance(tv, (TypeVar, typing_extensions.TypeVar)) and tv.__constraints__:
         constraints = tuple(
             _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
         )
@@ -656,7 +660,7 @@ def _type_from_value(
         return _type_from_runtime(
             value.val, ctx, is_typeddict=is_typeddict, allow_unpack=allow_unpack
         )
-    elif isinstance(value, TypeVarValue):
+    elif isinstance(value, (TypeVarValue, TypeAliasValue)):
         return value
     elif isinstance(value, MultiValuedValue):
         return unite_values(
