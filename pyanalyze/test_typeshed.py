@@ -255,24 +255,10 @@ class TestBundledStubs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_cdata(self):
-        import array
-        import mmap
-        import pickle
-
         def capybara():
-            from _typeshed import ReadableBuffer
+            from _pyanalyze_tests.cdata import f
 
-            def inner(b: ReadableBuffer):
-                assert_is_value(
-                    b,
-                    TypedValue(bytes)
-                    | TypedValue(bytearray)
-                    | TypedValue(memoryview)
-                    | GenericValue(array.array, [AnyValue(AnySource.explicit)])
-                    | TypedValue(mmap.mmap)
-                    | TypedValue("ctypes._CData")
-                    | TypedValue(pickle.PickleBuffer),
-                )
+            assert_is_value(f(), TypedValue("_ctypes._CData"))
 
     @assert_passes()
     def test_ast(self):
