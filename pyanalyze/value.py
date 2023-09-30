@@ -25,6 +25,7 @@ import textwrap
 from collections import deque
 from dataclasses import dataclass, field, InitVar
 from itertools import chain
+import sys
 from types import FunctionType
 from typing import (
     Any,
@@ -60,9 +61,31 @@ BUILTIN_MODULE = str.__module__
 KNOWN_MUTABLE_TYPES = (list, set, dict, deque)
 ITERATION_LIMIT = 1000
 
-TypeVarLike = Union[
-    ExternalType["typing.TypeVar"], ExternalType["typing_extensions.ParamSpec"]
-]
+if sys.version_info >= (3, 11):
+    TypeVarLike = Union[
+        ExternalType["typing.TypeVar"],
+        ExternalType["typing_extensions.TypeVar"],
+        ExternalType["typing.ParamSpec"],
+        ExternalType["typing_extensions.ParamSpec"],
+        ExternalType["typing.TypeVarTuple"],
+        ExternalType["typing_extensions.TypeVarTuple"],
+    ]
+elif sys.version_info >= (3, 10):
+    TypeVarLike = Union[
+        ExternalType["typing.TypeVar"],
+        ExternalType["typing_extensions.TypeVar"],
+        ExternalType["typing.ParamSpec"],
+        ExternalType["typing_extensions.ParamSpec"],
+        ExternalType["typing_extensions.TypeVarTuple"],
+    ]
+else:
+    TypeVarLike = Union[
+        ExternalType["typing.TypeVar"],
+        ExternalType["typing_extensions.TypeVar"],
+        ExternalType["typing_extensions.ParamSpec"],
+        ExternalType["typing_extensions.TypeVarTuple"],
+    ]
+
 TypeVarMap = Mapping[TypeVarLike, ExternalType["pyanalyze.value.Value"]]
 BoundsMap = Mapping[TypeVarLike, Sequence[ExternalType["pyanalyze.value.Bound"]]]
 GenericBases = Mapping[Union[type, str], TypeVarMap]

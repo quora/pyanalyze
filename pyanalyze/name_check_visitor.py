@@ -1758,7 +1758,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         value, _ = self._set_name_in_scope(node.name, node, value)
         return value
 
-    def _get_local_object(self, name: str, node: ast.ClassDef) -> Value:
+    def _get_local_object(self, name: str, node: ast.AST) -> Value:
         if self.scopes.scope_type() == ScopeType.module_scope:
             return self.scopes.get(name, node, self.state)
         elif (
@@ -4512,7 +4512,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     if sys.version_info >= (3, 12):
 
-        def visit_TypeAlias(self, node: ast.TypeAlias) -> None:
+        def visit_TypeAlias(self, node: ast.TypeAlias) -> Value:
             assert isinstance(node.name, ast.Name)
             name = node.name.id
             alias_val = self._get_local_object(name, node)
@@ -4556,7 +4556,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 else:
                     alias_val = TypeAliasValue(
                         name,
-                        self.module,
+                        self.module.__name__ if self.module is not None else "",
                         TypeAlias(
                             lambda: type_from_value(value, self, node),
                             lambda: tuple(val.typevar for val in type_param_values),
@@ -4579,7 +4579,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 (
                     tuple(type_from_value(c, self, node) for c in constraints)
                     if constraints is not None
-                    else None
+                    else ()
                 ),
             )
             self._set_name_in_scope(node.name, node, typevar)
