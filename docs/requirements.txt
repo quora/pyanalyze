@@ -1,3 +1,4 @@
 myst-parser==2.0.0
 Sphinx==7.2.5
 pygments==2.16.1
+pyanalyze
