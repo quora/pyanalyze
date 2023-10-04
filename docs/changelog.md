@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## Version 0.11.0 (October 3, 2023)
 
-- Partial support for PEP 695-style type aliases (#690, #692)
+- Partial support for PEP 695-style type aliases. Scoping changes
+  are not yet fully implemented. (#690, #692)
 - Fix tests to account for new `typeshed_client` release
   (#694)
 - Add option to disable all error codes (#659)
