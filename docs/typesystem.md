@@ -295,6 +295,7 @@ Although pyanalyze aims to support the full Python type system, support for some
 - Variance of TypeVars
 - `NewType` over non-trivial types
 - `ParamSpec` (PEP 612)
+- `TypeVarTuple` (PEP 646)
 
 More generally, Python is sufficiently dynamic that almost any check like the ones run by pyanalyze will inevitably have false positives: cases where the script sees an error, but the code in fact runs fine. Attributes may be added at runtime in hard-to-detect ways, variables may be created by direct manipulation of the `globals()` dictionary, and the `unittest.mock` module can change anything into anything. Although pyanalyze has a number of configuration mechanisms to deal with these false positives, it is usually better to write code in a way that doesn't require use of these knobs: code that's easier for the script to understand is probably also easier for humans to understand.
 

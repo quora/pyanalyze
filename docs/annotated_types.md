@@ -38,6 +38,9 @@ def caller(i: int) -> None:
         takes_gt_5(i)  # accepted
 ```
 
+Similarly, pyanalyze infers the `MinLen` and `MaxLen` attributes after checks
+on `len()`.
+
 For the `MultipleOf` check, pyanalyze follows Python semantics: values
 are accepted if `value % multiple_of == 0`.
 
