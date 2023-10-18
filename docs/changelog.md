@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fix bug in type compatibility check between known-length sequence
+  types and literal values (#701)
+
 ## Version 0.11.0 (October 3, 2023)
 
 - Partial support for PEP 695-style type aliases. Scoping changes

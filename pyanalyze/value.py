@@ -1057,6 +1057,7 @@ class SequenceValue(GenericValue):
             return SequenceValue(typ, members)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        other = replace_known_sequence_value(other)
         if isinstance(other, SequenceValue):
             can_assign = self.get_type_object(ctx).can_assign(self, other, ctx)
             if isinstance(can_assign, CanAssignError):

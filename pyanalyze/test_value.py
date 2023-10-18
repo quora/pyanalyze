@@ -238,6 +238,10 @@ def test_sequence_value() -> None:
         ),
     )
 
+    assert_can_assign(val, KnownValue((1, "x")))
+    assert_cannot_assign(val, KnownValue((1, 2)))
+    assert_cannot_assign(val, KnownValue((1, "x", "y")))
+
     assert str(val) == "tuple[int, str]"
     assert str(value.SequenceValue(tuple, [(False, TypedValue(int))])) == "tuple[int]"
     assert (
