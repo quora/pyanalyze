@@ -2028,6 +2028,24 @@ class TestWalrus(TestNameCheckVisitorBase):
                 if (x := opt()) and cond:
                     assert_is_value(x, TypedValue(int))
                 assert_is_value(x, TypedValue(int) | KnownValue(None))
+
+            def pacarana():
+                if (x := opt()) and (y := opt()):
+                    assert_is_value(x, TypedValue(int))
+                    assert_is_value(y, TypedValue(int))
+                assert_is_value(x, TypedValue(int) | KnownValue(None))
+
+            def is_not_none():
+                if (x := opt()) is not None and (y := opt()) is not None:
+                    assert_is_value(x, TypedValue(int))
+                    assert_is_value(y, TypedValue(int))
+                assert_is_value(x, TypedValue(int) | KnownValue(None))
+
+            def predicate_in_rhs():
+                if (x := opt()) is not None and (y := opt() is not None):
+                    assert_is_value(x, TypedValue(int))
+                    assert_is_value(y, TypedValue(bool))
+                assert_is_value(x, TypedValue(int) | KnownValue(None))
             """)
         self.assert_passes("""
             from typing import Set
