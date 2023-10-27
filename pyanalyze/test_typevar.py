@@ -108,6 +108,21 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(Capybara(i).x, TypedValue(int))
 
     @assert_passes()
+    def test_generic_constructor(self):
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class Capybara(Generic[T]):
+            x: T
+
+            def __init__(self, x: T) -> None:
+                self.x = x
+
+        def capybara(i: int) -> None:
+            assert_is_value(Capybara(i).x, TypedValue(int))
+
+    @assert_passes()
     def test_generic_base(self):
         from typing import Generic, TypeVar
 
