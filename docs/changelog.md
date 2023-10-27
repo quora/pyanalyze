@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- More PEP 695 support: generic classes and functions. Scoping rules
+  are not yet fully implemented. (#703)
+- Fix type inference when constructing user-defined generic classes
+  (#703)
 - Fix bug in type compatibility check between known-length sequence
   types and literal values (#701)
 

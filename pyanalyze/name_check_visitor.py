@@ -8,6 +8,7 @@ the system.
 
 """
 import abc
+from abc import abstractmethod
 import ast
 import asyncio
 import collections
@@ -35,6 +36,7 @@ from typing import (
     Container,
     ContextManager,
     Dict,
+    Generator,
     Iterable,
     Iterator,
     List,
@@ -70,11 +72,20 @@ from .asynq_checker import AsynqChecker
 from .boolability import Boolability, get_boolability
 from .checker import Checker, CheckerAttrContext
 from .error_code import ERROR_DESCRIPTION, ErrorCode
-from .extensions import assert_error, ParameterTypeGuard, patch_typing_overload
+from .extensions import (
+    assert_error,
+    evaluated,
+    overload,
+    real_overload,
+    ParameterTypeGuard,
+    patch_typing_overload,
+)
 from .find_unused import UnusedObjectFinder, used
 from .functions import (
     AsyncFunctionKind,
-    compute_function_info,
+    AsyncProxyDecorators,
+    AsynqDecorators,
+    compute_parameters,
     compute_value_of_function,
     FunctionDefNode,
     FunctionInfo,
@@ -1740,7 +1751,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return isinstance(ctx, (ast.Load, ast.Del))
 
     @contextlib.contextmanager
-    def _set_current_class(self, current_class: type) -> Iterator[None]:
+    def _set_current_class(self, current_class: Optional[type]) -> Iterator[None]:
         if should_check_for_duplicate_values(current_class, self.options):
             current_enum_members = {}
         else:
@@ -1752,9 +1763,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Value:
         self._generic_visit_list(node.decorator_list)
-        self._generic_visit_list(node.bases)
-        self._generic_visit_list(node.keywords)
-        value = self._visit_class_and_get_value(node)
+        class_obj = self._get_current_class_object(node)
+        if sys.version_info >= (3, 12) and node.type_params:
+            ctx = self.scopes.add_scope(
+                ScopeType.annotation_scope, scope_node=node, scope_object=class_obj
+            )
+        else:
+            ctx = qcore.empty_context
+        with ctx:
+            if sys.version_info >= (3, 12) and node.type_params:
+                self.visit_type_param_values(node.type_params)
+            self._generic_visit_list(node.bases)
+            self._generic_visit_list(node.keywords)
+            value = self._visit_class_and_get_value(node, class_obj)
         value, _ = self._set_name_in_scope(node.name, node, value)
         return value
 
@@ -1771,51 +1792,162 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 return KnownValue(runtime_obj)
         return AnyValue(AnySource.inference)
 
-    def _visit_class_and_get_value(self, node: ast.ClassDef) -> Value:
-        if self._is_checking():
-            cls_obj = self._get_local_object(node.name, node)
+    def _get_current_class_object(self, node: ast.ClassDef) -> Optional[type]:
+        cls_obj = self._get_local_object(node.name, node)
 
-            module = self.module
-            if isinstance(cls_obj, MultiValuedValue) and module is not None:
-                # if there are multiple, see if there is only one that matches this module
-                possible_values = [
-                    val
-                    for val in cls_obj.vals
-                    if isinstance(val, KnownValue)
-                    and isinstance(val.val, type)
-                    and safe_getattr(val.val, "__module__", None) == module.__name__
-                ]
-                if len(possible_values) == 1:
-                    cls_obj = possible_values[0]
+        module = self.module
+        if isinstance(cls_obj, MultiValuedValue) and module is not None:
+            # if there are multiple, see if there is only one that matches this module
+            possible_values = [
+                val
+                for val in cls_obj.vals
+                if isinstance(val, KnownValue)
+                and isinstance(val.val, type)
+                and safe_getattr(val.val, "__module__", None) == module.__name__
+            ]
+            if len(possible_values) == 1:
+                cls_obj = possible_values[0]
 
-            if isinstance(cls_obj, KnownValue):
-                cls_obj = KnownValue(UnwrapClass.unwrap(cls_obj.val, self.options))
-                current_class = cls_obj.val
-                if isinstance(current_class, type):
-                    self._record_class_examined(current_class)
-                else:
-                    current_class = None
+        if isinstance(cls_obj, KnownValue):
+            cls_obj = KnownValue(UnwrapClass.unwrap(cls_obj.val, self.options))
+            current_class = cls_obj.val
+            if isinstance(current_class, type):
+                self._record_class_examined(current_class)
+                return current_class
             else:
-                current_class = None
+                return None
+        else:
+            return None
 
+    def _visit_class_and_get_value(
+        self, node: ast.ClassDef, current_class: Optional[type]
+    ) -> Value:
+        if self._is_checking():
             with self.scopes.add_scope(
                 ScopeType.class_scope, scope_node=None, scope_object=current_class
             ), self._set_current_class(current_class):
                 self._generic_visit_list(node.body)
 
-            if isinstance(cls_obj, KnownValue):
-                return cls_obj
+            if current_class is not None:
+                return KnownValue(current_class)
 
         return AnyValue(AnySource.inference)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Value:
         return self.visit_FunctionDef(node)
 
+    @contextlib.contextmanager
+    def compute_function_info(
+        self,
+        node: FunctionNode,
+        *,
+        is_nested_in_class: bool = False,
+        enclosing_class: Optional[TypedValue] = None,
+        potential_function: Optional[object] = None,
+    ) -> Generator[FunctionInfo, None, None]:
+        """Visits a function's decorator list."""
+        async_kind = AsyncFunctionKind.non_async
+        is_classmethod = False
+        is_decorated_coroutine = False
+        is_staticmethod = False
+        is_overload = False
+        is_override = False
+        is_abstractmethod = False
+        is_evaluated = False
+        decorators = []
+        for decorator in [] if isinstance(node, ast.Lambda) else node.decorator_list:
+            # We have to descend into the Call node because the result of
+            # asynq.asynq() is a one-off function that we can't test against.
+            # This means that the decorator will be visited more than once, which seems OK.
+            if isinstance(decorator, ast.Call):
+                decorator_value = self.visit_expression(decorator)
+                callee = self.visit_expression(decorator.func)
+                if isinstance(callee, KnownValue):
+                    if AsynqDecorators.contains(callee.val, self.options):
+                        if any(kw.arg == "pure" for kw in decorator.keywords):
+                            async_kind = AsyncFunctionKind.pure
+                        else:
+                            async_kind = AsyncFunctionKind.normal
+                    elif AsyncProxyDecorators.contains(callee.val, self.options):
+                        # @async_proxy(pure=True) is a noop, so don't treat it specially
+                        if not any(kw.arg == "pure" for kw in decorator.keywords):
+                            async_kind = AsyncFunctionKind.async_proxy
+                decorators.append((callee, decorator_value, decorator))
+            else:
+                decorator_value = self.visit_expression(decorator)
+                if isinstance(decorator_value, KnownValue):
+                    val = decorator_value.val
+                    if val is classmethod:
+                        is_classmethod = True
+                    elif val is staticmethod:
+                        is_staticmethod = True
+                    elif sys.version_info < (3, 11) and val is (
+                        asyncio.coroutine  # static analysis: ignore[undefined_attribute]
+                    ):
+                        is_decorated_coroutine = True
+                    elif val is real_overload or val is overload:
+                        is_overload = True
+                    elif val is abstractmethod:
+                        is_abstractmethod = True
+                    elif val is evaluated:
+                        is_evaluated = True
+                    elif is_typing_name(val, "override"):
+                        is_override = True
+                decorators.append((decorator_value, decorator_value, decorator))
+        if (
+            sys.version_info >= (3, 12)
+            and not isinstance(node, ast.Lambda)
+            and node.type_params
+        ):
+            ctx = self.scopes.add_scope(
+                ScopeType.annotation_scope,
+                scope_node=node,
+                scope_object=potential_function,
+            )
+        else:
+            ctx = qcore.empty_context
+        with ctx:
+            if (
+                sys.version_info >= (3, 12)
+                and not isinstance(node, ast.Lambda)
+                and node.type_params
+            ):
+                type_params = self.visit_type_param_values(node.type_params)
+            else:
+                type_params = []
+            params = compute_parameters(
+                node,
+                enclosing_class,
+                self,
+                is_nested_in_class=is_nested_in_class,
+                is_classmethod=is_classmethod,
+                is_staticmethod=is_staticmethod,
+            )
+            if isinstance(node, ast.Lambda) or node.returns is None:
+                return_annotation = None
+            else:
+                return_annotation = self.value_of_annotation(node.returns)
+            yield FunctionInfo(
+                async_kind=async_kind,
+                is_decorated_coroutine=is_decorated_coroutine,
+                is_classmethod=is_classmethod,
+                is_staticmethod=is_staticmethod,
+                is_abstractmethod=is_abstractmethod,
+                is_overload=is_overload,
+                is_override=is_override,
+                is_evaluated=is_evaluated,
+                decorators=decorators,
+                node=node,
+                params=params,
+                return_annotation=return_annotation,
+                potential_function=potential_function,
+                type_params=type_params,
+            )
+
     def visit_FunctionDef(self, node: FunctionDefNode) -> Value:
         potential_function = self._get_potential_function(node)
-        info = compute_function_info(
+        with self.compute_function_info(
             node,
-            self,
             # If we set the current_class in the collecting phase,
             # the self argument of nested methods with an unannotated
             # first argument is incorrectly inferred.
@@ -1826,45 +1958,48 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             ),
             is_nested_in_class=self.node_context.includes(ast.ClassDef),
             potential_function=potential_function,
-        )
+        ) as info:
+            self.yield_checker.reset_yield_checks()
 
-        self.yield_checker.reset_yield_checks()
+            if node.returns is None:
+                self._show_error_if_checking(
+                    node, error_code=ErrorCode.missing_return_annotation
+                )
 
-        if node.returns is None:
-            self._show_error_if_checking(
-                node, error_code=ErrorCode.missing_return_annotation
-            )
+            computed_function = compute_value_of_function(info, self)
+            if potential_function is None:
+                val = computed_function
+            else:
+                val = KnownValue(potential_function)
+            if not info.is_overload and not info.is_evaluated:
+                self._set_name_in_scope(node.name, node, val)
 
-        computed_function = compute_value_of_function(info, self)
-        if potential_function is None:
-            val = computed_function
-        else:
-            val = KnownValue(potential_function)
-        if not info.is_overload and not info.is_evaluated:
-            self._set_name_in_scope(node.name, node, val)
+            if (
+                node.name in METHODS_ALLOWING_NOTIMPLEMENTED
+                and info.return_annotation is not None
+            ):
+                expected_return = info.return_annotation | KnownValue(NotImplemented)
+            else:
+                expected_return = info.return_annotation
 
-        if (
-            node.name in METHODS_ALLOWING_NOTIMPLEMENTED
-            and info.return_annotation is not None
-        ):
-            expected_return = info.return_annotation | KnownValue(NotImplemented)
-        else:
-            expected_return = info.return_annotation
-
-        with self.asynq_checker.set_func_name(
-            node.name, async_kind=info.async_kind, is_classmethod=info.is_classmethod
-        ), qcore.override(self, "yield_checker", YieldChecker(self)), qcore.override(
-            self, "is_async_def", isinstance(node, ast.AsyncFunctionDef)
-        ), qcore.override(
-            self, "current_function_name", node.name
-        ), qcore.override(
-            self, "current_function", potential_function
-        ), qcore.override(
-            self, "expected_return_value", expected_return
-        ), qcore.override(
-            self, "current_function_info", info
-        ):
-            result = self._visit_function_body(info)
+            with self.asynq_checker.set_func_name(
+                node.name,
+                async_kind=info.async_kind,
+                is_classmethod=info.is_classmethod,
+            ), qcore.override(
+                self, "yield_checker", YieldChecker(self)
+            ), qcore.override(
+                self, "is_async_def", isinstance(node, ast.AsyncFunctionDef)
+            ), qcore.override(
+                self, "current_function_name", node.name
+            ), qcore.override(
+                self, "current_function", potential_function
+            ), qcore.override(
+                self, "expected_return_value", expected_return
+            ), qcore.override(
+                self, "current_function_info", info
+            ):
+                result = self._visit_function_body(info)
 
         if (
             not result.has_return
@@ -1992,9 +2127,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_Lambda(self, node: ast.Lambda) -> Value:
         with self.asynq_checker.set_func_name("<lambda>"):
-            info = compute_function_info(node, self)
-            with qcore.override(self, "current_function_info", info):
-                result = self._visit_function_body(info)
+            with self.compute_function_info(node) as info:
+                with qcore.override(self, "current_function_info", info):
+                    result = self._visit_function_body(info)
             return compute_value_of_function(info, self, result=result.return_value)
 
     def _visit_function_body(self, function_info: FunctionInfo) -> FunctionResult:
@@ -4510,6 +4645,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # syntax like 'x = y = 0' results in multiple targets
             self.visit(node.target)
 
+    def visit_type_param_values(
+        self, type_params: Sequence[ast.AST]
+    ) -> Sequence[TypeVarValue]:
+        type_param_values = [self.visit(param) for param in type_params]
+        assert all_of_type(type_param_values, TypeVarValue)
+        return type_param_values
+
     if sys.version_info >= (3, 12):
 
         def visit_TypeAlias(self, node: ast.TypeAlias) -> Value:
@@ -4524,29 +4666,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 alias_obj = None
             type_param_values = []
             if self._is_checking():
-                if node.type_params:
-                    with self.scopes.add_scope(
-                        ScopeType.annotation_scope,
-                        scope_node=node,
-                        scope_object=alias_obj,
-                    ):
-                        type_param_values = [
-                            self.visit(param) for param in node.type_params
-                        ]
-                        assert all_of_type(type_param_values, TypeVarValue)
+                with self.scopes.add_scope(
+                    ScopeType.annotation_scope, scope_node=node, scope_object=alias_obj
+                ):
+                    if node.type_params:
+                        type_param_values = self.visit_type_param_values(
+                            node.type_params
+                        )
                         with self.scopes.add_scope(
                             ScopeType.annotation_scope,
                             scope_node=node,
                             scope_object=alias_obj,
                         ):
                             value = self.visit(node.value)
-
-                else:
-                    with self.scopes.add_scope(
-                        ScopeType.annotation_scope,
-                        scope_node=node,
-                        scope_object=alias_obj,
-                    ):
+                    else:
                         value = self.visit(node.value)
             else:
                 value = None
