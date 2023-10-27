@@ -91,7 +91,7 @@ class FunctionInfo:
     params: Sequence[ParamInfo]
     return_annotation: Optional[Value]
     potential_function: Optional[object]
-    type_params: List[TypeVarValue]
+    type_params: Sequence[TypeVarValue]
 
     def get_generator_yield_type(self, ctx: CanAssignContext) -> Value:
         if self.return_annotation is None:
