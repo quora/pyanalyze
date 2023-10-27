@@ -1751,7 +1751,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return isinstance(ctx, (ast.Load, ast.Del))
 
     @contextlib.contextmanager
-    def _set_current_class(self, current_class: type) -> Iterator[None]:
+    def _set_current_class(self, current_class: Optional[type]) -> Iterator[None]:
         if should_check_for_duplicate_values(current_class, self.options):
             current_enum_members = {}
         else:
@@ -1763,9 +1763,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Value:
         self._generic_visit_list(node.decorator_list)
-        self._generic_visit_list(node.bases)
-        self._generic_visit_list(node.keywords)
-        value = self._visit_class_and_get_value(node)
+        class_obj = self._get_current_class_object(node)
+        if sys.version_info >= (3, 12) and node.type_params:
+            ctx = self.scopes.add_scope(
+                ScopeType.annotation_scope, scope_node=node, scope_object=class_obj
+            )
+        else:
+            ctx = qcore.empty_context
+        with ctx:
+            if sys.version_info >= (3, 12) and node.type_params:
+                self.visit_type_param_values(node.type_params)
+            self._generic_visit_list(node.bases)
+            self._generic_visit_list(node.keywords)
+            value = self._visit_class_and_get_value(node, class_obj)
         value, _ = self._set_name_in_scope(node.name, node, value)
         return value
 
@@ -1782,40 +1792,44 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 return KnownValue(runtime_obj)
         return AnyValue(AnySource.inference)
 
-    def _visit_class_and_get_value(self, node: ast.ClassDef) -> Value:
-        if self._is_checking():
-            cls_obj = self._get_local_object(node.name, node)
+    def _get_current_class_object(self, node: ast.ClassDef) -> Optional[type]:
+        cls_obj = self._get_local_object(node.name, node)
 
-            module = self.module
-            if isinstance(cls_obj, MultiValuedValue) and module is not None:
-                # if there are multiple, see if there is only one that matches this module
-                possible_values = [
-                    val
-                    for val in cls_obj.vals
-                    if isinstance(val, KnownValue)
-                    and isinstance(val.val, type)
-                    and safe_getattr(val.val, "__module__", None) == module.__name__
-                ]
-                if len(possible_values) == 1:
-                    cls_obj = possible_values[0]
+        module = self.module
+        if isinstance(cls_obj, MultiValuedValue) and module is not None:
+            # if there are multiple, see if there is only one that matches this module
+            possible_values = [
+                val
+                for val in cls_obj.vals
+                if isinstance(val, KnownValue)
+                and isinstance(val.val, type)
+                and safe_getattr(val.val, "__module__", None) == module.__name__
+            ]
+            if len(possible_values) == 1:
+                cls_obj = possible_values[0]
 
-            if isinstance(cls_obj, KnownValue):
-                cls_obj = KnownValue(UnwrapClass.unwrap(cls_obj.val, self.options))
-                current_class = cls_obj.val
-                if isinstance(current_class, type):
-                    self._record_class_examined(current_class)
-                else:
-                    current_class = None
+        if isinstance(cls_obj, KnownValue):
+            cls_obj = KnownValue(UnwrapClass.unwrap(cls_obj.val, self.options))
+            current_class = cls_obj.val
+            if isinstance(current_class, type):
+                self._record_class_examined(current_class)
+                return current_class
             else:
-                current_class = None
+                return None
+        else:
+            return None
 
+    def _visit_class_and_get_value(
+        self, node: ast.ClassDef, current_class: Optional[type]
+    ) -> Value:
+        if self._is_checking():
             with self.scopes.add_scope(
                 ScopeType.class_scope, scope_node=None, scope_object=current_class
             ), self._set_current_class(current_class):
                 self._generic_visit_list(node.body)
 
-            if isinstance(cls_obj, KnownValue):
-                return cls_obj
+            if current_class is not None:
+                return KnownValue(current_class)
 
         return AnyValue(AnySource.inference)
 

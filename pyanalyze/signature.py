@@ -1918,6 +1918,7 @@ class Signature:
             return None
         if self_annotation_value is not None:
             tv_map = get_tv_map(self_annotation, self_annotation_value, ctx)
+            print("TV MAP", tv_map, self_annotation, self_annotation_value)
             if isinstance(tv_map, CanAssignError):
                 return None
         else:

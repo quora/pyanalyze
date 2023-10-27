@@ -92,6 +92,21 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(mktemp("p", "s"), KnownValue("p") | KnownValue("s"))
 
     @assert_passes()
+    def test_generic_constructor(self):
+        from typing import Generic, TypeVar
+
+        T = TypeVar("T")
+
+        class Capybara(Generic[T]):
+            x: T
+
+            def __init__(self, x: T) -> None:
+                self.x = x
+
+        def capybara(i: int) -> None:
+            assert_is_value(Capybara(i).x, TypedValue(int))
+
+    @assert_passes()
     def test_generic_base(self):
         from typing import Generic, TypeVar
 
@@ -368,3 +383,37 @@ class TestDunder(TestNameCheckVisitorBase):
 
         def capybara(s: Sequence[int], t: str):
             assert_type(s[0], int)
+
+
+class TestGenericClasses(TestNameCheckVisitorBase):
+    @skip_before((3, 12))
+    def test_generic(self):
+        self.assert_passes("""
+            from typing_extensions import assert_type
+
+            class C[T]:
+                x: T
+
+                def __init__(self, x: T) -> None:
+                    self.x = x
+
+            def capybara(i: int):
+                assert_type(C(i).x, int)
+        """)
+
+    @skip_before((3, 12))
+    def test_generic_with_bound(self):
+        self.assert_passes("""
+            from typing_extensions import assert_type
+
+            class C[T: int]:
+                x: T
+
+                def __init__(self, x: T) -> None:
+                    self.x = x
+
+            def capybara(i: int, s: str, b: bool):
+                assert_type(C(i).x, int)
+                assert_type(C(b).x, bool)
+                C(s)  # E: incompatible_argument
+        """)

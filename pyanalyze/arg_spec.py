@@ -805,9 +805,12 @@ class ArgSpecCache:
                 signature = override
             else:
                 should_ignore = IgnoredCallees.contains(obj, self.options)
-                return_type = (
-                    AnyValue(AnySource.error) if should_ignore else TypedValue(obj)
-                )
+                if should_ignore:
+                    return_type = AnyValue(AnySource.error)
+                elif type_params:
+                    return_type = GenericValue(obj, type_params)
+                else:
+                    return_type = TypedValue(obj)
                 if isinstance(override, inspect.Signature):
                     inspect_sig = override
                     constructor = None
@@ -860,7 +863,10 @@ class ArgSpecCache:
             if is_dunder_new:
                 self_annotation_value = KnownValue(obj)
             else:
-                self_annotation_value = TypedValue(obj)
+                if type_params:
+                    self_annotation_value = GenericValue(obj, type_params)
+                else:
+                    self_annotation_value = TypedValue(obj)
             sig = bound_sig.get_signature(
                 preserve_impl=True,
                 ctx=self.ctx,
@@ -957,7 +963,7 @@ class ArgSpecCache:
             typ is Generic
             or is_typing_name(typ, "Protocol")
             or typ is object
-            or typ in ("typing.Generic", "builtins.object")
+            or typ in ("typing.Generic", "typing_extensions.Generic", "builtins.object")
         ):
             return {}
         generic_bases = self._get_generic_bases_cached(typ)
