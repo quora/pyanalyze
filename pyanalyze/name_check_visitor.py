@@ -4645,7 +4645,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # syntax like 'x = y = 0' results in multiple targets
             self.visit(node.target)
 
-    def visit_type_param_values(self, type_params: Sequence[ast.AST]) -> List[Value]:
+    def visit_type_param_values(
+        self, type_params: Sequence[ast.AST]
+    ) -> Sequence[TypeVarValue]:
         type_param_values = [self.visit(param) for param in type_params]
         assert all_of_type(type_param_values, TypeVarValue)
         return type_param_values
