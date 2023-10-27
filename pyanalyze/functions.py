@@ -9,7 +9,6 @@ import collections.abc
 import enum
 import sys
 import types
-from abc import abstractmethod
 from dataclasses import dataclass, replace
 from itertools import zip_longest
 from typing import Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
@@ -18,10 +17,8 @@ import asynq
 from typing_extensions import Protocol
 
 from .error_code import ErrorCode
-from .extensions import evaluated, overload, real_overload
 from .node_visitor import ErrorContext
 from .options import Options, PyObjectSequenceOption
-from .safe import is_typing_name
 from .signature import ParameterKind, Signature, SigParameter
 from .stacked_scopes import Composite
 from .value import (
@@ -94,6 +91,7 @@ class FunctionInfo:
     params: Sequence[ParamInfo]
     return_annotation: Optional[Value]
     potential_function: Optional[object]
+    type_params: List[TypeVarValue]
 
     def get_generator_yield_type(self, ctx: CanAssignContext) -> Value:
         if self.return_annotation is None:
@@ -205,92 +203,6 @@ class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
 
     name = "safe_decorators_for_nested_functions"
     default_value = _safe_decorators
-
-
-def compute_function_info(
-    node: FunctionNode,
-    ctx: Context,
-    *,
-    is_nested_in_class: bool = False,
-    enclosing_class: Optional[TypedValue] = None,
-    potential_function: Optional[object] = None,
-) -> FunctionInfo:
-    """Visits a function's decorator list."""
-    async_kind = AsyncFunctionKind.non_async
-    is_classmethod = False
-    is_decorated_coroutine = False
-    is_staticmethod = False
-    is_overload = False
-    is_override = False
-    is_abstractmethod = False
-    is_evaluated = False
-    decorators = []
-    for decorator in [] if isinstance(node, ast.Lambda) else node.decorator_list:
-        # We have to descend into the Call node because the result of
-        # asynq.asynq() is a one-off function that we can't test against.
-        # This means that the decorator will be visited more than once, which seems OK.
-        if isinstance(decorator, ast.Call):
-            decorator_value = ctx.visit_expression(decorator)
-            callee = ctx.visit_expression(decorator.func)
-            if isinstance(callee, KnownValue):
-                if AsynqDecorators.contains(callee.val, ctx.options):
-                    if any(kw.arg == "pure" for kw in decorator.keywords):
-                        async_kind = AsyncFunctionKind.pure
-                    else:
-                        async_kind = AsyncFunctionKind.normal
-                elif AsyncProxyDecorators.contains(callee.val, ctx.options):
-                    # @async_proxy(pure=True) is a noop, so don't treat it specially
-                    if not any(kw.arg == "pure" for kw in decorator.keywords):
-                        async_kind = AsyncFunctionKind.async_proxy
-            decorators.append((callee, decorator_value, decorator))
-        else:
-            decorator_value = ctx.visit_expression(decorator)
-            if isinstance(decorator_value, KnownValue):
-                val = decorator_value.val
-                if val is classmethod:
-                    is_classmethod = True
-                elif val is staticmethod:
-                    is_staticmethod = True
-                elif sys.version_info < (3, 11) and val is (
-                    asyncio.coroutine  # static analysis: ignore[undefined_attribute]
-                ):
-                    is_decorated_coroutine = True
-                elif val is real_overload or val is overload:
-                    is_overload = True
-                elif val is abstractmethod:
-                    is_abstractmethod = True
-                elif val is evaluated:
-                    is_evaluated = True
-                elif is_typing_name(val, "override"):
-                    is_override = True
-            decorators.append((decorator_value, decorator_value, decorator))
-    params = compute_parameters(
-        node,
-        enclosing_class,
-        ctx,
-        is_nested_in_class=is_nested_in_class,
-        is_classmethod=is_classmethod,
-        is_staticmethod=is_staticmethod,
-    )
-    if isinstance(node, ast.Lambda) or node.returns is None:
-        return_annotation = None
-    else:
-        return_annotation = ctx.value_of_annotation(node.returns)
-    return FunctionInfo(
-        async_kind=async_kind,
-        is_decorated_coroutine=is_decorated_coroutine,
-        is_classmethod=is_classmethod,
-        is_staticmethod=is_staticmethod,
-        is_abstractmethod=is_abstractmethod,
-        is_overload=is_overload,
-        is_override=is_override,
-        is_evaluated=is_evaluated,
-        decorators=decorators,
-        node=node,
-        params=params,
-        return_annotation=return_annotation,
-        potential_function=potential_function,
-    )
 
 
 def _visit_default(node: ast.AST, ctx: Context) -> Value:

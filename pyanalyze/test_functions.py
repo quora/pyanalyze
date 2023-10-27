@@ -2,7 +2,7 @@
 from .error_code import ErrorCode
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes
+from .test_node_visitor import assert_passes, skip_before
 from .value import AnySource, AnyValue, GenericValue, KnownValue, TypedValue
 
 
@@ -214,3 +214,31 @@ class TestAsyncGenerator(TestNameCheckVisitorBase):
             assert_is_value(
                 x, GenericValue(collections.abc.AsyncIterator, [TypedValue(int)])
             )
+
+
+class TestGenericFunctions(TestNameCheckVisitorBase):
+    @skip_before((3, 12))
+    def test_generic(self):
+        self.assert_passes("""
+            from typing_extensions import assert_type
+
+            def func[T](x: T) -> T:
+                return x
+
+            def capybara(i: int):
+                assert_type(func(i), int)
+        """)
+
+    @skip_before((3, 12))
+    def test_generic_with_bound(self):
+        self.assert_passes("""
+            from typing_extensions import assert_type
+
+            def func[T: int](x: T) -> T:
+                return x
+
+            def capybara(i: int, s: str, b: bool):
+                assert_type(func(i), int)
+                assert_type(func(b), bool)
+                func(s)  # E: incompatible_argument
+        """)
