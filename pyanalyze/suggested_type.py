@@ -3,6 +3,7 @@
 Suggest types for untyped code.
 
 """
+
 import ast
 from collections import defaultdict
 from dataclasses import dataclass, field

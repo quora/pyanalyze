@@ -3,6 +3,7 @@
 Reusable predicates.
 
 """
+
 import enum
 import operator
 from dataclasses import dataclass

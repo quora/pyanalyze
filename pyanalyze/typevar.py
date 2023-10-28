@@ -3,6 +3,7 @@
 TypeVar solver.
 
 """
+
 from typing import Iterable, Sequence, Tuple, Union
 
 import qcore

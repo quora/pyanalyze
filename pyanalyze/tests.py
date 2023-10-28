@@ -216,13 +216,11 @@ def custom_code() -> None:
 
 
 @overload
-def overloaded() -> int:
-    ...
+def overloaded() -> int: ...
 
 
 @overload
-def overloaded(x: str) -> str:
-    ...
+def overloaded(x: str) -> str: ...
 
 
 def overloaded(*args: str) -> Union[int, str]:

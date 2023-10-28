@@ -3,6 +3,7 @@
 Commonly useful components for static analysis tools.
 
 """
+
 import ast
 import linecache
 import os

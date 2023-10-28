@@ -3,6 +3,7 @@
 An object that represents a type.
 
 """
+
 import inspect
 from dataclasses import dataclass, field
 from typing import Container, Dict, Sequence, Set, Union

@@ -3,6 +3,7 @@
 Runs pyanalyze on itself.
 
 """
+
 import pyanalyze
 
 

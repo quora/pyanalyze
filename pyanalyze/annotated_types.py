@@ -3,6 +3,7 @@
 Support for annotations from the annotated_types library.
 
 """
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import enum

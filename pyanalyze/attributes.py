@@ -3,6 +3,7 @@
 Code for retrieving the value of attributes.
 
 """
+
 import ast
 import inspect
 import sys

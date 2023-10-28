@@ -3,6 +3,7 @@
 Functionality for dealing with implicit reexports.
 
 """
+
 from ast import AST
 from collections import defaultdict
 from dataclasses import dataclass, field, InitVar

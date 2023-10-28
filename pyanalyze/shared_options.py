@@ -3,6 +3,7 @@
 Defines some concrete options that cannot easily be placed elsewhere.
 
 """
+
 from types import ModuleType
 from typing import Callable
 

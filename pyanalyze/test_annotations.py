@@ -538,8 +538,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
     def test_generic_alias(self):
         from queue import Queue
 
-        class I:
-            ...
+        class I: ...
 
         class X:
             def __init__(self):

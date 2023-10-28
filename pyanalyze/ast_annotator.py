@@ -7,6 +7,7 @@ an AST with inferred :class:`pyanalyze.value.Value` objects in `.inferred_value`
 attributes.
 
 """
+
 import ast
 import os
 import textwrap

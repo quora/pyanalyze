@@ -153,8 +153,7 @@ def test_typed_value() -> None:
 
 @runtime_checkable
 class Proto(Protocol):
-    def asynq(self) -> None:
-        ...
+    def asynq(self) -> None: ...
 
 
 def test_protocol() -> None:
