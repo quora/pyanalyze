@@ -39,12 +39,10 @@ class TestRuntime(TestNameCheckVisitorBase):
 
         @overload
         @deprecated("int support is deprecated")
-        def deprecated_overload(x: int) -> int:
-            ...
+        def deprecated_overload(x: int) -> int: ...
 
         @overload
-        def deprecated_overload(x: str) -> str:
-            ...
+        def deprecated_overload(x: str) -> str: ...
 
         def deprecated_overload(x):
             return x

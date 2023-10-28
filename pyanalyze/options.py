@@ -3,6 +3,7 @@
 Structured configuration options.
 
 """
+
 import argparse
 import functools
 import pathlib

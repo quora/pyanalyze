@@ -3,6 +3,7 @@
 The checker maintains global state that is preserved across different modules.
 
 """
+
 import collections.abc
 import itertools
 import sys

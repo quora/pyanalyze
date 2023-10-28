@@ -7,6 +7,7 @@ use them in a boolean context. This file helps figure out whether
 a particular type is usable as a boolean.
 
 """
+
 import enum
 
 import asynq

@@ -19,6 +19,7 @@ Other subtleties implemented here:
 - Class scopes except the current one are skipped in name lookup
 
 """
+
 import builtins
 import contextlib
 import enum

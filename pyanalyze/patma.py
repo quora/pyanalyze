@@ -272,10 +272,8 @@ class PatmaVisitor(ast.NodeVisitor):
             if value is UNINITIALIZED_VALUE:
                 self.visitor.show_error(
                     node,
-                    (
-                        f"Impossible pattern: {self.visitor.match_subject.value} has no"
-                        f" key {key_val}"
-                    ),
+                    f"Impossible pattern: {self.visitor.match_subject.value} has no"
+                    f" key {key_val}",
                     ErrorCode.impossible_pattern,
                 )
                 value = AnyValue(AnySource.error)
@@ -332,10 +330,8 @@ class PatmaVisitor(ast.NodeVisitor):
             if len(node.patterns) > len(match_args):
                 self.visitor.show_error(
                     node.cls,
-                    (
-                        f"{cls} takes at most {len(match_args)} positional subpatterns,"
-                        f" but {len(match_args)} were provided"
-                    ),
+                    f"{cls} takes at most {len(match_args)} positional subpatterns,"
+                    f" but {len(match_args)} were provided",
                     ErrorCode.bad_match,
                     detail=str(match_args),
                 )
@@ -417,10 +413,8 @@ class PatmaVisitor(ast.NodeVisitor):
         if not is_overlapping(self.visitor.match_subject.value, value, self.visitor):
             self.visitor.show_error(
                 node,
-                (
-                    f"Impossible pattern: {self.visitor.match_subject.value} can never"
-                    f" be {value}"
-                ),
+                f"Impossible pattern: {self.visitor.match_subject.value} can never"
+                f" be {value}",
                 ErrorCode.impossible_pattern,
             )
 

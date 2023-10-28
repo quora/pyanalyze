@@ -32,10 +32,10 @@ jobs:
             python: "3.12"
             toxenv: py312
           - name: black
-            python: "3.11"
+            python: "3.12"
             toxenv: black
           - name: flake8
-            python: "3.11"
+            python: "3.12"
             toxenv: flake8
 
     steps:
@@ -45,7 +45,7 @@ jobs:
           python-version: ${{ matrix.python }}
           allow-prereleases: true
       - name: install tox
-        run: pip install --upgrade setuptools tox==4.0.16
+        run: pip install --upgrade setuptools tox==4.11.3
       - name: setup tox environment
         run: tox -e ${{ matrix.toxenv }} --notest
       - name: test

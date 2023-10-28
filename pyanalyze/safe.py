@@ -3,6 +3,7 @@
 "Safe" operations that call into user code and catch any exceptions.
 
 """
+
 import inspect
 import sys
 import typing

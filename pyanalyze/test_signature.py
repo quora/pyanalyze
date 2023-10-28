@@ -435,10 +435,8 @@ class TestCalls(TestNameCheckVisitorBase):
 
         def capybara():
             two_args(
-                (
-                    "one very long string so long that it goes on its own line is this"
-                    " enough"
-                ),
+                "one very long string so long that it goes on its own line is this"
+                " enough",
                 "not an int",  # E: incompatible_argument
             )
 
@@ -1204,12 +1202,10 @@ class TestOverload(TestNameCheckVisitorBase):
 
         class Capybara:
             @overload
-            def meth(self, x: int) -> str:
-                ...
+            def meth(self, x: int) -> str: ...
 
             @overload
-            def meth(self, x: str) -> int:
-                ...
+            def meth(self, x: str) -> int: ...
 
             def meth(self, x: object) -> object:
                 raise NotImplementedError

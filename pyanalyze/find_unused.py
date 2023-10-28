@@ -3,6 +3,7 @@
 Implementation of unused object detection.
 
 """
+
 import __future__
 
 import enum

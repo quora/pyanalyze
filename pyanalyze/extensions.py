@@ -8,6 +8,7 @@ Several type system extensions are used with the ``Annotated`` type from
 be gracefully ignored by other type checkers.
 
 """
+
 import typing
 from collections import defaultdict
 from contextlib import contextmanager
