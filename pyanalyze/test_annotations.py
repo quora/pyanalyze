@@ -127,7 +127,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
     def test_literal(self):
         from typing_extensions import Literal
 
-        def capybara(x: Literal[True], y: Literal[True, False]) -> None:
+        def capybara(x: Literal[True], y: Literal[(True, False)]) -> None:
             assert_is_value(x, KnownValue(True))
             assert_is_value(y, MultiValuedValue([KnownValue(True), KnownValue(False)]))
 
