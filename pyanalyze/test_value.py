@@ -224,8 +224,8 @@ def test_sequence_value() -> None:
     val = value.SequenceValue(
         tuple, [(False, TypedValue(int)), (False, TypedValue(str))]
     )
-    assert_can_assign(val, TypedValue(tuple))
-    assert_can_assign(val, GenericValue(tuple, [TypedValue(int) | TypedValue(str)]))
+    assert_cannot_assign(val, TypedValue(tuple))
+    assert_cannot_assign(val, GenericValue(tuple, [TypedValue(int) | TypedValue(str)]))
     assert_cannot_assign(val, GenericValue(tuple, [TypedValue(int) | TypedValue(list)]))
 
     assert_can_assign(val, val)

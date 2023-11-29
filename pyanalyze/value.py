@@ -729,6 +729,8 @@ class TypedValue(Value):
         return self._type_object
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(self, SequenceValue):
+            return super().can_assign(other, ctx)
         self_tobj = self.get_type_object(ctx)
         if self_tobj.is_thrift_enum:
             # Special case: Thrift enums. These are conceptually like
@@ -904,7 +906,11 @@ class GenericValue(TypedValue):
         other = replace_known_sequence_value(other)
         if isinstance(other, KnownValue):
             other = TypedValue(type(other.val))
-        if isinstance(other, TypedValue) and not isinstance(other.typ, super):
+        if (
+            isinstance(other, TypedValue)
+            and not isinstance(other.typ, super)
+            and not isinstance(self, SequenceValue)
+        ):
             generic_args = other.get_generic_args_for_type(self.typ, ctx)
             # If we don't think it's a generic base, try super;
             # runtime isinstance() may disagree.
