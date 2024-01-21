@@ -442,6 +442,7 @@ EXCLUDED_PROTOCOL_MEMBERS = {
     "_is_runtime_protocol",
     "__protocol_attrs__",
     "__callable_proto_members_only__",
+    "__non_callable_proto_members__",
 }
 
 

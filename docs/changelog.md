@@ -8,6 +8,8 @@
   (#703)
 - Fix bug in type compatibility check between known-length sequence
   types and literal values (#701)
+- Fix Protocol compatibility issue with Python 3.13 and an upcoming
+  release of typing-extensions (#716)
 
 ## Version 0.11.0 (October 3, 2023)
 
