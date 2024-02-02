@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `tuple[T, ...]` is no longer considered compatible with
+  fixed-length tuple types (#711)
 - More PEP 695 support: generic classes and functions. Scoping rules
   are not yet fully implemented. (#703)
 - Fix type inference when constructing user-defined generic classes
