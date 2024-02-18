@@ -269,10 +269,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsOverload(self):
-        import collections.abc
         from typing import Callable, Iterable, Iterator, List, Optional, TypeVar
         from typing_extensions import TypeIs, overload, assert_type
-        from pyanalyze.value import assert_is_value, GenericValue, AnyValue, AnySource
 
         T = TypeVar("T")
         R = TypeVar("R")
@@ -294,19 +292,13 @@ class TestTypeIs(TestNameCheckVisitorBase):
         def is_int_bool(a: object) -> bool:
             return False
 
-        iter_any = GenericValue(
-            collections.abc.Iterator, [AnyValue(AnySource.generic_argument)]
-        )
-
         def main(a: List[Optional[int]]) -> None:
             bb = filter(lambda x: x is not None, a)
-            # TODO Iterator[Optional[int]]
-            assert_is_value(bb, iter_any)
+            assert_type(bb, Iterator[Optional[int]])
             cc = filter(is_int_typeguard, a)
             assert_type(cc, Iterator[int])
             dd = filter(is_int_bool, a)
-            # TODO Iterator[Optional[int]]
-            assert_is_value(dd, iter_any)
+            assert_type(dd, Iterator[Optional[int]])
 
     @assert_passes()
     def testTypeIsDecorated(self):
@@ -335,7 +327,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
                 return False
 
         class D(C):
-            def is_float(self, a: object) -> bool:  # TODO: incompatible_override
+            def is_float(self, a: object) -> bool:  # E: incompatible_override
                 return False
 
     @assert_passes()
@@ -566,10 +558,10 @@ class TestTypeIs(TestNameCheckVisitorBase):
             return False
 
         accepts_typeguard(with_typeguard)
-        accepts_typeguard(with_bool)  # TODO error
+        accepts_typeguard(with_bool)  # E: incompatible_argument
 
         different_typeguard(with_typeguard)  # E: incompatible_argument
-        different_typeguard(with_bool)  # TODO error
+        different_typeguard(with_bool)  # E: incompatible_argument
 
     @assert_passes()
     def testTypeIsAsGenericFunctionArg(self):
@@ -592,7 +584,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
         accepts_typeguard(with_bool_typeguard)
         accepts_typeguard(with_str_typeguard)
-        accepts_typeguard(with_bool)  # TODO error
+        accepts_typeguard(with_bool)  # E: incompatible_argument
 
     @assert_passes()
     def testTypeIsAsOverloadedFunctionArg(self):
@@ -776,7 +768,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
         @overload
         def typeguard(x: object, y: int) -> TypeIs[int]: ...
 
-        def typeguard(x: object, y: Union[int, str]) -> Union[TypeIs[int], TypeIs[str]]:
+        def typeguard(x: object, y: Union[int, str]) -> bool:
             return False
 
         def capybara(x: object) -> None:

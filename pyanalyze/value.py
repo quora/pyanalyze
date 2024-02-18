@@ -1943,6 +1943,7 @@ class TypeGuardExtension(Extension):
     def can_assign(
         self, value: Value, ctx: CanAssignContext
     ) -> Mapping[ExternalType, Sequence[ExternalType]] | CanAssignError:
+        can_assign_maps = []
         if isinstance(value, AnnotatedValue):
             for ext in value.get_metadata_of_type(Extension):
                 if isinstance(ext, TypeIsExtension):
@@ -1956,8 +1957,10 @@ class TypeGuardExtension(Extension):
                         return CanAssignError(
                             "Incompatible types in TypeIs", children=[left_can_assign]
                         )
-                    return left_can_assign
-        return {}
+                    can_assign_maps.append(left_can_assign)
+        if not can_assign_maps:
+            return CanAssignError(f"{value} is not a TypeGuard")
+        return unify_bounds_maps(can_assign_maps)
 
 
 @dataclass(frozen=True)
@@ -1981,6 +1984,7 @@ class TypeIsExtension(Extension):
     def can_assign(
         self, value: Value, ctx: CanAssignContext
     ) -> Mapping[ExternalType, Sequence[ExternalType]] | CanAssignError:
+        can_assign_maps = []
         if isinstance(value, AnnotatedValue):
             for ext in value.get_metadata_of_type(Extension):
                 if isinstance(ext, TypeGuardExtension):
@@ -2001,8 +2005,10 @@ class TypeIsExtension(Extension):
                         return CanAssignError(
                             "Incompatible types in TypeIs", children=[right_can_assign]
                         )
-                    return unify_bounds_maps([left_can_assign, right_can_assign])
-        return {}
+                    can_assign_maps += [left_can_assign, right_can_assign]
+        if not can_assign_maps:
+            return CanAssignError(f"{value} is not a TypeIs")
+        return unify_bounds_maps(can_assign_maps)
 
 
 @dataclass(frozen=True)

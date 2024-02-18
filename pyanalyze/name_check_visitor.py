@@ -1986,6 +1986,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 expected_return = info.return_annotation | KnownValue(NotImplemented)
             else:
                 expected_return = info.return_annotation
+            if isinstance(expected_return, AnnotatedValue):
+                expected_return, _ = unannotate_value(expected_return, TypeIsExtension)
+                expected_return, _ = unannotate_value(
+                    expected_return, TypeGuardExtension
+                )
 
             with self.asynq_checker.set_func_name(
                 node.name,
