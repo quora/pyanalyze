@@ -129,6 +129,7 @@ from .signature import (
     KWARGS,
     MaybeSignature,
     OverloadedSignature,
+    ParameterKind,
     Signature,
     SigParameter,
 )
@@ -178,6 +179,8 @@ from .value import (
     SkipDeprecatedExtension,
     TypeAlias,
     TypeAliasValue,
+    TypeGuardExtension,
+    TypeIsExtension,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -1932,6 +1935,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 is_classmethod=is_classmethod,
                 is_staticmethod=is_staticmethod,
                 is_abstractmethod=is_abstractmethod,
+                is_instancemethod=is_nested_in_class
+                and not is_classmethod
+                and not is_staticmethod,
                 is_overload=is_overload,
                 is_override=is_override,
                 is_evaluated=is_evaluated,
@@ -2000,6 +2006,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             ):
                 result = self._visit_function_body(info)
 
+        self.check_typeis(info)
+
         if (
             not result.has_return
             and not info.is_overload
@@ -2055,6 +2063,56 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         self._set_argspec_to_retval(val, info, result)
         return val
+
+    def check_typeis(self, info: FunctionInfo) -> None:
+        if info.return_annotation is None:
+            return
+        assert isinstance(info.node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        assert info.node.returns is not None
+        _, ti = unannotate_value(info.return_annotation, TypeIsExtension)
+        for type_is in ti:
+            param = self._get_typeis_parameter(info)
+            if param is None:
+                self._show_error_if_checking(
+                    info.node,
+                    "TypeIs must be used on a function taking at least one positional"
+                    " parameter",
+                    error_code=ErrorCode.invalid_typeguard,
+                )
+                continue
+            can_assign = param.annotation.can_assign(type_is.guarded_type, self)
+            if isinstance(can_assign, CanAssignError):
+                self._show_error_if_checking(
+                    info.node.returns,
+                    f"TypeIs narrowed type {type_is.guarded_type} is incompatible "
+                    f"with parameter {param.name}",
+                    error_code=ErrorCode.typeis_must_be_subtype,
+                    detail=can_assign.display(),
+                )
+        _, tg = unannotate_value(info.return_annotation, TypeGuardExtension)
+        for _ in tg:
+            param = self._get_typeis_parameter(info)
+            if param is None:
+                self._show_error_if_checking(
+                    info.node,
+                    "TypeGuard must be used on a function taking at least one"
+                    " positional parameter",
+                    error_code=ErrorCode.invalid_typeguard,
+                )
+
+    def _get_typeis_parameter(self, info: FunctionInfo) -> Optional[SigParameter]:
+        index = 0
+        if info.is_classmethod or info.is_instancemethod:
+            index = 1
+        if len(info.params) <= index:
+            return None
+        param = info.params[index].param
+        if param.kind not in (
+            ParameterKind.POSITIONAL_ONLY,
+            ParameterKind.POSITIONAL_OR_KEYWORD,
+        ):
+            return None
+        return param
 
     def _set_argspec_to_retval(
         self, val: Value, info: FunctionInfo, result: FunctionResult

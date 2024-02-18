@@ -1930,6 +1930,25 @@ class TypeGuardExtension(Extension):
 
 
 @dataclass(frozen=True)
+class TypeIsExtension(Extension):
+    """An :class:`Extension` used in a function return type. Used to
+    indicate that the first function argument may be narrowed to type `guarded_type`.
+
+    Corresponds to ``typing_extensions.TypeIs`` (see PEP 742).
+
+    """
+
+    guarded_type: Value
+
+    def substitute_typevars(self, typevars: TypeVarMap) -> Extension:
+        guarded_type = self.guarded_type.substitute_typevars(typevars)
+        return TypeIsExtension(guarded_type)
+
+    def walk_values(self) -> Iterable[Value]:
+        yield from self.guarded_type.walk_values()
+
+
+@dataclass(frozen=True)
 class HasAttrGuardExtension(Extension):
     """An :class:`Extension` used in a function return type. Used to
     indicate that the function argument named `varname` has an attribute
