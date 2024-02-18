@@ -787,7 +787,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testGenericAliasWithTypeIs(self):
         from typing import Callable, List, TypeVar
-        from typing_extensions import TypeIs
+        from typing_extensions import TypeIs, assert_type
 
         T = TypeVar("T")
         A = Callable[[object], TypeIs[List[T]]]
@@ -799,8 +799,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
             raise NotImplementedError
 
         def capybara() -> None:
-            pass
-            # TODO: assert_type(test(foo), List[str])
+            assert_type(test(foo), str)
 
     @assert_passes()
     def testNoCrashOnDunderCallTypeIs(self):
