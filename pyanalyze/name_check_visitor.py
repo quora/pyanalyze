@@ -2075,7 +2075,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if param is None:
                 self._show_error_if_checking(
                     info.node,
-                    "TypeIs must be used on a function taking at least one positional parameter",
+                    "TypeIs must be used on a function taking at least one positional"
+                    " parameter",
                     error_code=ErrorCode.invalid_typeguard,
                 )
                 continue
@@ -2094,7 +2095,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if param is None:
                 self._show_error_if_checking(
                     info.node,
-                    "TypeGuard must be used on a function taking at least one positional parameter",
+                    "TypeGuard must be used on a function taking at least one"
+                    " positional parameter",
                     error_code=ErrorCode.invalid_typeguard,
                 )
 

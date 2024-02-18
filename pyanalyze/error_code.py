@@ -241,7 +241,9 @@ ERROR_DESCRIPTION = {
     ErrorCode.override_does_not_override: "Method does not override any base method",
     ErrorCode.missing_generic_parameters: "Missing type parameters for generic type",
     ErrorCode.disallowed_import: "Disallowed import",
-    ErrorCode.typeis_must_be_subtype: "TypeIs narrowed type must be a subtype of the input type",
+    ErrorCode.typeis_must_be_subtype: (
+        "TypeIs narrowed type must be a subtype of the input type"
+    ),
     ErrorCode.invalid_typeguard: "Invalid use of TypeGuard or TypeIs",
 }
 
