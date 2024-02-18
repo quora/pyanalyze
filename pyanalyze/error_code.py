@@ -107,6 +107,8 @@ class ErrorCode(enum.Enum):
     reveal_type = 87
     missing_generic_parameters = 88
     disallowed_import = 89
+    typeis_must_be_subtype = 90
+    invalid_typeguard = 91
 
 
 # Allow testing unannotated functions without too much fuss
@@ -239,6 +241,8 @@ ERROR_DESCRIPTION = {
     ErrorCode.override_does_not_override: "Method does not override any base method",
     ErrorCode.missing_generic_parameters: "Missing type parameters for generic type",
     ErrorCode.disallowed_import: "Disallowed import",
+    ErrorCode.typeis_must_be_subtype: "TypeIs narrowed type must be a subtype of the input type",
+    ErrorCode.invalid_typeguard: "Invalid use of TypeGuard or TypeIs",
 }
 
 

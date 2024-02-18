@@ -84,6 +84,7 @@ class FunctionInfo:
     is_override: bool  # @typing.override
     is_evaluated: bool  # @pyanalyze.extensions.evaluated
     is_abstractmethod: bool  # has @abstractmethod
+    is_instancemethod: bool  # is an instance method
     # a list of tuples of (decorator function, applied decorator function, AST node). These are
     # different for decorators that take arguments, like @asynq(): the first element will be the
     # asynq function and the second will be the result of calling asynq().

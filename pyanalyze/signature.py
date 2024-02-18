@@ -36,6 +36,8 @@ import qcore
 from qcore.helpers import safe_str
 from typing_extensions import assert_never, Literal, Protocol, Self
 
+from pyanalyze.predicates import IsAssignablePredicate
+
 from .error_code import ErrorCode
 from .safe import safe_getattr
 from .node_visitor import Replacement
@@ -62,6 +64,7 @@ from .type_evaluation import (
 from .typevar import resolve_bounds_map
 from .value import (
     SelfT,
+    TypeIsExtension,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -683,13 +686,18 @@ class Signature:
         return None
 
     def _apply_annotated_constraints(
-        self, raw_return: Union[Value, ImplReturn], composites: Dict[str, Composite]
+        self,
+        raw_return: Union[Value, ImplReturn],
+        composites: Dict[str, Composite],
+        ctx: CheckCallContext,
     ) -> Value:
         if isinstance(raw_return, Value):
             ret = ImplReturn(raw_return)
         else:
             ret = raw_return
-        constraints = [ret.constraint]
+        constraints = []
+        if ret.constraint is not NULL_CONSTRAINT:
+            constraints.append(ret.constraint)
         return_value = ret.return_value
         no_return_unless = ret.no_return_unless
         if isinstance(return_value, AnnotatedValue):
@@ -707,28 +715,31 @@ class Signature:
                             guard.guarded_type,
                         )
                         constraints.append(constraint)
+
             return_value, tg = unannotate_value(return_value, TypeGuardExtension)
             for guard in tg:
-                # This might miss some cases where we should use the second argument instead. We'll
-                # have to come up with additional heuristics if that comes up.
-                if isinstance(self.callable, MethodType) or (
-                    isinstance(self.callable, FunctionType)
-                    and self.callable.__name__ != self.callable.__qualname__
-                ):
-                    index = 1
-                else:
-                    index = 0
-                param = self._get_positional_parameter(index)
-                if param is not None:
-                    composite = composites[param.name]
-                    if composite.varname is not None:
-                        constraint = Constraint(
-                            composite.varname,
-                            ConstraintType.is_value_object,
-                            True,
-                            guard.guarded_type,
-                        )
-                        constraints.append(constraint)
+                varname = self._get_typeguard_varname(composites)
+                if varname is not None:
+                    constraint = Constraint(
+                        varname,
+                        ConstraintType.is_value_object,
+                        True,
+                        guard.guarded_type,
+                    )
+                    constraints.append(constraint)
+
+            return_value, ti = unannotate_value(return_value, TypeIsExtension)
+            for guard in ti:
+                varname = self._get_typeguard_varname(composites)
+                if varname is not None and ctx.visitor is not None:
+                    predicate = IsAssignablePredicate(
+                        guard.guarded_type, ctx.visitor, positive_only=False
+                    )
+                    constraint = Constraint(
+                        varname, ConstraintType.predicate, True, predicate
+                    )
+                    constraints.append(constraint)
+
             return_value, hag = unannotate_value(return_value, HasAttrGuardExtension)
             for guard in hag:
                 if guard.varname in composites:
@@ -767,6 +778,25 @@ class Signature:
         if no_return_unless is not NULL_CONSTRAINT:
             extensions.append(NoReturnConstraintExtension(no_return_unless))
         return annotate_value(return_value, extensions)
+
+    def _get_typeguard_varname(
+        self, composites: Dict[str, Composite]
+    ) -> Optional[VarnameWithOrigin]:
+        # This might miss some cases where we should use the second argument instead. We'll
+        # have to come up with additional heuristics if that comes up.
+        if isinstance(self.callable, MethodType) or (
+            isinstance(self.callable, FunctionType)
+            and self.callable.__name__ != self.callable.__qualname__
+        ):
+            index = 1
+        else:
+            index = 0
+        param = self._get_positional_parameter(index)
+        if param is not None:
+            composite = composites[param.name]
+            if composite.varname is not None:
+                return composite.varname
+        return None
 
     def bind_arguments(
         self, actual_args: ActualArguments, ctx: CheckCallContext
@@ -1308,7 +1338,7 @@ class Signature:
                     )
                 else:
                     return_value = runtime_return
-        ret = self._apply_annotated_constraints(return_value, composites)
+        ret = self._apply_annotated_constraints(return_value, composites, ctx)
         return CallReturn(
             ret,
             is_error=had_error,

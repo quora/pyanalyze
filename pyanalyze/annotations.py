@@ -86,6 +86,7 @@ from .value import (
     KVPair,
     TypeAlias,
     TypeAliasValue,
+    TypeIsExtension,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -784,6 +785,13 @@ def _type_from_subscripted_value(
         return AnnotatedValue(
             TypedValue(bool), [TypeGuardExtension(_type_from_value(members[0], ctx))]
         )
+    elif is_typing_name(root, "TypeIs"):
+        if len(members) != 1:
+            ctx.show_error("TypeIs requires a single argument")
+            return AnyValue(AnySource.error)
+        return AnnotatedValue(
+            TypedValue(bool), [TypeIsExtension(_type_from_value(members[0], ctx))]
+        )
     elif is_typing_name(root, "Required"):
         if not is_typeddict:
             ctx.show_error("Required[] used in unsupported context")
@@ -1178,6 +1186,13 @@ def _value_of_origin_args(
             return AnyValue(AnySource.error)
         return AnnotatedValue(
             TypedValue(bool), [TypeGuardExtension(_type_from_runtime(args[0], ctx))]
+        )
+    elif is_typing_name(origin, "TypeIs"):
+        if len(args) != 1:
+            ctx.show_error("TypeIs requires a single argument")
+            return AnyValue(AnySource.error)
+        return AnnotatedValue(
+            TypedValue(bool), [TypeIsExtension(_type_from_runtime(args[0], ctx))]
         )
     elif is_typing_name(origin, "Final"):
         if len(args) != 1:
