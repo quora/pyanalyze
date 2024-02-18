@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix some higher-order behavior of `TypeGuard` and `TypeIs` (#719)
 - Add support for `TypeIs` from PEP 742 (#718)
 - More PEP 695 support: generic classes and functions. Scoping rules
   are not yet fully implemented. (#703)

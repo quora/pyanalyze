@@ -1853,6 +1853,12 @@ class Extension:
     def walk_values(self) -> Iterable[Value]:
         return []
 
+    def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+        return {}
+
+    def can_be_assigned(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+        return {}
+
 
 @dataclass(frozen=True)
 class CustomCheckExtension(Extension):
@@ -1867,6 +1873,12 @@ class CustomCheckExtension(Extension):
 
     def walk_values(self) -> Iterable[Value]:
         yield from self.custom_check.walk_values()
+
+    def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+        return self.custom_check.can_assign(value, ctx)
+
+    def can_be_assigned(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+        return self.custom_check.can_be_assigned(value, ctx)
 
 
 @dataclass(frozen=True)
@@ -1928,6 +1940,26 @@ class TypeGuardExtension(Extension):
     def walk_values(self) -> Iterable[Value]:
         yield from self.guarded_type.walk_values()
 
+    def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+        can_assign_maps = []
+        if isinstance(value, AnnotatedValue):
+            for ext in value.get_metadata_of_type(Extension):
+                if isinstance(ext, TypeIsExtension):
+                    return CanAssignError("TypeGuard is not compatible with TypeIs")
+                elif isinstance(ext, TypeGuardExtension):
+                    # TypeGuard is covariant
+                    left_can_assign = self.guarded_type.can_assign(
+                        ext.guarded_type, ctx
+                    )
+                    if isinstance(left_can_assign, CanAssignError):
+                        return CanAssignError(
+                            "Incompatible types in TypeIs", children=[left_can_assign]
+                        )
+                    can_assign_maps.append(left_can_assign)
+        if not can_assign_maps:
+            return CanAssignError(f"{value} is not a TypeGuard")
+        return unify_bounds_maps(can_assign_maps)
+
 
 @dataclass(frozen=True)
 class TypeIsExtension(Extension):
@@ -1946,6 +1978,33 @@ class TypeIsExtension(Extension):
 
     def walk_values(self) -> Iterable[Value]:
         yield from self.guarded_type.walk_values()
+
+    def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
+        can_assign_maps = []
+        if isinstance(value, AnnotatedValue):
+            for ext in value.get_metadata_of_type(Extension):
+                if isinstance(ext, TypeGuardExtension):
+                    return CanAssignError("TypeGuard is not compatible with TypeIs")
+                elif isinstance(ext, TypeIsExtension):
+                    # TypeIs is invariant
+                    left_can_assign = self.guarded_type.can_assign(
+                        ext.guarded_type, ctx
+                    )
+                    if isinstance(left_can_assign, CanAssignError):
+                        return CanAssignError(
+                            "Incompatible types in TypeIs", children=[left_can_assign]
+                        )
+                    right_can_assign = ext.guarded_type.can_assign(
+                        self.guarded_type, ctx
+                    )
+                    if isinstance(right_can_assign, CanAssignError):
+                        return CanAssignError(
+                            "Incompatible types in TypeIs", children=[right_can_assign]
+                        )
+                    can_assign_maps += [left_can_assign, right_can_assign]
+        if not can_assign_maps:
+            return CanAssignError(f"{value} is not a TypeIs")
+        return unify_bounds_maps(can_assign_maps)
 
 
 @dataclass(frozen=True)
@@ -2120,8 +2179,8 @@ class AnnotatedValue(Value):
         if isinstance(can_assign, CanAssignError):
             return can_assign
         bounds_maps = [can_assign]
-        for custom_check in self.get_metadata_of_type(CustomCheckExtension):
-            custom_can_assign = custom_check.custom_check.can_assign(other, ctx)
+        for ext in self.get_metadata_of_type(Extension):
+            custom_can_assign = ext.can_assign(other, ctx)
             if isinstance(custom_can_assign, CanAssignError):
                 return custom_can_assign
             bounds_maps.append(custom_can_assign)
@@ -2132,8 +2191,8 @@ class AnnotatedValue(Value):
         if isinstance(can_assign, CanAssignError):
             return can_assign
         bounds_maps = [can_assign]
-        for custom_check in self.get_metadata_of_type(CustomCheckExtension):
-            custom_can_assign = custom_check.custom_check.can_be_assigned(other, ctx)
+        for ext in self.get_metadata_of_type(Extension):
+            custom_can_assign = ext.can_be_assigned(other, ctx)
             if isinstance(custom_can_assign, CanAssignError):
                 return custom_can_assign
             bounds_maps.append(custom_can_assign)
