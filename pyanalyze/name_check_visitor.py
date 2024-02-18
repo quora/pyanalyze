@@ -2083,7 +2083,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     info.node.returns,
-                    f"TypeIs narrowed type {type_is.guarded_type} is incompatible with parameter {param.name}",
+                    f"TypeIs narrowed type {type_is.guarded_type} is incompatible "
+                    f"with parameter {param.name}",
                     error_code=ErrorCode.typeis_must_be_subtype,
                     detail=can_assign.display(),
                 )

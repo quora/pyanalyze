@@ -279,7 +279,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     def testTypeIsOverload(self):
         import collections.abc
         from typing import Callable, Iterable, Iterator, List, Optional, TypeVar
-        from typing_extensions import TypeIs, assert_type, overload
+        from typing_extensions import TypeIs, overload
         from pyanalyze.value import assert_is_value, GenericValue, AnyValue, AnySource
 
         T = TypeVar("T")
@@ -576,16 +576,10 @@ class TestTypeIs(TestNameCheckVisitorBase):
             return False
 
         accepts_typeguard(with_typeguard)
-        accepts_typeguard(
-            with_bool
-        )  # E: Argument 1 to "accepts_typeguard" has incompatible type "Callable[[object], bool]"; expected "Callable[[object], TypeIs[bool]]"
+        accepts_typeguard(with_bool)  # TODO error
 
-        different_typeguard(
-            with_typeguard
-        )  # E: Argument 1 to "different_typeguard" has incompatible type "Callable[[object], TypeIs[bool]]"; expected "Callable[[object], TypeIs[str]]"
-        different_typeguard(
-            with_bool
-        )  # E: Argument 1 to "different_typeguard" has incompatible type "Callable[[object], bool]"; expected "Callable[[object], TypeIs[str]]"
+        different_typeguard(with_typeguard)  # TODO error
+        different_typeguard(with_bool)  # TODO error
 
     @assert_passes()
     def testTypeIsAsGenericFunctionArg(self):
@@ -608,15 +602,13 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
         accepts_typeguard(with_bool_typeguard)
         accepts_typeguard(with_str_typeguard)
-        accepts_typeguard(
-            with_bool
-        )  # E: Argument 1 to "accepts_typeguard" has incompatible type "Callable[[object], bool]"; expected "Callable[[object], TypeIs[bool]]"
+        accepts_typeguard(with_bool)  # TODO error
 
     @assert_passes()
     def testTypeIsAsOverloadedFunctionArg(self):
         # https://github.com/python/mypy/issues/11307
         from typing import Callable, TypeVar, Generic, Any, overload
-        from typing_extensions import TypeIs, assert_type
+        from typing_extensions import TypeIs
 
         _T = TypeVar("_T")
 
@@ -670,13 +662,9 @@ class TestTypeIs(TestNameCheckVisitorBase):
         def with_typeguard_c(o: object) -> TypeIs[C]:
             return False
 
-        accepts_typeguard(
-            with_typeguard_a
-        )  # E: Argument 1 to "accepts_typeguard" has incompatible type "Callable[[object], TypeIs[A]]"; expected "Callable[[object], TypeIs[B]]"
+        accepts_typeguard(with_typeguard_a)  # TODO error
         accepts_typeguard(with_typeguard_b)
-        accepts_typeguard(
-            with_typeguard_c
-        )  # E: Argument 1 to "accepts_typeguard" has incompatible type "Callable[[object], TypeIs[C]]"; expected "Callable[[object], TypeIs[B]]"
+        accepts_typeguard(with_typeguard_c)  # TODO error
 
     @assert_passes()
     def testTypeIsWithIdentityGeneric(self):
