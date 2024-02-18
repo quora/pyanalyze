@@ -1940,9 +1940,7 @@ class TypeGuardExtension(Extension):
     def walk_values(self) -> Iterable[Value]:
         yield from self.guarded_type.walk_values()
 
-    def can_assign(
-        self, value: Value, ctx: CanAssignContext
-    ) -> Mapping[ExternalType, Sequence[ExternalType]] | CanAssignError:
+    def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
         can_assign_maps = []
         if isinstance(value, AnnotatedValue):
             for ext in value.get_metadata_of_type(Extension):
@@ -1981,9 +1979,7 @@ class TypeIsExtension(Extension):
     def walk_values(self) -> Iterable[Value]:
         yield from self.guarded_type.walk_values()
 
-    def can_assign(
-        self, value: Value, ctx: CanAssignContext
-    ) -> Mapping[ExternalType, Sequence[ExternalType]] | CanAssignError:
+    def can_assign(self, value: Value, ctx: CanAssignContext) -> CanAssign:
         can_assign_maps = []
         if isinstance(value, AnnotatedValue):
             for ext in value.get_metadata_of_type(Extension):
