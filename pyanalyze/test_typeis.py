@@ -126,10 +126,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsHigherOrder(self):
-        import collections.abc
         from typing import Callable, TypeVar, Iterable, List
-        from typing_extensions import TypeIs
-        from pyanalyze.value import assert_is_value, GenericValue, AnyValue, AnySource
+        from typing_extensions import TypeIs, assert_type
 
         T = TypeVar("T")
         R = TypeVar("R")
@@ -143,13 +141,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
         def capybara() -> None:
             a: List[object] = ["a", 0, 0.0]
             b = filter(is_float, a)
-            # TODO should be Iterable[float]
-            assert_is_value(
-                b,
-                GenericValue(
-                    collections.abc.Iterable, [AnyValue(AnySource.generic_argument)]
-                ),
-            )
+            assert_type(b, Iterable[float])
 
     @assert_passes()
     def testTypeIsMethod(self):
@@ -279,7 +271,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     def testTypeIsOverload(self):
         import collections.abc
         from typing import Callable, Iterable, Iterator, List, Optional, TypeVar
-        from typing_extensions import TypeIs, overload
+        from typing_extensions import TypeIs, overload, assert_type
         from pyanalyze.value import assert_is_value, GenericValue, AnyValue, AnySource
 
         T = TypeVar("T")
@@ -310,10 +302,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
             bb = filter(lambda x: x is not None, a)
             # TODO Iterator[Optional[int]]
             assert_is_value(bb, iter_any)
-            # Also, if you replace 'bool' with 'Any' in the second overload, bb is Iterator[Any]
             cc = filter(is_int_typeguard, a)
-            # TODO Iterator[int]
-            assert_is_value(cc, iter_any)
+            assert_type(cc, Iterator[int])
             dd = filter(is_int_bool, a)
             # TODO Iterator[Optional[int]]
             assert_is_value(dd, iter_any)
@@ -578,7 +568,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
         accepts_typeguard(with_typeguard)
         accepts_typeguard(with_bool)  # TODO error
 
-        different_typeguard(with_typeguard)  # TODO error
+        different_typeguard(with_typeguard)  # E: incompatible_argument
         different_typeguard(with_bool)  # TODO error
 
     @assert_passes()
@@ -662,9 +652,9 @@ class TestTypeIs(TestNameCheckVisitorBase):
         def with_typeguard_c(o: object) -> TypeIs[C]:
             return False
 
-        accepts_typeguard(with_typeguard_a)  # TODO error
+        accepts_typeguard(with_typeguard_a)  # E: incompatible_argument
         accepts_typeguard(with_typeguard_b)
-        accepts_typeguard(with_typeguard_c)  # TODO error
+        accepts_typeguard(with_typeguard_c)  # E: incompatible_argument
 
     @assert_passes()
     def testTypeIsWithIdentityGeneric(self):
