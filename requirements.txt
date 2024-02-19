@@ -10,4 +10,4 @@ myst-parser==2.0.0
 Sphinx==7.2.5
 black==24.1.1
 flake8==7.0.0
-usort==1.0.7
+usort==1.0.8.post1
