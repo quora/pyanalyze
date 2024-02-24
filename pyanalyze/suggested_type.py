@@ -12,10 +12,10 @@ from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from .error_code import ErrorCode
 from .node_visitor import ErrorContext, Failure
-
 from .safe import safe_getattr, safe_isinstance
 from .signature import Signature
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -24,16 +24,15 @@ from .value import (
     GenericValue,
     KnownValue,
     MultiValuedValue,
-    NO_RETURN_VALUE,
-    replace_known_sequence_value,
     SequenceValue,
-    stringify_object,
     SubclassValue,
     TypedDictValue,
     TypedValue,
-    unite_values,
     Value,
     VariableNameValue,
+    replace_known_sequence_value,
+    stringify_object,
+    unite_values,
 )
 
 CallArgs = Mapping[str, Value]

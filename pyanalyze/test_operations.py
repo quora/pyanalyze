@@ -233,7 +233,7 @@ class TestCompare(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_contains(self):
-        from typing import Iterator, Iterable
+        from typing import Iterable, Iterator
 
         class OnlyGetitem:
             def __getitem__(self, x: int) -> int:

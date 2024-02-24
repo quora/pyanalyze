@@ -51,14 +51,20 @@ select = [
   "F",
   "E",
   "I",  # import sorting
-  "C4",  # flake8-comprehensions
-  "B",  # bugbear
-  "SIM",  # simplify
-  "UP",  # pyupgrade
-  "PIE810",  # startswith/endswith with a tuple
-  "PERF101",  # unnecessary list() calls that can be replaced with literals
 ]
 
 ignore = [
   "B008",  # do not perform function calls in argument defaults
+  "F811",  # redefinition of unused '...'
+  "F821",  # undefined name
+  "F505",  # .format() stuff
+  "F507",  # .format() stuff
+  "F524",  # .format() stuff
+  "F823", # local variable referenced before assignment
+  "F601",  # dictionary key name repeated with different values
+  "E721",  # do not compare types, use 'isinstance()'
+  "F841",  # local variable is assigned to but never used
+  "E742",  # Ambiguous class name
+  "E731",  # do not assign a lambda expression, use a def
+  "E741",  # ambiguous variable name
 ]

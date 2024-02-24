@@ -18,7 +18,7 @@ from .value import (
 class TestBadAsyncYield(TestNameCheckVisitorBase):
     @assert_passes()
     def test_const_future(self):
-        from asynq import asynq, ConstFuture, FutureBase
+        from asynq import ConstFuture, FutureBase, asynq
 
         @asynq()
         def capybara(condition):
@@ -110,7 +110,7 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
     # constfuture, async, and yielded because changes between Python 3.7 and 3.8
     @assert_fails(ErrorCode.task_needs_yield)
     def test_constfuture(self):
-        from asynq import asynq, ConstFuture
+        from asynq import ConstFuture, asynq
 
         @asynq()
         def bad_async_fn():
@@ -162,7 +162,7 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
 class TestReturn(TestNameCheckVisitorBase):
     @assert_passes()
     def test_type_inference(self):
-        from asynq import async_proxy, AsyncTask, asynq, ConstFuture, FutureBase
+        from asynq import AsyncTask, ConstFuture, FutureBase, async_proxy, asynq
 
         def returns_3():
             return 3

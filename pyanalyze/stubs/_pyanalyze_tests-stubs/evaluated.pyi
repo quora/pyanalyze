@@ -1,4 +1,4 @@
-from typing import Any, BinaryIO, IO, TextIO
+from typing import IO, Any, BinaryIO, TextIO
 
 from pyanalyze.extensions import evaluated
 

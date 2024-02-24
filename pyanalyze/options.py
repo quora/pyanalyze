@@ -32,7 +32,6 @@ import qcore
 import tomli
 
 from .error_code import ErrorCode
-
 from .find_unused import used
 from .safe import safe_in
 

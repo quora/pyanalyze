@@ -1,4 +1,5 @@
 from typing import AnyStr, ContextManager, Dict, Union
+
 from typing_extensions import TypeAlias
 
 class _ScandirIterator(ContextManager[_ScandirIterator[AnyStr]]):

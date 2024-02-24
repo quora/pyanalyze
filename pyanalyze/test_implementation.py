@@ -3,19 +3,19 @@ from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .value import (
+    NO_RETURN_VALUE,
     AnySource,
     AnyValue,
-    assert_is_value,
     CallableValue,
     DictIncompleteValue,
     GenericValue,
     KnownValue,
     KVPair,
     MultiValuedValue,
-    NO_RETURN_VALUE,
     SequenceValue,
     SubclassValue,
     TypedValue,
+    assert_is_value,
 )
 
 
@@ -351,7 +351,7 @@ class TestBool(TestNameCheckVisitorBase):
 class TestCast(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
-        from typing import cast, List
+        from typing import List, cast
 
         def capybara():
             assert_is_value(cast(str, 1), TypedValue(str))
@@ -360,7 +360,7 @@ class TestCast(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_undefined_name(self):
-        from typing import cast, List
+        from typing import List, cast
 
         def capybara():
             cast("List[fail]", 1)  # E: undefined_name
@@ -1332,8 +1332,9 @@ class TestCallableGuards(TestNameCheckVisitorBase):
 class TestAssertType(TestNameCheckVisitorBase):
     @assert_passes()
     def test_assert_type(self):
-        from typing_extensions import assert_type, Literal
         from typing import Any
+
+        from typing_extensions import Literal, assert_type
 
         def capybara(x: object, unannotated, explicit_any: Any) -> None:
             assert_type(x, object)

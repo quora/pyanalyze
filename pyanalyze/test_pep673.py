@@ -152,8 +152,8 @@ class TestPEP673(TestNameCheckVisitorBase):
     @assert_passes()
     def test_stub(self):
         def capybara():
-            from typing_extensions import assert_type
             from _pyanalyze_tests.self import X, Y
+            from typing_extensions import assert_type
 
             x = X()
             y = Y()
@@ -175,8 +175,8 @@ class TestPEP673(TestNameCheckVisitorBase):
     @assert_passes()
     def test_typeshed_self(self):
         def capybara():
-            from typing_extensions import assert_type
             from _pyanalyze_tests.tsself import X
+            from typing_extensions import assert_type
 
             x = X()
             assert_type(x, X)

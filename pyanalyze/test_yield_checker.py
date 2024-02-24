@@ -3,8 +3,7 @@ import ast
 
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-
-from .yield_checker import _camel_case_to_snake_case, VarnameGenerator
+from .yield_checker import VarnameGenerator, _camel_case_to_snake_case
 
 
 class TestUnnecessaryYield(TestNameCheckVisitorBase):
@@ -77,7 +76,7 @@ class TestUnnecessaryYield(TestNameCheckVisitorBase):
         from asynq import asynq, result
         from asynq.tools import afilter
 
-        from pyanalyze.tests import async_fn, PropertyObject
+        from pyanalyze.tests import PropertyObject, async_fn
 
         @asynq()
         def capybara(qids, t):

@@ -5,10 +5,10 @@ Functions to be used in test_scope unit tests.
 
 """
 
-from typing import ClassVar, NoReturn, overload, Sequence, Union
+from typing import ClassVar, NoReturn, Sequence, Union, overload
 
 import qcore
-from asynq import async_proxy, AsyncTask, asynq, ConstFuture, get_async_fn, result
+from asynq import AsyncTask, ConstFuture, async_proxy, asynq, get_async_fn, result
 from asynq.decorators import AsyncDecorator
 
 from .value import SequenceValue, Value, VariableNameValue

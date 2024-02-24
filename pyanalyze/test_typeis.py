@@ -72,7 +72,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsWithTypeVar(self):
-        from typing import TypeVar, Tuple, Type
+        from typing import Tuple, Type, TypeVar
+
         from typing_extensions import TypeIs, assert_type
 
         T = TypeVar("T")
@@ -89,6 +90,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsUnionIn(self):
         from typing import Union
+
         from typing_extensions import TypeIs, assert_type
 
         def is_foo(a: Union[int, str]) -> TypeIs[str]:
@@ -104,6 +106,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsUnionOut(self):
         from typing import Union
+
         from typing_extensions import TypeIs, assert_type
 
         def is_foo(a: object) -> TypeIs[Union[int, str]]:
@@ -126,7 +129,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsHigherOrder(self):
-        from typing import Callable, TypeVar, Iterable, List
+        from typing import Callable, Iterable, List, TypeVar
+
         from typing_extensions import TypeIs, assert_type
 
         T = TypeVar("T")
@@ -166,6 +170,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsNarrowToTypedDict(self):
         from typing import Mapping, TypedDict
+
         from typing_extensions import TypeIs, assert_type
 
         class User(TypedDict):
@@ -193,6 +198,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsFromAny(self):
         from typing import Any
+
         from typing_extensions import TypeIs, assert_type
 
         def is_objfloat(a: object) -> TypeIs[float]:
@@ -216,6 +222,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsNegatedAndElse(self):
         from typing import Union
+
         from typing_extensions import TypeIs, assert_type
 
         def is_int(a: object) -> TypeIs[int]:
@@ -270,7 +277,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsOverload(self):
         from typing import Callable, Iterable, Iterator, List, Optional, TypeVar
-        from typing_extensions import TypeIs, overload, assert_type
+
+        from typing_extensions import TypeIs, assert_type, overload
 
         T = TypeVar("T")
         R = TypeVar("R")
@@ -303,6 +311,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsDecorated(self):
         from typing import TypeVar
+
         from typing_extensions import TypeIs, assert_type
 
         T = TypeVar("T")
@@ -333,6 +342,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsInAnd(self):
         from typing import Any
+
         from typing_extensions import TypeIs
 
         def isclass(a: object) -> bool:
@@ -399,7 +409,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testAssignToTypeIsedVariable3(self):
-        from typing_extensions import TypeIs, assert_type, Never
+        from typing_extensions import Never, TypeIs, assert_type
 
         class A:
             pass
@@ -422,8 +432,9 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsNestedRestrictionAny(self):
-        from typing_extensions import TypeIs, assert_type
         from typing import Any, Union
+
+        from typing_extensions import TypeIs, assert_type
 
         class A: ...
 
@@ -439,8 +450,9 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsNestedRestrictionUnionOther(self):
-        from typing_extensions import TypeIs, assert_type
         from typing import Union
+
+        from typing_extensions import TypeIs, assert_type
 
         class A: ...
 
@@ -460,6 +472,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsComprehensionSubtype(self):
         from typing import List
+
         from typing_extensions import TypeIs
 
         class Base: ...
@@ -482,8 +495,9 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsNestedRestrictionUnionIsInstance(self):
-        from typing_extensions import TypeIs, assert_type
         from typing import Any, List
+
+        from typing_extensions import TypeIs, assert_type
 
         class A: ...
 
@@ -497,7 +511,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsMultipleCondition(self):
-        from typing_extensions import TypeIs, assert_type, Never
+        from typing_extensions import Never, TypeIs, assert_type
 
         class Foo: ...
 
@@ -522,6 +536,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsAsFunctionArgAsBoolSubtype(self):
         from typing import Callable
+
         from typing_extensions import TypeIs
 
         def accepts_bool(f: Callable[[object], bool]) -> None:
@@ -543,6 +558,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsAsFunctionArg(self):
         from typing import Callable
+
         from typing_extensions import TypeIs
 
         def accepts_typeguard(f: Callable[[object], TypeIs[bool]]) -> None:
@@ -566,6 +582,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsAsGenericFunctionArg(self):
         from typing import Callable, TypeVar
+
         from typing_extensions import TypeIs
 
         T = TypeVar("T")
@@ -589,7 +606,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsAsOverloadedFunctionArg(self):
         # https://github.com/python/mypy/issues/11307
-        from typing import Callable, TypeVar, Generic, Any, overload
+        from typing import Any, Callable, Generic, TypeVar, overload
+
         from typing_extensions import TypeIs
 
         _T = TypeVar("_T")
@@ -621,6 +639,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsSubtypingVariance(self):
         from typing import Callable
+
         from typing_extensions import TypeIs
 
         class A:
@@ -651,6 +670,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testTypeIsWithIdentityGeneric(self):
         from typing import TypeVar
+
         from typing_extensions import TypeIs, assert_type
 
         _T = TypeVar("_T")
@@ -670,7 +690,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsWithGenericInstance(self):
-        from typing import TypeVar, List, Iterable
+        from typing import Iterable, List, TypeVar
+
         from typing_extensions import TypeIs, assert_type
 
         _T = TypeVar("_T")
@@ -685,7 +706,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsWithTupleGeneric(self):
-        from typing import TypeVar, Tuple
+        from typing import Tuple, TypeVar
+
         from typing_extensions import TypeIs, assert_type
 
         _T = TypeVar("_T")
@@ -759,7 +781,8 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsKwargFollowingThroughOverloaded(self):
-        from typing import overload, Union
+        from typing import Union, overload
+
         from typing_extensions import TypeIs, assert_type
 
         @overload
@@ -787,6 +810,7 @@ class TestTypeIs(TestNameCheckVisitorBase):
     @assert_passes()
     def testGenericAliasWithTypeIs(self):
         from typing import Callable, List, TypeVar
+
         from typing_extensions import TypeIs, assert_type
 
         T = TypeVar("T")
@@ -818,8 +842,9 @@ class TestTypeIs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def testTypeIsMustBeSubtypeFunctions(self):
-        from typing_extensions import TypeIs
         from typing import List, Sequence, TypeVar
+
+        from typing_extensions import TypeIs
 
         def f(x: str) -> TypeIs[int]:  # E: typeis_must_be_subtype
             return False

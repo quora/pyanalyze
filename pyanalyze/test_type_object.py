@@ -5,11 +5,11 @@ from .test_node_visitor import assert_passes
 from .value import (
     AnySource,
     AnyValue,
-    assert_is_value,
     CallableValue,
     GenericValue,
     KnownValue,
     TypedValue,
+    assert_is_value,
 )
 
 
@@ -384,9 +384,10 @@ class TestHashable(TestNameCheckVisitorBase):
 class TestIO(TestNameCheckVisitorBase):
     @assert_passes()
     def test_text(self):
-        from typing import TextIO
-        from typing_extensions import assert_type
         import io
+        from typing import TextIO
+
+        from typing_extensions import assert_type
 
         def want_io(x: TextIO):
             x.write("hello")
@@ -398,9 +399,10 @@ class TestIO(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_binary(self):
-        from typing import BinaryIO
-        from typing_extensions import assert_type
         import io
+        from typing import BinaryIO
+
+        from typing_extensions import assert_type
 
         def want_io(x: BinaryIO):
             x.write(b"hello")

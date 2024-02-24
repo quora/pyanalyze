@@ -4,13 +4,14 @@ Expose an interface for a runtime type checker.
 
 """
 
-from typing import Optional
-import pyanalyze
 from functools import lru_cache
+from typing import Optional
 
-from .value import CanAssignError, KnownValue
+import pyanalyze
+
 from .annotations import type_from_runtime
 from .find_unused import used
+from .value import CanAssignError, KnownValue
 
 
 @lru_cache(maxsize=None)

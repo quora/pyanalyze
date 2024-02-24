@@ -32,7 +32,8 @@ class TestImport(TestNameCheckVisitorBase):
                 assert_is_value(assert_error, KnownValue(P.extensions.assert_error))
 
     def test_import_star(self):
-        self.assert_passes("""
+        self.assert_passes(
+            """
             import pyanalyze as P
 
             if False:
@@ -40,7 +41,8 @@ class TestImport(TestNameCheckVisitorBase):
 
                 assert_is_value(extensions, KnownValue(P.extensions))
                 not_a_name  # E: undefined_name
-            """)
+            """
+        )
 
 
 class TestDisallowedImport(TestNameCheckVisitorBase):
@@ -48,30 +50,29 @@ class TestDisallowedImport(TestNameCheckVisitorBase):
     def test_top_level(self):
         import getopt  # E: disallowed_import
         import xml.etree.ElementTree  # E: disallowed_import
-
         from getopt import GetoptError  # E: disallowed_import
 
         print(getopt, GetoptError, xml)  # shut up flake8
 
         def capybara():
             import getopt  # E: disallowed_import
-            from getopt import GetoptError  # E: disallowed_import
             import xml.etree.ElementTree  # E: disallowed_import
+            from getopt import GetoptError  # E: disallowed_import
 
             print(getopt, GetoptError, xml)
 
     @assert_passes()
     def test_nested(self):
-        import email.quoprimime  # E: disallowed_import
         import email.base64mime  # ok
+        import email.quoprimime  # E: disallowed_import
         from email.quoprimime import unquote  # E: disallowed_import
         from xml.etree import ElementTree  # E: disallowed_import
 
         print(email, unquote, ElementTree)
 
         def capybara():
-            import email.quoprimime  # E: disallowed_import
             import email.base64mime  # ok
+            import email.quoprimime  # E: disallowed_import
             from email.quoprimime import unquote  # E: disallowed_import
             from xml.etree import ElementTree  # E: disallowed_import
 
@@ -79,13 +80,11 @@ class TestDisallowedImport(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_import_from(self):
-        from email import quoprimime  # E: disallowed_import
-        from email import base64mime  # ok
+        from email import base64mime, quoprimime  # ok  # E: disallowed_import
 
         print(quoprimime, base64mime)
 
         def capybara():
-            from email import quoprimime  # E: disallowed_import
-            from email import base64mime  # ok
+            from email import base64mime, quoprimime  # ok  # E: disallowed_import
 
             print(quoprimime, base64mime)

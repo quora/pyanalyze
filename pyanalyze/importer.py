@@ -10,7 +10,7 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
-from typing import cast, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple, cast
 
 
 @lru_cache()

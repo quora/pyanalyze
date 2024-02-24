@@ -21,11 +21,10 @@ from .value import (
     OrBound,
     TypeVarLike,
     TypeVarMap,
-    unite_values,
     UpperBound,
     Value,
+    unite_values,
 )
-
 
 BOTTOM = qcore.MarkerObject("<bottom>")
 TOP = qcore.MarkerObject("<top>")
