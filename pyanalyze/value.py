@@ -1387,6 +1387,10 @@ class TypedDictValue(GenericValue):
                         return CanAssignError(
                             f"Mutable key {key} is required in {other}"
                         )
+                    if not entry.readonly and their_entry.readonly:
+                        return CanAssignError(
+                            f"Mutable key {key} is readonly in {other}"
+                        )
 
                     can_assign = entry.typ.can_assign(their_entry.typ, ctx)
                     if isinstance(can_assign, CanAssignError):
@@ -1472,7 +1476,7 @@ class TypedDictValue(GenericValue):
         )
 
     def __str__(self) -> str:
-        entries = list(self.items.items())
+        entries: List[Tuple[str, object]] = list(self.items.items())
         if self.extra_keys is not None and self.extra_keys is not NO_RETURN_VALUE:
             extra_typ = str(self.extra_keys)
             if self.extra_keys_readonly:

@@ -258,3 +258,105 @@ class TestTypedDict(TestNameCheckVisitorBase):
             f({"a": "a"})  # E: incompatible_argument
             g({"c": 1.0})
             g({})  # E: incompatible_argument
+
+
+class TestReadOnly(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        from typing_extensions import NotRequired, ReadOnly, TypedDict
+        from typing import Any, Dict
+
+        class TD(TypedDict):
+            a: ReadOnly[NotRequired[int]]
+            b: ReadOnly[str]
+
+        def capybara(td: TD, anydict: Dict[str, Any]) -> None:
+            td["a"] = 1  # E: readonly_typeddict
+            td["b"] = "a"  # E: readonly_typeddict
+            td.update(anydict)  # E: invalid_typeddict_key
+            td.setdefault("a", 1)  # E: readonly_typeddict
+            td.setdefault("b", "a")  # E: readonly_typeddict
+            td.pop("a")  # E: readonly_typeddict
+            td.pop("b")  # E: incompatible_argument
+            del td["a"]  # E: readonly_typeddict
+            del td["b"]  # E: incompatible_argument
+
+    @assert_passes()
+    def test_compatibility(self):
+        from typing_extensions import ReadOnly, TypedDict
+        from typing import Dict, Any
+
+        class TD(TypedDict):
+            a: int
+
+        class TD2(TypedDict):
+            a: ReadOnly[int]
+
+        class TD3(TypedDict):
+            a: bool
+
+        class TD4(TypedDict):
+            a: str
+
+        def want_td(td: TD) -> None:
+            pass
+
+        def want_td2(td: TD2) -> None:
+            pass
+
+        def capybara(
+            td: TD, td2: TD2, td3: TD3, td4: TD4, anydict: Dict[str, Any]
+        ) -> None:
+            want_td(td)
+            want_td(td2)  # E: incompatible_argument
+            want_td(td3)  # E: incompatible_argument
+            want_td(td4)  # E: incompatible_argument
+            want_td(anydict)
+
+            want_td2(td)
+            want_td2(td2)
+            want_td2(td3)
+            want_td2(td4)  # E: incompatible_argument
+            want_td2(anydict)
+
+
+class TestClosed(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_basic(self):
+        from typing_extensions import NotRequired, TypedDict
+        from typing import Any, Dict
+
+        class Closed(TypedDict, closed=True):
+            a: NotRequired[int]
+            b: str
+
+        class Open(TypedDict):
+            a: NotRequired[int]
+            b: str
+
+        def want_closed(td: Closed) -> None:
+            pass
+
+        def want_open(td: Open) -> None:
+            pass
+
+        def capybara(closed: Closed, open: Open, anydict: Dict[str, Any]) -> None:
+            closed["a"] = 1
+            closed["b"] = "a"
+            closed["a"] = "x"  # E: incompatible_argument
+
+            open["a"] = 1
+            open["b"] = "a"
+            open["a"] = "x"  # E: incompatible_argument
+
+            closed.update(anydict)  # E: invalid_typeddict_key
+            open.update(anydict)  # E: invalid_typeddict_key
+
+            x: Closed = {"a": 1, "b": "a", "c": "x"}  # E: incompatible_assignment
+            y: Open = {"a": 1, "b": "a", "c": "x"}
+
+            want_closed(closed)
+            want_closed(open)  # E: incompatible_argument
+
+            want_open(open)
+            want_open(closed)

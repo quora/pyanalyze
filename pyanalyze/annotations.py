@@ -823,7 +823,9 @@ def _type_from_subscripted_value(
         if len(members) != 1:
             ctx.show_error("Required[] requires a single argument")
             return AnyValue(AnySource.error)
-        return TypeQualifierValue("Required", _type_from_value(members[0], ctx))
+        return TypeQualifierValue(
+            "Required", _type_from_value(members[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(root, "NotRequired"):
         if not is_typeddict:
             ctx.show_error("NotRequired[] used in unsupported context")
@@ -831,7 +833,9 @@ def _type_from_subscripted_value(
         if len(members) != 1:
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
-        return TypeQualifierValue("NotRequired", _type_from_value(members[0], ctx))
+        return TypeQualifierValue(
+            "NotRequired", _type_from_value(members[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(root, "ReadOnly"):
         if not is_typeddict:
             ctx.show_error("ReadOnly[] used in unsupported context")
@@ -839,7 +843,9 @@ def _type_from_subscripted_value(
         if len(members) != 1:
             ctx.show_error("ReadOnly[] requires a single argument")
             return AnyValue(AnySource.error)
-        return TypeQualifierValue("ReadOnly", _type_from_value(members[0], ctx))
+        return TypeQualifierValue(
+            "ReadOnly", _type_from_value(members[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(root, "Unpack"):
         if not allow_unpack:
             ctx.show_error("Unpack[] used in unsupported context")
@@ -1244,7 +1250,9 @@ def _value_of_origin_args(
         if len(args) != 1:
             ctx.show_error("Required[] requires a single argument")
             return AnyValue(AnySource.error)
-        return TypeQualifierValue("Required", _type_from_runtime(args[0], ctx))
+        return TypeQualifierValue(
+            "Required", _type_from_runtime(args[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(origin, "NotRequired"):
         if not is_typeddict:
             ctx.show_error("NotRequired[] used in unsupported context")
@@ -1252,7 +1260,9 @@ def _value_of_origin_args(
         if len(args) != 1:
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
-        return TypeQualifierValue("NotRequired", _type_from_runtime(args[0], ctx))
+        return TypeQualifierValue(
+            "NotRequired", _type_from_runtime(args[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(origin, "ReadOnly"):
         if not is_typeddict:
             ctx.show_error("ReadOnly[] used in unsupported context")
@@ -1260,7 +1270,9 @@ def _value_of_origin_args(
         if len(args) != 1:
             ctx.show_error("ReadOnly[] requires a single argument")
             return AnyValue(AnySource.error)
-        return TypeQualifierValue("ReadOnly", _type_from_runtime(args[0], ctx))
+        return TypeQualifierValue(
+            "ReadOnly", _type_from_runtime(args[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(origin, "Unpack"):
         if not allow_unpack:
             ctx.show_error("Invalid usage of Unpack")

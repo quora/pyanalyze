@@ -508,6 +508,7 @@ def _typeddict_setitem(
                 ErrorCode.invalid_typeddict_key,
                 arg="k",
             )
+            return
         for td_key, entry in self_value.items.items():
             if not key.is_assignable(KnownValue(td_key), ctx.visitor):
                 continue
@@ -517,6 +518,7 @@ def _typeddict_setitem(
                     ErrorCode.readonly_typeddict,
                     arg="k",
                 )
+                return
             can_assign = entry.typ.can_assign(value, ctx.visitor)
             if isinstance(can_assign, CanAssignError):
                 ctx.show_error(
@@ -525,6 +527,7 @@ def _typeddict_setitem(
                     arg="v",
                     detail=str(can_assign),
                 )
+                return
         return
 
     if not isinstance(key.val, str):
@@ -749,6 +752,88 @@ def _dict_get_impl(ctx: CallContext) -> ImplReturn:
     return flatten_unions(inner, ctx.vars["key"])
 
 
+def _dict_delitem_impl(ctx: CallContext) -> ImplReturn:
+    key = ctx.vars["key"]
+    varname = ctx.visitor.varname_for_self_constraint(ctx.node)
+    self_value = replace_known_sequence_value(ctx.vars["self"])
+
+    if not _check_dict_key_hashability(key, ctx, "key"):
+        return ImplReturn(AnyValue(AnySource.error))
+
+    if isinstance(self_value, TypedDictValue):
+        if not TypedValue(str).is_assignable(key, ctx.visitor):
+            ctx.show_error(
+                f"TypedDict key must be str, not {key}",
+                ErrorCode.invalid_typeddict_key,
+                arg="key",
+            )
+            return ImplReturn(AnyValue(AnySource.error))
+        elif isinstance(key, KnownValue):
+            try:
+                entry = self_value.items[key.val]
+            # probably KeyError, but catch anything in case it's an
+            # unhashable str subclass or something
+            except Exception:
+                pass
+            else:
+                if entry.required:
+                    ctx.show_error(
+                        f"Cannot delete required TypedDict key {key}",
+                        error_code=ErrorCode.incompatible_argument,
+                        arg="key",
+                    )
+                elif entry.readonly:
+                    ctx.show_error(
+                        f"Cannot delete readonly TypedDict key {key}",
+                        error_code=ErrorCode.readonly_typeddict,
+                        arg="key",
+                    )
+                return ImplReturn(KnownValue(None))
+        if self_value.extra_keys_readonly:
+            ctx.show_error(
+                f"Cannot delete unknown key {key} in closed TypedDict {self_value}",
+                ErrorCode.readonly_typeddict,
+                arg="key",
+            )
+        elif self_value.extra_keys is None or self_value.extra_keys is NO_RETURN_VALUE:
+            ctx.show_error(
+                f"Key {key} does not exist in TypedDict",
+                ErrorCode.invalid_typeddict_key,
+                arg="key",
+            )
+    elif isinstance(self_value, DictIncompleteValue):
+        existing_value = self_value.get_value(key, ctx.visitor)
+        is_present = existing_value is not UNINITIALIZED_VALUE
+        if varname is not None and isinstance(key, KnownValue):
+            new_value = DictIncompleteValue(
+                self_value.typ,
+                [pair for pair in self_value.kv_pairs if pair.key != key],
+            )
+            no_return_unless = Constraint(
+                varname, ConstraintType.is_value_object, True, new_value
+            )
+        else:
+            no_return_unless = NULL_CONSTRAINT
+        if not is_present:
+            ctx.show_error(
+                f"Key {key} does not exist in dictionary {self_value}",
+                error_code=ErrorCode.incompatible_argument,
+                arg="key",
+            )
+            return ImplReturn(KnownValue(None))
+        return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
+    elif isinstance(self_value, TypedValue):
+        key_type = self_value.get_generic_arg_for_type(dict, ctx.visitor, 0)
+        tv_map = key_type.can_assign(key, ctx.visitor)
+        if isinstance(tv_map, CanAssignError):
+            ctx.show_error(
+                f"Key {key} is not valid for {self_value}",
+                ErrorCode.incompatible_argument,
+                arg="key",
+            )
+    return ImplReturn(KnownValue(None))
+
+
 def _dict_pop_impl(ctx: CallContext) -> ImplReturn:
     key = ctx.vars["key"]
     default = ctx.vars["default"]
@@ -780,13 +865,22 @@ def _dict_pop_impl(ctx: CallContext) -> ImplReturn:
                         error_code=ErrorCode.incompatible_argument,
                         arg="key",
                     )
-                if entry.readonly:
+                elif entry.readonly:
                     ctx.show_error(
                         f"Cannot pop readonly TypedDict key {key}",
                         error_code=ErrorCode.readonly_typeddict,
                         arg="key",
                     )
                 return ImplReturn(_maybe_unite(entry.typ, default))
+        if self_value.extra_keys_readonly:
+            ctx.show_error(
+                f"Cannot pop unknown key {key} in closed TypedDict {self_value}",
+                ErrorCode.readonly_typeddict,
+                arg="key",
+            )
+            return ImplReturn(
+                _maybe_unite(self_value.extra_keys or TypedValue(object), default)
+            )
         if (
             self_value.extra_keys is not None
             and self_value.extra_keys is not NO_RETURN_VALUE
@@ -1297,9 +1391,9 @@ def _str_format_impl(ctx: CallContext) -> Value:
             else:
                 return TypedValue(str)
     elif isinstance(kwargs_value, TypedDictValue):
-        for key, (required, value_value) in kwargs_value.items.items():
-            if required:
-                kwargs[key] = value_value
+        for key, entry in kwargs_value.items.items():
+            if entry.required:
+                kwargs[key] = entry.typ
     else:
         return TypedValue(str)
     template = self.val
@@ -1797,6 +1891,15 @@ def get_default_argspecs() -> Dict[object, Signature]:
             callable=dict.pop,
             impl=_dict_pop_impl,
             return_annotation=AnyValue(AnySource.inference),
+        ),
+        Signature.make(
+            [
+                SigParameter("self", _POS_ONLY, annotation=TypedValue(dict)),
+                SigParameter("key", _POS_ONLY),
+            ],
+            callable=dict.__delitem__,
+            impl=_dict_delitem_impl,
+            return_annotation=KnownValue(None),
         ),
         Signature.make(
             [

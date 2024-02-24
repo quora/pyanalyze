@@ -1038,7 +1038,8 @@ class Signature:
                     )
                 elif actual_args.star_kwargs is not None:
                     value_value = unite_values(
-                        *(val for _, val in items.values()), actual_args.star_kwargs
+                        *(entry.typ for entry in items.values()),
+                        actual_args.star_kwargs,
                     )
                     star_kwargs_value = GenericValue(
                         dict, [TypedValue(str), value_value]
@@ -2132,7 +2133,9 @@ def _preprocess_kwargs_no_mvv(
     """
     value = replace_known_sequence_value(value)
     if isinstance(value, TypedDictValue):
-        return value.items, None
+        return {
+            key: (entry.required, entry.typ) for key, entry in value.items.items()
+        }, None
     elif isinstance(value, DictIncompleteValue):
         return _preprocess_kwargs_kv_pairs(value.kv_pairs, ctx)
     else:
@@ -2633,7 +2636,7 @@ def can_assign_var_keyword(
             return CanAssignError(
                 f"parameter {my_param.name!r} is not accepted by {kwargs_annotation}"
             )
-        their_annotation = kwargs_annotation.items[my_param.name][1]
+        their_annotation = kwargs_annotation.items[my_param.name].typ
         can_assign = their_annotation.can_assign(my_annotation, ctx)
         if isinstance(can_assign, CanAssignError):
             return CanAssignError(
