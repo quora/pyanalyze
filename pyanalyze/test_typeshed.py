@@ -12,10 +12,10 @@ import urllib.parse
 from collections.abc import Collection, MutableSequence, Reversible, Sequence, Set
 from pathlib import Path
 from typing import Dict, Generic, List, NewType, TypeVar, Union
+from unittest.mock import ANY
 from urllib.error import HTTPError
 
-from unittest.mock import ANY
-from typeshed_client import get_search_context, Resolver
+from typeshed_client import Resolver, get_search_context
 
 from .checker import Checker
 from .extensions import evaluated
@@ -27,23 +27,23 @@ from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .typeshed import TypeshedFinder
 from .value import (
+    UNINITIALIZED_VALUE,
     AnySource,
     AnyValue,
-    SequenceValue,
-    TypedDictEntry,
-    assert_is_value,
     CallableValue,
     DictIncompleteValue,
     GenericValue,
     KnownValue,
     KVPair,
     NewTypeValue,
+    SequenceValue,
     SubclassValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     TypeVarValue,
-    UNINITIALIZED_VALUE,
     Value,
+    assert_is_value,
 )
 
 T = TypeVar("T")
@@ -161,6 +161,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
     @assert_passes()
     def test_datetime(self):
         from datetime import datetime
+
         from typing_extensions import assert_type
 
         def capybara(i: int):
@@ -211,9 +212,9 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     def test_import_aliases(self):
         def capybara():
             from _pyanalyze_tests.aliases import (
+                ExplicitAlias,
                 aliased_constant,
                 constant,
-                ExplicitAlias,
                 explicitly_aliased_constant,
             )
 
@@ -284,7 +285,7 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     @assert_passes()
     def test_import_typeddicts(self):
         def capybara():
-            from _pyanalyze_tests.typeddict import Inherited, PEP655, TD1, TD2
+            from _pyanalyze_tests.typeddict import PEP655, TD1, TD2, Inherited
 
             from pyanalyze.test_typeshed import _EXPECTED_TYPED_DICTS
 
@@ -302,7 +303,7 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     @assert_passes()
     def test_evaluated_import(self):
         def capybara(unannotated):
-            from typing import BinaryIO, IO, TextIO
+            from typing import IO, BinaryIO, TextIO
 
             from _pyanalyze_tests.evaluated import open, open2
 
@@ -357,7 +358,7 @@ class TestBundledStubs(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_stub_context_manager(self):
-        from typing_extensions import assert_type, Literal
+        from typing_extensions import Literal, assert_type
 
         def capybara():
             from _pyanalyze_tests.contextmanager import cm
@@ -760,7 +761,7 @@ class TestIntegration(TestNameCheckVisitorBase):
     @assert_passes()
     def test_open(self):
         import io
-        from typing import Any, BinaryIO, IO
+        from typing import IO, Any, BinaryIO
 
         from pyanalyze.extensions import assert_type
 

@@ -29,10 +29,10 @@ import builtins
 import contextlib
 import typing
 from collections.abc import Callable, Hashable
-from dataclasses import dataclass, field, InitVar
+from dataclasses import InitVar, dataclass, field
 from typing import (
+    TYPE_CHECKING,
     Any,
-    cast,
     Container,
     ContextManager,
     Generator,
@@ -43,20 +43,18 @@ from typing import (
     Sequence,
     Set,
     Tuple,
-    TYPE_CHECKING,
     TypeVar,
     Union,
+    cast,
 )
-import typing_extensions
 
 import qcore
-
-from typing_extensions import Literal, ParamSpec, TypedDict, get_origin, get_args
+import typing_extensions
+from typing_extensions import Literal, ParamSpec, TypedDict, get_args, get_origin
 
 from pyanalyze.annotated_types import get_annotated_types_extension
 
 from . import type_evaluation
-
 from .error_code import ErrorCode
 from .extensions import (
     AsynqCallable,
@@ -81,26 +79,20 @@ from .signature import (
     SigParameter,
 )
 from .value import (
-    _HashableValue,
-    DictIncompleteValue,
-    KVPair,
-    TypeAlias,
-    TypeAliasValue,
-    TypeIsExtension,
-    TypedDictEntry,
-    annotate_value,
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
     CallableValue,
     CustomCheckExtension,
+    DictIncompleteValue,
     Extension,
     GenericValue,
     HasAttrGuardExtension,
     KnownValue,
+    KVPair,
     MultiValuedValue,
     NewTypeValue,
-    NO_RETURN_VALUE,
     NoReturnGuardExtension,
     ParameterTypeGuardExtension,
     ParamSpecArgsValue,
@@ -108,14 +100,20 @@ from .value import (
     SelfTVV,
     SequenceValue,
     SubclassValue,
+    TypeAlias,
+    TypeAliasValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     TypeGuardExtension,
+    TypeIsExtension,
     TypeVarLike,
     TypeVarValue,
-    unite_values,
     UnpackedValue,
     Value,
+    _HashableValue,
+    annotate_value,
+    unite_values,
 )
 
 if TYPE_CHECKING:

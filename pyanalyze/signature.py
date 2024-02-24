@@ -14,6 +14,7 @@ import itertools
 from dataclasses import dataclass, field, replace
 from types import FunctionType, MethodType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     ClassVar,
@@ -26,7 +27,6 @@ from typing import (
     Sequence,
     Set,
     Tuple,
-    TYPE_CHECKING,
     TypeVar,
     Union,
 )
@@ -34,83 +34,83 @@ from typing import (
 import asynq
 import qcore
 from qcore.helpers import safe_str
-from typing_extensions import assert_never, Literal, Protocol, Self
+from typing_extensions import Literal, Protocol, Self, assert_never
 
 from pyanalyze.predicates import IsAssignablePredicate
 
 from .error_code import ErrorCode
-from .safe import safe_getattr
 from .node_visitor import Replacement
 from .options import IntegerOption
+from .safe import safe_getattr
 from .stacked_scopes import (
+    NULL_CONSTRAINT,
     AbstractConstraint,
     AndConstraint,
     Composite,
     Constraint,
     ConstraintType,
-    NULL_CONSTRAINT,
     OrConstraint,
     VarnameWithOrigin,
 )
 from .type_evaluation import (
     ARGS,
     DEFAULT,
+    KWARGS,
+    UNKNOWN,
     EvalContext,
     Evaluator,
-    KWARGS,
     Position,
-    UNKNOWN,
 )
 from .typevar import resolve_bounds_map
 from .value import (
-    SelfT,
-    TypeIsExtension,
-    TypedDictEntry,
-    annotate_value,
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
     AsyncTaskIncompleteValue,
     BoundsMap,
     CallableValue,
-    can_assign_and_used_any,
     CanAssign,
     CanAssignContext,
     CanAssignError,
-    concrete_values_from_iterable,
     ConstraintExtension,
     DictIncompleteValue,
-    extract_typevars,
-    flatten_values,
     GenericValue,
-    get_tv_map,
     HasAttrExtension,
     HasAttrGuardExtension,
     KnownValue,
     KVPair,
     LowerBound,
     MultiValuedValue,
-    NO_RETURN_VALUE,
     NoReturnConstraintExtension,
     NoReturnGuardExtension,
     ParameterTypeGuardExtension,
     ParamSpecArgsValue,
     ParamSpecKwargsValue,
-    is_iterable,
-    replace_known_sequence_value,
+    SelfT,
     SequenceValue,
-    stringify_object,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     TypeGuardExtension,
+    TypeIsExtension,
     TypeVarLike,
     TypeVarMap,
     TypeVarValue,
+    Value,
+    annotate_value,
+    can_assign_and_used_any,
+    concrete_values_from_iterable,
+    extract_typevars,
+    flatten_values,
+    get_tv_map,
+    is_iterable,
+    replace_known_sequence_value,
+    stringify_object,
     unannotate,
     unannotate_value,
     unify_bounds_maps,
     unite_values,
-    Value,
 )
 
 if TYPE_CHECKING:

@@ -2,14 +2,15 @@
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .value import TypedDictValue, TypedValue, AnyValue, AnySource, TypedDictEntry
+from .value import AnySource, AnyValue, TypedDictEntry, TypedDictValue, TypedValue
 
 
 class TestExtraKeys(TestNameCheckVisitorBase):
     @assert_passes()
     def test_signature(self):
-        from pyanalyze.extensions import has_extra_keys
         from typing_extensions import TypedDict
+
+        from pyanalyze.extensions import has_extra_keys
 
         @has_extra_keys(int)
         class TD(TypedDict):
@@ -28,9 +29,11 @@ class TestExtraKeys(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_methods(self):
-        from pyanalyze.extensions import has_extra_keys
-        from typing_extensions import TypedDict, assert_type, Literal
         from typing import Union
+
+        from typing_extensions import Literal, TypedDict, assert_type
+
+        from pyanalyze.extensions import has_extra_keys
 
         @has_extra_keys(int)
         class TD(TypedDict):
@@ -57,8 +60,9 @@ class TestExtraKeys(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_kwargs_annotation(self):
-        from pyanalyze.extensions import has_extra_keys
         from typing_extensions import TypedDict, Unpack, assert_type
+
+        from pyanalyze.extensions import has_extra_keys
 
         @has_extra_keys(int)
         class TD(TypedDict):
@@ -73,9 +77,11 @@ class TestExtraKeys(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_compatibility(self):
-        from pyanalyze.extensions import has_extra_keys
-        from typing_extensions import ReadOnly, TypedDict
         from typing import Any, Dict
+
+        from typing_extensions import ReadOnly, TypedDict
+
+        from pyanalyze.extensions import has_extra_keys
 
         @has_extra_keys(int)
         class TD(TypedDict):
@@ -112,9 +118,11 @@ class TestExtraKeys(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_iteration(self):
-        from pyanalyze.extensions import has_extra_keys
-        from typing_extensions import TypedDict, assert_type, Literal
         from typing import Union
+
+        from typing_extensions import Literal, TypedDict, assert_type
+
+        from pyanalyze.extensions import has_extra_keys
 
         @has_extra_keys(int)
         class TD(TypedDict):
@@ -263,8 +271,9 @@ class TestTypedDict(TestNameCheckVisitorBase):
 class TestReadOnly(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):
-        from typing_extensions import NotRequired, ReadOnly, TypedDict
         from typing import Any, Dict
+
+        from typing_extensions import NotRequired, ReadOnly, TypedDict
 
         class TD(TypedDict):
             a: ReadOnly[NotRequired[int]]
@@ -283,8 +292,9 @@ class TestReadOnly(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_compatibility(self):
+        from typing import Any, Dict
+
         from typing_extensions import ReadOnly, TypedDict
-        from typing import Dict, Any
 
         class TD(TypedDict):
             a: int
@@ -323,8 +333,9 @@ class TestReadOnly(TestNameCheckVisitorBase):
 class TestClosed(TestNameCheckVisitorBase):
     @assert_passes()
     def test_basic(self):
-        from typing_extensions import NotRequired, TypedDict
         from typing import Any, Dict
+
+        from typing_extensions import NotRequired, TypedDict
 
         class Closed(TypedDict, closed=True):
             a: NotRequired[int]
