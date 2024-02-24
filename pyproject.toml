@@ -1,13 +1,8 @@
 [tool.black]
-target_version = ['py36']
+target_version = ['py38']
 include = '\.pyi?$'
 skip-magic-trailing-comma = true
 preview = true
-
-# README
-# The first section is for directories
-# The second section is for specific files
-
 exclude = '''
 /(
     \.git
@@ -46,3 +41,24 @@ implicit_any = true
 [[tool.pyanalyze.overrides]]
 module = "pyanalyze.yield_checker"
 implicit_any = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+  "F",
+  "E",
+  "I",  # import sorting
+  "C4",  # flake8-comprehensions
+  "B",  # bugbear
+  "SIM",  # simplify
+  "UP",  # pyupgrade
+  "PIE810",  # startswith/endswith with a tuple
+  "PERF101",  # unnecessary list() calls that can be replaced with literals
+]
+
+ignore = [
+  "B008",  # do not perform function calls in argument defaults
+]
