@@ -59,6 +59,8 @@ ignore = [
   "F821",  # undefined name
   "F505",  # .format() stuff
   "F507",  # .format() stuff
+  "F522",  # .format() stuff
+  "F523",  # .format() stuff
   "F524",  # .format() stuff
   "F823", # local variable referenced before assignment
   "F601",  # dictionary key name repeated with different values
