@@ -89,6 +89,7 @@ from .value import (
     ParamSpecKwargsValue,
     SelfT,
     SequenceValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     TypeGuardExtension,
@@ -1027,7 +1028,9 @@ class Signature:
                 ) in actual_args.keywords.items():
                     if key in keywords_consumed:
                         continue
-                    items[key] = (definitely_provided, composite.value)
+                    items[key] = TypedDictEntry(
+                        composite.value, required=definitely_provided
+                    )
                 position = KWARGS
                 if actual_args.ellipsis:
                     star_kwargs_value = GenericValue(
@@ -1035,7 +1038,8 @@ class Signature:
                     )
                 elif actual_args.star_kwargs is not None:
                     value_value = unite_values(
-                        *(val for _, val in items.values()), actual_args.star_kwargs
+                        *(entry.typ for entry in items.values()),
+                        actual_args.star_kwargs,
                     )
                     star_kwargs_value = GenericValue(
                         dict, [TypedValue(str), value_value]
@@ -1819,12 +1823,12 @@ class Signature:
             elif param.kind is ParameterKind.VAR_KEYWORD and isinstance(
                 param.annotation, TypedDictValue
             ):
-                for name, (is_required, value) in param.annotation.items.items():
+                for name, entry in param.annotation.items.items():
                     param_dict[name] = SigParameter(
                         name,
                         ParameterKind.KEYWORD_ONLY,
-                        annotation=value,
-                        default=None if is_required else AnyValue(AnySource.marker),
+                        annotation=entry.typ,
+                        default=None if entry.required else AnyValue(AnySource.marker),
                     )
                     i += 1
                 if param.annotation.extra_keys is not None:
@@ -2129,7 +2133,9 @@ def _preprocess_kwargs_no_mvv(
     """
     value = replace_known_sequence_value(value)
     if isinstance(value, TypedDictValue):
-        return value.items, None
+        return {
+            key: (entry.required, entry.typ) for key, entry in value.items.items()
+        }, None
     elif isinstance(value, DictIncompleteValue):
         return _preprocess_kwargs_kv_pairs(value.kv_pairs, ctx)
     else:
@@ -2630,7 +2636,7 @@ def can_assign_var_keyword(
             return CanAssignError(
                 f"parameter {my_param.name!r} is not accepted by {kwargs_annotation}"
             )
-        their_annotation = kwargs_annotation.items[my_param.name][1]
+        their_annotation = kwargs_annotation.items[my_param.name].typ
         can_assign = their_annotation.can_assign(my_annotation, ctx)
         if isinstance(can_assign, CanAssignError):
             return CanAssignError(

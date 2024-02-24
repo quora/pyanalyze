@@ -15,6 +15,7 @@ from .value import (
     NewTypeValue,
     SequenceValue,
     SubclassValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     TypeVarValue,
@@ -1504,9 +1505,9 @@ class TestRequired(TestNameCheckVisitorBase):
                 td,
                 TypedDictValue(
                     {
-                        "a": (True, TypedValue(int)),
-                        "b": (True, TypedValue(str)),
-                        "c": (False, TypedValue(float)),
+                        "a": TypedDictEntry(TypedValue(int)),
+                        "b": TypedDictEntry(TypedValue(str)),
+                        "c": TypedDictEntry(TypedValue(float), required=False),
                     }
                 ),
             )
@@ -1521,9 +1522,9 @@ class TestRequired(TestNameCheckVisitorBase):
                 td,
                 TypedDictValue(
                     {
-                        "a": (False, TypedValue(int)),
-                        "b": (True, TypedValue(str)),
-                        "c": (False, TypedValue(float)),
+                        "a": TypedDictEntry(TypedValue(int), required=False),
+                        "b": TypedDictEntry(TypedValue(str)),
+                        "c": TypedDictEntry(TypedValue(float), required=False),
                     }
                 ),
             )
@@ -1538,9 +1539,9 @@ class TestRequired(TestNameCheckVisitorBase):
                 td,
                 TypedDictValue(
                     {
-                        "a": (True, TypedValue(int)),
-                        "b": (True, TypedValue(str)),
-                        "c": (False, TypedValue(float)),
+                        "a": TypedDictEntry(TypedValue(int)),
+                        "b": TypedDictEntry(TypedValue(str)),
+                        "c": TypedDictEntry(TypedValue(float), required=False),
                     }
                 ),
             )
@@ -1571,9 +1572,9 @@ class TestRequired(TestNameCheckVisitorBase):
                 KnownValue(None)
                 | TypedDictValue(
                     {
-                        "a": (True, TypedValue(int)),
-                        "b": (True, TypedValue(str)),
-                        "c": (False, TypedValue(float)),
+                        "a": TypedDictEntry(TypedValue(int)),
+                        "b": TypedDictEntry(TypedValue(str)),
+                        "c": TypedDictEntry(TypedValue(float), required=False),
                     }
                 ),
             )
@@ -1582,9 +1583,9 @@ class TestRequired(TestNameCheckVisitorBase):
                 KnownValue(None)
                 | TypedDictValue(
                     {
-                        "a": (True, TypedValue(int)),
-                        "b": (True, TypedValue(str)),
-                        "c": (False, TypedValue(float)),
+                        "a": TypedDictEntry(TypedValue(int)),
+                        "b": TypedDictEntry(TypedValue(str)),
+                        "c": TypedDictEntry(TypedValue(float), required=False),
                     }
                 ),
             )
@@ -1605,9 +1606,9 @@ class TestRequired(TestNameCheckVisitorBase):
                 td,
                 TypedDictValue(
                     {
-                        "a": (True, TypedValue(int)),
-                        "b": (True, TypedValue(str)),
-                        "c": (False, TypedValue(float)),
+                        "a": TypedDictEntry(TypedValue(int)),
+                        "b": TypedDictEntry(TypedValue(str)),
+                        "c": TypedDictEntry(TypedValue(float), required=False),
                     }
                 ),
             )
@@ -1622,9 +1623,9 @@ class TestRequired(TestNameCheckVisitorBase):
                 td,
                 TypedDictValue(
                     {
-                        "a": (False, TypedValue(int)),
-                        "b": (True, TypedValue(str)),
-                        "c": (False, TypedValue(float)),
+                        "a": TypedDictEntry(TypedValue(int), required=False),
+                        "b": TypedDictEntry(TypedValue(str)),
+                        "c": TypedDictEntry(TypedValue(float), required=False),
                     }
                 ),
             )
@@ -1639,9 +1640,9 @@ class TestRequired(TestNameCheckVisitorBase):
                 td,
                 TypedDictValue(
                     {
-                        "a": (True, TypedValue(int)),
-                        "b": (True, TypedValue(str)),
-                        "c": (False, TypedValue(float)),
+                        "a": TypedDictEntry(TypedValue(int)),
+                        "b": TypedDictEntry(TypedValue(str)),
+                        "c": TypedDictEntry(TypedValue(float), required=False),
                     }
                 ),
             )

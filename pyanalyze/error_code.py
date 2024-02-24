@@ -109,6 +109,7 @@ class ErrorCode(enum.Enum):
     disallowed_import = 89
     typeis_must_be_subtype = 90
     invalid_typeguard = 91
+    readonly_typeddict = 92
 
 
 # Allow testing unannotated functions without too much fuss
@@ -245,6 +246,7 @@ ERROR_DESCRIPTION = {
         "TypeIs narrowed type must be a subtype of the input type"
     ),
     ErrorCode.invalid_typeguard: "Invalid use of TypeGuard or TypeIs",
+    ErrorCode.readonly_typeddict: "TypedDict is read-only",
 }
 
 

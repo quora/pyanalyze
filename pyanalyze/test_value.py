@@ -358,7 +358,10 @@ def test_variable_name_value() -> None:
 
 def test_typeddict_value() -> None:
     val = value.TypedDictValue(
-        {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
+        {
+            "a": value.TypedDictEntry(TypedValue(int)),
+            "b": value.TypedDictEntry(TypedValue(str)),
+        }
     )
     # dict iteration order in some Python versions is not deterministic
     assert str(val) in [
@@ -384,26 +387,44 @@ def test_typeddict_value() -> None:
     assert_can_assign(
         val,
         value.TypedDictValue(
-            {"a": (True, KnownValue(1)), "b": (True, TypedValue(str))}
-        ),
-    )
-    assert_can_assign(
-        val,
-        value.TypedDictValue(
             {
-                "a": (True, KnownValue(1)),
-                "b": (True, TypedValue(str)),
-                "c": (True, TypedValue(float)),
+                "a": value.TypedDictEntry(TypedValue(int)),
+                "b": value.TypedDictEntry(TypedValue(str)),
+                "c": value.TypedDictEntry(TypedValue(float)),
             }
         ),
     )
     assert_cannot_assign(
         val,
         value.TypedDictValue(
-            {"a": (True, KnownValue(1)), "b": (True, TypedValue(int))}
+            {
+                "a": value.TypedDictEntry(KnownValue(1)),
+                "b": value.TypedDictEntry(TypedValue(str)),
+            }
         ),
     )
-    assert_cannot_assign(val, value.TypedDictValue({"b": (True, TypedValue(str))}))
+    assert_cannot_assign(
+        val,
+        value.TypedDictValue(
+            {
+                "a": value.TypedDictEntry(KnownValue(1)),
+                "b": value.TypedDictEntry(TypedValue(str)),
+                "c": value.TypedDictEntry(TypedValue(float)),
+            }
+        ),
+    )
+    assert_cannot_assign(
+        val,
+        value.TypedDictValue(
+            {
+                "a": value.TypedDictEntry(KnownValue(1)),
+                "b": value.TypedDictEntry(TypedValue(int)),
+            }
+        ),
+    )
+    assert_cannot_assign(
+        val, value.TypedDictValue({"b": value.TypedDictEntry(TypedValue(str))})
+    )
 
     # DictIncompleteValue
     assert_can_assign(

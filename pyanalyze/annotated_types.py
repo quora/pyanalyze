@@ -13,6 +13,7 @@ from pyanalyze.value import CanAssign, CanAssignContext, Value, flatten_values
 
 from .extensions import CustomCheck
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnyValue,
     CanAssignError,
@@ -293,7 +294,7 @@ def _min_len_of_value(val: Value) -> Optional[int]:
     elif isinstance(val, DictIncompleteValue):
         return sum(pair.is_required and not pair.is_many for pair in val.kv_pairs)
     elif isinstance(val, TypedDictValue):
-        return sum(required for required, _ in val.items.values())
+        return sum(entry.required for entry in val.items.values())
     else:
         return None
 
@@ -314,6 +315,10 @@ def _max_len_of_value(val: Value) -> Optional[int]:
             if pair.is_required:
                 maximum += 1
         return maximum
+    elif isinstance(val, TypedDictValue):
+        if val.extra_keys is not NO_RETURN_VALUE:
+            # May have arbitrary number of extra keys
+            return None
+        return len(val.items)
     else:
-        # Always None for TypedDicts as TypedDicts may have arbitrary extra keys
         return None

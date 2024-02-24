@@ -50,7 +50,7 @@ from typing import (
 
 import qcore
 import typing_extensions
-from typing_extensions import ParamSpec, TypedDict, get_args, get_origin
+from typing_extensions import Literal, ParamSpec, TypedDict, get_args, get_origin
 
 from pyanalyze.annotated_types import get_annotated_types_extension
 
@@ -102,6 +102,7 @@ from .value import (
     SubclassValue,
     TypeAlias,
     TypeAliasValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     TypeGuardExtension,
@@ -432,20 +433,32 @@ def _type_from_runtime(
     # mypy_extensions.TypedDict
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
         required_keys = getattr(val, "__required_keys__", None)
+        readonly_keys = getattr(val, "__readonly_keys__", None)
         # 3.8's typing.TypedDict doesn't have __required_keys__. With
         # inheritance, this makes it apparently impossible to figure out which
         # keys are required at runtime.
         total = getattr(val, "__total__", True)
+        extra_keys = None
         if hasattr(val, "__extra_keys__"):
-            extra_keys = _type_from_runtime(val.__extra_keys__, ctx)
-        else:
-            extra_keys = None
+            extra_keys = _type_from_runtime(val.__extra_keys__, ctx, is_typeddict=True)
+        if hasattr(val, "__closed__") and val.__closed__:
+            extra_keys = _type_from_runtime(val.__extra_items__, ctx, is_typeddict=True)
+        extra_readonly = False
+        while isinstance(extra_keys, TypeQualifierValue):
+            if extra_keys.qualifier == "ReadOnly":
+                extra_readonly = True
+            else:
+                ctx.show_error(f"{extra_keys.qualifier} not allowed on extra_keys")
+            extra_keys = extra_keys.value
         return TypedDictValue(
             {
-                key: _get_typeddict_value(value, ctx, key, required_keys, total)
+                key: _get_typeddict_value(
+                    value, ctx, key, required_keys, total, readonly_keys
+                )
                 for key, value in val.__annotations__.items()
             },
             extra_keys=extra_keys,
+            extra_keys_readonly=extra_readonly,
         )
     elif val is InitVar:
         # On 3.6 and 3.7, InitVar[T] just returns InitVar at runtime, so we can't
@@ -624,15 +637,26 @@ def _get_typeddict_value(
     key: str,
     required_keys: Optional[Container[str]],
     total: bool,
-) -> Tuple[bool, Value]:
+    readonly_keys: Optional[Container[str]],
+) -> TypedDictEntry:
     val = _type_from_runtime(value, ctx, is_typeddict=True)
-    if isinstance(val, Pep655Value):
-        return (val.required, val.value)
     if required_keys is None:
         required = total
     else:
         required = key in required_keys
-    return required, val
+    if readonly_keys is None:
+        readonly = False
+    else:
+        readonly = key in readonly_keys
+    while isinstance(val, TypeQualifierValue):
+        if val.qualifier == "ReadOnly":
+            readonly = True
+        elif val.qualifier == "Required":
+            required = True
+        elif val.qualifier == "NotRequired":
+            required = False
+        val = val.value
+    return TypedDictEntry(required=required, readonly=readonly, typ=val)
 
 
 def _eval_forward_ref(
@@ -797,7 +821,9 @@ def _type_from_subscripted_value(
         if len(members) != 1:
             ctx.show_error("Required[] requires a single argument")
             return AnyValue(AnySource.error)
-        return Pep655Value(True, _type_from_value(members[0], ctx))
+        return TypeQualifierValue(
+            "Required", _type_from_value(members[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(root, "NotRequired"):
         if not is_typeddict:
             ctx.show_error("NotRequired[] used in unsupported context")
@@ -805,7 +831,19 @@ def _type_from_subscripted_value(
         if len(members) != 1:
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
-        return Pep655Value(False, _type_from_value(members[0], ctx))
+        return TypeQualifierValue(
+            "NotRequired", _type_from_value(members[0], ctx, is_typeddict=True)
+        )
+    elif is_typing_name(root, "ReadOnly"):
+        if not is_typeddict:
+            ctx.show_error("ReadOnly[] used in unsupported context")
+            return AnyValue(AnySource.error)
+        if len(members) != 1:
+            ctx.show_error("ReadOnly[] requires a single argument")
+            return AnyValue(AnySource.error)
+        return TypeQualifierValue(
+            "ReadOnly", _type_from_value(members[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(root, "Unpack"):
         if not allow_unpack:
             ctx.show_error("Unpack[] used in unsupported context")
@@ -919,8 +957,8 @@ class _SubscriptedValue(Value):
 
 
 @dataclass
-class Pep655Value(Value):
-    required: bool
+class TypeQualifierValue(Value):
+    qualifier: Literal["Required", "NotRequired", "ReadOnly"]
     value: Value
 
 
@@ -1210,7 +1248,9 @@ def _value_of_origin_args(
         if len(args) != 1:
             ctx.show_error("Required[] requires a single argument")
             return AnyValue(AnySource.error)
-        return Pep655Value(True, _type_from_runtime(args[0], ctx))
+        return TypeQualifierValue(
+            "Required", _type_from_runtime(args[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(origin, "NotRequired"):
         if not is_typeddict:
             ctx.show_error("NotRequired[] used in unsupported context")
@@ -1218,7 +1258,19 @@ def _value_of_origin_args(
         if len(args) != 1:
             ctx.show_error("NotRequired[] requires a single argument")
             return AnyValue(AnySource.error)
-        return Pep655Value(False, _type_from_runtime(args[0], ctx))
+        return TypeQualifierValue(
+            "NotRequired", _type_from_runtime(args[0], ctx, is_typeddict=True)
+        )
+    elif is_typing_name(origin, "ReadOnly"):
+        if not is_typeddict:
+            ctx.show_error("ReadOnly[] used in unsupported context")
+            return AnyValue(AnySource.error)
+        if len(args) != 1:
+            ctx.show_error("ReadOnly[] requires a single argument")
+            return AnyValue(AnySource.error)
+        return TypeQualifierValue(
+            "ReadOnly", _type_from_runtime(args[0], ctx, is_typeddict=True)
+        )
     elif is_typing_name(origin, "Unpack"):
         if not allow_unpack:
             ctx.show_error("Invalid usage of Unpack")

@@ -42,8 +42,8 @@ from .analysis_lib import is_positional_only_arg_name
 from .annotations import (
     Context,
     DecoratorValue,
-    Pep655Value,
     SyntheticEvaluator,
+    TypeQualifierValue,
     make_type_var_value,
     type_from_value,
     value_from_ast,
@@ -75,6 +75,7 @@ from .value import (
     KnownValue,
     SubclassValue,
     SyntheticModuleValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     TypeVarValue,
@@ -1100,6 +1101,7 @@ class TypeshedFinder:
         total = True
         if isinstance(info.ast, ast.ClassDef):
             for keyword in info.ast.keywords:
+                # TODO support PEP 728 here
                 if keyword.arg == "total":
                     val = self._parse_expr(keyword.value, module)
                     if isinstance(val, KnownValue) and isinstance(val.val, bool):
@@ -1123,11 +1125,18 @@ class TypeshedFinder:
         )
         return TypedDictValue(items)
 
-    def _make_td_value(self, field: Value, total: bool) -> Tuple[bool, Value]:
-        if isinstance(field, Pep655Value):
-            return (field.required, field.value)
-        else:
-            return (total, field)
+    def _make_td_value(self, field: Value, total: bool) -> TypedDictEntry:
+        readonly = False
+        required = total
+        while isinstance(field, TypeQualifierValue):
+            if field.qualifier == "ReadOnly":
+                readonly = True
+            elif field.qualifier == "Required":
+                required = True
+            elif field.qualifier == "NotRequired":
+                required = False
+            field = field.value
+        return TypedDictEntry(readonly=readonly, required=required, typ=field)
 
     def _value_from_info(
         self, info: typeshed_client.resolver.ResolvedName, module: str

@@ -38,6 +38,7 @@ from .value import (
     NewTypeValue,
     SequenceValue,
     SubclassValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     TypeVarValue,
@@ -181,18 +182,26 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
 
 
 _EXPECTED_TYPED_DICTS = {
-    "TD1": TypedDictValue({"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}),
+    "TD1": TypedDictValue(
+        {"a": TypedDictEntry(TypedValue(int)), "b": TypedDictEntry(TypedValue(str))}
+    ),
     "TD2": TypedDictValue(
-        {"a": (False, TypedValue(int)), "b": (False, TypedValue(str))}
+        {
+            "a": TypedDictEntry(TypedValue(int), required=False),
+            "b": TypedDictEntry(TypedValue(str), required=False),
+        }
     ),
     "PEP655": TypedDictValue(
-        {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
+        {
+            "a": TypedDictEntry(TypedValue(int), required=False),
+            "b": TypedDictEntry(TypedValue(str)),
+        }
     ),
     "Inherited": TypedDictValue(
         {
-            "a": (True, TypedValue(int)),
-            "b": (True, TypedValue(str)),
-            "c": (True, TypedValue(float)),
+            "a": TypedDictEntry(TypedValue(int)),
+            "b": TypedDictEntry(TypedValue(str)),
+            "c": TypedDictEntry(TypedValue(float)),
         }
     ),
 }

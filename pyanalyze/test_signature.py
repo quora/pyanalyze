@@ -17,6 +17,7 @@ from .value import (
     GenericValue,
     KnownValue,
     SequenceValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
 )
@@ -316,9 +317,9 @@ class TestCanAssign:
         self.can(three_ints_sig, Signature.make([dict_int]))
         good_td = TypedDictValue(
             {
-                "a": (True, TypedValue(int)),
-                "b": (True, TypedValue(int)),
-                "c": (True, TypedValue(int)),
+                "a": TypedDictEntry(TypedValue(int)),
+                "b": TypedDictEntry(TypedValue(int)),
+                "c": TypedDictEntry(TypedValue(int)),
             }
         )
         self.can(
@@ -326,7 +327,7 @@ class TestCanAssign:
             Signature.make([P("a", annotation=good_td, kind=K.VAR_KEYWORD)]),
         )
         smaller_td = TypedDictValue(
-            {"a": (True, TypedValue(int)), "b": (True, TypedValue(int))}
+            {"a": TypedDictEntry(TypedValue(int)), "b": TypedDictEntry(TypedValue(int))}
         )
         # This is still OK because TypedDicts are allowed to have extra keys.
         # TODO change to can
@@ -335,7 +336,7 @@ class TestCanAssign:
             Signature.make([P("a", annotation=smaller_td, kind=K.VAR_KEYWORD)]),
         )
         bad_td = TypedDictValue(
-            {"a": (True, TypedValue(str)), "b": (True, TypedValue(int))}
+            {"a": TypedDictEntry(TypedValue(str)), "b": TypedDictEntry(TypedValue(int))}
         )
         self.cannot(
             three_ints_sig,
@@ -1273,7 +1274,10 @@ class TestUnpack(TestNameCheckVisitorBase):
             assert_is_value(
                 kwargs,
                 TypedDictValue(
-                    {"a": (False, TypedValue(int)), "b": (True, TypedValue(str))}
+                    {
+                        "a": TypedDictEntry(TypedValue(int), required=False),
+                        "b": TypedDictEntry(TypedValue(str)),
+                    }
                 ),
             )
 
