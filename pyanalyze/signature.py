@@ -65,6 +65,7 @@ from .typevar import resolve_bounds_map
 from .value import (
     SelfT,
     TypeIsExtension,
+    TypedDictEntry,
     annotate_value,
     AnnotatedValue,
     AnySource,
@@ -1027,7 +1028,9 @@ class Signature:
                 ) in actual_args.keywords.items():
                     if key in keywords_consumed:
                         continue
-                    items[key] = (definitely_provided, composite.value)
+                    items[key] = TypedDictEntry(
+                        composite.value, required=definitely_provided
+                    )
                 position = KWARGS
                 if actual_args.ellipsis:
                     star_kwargs_value = GenericValue(
@@ -1819,12 +1822,12 @@ class Signature:
             elif param.kind is ParameterKind.VAR_KEYWORD and isinstance(
                 param.annotation, TypedDictValue
             ):
-                for name, (is_required, value) in param.annotation.items.items():
+                for name, entry in param.annotation.items.items():
                     param_dict[name] = SigParameter(
                         name,
                         ParameterKind.KEYWORD_ONLY,
-                        annotation=value,
-                        default=None if is_required else AnyValue(AnySource.marker),
+                        annotation=entry.typ,
+                        default=None if entry.required else AnyValue(AnySource.marker),
                     )
                     i += 1
                 if param.annotation.extra_keys is not None:

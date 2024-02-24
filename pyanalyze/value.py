@@ -956,8 +956,8 @@ class GenericValue(TypedValue):
                     if isinstance(can_assign, CanAssignError):
                         return CanAssignError(f"In TypedDict key {key!r}", [can_assign])
             elif i == 1:
-                for key, (_, value) in other.items.items():
-                    can_assign = expected.can_assign(value, ctx)
+                for key, entry in other.items.items():
+                    can_assign = expected.can_assign(entry.typ, ctx)
                     if isinstance(can_assign, CanAssignError):
                         return CanAssignError(f"In TypedDict key {key!r}", [can_assign])
         elif isinstance(other, SequenceValue) and self.typ in {
@@ -1241,22 +1241,42 @@ class DictIncompleteValue(GenericValue):
         return unite_values(*possible_values)
 
 
+@dataclass(frozen=True)
+class TypedDictEntry:
+    typ: Value
+    required: bool = True
+    readonly: bool = False
+
+    def __str__(self) -> str:
+        val = str(self.typ)
+        if self.readonly:
+            val = f"Readonly[{val}]"
+        if not self.required:
+            val = f"NotRequired[{val}]"
+        return val
+
+
 @dataclass(init=False)
 class TypedDictValue(GenericValue):
     """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys."""
 
-    items: Dict[str, Tuple[bool, Value]]
+    items: Dict[str, TypedDictEntry]
     """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
     ones as (False, value)."""
     extra_keys: Optional[Value] = None
     """The type of unknown keys, if any."""
+    extra_keys_readonly: bool = False
+    """Whether the extra keys are readonly."""
 
     def __init__(
-        self, items: Dict[str, Tuple[bool, Value]], extra_keys: Optional[Value] = None
+        self,
+        items: Dict[str, TypedDictEntry],
+        extra_keys: Optional[Value] = None,
+        extra_keys_readonly: bool = False,
     ) -> None:
         value_types = []
         if items:
-            value_types += [val for _, val in items.values()]
+            value_types += [val.typ for val in items.values()]
         if extra_keys is not None:
             value_types.append(extra_keys)
         value_type = (
@@ -1269,97 +1289,206 @@ class TypedDictValue(GenericValue):
         super().__init__(dict, (key_type, value_type))
         self.items = items
         self.extra_keys = extra_keys
+        self.extra_keys_readonly = extra_keys_readonly
 
     def num_required_keys(self) -> int:
-        return sum(1 for required, _ in self.items.values() if required)
+        return sum(1 for entry in self.items.values() if entry.required)
 
     def all_keys_required(self) -> bool:
-        return all(required for required, _ in self.items.values())
+        return all(entry.required for entry in self.items.values())
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, DictIncompleteValue):
             bounds_maps = []
-            for key, (is_required, value) in self.items.items():
+            for key, entry in self.items.items():
                 their_value = other.get_value(KnownValue(key), ctx)
                 if their_value is UNINITIALIZED_VALUE:
-                    if is_required:
+                    if entry.required:
                         return CanAssignError(f"Key {key} is missing in {other}")
                     else:
                         continue
-                can_assign = value.can_assign(their_value, ctx)
+                can_assign = entry.typ.can_assign(their_value, ctx)
                 if isinstance(can_assign, CanAssignError):
                     return CanAssignError(
                         f"Types for key {key} are incompatible", children=[can_assign]
                     )
                 bounds_maps.append(can_assign)
+            for pair in other.kv_pairs:
+                for key_type in flatten_values(pair.key, unwrap_annotated=True):
+                    if isinstance(key_type, KnownValue):
+                        if not isinstance(key_type.val, str):
+                            return CanAssignError(f"Key {pair.key} is not a string")
+                        if key_type.val not in self.items:
+                            if self.extra_keys is NO_RETURN_VALUE:
+                                return CanAssignError(
+                                    f"Key {key_type.val!r} is not allowed in closed TypedDict {self}"
+                                )
+                            elif self.extra_keys is not None:
+                                can_assign = self.extra_keys.can_assign(pair.value, ctx)
+                                if isinstance(can_assign, CanAssignError):
+                                    return CanAssignError(
+                                        f"Type for extra key {pair.key} is incompatible",
+                                        children=[can_assign],
+                                    )
+                                bounds_maps.append(can_assign)
+                    else:
+                        can_assign = TypedValue(str).can_assign(key_type, ctx)
+                        if isinstance(can_assign, CanAssignError):
+                            return CanAssignError(
+                                f"Type for key {pair.key} is not a string",
+                                children=[can_assign],
+                            )
+                        if self.extra_keys is NO_RETURN_VALUE:
+                            return CanAssignError(
+                                f"Key {pair.key} is not allowed in closed TypedDict {self}"
+                            )
+                        elif self.extra_keys is not None:
+                            can_assign = self.extra_keys.can_assign(pair.value, ctx)
+                            if isinstance(can_assign, CanAssignError):
+                                return CanAssignError(
+                                    f"Type for extra key {pair.key} is incompatible",
+                                    children=[can_assign],
+                                )
+                            bounds_maps.append(can_assign)
             return unify_bounds_maps(bounds_maps)
         elif isinstance(other, TypedDictValue):
             bounds_maps = []
-            for key, (is_required, value) in self.items.items():
+            for key, entry in self.items.items():
                 if key not in other.items:
-                    if is_required:
-                        return CanAssignError(f"Key {key} is missing in {other}")
+                    if entry.required:
+                        return CanAssignError(
+                            f"Required key {key} is missing in {other}"
+                        )
+                    if not entry.readonly:
+                        # "other" may be a subclass of its TypedDict type that sets a different key
+                        return CanAssignError(
+                            f"Mutable key {key} is missing in {other}"
+                        )
+                    extra_keys_type = other.extra_keys or TypedValue(object)
+                    can_assign = entry.typ.can_assign(extra_keys_type, ctx)
+                    if isinstance(can_assign, CanAssignError):
+                        return CanAssignError(
+                            f"Type for key {key} is incompatible with extra keys type {extra_keys_type}",
+                            children=[can_assign],
+                        )
                 else:
-                    can_assign = value.can_assign(other.items[key][1], ctx)
+                    their_entry = other.items[key]
+                    if entry.required and not their_entry.required:
+                        return CanAssignError(
+                            f"Required key {key} is non-required in {other}"
+                        )
+                    if (
+                        not entry.required
+                        and not entry.readonly
+                        and their_entry.required
+                    ):
+                        # This means we may del the key, but the other TypedDict does not
+                        # allow it
+                        return CanAssignError(
+                            f"Mutable key {key} is required in {other}"
+                        )
+
+                    can_assign = entry.typ.can_assign(their_entry.typ, ctx)
                     if isinstance(can_assign, CanAssignError):
                         return CanAssignError(
                             f"Types for key {key} are incompatible",
                             children=[can_assign],
                         )
                     bounds_maps.append(can_assign)
-            # TODO: What if only one of the two has extra keys?
-            if self.extra_keys is not None and other.extra_keys is not None:
-                can_assign = self.extra_keys.can_assign(other.extra_keys, ctx)
+                    if not entry.readonly:
+                        can_assign = their_entry.typ.can_assign(entry.typ, ctx)
+                        if isinstance(can_assign, CanAssignError):
+                            return CanAssignError(
+                                f"Types for mutable key {key} are incompatible",
+                                children=[can_assign],
+                            )
+                        bounds_maps.append(can_assign)
+            if not self.extra_keys_readonly and other.extra_keys_readonly:
+                return CanAssignError(f"Extra keys are readonly in {other}")
+            if self.extra_keys is not None:
+                their_extra_keys = other.extra_keys or TypedValue(object)
+                can_assign = self.extra_keys.can_assign(their_extra_keys, ctx)
                 if isinstance(can_assign, CanAssignError):
                     return CanAssignError(
                         "Types for extra keys are incompatible", children=[can_assign]
                     )
                 bounds_maps.append(can_assign)
+                if not self.extra_keys_readonly:
+                    can_assign = their_extra_keys.can_assign(self.extra_keys, ctx)
+                    if isinstance(can_assign, CanAssignError):
+                        return CanAssignError(
+                            "Types for mutable extra keys are incompatible",
+                            children=[can_assign],
+                        )
+                    bounds_maps.append(can_assign)
             return unify_bounds_maps(bounds_maps)
         elif isinstance(other, KnownValue) and isinstance(other.val, dict):
             bounds_maps = []
-            for key, (is_required, value) in self.items.items():
+            for key, entry in self.items.items():
                 if key not in other.val:
-                    if is_required:
+                    if entry.required:
                         return CanAssignError(f"Key {key} is missing in {other}")
                 else:
-                    can_assign = value.can_assign(KnownValue(other.val[key]), ctx)
+                    can_assign = entry.typ.can_assign(KnownValue(other.val[key]), ctx)
                     if isinstance(can_assign, CanAssignError):
                         return CanAssignError(
                             f"Types for key {key} are incompatible",
                             children=[can_assign],
                         )
                     bounds_maps.append(can_assign)
+            for key, value in other.val.items():
+                if key not in self.items:
+                    if self.extra_keys is NO_RETURN_VALUE:
+                        return CanAssignError(
+                            f"Key {key} is not allowed in closed TypedDict {self}"
+                        )
+                    elif self.extra_keys is not None:
+                        can_assign = self.extra_keys.can_assign(KnownValue(value), ctx)
+                        if isinstance(can_assign, CanAssignError):
+                            return CanAssignError(
+                                f"Type for extra key {key} is incompatible",
+                                children=[can_assign],
+                            )
+                        bounds_maps.append(can_assign)
             return unify_bounds_maps(bounds_maps)
         return super().can_assign(other, ctx)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "TypedDictValue":
         return TypedDictValue(
             {
-                key: (is_required, value.substitute_typevars(typevars))
-                for key, (is_required, value) in self.items.items()
+                key: TypedDictEntry(
+                    entry.typ.substitute_typevars(typevars),
+                    required=entry.required,
+                    readonly=entry.readonly,
+                )
+                for key, entry in self.items.items()
             },
             extra_keys=(
                 self.extra_keys.substitute_typevars(typevars)
                 if self.extra_keys is not None
                 else None
             ),
+            extra_keys_readonly=self.extra_keys_readonly,
         )
 
     def __str__(self) -> str:
-        items = [
-            f'"{key}": {value if required else "NotRequired[" + str(value) + "]"}'
-            for key, (required, value) in self.items.items()
-        ]
-        return "TypedDict({%s})" % ", ".join(items)
+        entries = list(self.items.items())
+        if self.extra_keys is not None and self.extra_keys is not NO_RETURN_VALUE:
+            extra_typ = str(self.extra_keys)
+            if self.extra_keys_readonly:
+                extra_typ = f"ReadOnly[{extra_typ}]"
+            entries.append(("__extra_items__", extra_typ))
+        items = [f'"{key}": {entry}' for key, entry in entries]
+        closed = ", closed=True" if self.extra_keys is not None else ""
+        return f"TypedDict({{{', '.join(items)}}}{closed})"
 
     def __hash__(self) -> int:
         return hash(tuple(sorted(self.items)))
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
-        for _, value in self.items.values():
-            yield from value.walk_values()
+        for entry in self.items.values():
+            yield from entry.typ.walk_values()
 
 
 @dataclass(unsafe_hash=True, init=False)
@@ -2533,12 +2662,12 @@ def concrete_values_from_iterable(
             return value.args[0]
         return members
     elif isinstance(value, TypedDictValue):
-        if value.extra_keys is None and all(
-            required for required, _ in value.items.items()
+        if value.extra_keys is NO_RETURN_VALUE and all(
+            entry.required for entry in value.items.values()
         ):
             return [KnownValue(key) for key in value.items]
         possibilities = [KnownValue(key) for key in value.items]
-        if value.extra_keys is not None:
+        if value.extra_keys is not NO_RETURN_VALUE:
             possibilities.append(TypedValue(str))
         return MultiValuedValue(possibilities)
     elif isinstance(value, DictIncompleteValue):
@@ -2622,8 +2751,8 @@ def kv_pairs_from_mapping(
         return value_val.kv_pairs
     elif isinstance(value_val, TypedDictValue):
         pairs = [
-            KVPair(KnownValue(key), value, is_required=required)
-            for key, (required, value) in value_val.items.items()
+            KVPair(KnownValue(key), entry.typ, is_required=entry.required)
+            for key, entry in value_val.items.items()
         ]
         if value_val.extra_keys is not None:
             pairs.append(

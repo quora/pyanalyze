@@ -2,7 +2,7 @@
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .value import TypedDictValue, TypedValue, AnyValue, AnySource
+from .value import TypedDictValue, TypedValue, AnyValue, AnySource, TypedDictEntry
 
 
 class TestExtraKeys(TestNameCheckVisitorBase):
@@ -20,7 +20,7 @@ class TestExtraKeys(TestNameCheckVisitorBase):
             assert_is_value(
                 x,
                 TypedDictValue(
-                    {"a": (True, TypedValue(str))}, extra_keys=TypedValue(int)
+                    {"a": TypedDictEntry(TypedValue(str))}, extra_keys=TypedValue(int)
                 ),
             )
 
@@ -74,7 +74,7 @@ class TestExtraKeys(TestNameCheckVisitorBase):
     @assert_passes()
     def test_compatibility(self):
         from pyanalyze.extensions import has_extra_keys
-        from typing_extensions import TypedDict
+        from typing_extensions import ReadOnly, TypedDict
         from typing import Any, Dict
 
         @has_extra_keys(int)
@@ -89,14 +89,26 @@ class TestExtraKeys(TestNameCheckVisitorBase):
         class TD3(TypedDict):
             a: str
 
+        @has_extra_keys(ReadOnly[int])
+        class TD4(TypedDict):
+            a: str
+
         def want_td(td: TD) -> None:
+            pass
+
+        def want_td4(td: TD4) -> None:
             pass
 
         def capybara(td: TD, td2: TD2, td3: TD3, anydict: Dict[str, Any]) -> None:
             want_td(td)
-            want_td(td2)
+            want_td(td2)  # E: incompatible_argument
             want_td(td3)  # E: incompatible_argument
             want_td(anydict)
+
+            want_td4(td)
+            want_td4(td2)
+            want_td4(td3)  # E: incompatible_argument
+            want_td4(anydict)
 
     @assert_passes()
     def test_iteration(self):
@@ -122,7 +134,7 @@ class TestExtraKeys(TestNameCheckVisitorBase):
                 assert_type(k, str)
                 assert_type(v, str)
             for k in td2:
-                assert_type(k, Literal["a"])
+                assert_type(k, Union[str, Literal["a"]])
 
 
 class TestTypedDict(TestNameCheckVisitorBase):
@@ -143,7 +155,10 @@ class TestTypedDict(TestNameCheckVisitorBase):
             assert_is_value(
                 cap,
                 TypedDictValue(
-                    {"x": (True, TypedValue(int)), "y": (True, TypedValue(str))}
+                    {
+                        "x": TypedDictEntry(TypedValue(int)),
+                        "y": TypedDictEntry(TypedValue(str)),
+                    }
                 ),
             )
             Capybara(x=1)  # E: incompatible_call
@@ -152,7 +167,10 @@ class TestTypedDict(TestNameCheckVisitorBase):
             assert_is_value(
                 maybe_cap,
                 TypedDictValue(
-                    {"x": (True, TypedValue(int)), "y": (False, TypedValue(str))}
+                    {
+                        "x": TypedDictEntry(TypedValue(int)),
+                        "y": TypedDictEntry(TypedValue(str), required=False),
+                    }
                 ),
             )
 
@@ -179,14 +197,20 @@ class TestTypedDict(TestNameCheckVisitorBase):
             assert_is_value(
                 x,
                 TypedDictValue(
-                    {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
+                    {
+                        "a": TypedDictEntry(TypedValue(int)),
+                        "b": TypedDictEntry(TypedValue(str)),
+                    }
                 ),
             )
             assert_is_value(x["a"], TypedValue(int))
             assert_is_value(
                 y,
                 TypedDictValue(
-                    {"a": (True, TypedValue(int)), "b": (True, TypedValue(str))}
+                    {
+                        "a": TypedDictEntry(TypedValue(int)),
+                        "b": TypedDictEntry(TypedValue(str)),
+                    }
                 ),
             )
             assert_is_value(y["a"], TypedValue(int))

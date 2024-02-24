@@ -87,7 +87,7 @@ _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))
 
 
 def clean_up_implementation_fn_return(
-    return_value: Union[Value, ImplReturn]
+    return_value: Union[Value, ImplReturn],
 ) -> ImplReturn:
     if isinstance(return_value, Value):
         return ImplReturn(return_value)
@@ -494,7 +494,40 @@ def _sequence_getitem_impl(ctx: CallContext) -> ImplReturn:
 def _typeddict_setitem(
     self_value: TypedDictValue, key: Value, value: Value, ctx: CallContext
 ) -> None:
-    if not isinstance(key, KnownValue) or not isinstance(key.val, str):
+    if not isinstance(key, KnownValue):
+        if not TypedValue(str).is_assignable(key, ctx.visitor):
+            ctx.show_error(
+                f"TypedDict key must be str, not {key}",
+                ErrorCode.invalid_typeddict_key,
+                arg="k",
+            )
+            return
+        if self_value.extra_keys is None or self_value.extra_keys is NO_RETURN_VALUE:
+            ctx.show_error(
+                f"Cannot set unknown key {key} in TypedDict {self_value}",
+                ErrorCode.invalid_typeddict_key,
+                arg="k",
+            )
+        for td_key, entry in self_value.items.items():
+            if not key.is_assignable(KnownValue(td_key), ctx.visitor):
+                continue
+            if entry.readonly:
+                ctx.show_error(
+                    f"Cannot set readonly key {key} in TypedDict {self_value}",
+                    ErrorCode.readonly_typeddict,
+                    arg="k",
+                )
+            can_assign = entry.typ.can_assign(value, ctx.visitor)
+            if isinstance(can_assign, CanAssignError):
+                ctx.show_error(
+                    f"Value for key {key} must be {entry.typ}, not {value}",
+                    ErrorCode.incompatible_argument,
+                    arg="v",
+                    detail=str(can_assign),
+                )
+        return
+
+    if not isinstance(key.val, str):
         ctx.show_error(
             f"TypedDict key must be a string literal (got {key})",
             ErrorCode.invalid_typeddict_key,
@@ -502,6 +535,13 @@ def _typeddict_setitem(
         )
         return
     if key.val not in self_value.items:
+        if self_value.extra_keys_readonly:
+            ctx.show_error(
+                f"Cannot set unknown key {key.val!r} in closed TypedDict {self_value}",
+                ErrorCode.readonly_typeddict,
+                arg="k",
+            )
+            return
         if self_value.extra_keys is None:
             ctx.show_error(
                 f"Key {key.val!r} does not exist in {self_value}",
@@ -512,7 +552,15 @@ def _typeddict_setitem(
         else:
             expected_type = self_value.extra_keys
     else:
-        _, expected_type = self_value.items[key.val]
+        entry = self_value.items[key.val]
+        if entry.readonly:
+            ctx.show_error(
+                f"Cannot set readonly key {key.val!r} in TypedDict {self_value}",
+                ErrorCode.readonly_typeddict,
+                arg="k",
+            )
+            return
+        expected_type = entry.typ
     tv_map = expected_type.can_assign(value, ctx.visitor)
     if isinstance(tv_map, CanAssignError):
         ctx.show_error(
@@ -573,25 +621,29 @@ def _dict_getitem_impl(ctx: CallContext) -> ImplReturn:
                 return AnyValue(AnySource.error)
             elif isinstance(key, KnownValue):
                 try:
-                    _, value = self_value.items[key.val]
-                    return value
+                    entry = self_value.items[key.val]
+                    return entry.typ
                 # probably KeyError, but catch anything in case it's an
                 # unhashable str subclass or something
                 except Exception:
-                    if self_value.extra_keys is None:
-                        ctx.show_error(
-                            f"Unknown TypedDict key {key}",
-                            ErrorCode.invalid_typeddict_key,
-                            arg="k",
-                        )
-                        return AnyValue(AnySource.error)
-            if self_value.extra_keys is not None:
+                    pass
+            if (
+                self_value.extra_keys is not None
+                and self_value.extra_keys is not NO_RETURN_VALUE
+            ):
                 return self_value.extra_keys
-            ctx.show_error(
-                f"TypedDict key must be a literal, not {key}",
-                ErrorCode.invalid_typeddict_key,
-                arg="k",
-            )
+            if isinstance(key, KnownValue):
+                ctx.show_error(
+                    f"Unknown TypedDict key {key.val!r}",
+                    ErrorCode.invalid_typeddict_key,
+                    arg="k",
+                )
+            else:
+                ctx.show_error(
+                    f"TypedDict key must be a literal, not {key}",
+                    ErrorCode.invalid_typeddict_key,
+                    arg="k",
+                )
             return AnyValue(AnySource.error)
         elif isinstance(self_value, DictIncompleteValue):
             val = self_value.get_value(key, ctx.visitor)
@@ -646,29 +698,33 @@ def _dict_get_impl(ctx: CallContext) -> ImplReturn:
                 return AnyValue(AnySource.error)
             elif isinstance(key, KnownValue):
                 try:
-                    required, value = self_value.items[key.val]
+                    entry = self_value.items[key.val]
                 # probably KeyError, but catch anything in case it's an
                 # unhashable str subclass or something
                 except Exception:
-                    if self_value.extra_keys is None:
-                        ctx.show_error(
-                            f"Unknown TypedDict key {key.val!r}",
-                            ErrorCode.invalid_typeddict_key,
-                            arg="k",
-                        )
-                        return AnyValue(AnySource.error)
+                    pass
                 else:
-                    if required:
-                        return value
+                    if entry.required:
+                        return entry.typ
                     else:
-                        return value | default
-            if self_value.extra_keys is not None:
+                        return entry.typ | default
+            if (
+                self_value.extra_keys is not None
+                and self_value.extra_keys is not NO_RETURN_VALUE
+            ):
                 return self_value.extra_keys | default
-            ctx.show_error(
-                f"TypedDict key must be a literal, not {key}",
-                ErrorCode.invalid_typeddict_key,
-                arg="k",
-            )
+            if isinstance(key, KnownValue):
+                ctx.show_error(
+                    f"Unknown TypedDict key {key.val!r}",
+                    ErrorCode.invalid_typeddict_key,
+                    arg="k",
+                )
+            else:
+                ctx.show_error(
+                    f"TypedDict key must be a literal, not {key}",
+                    ErrorCode.invalid_typeddict_key,
+                    arg="k",
+                )
             return AnyValue(AnySource.error)
         elif isinstance(self_value, DictIncompleteValue):
             val = self_value.get_value(key, ctx.visitor)
@@ -712,20 +768,29 @@ def _dict_pop_impl(ctx: CallContext) -> ImplReturn:
             return ImplReturn(AnyValue(AnySource.error))
         elif isinstance(key, KnownValue):
             try:
-                is_required, expected_type = self_value.items[key.val]
+                entry = self_value.items[key.val]
             # probably KeyError, but catch anything in case it's an
             # unhashable str subclass or something
             except Exception:
                 pass
             else:
-                if is_required:
+                if entry.required:
                     ctx.show_error(
                         f"Cannot pop required TypedDict key {key}",
                         error_code=ErrorCode.incompatible_argument,
                         arg="key",
                     )
-                return ImplReturn(_maybe_unite(expected_type, default))
-        if self_value.extra_keys is not None:
+                if entry.readonly:
+                    ctx.show_error(
+                        f"Cannot pop readonly TypedDict key {key}",
+                        error_code=ErrorCode.readonly_typeddict,
+                        arg="key",
+                    )
+                return ImplReturn(_maybe_unite(entry.typ, default))
+        if (
+            self_value.extra_keys is not None
+            and self_value.extra_keys is not NO_RETURN_VALUE
+        ):
             return ImplReturn(_maybe_unite(self_value.extra_keys, default))
         ctx.show_error(
             f"Key {key} does not exist in TypedDict",
@@ -798,22 +863,31 @@ def _dict_setdefault_impl(ctx: CallContext) -> ImplReturn:
             return ImplReturn(AnyValue(AnySource.error))
         elif isinstance(key, KnownValue):
             try:
-                _, expected_type = self_value.items[key.val]
+                entry = self_value.items[key.val]
             # probably KeyError, but catch anything in case it's an
             # unhashable str subclass or something
             except Exception:
                 pass
             else:
-                tv_map = expected_type.can_assign(default, ctx.visitor)
+                if entry.readonly:
+                    ctx.show_error(
+                        f"Cannot setdefault readonly TypedDict key {key}",
+                        error_code=ErrorCode.readonly_typeddict,
+                        arg="key",
+                    )
+                tv_map = entry.typ.can_assign(default, ctx.visitor)
                 if isinstance(tv_map, CanAssignError):
                     ctx.show_error(
                         f"TypedDict key {key.val} expected value of type"
-                        f" {expected_type}, not {default}",
+                        f" {entry.typ}, not {default}",
                         ErrorCode.incompatible_argument,
                         arg="default",
                     )
-                return ImplReturn(expected_type)
-        if self_value.extra_keys is not None:
+                return ImplReturn(entry.typ)
+        if (
+            self_value.extra_keys is not None
+            and self_value.extra_keys is not NO_RETURN_VALUE
+        ):
             return ImplReturn(self_value.extra_keys | default)
         ctx.show_error(
             f"Key {key} does not exist in TypedDict",

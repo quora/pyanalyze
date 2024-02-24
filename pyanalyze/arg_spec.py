@@ -88,6 +88,7 @@ from .value import (
     make_coro_type,
     NewTypeValue,
     SubclassValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     TypeVarValue,
@@ -221,6 +222,7 @@ class ClassesSafeToInstantiate(PyObjectSequenceOption[type]):
         Value,
         Extension,
         KVPair,
+        TypedDictEntry,
         asynq.ConstFuture,
         range,
         tuple,
@@ -735,10 +737,10 @@ class ArgSpecCache:
                     SigParameter(
                         key,
                         ParameterKind.KEYWORD_ONLY,
-                        default=None if required else KnownValue(...),
-                        annotation=value,
+                        default=None if entry.required else KnownValue(...),
+                        annotation=entry.typ,
                     )
-                    for key, (required, value) in td_type.items.items()
+                    for key, entry in td_type.items.items()
                 ]
                 if td_type.extra_keys is not None:
                     annotation = GenericValue(
