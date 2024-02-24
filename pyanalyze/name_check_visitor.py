@@ -9,7 +9,6 @@ the system.
 """
 
 import abc
-from abc import abstractmethod
 import ast
 import asyncio
 import collections
@@ -26,6 +25,7 @@ import sys
 import traceback
 import types
 import typing
+from abc import abstractmethod
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from itertools import chain
@@ -56,50 +56,48 @@ import qcore
 import typeshed_client
 from typing_extensions import Annotated, Protocol, get_args, get_origin
 
-from .annotated_types import Gt, Ge, Le, Lt
-
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
+from .annotated_types import Ge, Gt, Le, Lt
 from .annotations import (
+    SyntheticEvaluator,
     is_context_manager_type,
     is_instance_of_typing_name,
     is_typing_name,
-    SyntheticEvaluator,
     type_from_annotations,
     type_from_value,
 )
-from .arg_spec import ArgSpecCache, IgnoredCallees, is_dot_asynq_function, UnwrapClass
+from .arg_spec import ArgSpecCache, IgnoredCallees, UnwrapClass, is_dot_asynq_function
 from .asynq_checker import AsynqChecker
 from .boolability import Boolability, get_boolability
 from .checker import Checker, CheckerAttrContext
 from .error_code import ERROR_DESCRIPTION, ErrorCode
 from .extensions import (
+    ParameterTypeGuard,
     assert_error,
     evaluated,
     overload,
-    real_overload,
-    ParameterTypeGuard,
     patch_typing_overload,
+    real_overload,
 )
 from .find_unused import UnusedObjectFinder, used
 from .functions import (
+    IMPLICIT_CLASSMETHODS,
     AsyncFunctionKind,
     AsyncProxyDecorators,
     AsynqDecorators,
-    compute_parameters,
-    compute_value_of_function,
     FunctionDefNode,
     FunctionInfo,
     FunctionNode,
     FunctionResult,
     GeneratorValue,
-    IMPLICIT_CLASSMETHODS,
     ReturnT,
     SendT,
     YieldT,
+    compute_parameters,
+    compute_value_of_function,
 )
 from .options import (
-    add_arguments,
     BooleanOption,
     ConcatenatedOption,
     ConfigOption,
@@ -108,6 +106,7 @@ from .options import (
     Options,
     PyObjectSequenceOption,
     StringSequenceOption,
+    add_arguments,
 )
 from .patma import PatmaVisitor
 from .predicates import EqualsPredicate, InPredicate
@@ -125,8 +124,8 @@ from .shared_options import EnforceNoUnused, ImportPaths, Paths
 from .signature import (
     ANY_SIGNATURE,
     ARGS,
-    ConcreteSignature,
     KWARGS,
+    ConcreteSignature,
     MaybeSignature,
     OverloadedSignature,
     ParameterKind,
@@ -134,32 +133,32 @@ from .signature import (
     SigParameter,
 )
 from .stacked_scopes import (
-    AbstractConstraint,
-    AndConstraint,
-    annotate_with_constraint,
-    Composite,
-    CompositeIndex,
-    constrain_value,
-    Constraint,
-    ConstraintType,
     EMPTY_ORIGIN,
-    EquivalentConstraint,
-    extract_constraints,
     FALSY_CONSTRAINT,
-    FunctionScope,
     LEAVES_LOOP,
     LEAVES_SCOPE,
     NULL_CONSTRAINT,
+    TRUTHY_CONSTRAINT,
+    AbstractConstraint,
+    AndConstraint,
+    Composite,
+    CompositeIndex,
+    Constraint,
+    ConstraintType,
+    EquivalentConstraint,
+    FunctionScope,
     OrConstraint,
     PredicateProvider,
     ScopeType,
     StackedScopes,
     SubScope,
-    TRUTHY_CONSTRAINT,
     Varname,
     VarnameOrigin,
     VarnameWithOrigin,
     VisitorState,
+    annotate_with_constraint,
+    constrain_value,
+    extract_constraints,
 )
 from .suggested_type import (
     CallArgs,
@@ -167,21 +166,15 @@ from .suggested_type import (
     prepare_type,
     should_suggest_type,
 )
-from .type_object import get_mro, TypeObject
+from .type_object import TypeObject, get_mro
 from .typeshed import TypeshedFinder
 from .value import (
+    NO_RETURN_VALUE,
     SYS_PLATFORM_EXTENSION,
     SYS_VERSION_INFO_EXTENSION,
+    UNINITIALIZED_VALUE,
+    VOID,
     AlwaysPresentExtension,
-    CustomCheckExtension,
-    DefiniteValueExtension,
-    DeprecatedExtension,
-    SkipDeprecatedExtension,
-    TypeAlias,
-    TypeAliasValue,
-    TypeGuardExtension,
-    TypeIsExtension,
-    annotate_value,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -190,43 +183,48 @@ from .value import (
     CallableValue,
     CanAssign,
     CanAssignError,
-    check_hashability,
-    concrete_values_from_iterable,
     ConstraintExtension,
+    CustomCheckExtension,
+    DefiniteValueExtension,
+    DeprecatedExtension,
     DictIncompleteValue,
-    flatten_values,
     GenericBases,
     GenericValue,
+    KnownValue,
+    KVPair,
+    MultiValuedValue,
+    NoReturnConstraintExtension,
+    ReferencingValue,
+    SequenceValue,
+    SkipDeprecatedExtension,
+    SubclassValue,
+    TypeAlias,
+    TypeAliasValue,
+    TypedValue,
+    TypeGuardExtension,
+    TypeIsExtension,
+    TypeVarValue,
+    UnboundMethodValue,
+    Value,
+    annotate_value,
+    check_hashability,
+    concrete_values_from_iterable,
+    flatten_values,
     get_tv_map,
     is_async_iterable,
     is_iterable,
     is_union,
-    KnownValue,
     kv_pairs_from_mapping,
-    KVPair,
     make_coro_type,
-    MultiValuedValue,
-    NO_RETURN_VALUE,
-    NoReturnConstraintExtension,
-    ReferencingValue,
     replace_known_sequence_value,
-    SequenceValue,
     set_self,
     stringify_object,
-    SubclassValue,
-    TypedValue,
-    TypeVarValue,
     unannotate_value,
-    UnboundMethodValue,
-    UNINITIALIZED_VALUE,
     unite_and_simplify,
     unite_values,
     unpack_values,
-    Value,
-    VOID,
 )
 from .yield_checker import YieldChecker
-
 
 if sys.version_info >= (3, 11):
     TryNode = ast.Try | ast.TryStar
@@ -3232,7 +3230,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
             try:
                 already_exists = key in ret
-            except TypeError as e:
+            except TypeError:
                 continue
 
             if already_exists:

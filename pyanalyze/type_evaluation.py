@@ -29,26 +29,26 @@ from typing_extensions import Literal
 
 from .predicates import IsAssignablePredicate
 from .stacked_scopes import (
-    constrain_value,
     Constraint,
     ConstraintType,
     VarnameWithOrigin,
+    constrain_value,
 )
 from .value import (
+    NO_RETURN_VALUE,
     BoundsMap,
     CanAssign,
     CanAssignContext,
     CanAssignError,
-    flatten_values,
     KnownValue,
     MultiValuedValue,
-    NO_RETURN_VALUE,
     SequenceValue,
     TypeVarMap,
+    Value,
+    flatten_values,
     unannotate,
     unify_bounds_maps,
     unite_values,
-    Value,
 )
 
 ARGS = qcore.MarkerObject("*args")

@@ -22,6 +22,7 @@ from .safe import safe_isinstance, safe_issubclass
 from .signature import MaybeSignature
 from .stacked_scopes import Composite
 from .value import (
+    UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -33,16 +34,15 @@ from .value import (
     KnownValue,
     KnownValueWithTypeVars,
     MultiValuedValue,
+    SubclassValue,
     SyntheticModuleValue,
     TypeAliasValue,
-    annotate_value,
-    set_self,
-    SubclassValue,
     TypedValue,
     TypeVarValue,
     UnboundMethodValue,
-    UNINITIALIZED_VALUE,
     Value,
+    annotate_value,
+    set_self,
 )
 
 # these don't appear to be in the standard types module

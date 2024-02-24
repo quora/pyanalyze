@@ -34,9 +34,9 @@ jobs:
           - name: black
             python: "3.12"
             toxenv: black
-          - name: flake8
+          - name: ruff
             python: "3.12"
-            toxenv: flake8
+            toxenv: ruff
 
     steps:
       - uses: actions/checkout@v4

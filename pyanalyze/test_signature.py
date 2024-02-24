@@ -2,19 +2,13 @@
 from collections.abc import Sequence
 
 from .implementation import assert_is_value
-from .signature import (
-    ConcreteSignature,
-    ELLIPSIS_PARAM,
-    OverloadedSignature,
-    ParameterKind as K,
-    Signature,
-    SigParameter as P,
-)
+from .signature import ELLIPSIS_PARAM, ConcreteSignature, OverloadedSignature, Signature
+from .signature import ParameterKind as K
+from .signature import SigParameter as P
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .test_value import CTX
 from .tests import make_simple_sequence
-
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -668,7 +662,6 @@ class TestCalls(TestNameCheckVisitorBase):
     def test_hasattr(self):
         from dataclasses import dataclass
         from typing import Any, cast
-
         from unittest.mock import ANY
 
         @dataclass
@@ -862,7 +855,8 @@ class TestCalls(TestNameCheckVisitorBase):
             many_args(**typed_int_kwargs)  # E: incompatible_call
 
     def test_pos_only(self):
-        self.assert_passes("""
+        self.assert_passes(
+            """
             from typing import Sequence
 
             def pos_only(pos: int, /) -> None:
@@ -875,7 +869,8 @@ class TestCalls(TestNameCheckVisitorBase):
                 pos_only(pos=1)  # E: incompatible_call
                 pos_only()  # E: incompatible_call
                 pos_only(1, 2)  # E: incompatible_call
-            """)
+            """
+        )
 
     @assert_passes()
     def test_kw_only(self):
@@ -1136,10 +1131,8 @@ class TestOverload(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_runtime(self):
-        from pyanalyze.extensions import (
-            overload as extension_overload,
-            patch_typing_overload,
-        )
+        from pyanalyze.extensions import overload as extension_overload
+        from pyanalyze.extensions import patch_typing_overload
 
         patch_typing_overload()
         from typing import overload

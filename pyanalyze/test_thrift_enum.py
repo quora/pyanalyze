@@ -2,7 +2,7 @@
 
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .value import assert_is_value, KnownValue, TypedValue
+from .value import KnownValue, TypedValue, assert_is_value
 
 
 class TestThriftEnum(TestNameCheckVisitorBase):

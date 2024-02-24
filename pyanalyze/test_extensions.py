@@ -1,9 +1,9 @@
 import sys
 from types import FunctionType
 from typing import List, Optional, TypeVar, Union
-from typing_extensions import get_args
 
 from qcore.asserts import AssertRaises
+from typing_extensions import get_args
 
 from .extensions import AsynqCallable, get_overloads, overload
 from .safe import all_of_type

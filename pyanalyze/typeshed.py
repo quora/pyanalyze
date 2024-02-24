@@ -10,13 +10,13 @@ import collections.abc
 import enum
 import inspect
 import sys
-
+import types
 from abc import abstractmethod
-from collections.abc import Collection, MutableMapping, Set as AbstractSet
+from collections.abc import Collection, MutableMapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field, replace
 from enum import Enum, EnumMeta
 from types import GeneratorType, MethodDescriptorType, ModuleType
-import types
 from typing import (
     Any,
     Callable,
@@ -37,54 +37,51 @@ import typeshed_client
 from typing_extensions import Protocol, TypedDict
 
 from pyanalyze.functions import translate_vararg_type
+
 from .analysis_lib import is_positional_only_arg_name
 from .annotations import (
     Context,
-    make_type_var_value,
     DecoratorValue,
     Pep655Value,
     SyntheticEvaluator,
+    make_type_var_value,
     type_from_value,
     value_from_ast,
 )
 from .error_code import ErrorCode
-from .extensions import (
-    evaluated,
-    overload,
-    real_overload,
-    deprecated as deprecated_decorator,
-)
+from .extensions import deprecated as deprecated_decorator
+from .extensions import evaluated, overload, real_overload
 from .node_visitor import Failure
 from .options import Options, PathSequenceOption
 from .safe import all_of_type, hasattr_static, is_typing_name, safe_isinstance
 from .signature import (
     ConcreteSignature,
-    make_bound_method,
     OverloadedSignature,
     ParameterKind,
     Signature,
     SigParameter,
+    make_bound_method,
 )
 from .stacked_scopes import Composite, uniq_chain
 from .value import (
+    UNINITIALIZED_VALUE,
     AnySource,
     AnyValue,
     CallableValue,
     CanAssignContext,
     DeprecatedExtension,
     Extension,
-    SyntheticModuleValue,
-    annotate_value,
-    extract_typevars,
     GenericValue,
     KnownValue,
-    make_coro_type,
     SubclassValue,
+    SyntheticModuleValue,
     TypedDictValue,
     TypedValue,
     TypeVarValue,
-    UNINITIALIZED_VALUE,
     Value,
+    annotate_value,
+    extract_typevars,
+    make_coro_type,
 )
 
 PROPERTY_LIKE = {KnownValue(property), KnownValue(types.DynamicClassAttribute)}

@@ -8,6 +8,7 @@ class TestSysPlatform(TestNameCheckVisitorBase):
     def test(self):
         import os
         import sys
+
         from typing_extensions import assert_type
 
         def capybara() -> None:
@@ -22,6 +23,7 @@ class TestSysVersion(TestNameCheckVisitorBase):
     def test(self):
         import ast
         import sys
+
         from typing_extensions import assert_type
 
         if sys.version_info >= (3, 10):

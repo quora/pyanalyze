@@ -32,14 +32,14 @@ import qcore
 from ast_decompiler import decompile
 
 import pyanalyze
-from .analysis_lib import get_indentation, get_line_range_for_node
 
+from .analysis_lib import get_indentation, get_line_range_for_node
 from .asynq_checker import AsyncFunctionKind
 from .error_code import ErrorCode
 from .functions import FunctionNode
 from .node_visitor import Replacement
 from .stacked_scopes import VisitorState
-from .value import KnownValue, UnboundMethodValue, UNINITIALIZED_VALUE, Value
+from .value import UNINITIALIZED_VALUE, KnownValue, UnboundMethodValue, Value
 
 
 @dataclass

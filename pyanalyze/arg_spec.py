@@ -11,9 +11,9 @@ import enum
 import inspect
 import sys
 import textwrap
+import typing
 from dataclasses import dataclass, replace
 from types import FunctionType, MethodType, ModuleType
-import typing
 from typing import (
     Any,
     Callable,
@@ -37,15 +37,12 @@ import qcore
 from typing_extensions import is_typeddict
 
 import pyanalyze
+
 from . import implementation
 from .analysis_lib import is_positional_only_arg_name
 from .annotations import Context, RuntimeEvaluator, type_from_runtime
-from .extensions import (
-    CustomCheck,
-    get_overloads as pyanalyze_get_overloads,
-    get_type_evaluations,
-    TypeGuard,
-)
+from .extensions import CustomCheck, TypeGuard, get_type_evaluations
+from .extensions import get_overloads as pyanalyze_get_overloads
 from .find_unused import used
 from .functions import translate_vararg_type
 from .options import Options, PyObjectSequenceOption
@@ -63,15 +60,15 @@ from .safe import (
 )
 from .signature import (
     ANY_SIGNATURE,
-    ConcreteSignature,
     ELLIPSIS_PARAM,
+    ConcreteSignature,
     Impl,
-    make_bound_method,
     MaybeSignature,
     OverloadedSignature,
     ParameterKind,
     Signature,
     SigParameter,
+    make_bound_method,
 )
 from .stacked_scopes import Composite, uniq_chain
 from .typeshed import TypeshedFinder
@@ -80,18 +77,18 @@ from .value import (
     AnyValue,
     CanAssignContext,
     Extension,
-    extract_typevars,
     GenericBases,
     GenericValue,
     KnownValue,
     KVPair,
-    make_coro_type,
     NewTypeValue,
     SubclassValue,
     TypedDictValue,
     TypedValue,
     TypeVarValue,
     Value,
+    extract_typevars,
+    make_coro_type,
 )
 
 _GET_OVERLOADS = []
@@ -306,8 +303,8 @@ class UnwrapClass(PyObjectSequenceOption[_Unwrapper]):
 _BUILTIN_KNOWN_SIGNATURES = []
 
 try:
-    import pytest
     import _pytest
+    import pytest
 except ImportError:
     # if pytest is not installed in this environment, don't use it
     pass

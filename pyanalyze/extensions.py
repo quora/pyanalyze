@@ -9,12 +9,13 @@ be gracefully ignored by other type checkers.
 
 """
 
+import enum
 import typing
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-import enum
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Container,
@@ -23,17 +24,16 @@ from typing import (
     Iterator,
     List,
     Optional,
-    overload as real_overload,
     Sequence,
     Tuple,
-    TYPE_CHECKING,
     Type,
     TypeVar,
     Union,
 )
+from typing import overload as real_overload
 
 import typing_extensions
-from typing_extensions import Literal, NoReturn, Annotated
+from typing_extensions import Annotated, Literal, NoReturn
 
 import pyanalyze
 

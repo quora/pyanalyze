@@ -6,12 +6,11 @@ Functionality for dealing with implicit reexports.
 
 from ast import AST
 from collections import defaultdict
-from dataclasses import dataclass, field, InitVar
+from dataclasses import InitVar, dataclass, field
 from typing import Callable, Dict, List, Set, Tuple
 
 from .error_code import ErrorCode
 from .node_visitor import ErrorContext
-
 from .options import Options, PyObjectSequenceOption
 
 _ReexportConfigProvider = Callable[["ImplicitReexportTracker"], None]

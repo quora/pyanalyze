@@ -21,16 +21,15 @@ these subclasses and some related utilities.
 
 import collections.abc
 import enum
+import sys
 import textwrap
 from collections import deque
-from dataclasses import dataclass, field, InitVar
+from dataclasses import InitVar, dataclass, field
 from itertools import chain
-import sys
 from types import FunctionType
 from typing import (
     Any,
     Callable,
-    cast,
     ContextManager,
     Dict,
     Iterable,
@@ -44,6 +43,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 import qcore

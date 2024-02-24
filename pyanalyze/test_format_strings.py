@@ -4,10 +4,10 @@ from .format_strings import (
     ConversionSpecifier,
     FormatString,
     IndexOrAttribute,
-    parse_format_string,
     PercentFormatString,
     ReplacementField,
     StarConversionSpecifier,
+    parse_format_string,
 )
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
@@ -16,13 +16,12 @@ from .tests import make_simple_sequence
 from .value import (
     AnySource,
     AnyValue,
-    assert_is_value,
     DictIncompleteValue,
     KnownValue,
     KVPair,
     TypedValue,
+    assert_is_value,
 )
-
 
 PERCENT_TESTCASES = [
     ("%(a)s", (ConversionSpecifier("s", mapping_key="a"),), ("", "")),

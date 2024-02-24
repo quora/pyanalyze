@@ -29,17 +29,17 @@ from .value import (
     CanAssignContext,
     CanAssignError,
     GenericValue,
-    get_tv_map,
     KnownValue,
-    is_async_iterable,
-    is_iterable,
-    make_coro_type,
     SubclassValue,
     TypedValue,
     TypeVarValue,
-    unite_values,
     UnpackedValue,
     Value,
+    get_tv_map,
+    is_async_iterable,
+    is_iterable,
+    make_coro_type,
+    unite_values,
 )
 
 FunctionDefNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]

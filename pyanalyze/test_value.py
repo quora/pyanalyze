@@ -21,7 +21,6 @@ from .value import (
     AnyValue,
     CallableValue,
     CanAssignError,
-    concrete_values_from_iterable,
     GenericValue,
     KnownValue,
     KVPair,
@@ -30,9 +29,10 @@ from .value import (
     SubclassValue,
     TypedValue,
     TypeVarMap,
+    Value,
+    concrete_values_from_iterable,
     unite_and_simplify,
     unpack_values,
-    Value,
 )
 
 _checker = Checker()

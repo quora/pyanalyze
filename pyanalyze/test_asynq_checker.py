@@ -8,13 +8,13 @@ from .stacked_scopes import Composite
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .tests import (
-    async_fn,
     ASYNQ_METHOD_NAME,
+    PropertyObject,
+    Subclass,
+    async_fn,
     cached_fn,
     l0cached_async_fn,
-    PropertyObject,
     proxied_fn,
-    Subclass,
 )
 from .value import KnownValue, TypedValue, UnboundMethodValue
 
@@ -137,7 +137,7 @@ def capybara():
     def test_pure_async_call(self):
         from asynq import asynq, result
 
-        from pyanalyze.tests import async_fn, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, async_fn
 
         class Capybara(CheckedForAsynq):
             def init(self, qid):
@@ -150,7 +150,7 @@ def capybara():
 
     @assert_passes()
     def test_impure_async_call(self):
-        from pyanalyze.tests import async_fn, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, async_fn
 
         class Capybara(CheckedForAsynq):
             def init(self, aid):
@@ -162,7 +162,7 @@ def capybara():
 
     @assert_passes()
     def test_impure_cached_call(self):
-        from pyanalyze.tests import cached_fn, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, cached_fn
 
         class Capybara(CheckedForAsynq):
             def init(self, uid):
@@ -176,7 +176,7 @@ def capybara():
     def test_impure_async_call_in_component(self):
         from asynq import asynq
 
-        from pyanalyze.tests import cached_fn, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, cached_fn
 
         class Capybara(CheckedForAsynq):
             def init(self, uid):
@@ -261,7 +261,7 @@ def capybara():
 
     @assert_passes()
     def test_no_error_in_classmethod(self):
-        from pyanalyze.tests import cached_fn, CheckedForAsynq
+        from pyanalyze.tests import CheckedForAsynq, cached_fn
 
         class Capybara(CheckedForAsynq):
             @classmethod

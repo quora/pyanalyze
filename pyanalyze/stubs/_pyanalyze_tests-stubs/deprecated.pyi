@@ -1,5 +1,6 @@
-from pyanalyze.extensions import deprecated
 from typing import overload
+
+from pyanalyze.extensions import deprecated
 
 @overload
 @deprecated("int support is deprecated")

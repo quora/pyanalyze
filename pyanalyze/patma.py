@@ -24,24 +24,25 @@ from typing import (
 import qcore
 
 import pyanalyze
+
 from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import CustomCheck
-
 from .implementation import len_of_value
 from .predicates import EqualsPredicate, IsAssignablePredicate
 from .signature import MappingValue
 from .stacked_scopes import (
+    NULL_CONSTRAINT,
     AbstractConstraint,
     AndConstraint,
     Composite,
-    constrain_value,
     Constraint,
     ConstraintType,
-    NULL_CONSTRAINT,
     OrConstraint,
+    constrain_value,
 )
 from .value import (
+    UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -50,20 +51,19 @@ from .value import (
     CanAssignError,
     CustomCheckExtension,
     DictIncompleteValue,
-    flatten_values,
-    is_overlapping,
     KnownValue,
-    kv_pairs_from_mapping,
     KVPair,
-    replace_known_sequence_value,
     SequenceValue,
     SubclassValue,
     TypedValue,
+    Value,
+    flatten_values,
+    is_overlapping,
+    kv_pairs_from_mapping,
+    replace_known_sequence_value,
     unannotate,
-    UNINITIALIZED_VALUE,
     unite_values,
     unpack_values,
-    Value,
 )
 
 try:

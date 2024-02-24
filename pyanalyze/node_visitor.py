@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import os.path
-from pathlib import Path
 import re
 import subprocess
 import sys
@@ -23,6 +22,7 @@ from builtins import print as real_print
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from types import ModuleType
 from typing import (
     Any,

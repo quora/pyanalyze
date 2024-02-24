@@ -380,6 +380,7 @@ class TestDunder(TestNameCheckVisitorBase):
     @assert_passes()
     def test_sequence(self):
         from typing import Sequence
+
         from typing_extensions import assert_type
 
         def capybara(s: Sequence[int], t: str):
@@ -389,7 +390,8 @@ class TestDunder(TestNameCheckVisitorBase):
 class TestGenericClasses(TestNameCheckVisitorBase):
     @skip_before((3, 12))
     def test_generic(self):
-        self.assert_passes("""
+        self.assert_passes(
+            """
             from typing_extensions import assert_type
 
             class C[T]:
@@ -400,11 +402,13 @@ class TestGenericClasses(TestNameCheckVisitorBase):
 
             def capybara(i: int):
                 assert_type(C(i).x, int)
-        """)
+        """
+        )
 
     @skip_before((3, 12))
     def test_generic_with_bound(self):
-        self.assert_passes("""
+        self.assert_passes(
+            """
             from typing_extensions import assert_type
 
             class C[T: int]:
@@ -417,4 +421,5 @@ class TestGenericClasses(TestNameCheckVisitorBase):
                 assert_type(C(i).x, int)
                 assert_type(C(b).x, bool)
                 C(s)  # E: incompatible_argument
-        """)
+        """
+        )

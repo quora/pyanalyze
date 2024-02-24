@@ -11,6 +11,7 @@ from unittest import mock
 
 from .safe import safe_in, safe_isinstance, safe_issubclass
 from .value import (
+    UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
@@ -19,12 +20,11 @@ from .value import (
     CanAssignContext,
     CanAssignError,
     KnownValue,
-    stringify_object,
     SubclassValue,
     TypedValue,
-    unify_bounds_maps,
-    UNINITIALIZED_VALUE,
     Value,
+    stringify_object,
+    unify_bounds_maps,
 )
 
 
