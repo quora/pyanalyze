@@ -288,7 +288,7 @@ class TestReadOnly(TestNameCheckVisitorBase):
             td.pop("a")  # E: readonly_typeddict
             td.pop("b")  # E: incompatible_argument
             del td["a"]  # E: readonly_typeddict
-            del td["b"]  # E: incompatible_argument
+            del td["b"]  # E: readonly_typeddict
 
     @assert_passes()
     def test_compatibility(self):
