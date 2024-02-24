@@ -14,6 +14,7 @@ from .value import (
     KVPair,
     NO_RETURN_VALUE,
     SequenceValue,
+    TypedDictEntry,
     TypedDictValue,
     TypedValue,
     UnboundMethodValue,
@@ -44,10 +45,10 @@ def test_get_boolability() -> None:
 
     # Sequence/dict values
     assert Boolability.type_always_true == get_boolability(
-        TypedDictValue({"a": (True, TypedValue(int))})
+        TypedDictValue({"a": TypedDictEntry(TypedValue(int))})
     )
     assert Boolability.boolable == get_boolability(
-        TypedDictValue({"a": (False, TypedValue(int))})
+        TypedDictValue({"a": TypedDictEntry(TypedValue(int), required=False)})
     )
     assert Boolability.type_always_true == get_boolability(
         SequenceValue(tuple, [(False, KnownValue(1))])
