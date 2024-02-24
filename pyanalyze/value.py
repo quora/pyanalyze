@@ -1274,6 +1274,15 @@ class TypedDictValue(GenericValue):
         extra_keys: Optional[Value] = None,
         extra_keys_readonly: bool = False,
     ) -> None:
+        # Compatibility with old format, where values were (required, type) tuples.
+        items = {
+            key: (
+                value
+                if isinstance(value, TypedDictEntry)
+                else TypedDictEntry(value[1], required=value[0])
+            )
+            for key, value in items.items()
+        }
         value_types = []
         if items:
             value_types += [val.typ for val in items.values()]
