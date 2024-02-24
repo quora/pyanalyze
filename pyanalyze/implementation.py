@@ -753,7 +753,7 @@ def _dict_get_impl(ctx: CallContext) -> ImplReturn:
 
 def _dict_delitem_impl(ctx: CallContext) -> ImplReturn:
     key = ctx.vars["key"]
-    varname = ctx.visitor.varname_for_self_constraint(ctx.node)
+    varname = ctx.varname_for_arg("self")
     self_value = replace_known_sequence_value(ctx.vars["self"])
 
     if not _check_dict_key_hashability(key, ctx, "key"):
@@ -775,16 +775,16 @@ def _dict_delitem_impl(ctx: CallContext) -> ImplReturn:
             except Exception:
                 pass
             else:
-                if entry.required:
-                    ctx.show_error(
-                        f"Cannot delete required TypedDict key {key}",
-                        error_code=ErrorCode.incompatible_argument,
-                        arg="key",
-                    )
-                elif entry.readonly:
+                if entry.readonly:
                     ctx.show_error(
                         f"Cannot delete readonly TypedDict key {key}",
                         error_code=ErrorCode.readonly_typeddict,
+                        arg="key",
+                    )
+                elif entry.required:
+                    ctx.show_error(
+                        f"Cannot delete required TypedDict key {key}",
+                        error_code=ErrorCode.incompatible_argument,
                         arg="key",
                     )
                 return ImplReturn(KnownValue(None))
@@ -814,11 +814,7 @@ def _dict_delitem_impl(ctx: CallContext) -> ImplReturn:
         else:
             no_return_unless = NULL_CONSTRAINT
         if not is_present:
-            ctx.show_error(
-                f"Key {key} does not exist in dictionary {self_value}",
-                error_code=ErrorCode.incompatible_argument,
-                arg="key",
-            )
+            # No error; it might have been added where we couldn't see it
             return ImplReturn(KnownValue(None))
         return ImplReturn(KnownValue(None), no_return_unless=no_return_unless)
     elif isinstance(self_value, TypedValue):

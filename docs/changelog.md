@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add special handling for `dict.__delitem__` (#723, #726)
 - Add support for the `ReadOnly` type qualifier (PEP 705) and
   for the `closed=True` TypedDict argument (PEP 728) (#723)
 - Fix some higher-order behavior of `TypeGuard` and `TypeIs` (#719)
