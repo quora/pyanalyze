@@ -9,7 +9,7 @@ import itertools
 import sys
 import types
 from contextlib import contextmanager
-from dataclasses import dataclass, field, InitVar
+from dataclasses import InitVar, dataclass, field
 from typing import (
     Callable,
     ContextManager,
@@ -29,7 +29,6 @@ import qcore
 from .arg_spec import ArgSpecCache, GenericBases
 from .attributes import AttrContext, get_attribute
 from .node_visitor import Failure
-
 from .options import Options, PyObjectSequenceOption
 from .reexport import ImplicitReexportTracker
 from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
@@ -38,33 +37,33 @@ from .signature import (
     ANY_SIGNATURE,
     BoundMethodSignature,
     ConcreteSignature,
-    make_bound_method,
     MaybeSignature,
     OverloadedSignature,
     Signature,
+    make_bound_method,
 )
 from .stacked_scopes import Composite
 from .suggested_type import CallableTracker
-from .type_object import get_mro, TypeObject
+from .type_object import TypeObject, get_mro
 from .typeshed import TypeshedFinder
 from .value import (
+    UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnyValue,
     CallableValue,
-    TypeAlias,
-    flatten_values,
-    is_union,
     KnownValue,
     KnownValueWithTypeVars,
     MultiValuedValue,
     SubclassValue,
+    TypeAlias,
     TypedValue,
     TypeVarValue,
     UnboundMethodValue,
-    UNINITIALIZED_VALUE,
-    unite_values,
     Value,
     VariableNameValue,
+    flatten_values,
+    is_union,
+    unite_values,
 )
 
 _BaseProvider = Callable[[Union[type, super]], Set[type]]

@@ -1,12 +1,13 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import skip_before, assert_passes
+from .test_node_visitor import assert_passes, skip_before
 
 
 class TestExoticTry(TestNameCheckVisitorBase):
     @assert_passes()
     def test_except_everything(self):
-        from typing import Union, Tuple, Type
+        from typing import Tuple, Type, Union
+
         from typing_extensions import Literal, assert_type
 
         def capybara(

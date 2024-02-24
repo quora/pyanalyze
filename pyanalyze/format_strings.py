@@ -28,12 +28,12 @@ from .value import (
     AnnotatedValue,
     CanAssignContext,
     DictIncompleteValue,
-    flatten_values,
     KnownValue,
-    replace_known_sequence_value,
     SequenceValue,
     TypedValue,
     Value,
+    flatten_values,
+    replace_known_sequence_value,
 )
 
 # refer to https://docs.python.org/2/library/stdtypes.html#string-formatting-operations

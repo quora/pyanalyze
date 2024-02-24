@@ -222,7 +222,7 @@ class TestArgSpec(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_async_def_from_typeshed(self):
-        from asyncio.streams import open_connection, StreamReader, StreamWriter
+        from asyncio.streams import StreamReader, StreamWriter, open_connection
 
         from pyanalyze.value import make_coro_type
 

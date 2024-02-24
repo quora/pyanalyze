@@ -6,7 +6,6 @@ from typing import List, NewType, TypeVar
 from asynq import asynq
 
 from .arg_spec import is_dot_asynq_function
-
 from .checker import Checker
 from .signature import BoundMethodSignature, ParameterKind, Signature, SigParameter
 from .stacked_scopes import Composite
@@ -19,12 +18,12 @@ from .tests import l0cached_async_fn
 from .value import (
     AnySource,
     AnyValue,
-    assert_is_value,
     GenericValue,
     KnownValue,
     MultiValuedValue,
     NewTypeValue,
     TypedValue,
+    assert_is_value,
 )
 
 T = TypeVar("T")

@@ -71,6 +71,7 @@ class TestNarrowing(TestNameCheckVisitorBase):
     @assert_passes()
     def test_exhaustive(self):
         from enum import Enum
+
         from typing_extensions import assert_never
 
         class X(Enum):
@@ -117,9 +118,11 @@ class TestNarrowing(TestNameCheckVisitorBase):
 class TestEnumName(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
-        from pyanalyze.extensions import EnumName
         import enum
+
         from typing_extensions import assert_type
+
+        from pyanalyze.extensions import EnumName
 
         class Rodent(enum.IntEnum):
             capybara = 1

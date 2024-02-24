@@ -82,8 +82,9 @@ class TestAssertNever(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_enum(self):
-        from typing_extensions import assert_never
         import enum
+
+        from typing_extensions import assert_never
 
         class Capybara(enum.Enum):
             hydrochaeris = 1

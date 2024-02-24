@@ -11,19 +11,19 @@ from typing import Optional, Sequence
 
 from .safe import safe_issubclass
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnyValue,
     CanAssignContext,
-    is_overlapping,
     KnownValue,
     MultiValuedValue,
-    NO_RETURN_VALUE,
     SubclassValue,
     TypedValue,
     TypeVarValue,
+    Value,
+    is_overlapping,
     unannotate,
     unite_values,
-    Value,
 )
 
 

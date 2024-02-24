@@ -4,10 +4,10 @@ Support for annotations from the annotated_types library.
 
 """
 
+import enum
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import enum
-from typing import Any, Callable, Iterable, Optional, Union, Type
+from typing import Any, Callable, Iterable, Optional, Type, Union
 
 from pyanalyze.value import CanAssign, CanAssignContext, Value, flatten_values
 

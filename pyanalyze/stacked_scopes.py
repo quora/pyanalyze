@@ -24,7 +24,7 @@ import builtins
 import contextlib
 import enum
 from ast import AST
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field, replace
 from itertools import chain
 from types import ModuleType
@@ -53,23 +53,23 @@ from .boolability import get_boolability
 from .extensions import reveal_type
 from .safe import safe_equals, safe_issubclass
 from .value import (
-    annotate_value,
+    NO_RETURN_VALUE,
+    UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
     ConstraintExtension,
-    flatten_values,
     KnownValue,
     MultiValuedValue,
-    NO_RETURN_VALUE,
     ReferencingValue,
     SubclassValue,
     TypedValue,
     TypeVarMap,
-    UNINITIALIZED_VALUE,
+    Value,
+    annotate_value,
+    flatten_values,
     unite_and_simplify,
     unite_values,
-    Value,
 )
 
 T = TypeVar("T")

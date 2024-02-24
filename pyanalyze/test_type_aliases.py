@@ -36,8 +36,9 @@ class TestTypeAliasType(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_typing_extensions_generic(self):
+        from typing import List, Set, TypeVar, Union
+
         from typing_extensions import TypeAliasType, assert_type
-        from typing import TypeVar, Union, List, Set
 
         T = TypeVar("T")
         MyType = TypeAliasType("MyType", Union[List[T], Set[T]], type_params=(T,))

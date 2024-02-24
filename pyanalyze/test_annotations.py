@@ -614,7 +614,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_initvar(self):
-        from dataclasses import dataclass, InitVar
+        from dataclasses import InitVar, dataclass
 
         @dataclass
         class Capybara:
@@ -954,8 +954,8 @@ class TestCallable(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_bare_callable(self):
-        import typing
         import collections.abc
+        import typing
 
         def want_typing(c: typing.Callable) -> None:
             pass
@@ -1276,8 +1276,8 @@ class TestCustomCheck(TestNameCheckVisitorBase):
             CanAssign,
             CanAssignContext,
             CanAssignError,
-            flatten_values,
             Value,
+            flatten_values,
         )
 
         class DontAssignToAny(CustomCheck):
@@ -1346,9 +1346,9 @@ class TestCustomCheck(TestNameCheckVisitorBase):
             CanAssign,
             CanAssignContext,
             CanAssignError,
-            flatten_values,
             KnownValue,
             Value,
+            flatten_values,
         )
 
         @dataclass(frozen=True)
@@ -1383,11 +1383,11 @@ class TestCustomCheck(TestNameCheckVisitorBase):
             CanAssign,
             CanAssignContext,
             CanAssignError,
-            flatten_values,
             KnownValue,
             TypeVarMap,
             TypeVarValue,
             Value,
+            flatten_values,
         )
 
         @dataclass(frozen=True)
@@ -1694,8 +1694,9 @@ class TestParamSpec(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_concatenate(self):
-        from typing_extensions import ParamSpec, Concatenate
-        from typing import Callable, TypeVar, List
+        from typing import Callable, List, TypeVar
+
+        from typing_extensions import Concatenate, ParamSpec
 
         P = ParamSpec("P")
         T = TypeVar("T")
@@ -1870,7 +1871,7 @@ class TestUnpack(TestNameCheckVisitorBase):
 class TestMissinGenericParameters(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
-        from typing import List, Set, Dict
+        from typing import Dict, List, Set
 
         def capybara(
             x: list,  # E: missing_generic_parameters

@@ -1,13 +1,8 @@
 [tool.black]
-target_version = ['py36']
+target_version = ['py38']
 include = '\.pyi?$'
 skip-magic-trailing-comma = true
 preview = true
-
-# README
-# The first section is for directories
-# The second section is for specific files
-
 exclude = '''
 /(
     \.git
@@ -46,3 +41,32 @@ implicit_any = true
 [[tool.pyanalyze.overrides]]
 module = "pyanalyze.yield_checker"
 implicit_any = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+  "F",
+  "E",
+  "I",  # import sorting
+]
+
+ignore = [
+  "B008",  # do not perform function calls in argument defaults
+  "F811",  # redefinition of unused '...'
+  "F821",  # undefined name
+  "F505",  # .format() stuff
+  "F507",  # .format() stuff
+  "F522",  # .format() stuff
+  "F523",  # .format() stuff
+  "F524",  # .format() stuff
+  "F823", # local variable referenced before assignment
+  "F601",  # dictionary key name repeated with different values
+  "E721",  # do not compare types, use 'isinstance()'
+  "F841",  # local variable is assigned to but never used
+  "E742",  # Ambiguous class name
+  "E731",  # do not assign a lambda expression, use a def
+  "E741",  # ambiguous variable name
+]

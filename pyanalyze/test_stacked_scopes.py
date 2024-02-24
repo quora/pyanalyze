@@ -5,19 +5,19 @@ from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
+    NO_RETURN_VALUE,
+    UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
-    assert_is_value,
     DictIncompleteValue,
     GenericValue,
     KnownValue,
     MultiValuedValue,
-    NO_RETURN_VALUE,
     ReferencingValue,
     SequenceValue,
     TypedValue,
-    UNINITIALIZED_VALUE,
+    assert_is_value,
 )
 
 
@@ -1507,8 +1507,8 @@ class TestConstraints(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_gt_annotated_unification(self):
-        from pyanalyze.value import CustomCheckExtension
         from pyanalyze.annotated_types import Gt
+        from pyanalyze.value import CustomCheckExtension
 
         ext = CustomCheckExtension(Gt(5))
 

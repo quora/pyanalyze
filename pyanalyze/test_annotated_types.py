@@ -6,9 +6,10 @@ from .test_node_visitor import assert_passes
 class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
     @assert_passes()
     def test_gt(self):
-        from typing_extensions import Annotated
         from typing import Any
-        from annotated_types import Gt, Ge
+
+        from annotated_types import Ge, Gt
+        from typing_extensions import Annotated
 
         def takes_gt_5(x: Annotated[Any, Gt(5)]) -> None:
             pass
@@ -35,9 +36,10 @@ class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_ge(self):
-        from typing_extensions import Annotated
         from typing import Any
+
         from annotated_types import Ge, Gt
+        from typing_extensions import Annotated
 
         def takes_ge_5(x: Annotated[Any, Ge(5)]) -> None:
             pass
@@ -65,9 +67,10 @@ class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_lt(self):
-        from typing_extensions import Annotated
         from typing import Any
-        from annotated_types import Lt, Le
+
+        from annotated_types import Le, Lt
+        from typing_extensions import Annotated
 
         def takes_lt_5(x: Annotated[Any, Lt(5)]) -> None:
             pass
@@ -93,9 +96,10 @@ class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_le(self):
-        from typing_extensions import Annotated
         from typing import Any
+
         from annotated_types import Le, Lt
+        from typing_extensions import Annotated
 
         def takes_le_5(x: Annotated[Any, Le(5)]) -> None:
             pass
@@ -123,8 +127,8 @@ class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_multiple_of(self):
-        from typing_extensions import Annotated
         from annotated_types import MultipleOf
+        from typing_extensions import Annotated
 
         def takes_multiple_of_10(x: Annotated[int, MultipleOf(10)]) -> None:
             pass
@@ -147,8 +151,8 @@ class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_min_max_len(self):
-        from typing_extensions import Annotated, TypedDict, NotRequired
-        from annotated_types import MinLen, MaxLen, Len
+        from annotated_types import Len, MaxLen, MinLen
+        from typing_extensions import Annotated, NotRequired, TypedDict
 
         def takes_min_len_5(x: Annotated[object, MinLen(5)]) -> None:
             pass
@@ -206,9 +210,10 @@ class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_timezone(self):
-        from typing_extensions import Annotated
+        from datetime import datetime, timedelta, timezone
+
         from annotated_types import Timezone
-        from datetime import datetime, timezone, timedelta
+        from typing_extensions import Annotated
 
         def takes_naive(x: Annotated[datetime, Timezone(None)]) -> None:
             pass
@@ -241,8 +246,8 @@ class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_predicate(self):
-        from typing_extensions import Annotated
         from annotated_types import Predicate
+        from typing_extensions import Annotated
 
         def takes_upper(x: Annotated[str, Predicate(str.isupper)]) -> None:
             pass
@@ -260,8 +265,8 @@ class TestAnnotatedTypesAnnotations(TestNameCheckVisitorBase):
 class TestInferAnnotations(TestNameCheckVisitorBase):
     @assert_passes()
     def test_infer_gt(self):
-        from typing_extensions import Annotated
         from annotated_types import Gt
+        from typing_extensions import Annotated
 
         def takes_gt_5(x: Annotated[int, Gt(5)]) -> None:
             pass
@@ -282,8 +287,8 @@ class TestInferAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_len(self):
+        from annotated_types import Len, MaxLen, MinLen
         from typing_extensions import Annotated
-        from annotated_types import MinLen, MaxLen, Len
 
         def takes_len_5(x: Annotated[str, Len(5)]) -> None:
             pass

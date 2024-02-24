@@ -7,12 +7,12 @@ from .value import (
     AnnotatedValue,
     AnySource,
     AnyValue,
-    assert_is_value,
     GenericValue,
     KnownValue,
     MultiValuedValue,
     TypedValue,
     UnboundMethodValue,
+    assert_is_value,
 )
 
 _global_dict: Dict[Union[int, str], float] = {}
@@ -165,8 +165,9 @@ class TestAttributes(TestNameCheckVisitorBase):
     @assert_passes()
     def test_only_known_attributes(self):
         from dataclasses import dataclass
-        from pydantic import BaseModel
         from typing import NamedTuple
+
+        from pydantic import BaseModel
 
         @dataclass
         class DC:
@@ -207,9 +208,10 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_annotated_known(self):
-        from unittest.mock import ANY
-        from typing_extensions import Annotated, Literal
         from typing import Any, cast
+        from unittest.mock import ANY
+
+        from typing_extensions import Annotated, Literal
 
         from pyanalyze.extensions import LiteralOnly
         from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin

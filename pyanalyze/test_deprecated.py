@@ -7,9 +7,14 @@ class TestStub(TestNameCheckVisitorBase):
     @assert_passes()
     def test(self):
         def capybara():
-            from _pyanalyze_tests.deprecated import deprecated_overload
-            from _pyanalyze_tests.deprecated import deprecated_function  # E: deprecated
+            print("keep")
             from _pyanalyze_tests.deprecated import DeprecatedCapybara  # E: deprecated
+
+            print("these imports")
+            from _pyanalyze_tests.deprecated import deprecated_function  # E: deprecated
+
+            print("separate")
+            from _pyanalyze_tests.deprecated import deprecated_overload
 
             deprecated_overload(1)  # E: deprecated
             deprecated_overload("x")
@@ -24,9 +29,9 @@ class TestStub(TestNameCheckVisitorBase):
     def test_multiline_import(self):
         def capybara():
             from _pyanalyze_tests.deprecated import (
-                deprecated_overload,
-                deprecated_function,  # E: deprecated
                 DeprecatedCapybara,  # E: deprecated
+                deprecated_function,  # E: deprecated
+                deprecated_overload,
             )
 
             return [deprecated_function, deprecated_overload, DeprecatedCapybara]

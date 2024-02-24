@@ -1,7 +1,7 @@
 # static analysis: ignore
 from typing import List
 
-from .runtime import is_compatible, get_compatibility_error
+from .runtime import get_compatibility_error, is_compatible
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 
@@ -28,8 +28,9 @@ def test_get_compatibility_error() -> None:
 class TestRuntimeTypeGuard(TestNameCheckVisitorBase):
     @assert_passes()
     def test_runtime(self):
-        from typing_extensions import Annotated
         from annotated_types import Predicate
+        from typing_extensions import Annotated
+
         from pyanalyze.runtime import is_compatible
 
         IsLower = Annotated[str, Predicate(str.islower)]

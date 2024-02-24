@@ -3,9 +3,8 @@ from pathlib import Path
 from typing import Callable, Type
 
 from .analysis_lib import files_with_extension_from_directory
-
 from .ast_annotator import annotate_code, annotate_file
-from .value import KnownValue, unannotate, Value
+from .value import KnownValue, Value, unannotate
 
 
 def _check_inferred_value(

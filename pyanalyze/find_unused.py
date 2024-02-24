@@ -16,6 +16,7 @@ from typing import Dict, Iterable, List, Optional, Set, Type, TypeVar
 import qcore
 
 import pyanalyze
+
 from . import extensions
 from .safe import safe_in
 

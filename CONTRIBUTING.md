@@ -3,6 +3,7 @@ as possible. Here is a quick guide.
 
 It's useful to have a virtual environment to work in. I use
 commands like these:
+
 ```
 $ cd pyanalyze
 $ python3 -m venv .venv
@@ -13,7 +14,7 @@ $ pip install -e .
 
 ## Black
 
-The code is formatted using [*Black*](https://black.readthedocs.io).
+The code is formatted using [_Black_](https://black.readthedocs.io).
 You can run the formatter with:
 
 ```

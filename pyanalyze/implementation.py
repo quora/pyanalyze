@@ -6,21 +6,20 @@ import typing
 from itertools import product
 from typing import (
     Callable,
-    Type,
-    cast,
     Dict,
     NewType,
     Optional,
     Sequence,
+    Type,
     TypeVar,
     Union,
+    cast,
 )
-
-from .annotated_types import MaxLen, MinLen
 
 import qcore
 import typing_extensions
 
+from .annotated_types import MaxLen, MinLen
 from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import assert_type, reveal_locals, reveal_type
@@ -37,50 +36,50 @@ from .signature import (
     SigParameter,
 )
 from .stacked_scopes import (
+    NULL_CONSTRAINT,
     AbstractConstraint,
-    annotate_with_constraint,
     Composite,
     Constraint,
     ConstraintType,
-    NULL_CONSTRAINT,
     OrConstraint,
     PredicateProvider,
     VarnameWithOrigin,
+    annotate_with_constraint,
 )
 from .value import (
+    KNOWN_MUTABLE_TYPES,
+    NO_RETURN_VALUE,
+    UNINITIALIZED_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
-    CustomCheckExtension,
-    annotate_value,
-    assert_is_value,
     CallableValue,
     CanAssignContext,
     CanAssignError,
-    check_hashability,
-    concrete_values_from_iterable,
+    CustomCheckExtension,
     DictIncompleteValue,
-    dump_value,
-    flatten_values,
     GenericValue,
     HasAttrGuardExtension,
-    KNOWN_MUTABLE_TYPES,
     KnownValue,
-    kv_pairs_from_mapping,
     KVPair,
     MultiValuedValue,
-    NO_RETURN_VALUE,
     ParameterTypeGuardExtension,
-    replace_known_sequence_value,
     SequenceValue,
     SubclassValue,
     TypedDictValue,
     TypedValue,
     TypeVarValue,
-    UNINITIALIZED_VALUE,
+    Value,
+    annotate_value,
+    assert_is_value,
+    check_hashability,
+    concrete_values_from_iterable,
+    dump_value,
+    flatten_values,
+    kv_pairs_from_mapping,
+    replace_known_sequence_value,
     unite_values,
     unpack_values,
-    Value,
 )
 
 _NO_ARG_SENTINEL = KnownValue(qcore.MarkerObject("no argument given"))

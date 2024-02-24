@@ -380,6 +380,7 @@ class TestDunder(TestNameCheckVisitorBase):
     @assert_passes()
     def test_sequence(self):
         from typing import Sequence
+
         from typing_extensions import assert_type
 
         def capybara(s: Sequence[int], t: str):

@@ -2,7 +2,7 @@
 from .extensions import is_keyword, is_of_type, is_positional, is_provided, show_error
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
-from .value import AnySource, AnyValue, assert_is_value, KnownValue, TypedValue
+from .value import AnySource, AnyValue, KnownValue, TypedValue, assert_is_value
 
 
 class TestTypeEvaluation(TestNameCheckVisitorBase):
@@ -474,7 +474,7 @@ class TestExamples(TestNameCheckVisitorBase):
             FileIO,
             TextIOWrapper,
         )
-        from typing import Any, BinaryIO, Callable, IO, Optional, Union
+        from typing import IO, Any, BinaryIO, Callable, Optional, Union
 
         from typing_extensions import Literal
 

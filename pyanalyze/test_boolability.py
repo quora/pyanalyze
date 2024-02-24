@@ -6,13 +6,13 @@ from .stacked_scopes import Composite
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes
 from .value import (
+    NO_RETURN_VALUE,
     AnnotatedValue,
     AnySource,
     AnyValue,
     DictIncompleteValue,
     KnownValue,
     KVPair,
-    NO_RETURN_VALUE,
     SequenceValue,
     TypedDictEntry,
     TypedDictValue,
