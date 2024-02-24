@@ -52,7 +52,8 @@ class TestTypeAliasType(TestNameCheckVisitorBase):
 
     @skip_before((3, 12))
     def test_312(self):
-        self.assert_passes("""
+        self.assert_passes(
+            """
             from typing_extensions import assert_type
             type MyType = int
 
@@ -63,11 +64,13 @@ class TestTypeAliasType(TestNameCheckVisitorBase):
             def capybara(i: int, s: str):
                 f(i)
                 f(s)  # E: incompatible_argument
-        """)
+        """
+        )
 
     @skip_before((3, 12))
     def test_312_generic(self):
-        self.assert_passes("""
+        self.assert_passes(
+            """
             from typing_extensions import assert_type
             type MyType[T] = list[T] | set[T]
 
@@ -78,11 +81,13 @@ class TestTypeAliasType(TestNameCheckVisitorBase):
             def capybara(i: int, s: str):
                 f([i])
                 f([s])  # E: incompatible_argument
-        """)
+        """
+        )
 
     @skip_before((3, 12))
     def test_312_local_alias(self):
-        self.assert_passes("""
+        self.assert_passes(
+            """
             from typing_extensions import assert_type
 
             def capybara():
@@ -93,4 +98,5 @@ class TestTypeAliasType(TestNameCheckVisitorBase):
 
                 f(1)
                 f("x")  # E: incompatible_argument
-        """)
+        """
+        )

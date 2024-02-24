@@ -25,23 +25,28 @@ def test_annotate_code() -> None:
     _check_inferred_value(tree, ast.Constant, KnownValue(1))
     _check_inferred_value(tree, ast.Name, KnownValue(1))
 
-    tree = annotate_code("""
+    tree = annotate_code(
+        """
         class X:
             def __init__(self):
                 self.a = 1
-        """)
+        """
+    )
     _check_inferred_value(tree, ast.Attribute, KnownValue(1))
-    tree = annotate_code("""
+    tree = annotate_code(
+        """
         class X:
             def __init__(self):
                 self.a = 1
 
         x = X()
         x.a + 1
-        """)
+        """
+    )
     _check_inferred_value(tree, ast.BinOp, KnownValue(2))
 
-    tree = annotate_code("""
+    tree = annotate_code(
+        """
         class A:
             def __init__(self):
                 self.a = 1
@@ -52,7 +57,8 @@ def test_annotate_code() -> None:
 
         a = A()
         b = a.bla()
-        """)
+        """
+    )
     _check_inferred_value(tree, ast.Name, KnownValue(1), lambda node: node.id == "b")
 
 

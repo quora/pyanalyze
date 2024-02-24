@@ -1321,13 +1321,15 @@ class TypedDictValue(GenericValue):
                         if key_type.val not in self.items:
                             if self.extra_keys is NO_RETURN_VALUE:
                                 return CanAssignError(
-                                    f"Key {key_type.val!r} is not allowed in closed TypedDict {self}"
+                                    f"Key {key_type.val!r} is not allowed in closed"
+                                    f" TypedDict {self}"
                                 )
                             elif self.extra_keys is not None:
                                 can_assign = self.extra_keys.can_assign(pair.value, ctx)
                                 if isinstance(can_assign, CanAssignError):
                                     return CanAssignError(
-                                        f"Type for extra key {pair.key} is incompatible",
+                                        f"Type for extra key {pair.key} is"
+                                        " incompatible",
                                         children=[can_assign],
                                     )
                                 bounds_maps.append(can_assign)
@@ -1340,7 +1342,8 @@ class TypedDictValue(GenericValue):
                             )
                         if self.extra_keys is NO_RETURN_VALUE:
                             return CanAssignError(
-                                f"Key {pair.key} is not allowed in closed TypedDict {self}"
+                                f"Key {pair.key} is not allowed in closed TypedDict"
+                                f" {self}"
                             )
                         elif self.extra_keys is not None:
                             can_assign = self.extra_keys.can_assign(pair.value, ctx)
@@ -1368,7 +1371,8 @@ class TypedDictValue(GenericValue):
                     can_assign = entry.typ.can_assign(extra_keys_type, ctx)
                     if isinstance(can_assign, CanAssignError):
                         return CanAssignError(
-                            f"Type for key {key} is incompatible with extra keys type {extra_keys_type}",
+                            f"Type for key {key} is incompatible with extra keys type"
+                            f" {extra_keys_type}",
                             children=[can_assign],
                         )
                 else:

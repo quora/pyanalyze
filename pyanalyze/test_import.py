@@ -32,7 +32,8 @@ class TestImport(TestNameCheckVisitorBase):
                 assert_is_value(assert_error, KnownValue(P.extensions.assert_error))
 
     def test_import_star(self):
-        self.assert_passes("""
+        self.assert_passes(
+            """
             import pyanalyze as P
 
             if False:
@@ -40,7 +41,8 @@ class TestImport(TestNameCheckVisitorBase):
 
                 assert_is_value(extensions, KnownValue(P.extensions))
                 not_a_name  # E: undefined_name
-            """)
+            """
+        )
 
 
 class TestDisallowedImport(TestNameCheckVisitorBase):
