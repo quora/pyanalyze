@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Version 0.12.0 (February 25, 2024)
 
 ### New features
 

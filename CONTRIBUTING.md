@@ -23,18 +23,10 @@ $ black pyanalyze
 
 ## flake8
 
-We use [flake8](https://flake8.pycqa.org/en/latest/) as a linter:
+We use [ruff](https://docs.astral.sh/ruff/) as a linter and import sorter:
 
 ```
-$ flake8 pyanalyze
-```
-
-## usort
-
-Imports are sorted using [μsort](https://usort.readthedocs.io/en/stable/index.html):
-
-```
-$ usort format pyanalyze
+$ ruff check pyanalyze
 ```
 
 ## Unit tests
