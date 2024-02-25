@@ -925,6 +925,7 @@ class TestImports(TestNameCheckVisitorBase):
             import qcore
 
             assert_is_value(qcore.utime, KnownValue(_qcore.utime))
+            assert_is_value(_qcore.utime(), NewTypeValue(_qcore.Utime))
             assert_is_value(qcore.utime(), NewTypeValue(_qcore.Utime))
 
     @assert_passes()

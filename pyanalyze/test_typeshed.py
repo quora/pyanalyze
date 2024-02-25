@@ -11,7 +11,7 @@ import typing
 import urllib.parse
 from collections.abc import Collection, MutableSequence, Reversible, Sequence, Set
 from pathlib import Path
-from typing import Dict, Generic, List, NewType, TypeVar, Union
+from typing import Dict, Generic, List, NewType, Type, TypeVar, Union
 from unittest.mock import ANY
 from urllib.error import HTTPError
 
@@ -70,16 +70,24 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
 
     def test_get_bases(self):
         tsf = TypeshedFinder(Checker(), verbose=True)
-        assert [
-            GenericValue(MutableSequence, (TypeVarValue(typevar=ANY),)),
-            GenericValue(Generic, (TypeVarValue(typevar=ANY),)),
-        ] == tsf.get_bases(list)
-        assert [
-            GenericValue(Collection, (TypeVarValue(typevar=ANY),)),
-            GenericValue(Reversible, (TypeVarValue(typevar=ANY),)),
-            GenericValue(Generic, (TypeVarValue(typevar=ANY),)),
-        ] == tsf.get_bases(Sequence)
-        assert [GenericValue(Collection, (TypeVarValue(ANY),))] == tsf.get_bases(Set)
+        generic = GenericValue(Generic, (TypeVarValue(typevar=ANY),))
+
+        # typeshed removed Generic[] from the base list, account for both options
+        def assert_with_maybe_generic(cls: Type[object], expected: List[Value]) -> None:
+            actual = tsf.get_bases(cls)
+            assert actual == expected or actual == [*expected, generic]
+
+        assert_with_maybe_generic(
+            list, [GenericValue(MutableSequence, (TypeVarValue(typevar=ANY),))]
+        )
+        assert_with_maybe_generic(
+            Sequence,
+            [
+                GenericValue(Collection, (TypeVarValue(typevar=ANY),)),
+                GenericValue(Reversible, (TypeVarValue(typevar=ANY),)),
+            ],
+        )
+        assert_with_maybe_generic(Set, [GenericValue(Collection, (TypeVarValue(ANY),))])
 
     def test_newtype(self):
         with tempfile.TemporaryDirectory() as temp_dir_str:
