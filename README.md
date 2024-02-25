@@ -1,14 +1,10 @@
 # pyanalyze
 
-Pyanalyze is a tool for programmatically detecting common mistakes in Python code, such as references to undefined variables and type errors.
-It can be extended to add additional rules and perform checks specific to particular functions.
-
-Some use cases for this tool include:
-
-- **Catching bugs before they reach production**. The script will catch accidental mistakes like writing "`collections.defalutdict`" instead of "`collections.defaultdict`", so that they won't cause errors in production. Other categories of bugs it can find include variables that may be undefined at runtime, duplicate keys in dict literals, and missing `await` keywords.
-- **Making refactoring easier**. When you make a change like removing an object attribute or moving a class from one file to another, pyanalyze will often be able to flag code that you forgot to change.
-- **Finding dead code**. It has an option for finding Python objects (functions and classes) that are not used anywhere in the codebase.
-- **Checking type annotations**. Type annotations are useful as documentation for readers of code, but only when they are actually correct. Although pyanalyze does not support the full Python type system (see [here](https://pyanalyze.readthedocs.io/en/latest/typesystem.html) for details), it can often detect incorrect type annotations.
+Pyanalyze is a semi-static type checker for Python code. Like a static type checker (e.g., mypy or pyright), it
+detects type errors in your code so bugs can be found before they reach production. Unlike such tools, however,
+it imports the modules it type checks, enabling pyanalyze to understand many dynamic constructs that other type
+checkers will reject. This property also makes it possible to extend pyanalyze with plugins that interact directly
+with your code.
 
 ## Usage
 
@@ -29,6 +25,18 @@ But note that this will try to import all Python files it is passed. If you have
 
 In order to run successfully, pyanalyze needs to be able to import the code it checks. To make this work you may have to manually adjust Python's import path using the `$PYTHONPATH` environment variable.
 
+For quick experimentation, you can also use the `-c` option to directly type check a piece of code:
+
+```
+$ python -m pyanalyze -c 'import typing; typing.reveal_type(1)'
+Runtime type is 'int'
+
+Revealed type is 'Literal[1]' (code: reveal_type)
+In <code> at line 1
+   1: import typing; typing.reveal_type(1)
+                                        ^
+```
+
 ### Configuration
 
 Pyanalyze has a number of command-line options, which you can see by running `python -m pyanalyze --help`. Important ones include `-f`, which runs an interactive prompt that lets you examine and fix each error found by pyanalyze, and `--enable`/`--disable`, which enable and disable specific error codes.
@@ -39,7 +47,7 @@ details.
 
 ### Extending pyanalyze
 
-The main way to extend pyanalyze is by providing a specification for a particular function. This allows you to run arbitrary code that inspects the arguments to the function and raises errors if something is wrong.
+One of the main ways to extend pyanalyze is by providing a specification for a particular function. This allows you to run arbitrary code that inspects the arguments to the function and raises errors if something is wrong.
 
 As an example, suppose your codebase contains a function `database.run_query()` that takes as an argument a SQL string, like this:
 
@@ -98,41 +106,11 @@ def get_known_argspecs(arg_spec_cache):
     }
 ```
 
-### Displaying and checking the type of an expression
+### Supported features
 
-You can use `typing_extensions.reveal_type(expr)` to display the type pyanalyze infers for an expression. This can be
-useful to understand errors or to debug why pyanalyze does not catch a particular issue. For example:
-
-```python
-from typing_extensions import reveal_type
-
-reveal_type(1)  # Revealed type is 'Literal[1]' (code: reveal_type)
-```
-
-This function is also considered a builtin while type checking, so you can use `reveal_type()` in code that is type checked but not run.
-
-For callable objects, `reveal_type()` will also display the signature inferred by pyanalyze:
-
-```python
-from typing_extensions import reveal_type
-
-reveal_type(reveal_type)  # Revealed type is 'Literal[<function reveal_type at 0x104bf55e0>]', signature is (value, /) -> None (code: reveal_type)
-```
-
-A similar function, `pyanalyze.dump_value`, can be used to get lower-level details of the `Value` object pyanalyze infers for an expression.
-
-Similarly, you can use `pyanalyze.assert_is_value` to assert that pyanalyze infers a particular type for
-an expression. This requires importing the appropriate `Value` subclass from `pyanalyze.value`. For example:
-
-```python
-from pyanalyze import assert_is_value
-from pyanalyze.value import KnownValue
-
-assert_is_value(1, KnownValue(1))  # succeeds
-assert_is_value(int("2"), KnownValue(1))  # Bad value inference: expected KnownValue(val=1), got TypedValue(typ=<class 'int'>) (code: inference_failure)
-```
-
-This function is mostly useful when writing unit tests for pyanalyze or an extension.
+Pyanalyze generally aims to implement [the Python typing spec](https://typing.readthedocs.io/en/latest/spec/index.html),
+but support for some features is incomplete. See [the documentation](https://pyanalyze.readthedocs.io/en/latest/)
+for details.
 
 ### Ignoring errors
 
@@ -144,9 +122,11 @@ Sometimes pyanalyze gets things wrong and you need to ignore an error it emits. 
 
 You can add an error code, like `# static analysis: ignore[undefined_name]`, to ignore only a specific error code. This does not work for whole-file ignores. If the `bare_ignore` error code is turned on, pyanalyze will emit an error if you don't specify an error code on an ignore comment.
 
+Pyanalyze does not currently support the standard `# type: ignore` comment syntax.
+
 ### Python version support
 
-Pyanalyze supports Python 3.6 through 3.10. Because it imports the code it checks, you have to run it using the same version of Python you use to run your code.
+Pyanalyze supports all versions of Python that have not reached end-of-life. Because it imports the code it checks, you have to run it using the same version of Python you use to run your code.
 
 ## Contributing
 
