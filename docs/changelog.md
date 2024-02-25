@@ -2,19 +2,28 @@
 
 ## Unreleased
 
-- Add special handling for `dict.__delitem__` (#723, #726)
+### New features
+
 - Add support for the `ReadOnly` type qualifier (PEP 705) and
   for the `closed=True` TypedDict argument (PEP 728) (#723)
-- Fix some higher-order behavior of `TypeGuard` and `TypeIs` (#719)
 - Add support for `TypeIs` from PEP 742 (#718)
 - More PEP 695 support: generic classes and functions. Scoping rules
   are not yet fully implemented. (#703)
+- Add special handling for `dict.__delitem__` (#723, #726)
+
+### Compatibility fixes
+
+- Make tests pass with latest release of `typeshed_client` (#727)
+- Fix Protocol compatibility issue with Python 3.13 and an upcoming
+  release of typing-extensions (#716)
+
+## Other bugs
+
+- Fix some higher-order behavior of `TypeGuard` and `TypeIs` (#719)
 - Fix type inference when constructing user-defined generic classes
   (#703)
 - Fix bug in type compatibility check between known-length sequence
   types and literal values (#701)
-- Fix Protocol compatibility issue with Python 3.13 and an upcoming
-  release of typing-extensions (#716)
 
 ## Version 0.11.0 (October 3, 2023)
 
