@@ -11,7 +11,7 @@ import typing
 import urllib.parse
 from collections.abc import Collection, MutableSequence, Reversible, Sequence, Set
 from pathlib import Path
-from typing import Dict, Generic, List, NewType, TypeVar, Union
+from typing import Dict, Generic, List, NewType, Type, TypeVar, Union
 from unittest.mock import ANY
 from urllib.error import HTTPError
 
@@ -73,7 +73,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         generic = GenericValue(Generic, (TypeVarValue(typevar=ANY),))
 
         # typeshed removed Generic[] from the base list, account for both options
-        def assert_with_maybe_generic(cls: type[object], expected: List[Value]) -> None:
+        def assert_with_maybe_generic(cls: Type[object], expected: List[Value]) -> None:
             actual = tsf.get_bases(cls)
             assert actual == expected or actual == [*expected, generic]
 
