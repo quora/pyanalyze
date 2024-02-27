@@ -646,14 +646,18 @@ class ArgSpecCache:
                     unbound, impl, is_asynq, in_overload_resolution
                 )
                 if sig is not None:
-                    return make_bound_method(sig, Composite(KnownValue(obj.__self__)))
+                    return make_bound_method(
+                        sig, Composite(KnownValue(obj.__self__)), ctx=self.ctx
+                    )
 
         # for bound methods, see if we have an argspec for the unbound method
         if inspect.ismethod(obj) and obj.__self__ is not None:
             argspec = self._cached_get_argspec(
                 obj.__func__, impl, is_asynq, in_overload_resolution
             )
-            return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
+            return make_bound_method(
+                argspec, Composite(KnownValue(obj.__self__)), ctx=self.ctx
+            )
 
         # Must be after the check for bound methods, because otherwise we
         # won't bind self correctly.
@@ -704,7 +708,9 @@ class ArgSpecCache:
                 _ENUM_CALL, impl, is_asynq, in_overload_resolution
             )
             self_value = SubclassValue(TypedValue(obj))
-            bound_sig = make_bound_method(signature, Composite(self_value))
+            bound_sig = make_bound_method(
+                signature, Composite(self_value), ctx=self.ctx
+            )
             if bound_sig is None:
                 return None
             sig = bound_sig.get_signature(
@@ -793,7 +799,9 @@ class ArgSpecCache:
             )
             # wrap if it's a bound method
             if obj.instance is not None and argspec is not None:
-                return make_bound_method(argspec, Composite(KnownValue(obj.instance)))
+                return make_bound_method(
+                    argspec, Composite(KnownValue(obj.instance)), ctx=self.ctx
+                )
             return argspec
 
         if inspect.isclass(obj):
@@ -856,7 +864,9 @@ class ArgSpecCache:
                     returns=return_type,
                     allow_call=allow_call,
                 )
-            bound_sig = make_bound_method(signature, Composite(TypedValue(obj)))
+            bound_sig = make_bound_method(
+                signature, Composite(TypedValue(obj)), ctx=self.ctx
+            )
             if bound_sig is None:
                 return None
             if is_dunder_new:
@@ -894,7 +904,9 @@ class ArgSpecCache:
                 argspec = self._cached_get_argspec(
                     method, impl, is_asynq, in_overload_resolution
                 )
-                return make_bound_method(argspec, Composite(KnownValue(obj.__self__)))
+                return make_bound_method(
+                    argspec, Composite(KnownValue(obj.__self__)), ctx=self.ctx
+                )
 
         if hasattr_static(obj, "__call__"):
             # we could get an argspec here in some cases, but it's impossible to figure out

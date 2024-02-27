@@ -233,7 +233,9 @@ class TypeshedFinder:
                 sig = self._get_sig_from_method_descriptor(method, allow_call)
                 if sig is None:
                     return None
-                bound = make_bound_method(sig, Composite(TypedValue(obj.__self__)))
+                bound = make_bound_method(
+                    sig, Composite(TypedValue(obj.__self__)), ctx=self.ctx
+                )
                 if bound is None:
                     return None
                 return bound.get_signature(ctx=self.ctx)
@@ -806,7 +808,9 @@ class TypeshedFinder:
                         self_annotation_value = self_val
                     else:
                         self_annotation_value = SubclassValue(self_val)
-                    bound_sig = make_bound_method(sig, Composite(self_val))
+                    bound_sig = make_bound_method(
+                        sig, Composite(self_val), ctx=self.ctx
+                    )
                     if bound_sig is None:
                         return None
                     sig = bound_sig.get_signature(

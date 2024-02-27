@@ -608,6 +608,9 @@ class KnownValueWithTypeVars(KnownValue):
     typevars: TypeVarMap = field(compare=False)
     """TypeVars substituted on this value."""
 
+    def __str__(self) -> str:
+        return super().__str__() + f" with typevars {self.typevars}"
+
 
 @dataclass(frozen=True)
 class SyntheticModuleValue(Value):

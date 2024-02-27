@@ -448,8 +448,8 @@ def _get_attribute_from_known(obj: object, ctx: AttrContext) -> Value:
         )
         and isinstance(ctx.root_value, AnnotatedValue)
     ):
-        result = UnboundMethodValue(ctx.attr, ctx.root_composite)
-    if safe_isinstance(obj, type):
+        result = set_self(result, ctx.root_value)
+    elif safe_isinstance(obj, type):
         result = set_self(result, TypedValue(obj))
     if isinstance(obj, (types.ModuleType, type)):
         ctx.record_usage(obj, result)

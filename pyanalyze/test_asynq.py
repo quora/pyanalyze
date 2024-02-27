@@ -225,3 +225,51 @@ class TestReturn(TestNameCheckVisitorBase):
             if cond:
                 return 3
             yield capybara.asynq(False)
+
+
+class TestBindDecorator(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_l0(self):
+        import qcore
+        from asynq import asynq
+
+        class L0CacheDecoratorBinder(qcore.decorators.DecoratorBinder):
+            def dirty(self, *args, **kwargs):
+                pass
+
+        class L0AsyncCacheDecoratorBinder(L0CacheDecoratorBinder):
+            def asynq(self, *args, **kwargs):
+                pass
+
+        class L0CacheDecorator(qcore.decorators.DecoratorBase):
+            binder_cls = L0CacheDecoratorBinder
+
+            def dirty(self, *args, **kwargs):
+                pass
+
+        class L0AsyncCacheDecorator(L0CacheDecorator):
+            binder_cls = L0AsyncCacheDecoratorBinder
+
+            def __call__(self, *args, **kwargs):
+                pass
+
+            def asynq(self, *args, **kwargs):
+                pass
+
+            def is_pure_async_fn(self):
+                return False
+
+        def cached():
+            def decorate(fn):
+                return qcore.decorators.decorate(L0AsyncCacheDecorator)(fn)
+
+            return decorate
+
+        class A:
+            @cached()
+            @asynq()
+            def f1(self):
+                return 100
+
+            def f2(self):
+                self.f1.dirty()  # should be ok

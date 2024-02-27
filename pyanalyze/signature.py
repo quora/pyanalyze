@@ -2570,6 +2570,8 @@ def make_bound_method(
     argspec: MaybeSignature,
     self_composite: Composite,
     return_override: Optional[Value] = None,
+    *,
+    ctx: CanAssignContext,
 ) -> Optional[BoundMethodSignature]:
     if argspec is None:
         return None
@@ -2578,7 +2580,10 @@ def make_bound_method(
     elif isinstance(argspec, BoundMethodSignature):
         if return_override is None:
             return_override = argspec.return_override
-        return BoundMethodSignature(argspec.signature, self_composite, return_override)
+        sig = argspec.get_signature(ctx=ctx)
+        if sig is None:
+            return None
+        return BoundMethodSignature(sig, self_composite, return_override)
     else:
         assert_never(argspec)
 
