@@ -320,9 +320,12 @@ class Checker:
                 sig = self.arg_spec_cache.get_argspec(method)
                 if sig is None:
                     # TODO return None here and figure out when the signature is missing
+                    # Probably because of cythonized methods
                     return ANY_SIGNATURE
                 return_override = get_return_override(sig)
-                bound = make_bound_method(sig, value.composite, return_override)
+                bound = make_bound_method(
+                    sig, value.composite, return_override, ctx=self
+                )
                 if bound is not None and value.typevars is not None:
                     bound = bound.substitute_typevars(value.typevars)
                 return bound
@@ -352,7 +355,9 @@ class Checker:
             call_fn = typ.__call__
             sig = self.arg_spec_cache.get_argspec(call_fn)
             return_override = get_return_override(sig)
-            bound_method = make_bound_method(sig, Composite(value), return_override)
+            bound_method = make_bound_method(
+                sig, Composite(value), return_override, ctx=self
+            )
             if bound_method is None:
                 return None
             return bound_method.get_signature(ctx=self)

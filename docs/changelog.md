@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix inference of signature for certain secondary methods (#732)
+
 ## Version 0.12.0 (February 25, 2024)
 
 ### New features

@@ -11,7 +11,6 @@ from .value import (
     KnownValue,
     MultiValuedValue,
     TypedValue,
-    UnboundMethodValue,
     assert_is_value,
 )
 
@@ -208,29 +207,22 @@ class TestAttributes(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_annotated_known(self):
-        from typing import Any, cast
-        from unittest.mock import ANY
-
         from typing_extensions import Annotated, Literal
 
         from pyanalyze.extensions import LiteralOnly
-        from pyanalyze.stacked_scopes import Composite, VarnameWithOrigin
-        from pyanalyze.value import CustomCheckExtension
-
-        origin = VarnameWithOrigin("encoding", cast(Any, ANY))
+        from pyanalyze.value import CustomCheckExtension, KnownValueWithTypeVars, SelfT
 
         def capybara():
             encoding: Annotated[Literal["ascii"], LiteralOnly()] = "ascii"
             assert_is_value(
                 encoding.encode,
-                UnboundMethodValue(
-                    "encode",
-                    Composite(
-                        AnnotatedValue(
+                KnownValueWithTypeVars(
+                    encoding.encode,
+                    {
+                        SelfT: AnnotatedValue(
                             KnownValue("ascii"), [CustomCheckExtension(LiteralOnly())]
-                        ),
-                        origin,
-                    ),
+                        )
+                    },
                 ),
             )
 
