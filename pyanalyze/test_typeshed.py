@@ -819,3 +819,12 @@ class TestNestedClass(TestNameCheckVisitorBase):
 
         def capybara() -> None:
             Outer.Inner(1)
+
+
+class TestDeprecated(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_utcnow(self):
+        import datetime
+
+        def capybara() -> None:
+            assert_is_value(datetime.datetime.utcnow(), TypedValue(datetime.datetime))

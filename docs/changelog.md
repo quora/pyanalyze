@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix crash on encountering certain decorators in stubs (#734)
 - Fix inference of signature for certain secondary methods (#732)
 
 ## Version 0.12.0 (February 25, 2024)
