@@ -526,7 +526,6 @@ class TypeshedFinder:
         if isinstance(node, ast.AnnAssign):
             return self._parse_type(node.annotation, mod, is_typeddict=is_typeddict)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            extensions = []
             is_property = False
             for decorator_node in node.decorator_list:
                 decorator_value = self._parse_expr(decorator_node, mod)
@@ -564,7 +563,7 @@ class TypeshedFinder:
                     parent_name=parent_name,
                 )
                 sig = self._sig_from_value(val)
-                if sig is None:
+                if not isinstance(sig, Signature):
                     return AnyValue(AnySource.inference)
                 sigs.append(sig)
             return CallableValue(OverloadedSignature(sigs))
@@ -794,7 +793,6 @@ class TypeshedFinder:
                 new_value, provider = self.get_attribute_recursively(
                     fq_name, "__new__", on_class=True
                 )
-                sig = None
                 from_init = False
                 if new_value is UNINITIALIZED_VALUE or provider is object:
                     init_value, provider = self.get_attribute_recursively(
