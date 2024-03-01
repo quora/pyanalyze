@@ -956,13 +956,13 @@ class _SubscriptedValue(Value):
     members: Tuple[Value, ...]
 
 
-@dataclass
+@dataclass(frozen=True)
 class TypeQualifierValue(Value):
     qualifier: Literal["Required", "NotRequired", "ReadOnly"]
     value: Value
 
 
-@dataclass
+@dataclass(frozen=True)
 class DecoratorValue(Value):
     decorator: object
     args: Tuple[Value, ...]

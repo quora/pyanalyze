@@ -53,7 +53,7 @@ from .extensions import deprecated as deprecated_decorator
 from .extensions import evaluated, overload, real_overload
 from .node_visitor import Failure
 from .options import Options, PathSequenceOption
-from .safe import all_of_type, hasattr_static, is_typing_name, safe_isinstance
+from .safe import hasattr_static, is_typing_name, safe_isinstance
 from .signature import (
     ConcreteSignature,
     OverloadedSignature,
@@ -65,6 +65,7 @@ from .signature import (
 from .stacked_scopes import Composite, uniq_chain
 from .value import (
     UNINITIALIZED_VALUE,
+    AnnotatedValue,
     AnySource,
     AnyValue,
     CallableValue,
@@ -83,6 +84,7 @@ from .value import (
     annotate_value,
     extract_typevars,
     make_coro_type,
+    unannotate_value,
 )
 
 PROPERTY_LIKE = {KnownValue(property), KnownValue(types.DynamicClassAttribute)}
@@ -524,18 +526,26 @@ class TypeshedFinder:
         if isinstance(node, ast.AnnAssign):
             return self._parse_type(node.annotation, mod, is_typeddict=is_typeddict)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            decorators = [
-                self._parse_expr(decorator, mod) for decorator in node.decorator_list
-            ]
-            if node.returns and set(decorators) & PROPERTY_LIKE:
-                return self._parse_type(node.returns, mod)
-            sig = self._get_signature_from_func_def(
-                node, None, mod, autobind=not on_class
-            )
-            if sig is None:
-                return AnyValue(AnySource.inference)
+            extensions = []
+            is_property = False
+            for decorator_node in node.decorator_list:
+                decorator_value = self._parse_expr(decorator_node, mod)
+                if decorator_value in PROPERTY_LIKE:
+                    is_property = True
+            if is_property:
+                if node.returns:
+                    return self._parse_type(node.returns, mod)
+                else:
+                    return AnyValue(AnySource.unannotated)
             else:
-                return CallableValue(sig)
+                # TODO: apply decorators to the return value
+                sig = self._get_signature_from_func_def(
+                    node, None, mod, autobind=not on_class
+                )
+                if sig is None:
+                    return AnyValue(AnySource.inference)
+                else:
+                    return CallableValue(sig)
         elif isinstance(node, ast.ClassDef):
             # should be
             # SubclassValue(TypedValue(f"{mod}.{parent_name}.{node.name}"), exactly=True)
@@ -544,21 +554,20 @@ class TypeshedFinder:
         elif isinstance(node, ast.Assign):
             return UNINITIALIZED_VALUE
         elif isinstance(node, typeshed_client.OverloadedName):
-            vals = [
-                self._get_value_from_child_info(
+            sigs = []
+            for subnode in node.definitions:
+                val = self._get_value_from_child_info(
                     subnode,
                     mod,
                     is_typeddict=is_typeddict,
                     on_class=on_class,
                     parent_name=parent_name,
                 )
-                for subnode in node.definitions
-            ]
-            if all_of_type(vals, CallableValue):
-                sigs = [val.signature for val in vals]
-                if all_of_type(sigs, Signature):
-                    return CallableValue(OverloadedSignature(sigs))
-            return AnyValue(AnySource.inference)
+                sig = self._sig_from_value(val)
+                if sig is None:
+                    return AnyValue(AnySource.inference)
+                sigs.append(sig)
+            return CallableValue(OverloadedSignature(sigs))
         assert False, repr(node)
 
     def _get_child_info(
@@ -737,6 +746,18 @@ class TypeshedFinder:
             self.log("Ignoring object without module or qualname", obj)
             return None
 
+    def _sig_from_value(self, val: Value) -> Optional[ConcreteSignature]:
+        val, extensions = unannotate_value(val, DeprecatedExtension)
+        if isinstance(val, AnnotatedValue):
+            val = val.value
+        if not isinstance(val, CallableValue):
+            return None
+        sig = val.signature
+        if isinstance(sig, Signature):
+            for extension in extensions:
+                sig = replace(sig, deprecated=extension.deprecation_message)
+        return sig
+
     def _get_signature_from_info(
         self,
         info: typeshed_client.resolver.ResolvedName,
@@ -779,11 +800,10 @@ class TypeshedFinder:
                     init_value, provider = self.get_attribute_recursively(
                         fq_name, "__init__", on_class=True
                     )
-                    if isinstance(init_value, CallableValue):
-                        sig = init_value.signature
+                    if (sig := self._sig_from_value(init_value)) is not None:
                         from_init = True
-                elif isinstance(new_value, CallableValue):
-                    sig = new_value.signature
+                else:
+                    sig = self._sig_from_value(new_value)
                 if sig is not None:
                     if safe_isinstance(obj, type):
                         if allow_call:
@@ -1070,14 +1090,22 @@ class TypeshedFinder:
         metadata = []
         for decorator in node.decorator_list:
             decorator_val = self._parse_expr(decorator, module)
-            if (
-                isinstance(decorator_val, DecoratorValue)
-                and decorator_val.decorator is deprecated_decorator
-            ):
-                arg = decorator_val.args[0]
-                if isinstance(arg, KnownValue) and isinstance(arg.val, str):
-                    metadata.append(DeprecatedExtension(arg.val))
+            extension = self._extract_extension_from_decorator(decorator_val)
+            if extension is not None:
+                metadata.append(extension)
         return metadata
+
+    def _extract_extension_from_decorator(
+        self, decorator_val: Value
+    ) -> Optional[Extension]:
+        if (
+            isinstance(decorator_val, DecoratorValue)
+            and decorator_val.decorator is deprecated_decorator
+        ):
+            arg = decorator_val.args[0]
+            if isinstance(arg, KnownValue) and isinstance(arg.val, str):
+                return DeprecatedExtension(arg.val)
+        return None
 
     def make_synthetic_type(self, module: str, info: typeshed_client.NameInfo) -> Value:
         fq_name = f"{module}.{info.name}"
