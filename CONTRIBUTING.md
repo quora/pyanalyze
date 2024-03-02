@@ -21,7 +21,7 @@ You can run the formatter with:
 $ black pyanalyze
 ```
 
-## flake8
+## ruff
 
 We use [ruff](https://docs.astral.sh/ruff/) as a linter and import sorter:
 
