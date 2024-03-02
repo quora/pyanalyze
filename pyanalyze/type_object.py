@@ -68,10 +68,10 @@ class TypeObject:
         self.base_classes |= set(get_mro(self.typ))
         # As a special case, the Python type system treats int as
         # a subtype of float, and both int and float as subtypes of complex.
-        if self.typ is int:
+        if self.typ is int or safe_in(int, self.base_classes):
             self.artificial_bases.add(float)
             self.artificial_bases.add(complex)
-        if self.typ is float:
+        if self.typ is float or safe_in(float, self.base_classes):
             self.artificial_bases.add(complex)
         if self.is_thrift_enum:
             self.artificial_bases.add(int)
