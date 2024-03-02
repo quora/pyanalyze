@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Make error registry into a custom class instead of an enum, removing
+  dependency on `aenum` (#739)
 - Treat subclasses of `int` as subclasses of `float` and `complex` too (#738)
 - Fix crash on encountering certain decorators in stubs (#734)
 - Fix inference of signature for certain secondary methods (#732)

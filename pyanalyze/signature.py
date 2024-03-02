@@ -38,7 +38,7 @@ from typing_extensions import Literal, Protocol, Self, assert_never
 
 from pyanalyze.predicates import IsAssignablePredicate
 
-from .error_code import ErrorCode
+from .error_code import Error, ErrorCode
 from .node_visitor import Replacement
 from .options import IntegerOption
 from .safe import safe_getattr
@@ -178,7 +178,7 @@ class CheckCallContext(Protocol):
         self,
         __message: str,
         *,
-        code: ErrorCode = ...,
+        code: Error = ...,
         node: Optional[ast.AST] = ...,
         detail: Optional[str] = ...,
         replacement: Optional[Replacement] = ...,
@@ -200,7 +200,7 @@ class _CanAssignBasedContext:
         self,
         message: str,
         *,
-        code: ErrorCode = ErrorCode.incompatible_call,
+        code: Error = ErrorCode.incompatible_call,
         node: Optional[ast.AST] = None,
         detail: Optional[str] = ...,
         replacement: Optional[Replacement] = ...,
@@ -222,7 +222,7 @@ class _VisitorBasedContext:
         self,
         message: str,
         *,
-        code: ErrorCode = ErrorCode.incompatible_call,
+        code: Error = ErrorCode.incompatible_call,
         node: Optional[ast.AST] = None,
         detail: Optional[str] = ...,
         replacement: Optional[Replacement] = None,
@@ -347,7 +347,7 @@ class CallContext:
     def show_error(
         self,
         message: str,
-        error_code: ErrorCode = ErrorCode.incompatible_call,
+        error_code: Error = ErrorCode.incompatible_call,
         *,
         arg: Optional[str] = None,
         node: Optional[ast.AST] = None,

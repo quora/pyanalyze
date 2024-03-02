@@ -71,7 +71,7 @@ from .arg_spec import ArgSpecCache, IgnoredCallees, UnwrapClass, is_dot_asynq_fu
 from .asynq_checker import AsynqChecker
 from .boolability import Boolability, get_boolability
 from .checker import Checker, CheckerAttrContext
-from .error_code import ERROR_DESCRIPTION, ErrorCode
+from .error_code import Error, ErrorCode
 from .extensions import (
     ParameterTypeGuard,
     assert_error,
@@ -1111,7 +1111,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         contents: str,
         tree: ast.Module,
         *,
-        settings: Optional[Mapping[ErrorCode, bool]] = None,
+        settings: Optional[Mapping[Error, bool]] = None,
         fail_after_first: bool = False,
         verbosity: int = logging.CRITICAL,
         unused_finder: Optional[UnusedObjectFinder] = None,
@@ -1438,7 +1438,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self,
         node: ast.AST,
         msg: Optional[str] = None,
-        error_code: Optional[ErrorCode] = None,
+        error_code: Optional[Error] = None,
         *,
         replacement: Optional[node_visitor.Replacement] = None,
         detail: Optional[str] = None,
@@ -4522,11 +4522,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return condition, constraint
 
     def _check_boolability(
-        self,
-        value: Value,
-        node: ast.AST,
-        *,
-        disabled: Container[ErrorCode] = frozenset(),
+        self, value: Value, node: ast.AST, *, disabled: Container[Error] = frozenset()
     ) -> None:
         boolability = get_boolability(value)
         if boolability is Boolability.erroring_bool:
@@ -5700,8 +5696,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return parser
 
     @classmethod
-    def get_description_for_error_code(cls, error_code: ErrorCode) -> str:
-        return ERROR_DESCRIPTION[error_code]
+    def get_description_for_error_code(cls, error_code: Error) -> str:
+        return error_code.description
 
     @classmethod
     def get_default_directories(
@@ -5711,7 +5707,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return tuple(str(path) for path in paths)
 
     @classmethod
-    def _get_default_settings(cls) -> Optional[Dict[enum.Enum, bool]]:
+    def _get_default_settings(
+        cls,
+    ) -> Optional[Dict[node_visitor.ErrorCodeInstance, bool]]:
         return {}
 
     @classmethod
@@ -5748,8 +5746,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         patch_typing_overload()
         return kwargs
 
-    def is_enabled(self, error_code: enum.Enum) -> bool:
-        if not isinstance(error_code, ErrorCode):
+    def is_enabled(self, error_code: node_visitor.ErrorCodeInstance) -> bool:
+        if not isinstance(error_code, Error):
             return False
         return self.options.is_error_code_enabled(error_code)
 

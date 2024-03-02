@@ -7,7 +7,7 @@ Defines some concrete options that cannot easily be placed elsewhere.
 from types import ModuleType
 from typing import Callable
 
-from .error_code import DISABLED_BY_DEFAULT, ERROR_DESCRIPTION, ErrorCode
+from .error_code import DISABLED_BY_DEFAULT, ErrorCode
 from .options import BooleanOption, PathSequenceOption, PyObjectSequenceOption
 from .value import VariableNameValue
 
@@ -47,7 +47,7 @@ for _code in ErrorCode:
         _code.name,
         (BooleanOption,),
         {
-            "__doc__": ERROR_DESCRIPTION[_code],
+            "__doc__": _code.description,
             "name": _code.name,
             "default_value": _code not in DISABLED_BY_DEFAULT,
             "should_create_command_line_option": False,

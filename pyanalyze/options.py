@@ -31,7 +31,7 @@ from typing import (
 import qcore
 import tomli
 
-from .error_code import ErrorCode
+from .error_code import Error, ErrorCode
 from .find_unused import used
 from .safe import safe_in
 
@@ -313,14 +313,14 @@ class Options:
         instances = [*self.options.get(option.name, ()), option(option.default_value)]
         return option.get_value_from_instances(instances, self.module_path)
 
-    def is_error_code_enabled(self, code: ErrorCode) -> bool:
+    def is_error_code_enabled(self, code: Error) -> bool:
         option = ConfigOption.registry[code.name]
         try:
             return self._get_value_for_no_default(option)
         except NotFound:
             return option.default_value
 
-    def is_error_code_enabled_anywhere(self, code: ErrorCode) -> bool:
+    def is_error_code_enabled_anywhere(self, code: Error) -> bool:
         option = ConfigOption.registry[code.name]
         instances = self.options.get(option.name, ())
         if any(instance.value for instance in instances):
