@@ -23,6 +23,9 @@ class TestNumerics(TestNameCheckVisitorBase):
         def take_float(x: float) -> None:
             pass
 
+        class IntSubclass(int):
+            pass
+
         def capybara(nt: NT, i: int, f: float) -> None:
             take_float(nt)
             take_float(i)
@@ -31,11 +34,9 @@ class TestNumerics(TestNameCheckVisitorBase):
             take_float(3)
             take_float(1 + 1j)  # E: incompatible_argument
             take_float("string")  # E: incompatible_argument
-            # Strictly speaking this should be allowed, but it doesn't
-            # seem useful and I don't know of a concrete use case that would
-            # require this to work. This can be revisited if we do find a use
-            # case.
-            take_float(True)  # E: incompatible_argument
+            # bool is a subclass of int, which is treated as a subclass of float
+            take_float(True)
+            take_float(IntSubclass(3))
 
     @assert_passes()
     def test_complex(self):
@@ -57,7 +58,7 @@ class TestNumerics(TestNameCheckVisitorBase):
             take_complex(3)
             take_complex(1 + 1j)
             take_complex("string")  # E: incompatible_argument
-            take_complex(True)  # E: incompatible_argument
+            take_complex(True)  # bool is an int, which is a float, which is a complex
 
 
 class TestSyntheticType(TestNameCheckVisitorBase):

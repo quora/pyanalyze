@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Treat subclasses of `int` as subclasses of `float` and `complex` too (#738)
 - Fix crash on encountering certain decorators in stubs (#734)
 - Fix inference of signature for certain secondary methods (#732)
 
