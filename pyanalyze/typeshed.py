@@ -15,7 +15,7 @@ from abc import abstractmethod
 from collections.abc import Collection, MutableMapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field, replace
-from enum import Enum, EnumMeta
+from enum import EnumMeta
 from types import GeneratorType, MethodDescriptorType, ModuleType
 from typing import (
     Any,
@@ -36,6 +36,7 @@ import qcore
 import typeshed_client
 from typing_extensions import Protocol, TypedDict
 
+from pyanalyze import node_visitor
 from pyanalyze.functions import translate_vararg_type
 
 from .analysis_lib import is_positional_only_arg_name
@@ -48,7 +49,7 @@ from .annotations import (
     type_from_value,
     value_from_ast,
 )
-from .error_code import ErrorCode
+from .error_code import Error, ErrorCode
 from .extensions import deprecated as deprecated_decorator
 from .extensions import evaluated, overload, real_overload
 from .node_visitor import Failure
@@ -104,7 +105,7 @@ class _AnnotationContext(Context):
     def show_error(
         self,
         message: str,
-        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        error_code: Error = ErrorCode.invalid_annotation,
         node: Optional[ast.AST] = None,
     ) -> None:
         self.finder.log(message, ())
@@ -128,7 +129,7 @@ class _DummyErrorContext:
         self,
         node: ast.AST,
         e: str,
-        error_code: Enum,
+        error_code: node_visitor.ErrorCodeInstance,
         *,
         detail: Optional[str] = None,
         save: bool = True,

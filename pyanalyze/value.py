@@ -50,7 +50,7 @@ import qcore
 from typing_extensions import Literal, ParamSpec, Protocol
 
 import pyanalyze
-from pyanalyze.error_code import ErrorCode
+from pyanalyze.error_code import Error
 from pyanalyze.extensions import CustomCheck, ExternalType
 
 from .safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
@@ -294,7 +294,7 @@ class CanAssignError:
 
     message: str = ""
     children: List["CanAssignError"] = field(default_factory=list)
-    error_code: Optional[ErrorCode] = None
+    error_code: Optional[Error] = None
 
     def display(self, depth: int = 2) -> str:
         """Display all errors in a human-readable format."""
@@ -307,7 +307,7 @@ class CanAssignError:
         else:
             return child_result
 
-    def get_error_code(self) -> Optional[ErrorCode]:
+    def get_error_code(self) -> Optional[Error]:
         errors = {child.get_error_code() for child in self.children}
         if self.error_code:
             errors.add(self.error_code)

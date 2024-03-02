@@ -43,10 +43,12 @@ import qcore
 from ast_decompiler import decompile
 from typing_extensions import NotRequired, Protocol, TypedDict
 
-from . import analysis_lib
+from . import analysis_lib, error_code
 from .safe import safe_getattr, safe_isinstance
 
 Error = Dict[str, Any]
+ErrorCodeContainer = Union[error_code.ErrorRegistry, Type[Enum]]
+ErrorCodeInstance = Union[error_code.Error, Enum]
 
 
 @dataclass(frozen=True)
@@ -100,7 +102,9 @@ class _Query:
 
 
 class VisitorError(Exception):
-    def __init__(self, message: str, error_code: Optional[Enum] = None) -> None:
+    def __init__(
+        self, message: str, error_code: Optional[ErrorCodeInstance] = None
+    ) -> None:
         self.message = message
         self.error_code = error_code
 
@@ -137,7 +141,7 @@ class Failure(TypedDict):
     description: str
     filename: str
     absolute_filename: str
-    code: NotRequired[Enum]
+    code: NotRequired[ErrorCodeInstance]
     lineno: NotRequired[int]
     col_offset: NotRequired[int]
     context: NotRequired[str]
@@ -152,7 +156,7 @@ class ErrorContext(Protocol):
         self,
         node: ast.AST,
         e: str,
-        error_code: Enum,
+        error_code: ErrorCodeInstance,
         *,
         detail: Optional[str] = None,
         save: bool = True,
@@ -166,7 +170,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     # Number of context lines to show around errors
     CONTEXT_LINES: int = 3
-    error_code_enum: Optional[Type[Enum]] = None
+    error_code_enum: Optional[ErrorCodeContainer] = None
     default_module: Optional[ModuleType] = None  # module to run on by default
     # whether to look at FILE_ENVIRON_KEY to find files to run on
     should_check_environ_for_files: bool = True
@@ -183,7 +187,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         filename: str,
         contents: str,
         tree: ast.Module,
-        settings: Optional[Mapping[Enum, bool]] = None,
+        settings: Optional[Mapping[ErrorCodeInstance, bool]] = None,
         fail_after_first: bool = False,
         verbosity: int = logging.CRITICAL,
         collect_failures: bool = False,
@@ -245,7 +249,9 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @qcore.caching.cached_per_instance()
     def has_file_level_ignore(
-        self, error_code: Optional[Enum] = None, ignore_comment: str = IGNORE_COMMENT
+        self,
+        error_code: Optional[ErrorCodeInstance] = None,
+        ignore_comment: str = IGNORE_COMMENT,
     ) -> bool:
         # if the IGNORE_COMMENT occurs before any non-comment line, all errors in the file are
         # ignored
@@ -269,7 +275,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             if IGNORE_COMMENT in line and i not in self.used_ignores
         ]
 
-    def show_errors_for_unused_ignores(self, error_code: Enum) -> None:
+    def show_errors_for_unused_ignores(self, error_code: ErrorCodeInstance) -> None:
         """Shows errors for any unused ignore comments."""
         for i, line in self.get_unused_ignores():
             node = _FakeNode(i + 1, line.index(IGNORE_COMMENT))
@@ -286,7 +292,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 node, error_code=error_code, replacement=replacement, obey_ignore=False
             )
 
-    def show_errors_for_bare_ignores(self, error_code: Enum) -> None:
+    def show_errors_for_bare_ignores(self, error_code: ErrorCodeInstance) -> None:
         """Shows errors for ignore comments without an error code."""
         if self.has_file_level_ignore():
             # file-level ignores are allowed to be blanket ignores
@@ -374,11 +380,12 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 settings = {code: False for code in cls.error_code_enum}
             else:
                 settings = cls._get_default_settings()
+            name_to_setting = {setting.name: setting for setting in cls.error_code_enum}
             if settings is not None:
                 for setting in args.enable:
-                    settings[cls.error_code_enum[setting]] = True
+                    settings[name_to_setting[setting]] = True
                 for setting in args.disable:
-                    settings[cls.error_code_enum[setting]] = False
+                    settings[name_to_setting[setting]] = False
             kwargs = {
                 key: value
                 for key, value in args.__dict__.items()
@@ -536,7 +543,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return lines
 
     @classmethod
-    def _get_default_settings(cls) -> Optional[Dict[Enum, bool]]:
+    def _get_default_settings(cls) -> Optional[Dict[ErrorCodeInstance, bool]]:
         if cls.error_code_enum is None:
             return None
         else:
@@ -554,7 +561,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         for error in errors:
             self.show_error(**error)
 
-    def is_enabled(self, error_code: Enum) -> bool:
+    def is_enabled(self, error_code: ErrorCodeInstance) -> bool:
         if self.settings is not None:
             return self.settings.get(error_code, True)
         return True
@@ -563,7 +570,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         self,
         node: Union[ast.AST, _FakeNode, None],
         e: Optional[str] = None,
-        error_code: Optional[Enum] = None,
+        error_code: Optional[ErrorCodeInstance] = None,
         *,
         replacement: Optional[Replacement] = None,
         obey_ignore: bool = True,
@@ -961,11 +968,11 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return parser
 
     @classmethod
-    def is_enabled_by_default(cls, code: Enum) -> bool:
+    def is_enabled_by_default(cls, code: ErrorCodeInstance) -> bool:
         return True
 
     @classmethod
-    def get_description_for_error_code(cls, code: Enum) -> str:
+    def get_description_for_error_code(cls, code: ErrorCodeInstance) -> str:
         return f"Error: {code}"
 
     @classmethod

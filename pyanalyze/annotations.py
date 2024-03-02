@@ -55,7 +55,7 @@ from typing_extensions import Literal, ParamSpec, TypedDict, get_args, get_origi
 from pyanalyze.annotated_types import get_annotated_types_extension
 
 from . import type_evaluation
-from .error_code import ErrorCode
+from .error_code import Error, ErrorCode
 from .extensions import (
     AsynqCallable,
     CustomCheck,
@@ -168,7 +168,7 @@ class Context:
     def show_error(
         self,
         message: str,
-        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        error_code: Error = ErrorCode.invalid_annotation,
         node: Optional[ast.AST] = None,
     ) -> None:
         """Show an error found while evaluating an annotation."""
@@ -239,7 +239,7 @@ class SyntheticEvaluator(type_evaluation.Evaluator):
     def show_error(
         self,
         message: str,
-        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        error_code: Error = ErrorCode.invalid_annotation,
         node: Optional[ast.AST] = None,
     ) -> None:
         self.error_ctx.show_error(node or self.node, message, error_code=error_code)
@@ -904,7 +904,7 @@ class _DefaultContext(Context):
     def show_error(
         self,
         message: str,
-        error_code: ErrorCode = ErrorCode.invalid_annotation,
+        error_code: Error = ErrorCode.invalid_annotation,
         node: Optional[ast.AST] = None,
     ) -> None:
         if node is None:
