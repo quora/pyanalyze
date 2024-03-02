@@ -5,7 +5,7 @@ Error codes used by test_scope.
 """
 
 from dataclasses import dataclass
-from typing import Iterable, Iterator
+from typing import Dict, Iterable, Iterator
 
 import pyanalyze
 
@@ -20,7 +20,7 @@ class Error:
 
 
 class ErrorRegistry:
-    errors: dict[str, Error]
+    errors: Dict[str, Error]
 
     def __init__(self, errors: Iterable[Error]) -> None:
         self.errors = {}
