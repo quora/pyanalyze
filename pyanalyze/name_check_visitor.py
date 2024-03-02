@@ -4050,7 +4050,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if isinstance(can_assign, CanAssignError):
                     self._show_error_if_checking(
                         node,
-                        f"Incompatible return value {value} (expected {expected})",
+                        f"Incompatible return type: expected {expected}, got {value}",
                         error_code=ErrorCode.incompatible_return_value,
                         detail=can_assign.display(),
                     )
@@ -4059,8 +4059,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if isinstance(can_assign, CanAssignError):
                 self._show_error_if_checking(
                     node,
-                    f"Declared return type {self.expected_return_value} is"
-                    f" incompatible with actual return type {value}",
+                    f"Incompatible return type: expected {self.expected_return_value}, got {value}",
                     error_code=ErrorCode.incompatible_return_value,
                     detail=can_assign.display(),
                 )
