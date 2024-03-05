@@ -613,7 +613,7 @@ ways:
   so that users have time to adapt before the runtime code
   is broken.
 
-As an example, this is the current implemenation of `sum()`
+As an example, this is the current implementation of `sum()`
 in typeshed:
 
     if sys.version_info >= (3, 8):

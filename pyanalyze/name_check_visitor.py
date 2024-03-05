@@ -652,7 +652,7 @@ class ClassAttributeChecker:
     ) -> None:
         self.options = options
         # we might not have examined all parent classes when looking for attributes set
-        # we dump them here. incase the callers want to extend coverage.
+        # we dump them here. in case the callers want to extend coverage.
         self.unexamined_base_classes = set()
         self.modules_examined = set()
         self.enabled = enabled
@@ -3117,7 +3117,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 return TypedValue(str)
             if unsupported_conversion:
                 raise NotImplementedError(
-                    f"Unsupported converion specifier {node.conversion}"
+                    f"Unsupported conversion specifier {node.conversion}"
                 )
         try:
             output = format(output, format_spec)

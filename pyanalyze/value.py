@@ -865,7 +865,7 @@ class NewTypeValue(TypedValue):
             if self.newtype is other.newtype:
                 return {}
             return CanAssignError(f"NewTypes {self} and {other} are not compatible")
-        # Alow e.g. int for a NewType over int, but not a subtype of int such as an
+        # Allow e.g. int for a NewType over int, but not a subtype of int such as an
         # IntEnum
         elif isinstance(other, TypedValue):
             if self.typ is not other.typ:

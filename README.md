@@ -116,7 +116,7 @@ for details.
 
 Sometimes pyanalyze gets things wrong and you need to ignore an error it emits. This can be done as follows:
 
-- Add `# static analysis: ignore` on a line by itself before the line that generates the erorr.
+- Add `# static analysis: ignore` on a line by itself before the line that generates the error.
 - Add `# static analysis: ignore` at the end of the line that generates the error.
 - Add `# static analysis: ignore` at the top of the file; this will ignore errors in the entire file.
 
