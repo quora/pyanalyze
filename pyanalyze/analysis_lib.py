@@ -40,7 +40,7 @@ def files_with_extension_from_directory(
 
 
 def get_indentation(line: str) -> int:
-    """Returns the indendation of a line of code."""
+    """Returns the indentation of a line of code."""
     if len(line.lstrip()) == 0:
         # if it is a newline or a line with just spaces
         return 0
