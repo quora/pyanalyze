@@ -82,7 +82,8 @@ except ImportError:
     MatchAs = MatchClass = MatchMapping = Any
     MatchOr = MatchSequence = MatchSingleton = MatchValue = Any
 
-    class MatchStar:  # Avoid false positive errors on isinstance() in 3.8/3.9 self check
+    # Avoid false positive errors on isinstance() in 3.8/3.9 self check
+    class MatchStar(ast.AST):
         pass
 
 
