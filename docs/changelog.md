@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Support calls to `TypeVar` and several other typing constructs in
+  code that is not executed (e.g., under `if TYPE_CHECKING`) (#746)
+- Fix spurious errors for the class-based syntax for creating
+  `NamedTuple` classes (#746)
 - Make error registry into a custom class instead of an enum, removing
   dependency on `aenum` (#739)
 - Treat subclasses of `int` as subclasses of `float` and `complex` too (#738)

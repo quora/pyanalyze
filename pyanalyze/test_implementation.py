@@ -1445,3 +1445,18 @@ class TestAny(TestNameCheckVisitorBase):
 
         def capybara():
             Any(42)  # E: incompatible_call
+
+
+class TestNamedTuple(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_namedtuple(self):
+        from typing import NamedTuple
+
+        def capybara() -> None:
+            NamedTuple("x", y=int)  # E: deprecated
+            NamedTuple("x")  # E: deprecated
+            NamedTuple("x", None, y=int)  # E: incompatible_call
+            NamedTuple("x", None)  # E: deprecated
+            NamedTuple("x", [("y", int)], z=str)  # E: incompatible_call
+
+            NamedTuple("x", [("y", int)])  # ok
