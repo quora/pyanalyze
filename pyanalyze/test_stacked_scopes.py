@@ -3,7 +3,7 @@ from .error_code import ErrorCode
 from .name_check_visitor import build_stacked_scopes
 from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes
+from .test_node_visitor import assert_passes, skip_before
 from .value import (
     NO_RETURN_VALUE,
     UNINITIALIZED_VALUE,
@@ -932,6 +932,8 @@ class TestConstraints(TestNameCheckVisitorBase):
                 # Don't widen the type to A.
                 assert_is_value(x, TypedValue(B))
 
+    @assert_passes()
+    def test_isinstance_multiple_types(self):
         def kerodon(cond1, cond2, val, lst: list):  # E: missing_generic_parameters
             if cond1:
                 x = int(val)
@@ -958,6 +960,8 @@ class TestConstraints(TestNameCheckVisitorBase):
             else:
                 assert_is_value(x, TypedValue(list))
 
+    @assert_passes()
+    def test_complex_boolean(self):
         def paca(cond1, cond2):
             if cond1:
                 x = True
@@ -972,6 +976,40 @@ class TestConstraints(TestNameCheckVisitorBase):
                 )
             else:
                 assert_is_value(x, KnownValue(False))
+
+    @assert_passes()
+    def test_isinstance_mapping(self):
+        from typing import Any, Mapping, Union
+
+        from typing_extensions import assert_type
+
+        class A: ...
+
+        def takes_mapping(x: Mapping[str, Any]) -> None: ...
+
+        def foo(x: Union[A, Mapping[str, Any]]) -> None:
+            # This is tricky because Mapping is not an instance of type.
+            if isinstance(x, Mapping):
+                assert_type(x, Mapping[str, Any])
+            else:
+                assert_type(x, A)
+
+    @skip_before((3, 10))
+    @assert_passes()
+    def test_isinstance_union(self):
+        from typing import Union
+
+        from typing_extensions import assert_type
+
+        def foo(x: Union[int, str, range]) -> None:
+            if isinstance(x, int | str):
+                assert_type(x, int | str)
+            else:
+                assert_type(x, range)
+            if isinstance(x, Union[int, range]):
+                assert_type(x, int | range)
+            else:
+                assert_type(x, str)
 
     @assert_passes()
     def test_double_index(self):
