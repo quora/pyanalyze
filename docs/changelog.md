@@ -4,6 +4,7 @@
 
 - Fix narrowing on `isinstance` calls with arguments that are not
   instance of `typing`, such as unions and certain typing special forms (#747)
+- Detect invalid calls to `isinstance` (#747)
 - Support calls to `TypeVar` and several other typing constructs in
   code that is not executed (e.g., under `if TYPE_CHECKING`) (#746)
 - Fix spurious errors for the class-based syntax for creating

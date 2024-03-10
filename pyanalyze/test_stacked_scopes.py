@@ -1012,6 +1012,24 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_type(x, str)
 
     @assert_passes()
+    def test_isinstance_nested_tuple(self):
+        from typing import Union
+
+        from typing_extensions import assert_type
+
+        def foo(x: Union[int, str, range]) -> None:
+            if isinstance(x, (((int,), (str,)),)):
+                assert_type(x, Union[int, str])
+            else:
+                assert_type(x, range)
+
+    @assert_passes()
+    def test_isinstance_bad_arg(self):
+        def capybara(x):
+            if isinstance(x, 1):  # E: incompatible_argument
+                pass
+
+    @assert_passes()
     def test_double_index(self):
         from typing import Optional, Union
 

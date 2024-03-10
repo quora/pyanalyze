@@ -121,8 +121,15 @@ def _issubclass_impl(ctx: CallContext) -> Value:
     varname = ctx.varname_for_arg("cls")
     if varname is None or not isinstance(class_or_tuple, KnownValue):
         return TypedValue(bool)
-    narrowed_types = list(_resolve_isinstance_arg(class_or_tuple.val))
-    if not narrowed_types:
+    try:
+        narrowed_types = list(_resolve_isinstance_arg(class_or_tuple.val))
+    except _CannotResolve as e:
+        ctx.show_error(
+            f'Second argument to "issubclass" must be a type, union,'
+            f' or tuple of types, not "{e.args[0]!r}"',
+            ErrorCode.incompatible_argument,
+            arg="class_or_tuple",
+        )
         return TypedValue(bool)
     narrowed_type = unite_values(
         *[SubclassValue(TypedValue(typ)) for typ in narrowed_types]
@@ -137,8 +144,15 @@ def _isinstance_impl(ctx: CallContext) -> Value:
     varname = ctx.varname_for_arg("obj")
     if varname is None or not isinstance(class_or_tuple, KnownValue):
         return TypedValue(bool)
-    narrowed_types = list(_resolve_isinstance_arg(class_or_tuple.val))
-    if not narrowed_types:
+    try:
+        narrowed_types = list(_resolve_isinstance_arg(class_or_tuple.val))
+    except _CannotResolve as e:
+        ctx.show_error(
+            f'Second argument to "isinstance" must be a type, union,'
+            f' or tuple of types, not "{e.args[0]!r}"',
+            ErrorCode.incompatible_argument,
+            arg="class_or_tuple",
+        )
         return TypedValue(bool)
     narrowed_type = unite_values(*[TypedValue(typ) for typ in narrowed_types])
     predicate = IsAssignablePredicate(narrowed_type, ctx.visitor, positive_only=False)
@@ -146,11 +160,16 @@ def _isinstance_impl(ctx: CallContext) -> Value:
     return annotate_with_constraint(TypedValue(bool), constraint)
 
 
+class _CannotResolve(Exception):
+    pass
+
+
 def _resolve_isinstance_arg(val: object) -> Iterable[type]:
     if safe_isinstance(val, type):
         yield val
-    elif safe_isinstance(val, tuple) and all(safe_isinstance(elt, type) for elt in val):
-        yield from val
+    elif safe_isinstance(val, tuple):
+        for elt in val:
+            yield from _resolve_isinstance_arg(elt)
     else:
         origin = typing_extensions.get_origin(val)
         if is_union(origin):
@@ -158,6 +177,8 @@ def _resolve_isinstance_arg(val: object) -> Iterable[type]:
                 yield from _resolve_isinstance_arg(arg)
         elif safe_isinstance(origin, type):
             yield origin
+        else:
+            raise _CannotResolve(val)
 
 
 def _constraint_from_isinstance(
