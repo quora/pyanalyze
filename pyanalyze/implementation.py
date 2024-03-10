@@ -1589,6 +1589,55 @@ def _any_impl(ctx: CallContext) -> Value:
     return AnyValue(AnySource.error)
 
 
+# Should not be necessary, but by default we pick up a wrong signature for
+# typing.NamedTuple
+def _namedtuple_impl(ctx: CallContext) -> Value:
+    has_kwargs = (
+        isinstance(ctx.vars["kwargs"], TypedDictValue)
+        and len(ctx.vars["kwargs"].items) > 0
+    )
+    # Mirrors the runtime logic in typing.NamedTuple in 3.13
+    if ctx.vars["fields"] is _NO_ARG_SENTINEL:
+        if has_kwargs:
+            ctx.show_error(
+                'Creating "NamedTuple" classes using keyword arguments'
+                " is deprecated and will be disallowed in Python 3.15. "
+                "Use the class-based or functional syntax instead.",
+                ErrorCode.deprecated,
+                arg="kwargs",
+            )
+        else:
+            ctx.show_error(
+                'Failing to pass a value for the "fields" parameter'
+                " is deprecated and will be disallowed in Python 3.15.",
+                ErrorCode.deprecated,
+            )
+    elif ctx.vars["fields"] == KnownValue(None):
+        if has_kwargs:
+            ctx.show_error(
+                'Cannot pass "None" as the "fields" parameter '
+                "and also specify fields using keyword arguments",
+                ErrorCode.incompatible_call,
+                arg="fields",
+            )
+        else:
+            ctx.show_error(
+                'Passing "None" as the "fields" parameter '
+                " is deprecated and will be disallowed in Python 3.15.",
+                ErrorCode.deprecated,
+                arg="fields",
+            )
+    elif has_kwargs:
+        ctx.show_error(
+            "Either list of fields or keywords"
+            ' can be provided to "NamedTuple", not both',
+            ErrorCode.incompatible_call,
+            arg="kwargs",
+        )
+
+    return AnyValue(AnySource.inference)
+
+
 _POS_ONLY = ParameterKind.POSITIONAL_ONLY
 _ENCODING_PARAMETER = SigParameter(
     "encoding", annotation=TypedValue(str), default=KnownValue("")
@@ -2090,7 +2139,6 @@ def get_default_argspecs() -> Dict[object, Signature]:
         except AttributeError:
             pass
         else:
-            # Anticipating https://bugs.python.org/issue46414
             sig = Signature.make(
                 [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
                 return_annotation=TypeVarValue(T),
@@ -2098,7 +2146,6 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 callable=reveal_type_func,
             )
             signatures.append(sig)
-        # Anticipating that this will be added to the stdlib
         try:
             assert_type_func = getattr(mod, "assert_type")
         except AttributeError:
@@ -2112,6 +2159,40 @@ def get_default_argspecs() -> Dict[object, Signature]:
                 return_annotation=TypeVarValue(T),
                 callable=assert_type_func,
                 impl=_assert_type_impl,
+            )
+            signatures.append(sig)
+        try:
+            namedtuple_func = getattr(mod, "NamedTuple")
+        except AttributeError:
+            pass
+        else:
+            sig = Signature.make(
+                [
+                    SigParameter("typename", _POS_ONLY, annotation=TypedValue(str)),
+                    SigParameter(
+                        "fields",
+                        _POS_ONLY,
+                        annotation=GenericValue(
+                            collections.abc.Iterable,
+                            [
+                                SequenceValue(
+                                    tuple,
+                                    [
+                                        (False, TypedValue(str)),
+                                        (False, AnyValue(AnySource.inference)),
+                                    ],
+                                )
+                            ],
+                        )
+                        | KnownValue(None),
+                        default=_NO_ARG_SENTINEL,
+                    ),
+                    SigParameter("kwargs", ParameterKind.VAR_KEYWORD),
+                ],
+                return_annotation=TypedValue(type),
+                callable=namedtuple_func,
+                impl=_namedtuple_impl,
+                allow_call=True,
             )
             signatures.append(sig)
     return {sig.callable: sig for sig in signatures}

@@ -6,6 +6,7 @@ Implementation of extended argument specifications used by test_scope.
 
 import ast
 import asyncio
+import collections
 import contextlib
 import enum
 import inspect
@@ -34,6 +35,7 @@ from unittest import mock
 
 import asynq
 import qcore
+import typing_extensions
 from typing_extensions import is_typeddict
 
 import pyanalyze
@@ -208,6 +210,24 @@ class IgnoredCallees(PyObjectSequenceOption[object]):
     name = "ignored_callees"
 
 
+TYPING_OBJECTS_SAFE_TO_CALL = [
+    getattr(mod, name)
+    for mod in (typing, typing_extensions)
+    for name in (
+        "TypeVar",
+        "TypeVarTuple",
+        "ParamSpec",
+        "NewType",
+        "TypeAliasType",
+        "NamedTuple",
+        "TypedDict",
+        "deprecated",
+        "dataclass_transform",
+    )
+    if hasattr(mod, name)
+]
+
+
 class ClassesSafeToInstantiate(PyObjectSequenceOption[type]):
     """We will instantiate instances of these classes if we can infer the value of all of
     their arguments. This is useful mostly for classes that are commonly instantiated with static
@@ -223,6 +243,7 @@ class ClassesSafeToInstantiate(PyObjectSequenceOption[type]):
         asynq.ConstFuture,
         range,
         tuple,
+        *[obj for obj in TYPING_OBJECTS_SAFE_TO_CALL if safe_isinstance(obj, type)],
     ]
 
 
@@ -232,7 +253,12 @@ class FunctionsSafeToCall(PyObjectSequenceOption[object]):
     arguments."""
 
     name = "functions_safe_to_call"
-    default_value = [sorted, asynq.asynq]
+    default_value = [
+        sorted,
+        asynq.asynq,
+        collections.namedtuple,
+        *[obj for obj in TYPING_OBJECTS_SAFE_TO_CALL if not safe_isinstance(obj, type)],
+    ]
 
 
 _HookReturn = Union[None, ConcreteSignature, inspect.Signature, Callable[..., Any]]

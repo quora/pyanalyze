@@ -1900,3 +1900,38 @@ class TestMissinGenericParameters(TestNameCheckVisitorBase):
             z: float | bool | set,  # E: missing_generic_parameters
         ) -> None:
             pass
+
+
+class TestIfTypeChecking(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_typevar(self):
+        from typing import TYPE_CHECKING, TypeVar
+
+        from typing_extensions import Literal, assert_type
+
+        if TYPE_CHECKING:
+
+            T = TypeVar("T")
+
+            def capybara(x: T) -> T:
+                return x
+
+            assert_type(capybara(1), Literal[1])
+
+    @assert_passes()
+    def test_namedtuple(self):
+        from collections import namedtuple
+        from typing import TYPE_CHECKING, Any, NamedTuple
+
+        from typing_extensions import assert_type
+
+        if TYPE_CHECKING:
+            TypedCapybara = NamedTuple("TypedCapybara", [("x", int), ("y", str)])
+            UntypedCapybara = namedtuple("UntypedCapybara", ["x", "y"])
+
+        def capybara(t: "TypedCapybara", u: "UntypedCapybara") -> None:
+            assert_type(t.x, int)
+            assert_type(t.y, str)
+
+            assert_type(u.x, Any)
+            assert_type(u.y, Any)
