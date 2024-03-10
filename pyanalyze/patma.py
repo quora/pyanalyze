@@ -80,7 +80,11 @@ try:
 except ImportError:
     # 3.9 and lower
     MatchAs = MatchClass = MatchMapping = Any
-    MatchOr = MatchSequence = MatchSingleton = MatchStar = MatchValue = Any
+    MatchOr = MatchSequence = MatchSingleton = MatchValue = Any
+
+    # Avoid false positive errors on isinstance() in 3.8/3.9 self check
+    class MatchStar(ast.AST):
+        pass
 
 
 # For these types, a single class subpattern matches the whole thing

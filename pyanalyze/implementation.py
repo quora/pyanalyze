@@ -7,6 +7,7 @@ from itertools import product
 from typing import (
     Callable,
     Dict,
+    Iterable,
     NewType,
     Optional,
     Sequence,
@@ -26,7 +27,7 @@ from .extensions import assert_type, reveal_locals, reveal_type
 from .format_strings import parse_format_string
 from .predicates import IsAssignablePredicate
 from .runtime import is_compatible
-from .safe import hasattr_static, safe_isinstance, safe_issubclass
+from .safe import hasattr_static, is_union, safe_isinstance, safe_issubclass
 from .signature import (
     ANY_SIGNATURE,
     CallContext,
@@ -120,15 +121,19 @@ def _issubclass_impl(ctx: CallContext) -> Value:
     varname = ctx.varname_for_arg("cls")
     if varname is None or not isinstance(class_or_tuple, KnownValue):
         return TypedValue(bool)
-    if isinstance(class_or_tuple.val, type):
-        narrowed_type = SubclassValue(TypedValue(class_or_tuple.val))
-    elif isinstance(class_or_tuple.val, tuple) and all(
-        isinstance(elt, type) for elt in class_or_tuple.val
-    ):
-        vals = [SubclassValue(TypedValue(elt)) for elt in class_or_tuple.val]
-        narrowed_type = unite_values(*vals)
-    else:
+    try:
+        narrowed_types = list(_resolve_isinstance_arg(class_or_tuple.val))
+    except _CannotResolve as e:
+        ctx.show_error(
+            f'Second argument to "issubclass" must be a type, union,'
+            f' or tuple of types, not "{e.args[0]!r}"',
+            ErrorCode.incompatible_argument,
+            arg="class_or_tuple",
+        )
         return TypedValue(bool)
+    narrowed_type = unite_values(
+        *[SubclassValue(TypedValue(typ)) for typ in narrowed_types]
+    )
     predicate = IsAssignablePredicate(narrowed_type, ctx.visitor, positive_only=False)
     constraint = Constraint(varname, ConstraintType.predicate, True, predicate)
     return annotate_with_constraint(TypedValue(bool), constraint)
@@ -139,18 +144,41 @@ def _isinstance_impl(ctx: CallContext) -> Value:
     varname = ctx.varname_for_arg("obj")
     if varname is None or not isinstance(class_or_tuple, KnownValue):
         return TypedValue(bool)
-    if isinstance(class_or_tuple.val, type):
-        narrowed_type = TypedValue(class_or_tuple.val)
-    elif isinstance(class_or_tuple.val, tuple) and all(
-        isinstance(elt, type) for elt in class_or_tuple.val
-    ):
-        vals = [TypedValue(elt) for elt in class_or_tuple.val]
-        narrowed_type = unite_values(*vals)
-    else:
+    try:
+        narrowed_types = list(_resolve_isinstance_arg(class_or_tuple.val))
+    except _CannotResolve as e:
+        ctx.show_error(
+            f'Second argument to "isinstance" must be a type, union,'
+            f' or tuple of types, not "{e.args[0]!r}"',
+            ErrorCode.incompatible_argument,
+            arg="class_or_tuple",
+        )
         return TypedValue(bool)
+    narrowed_type = unite_values(*[TypedValue(typ) for typ in narrowed_types])
     predicate = IsAssignablePredicate(narrowed_type, ctx.visitor, positive_only=False)
     constraint = Constraint(varname, ConstraintType.predicate, True, predicate)
     return annotate_with_constraint(TypedValue(bool), constraint)
+
+
+class _CannotResolve(Exception):
+    pass
+
+
+def _resolve_isinstance_arg(val: object) -> Iterable[type]:
+    if safe_isinstance(val, type):
+        yield val
+    elif safe_isinstance(val, tuple):
+        for elt in val:
+            yield from _resolve_isinstance_arg(elt)
+    else:
+        origin = typing_extensions.get_origin(val)
+        if is_union(origin):
+            for arg in typing_extensions.get_args(val):
+                yield from _resolve_isinstance_arg(arg)
+        elif safe_isinstance(origin, type):
+            yield origin
+        else:
+            raise _CannotResolve(val)
 
 
 def _constraint_from_isinstance(

@@ -69,7 +69,7 @@ from .extensions import (
 from .find_unused import used
 from .functions import FunctionDefNode
 from .node_visitor import ErrorContext
-from .safe import is_instance_of_typing_name, is_typing_name
+from .safe import is_instance_of_typing_name, is_typing_name, is_union
 from .signature import (
     ANY_SIGNATURE,
     ELLIPSIS_PARAM,
@@ -118,11 +118,6 @@ from .value import (
 
 if TYPE_CHECKING:
     from .name_check_visitor import NameCheckVisitor
-
-try:
-    from types import UnionType
-except ImportError:
-    UnionType = None
 
 
 CONTEXT_MANAGER_TYPES = (typing.ContextManager, contextlib.AbstractContextManager)
@@ -1182,9 +1177,7 @@ def _value_of_origin_args(
                 _type_from_runtime(arg, ctx, allow_unpack=True) for arg in args
             ]
             return _make_sequence_value(tuple, args_vals, ctx)
-    elif is_typing_name(origin, "Union") or (
-        UnionType is not None and origin is UnionType
-    ):
+    elif is_union(origin):
         return unite_values(*[_type_from_runtime(arg, ctx) for arg in args])
     elif origin is Callable or is_typing_name(origin, "Callable"):
         if len(args) == 0:
