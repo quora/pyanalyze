@@ -1893,3 +1893,47 @@ class TestInvalidation(TestNameCheckVisitorBase):
                 assert_is_value(key, TypedValue(int))
             else:
                 assert_is_value(key, KnownValue(None))
+
+
+class TestClassNesting(TestNameCheckVisitorBase):
+
+    @assert_passes()
+    def test_class_in_class(self):
+        class Caviids(object):
+            class Capybaras(object):
+                if False:
+                    print(neochoerus)  # E: undefined_name
+
+            def method(self, cap: Capybaras):
+                assert_is_value(cap, TypedValue(Caviids.Capybaras))
+
+    @assert_passes()
+    def test_class_in_function(self):
+        from typing_extensions import Literal, assert_type
+
+        def get_capybaras(object):
+            x = 3
+
+            class Capybaras(object):
+                if False:
+                    print(neochoerus)  # E: undefined_name
+
+                assert_type(x, Literal[3])
+
+    @assert_passes()
+    def test_double_nesting(self):
+        from typing_extensions import Literal, assert_type
+
+        def outer():
+            outer_var = "outer"
+
+            def inner():
+                inner_var = "inner"
+
+                class Nested:
+                    assert_type(outer_var, Literal["outer"])
+                    assert_type(inner_var, Literal["inner"])
+
+                return Nested
+
+            return inner
