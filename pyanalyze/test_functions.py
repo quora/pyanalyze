@@ -108,35 +108,31 @@ class TestFunctionDefinitions(TestNameCheckVisitorBase):
         def failing_capybara(a, *, b):
             capybara(1, 2)  # E: incompatible_call
 
+    @assert_passes(settings={ErrorCode.missing_parameter_annotation: True})
     def test_pos_only(self):
-        self.assert_passes(
-            """
-            from typing import Optional
+        from typing import Optional
 
-            def f(a: int, /) -> None:
-                assert_is_value(a, TypedValue(int))
+        def f(a: int, /) -> None:
+            assert_is_value(a, TypedValue(int))
 
-            def g(a: Optional[str] = None, /, b: int = 1) -> None:
-                assert_is_value(a, TypedValue(str) | KnownValue(None))
-                assert_is_value(b, TypedValue(int))
+        def g(a: Optional[str] = None, /, b: int = 1) -> None:
+            assert_is_value(a, TypedValue(str) | KnownValue(None))
+            assert_is_value(b, TypedValue(int))
 
-            def h(a, b: int = 1, /, c: int = 2) -> None:  # E: missing_parameter_annotation
-                assert_is_value(a, AnyValue(AnySource.unannotated))
-                assert_is_value(b, TypedValue(int))
+        def h(a, b: int = 1, /, c: int = 2) -> None:  # E: missing_parameter_annotation
+            assert_is_value(a, AnyValue(AnySource.unannotated))
+            assert_is_value(b, TypedValue(int))
 
-            def capybara() -> None:
-                f(1)
-                f("x")  # E: incompatible_argument
-                f(a=1)  # E: incompatible_call
-                g(a=1)  # E: incompatible_call
-                g(b=1)
-                g(None, b=1)
-                h(1, 1, c=2)
-                h(1)
-                h(1, b=1)  # E: incompatible_call
-            """,
-            settings={ErrorCode.missing_parameter_annotation: True},
-        )
+        def capybara() -> None:
+            f(1)
+            f("x")  # E: incompatible_argument
+            f(a=1)  # E: incompatible_call
+            g(a=1)  # E: incompatible_call
+            g(b=1)
+            g(None, b=1)
+            h(1, 1, c=2)
+            h(1)
+            h(1, b=1)  # E: incompatible_call
 
     @assert_passes()
     def test_lambda(self):
