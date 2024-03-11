@@ -67,7 +67,7 @@ class CallableData:
             suggested = unite_values(*all_values)
             if not should_suggest_type(suggested):
                 continue
-            detail, metadata = display_suggested_type(suggested, self.scopes, self.node)
+            detail, metadata = display_suggested_type(suggested, self.scopes)
             failure = self.ctx.show_error(
                 param,
                 f"Suggested type for parameter {param.arg}",
@@ -116,7 +116,7 @@ class CallableTracker:
 
 
 def display_suggested_type(
-    value: Value, scopes: StackedScopes, node: object
+    value: Value, scopes: StackedScopes
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     value = prepare_type(value)
     if isinstance(value, MultiValuedValue) and value.vals:
@@ -133,7 +133,7 @@ def display_suggested_type(
         else:
             typ_str = stringify_object(value.typ)
             typ_name = typ_str.split(".")[-1]
-            scope_value = scopes.get(typ_name, node, VisitorState.check_names)
+            scope_value = scopes.get(typ_name, None, VisitorState.check_names)
             if isinstance(scope_value, KnownValue) and scope_value.val is value.typ:
                 metadata = {"suggested_type": typ_name, "imports": []}
             else:
