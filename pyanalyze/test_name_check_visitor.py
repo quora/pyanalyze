@@ -2057,6 +2057,8 @@ class TestWalrus(TestNameCheckVisitorBase):
         def capybara(cond):
             if cond and (x := 1):
                 assert_type(x, Literal[1])
+            else:
+                print(x)  # E: possibly_undefined_name
             print(x)  # E: possibly_undefined_name
 
     def test_if_exp(self):
