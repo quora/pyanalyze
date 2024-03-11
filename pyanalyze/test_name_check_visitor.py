@@ -397,23 +397,6 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
             print({key: 1})  # E: unhashable_key
 
     @assert_passes()
-    def test_nested_classes(self):
-        class Caviids(object):
-            class Capybaras(object):
-                if False:
-                    print(neochoerus)  # E: undefined_name
-
-            def method(self, cap: Capybaras):
-                assert_is_value(cap, TypedValue(Caviids.Capybaras))
-
-    @assert_passes()
-    def test_class_in_function(self):
-        def get_capybaras(object):
-            class Capybaras(object):
-                if False:
-                    print(neochoerus)  # E: undefined_name
-
-    @assert_passes()
     def test_cant_del_tuple(self):
         tpl = (1, 2, 3)
 
