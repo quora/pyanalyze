@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from types import FunctionType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 
-
 from .error_code import ErrorCode
 from .node_visitor import ErrorContext, Failure
 from .safe import safe_getattr, safe_isinstance
