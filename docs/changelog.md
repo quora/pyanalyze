@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix incorrect `possibly_undefined_name` error on certain uses of the
+  walrus operator (#749)
 - Fix narrowing on `isinstance` calls with arguments that are not
   instance of `typing`, such as unions and certain typing special forms (#747)
 - Detect invalid calls to `isinstance` (#747)

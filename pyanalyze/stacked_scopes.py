@@ -342,7 +342,9 @@ class Constraint(AbstractConstraint):
         """
         inner_value = value.value if isinstance(value, AnnotatedValue) else value
         if inner_value is UNINITIALIZED_VALUE:
-            yield UNINITIALIZED_VALUE
+            # If a constraint applies to a value, it must have been initialized,
+            # or at least we must have already tried to read it and gotten a
+            # possibly_undefined_name error.
             return
         if self.constraint_type == ConstraintType.is_instance:
             if isinstance(inner_value, AnyValue):
