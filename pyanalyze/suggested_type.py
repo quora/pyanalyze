@@ -10,10 +10,12 @@ from dataclasses import dataclass, field
 from types import FunctionType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 
+
 from .error_code import ErrorCode
 from .node_visitor import ErrorContext, Failure
 from .safe import safe_getattr, safe_isinstance
 from .signature import Signature
+from .stacked_scopes import StackedScopes, VisitorState
 from .value import (
     NO_RETURN_VALUE,
     AnnotatedValue,
@@ -44,6 +46,7 @@ class CallableData:
     node: FunctionNode
     ctx: ErrorContext
     sig: Signature
+    scopes: StackedScopes
     calls: List[CallArgs] = field(default_factory=list)
 
     def check(self) -> Iterator[Failure]:
@@ -65,7 +68,7 @@ class CallableData:
             suggested = unite_values(*all_values)
             if not should_suggest_type(suggested):
                 continue
-            detail, metadata = display_suggested_type(suggested)
+            detail, metadata = display_suggested_type(suggested, self.scopes)
             failure = self.ctx.show_error(
                 param,
                 f"Suggested type for parameter {param.arg}",
@@ -89,10 +92,15 @@ class CallableTracker:
     )
 
     def record_callable(
-        self, node: FunctionNode, callable: object, sig: Signature, ctx: ErrorContext
+        self,
+        node: FunctionNode,
+        callable: object,
+        sig: Signature,
+        scopes: StackedScopes,
+        ctx: ErrorContext,
     ) -> None:
         """Record when we encounter a callable."""
-        self.callable_to_data[callable] = CallableData(node, ctx, sig)
+        self.callable_to_data[callable] = CallableData(node, ctx, sig, scopes)
 
     def record_call(self, callable: object, arguments: Mapping[str, Value]) -> None:
         """Record the actual arguments passed in in a call."""
@@ -108,7 +116,9 @@ class CallableTracker:
         return failures
 
 
-def display_suggested_type(value: Value) -> Tuple[str, Optional[Dict[str, Any]]]:
+def display_suggested_type(
+    value: Value, scopes: StackedScopes
+) -> Tuple[str, Optional[Dict[str, Any]]]:
     value = prepare_type(value)
     if isinstance(value, MultiValuedValue) and value.vals:
         cae = CanAssignError("Union", [CanAssignError(str(val)) for val in value.vals])
@@ -122,14 +132,19 @@ def display_suggested_type(value: Value) -> Tuple[str, Optional[Dict[str, Any]]]
             # exist, and we should be using a Callable type instead anyway.
             metadata = None
         else:
-            suggested_type = stringify_object(value.typ)
-            imports = []
-            if isinstance(value.typ, str):
-                if "." in value.typ:
-                    imports.append(value.typ)
-            elif safe_getattr(value.typ, "__module__", None) != "builtins":
-                imports.append(suggested_type.split(".")[0])
-            metadata = {"suggested_type": suggested_type, "imports": imports}
+            typ_str = stringify_object(value.typ)
+            typ_name = typ_str.split(".")[-1]
+            scope_value = scopes.get(typ_name, None, VisitorState.check_names)
+            if isinstance(scope_value, KnownValue) and scope_value.val is value.typ:
+                metadata = {"suggested_type": typ_name, "imports": []}
+            else:
+                imports = []
+                if isinstance(value.typ, str):
+                    if "." in value.typ:
+                        imports.append(value.typ)
+                elif safe_getattr(value.typ, "__module__", None) != "builtins":
+                    imports.append(typ_str.split(".")[0])
+                metadata = {"suggested_type": typ_str, "imports": imports}
     else:
         metadata = None
     return str(cae), metadata

@@ -2049,7 +2049,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             ):
                 prepared = prepare_type(result.return_value)
                 if should_suggest_type(prepared):
-                    detail, metadata = display_suggested_type(prepared)
+                    detail, metadata = display_suggested_type(prepared, self.scopes)
                     self._show_error_if_checking(
                         node,
                         error_code=ErrorCode.suggested_return_type,
@@ -2175,7 +2175,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             sig = self.signature_from_value(KnownValue(potential_function))
             if isinstance(sig, Signature):
                 self.checker.callable_tracker.record_callable(
-                    node, potential_function, sig, self
+                    node, potential_function, sig, scopes=self.scopes, ctx=self
                 )
         return potential_function
 
