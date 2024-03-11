@@ -2049,9 +2049,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             ):
                 prepared = prepare_type(result.return_value)
                 if should_suggest_type(prepared):
-                    detail, metadata = display_suggested_type(
-                        prepared, self.scopes, node
-                    )
+                    detail, metadata = display_suggested_type(prepared, self.scopes, node)
                     self._show_error_if_checking(
                         node,
                         error_code=ErrorCode.suggested_return_type,
