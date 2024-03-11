@@ -2007,48 +2007,37 @@ class TestIncompatibleOverride(TestNameCheckVisitorBase):
 
 
 class TestWalrus(TestNameCheckVisitorBase):
+    @assert_passes()
     def test(self):
-        self.assert_passes(
-            """
-            from typing import Optional
+        from typing import Optional
 
-            def opt() -> Optional[int]:
-                return None
+        def opt() -> Optional[int]:
+            return None
 
-            def capybara():
-                if (x := opt()):
-                    assert_is_value(x, TypedValue(int))
-                assert_is_value(x, TypedValue(int) | KnownValue(None))
+        def capybara():
+            if x := opt():
+                assert_is_value(x, TypedValue(int))
+            assert_is_value(x, TypedValue(int) | KnownValue(None))
 
-                if (y := opt()) is not None:
-                    assert_is_value(y, TypedValue(int))
-                assert_is_value(y, TypedValue(int) | KnownValue(None))
-            """
-        )
+            if (y := opt()) is not None:
+                assert_is_value(y, TypedValue(int))
+            assert_is_value(y, TypedValue(int) | KnownValue(None))
 
+    @assert_passes()
     def test_and(self):
-        self.assert_passes(
-            """
-            from typing import Optional
+        from typing import Optional, Set
 
-            def opt() -> Optional[int]:
-                return None
+        def opt() -> Optional[int]:
+            return None
 
-            def capybara(cond):
-                if (x := opt()) and cond:
-                    assert_is_value(x, TypedValue(int))
-                assert_is_value(x, TypedValue(int) | KnownValue(None))
-            """
-        )
-        self.assert_passes(
-            """
-            from typing import Set
+        def capybara(cond):
+            if (x := opt()) and cond:
+                assert_is_value(x, TypedValue(int))
+            assert_is_value(x, TypedValue(int) | KnownValue(None))
 
-            def func(myvar: str, strset: Set[str]) -> None:
-                if (encoder_type := myvar) and myvar in strset:
-                    print(encoder_type)
-            """
-        )
+        def func(myvar: str, strset: Set[str]) -> None:
+            if (encoder_type := myvar) and myvar in strset:
+                print(encoder_type)
 
     @assert_passes()
     def test_and_then_walrus(self):
@@ -2061,26 +2050,20 @@ class TestWalrus(TestNameCheckVisitorBase):
                 print(x)  # E: possibly_undefined_name
             print(x)  # E: possibly_undefined_name
 
+    @assert_passes()
     def test_if_exp(self):
-        self.assert_passes(
-            """
-            def capybara(cond):
-                (x := 2) if cond else (x := 1)
-                assert_is_value(x, KnownValue(2) | KnownValue(1))
-            """
-        )
+        def capybara(cond):
+            (x := 2) if cond else (x := 1)
+            assert_is_value(x, KnownValue(2) | KnownValue(1))
 
+    @assert_passes()
     def test_comprehension_scope(self):
-        self.assert_passes(
-            """
-            from typing import List, Optional
+        from typing import List, Optional
 
-            def capybara(elts: List[Optional[int]]) -> None:
-                if any((x := i) is not None for i in elts):
-                    assert_is_value(x, TypedValue(int) | KnownValue(None))
-                    print(i)  # E: undefined_name
-            """
-        )
+        def capybara(elts: List[Optional[int]]) -> None:
+            if any((x := i) is not None for i in elts):
+                assert_is_value(x, TypedValue(int) | KnownValue(None))
+                print(i)  # E: undefined_name
 
 
 class TestUnion(TestNameCheckVisitorBase):

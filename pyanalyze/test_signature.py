@@ -855,23 +855,20 @@ class TestCalls(TestNameCheckVisitorBase):
             typed_int_kwargs = {int(x): 1 for x in arg}
             many_args(**typed_int_kwargs)  # E: incompatible_call
 
+    @assert_passes()
     def test_pos_only(self):
-        self.assert_passes(
-            """
-            from typing import Sequence
+        from typing import Sequence
 
-            def pos_only(pos: int, /) -> None:
-                pass
+        def pos_only(pos: int, /) -> None:
+            pass
 
-            def capybara(ints: Sequence[int], strs: Sequence[str]) -> None:
-                pos_only(1)
-                pos_only(*ints)
-                pos_only(*strs)  # E: incompatible_argument
-                pos_only(pos=1)  # E: incompatible_call
-                pos_only()  # E: incompatible_call
-                pos_only(1, 2)  # E: incompatible_call
-            """
-        )
+        def capybara(ints: Sequence[int], strs: Sequence[str]) -> None:
+            pos_only(1)
+            pos_only(*ints)
+            pos_only(*strs)  # E: incompatible_argument
+            pos_only(pos=1)  # E: incompatible_call
+            pos_only()  # E: incompatible_call
+            pos_only(1, 2)  # E: incompatible_call
 
     @assert_passes()
     def test_kw_only(self):
