@@ -818,7 +818,7 @@ class TestLeavesScope(TestNameCheckVisitorBase):
             else:
                 pass
 
-            return x  # static analysis: ignore[possibly_undefined_name]
+            return x  # E: possibly_undefined_name
 
         def kerodon():
             # make sure we don't propagate the UNINITIALIZED_VALUE from
@@ -1704,6 +1704,17 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(x, AnnotatedValue(TypedValue(str), [KnownValue(1)]))
             else:
                 assert_is_value(x, AnnotatedValue(KnownValue(None), [KnownValue(1)]))
+
+    @assert_passes()
+    def test_possibly_undefined(self):
+        from typing_extensions import Literal, assert_type
+
+        def capybara(cond):
+            if cond:
+                x = 1
+
+            if x:  # E: possibly_undefined_name
+                assert_type(x, Literal[1])
 
 
 class TestComposite(TestNameCheckVisitorBase):

@@ -2050,6 +2050,17 @@ class TestWalrus(TestNameCheckVisitorBase):
             """
         )
 
+    @assert_passes()
+    def test_and_then_walrus(self):
+        from typing_extensions import Literal, assert_type
+
+        def capybara(cond):
+            if cond and (x := 1):
+                assert_type(x, Literal[1])
+            else:
+                print(x)  # E: possibly_undefined_name
+            print(x)  # E: possibly_undefined_name
+
     def test_if_exp(self):
         self.assert_passes(
             """
