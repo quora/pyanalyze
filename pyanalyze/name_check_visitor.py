@@ -1822,7 +1822,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _visit_class_and_get_value(
         self, node: ast.ClassDef, current_class: Optional[type]
     ) -> Value:
-        if self._is_checking():
+        if self._is_collecting():
+            # If this is a nested class, we need to run the collecting phase to get data
+            # about names accessed from the class.
+            if len(self.scopes.scopes) > 2:
+                with self.scopes.add_scope(
+                    ScopeType.class_scope, scope_node=node, scope_object=current_class
+                ), self._set_current_class(current_class):
+                    self._generic_visit_list(node.body)
+        else:
             with self.scopes.add_scope(
                 ScopeType.class_scope, scope_node=None, scope_object=current_class
             ), self._set_current_class(current_class):

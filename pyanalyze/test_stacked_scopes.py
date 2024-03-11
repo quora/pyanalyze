@@ -1937,3 +1937,21 @@ class TestClassNesting(TestNameCheckVisitorBase):
                 return Nested
 
             return inner
+
+    @assert_passes()
+    def test_triple_function_nesting(self):
+        from typing_extensions import Literal, assert_type
+
+        def outer():
+            outer_var = "outer"
+
+            def inner():
+                inner_var = "inner"
+
+                def innermost():
+                    assert_type(outer_var, Literal["outer"])
+                    assert_type(inner_var, Literal["inner"])
+
+                return innermost
+
+            return inner
