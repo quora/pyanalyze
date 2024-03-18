@@ -7,6 +7,6 @@ typing_extensions>=4.1.1
 codemod
 myst-parser==2.0.0
 Sphinx==7.2.5
-black==24.2.0
+black==24.3.0
 flake8==7.0.0
 usort==1.0.8.post1
