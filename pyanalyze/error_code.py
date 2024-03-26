@@ -167,6 +167,7 @@ ErrorCode = ErrorRegistry(
         ),
         Error("invalid_typeguard", "Invalid use of TypeGuard or TypeIs"),
         Error("readonly_typeddict", "TypedDict is read-only"),
+        Error("generator_return", "Generator must return an iterable"),
     ]
 )
 

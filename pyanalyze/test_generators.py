@@ -43,3 +43,43 @@ class TestGenerator(TestNameCheckVisitorBase):
         def caller() -> Iterable[int]:
             x = yield from gen(True)
             assert_is_value(x, AnyValue(AnySource.generic_argument))
+
+
+class TestGeneratorReturn(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_sync(self):
+        from typing import Generator, Iterable
+
+        from asynq import ConstFuture, asynq
+
+        def gen() -> int:  # E: generator_return
+            yield 1
+
+        def caller() -> int:  # E: generator_return
+            x = yield from [1, 2]
+            print(x)
+
+        def gen2() -> Iterable[int]:
+            yield 1
+
+        def caller2() -> Generator[int, None, None]:
+            x = yield from [1, 2]
+            print(x)
+
+        @asynq()
+        def asynq_gen() -> int:
+            x = yield ConstFuture(1)
+            return x
+
+    @assert_passes()
+    def test_async(self):
+        from typing import AsyncGenerator, AsyncIterable
+
+        async def gen() -> int:  # E: generator_return
+            yield 1
+
+        async def gen2() -> AsyncIterable[int]:
+            yield 1
+
+        async def gen3() -> AsyncGenerator[int, None]:
+            yield 1

@@ -2049,6 +2049,33 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         node, error_code=ErrorCode.override_does_not_override
                     )
 
+        if info.return_annotation is not None:
+            assert node.returns is not None
+            if result.is_generator:
+                if isinstance(node, ast.FunctionDef):
+                    if info.async_kind is AsyncFunctionKind.non_async:
+                        can_assign = TypedValue(collections.abc.Iterable).can_assign(
+                            info.return_annotation, self
+                        )
+                        if isinstance(can_assign, CanAssignError):
+                            self._show_error_if_checking(
+                                node.returns,
+                                "Generator function must return an iterable",
+                                error_code=ErrorCode.generator_return,
+                                detail=can_assign.display(),
+                            )
+                else:
+                    can_assign = TypedValue(collections.abc.AsyncIterable).can_assign(
+                        info.return_annotation, self
+                    )
+                    if isinstance(can_assign, CanAssignError):
+                        self._show_error_if_checking(
+                            node.returns,
+                            "Async generator function must return an async iterable",
+                            error_code=ErrorCode.generator_return,
+                            detail=can_assign.display(),
+                        )
+
         if node.returns is None:
             if (
                 result.has_return

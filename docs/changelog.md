@@ -2,13 +2,16 @@
 
 ## Unreleased
 
+- New error code `generator_return` is raised when a generator does not
+  return an iterable type, or an async generator does not return an async
+  iterable type (#756)
 - Fix type narrowing for certain conditionals using `or` (#755)
 - Fix incorrect `undefined_name` errors when a class is nested in a nested
   function and uses a name from the outer function (#750)
 - Fix incorrect `possibly_undefined_name` error on certain uses of the
   walrus operator (#749)
 - Fix narrowing on `isinstance` calls with arguments that are not
-  instance of `typing`, such as unions and certain typing special forms (#747)
+  instances of `type`, such as unions and certain typing special forms (#747)
 - Detect invalid calls to `isinstance` (#747)
 - Support calls to `TypeVar` and several other typing constructs in
   code that is not executed (e.g., under `if TYPE_CHECKING`) (#746)
