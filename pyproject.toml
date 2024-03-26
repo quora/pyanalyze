@@ -62,7 +62,7 @@ ignore = [
   "F522",  # .format() stuff
   "F523",  # .format() stuff
   "F524",  # .format() stuff
-  "F823", # local variable referenced before assignment
+  "F823",  # local variable referenced before assignment
   "F601",  # dictionary key name repeated with different values
   "E721",  # do not compare types, use 'isinstance()'
   "F841",  # local variable is assigned to but never used
