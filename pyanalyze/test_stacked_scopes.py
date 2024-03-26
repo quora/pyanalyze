@@ -978,6 +978,22 @@ class TestConstraints(TestNameCheckVisitorBase):
                 assert_is_value(x, KnownValue(False))
 
     @assert_passes()
+    def test_two_booleans_is(self):
+        def capybara(cond1: bool, cond2: bool) -> None:
+            from typing import Union
+
+            from typing_extensions import Literal, assert_type
+
+            if (cond1 is True) or (cond2 is True):
+                # Ideally we'd elide the "Literal[False]" but this isn't
+                # wrong.
+                assert_type(cond1, Union[bool, Literal[False]])
+                assert_type(cond2, bool)
+            else:
+                assert_type(cond1, Literal[False])
+                assert_type(cond2, Literal[False])
+
+    @assert_passes()
     def test_isinstance_mapping(self):
         from typing import Any, Mapping, Union
 

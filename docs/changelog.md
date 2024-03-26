@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix type narrowing for certain conditionals using `or` (#755)
 - Fix incorrect `undefined_name` errors when a class is nested in a nested
   function and uses a name from the outer function (#750)
 - Fix incorrect `possibly_undefined_name` error on certain uses of the

@@ -3433,12 +3433,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     values.append(constrain_value(new_value, TRUTHY_CONSTRAINT))
 
         self.scopes.combine_subscopes(scopes)
-        constraint_cls = AndConstraint if is_and else OrConstraint
-        constraint = constraint_cls.make(reversed(out_constraints))
         out = unite_values(*values)
         if definite_value is not None:
             out = annotate_value(out, [DefiniteValueExtension(definite_value)])
-        return annotate_with_constraint(out, constraint)
+        if is_and:
+            constraint = AndConstraint.make(reversed(out_constraints))
+            return annotate_with_constraint(out, constraint)
+        else:
+            # For OR conditions, no need to add a constraint here; we'll
+            # return a Union and extract_constraints() will combine them.
+            return out
 
     def visit_Compare(self, node: ast.Compare) -> Value:
         nodes = [node.left, *node.comparators]
