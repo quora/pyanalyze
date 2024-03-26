@@ -50,6 +50,8 @@ class TestGeneratorReturn(TestNameCheckVisitorBase):
     def test_sync(self):
         from typing import Generator, Iterable
 
+        from asynq import ConstFuture, asynq
+
         def gen() -> int:  # E: generator_return
             yield 1
 
@@ -63,6 +65,11 @@ class TestGeneratorReturn(TestNameCheckVisitorBase):
         def caller2() -> Generator[int, None, None]:
             x = yield from [1, 2]
             print(x)
+
+        @asynq()
+        def asynq_gen() -> int:
+            x = yield ConstFuture(1)
+            return x
 
     @assert_passes()
     def test_async(self):
