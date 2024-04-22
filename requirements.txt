@@ -8,4 +8,4 @@ codemod
 myst-parser==2.0.0
 Sphinx==7.2.5
 black==24.4.0
-ruff==0.3.7
+ruff==0.4.1
