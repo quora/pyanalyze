@@ -5649,10 +5649,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
                     self.yield_checker.reset_yield_checks()
 
-                with self.scopes.subscope() as else_scope:
-                    for constraint in constraints_to_apply:
-                        self.add_constraint(node, constraint)
-                    subscopes.append(else_scope)
+                self.match_subject = self.match_subject._replace(
+                    value=constrain_value(
+                        self.match_subject.value,
+                        AndConstraint.make(constraints_to_apply),
+                    )
+                )
+
+                if self.match_subject.value is NO_RETURN_VALUE:
+                    self._set_name_in_scope(LEAVES_SCOPE, node, NO_RETURN_VALUE)
+                else:
+                    with self.scopes.subscope() as else_scope:
+                        for constraint in constraints_to_apply:
+                            self.add_constraint(node, constraint)
+                        subscopes.append(else_scope)
                 self.scopes.combine_subscopes(subscopes)
 
     # Attribute checking

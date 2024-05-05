@@ -212,3 +212,14 @@ class TestPatma(TestNameCheckVisitorBase):
                         assert_is_value(p, KnownValue(Planet.earth))
             """
         )
+
+    @skip_before((3, 10))
+    def test_exhaustive(self):
+        self.assert_passes(
+            """
+            def f(x: object) -> int:
+                match x:
+                    case _:
+                        return 1
+            """
+        )
