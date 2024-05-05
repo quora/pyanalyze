@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Recognize exhaustive pattern matching (#766)
+- Narrow the types of variables assigned within complex patterns (#766)
 - New error code `generator_return` is raised when a generator does not
   return an iterable type, or an async generator does not return an async
   iterable type (#756)

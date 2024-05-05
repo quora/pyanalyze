@@ -226,7 +226,7 @@ class TestPatma(TestNameCheckVisitorBase):
                 match x:
                     case _ if x == 2:
                         return 1
-            
+
             def some_func() -> object:
                 return 1
 
@@ -234,6 +234,13 @@ class TestPatma(TestNameCheckVisitorBase):
                 match some_func():
                     case _:
                         return 1
+
+            def i(x: bool) -> int:
+                match x:
+                    case True:
+                        return 1
+                    case False:
+                        return 2
             """
         )
 
