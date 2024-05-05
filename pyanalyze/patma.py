@@ -393,7 +393,9 @@ class PatmaVisitor(ast.NodeVisitor):
     def visit_MatchAs(self, node: MatchAs) -> AbstractConstraint:
         val = self.visitor.match_subject.value
         if node.pattern is None:
-            constraint = self.make_constraint(ConstraintType.predicate, AlwaysMatching())
+            constraint = self.make_constraint(
+                ConstraintType.predicate, AlwaysMatching()
+            )
         else:
             constraint = self.visit(node.pattern)
 

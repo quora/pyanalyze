@@ -221,5 +221,10 @@ class TestPatma(TestNameCheckVisitorBase):
                 match x:
                     case _:
                         return 1
+
+            def g(x: object) -> int:  # E: missing_return
+                match x:
+                    case _ if x == 2:
+                        return 1
             """
         )
