@@ -248,7 +248,7 @@ class TestPatma(TestNameCheckVisitorBase):
     def test_reassign_in_tuple(self):
         self.assert_passes(
             """
-            from typing import assert_type
+            from typing_extensions import assert_type
 
             def f(x: int | str) -> None:
                 match (x,):
