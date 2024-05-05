@@ -178,6 +178,15 @@ class LenPredicate:
 
 
 @dataclass
+class AlwaysMatching:
+    def __call__(self, value: Value, positive: bool) -> Optional[Value]:
+        if positive:
+            return value
+        else:
+            return None
+
+
+@dataclass
 class PatmaVisitor(ast.NodeVisitor):
     visitor: "pyanalyze.name_check_visitor.NameCheckVisitor"
 
@@ -379,12 +388,14 @@ class PatmaVisitor(ast.NodeVisitor):
             self.visitor._set_name_in_scope(
                 node.name, node, self.visitor.match_subject.value
             )
-        return NULL_CONSTRAINT
+        return self.make_constraint(ConstraintType.predicate, AlwaysMatching())
 
     def visit_MatchAs(self, node: MatchAs) -> AbstractConstraint:
         val = self.visitor.match_subject.value
         if node.pattern is None:
-            constraint = NULL_CONSTRAINT
+            constraint = self.make_constraint(
+                ConstraintType.predicate, AlwaysMatching()
+            )
         else:
             constraint = self.visit(node.pattern)
 
@@ -405,12 +416,10 @@ class PatmaVisitor(ast.NodeVisitor):
         return OrConstraint.make(constraints)
 
     def generic_visit(self, node: ast.AST) -> AbstractConstraint:
-        return NULL_CONSTRAINT
+        raise NotImplementedError(f"Unsupported pattern node: {node}")
 
     def make_constraint(self, typ: ConstraintType, value: object) -> AbstractConstraint:
         varname = self.visitor.match_subject.varname
-        if varname is None:
-            return NULL_CONSTRAINT
         return Constraint(varname, typ, True, value)
 
     def check_impossible_pattern(self, node: ast.AST, value: Value) -> None:

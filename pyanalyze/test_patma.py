@@ -212,3 +212,47 @@ class TestPatma(TestNameCheckVisitorBase):
                         assert_is_value(p, KnownValue(Planet.earth))
             """
         )
+
+    @skip_before((3, 10))
+    def test_exhaustive(self):
+        self.assert_passes(
+            """
+            def f(x: object) -> int:
+                match x:
+                    case _:
+                        return 1
+
+            def g(x: object) -> int:  # E: missing_return
+                match x:
+                    case _ if x == 2:
+                        return 1
+
+            def some_func() -> object:
+                return 1
+
+            def h() -> int:
+                match some_func():
+                    case _:
+                        return 1
+
+            def i(x: bool) -> int:
+                match x:
+                    case True:
+                        return 1
+                    case False:
+                        return 2
+            """
+        )
+
+    @skip_before((3, 10))
+    def test_reassign_in_tuple(self):
+        self.assert_passes(
+            """
+            from typing_extensions import assert_type
+
+            def f(x: int | str) -> None:
+                match (x,):
+                    case (int() as x,):
+                        assert_type(x, int)
+            """
+        )

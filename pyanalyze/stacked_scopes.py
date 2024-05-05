@@ -296,7 +296,7 @@ class Constraint(AbstractConstraint):
 
     """
 
-    varname: VarnameWithOrigin
+    varname: Optional[VarnameWithOrigin]
     """The :term:`varname` that the constraint applies to."""
     constraint_type: ConstraintType
     """Type of constraint. Determines the meaning of :attr:`value`."""
@@ -313,7 +313,9 @@ class Constraint(AbstractConstraint):
     )
 
     def __post_init__(self) -> None:
-        assert isinstance(self.varname, VarnameWithOrigin), self.varname
+        assert self.varname is None or isinstance(
+            self.varname, VarnameWithOrigin
+        ), self.varname
 
     def apply(self) -> Iterable["Constraint"]:
         yield self
@@ -1069,6 +1071,8 @@ class FunctionScope(Scope):
     def _add_single_constraint(
         self, constraint: Constraint, node: Node, state: VisitorState
     ) -> None:
+        if constraint.varname is None:
+            return
         for parent_varname, constraint_origin in constraint.varname.get_all_varnames():
             current_origin = self.get_origin(parent_varname, node, state)
             current_set = self._resolve_origin(current_origin)
