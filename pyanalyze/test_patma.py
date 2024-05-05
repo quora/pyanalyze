@@ -226,5 +226,26 @@ class TestPatma(TestNameCheckVisitorBase):
                 match x:
                     case _ if x == 2:
                         return 1
+            
+            def some_func() -> object:
+                return 1
+
+            def h() -> int:
+                match some_func():
+                    case _:
+                        return 1
+            """
+        )
+
+    @skip_before((3, 10))
+    def test_reassign_in_tuple(self):
+        self.assert_passes(
+            """
+            from typing import assert_type
+
+            def f(x: int | str) -> None:
+                match (x,):
+                    case (int() as x,):
+                        assert_type(x, int)
             """
         )

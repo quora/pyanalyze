@@ -420,8 +420,6 @@ class PatmaVisitor(ast.NodeVisitor):
 
     def make_constraint(self, typ: ConstraintType, value: object) -> AbstractConstraint:
         varname = self.visitor.match_subject.varname
-        if varname is None:
-            return NULL_CONSTRAINT
         return Constraint(varname, typ, True, value)
 
     def check_impossible_pattern(self, node: ast.AST, value: Value) -> None:
