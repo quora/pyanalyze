@@ -248,7 +248,7 @@ class TestBundledStubs(TestNameCheckVisitorBase):
     @assert_passes()
     def test_pos_only(self):
         def capybara():
-            from _pyanalyze_tests.posonly import f, g, h
+            from _pyanalyze_tests.posonly import f, g, h, two_pos_only
 
             f(1, 2)
             f(1, 2, 3)
@@ -267,6 +267,11 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             h(x=1)  # E: incompatible_call
             h(1, y=2)
             h(1, 2, 3)
+
+            two_pos_only(1, "x")
+            two_pos_only(1)
+            two_pos_only(x=1)  # E: incompatible_call
+            two_pos_only(1, y="x")  # E: incompatible_call
 
     def test_typeddict(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)

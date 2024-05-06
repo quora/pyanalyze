@@ -914,7 +914,7 @@ class TypeshedFinder:
         if num_pos_only_defaults > 0:
             num_without_default = num_pos_only_args - num_pos_only_defaults
             pos_only_defaults = [None] * num_without_default + defaults[
-                num_pos_only_defaults:
+                :num_pos_only_defaults
             ]
             defaults = defaults[num_pos_only_defaults:]
         else:
