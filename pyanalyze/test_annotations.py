@@ -1842,7 +1842,7 @@ class TestParamSpec(TestNameCheckVisitorBase):
 
         def capybara() -> None:
             assert_type(apply(sample, 1), str)
-            apply(sample, "x")
+            apply(sample, "x")  # E: incompatible_call
 
 
 class TestTypeAlias(TestNameCheckVisitorBase):
