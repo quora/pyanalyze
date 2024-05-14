@@ -398,7 +398,7 @@ class ConditionEvaluator(ast.NodeVisitor):
             for keyword in node.keywords:
                 if keyword.arg == "exclude_any":
                     if isinstance(
-                        keyword.value, ast.NameConstant
+                        keyword.value, ast.Constant
                     ) and keyword.value.value in (True, False):
                         exclude_any = keyword.value.value
                     else:
@@ -717,12 +717,13 @@ class EvaluateVisitor(ast.NodeVisitor):
         if len(call.args) != 1:
             self.add_invalid("show_error() takes exactly one positional argument", call)
             return None
-        if not isinstance(call.args[0], ast.Str):
+        arg = call.args[0]
+        if not isinstance(arg, ast.Constant) or not isinstance(arg.value, str):
             self.add_invalid(
                 "show_error() message must be a string literal", call.args[0]
             )
             return None
-        message = call.args[0].s
+        message = arg.value
         argument = None
         for keyword in call.keywords:
             if keyword.arg == "argument":

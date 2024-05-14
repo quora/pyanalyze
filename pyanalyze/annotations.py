@@ -1020,23 +1020,8 @@ class _Visitor(ast.NodeVisitor):
         # class is unused in 3.9
         return self.visit(node.value)  # static analysis: ignore[undefined_attribute]
 
-    def visit_Ellipsis(self, node: ast.Ellipsis) -> Value:
-        return KnownValue(Ellipsis)
-
     def visit_Constant(self, node: ast.Constant) -> Value:
         return KnownValue(node.value)
-
-    def visit_NameConstant(self, node: ast.NameConstant) -> Value:
-        return KnownValue(node.value)
-
-    def visit_Num(self, node: ast.Num) -> Value:
-        return KnownValue(node.n)
-
-    def visit_Str(self, node: ast.Str) -> Value:
-        return KnownValue(node.s)
-
-    def visit_Bytes(self, node: ast.Bytes) -> Value:
-        return KnownValue(node.s)
 
     def visit_Expr(self, node: ast.Expr) -> Value:
         return self.visit(node.value)
