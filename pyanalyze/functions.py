@@ -30,6 +30,8 @@ from .value import (
     CanAssignError,
     GenericValue,
     KnownValue,
+    ParamSpecArgsValue,
+    ParamSpecKwargsValue,
     SubclassValue,
     TypedValue,
     TypeVarValue,
@@ -250,6 +252,7 @@ def compute_parameters(
     params = []
     tv_index = 1
 
+    seen_paramspec_args: Optional[Tuple[ast.arg, ParamSpecArgsValue]] = None
     for idx, (param, default) in enumerate(zip_longest(args, defaults)):
         assert param is not None, "must have more args than defaults"
         (kind, arg) = param
@@ -301,6 +304,38 @@ def compute_parameters(
                 value = unite_values(value, default)
 
         value = translate_vararg_type(kind, value, ctx, error_ctx=ctx, node=arg)
+        if isinstance(value, ParamSpecArgsValue):
+            if kind is ParameterKind.VAR_POSITIONAL:
+                seen_paramspec_args = (arg, value)
+            else:
+                ctx.show_error(
+                    arg,
+                    f"ParamSpec.args must be used on *args, not {arg.arg}",
+                    error_code=ErrorCode.invalid_annotation,
+                )
+        elif isinstance(value, ParamSpecKwargsValue):
+            if kind is ParameterKind.VAR_KEYWORD:
+                if seen_paramspec_args is not None:
+                    _, ps_args = seen_paramspec_args
+                    if ps_args.param_spec is not value.param_spec:
+                        ctx.show_error(
+                            arg,
+                            "The same ParamSpec must be used on *args and **kwargs",
+                            error_code=ErrorCode.invalid_annotation,
+                        )
+                else:
+                    ctx.show_error(
+                        arg,
+                        "ParamSpec.kwargs must be used together with ParamSpec.args",
+                        error_code=ErrorCode.invalid_annotation,
+                    )
+            else:
+                ctx.show_error(
+                    arg,
+                    f"ParamSpec.kwargs must be used on **kwargs, not {arg.arg}",
+                    error_code=ErrorCode.invalid_annotation,
+                )
+
         param = SigParameter(arg.arg, kind, default, value)
         info = ParamInfo(param, arg, is_self)
         params.append(info)
@@ -326,6 +361,8 @@ def translate_vararg_type(
                     )
                 return AnyValue(AnySource.error)
             return typ.value
+        elif isinstance(typ, ParamSpecArgsValue):
+            return typ
         else:
             return GenericValue(tuple, [typ])
     elif kind is ParameterKind.VAR_KEYWORD:
@@ -339,6 +376,8 @@ def translate_vararg_type(
                     )
                 return AnyValue(AnySource.error)
             return typ.value
+        elif isinstance(typ, ParamSpecKwargsValue):
+            return typ
         else:
             return GenericValue(dict, [TypedValue(str), typ])
     return typ

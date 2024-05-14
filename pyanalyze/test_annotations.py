@@ -1825,6 +1825,25 @@ class TestParamSpec(TestNameCheckVisitorBase):
             func(1, "A")
             func(1, 2)  # E: incompatible_argument
 
+    @assert_passes()
+    def test_apply(self):
+        from typing import Callable, TypeVar
+
+        from typing_extensions import ParamSpec, assert_type
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def apply(func: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+            return func(*args, **kwargs)
+
+        def sample(x: int) -> str:
+            return str(x)
+
+        def capybara() -> None:
+            assert_type(apply(sample, 1), str)
+            apply(sample, "x")
+
 
 class TestTypeAlias(TestNameCheckVisitorBase):
     @assert_passes()

@@ -70,6 +70,7 @@ from .value import (
     AsyncTaskIncompleteValue,
     BoundsMap,
     CallableValue,
+    CallValue,
     CanAssign,
     CanAssignContext,
     CanAssignError,
@@ -411,7 +412,10 @@ KIND_TO_ALLOWED_PREVIOUS = {
         ParameterKind.VAR_POSITIONAL,
         ParameterKind.KEYWORD_ONLY,
     },
-    ParameterKind.PARAM_SPEC: {ParameterKind.POSITIONAL_ONLY},
+    ParameterKind.PARAM_SPEC: {
+        ParameterKind.POSITIONAL_ONLY,
+        ParameterKind.POSITIONAL_OR_KEYWORD,
+    },
     ParameterKind.ELLIPSIS: {ParameterKind.POSITIONAL_ONLY},
 }
 CAN_HAVE_DEFAULT = {
@@ -1079,8 +1083,28 @@ class Signature:
                     )
                     bound_args[param.name] = KWARGS, composite
                 else:
-                    self.show_call_error("Callable requires a ParamSpec argument", ctx)
-                    return None
+                    new_actuals = ActualArguments(
+                        positionals=actual_args.positionals[positional_index:],
+                        star_args=(
+                            actual_args.star_args if not star_args_consumed else None
+                        ),
+                        keywords={
+                            key: value
+                            for key, value in actual_args.keywords.items()
+                            if key not in keywords_consumed
+                        },
+                        star_kwargs=(
+                            actual_args.star_kwargs
+                            if not star_kwargs_consumed
+                            else None
+                        ),
+                        kwargs_required=actual_args.kwargs_required,
+                        pos_or_keyword_params=actual_args.pos_or_keyword_params,
+                    )
+                    star_args_consumed = True
+                    star_kwargs_consumed = True
+                    val = CallValue(new_actuals)
+                    bound_args[param.name] = UNKNOWN, Composite(val)
             else:
                 assert False, f"unhandled param {param.kind}"
 
@@ -2276,7 +2300,6 @@ class OverloadedSignature:
         actual_args = preprocess_args(args, ctx)
         if actual_args is None:
             return AnyValue(AnySource.error)
-
         # We first bind the arguments for each overload, to get the obvious errors
         # out of the way first.
         errors_per_overload = []
@@ -2701,6 +2724,21 @@ def decompose_union(
             ), f"all union members matched between {expected_type} and {parent_value}"
             return bounds_map, union_used_any, unite_values(*remaining_values)
     return None
+
+
+def check_call_preprocessed(
+    sig: ConcreteSignature, args: ActualArguments, ctx: CanAssignContext
+) -> CanAssign:
+    if isinstance(sig, Signature):
+        check_ctx = _CanAssignBasedContext(ctx)
+        sig.check_call_preprocessed(args, check_ctx)
+        if check_ctx.errors:
+            return CanAssignError(
+                "Incompatible callable", [CanAssignError(e) for e in check_ctx.errors]
+            )
+        return {}
+    else:
+        return CanAssignError("Overloads are not supported")
 
 
 def _extract_known_value(val: Value) -> Optional[KnownValue]:
