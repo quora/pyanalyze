@@ -1844,6 +1844,22 @@ class TestParamSpec(TestNameCheckVisitorBase):
             assert_type(apply(sample, 1), str)
             apply(sample, "x")  # E: incompatible_call
 
+    @assert_passes()
+    def test_param_spec_errors(self):
+        from typing import Callable, TypeVar
+
+        from typing_extensions import ParamSpec
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def apply(func: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> None:
+            func(*args)  # E: incompatible_call
+            func(*args, *args, **kwargs)  # E: incompatible_call
+            func(**kwargs)  # E: incompatible_call
+            func(*args, **kwargs, **kwargs)  # E: incompatible_call
+            func(*args, **kwargs)
+
 
 class TestTypeAlias(TestNameCheckVisitorBase):
     @assert_passes()
