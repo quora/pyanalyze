@@ -8,7 +8,7 @@ from typing import Iterable, Sequence, Tuple, Union
 
 import qcore
 
-from .safe import all_of_type
+from .safe import all_of_type, is_instance_of_typing_name
 from .value import (
     AnySource,
     AnyValue,
@@ -40,12 +40,41 @@ def resolve_bounds_map(
     errors = []
     for tv, bounds in bounds_map.items():
         bounds = tuple(dict.fromkeys(bounds))
-        solution = solve(bounds, ctx)
+        if is_instance_of_typing_name(tv, "ParamSpec"):
+            # For ParamSpec, we use a simpler approach
+            solution = solve_paramspec(bounds, ctx)
+        else:
+            solution = solve(bounds, ctx)
         if isinstance(solution, CanAssignError):
             errors.append(solution)
             solution = AnyValue(AnySource.error)
         tv_map[tv] = solution
     return tv_map, errors
+
+
+def solve_paramspec(
+    bounds: Sequence[Bound], ctx: CanAssignContext
+) -> Union[Value, CanAssignError]:
+    if not bounds:
+        return CanAssignError("Unsupported ParamSpec")
+    bound = bounds[0]
+    if not isinstance(bound, LowerBound):
+        return CanAssignError("Unsupported ParamSpec")
+    solution = bound.value
+    for i, bound in enumerate(bounds):
+        if i == 0:
+            continue
+        if isinstance(bound, LowerBound):
+            can_assign = solution.can_assign(bound.value, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return can_assign
+        elif isinstance(bound, UpperBound):
+            can_assign = bound.value.can_assign(solution, ctx)
+            if isinstance(can_assign, CanAssignError):
+                return can_assign
+        else:
+            return CanAssignError("Unsupported ParamSpec bound")
+    return solution
 
 
 def solve(
@@ -68,6 +97,7 @@ def solve(
                 pass
             else:
                 # New bound is separate. We have to satisfy both.
+                # TODO shouldn't this use intersection?
                 bottom = unite_values(bottom, bound.value)
         elif isinstance(bound, UpperBound):
             if top is TOP or top.is_assignable(bound.value, ctx):

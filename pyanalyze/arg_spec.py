@@ -84,6 +84,8 @@ from .value import (
     KnownValue,
     KVPair,
     NewTypeValue,
+    ParamSpecArgsValue,
+    ParamSpecKwargsValue,
     SubclassValue,
     TypedDictEntry,
     TypedDictValue,
@@ -444,15 +446,25 @@ class ArgSpecCache:
                 returns = make_coro_type(returns)
 
         parameters = []
+        seen_paramspec_args: Optional[ParamSpecArgsValue] = None
         for i, parameter in enumerate(sig.parameters.values()):
-            param, make_everything_pos_only = self._make_sig_parameter(
-                parameter, func_globals, function_object, is_wrapped, i
+            param, make_everything_pos_only, new_ps_args = self._make_sig_parameter(
+                parameter,
+                func_globals,
+                function_object,
+                is_wrapped,
+                i,
+                seen_paramspec_args,
             )
             if make_everything_pos_only:
                 parameters = [
                     replace(param, kind=ParameterKind.POSITIONAL_ONLY)
                     for param in parameters
                 ]
+            if new_ps_args is not None:
+                seen_paramspec_args = new_ps_args
+            if param is None:
+                continue
             parameters.append(param)
 
         return Signature.make(
@@ -473,7 +485,8 @@ class ArgSpecCache:
         function_object: Optional[object],
         is_wrapped: bool,
         index: int,
-    ) -> Tuple[SigParameter, bool]:
+        seen_paramspec_args: Optional[ParamSpecArgsValue],
+    ) -> Tuple[Optional[SigParameter], bool, Optional[ParamSpecArgsValue]]:
         """Given an inspect.Parameter, returns a Parameter object."""
         if is_wrapped:
             typ = AnyValue(AnySource.inference)
@@ -481,6 +494,11 @@ class ArgSpecCache:
             typ = self._get_type_for_parameter(
                 parameter, func_globals, function_object, index
             )
+        if (
+            isinstance(typ, ParamSpecArgsValue)
+            and parameter.kind is inspect.Parameter.VAR_POSITIONAL
+        ):
+            return (None, False, typ)
         if parameter.default is inspect.Parameter.empty:
             default = None
         else:
@@ -496,9 +514,18 @@ class ArgSpecCache:
         else:
             kind = ParameterKind(parameter.kind)
             make_everything_pos_only = False
+        if (
+            seen_paramspec_args is not None
+            and kind is ParameterKind.VAR_KEYWORD
+            and isinstance(typ, ParamSpecKwargsValue)
+            and seen_paramspec_args.param_spec is typ.param_spec
+        ):
+            kind = ParameterKind.PARAM_SPEC
+            typ = TypeVarValue(typ.param_spec)
         return (
             SigParameter(parameter.name, kind, default=default, annotation=typ),
             make_everything_pos_only,
+            None,
         )
 
     def _get_type_for_parameter(

@@ -1567,6 +1567,10 @@ class CallableValue(TypedValue):
         return CallableValue(sig, self.typ)
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
+        if isinstance(other, CallValue):
+            return pyanalyze.signature.check_call_preprocessed(
+                self.signature, other.args, ctx
+            )
         if not isinstance(other, (MultiValuedValue, AnyValue, AnnotatedValue)):
             signature = ctx.signature_from_value(other)
             if signature is None:
@@ -2444,6 +2448,16 @@ class VariableNameValue(AnyValue):
                 shortened_varname = parts[-1]
             return varname_map.get(shortened_varname)
         return None
+
+
+@dataclass(frozen=True)
+class CallValue(Value):
+    """Represents the arguments to a call."""
+
+    args: "pyanalyze.signature.ActualArguments"
+
+    def __hash__(self) -> int:
+        return id(self)
 
 
 def is_union(val: Value) -> bool:

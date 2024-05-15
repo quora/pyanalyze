@@ -70,6 +70,7 @@ from .value import (
     AsyncTaskIncompleteValue,
     BoundsMap,
     CallableValue,
+    CallValue,
     CanAssign,
     CanAssignContext,
     CanAssignError,
@@ -411,7 +412,10 @@ KIND_TO_ALLOWED_PREVIOUS = {
         ParameterKind.VAR_POSITIONAL,
         ParameterKind.KEYWORD_ONLY,
     },
-    ParameterKind.PARAM_SPEC: {ParameterKind.POSITIONAL_ONLY},
+    ParameterKind.PARAM_SPEC: {
+        ParameterKind.POSITIONAL_ONLY,
+        ParameterKind.POSITIONAL_OR_KEYWORD,
+    },
     ParameterKind.ELLIPSIS: {ParameterKind.POSITIONAL_ONLY},
 }
 CAN_HAVE_DEFAULT = {
@@ -1079,8 +1083,28 @@ class Signature:
                     )
                     bound_args[param.name] = KWARGS, composite
                 else:
-                    self.show_call_error("Callable requires a ParamSpec argument", ctx)
-                    return None
+                    new_actuals = ActualArguments(
+                        positionals=actual_args.positionals[positional_index:],
+                        star_args=(
+                            actual_args.star_args if not star_args_consumed else None
+                        ),
+                        keywords={
+                            key: value
+                            for key, value in actual_args.keywords.items()
+                            if key not in keywords_consumed
+                        },
+                        star_kwargs=(
+                            actual_args.star_kwargs
+                            if not star_kwargs_consumed
+                            else None
+                        ),
+                        kwargs_required=actual_args.kwargs_required,
+                        pos_or_keyword_params=actual_args.pos_or_keyword_params,
+                    )
+                    star_args_consumed = True
+                    star_kwargs_consumed = True
+                    val = CallValue(new_actuals)
+                    bound_args[param.name] = UNKNOWN, Composite(val)
             else:
                 assert False, f"unhandled param {param.kind}"
 
@@ -1973,14 +1997,27 @@ def preprocess_args(
     # Step 1: Split up args and kwargs if possible.
     processed_args: List[Argument] = []
     kwargs_requireds = []
+    param_spec = None
+    param_spec_star_arg = None
+    seen_param_spec_kwargs = False
     for arg, label in args:
         if label is ARGS:
+            if isinstance(arg.value, ParamSpecArgsValue):
+                if param_spec is not None:
+                    ctx.on_error(
+                        "Only a single ParamSpec.args can be passed", node=arg.node
+                    )
+                param_spec = TypeVarValue(arg.value.param_spec)
+                param_spec_star_arg = arg
+                continue
             concrete_values = concrete_values_from_iterable(
                 arg.value, ctx.can_assign_ctx
             )
             if isinstance(concrete_values, CanAssignError):
                 ctx.on_error(
-                    f"{arg.value} is not iterable", detail=str(concrete_values)
+                    f"{arg.value} is not iterable",
+                    detail=str(concrete_values),
+                    node=arg.node,
                 )
                 return None
             elif isinstance(concrete_values, Value):
@@ -1995,6 +2032,23 @@ def preprocess_args(
                 for subval in concrete_values:
                     processed_args.append((Composite(subval), None))
         elif label is KWARGS:
+            if isinstance(arg.value, ParamSpecKwargsValue):
+                if param_spec is None:
+                    ctx.on_error(
+                        "ParamSpec.kwargs cannot be passed without ParamSpec.args",
+                        node=arg.node,
+                    )
+                elif param_spec.typevar is not arg.value.param_spec:
+                    ctx.on_error(
+                        "ParamSpec.args and ParamSpec.kwargs must use the same ParamSpec",
+                        node=arg.node,
+                    )
+                elif seen_param_spec_kwargs:
+                    ctx.on_error(
+                        "Only a single ParamSpec.kwargs can be passed", node=arg.node
+                    )
+                seen_param_spec_kwargs = True
+                continue
             items = {}
             extra_values = []
             if arg.value is NO_RETURN_VALUE:
@@ -2036,6 +2090,11 @@ def preprocess_args(
                 processed_args.append((new_composite, KWARGS))
         else:
             processed_args.append((arg, label))
+    if param_spec_star_arg is not None and not seen_param_spec_kwargs:
+        ctx.on_error(
+            "ParamSpec.args cannot be passed without ParamSpec.kwargs",
+            node=param_spec_star_arg.node,
+        )
 
     # Step 2: enforce invariants about ARGS and KWARGS placement. We dump
     # any single arguments that come after *args into *args, and we merge all *args.
@@ -2097,6 +2156,9 @@ def preprocess_args(
             more_processed_kwargs[label.name] = (label.is_required, arg)
             more_processed_args.append((label.is_required, arg))
         elif isinstance(label, TypeVarValue):
+            if param_spec is not None:
+                ctx.on_error("Multiple ParamSpecs passed")
+                continue
             param_spec = label
         elif label is ELLIPSIS:
             is_ellipsis = True
@@ -2276,7 +2338,6 @@ class OverloadedSignature:
         actual_args = preprocess_args(args, ctx)
         if actual_args is None:
             return AnyValue(AnySource.error)
-
         # We first bind the arguments for each overload, to get the obvious errors
         # out of the way first.
         errors_per_overload = []
@@ -2701,6 +2762,21 @@ def decompose_union(
             ), f"all union members matched between {expected_type} and {parent_value}"
             return bounds_map, union_used_any, unite_values(*remaining_values)
     return None
+
+
+def check_call_preprocessed(
+    sig: ConcreteSignature, args: ActualArguments, ctx: CanAssignContext
+) -> CanAssign:
+    if isinstance(sig, Signature):
+        check_ctx = _CanAssignBasedContext(ctx)
+        sig.check_call_preprocessed(args, check_ctx)
+        if check_ctx.errors:
+            return CanAssignError(
+                "Incompatible callable", [CanAssignError(e) for e in check_ctx.errors]
+            )
+        return {}
+    else:
+        return CanAssignError("Overloads are not supported")
 
 
 def _extract_known_value(val: Value) -> Optional[KnownValue]:
