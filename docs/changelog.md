@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix handling of stub functions with positional-only parameters with
+  defaults (#769)
 - Recognize exhaustive pattern matching (#766)
 - Narrow the types of variables assigned within complex patterns (#766)
 - New error code `generator_return` is raised when a generator does not
