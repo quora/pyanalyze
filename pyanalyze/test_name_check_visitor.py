@@ -341,7 +341,8 @@ class TestNameCheckVisitor(TestNameCheckVisitorBase):
     @assert_passes()
     def test_display(self):
         def run():
-            print([1, 2]())  # E: not_callable
+            x = [1, 2]
+            print(x())  # E: not_callable
 
     @assert_passes()
     def test_set_display(self):
@@ -1285,7 +1286,8 @@ class TestSubscripting(TestNameCheckVisitorBase):
     @assert_passes()
     def test_failure(self):
         def capybara():
-            return [1, 2][3.0]  # E: unsupported_operation
+            x = [1, 2]
+            return x[3.0]  # E: unsupported_operation
 
     @assert_passes()
     def test_union(self):
@@ -1337,7 +1339,7 @@ class TestNonlocal(TestNameCheckVisitorBase):
             return running
 
 
-class TestingCallSiteCollector(object):
+class SampleCallSiteCollector(object):
     """Records as string instead of actual reference so can be tested.
 
     Replaces name_check_visitor.py:CallSiteCollector, since that class records
@@ -1360,7 +1362,7 @@ class TestCallSiteCollection(TestNameCheckVisitorBase):
     """Base class for testing call site collection."""
 
     def run_and_get_call_map(self, code_str, **kwargs):
-        collector = TestingCallSiteCollector()
+        collector = SampleCallSiteCollector()
         self._run_str(code_str, collector=collector, **kwargs)
         return collector.map
 

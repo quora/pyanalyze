@@ -3162,7 +3162,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return KnownValue(output)
 
     def visit_Constant(self, node: ast.Constant) -> Value:
-        # replaces Num, Str, etc. in 3.8+
         if isinstance(node.value, str):
             self._maybe_show_missing_f_error(node, node.value)
         return KnownValue(node.value)

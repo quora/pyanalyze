@@ -47,7 +47,7 @@ from typing import (
 )
 
 import qcore
-from typing_extensions import Literal, ParamSpec, Protocol
+from typing_extensions import ParamSpec, Protocol
 
 import pyanalyze
 from pyanalyze.error_code import Error
@@ -1784,7 +1784,7 @@ class MultiValuedValue(Value):
             return self
         return MultiValuedValue([val.get_type_value() for val in self.vals])
 
-    def __eq__(self, other: Value) -> Union[bool, Literal[NotImplemented]]:
+    def __eq__(self, other: Value) -> bool:
         if not isinstance(other, MultiValuedValue):
             return NotImplemented
         if self.vals == other.vals:

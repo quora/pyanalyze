@@ -178,12 +178,13 @@ class ErrorCode(enum.Enum):
 
 
 class VeryStrictVisitor(BaseNodeVisitor):
-    def visit_Str(self, node):
-        self.show_error(
-            node, "Strings are not allowed", error_code=ErrorCode.no_strings
-        )
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if isinstance(node.value, str):
+            self.show_error(
+                node, "Strings are not allowed", error_code=ErrorCode.no_strings
+            )
 
-    def visit_Dict(self, node):
+    def visit_Dict(self, node: ast.Dict) -> None:
         self.show_error(
             node,
             "Dicts are not allowed",

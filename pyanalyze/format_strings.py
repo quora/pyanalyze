@@ -459,12 +459,12 @@ def maybe_replace_with_fstring(
     parts = []
     for raw_piece, substitution in zip(fs.raw_pieces, substitutions):
         if raw_piece:
-            parts.append(ast.Str(s=raw_piece))
+            parts.append(ast.Constant(value=raw_piece))
         parts.append(
             ast.FormattedValue(value=substitution, conversion=-1, format_spec=None)
         )
     if fs.raw_pieces[-1]:
-        parts.append(ast.Str(s=fs.raw_pieces[-1]))
+        parts.append(ast.Constant(value=fs.raw_pieces[-1]))
     return ast.JoinedStr(values=parts)
 
 

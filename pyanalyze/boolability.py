@@ -141,6 +141,8 @@ def _get_boolability_no_mvv(value: Value) -> Boolability:
         # not handling that for now.
         return Boolability.type_always_true
     elif isinstance(value, KnownValue):
+        if value.val is NotImplemented:
+            return Boolability.erroring_bool
         try:
             boolean_value = bool(value.val)
         except Exception:
