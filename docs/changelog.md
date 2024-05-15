@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Improve `ParamSpec` support
+- Improve `ParamSpec` support (#772)
 - Fix handling of stub functions with positional-only parameters with
   defaults (#769)
 - Recognize exhaustive pattern matching (#766)
