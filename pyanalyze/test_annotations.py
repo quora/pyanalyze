@@ -173,15 +173,20 @@ class TestAnnotations(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_contextmanager_class(self):
+        import sys
         from typing import ContextManager
 
         def f() -> ContextManager[int]:
             raise NotImplementedError
 
+        if sys.version_info >= (3, 13):
+            expected_args = [TypedValue(int), TypedValue(bool) | KnownValue(None)]
+        else:
+            expected_args = [TypedValue(int)]
+
         def capybara():
             assert_is_value(
-                f(),
-                GenericValue("contextlib.AbstractContextManager", [TypedValue(int)]),
+                f(), GenericValue("contextlib.AbstractContextManager", expected_args)
             )
             with f() as x:
                 assert_is_value(x, TypedValue(int))

@@ -421,6 +421,7 @@ class Checker:
 
 EXCLUDED_PROTOCOL_MEMBERS = {
     "__abstractmethods__",
+    "__annotate__",
     "__annotations__",
     "__dict__",
     "__doc__",
@@ -447,6 +448,8 @@ EXCLUDED_PROTOCOL_MEMBERS = {
     "__protocol_attrs__",
     "__callable_proto_members_only__",
     "__non_callable_proto_members__",
+    "__static_attributes__",
+    "__firstlineno__",
 }
 
 

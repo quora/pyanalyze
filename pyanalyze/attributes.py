@@ -555,7 +555,11 @@ def _get_attribute_from_mro(
                 try:
                     # Make sure to use only __annotations__ that are actually on this
                     # class, not ones inherited from a base class.
-                    annotations = base_dict["__annotations__"]
+                    # Starting in 3.10, __annotations__ is not inherited.
+                    if sys.version_info >= (3, 10):
+                        annotations = base_cls.__annotations__
+                    else:
+                        annotations = base_dict["__annotations__"]
                 except Exception:
                     pass
                 else:
