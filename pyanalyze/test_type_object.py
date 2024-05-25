@@ -166,9 +166,9 @@ class TestSyntheticType(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_protocol_inheritance(self):
-        import cgi
+        import operator
 
-        # cgi.parse requires SupportsItemAccess[str, str]
+        # operator.getitem requires SupportsGetItem[K, V]
 
         class Good:
             def __contains__(self, obj: object) -> bool:
@@ -177,12 +177,6 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             def __getitem__(self, k: str) -> str:
                 raise KeyError(k)
 
-            def __setitem__(self, k: str, v: str) -> None:
-                pass
-
-            def __delitem__(self, v: str) -> None:
-                pass
-
         class Bad:
             def __contains__(self, obj: object) -> bool:
                 return False
@@ -190,16 +184,10 @@ class TestSyntheticType(TestNameCheckVisitorBase):
             def __getitem__(self, k: bytes) -> str:
                 raise KeyError(k)
 
-            def __setitem__(self, k: str, v: str) -> None:
-                pass
-
-            def __delitem__(self, v: str) -> None:
-                pass
-
         def capybara():
-            cgi.parse(environ=Good())
-            cgi.parse(environ=Bad())  # E: incompatible_argument
-            cgi.parse(environ=1)  # E: incompatible_argument
+            operator.getitem(Good(), "hello")
+            operator.getitem(Bad(), "hello")  # E: incompatible_call
+            operator.getitem(1, "hello")  # E: incompatible_argument
 
     @assert_passes()
     def test_iterable(self):
