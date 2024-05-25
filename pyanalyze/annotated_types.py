@@ -6,7 +6,7 @@ Support for annotations from the annotated_types library.
 
 import enum
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from typing import Any, Callable, Iterable, Optional, Type, Union
 
 from pyanalyze.value import CanAssign, CanAssignContext, Value, flatten_values
@@ -37,6 +37,8 @@ else:
     def get_annotated_types_extension(obj: object) -> Iterable[CustomCheckExtension]:
         if isinstance(obj, annotated_types.GroupedMetadata):
             for value in obj:
+                if not isinstance(value, annotated_types.BaseMetadata):
+                    continue
                 maybe_ext = _get_single_annotated_types_extension(value)
                 if maybe_ext is not None:
                     yield CustomCheckExtension(maybe_ext)
@@ -256,7 +258,7 @@ class MaxLen(AnnotatedTypesCheck):
 
 @dataclass(frozen=True)
 class Timezone(AnnotatedTypesCheck):
-    value: Union[str, timezone, type(...), None]
+    value: Union[str, timezone, tzinfo, type(...), None]
 
     def predicate(self, value: Any) -> bool:
         if not isinstance(value, datetime):
