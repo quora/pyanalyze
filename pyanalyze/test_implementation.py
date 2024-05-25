@@ -1,6 +1,6 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, only_before
+from .test_node_visitor import assert_passes, only_before, skip_before
 from .tests import make_simple_sequence
 from .value import (
     NO_RETURN_VALUE,
@@ -1468,7 +1468,7 @@ class TestNamedTuple(TestNameCheckVisitorBase):
         def capybara() -> None:
             NamedTuple("x", None, y=int)  # E: incompatible_call
 
-    @only_before((3, 13))
+    @skip_before((3, 13))
     @assert_passes()
     def test_namedtuple_after_3_13(self):
         from typing import NamedTuple
