@@ -1850,6 +1850,45 @@ class TestParamSpec(TestNameCheckVisitorBase):
             apply(sample, "x")  # E: incompatible_call
 
     @assert_passes()
+    def test_apply_bound_method(self):
+        from typing import Callable, TypeVar
+
+        from typing_extensions import ParamSpec, assert_type
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def apply(func: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+            return func(*args, **kwargs)
+
+        class X:
+            def sample(self, x: int) -> str:
+                return str(x)
+
+        def capybara(x: X) -> None:
+            assert_type(apply(x.sample, 1), str)
+            apply(x.sample, "x")  # E: incompatible_call
+
+    @assert_passes()
+    def test_apply_any(self):
+        from typing import Any, Callable, TypeVar
+
+        from typing_extensions import ParamSpec, assert_type
+
+        P = ParamSpec("P")
+        T = TypeVar("T")
+
+        def apply(func: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+            return func(*args, **kwargs)
+
+        def capybara(x, args, kwargs) -> None:
+            assert_type(apply(x, 1), Any)
+            assert_type(apply(x.foo, 1), Any)
+            assert_type(apply(x), Any)
+            assert_type(apply(x, y=3), Any)
+            assert_type(apply(x, *args, **kwargs), Any)
+
+    @assert_passes()
     def test_param_spec_errors(self):
         from typing import Callable, TypeVar
 

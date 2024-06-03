@@ -1756,6 +1756,11 @@ class Signature:
                     elif isinstance(new_val, AnyValue):
                         new_param = SigParameter(param.name, ParameterKind.ELLIPSIS)
                         params.append((param.name, new_param))
+                    elif isinstance(new_val, CallValue):
+                        new_param = SigParameter(
+                            param.name, ParameterKind.PARAM_SPEC, annotation=new_val
+                        )
+                        params.append((param.name, new_param))
                     else:
                         assert isinstance(new_val, CallableValue), new_val
                         assert isinstance(new_val.signature, Signature), new_val
