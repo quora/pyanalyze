@@ -37,7 +37,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
         def kerodon() -> Optional[int]:
             return None
 
-        def complex() -> Union[List[str], Set[int], Dict[float, List[str]], int]:
+        def complex() -> Union[List[str], Set[int], Dict[bytes, List[str]], int]:
             return []
 
         def union_in_subscript() -> List[Union[str, int]]:
@@ -58,7 +58,7 @@ class TestAnnotations(TestNameCheckVisitorBase):
                         GenericValue(set, [TypedValue(int)]),
                         GenericValue(
                             dict,
-                            [TypedValue(float), GenericValue(list, [TypedValue(str)])],
+                            [TypedValue(bytes), GenericValue(list, [TypedValue(str)])],
                         ),
                         TypedValue(int),
                     ]
@@ -756,14 +756,14 @@ class TestCallable(TestNameCheckVisitorBase):
             y: Callable[[int], str],
             id_func: Callable[[T], T],
             takes_seq: Callable[[Sequence[T]], T],
-            two_args: Callable[[int, str], float],
+            two_args: Callable[[int, str], bytes],
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
             assert_is_value(y(1), TypedValue(str))
             assert_is_value(id_func(1), KnownValue(1))
             assert_is_value(takes_seq([int("1")]), TypedValue(int))
-            assert_is_value(two_args(1, "x"), TypedValue(float))
+            assert_is_value(two_args(1, "x"), TypedValue(bytes))
 
     @assert_passes()
     def test_stringified(self):
@@ -776,14 +776,14 @@ class TestCallable(TestNameCheckVisitorBase):
             y: "Callable[[int], str]",
             id_func: "Callable[[T], T]",
             takes_seq: "Callable[[Sequence[T]], T]",
-            two_args: "Callable[[int, str], float]",
+            two_args: "Callable[[int, str], bytes]",
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
             assert_is_value(y(1), TypedValue(str))
             assert_is_value(id_func(1), KnownValue(1))
             assert_is_value(takes_seq([int("1")]), TypedValue(int))
-            assert_is_value(two_args(1, "x"), TypedValue(float))
+            assert_is_value(two_args(1, "x"), TypedValue(bytes))
 
     @skip_before((3, 9))
     @assert_passes()
@@ -798,14 +798,14 @@ class TestCallable(TestNameCheckVisitorBase):
             y: Callable[[int], str],
             id_func: Callable[[T], T],
             takes_seq: Callable[[Sequence[T]], T],
-            two_args: Callable[[int, str], float],
+            two_args: Callable[[int, str], bytes],
         ):
             assert_is_value(x(), TypedValue(int))
             assert_is_value(x(arg=3), TypedValue(int))
             assert_is_value(y(1), TypedValue(str))
             assert_is_value(id_func(1), KnownValue(1))
             assert_is_value(takes_seq([int("1")]), TypedValue(int))
-            assert_is_value(two_args(1, "x"), TypedValue(float))
+            assert_is_value(two_args(1, "x"), TypedValue(bytes))
 
     @assert_passes()
     def test_known_value(self):
@@ -1043,20 +1043,23 @@ class TestTypeVar(TestNameCheckVisitorBase):
         AnyStr = TypeVar("AnyStr", bytes, str)
         IntT = TypeVar("IntT", bound=int)
 
-        class SupportsIsInteger(Protocol):
-            def is_integer(self) -> bool:
+        class SupportsInt(Protocol):
+            def __int__(self) -> int:
                 raise NotImplementedError
 
-        SupportsIsIntegerT = TypeVar("SupportsIsIntegerT", bound=SupportsIsInteger)
+        SupportsIntT = TypeVar("SupportsIntT", bound=SupportsInt)
 
-        def find_int(objs: Iterable[SupportsIsIntegerT]) -> SupportsIsIntegerT:
+        def find_int(objs: Iterable[SupportsIntT]) -> SupportsIntT:
             for obj in objs:
-                if obj.is_integer():
+                if obj.__int__() == obj:
                     return obj
             raise ValueError
 
         def wants_float_func(f: Callable[[Iterable[float]], float]) -> float:
             return f([1.0, 2.0])
+
+        def wants_int_func(f: Callable[[Iterable[int]], int]) -> int:
+            return f([1, 2])
 
         def want_anystr_func(
             f: Callable[[AnyStr], AnyStr], s: Union[str, bytes]
@@ -1087,7 +1090,10 @@ class TestTypeVar(TestNameCheckVisitorBase):
             want_bounded_func(anystr_func, 1)  # E: incompatible_argument
             want_str_func(anystr_func)
             want_str_func(int_func)  # E: incompatible_argument
-            wants_float_func(find_int)
+            assert_is_value(find_int([1.0, 2.0]), KnownValue(1.0) | KnownValue(2.0))
+            # TODO this should work with wants_float_func but it doesn't.
+            # Some bug with binding TypeVars to a union?
+            wants_int_func(find_int)
             wants_float_func(int_func)  # E: incompatible_argument
 
     @assert_passes()
@@ -1503,7 +1509,7 @@ class TestRequired(TestNameCheckVisitorBase):
         class RNR(TypedDict):
             a: int
             b: Required[str]
-            c: NotRequired[float]
+            c: NotRequired[bytes]
 
         def take_rnr(td: RNR) -> None:
             assert_is_value(
@@ -1512,7 +1518,7 @@ class TestRequired(TestNameCheckVisitorBase):
                     {
                         "a": TypedDictEntry(TypedValue(int)),
                         "b": TypedDictEntry(TypedValue(str)),
-                        "c": TypedDictEntry(TypedValue(float), required=False),
+                        "c": TypedDictEntry(TypedValue(bytes), required=False),
                     }
                 ),
             )
@@ -1520,7 +1526,7 @@ class TestRequired(TestNameCheckVisitorBase):
         class NotTotal(TypedDict, total=False):
             a: int
             b: Required[str]
-            c: NotRequired[float]
+            c: NotRequired[bytes]
 
         def take_not_total(td: NotTotal) -> None:
             assert_is_value(
@@ -1529,7 +1535,7 @@ class TestRequired(TestNameCheckVisitorBase):
                     {
                         "a": TypedDictEntry(TypedValue(int), required=False),
                         "b": TypedDictEntry(TypedValue(str)),
-                        "c": TypedDictEntry(TypedValue(float), required=False),
+                        "c": TypedDictEntry(TypedValue(bytes), required=False),
                     }
                 ),
             )
@@ -1537,7 +1543,7 @@ class TestRequired(TestNameCheckVisitorBase):
         class Stringify(TypedDict):
             a: "int"
             b: "Required[str]"
-            c: "NotRequired[float]"
+            c: "NotRequired[bytes]"
 
         def take_stringify(td: Stringify) -> None:
             assert_is_value(
@@ -1546,7 +1552,7 @@ class TestRequired(TestNameCheckVisitorBase):
                     {
                         "a": TypedDictEntry(TypedValue(int)),
                         "b": TypedDictEntry(TypedValue(str)),
-                        "c": TypedDictEntry(TypedValue(float), required=False),
+                        "c": TypedDictEntry(TypedValue(bytes), required=False),
                     }
                 ),
             )
@@ -1560,7 +1566,7 @@ class TestRequired(TestNameCheckVisitorBase):
         class Stringify(TypedDict):
             a: "int"
             b: "Required[str]"
-            c: "NotRequired[float]"
+            c: "NotRequired[bytes]"
 
         def make_td() -> Any:
             return Stringify
@@ -1579,7 +1585,7 @@ class TestRequired(TestNameCheckVisitorBase):
                     {
                         "a": TypedDictEntry(TypedValue(int)),
                         "b": TypedDictEntry(TypedValue(str)),
-                        "c": TypedDictEntry(TypedValue(float), required=False),
+                        "c": TypedDictEntry(TypedValue(bytes), required=False),
                     }
                 ),
             )
@@ -1590,7 +1596,7 @@ class TestRequired(TestNameCheckVisitorBase):
                     {
                         "a": TypedDictEntry(TypedValue(int)),
                         "b": TypedDictEntry(TypedValue(str)),
-                        "c": TypedDictEntry(TypedValue(float), required=False),
+                        "c": TypedDictEntry(TypedValue(bytes), required=False),
                     }
                 ),
             )
@@ -1604,7 +1610,7 @@ class TestRequired(TestNameCheckVisitorBase):
         class RNR(TypedDict):
             a: int
             b: Required[str]
-            c: NotRequired[float]
+            c: NotRequired[bytes]
 
         def take_rnr(td: RNR) -> None:
             assert_is_value(
@@ -1613,7 +1619,7 @@ class TestRequired(TestNameCheckVisitorBase):
                     {
                         "a": TypedDictEntry(TypedValue(int)),
                         "b": TypedDictEntry(TypedValue(str)),
-                        "c": TypedDictEntry(TypedValue(float), required=False),
+                        "c": TypedDictEntry(TypedValue(bytes), required=False),
                     }
                 ),
             )
@@ -1621,7 +1627,7 @@ class TestRequired(TestNameCheckVisitorBase):
         class NotTotal(TypedDict, total=False):
             a: int
             b: Required[str]
-            c: NotRequired[float]
+            c: NotRequired[bytes]
 
         def take_not_total(td: NotTotal) -> None:
             assert_is_value(
@@ -1630,7 +1636,7 @@ class TestRequired(TestNameCheckVisitorBase):
                     {
                         "a": TypedDictEntry(TypedValue(int), required=False),
                         "b": TypedDictEntry(TypedValue(str)),
-                        "c": TypedDictEntry(TypedValue(float), required=False),
+                        "c": TypedDictEntry(TypedValue(bytes), required=False),
                     }
                 ),
             )
@@ -1638,7 +1644,7 @@ class TestRequired(TestNameCheckVisitorBase):
         class Stringify(TypedDict):
             a: "int"
             b: "Required[str]"
-            c: "NotRequired[float]"
+            c: "NotRequired[bytes]"
 
         def take_stringify(td: Stringify) -> None:
             assert_is_value(
@@ -1647,7 +1653,7 @@ class TestRequired(TestNameCheckVisitorBase):
                     {
                         "a": TypedDictEntry(TypedValue(int)),
                         "b": TypedDictEntry(TypedValue(str)),
-                        "c": TypedDictEntry(TypedValue(float), required=False),
+                        "c": TypedDictEntry(TypedValue(bytes), required=False),
                     }
                 ),
             )
@@ -2014,3 +2020,31 @@ class TestIfTypeChecking(TestNameCheckVisitorBase):
 
             assert_type(u.x, Any)
             assert_type(u.y, Any)
+
+
+class TestFloatInt(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing_extensions import assert_type
+
+        def capybara(x: float):
+            assert_is_value(x, TypedValue(float) | TypedValue(int))
+            assert_type(x, float)
+
+            if isinstance(x, float):
+                # can't express this type for assert_type()
+                assert_is_value(x, TypedValue(float))
+            else:
+                assert_is_value(x, TypedValue(int))
+                assert_type(x, int)
+
+    @assert_passes()
+    def test_cast(self):
+        from typing import cast
+
+        from typing_extensions import assert_type
+
+        def capybara(x):
+            f = cast(float, x)
+            assert_is_value(x, TypedValue(float) | TypedValue(int))
+            assert_type(x, float)

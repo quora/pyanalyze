@@ -140,10 +140,10 @@ def test_typed_value() -> None:
     float_val = TypedValue(float)
     assert str(float_val) == "float"
     assert_can_assign(float_val, KnownValue(1.0))
-    assert_can_assign(float_val, KnownValue(1))
+    assert_cannot_assign(float_val, KnownValue(1))
     assert_cannot_assign(float_val, KnownValue(""))
     assert_can_assign(float_val, TypedValue(float))
-    assert_can_assign(float_val, TypedValue(int))
+    assert_cannot_assign(float_val, TypedValue(int))
     assert_cannot_assign(float_val, TypedValue(str))
     assert_can_assign(float_val, TypedValue(mock.Mock))
 
@@ -199,7 +199,7 @@ def test_subclass_value() -> None:
     assert TypedValue(str) == val.typ
     assert val.is_type(str)
     assert not val.is_type(int)
-    val = SubclassValue(TypedValue(float))
+    val = SubclassValue(TypedValue(float)) | SubclassValue(TypedValue(int))
     assert_can_assign(val, KnownValue(int))
     assert_can_assign(val, SubclassValue(TypedValue(int)))
 

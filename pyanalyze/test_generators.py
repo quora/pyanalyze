@@ -10,7 +10,7 @@ class TestGenerator(TestNameCheckVisitorBase):
     def test_generator_return(self):
         from typing import Generator
 
-        def gen(cond) -> Generator[int, str, float]:
+        def gen(cond) -> Generator[int, str, bytes]:
             x = yield 1
             assert_is_value(x, TypedValue(str))
             yield "x"  # E: incompatible_yield
@@ -21,7 +21,7 @@ class TestGenerator(TestNameCheckVisitorBase):
 
         def capybara() -> Generator[int, int, int]:
             x = yield from gen(True)  # E: incompatible_yield
-            assert_is_value(x, TypedValue(float))
+            assert_is_value(x, TypedValue(bytes))
 
             return 3
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Change implementation of implicit int/float and float/complex promotion
+  in accordance with https://github.com/python/typing/pull/1748. Now,
+  annotations of `float` implicitly mean `float | int`. (#778)
 - Fix various issues with Python 3.13 and 3.14 support (#773)
 - Improve `ParamSpec` support (#772, #777)
 - Fix handling of stub functions with positional-only parameters with

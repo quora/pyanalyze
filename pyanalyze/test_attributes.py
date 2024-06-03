@@ -14,7 +14,7 @@ from .value import (
     assert_is_value,
 )
 
-_global_dict: Dict[Union[int, str], float] = {}
+_global_dict: Dict[Union[int, str], bytes] = {}
 
 
 class TestAttributes(TestNameCheckVisitorBase):
@@ -106,11 +106,11 @@ class TestAttributes(TestNameCheckVisitorBase):
             x: str
 
         class C(B):
-            y: float
+            y: bytes
 
         def capybara() -> None:
             assert_is_value(A().x, TypedValue(int))
-            assert_is_value(C().y, TypedValue(float))
+            assert_is_value(C().y, TypedValue(bytes))
             assert_is_value(C().x, TypedValue(str))
 
     @assert_passes()
@@ -304,7 +304,7 @@ class TestAttributes(TestNameCheckVisitorBase):
             assert_is_value(
                 test_attributes._global_dict,
                 GenericValue(
-                    dict, [TypedValue(int) | TypedValue(str), TypedValue(float)]
+                    dict, [TypedValue(int) | TypedValue(str), TypedValue(bytes)]
                 ),
             )
             assert_is_value(
