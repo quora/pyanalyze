@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Fix various issues with Python 3.13 and 3.14 support (#773)
-- Improve `ParamSpec` support (#772)
+- Improve `ParamSpec` support (#772, #777)
 - Fix handling of stub functions with positional-only parameters with
   defaults (#769)
 - Recognize exhaustive pattern matching (#766)
