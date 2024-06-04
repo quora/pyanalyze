@@ -2046,5 +2046,5 @@ class TestFloatInt(TestNameCheckVisitorBase):
 
         def capybara(x):
             f = cast(float, x)
-            assert_is_value(x, TypedValue(float) | TypedValue(int))
-            assert_type(x, float)
+            assert_is_value(f, TypedValue(float) | TypedValue(int))
+            assert_type(f, float)

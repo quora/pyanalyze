@@ -641,7 +641,7 @@ class TestSubclassValue(TestNameCheckVisitorBase):
 
         class EnumMeta(type):
             def __getitem__(self, x: str) -> bytes:
-                return 42.0
+                return b"hi"
 
         class Enum(metaclass=EnumMeta):
             pass

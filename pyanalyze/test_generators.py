@@ -15,7 +15,7 @@ class TestGenerator(TestNameCheckVisitorBase):
             assert_is_value(x, TypedValue(str))
             yield "x"  # E: incompatible_yield
             if cond:
-                return 3.0
+                return b"hello"
             else:
                 return "hello"  # E: incompatible_return_value
 

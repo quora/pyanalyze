@@ -1122,6 +1122,8 @@ class TestOverload(TestNameCheckVisitorBase):
             print("x", file="not a file")  # E: incompatible_argument
 
         def pacarana(f: float):
+            # https://github.com/python/cpython/issues/120080
+            assert isinstance(f, float)
             assert_is_value(f.__round__(), TypedValue(int))
             assert_is_value(f.__round__(None), TypedValue(int))
             f.__round__(ndigits=None)  # E: incompatible_call
