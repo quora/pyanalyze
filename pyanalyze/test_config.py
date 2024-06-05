@@ -7,6 +7,8 @@ Configuration file specific to tests.
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from pyanalyze.annotated_types import Gt
+
 from . import tests, value
 from .arg_spec import ArgSpecCache
 from .error_code import ErrorCode, register_error_code
@@ -59,14 +61,25 @@ def get_constructor(cls: type) -> Optional[Signature]:
     return None
 
 
+def _make_union_in_annotated_impl(ctx: CallContext) -> value.Value:
+    return value.AnnotatedValue(
+        value.TypedValue(float) | value.TypedValue(int),
+        [value.CustomCheckExtension(Gt(0))],
+    )
+
+
 @used  # in test.toml
 def get_known_signatures(
     arg_spec_cache: ArgSpecCache,
 ) -> Dict[object, ConcreteSignature]:
     failing_impl_sig = arg_spec_cache.get_argspec(tests.FailingImpl, impl=_failing_impl)
     custom_sig = arg_spec_cache.get_argspec(tests.custom_code, impl=_custom_code_impl)
+    union_in_anno_sig = arg_spec_cache.get_argspec(
+        tests.make_union_in_annotated, impl=_make_union_in_annotated_impl
+    )
     assert isinstance(custom_sig, Signature), custom_sig
     assert isinstance(failing_impl_sig, Signature), failing_impl_sig
+    assert isinstance(union_in_anno_sig, Signature), union_in_anno_sig
     return {
         tests.takes_kwonly_argument: Signature.make(
             [
@@ -81,6 +94,7 @@ def get_known_signatures(
         ),
         tests.FailingImpl: failing_impl_sig,
         tests.custom_code: custom_sig,
+        tests.make_union_in_annotated: union_in_anno_sig,
         tests.overloaded: OverloadedSignature(
             [
                 Signature.make([], value.TypedValue(int), callable=tests.overloaded),

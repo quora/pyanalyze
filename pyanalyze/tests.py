@@ -238,3 +238,7 @@ def assert_never(arg: NoReturn) -> NoReturn:
 
 def make_simple_sequence(typ: type, vals: Sequence[Value]) -> SequenceValue:
     return SequenceValue(typ, [(False, val) for val in vals])
+
+
+def make_union_in_annotated() -> object:
+    return 42
