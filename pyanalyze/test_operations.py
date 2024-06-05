@@ -277,3 +277,42 @@ class TestAdd(TestNameCheckVisitorBase):
     def test_text_and_bytes(self):
         def capybara():
             return "foo" + b"bar"  # E: unsupported_operation
+
+
+class TestAnnotated(TestNameCheckVisitorBase):
+
+    @assert_passes()
+    def test_union(self):
+        from typing import Union
+
+        from pyanalyze.annotated_types import Gt as OurGt
+        from pyanalyze.tests import make_union_in_annotated
+        from pyanalyze.value import (
+            AnnotatedValue,
+            CustomCheckExtension,
+            TypedValue,
+            assert_is_value,
+        )
+
+        def want_float_or_int(x: Union[float, int]) -> None:
+            pass
+
+        def capybara() -> None:
+            # unite_values() distributes Annotated metadata over the union,
+            # so we have to really careful to get a type that is Annotated[x | y, ...]
+            # rather than Annotated[x, ...] | Annotated[y, ...]
+            assert_is_value(
+                make_union_in_annotated(),
+                AnnotatedValue(
+                    TypedValue(float) | TypedValue(int),
+                    [CustomCheckExtension(OurGt(0))],
+                ),
+            )
+            y = 10000 * make_union_in_annotated()
+            x = make_union_in_annotated()
+            z = x * 1000000
+            assert_is_value(y, TypedValue(float) | TypedValue(int))
+            assert_is_value(z, TypedValue(float) | TypedValue(int))
+
+            want_float_or_int(make_union_in_annotated())
+            want_float_or_int(x)
