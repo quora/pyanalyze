@@ -5078,10 +5078,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         args: Iterable[Composite],
         allow_call: bool = False,
     ) -> Tuple[Value, bool]:
-        if isinstance(callee_composite.value, MultiValuedValue):
+        val = callee_composite.value
+        if isinstance(val, AnnotatedValue):
+            val = val.value
+        if isinstance(val, MultiValuedValue):
             composites = [
-                Composite(val, callee_composite.varname, callee_composite.node)
-                for val in callee_composite.value.vals
+                Composite(subval, callee_composite.varname, callee_composite.node)
+                for subval in val.vals
             ]
             with qcore.override(self, "in_union_decomposition", True):
                 values_and_exists = [
