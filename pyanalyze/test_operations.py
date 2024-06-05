@@ -116,8 +116,8 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(1 + int(x), TypedValue(int))
             assert_is_value(3 * int(x), TypedValue(int))
             assert_is_value("foo" + str(x), TypedValue(str))
-            assert_is_value(1 + float(x), TypedValue(float))
-            assert_is_value(1.0 + int(x), TypedValue(float))
+            assert_is_value(1 + float(x), TypedValue(float) | TypedValue(int))
+            assert_is_value(1.0 + int(x), TypedValue(float) | TypedValue(int))
             assert_is_value(3 * 3.0 + 1, KnownValue(10.0))
 
     @assert_passes()
@@ -169,7 +169,7 @@ class TestOperators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_int_float_product(self):
         def capybara(f: float, i: int):
-            assert_is_value(i * f, TypedValue(float))
+            assert_is_value(i * f, TypedValue(float) | TypedValue(int))
 
     @assert_passes()
     def test_contains(self):
@@ -209,7 +209,9 @@ class TestCompare(TestNameCheckVisitorBase):
                 return 3.14
 
         def capybara(x: X):
-            assert_is_value(x == 1, TypedValue(float), skip_annotated=True)
+            assert_is_value(
+                x == 1, TypedValue(float) | TypedValue(int), skip_annotated=True
+            )
             assert_is_value(x == "x", TypedValue(bool), skip_annotated=True)
 
         class Container:

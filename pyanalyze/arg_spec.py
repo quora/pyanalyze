@@ -1067,16 +1067,21 @@ class ArgSpecCache:
             assert isinstance(
                 typ, type
             ), f"failed to extract typeshed bases for {typ!r}"
-            bases = [
-                type_from_runtime(base, ctx=self.default_context)
-                for base in self.get_runtime_bases(typ)
-            ]
+            bases = [self._type_from_base(base) for base in self.get_runtime_bases(typ)]
             generic_bases = self._extract_bases(typ, bases)
             assert (
                 generic_bases is not None
             ), f"failed to extract runtime bases from {typ}"
         self.generic_bases_cache[typ] = generic_bases
         return generic_bases
+
+    def _type_from_base(self, base: object) -> Value:
+        # Avoid promoting float to float|int here.
+        if base is float:
+            return TypedValue(float)
+        elif base is complex:
+            return TypedValue(complex)
+        return type_from_runtime(base, ctx=self.default_context)
 
     def _extract_bases(
         self, typ: Union[type, str], bases: Optional[Sequence[Value]]

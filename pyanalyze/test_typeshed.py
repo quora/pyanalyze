@@ -56,7 +56,7 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         import math
         from typing import Container
 
-        assert_is_value(math.exp(1.0), TypedValue(float))
+        assert_is_value(math.exp(1.0), TypedValue(float) | TypedValue(int))
         assert_is_value("".isspace(), TypedValue(bool))
 
         def capybara(x: Container[int]) -> None:
@@ -209,7 +209,7 @@ _EXPECTED_TYPED_DICTS = {
         {
             "a": TypedDictEntry(TypedValue(int)),
             "b": TypedDictEntry(TypedValue(str)),
-            "c": TypedDictEntry(TypedValue(float)),
+            "c": TypedDictEntry(TypedValue(float) | TypedValue(int)),
         }
     ),
 }

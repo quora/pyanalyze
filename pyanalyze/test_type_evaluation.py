@@ -113,11 +113,11 @@ class TestTypeEvaluation(TestNameCheckVisitorBase):
 
         def capybara(unannotated):
             assert_is_value(compare_evaluated(None), TypedValue(str))
-            assert_is_value(compare_evaluated(1), TypedValue(float))
+            assert_is_value(compare_evaluated(1), TypedValue(float) | TypedValue(int))
             assert_is_value(compare_evaluated("x"), TypedValue(int))
             assert_is_value(
                 compare_evaluated(None if unannotated else 1),
-                TypedValue(str) | TypedValue(float),
+                TypedValue(str) | TypedValue(float) | TypedValue(int),
             )
 
     @assert_passes()
