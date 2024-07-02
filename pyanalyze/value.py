@@ -3091,18 +3091,15 @@ def can_assign_and_used_any(
 
 
 def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
-    for ignored_extension in (
-        SysPlatformExtension,
-        SysVersionInfoExtension,
-        ConstraintExtension,
-        DefiniteValueExtension,
-    ):
-        left, _ = unannotate_value(left, ignored_extension)
-        right, _ = unannotate_value(right, ignored_extension)
-    if isinstance(left, KnownValue) and isinstance(right, KnownValue):
-        return safe_isinstance(left.val, type(right.val)) or safe_isinstance(
-            right.val, type(left.val)
-        )
+    # Fairly permissive checks for now; possibly this can be tightened up later.
+    left = unannotate(left)
+    right = unannotate(right)
+    if isinstance(left, KnownValue):
+        left = TypedValue(type(left.val))
+    if isinstance(right, KnownValue):
+        right = TypedValue(type(right.val))
+    if isinstance(left, MultiValuedValue):
+        return any(is_overlapping(val, right, ctx) for val in left.vals)
     return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)
 
 
