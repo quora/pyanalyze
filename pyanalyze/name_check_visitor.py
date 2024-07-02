@@ -198,6 +198,8 @@ from .value import (
     SequenceValue,
     SkipDeprecatedExtension,
     SubclassValue,
+    SysPlatformExtension,
+    SysVersionInfoExtension,
     TypeAlias,
     TypeAliasValue,
     TypedValue,
@@ -213,6 +215,7 @@ from .value import (
     get_tv_map,
     is_async_iterable,
     is_iterable,
+    is_overlapping,
     is_union,
     kv_pairs_from_mapping,
     make_coro_type,
@@ -3498,6 +3501,28 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         rhs: Value,
         parent_node: ast.AST,
     ) -> Value:
+        if (
+            isinstance(op, (ast.Eq, ast.NotEq, ast.Is, ast.IsNot))
+            and not is_overlapping(lhs, rhs, self)
+            and lhs != KnownNone
+            and rhs != KnownNone
+        ):
+            lhs_shown = lhs
+            rhs_shown = rhs
+            for ignored_extension in (
+                SysPlatformExtension,
+                SysVersionInfoExtension,
+                ConstraintExtension,
+                DefiniteValueExtension,
+            ):
+                lhs_shown, _ = unannotate_value(lhs_shown, ignored_extension)
+                rhs_shown, _ = unannotate_value(rhs_shown, ignored_extension)
+            self._show_error_if_checking(
+                msg=f"Comparison between objects that do not overlap: {lhs_shown} and {rhs_shown}",
+                error_code=ErrorCode.unsafe_comparison,
+                node=parent_node,
+            )
+
         lhs_constraint = extract_constraints(lhs)
         rhs_constraint = extract_constraints(rhs)
         if isinstance(rhs, AnnotatedValue):
