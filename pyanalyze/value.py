@@ -3090,16 +3090,22 @@ def can_assign_and_used_any(
     return tv_map, used_any
 
 
+def _deliteral(value: Value) -> Value:
+    value = unannotate(value)
+    if isinstance(value, KnownValue):
+        value = TypedValue(type(value.val))
+    if isinstance(value, SequenceValue):
+        value = TypedValue(value.typ)
+    return value
+
+
 def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
     # Fairly permissive checks for now; possibly this can be tightened up later.
-    left = unannotate(left)
-    right = unannotate(right)
-    if isinstance(left, KnownValue):
-        left = TypedValue(type(left.val))
-    if isinstance(right, KnownValue):
-        right = TypedValue(type(right.val))
+    left = _deliteral(left)
+    right = _deliteral(right)
     if isinstance(left, MultiValuedValue):
-        return any(is_overlapping(val, right, ctx) for val in left.vals)
+        # Swap the operands so we decompose and de-Literal the other union too
+        return any(is_overlapping(right, val, ctx) for val in left.vals)
     return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)
 
 
