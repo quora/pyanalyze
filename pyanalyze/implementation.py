@@ -20,13 +20,13 @@ from typing import (
 import qcore
 import typing_extensions
 
+from . import runtime
 from .annotated_types import MaxLen, MinLen
 from .annotations import type_from_value
 from .error_code import ErrorCode
 from .extensions import assert_type, reveal_locals, reveal_type
 from .format_strings import parse_format_string
 from .predicates import IsAssignablePredicate
-from .runtime import is_compatible
 from .safe import hasattr_static, is_union, safe_isinstance, safe_issubclass
 from .signature import (
     ANY_SIGNATURE,
@@ -1342,7 +1342,7 @@ def _assert_is_value_impl(ctx: CallContext) -> Value:
     return KnownValue(None)
 
 
-def _is_compatible_impl(ctx: CallContext) -> Value:
+def _is_assignable_impl(ctx: CallContext) -> Value:
     typ = ctx.vars["typ"]
     if not isinstance(typ, KnownValue):
         return TypedValue(bool)
@@ -1697,8 +1697,14 @@ def get_default_argspecs() -> Dict[object, Signature]:
         Signature.make(
             [SigParameter("value"), SigParameter("typ")],
             return_annotation=TypedValue(bool),
-            impl=_is_compatible_impl,
-            callable=is_compatible,
+            impl=_is_assignable_impl,
+            callable=runtime.is_assignable,
+        ),
+        Signature.make(
+            [SigParameter("value"), SigParameter("typ")],
+            return_annotation=TypedValue(bool),
+            impl=_is_assignable_impl,
+            callable=runtime.is_compatible,  # static analysis: ignore[deprecated]
         ),
         Signature.make(
             [SigParameter("value", _POS_ONLY, annotation=TypeVarValue(T))],
