@@ -27,3 +27,38 @@ class TestUnsafeOverlap(TestNameCheckVisitorBase):
             assert x == z  # ok
             assert x == b"y"  # E: unsafe_comparison
             assert 1 == z  # E: unsafe_comparison
+
+
+class TestOverrideEq(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_simple_eq(self):
+        from typing_extensions import Literal, overload
+
+        class HasSimpleEq:
+            def __eq__(self, other: object) -> bool:
+                return self is other
+
+        class FancyEq1:
+            @overload
+            def __eq__(self, x: int) -> Literal[False]: ...
+            @overload
+            def __eq__(self, x: str) -> Literal[False]: ...
+            def __eq__(self, x: object) -> bool:
+                return False
+
+        class FancyEq2:
+            def __eq__(self, x: object, extra_arg: bool = False) -> bool:
+                return False
+
+        class FancyEq3:
+            def __eq__(self, *args: object) -> bool:
+                return False
+
+        def capybara(
+            x: HasSimpleEq, y: int, fe1: FancyEq1, fe2: FancyEq2, fe3: FancyEq3
+        ):
+            assert x == y  # E: unsafe_comparison
+            assert y == x  # E: unsafe_comparison
+            assert fe1 == y  # OK
+            assert fe2 == y  # OK
+            assert fe3 == y  # OK

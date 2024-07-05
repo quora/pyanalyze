@@ -3492,36 +3492,71 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             unite_values(*results), AndConstraint.make(constraints)
         )
 
+    def overrides_eq(self, val: Value, node: ast.AST) -> bool:
+        if isinstance(val, AnnotatedValue):
+            return self.overrides_eq(val.value, node)
+        elif isinstance(val, MultiValuedValue):
+            return any(self.overrides_eq(subval, node) for subval in val.vals)
+        else:
+            method_object = self.get_attribute(
+                Composite(val.get_type_value()),
+                "__eq__",
+                node,
+                ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
+            )
+            sig = self.signature_from_value(method_object)
+            if isinstance(sig, OverloadedSignature):
+                return True
+            elif isinstance(sig, Signature):
+                if len(sig.parameters) != 2:
+                    return True
+                param = list(sig.parameters.values())[1]
+                if param.kind in (
+                    ParameterKind.POSITIONAL_ONLY,
+                    ParameterKind.POSITIONAL_OR_KEYWORD,
+                ) and param.annotation == TypedValue(object):
+                    return False
+            return True
+
+    def check_for_unsafe_comparison(
+        self, op: ast.cmpop, lhs: Value, rhs: Value, parent_node: ast.AST
+    ) -> None:
+        if lhs == KnownNone or rhs == KnownNone:
+            return
+        if not isinstance(op, (ast.Eq, ast.NotEq, ast.Is, ast.IsNot)):
+            return
+        if is_overlapping(lhs, rhs, self):
+            return
+        if isinstance(op, (ast.Eq, ast.NotEq)) and (
+            self.overrides_eq(lhs, parent_node) or self.overrides_eq(rhs, parent_node)
+        ):
+            return
+        lhs_shown = lhs
+        rhs_shown = rhs
+        for ignored_extension in (
+            SysPlatformExtension,
+            SysVersionInfoExtension,
+            ConstraintExtension,
+            DefiniteValueExtension,
+        ):
+            lhs_shown, _ = unannotate_value(lhs_shown, ignored_extension)
+            rhs_shown, _ = unannotate_value(rhs_shown, ignored_extension)
+        self._show_error_if_checking(
+            msg=f"Comparison between objects that do not overlap: {lhs_shown} and {rhs_shown}",
+            error_code=ErrorCode.unsafe_comparison,
+            node=parent_node,
+        )
+
     def _visit_single_compare(
         self,
-        lhs_node: ast.AST,
+        lhs_node: ast.cmpop,
         lhs: Value,
         op: ast.AST,
         rhs_node: ast.AST,
         rhs: Value,
         parent_node: ast.AST,
     ) -> Value:
-        if (
-            isinstance(op, (ast.Eq, ast.NotEq, ast.Is, ast.IsNot))
-            and not is_overlapping(lhs, rhs, self)
-            and lhs != KnownNone
-            and rhs != KnownNone
-        ):
-            lhs_shown = lhs
-            rhs_shown = rhs
-            for ignored_extension in (
-                SysPlatformExtension,
-                SysVersionInfoExtension,
-                ConstraintExtension,
-                DefiniteValueExtension,
-            ):
-                lhs_shown, _ = unannotate_value(lhs_shown, ignored_extension)
-                rhs_shown, _ = unannotate_value(rhs_shown, ignored_extension)
-            self._show_error_if_checking(
-                msg=f"Comparison between objects that do not overlap: {lhs_shown} and {rhs_shown}",
-                error_code=ErrorCode.unsafe_comparison,
-                node=parent_node,
-            )
+        self.check_for_unsafe_comparison(op, lhs, rhs, parent_node)
 
         lhs_constraint = extract_constraints(lhs)
         rhs_constraint = extract_constraints(rhs)
