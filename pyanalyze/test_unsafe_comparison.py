@@ -20,6 +20,15 @@ class TestUnsafeOverlap(TestNameCheckVisitorBase):
             assert x is not None
 
     @assert_passes()
+    def test_fancy_none(self):
+        class X:
+            def __init__(self) -> None:
+                self.y = None
+
+        def capybara(x: X):
+            assert x.y == 42  # OK
+
+    @assert_passes()
     def test_union(self):
         from typing import Union
 

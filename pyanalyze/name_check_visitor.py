@@ -3531,6 +3531,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.overrides_eq(lhs, parent_node) or self.overrides_eq(rhs, parent_node)
         ):
             return
+        if KnownNone.is_assignable(lhs, self) or KnownNone.is_assignable(rhs, self):
+            return
         lhs_shown = lhs
         rhs_shown = rhs
         for ignored_extension in (
