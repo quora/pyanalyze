@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a mechanism to allow overriding the global variables in an
+  analyzed module. Use this mechanism to set the type of
+  `qcore.testing.Anything` to `Any`. (#786)
 - Rename the `is_compatible` and `get_compatibility_error` functions
   to `is_assignable` and `get_assignability_error` to align with the
   terminology in the typing spec (#785)
