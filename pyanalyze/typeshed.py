@@ -19,7 +19,6 @@ from enum import EnumMeta
 from types import GeneratorType, MethodDescriptorType, ModuleType
 from typing import (
     Any,
-    Callable,
     Dict,
     Generic,
     Iterable,
@@ -34,7 +33,7 @@ from typing import (
 
 import qcore
 import typeshed_client
-from typing_extensions import Protocol, TypedDict
+from typing_extensions import Protocol
 
 from pyanalyze import node_visitor
 from pyanalyze.functions import translate_vararg_type
@@ -306,14 +305,8 @@ class TypeshedFinder:
                 # too confusing, just hardcode it.
                 if typ is AbstractSet:
                     return [GenericValue(Collection, (TypeVarValue(T_co),))]
-                if typ is Callable or typ is collections.abc.Callable:
+                if typ is collections.abc.Callable:
                     return None
-                if typ is TypedDict:
-                    return [
-                        GenericValue(
-                            MutableMapping, [TypedValue(str), TypedValue(object)]
-                        )
-                    ]
                 # In 3.11 it's named EnumType and EnumMeta is an alias, but the
                 # stubs have it the other way around. We can't deal with that for now.
                 if typ is EnumMeta:

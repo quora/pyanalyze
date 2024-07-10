@@ -194,6 +194,7 @@ from .value import (
     KVPair,
     MultiValuedValue,
     NoReturnConstraintExtension,
+    OverlapMode,
     ReferencingValue,
     SequenceValue,
     SkipDeprecatedExtension,
@@ -215,7 +216,6 @@ from .value import (
     get_tv_map,
     is_async_iterable,
     is_iterable,
-    is_overlapping,
     is_union,
     kv_pairs_from_mapping,
     make_coro_type,
@@ -3492,46 +3492,19 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             unite_values(*results), AndConstraint.make(constraints)
         )
 
-    def overrides_eq(self, val: Value, node: ast.AST) -> bool:
-        if isinstance(val, AnnotatedValue):
-            return self.overrides_eq(val.value, node)
-        elif isinstance(val, MultiValuedValue):
-            return any(self.overrides_eq(subval, node) for subval in val.vals)
-        else:
-            method_object = self.get_attribute(
-                Composite(val.get_type_value()),
-                "__eq__",
-                node,
-                ignore_none=self.options.get_value_for(IgnoreNoneAttributes),
-            )
-            sig = self.signature_from_value(method_object)
-            if isinstance(sig, OverloadedSignature):
-                return True
-            elif isinstance(sig, Signature):
-                if len(sig.parameters) != 2:
-                    return True
-                param = list(sig.parameters.values())[1]
-                if param.kind in (
-                    ParameterKind.POSITIONAL_ONLY,
-                    ParameterKind.POSITIONAL_OR_KEYWORD,
-                ) and param.annotation == TypedValue(object):
-                    return False
-            return True
-
     def check_for_unsafe_comparison(
         self, op: ast.cmpop, lhs: Value, rhs: Value, parent_node: ast.AST
     ) -> None:
         if lhs == KnownNone or rhs == KnownNone:
             return
-        if not isinstance(op, (ast.Eq, ast.NotEq, ast.Is, ast.IsNot)):
+        if isinstance(op, (ast.Eq, ast.NotEq)):
+            mode = OverlapMode.EQ
+        elif isinstance(op, (ast.Is, ast.IsNot)):
+            mode = OverlapMode.IS
+        else:
             return
-        if is_overlapping(lhs, rhs, self):
-            return
-        if isinstance(op, (ast.Eq, ast.NotEq)) and (
-            self.overrides_eq(lhs, parent_node) or self.overrides_eq(rhs, parent_node)
-        ):
-            return
-        if KnownNone.is_assignable(lhs, self) or KnownNone.is_assignable(rhs, self):
+        error = lhs.can_overlap(rhs, self, mode)
+        if error is None:
             return
         lhs_shown = lhs
         rhs_shown = rhs
@@ -3546,14 +3519,15 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self._show_error_if_checking(
             msg=f"Comparison between objects that do not overlap: {lhs_shown} and {rhs_shown}",
             error_code=ErrorCode.unsafe_comparison,
+            detail=str(error),
             node=parent_node,
         )
 
     def _visit_single_compare(
         self,
-        lhs_node: ast.cmpop,
+        lhs_node: ast.AST,
         lhs: Value,
-        op: ast.AST,
+        op: ast.cmpop,
         rhs_node: ast.AST,
         rhs: Value,
         parent_node: ast.AST,

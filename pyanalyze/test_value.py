@@ -25,6 +25,7 @@ from .value import (
     KnownValue,
     KVPair,
     MultiValuedValue,
+    OverlapMode,
     SequenceValue,
     SubclassValue,
     TypedValue,
@@ -679,3 +680,13 @@ def test_unpack_values() -> None:
         TypedValue(int) | TypedValue(str),
         TypedValue(float),
     ]
+
+
+def test_can_overlap() -> None:
+    assert isinstance(
+        TypedValue(str).can_overlap(TypedValue(int), CTX, OverlapMode.EQ),
+        CanAssignError,
+    )
+    assert isinstance(
+        TypedValue(str).can_overlap(KnownValue(1), CTX, OverlapMode.EQ), CanAssignError
+    )

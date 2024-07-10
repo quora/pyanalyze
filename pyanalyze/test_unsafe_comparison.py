@@ -37,6 +37,22 @@ class TestUnsafeOverlap(TestNameCheckVisitorBase):
             assert x == b"y"  # E: unsafe_comparison
             assert 1 == z  # E: unsafe_comparison
 
+    @assert_passes()
+    def test_subclass_value(self):
+        def capybara(x: type, y: type[int], marker: int):
+            if marker == 0:
+                assert x == int
+            elif marker == 1:
+                assert int == x
+            elif marker == 2:
+                assert x == y
+            elif marker == 3:
+                assert y == x
+            elif marker == 4:
+                assert str == y  # E: unsafe_comparison
+            elif marker == 5:
+                assert y == str  # E: unsafe_comparison
+
 
 class TestOverrideEq(TestNameCheckVisitorBase):
     @assert_passes()
