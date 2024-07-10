@@ -54,6 +54,7 @@ from typing import (
 import asynq
 import qcore
 import typeshed_client
+from qcore.testing import Anything
 from typing_extensions import Annotated, Protocol, get_args, get_origin
 
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
@@ -630,6 +631,19 @@ def should_check_for_duplicate_values(cls: object, options: Options) -> bool:
     return True
 
 
+def _anything_to_any(obj: object) -> Optional[Value]:
+    if obj is Anything:
+        return AnyValue(AnySource.explicit)
+    return None
+
+
+class TransformGlobals(PyObjectSequenceOption[Callable[[object], Optional[Value]]]):
+    """Transform global variables."""
+
+    name = "transform_globals"
+    default_value = [_anything_to_any]
+
+
 class IgnoredTypesForAttributeChecking(PyObjectSequenceOption[type]):
     """Used in the check for object attributes that are accessed but not set. In general, the check
     will only alert about attributes that don't exist when it has visited all the base classes of
@@ -1184,6 +1198,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         self.scopes = build_stacked_scopes(
             self.module,
             simplification_limit=self.options.get_value_for(UnionSimplificationLimit),
+            options=self.options,
         )
         self.node_context = StackedContexts()
         self.asynq_checker = AsynqChecker(
@@ -5952,7 +5967,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
 
 def build_stacked_scopes(
-    module: Optional[types.ModuleType], simplification_limit: Optional[int] = None
+    module: Optional[types.ModuleType],
+    simplification_limit: Optional[int] = None,
+    *,
+    options: Options,
 ) -> StackedScopes:
     # Build a StackedScopes object.
     # Not part of stacked_scopes.py to avoid a circular dependency.
@@ -5964,7 +5982,12 @@ def build_stacked_scopes(
         for key, value in module.__dict__.items():
             val = type_from_annotations(annotations, key, globals=module.__dict__)
             if val is None:
-                val = KnownValue(value)
+                for transformer in options.get_value_for(TransformGlobals):
+                    maybe_val = transformer(value)
+                    if maybe_val is not None:
+                        val = maybe_val
+                if val is None:
+                    val = KnownValue(value)
             module_vars[key] = val
     return StackedScopes(module_vars, module, simplification_limit=simplification_limit)
 
