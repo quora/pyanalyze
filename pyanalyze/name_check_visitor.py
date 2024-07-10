@@ -50,6 +50,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from unittest.mock import ANY
 
 import asynq
 import qcore
@@ -632,7 +633,7 @@ def should_check_for_duplicate_values(cls: object, options: Options) -> bool:
 
 
 def _anything_to_any(obj: object) -> Optional[Value]:
-    if obj is Anything:
+    if obj is Anything or obj is ANY:
         return AnyValue(AnySource.explicit)
     return None
 

@@ -202,6 +202,8 @@ class TypeObject:
         return unify_bounds_maps(bounds_maps)
 
     def overrides_eq(self, self_val: Value, ctx: CanAssignContext) -> bool:
+        if self.typ is type(None):
+            return False
         member = ctx.get_attribute_from_value(self_val, "__eq__")
         sig = ctx.signature_from_value(member)
         if isinstance(sig, BoundMethodSignature):

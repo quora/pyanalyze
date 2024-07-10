@@ -53,6 +53,13 @@ class TestUnsafeOverlap(TestNameCheckVisitorBase):
             elif marker == 5:
                 assert y == str  # E: unsafe_comparison
 
+    @assert_passes()
+    def test_mock_any(self):
+        from unittest.mock import ANY
+
+        def capybara(x: int):
+            assert x == ANY
+
 
 class TestOverrideEq(TestNameCheckVisitorBase):
     @assert_passes()
