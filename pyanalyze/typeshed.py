@@ -16,6 +16,7 @@ from collections.abc import Collection, MutableMapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field, replace
 from enum import EnumMeta
+from pathlib import Path
 from types import GeneratorType, MethodDescriptorType, ModuleType
 from typing import (
     Any,
@@ -184,7 +185,9 @@ class TypeshedFinder:
         verbose: bool = False,
     ) -> "TypeshedFinder":
         extra_paths = options.get_value_for(StubPath)
-        ctx = typeshed_client.get_search_context()
+        ctx = typeshed_client.get_search_context(
+            search_path=[Path(p) for p in sys.path]
+        )
         ctx = typeshed_client.get_search_context(
             search_path=[*ctx.search_path, *extra_paths]
         )
