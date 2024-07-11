@@ -53,13 +53,7 @@ import pyanalyze
 from pyanalyze.error_code import Error
 from pyanalyze.extensions import CustomCheck, ExternalType
 
-from .safe import (
-    all_of_type,
-    get_fully_qualified_name,
-    safe_equals,
-    safe_isinstance,
-    safe_issubclass,
-)
+from .safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
