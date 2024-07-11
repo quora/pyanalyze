@@ -156,7 +156,7 @@ class Value:
             # allow overlap with Never
             if other is NO_RETURN_VALUE:
                 return None
-            errors: list[CanAssignError] = []
+            errors: List[CanAssignError] = []
             for val in other.vals:
                 maybe_error = self.can_overlap(val, ctx, mode)
                 if maybe_error is None:
@@ -2034,7 +2034,7 @@ class MultiValuedValue(Value):
     ) -> Optional[CanAssignError]:
         if not self.vals:
             return None
-        errors: list[CanAssignError] = []
+        errors: List[CanAssignError] = []
         for val in self.vals:
             error = val.can_overlap(other, ctx, mode)
             if error is None:

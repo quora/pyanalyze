@@ -39,7 +39,9 @@ class TestUnsafeOverlap(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_subclass_value(self):
-        def capybara(x: type, y: type[int], marker: int):
+        from typing import Type
+
+        def capybara(x: type, y: Type[int], marker: int):
             if marker == 0:
                 assert x == int
             elif marker == 1:
