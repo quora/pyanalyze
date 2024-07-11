@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add new error code `unsafe_comparison`, which gets triggered
+  when two values are compared that can never be equal. (#784)
 - Improve representation of known module, function, and type objects
   in error messages (#788)
 - Add a mechanism to allow overriding the global variables in an

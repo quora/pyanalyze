@@ -50,6 +50,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from unittest.mock import ANY
 
 import asynq
 import qcore
@@ -195,10 +196,13 @@ from .value import (
     KVPair,
     MultiValuedValue,
     NoReturnConstraintExtension,
+    OverlapMode,
     ReferencingValue,
     SequenceValue,
     SkipDeprecatedExtension,
     SubclassValue,
+    SysPlatformExtension,
+    SysVersionInfoExtension,
     TypeAlias,
     TypeAliasValue,
     TypedValue,
@@ -629,7 +633,7 @@ def should_check_for_duplicate_values(cls: object, options: Options) -> bool:
 
 
 def _anything_to_any(obj: object) -> Optional[Value]:
-    if obj is Anything:
+    if obj is Anything or obj is ANY:
         return AnyValue(AnySource.explicit)
     return None
 
@@ -3504,15 +3508,50 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             unite_values(*results), AndConstraint.make(constraints)
         )
 
+    def check_for_unsafe_comparison(
+        self, op: ast.cmpop, lhs: Value, rhs: Value, parent_node: ast.AST
+    ) -> None:
+        if lhs == KnownNone or rhs == KnownNone:
+            return
+        if isinstance(op, (ast.Eq, ast.NotEq)):
+            mode = OverlapMode.EQ
+        elif isinstance(op, (ast.Is, ast.IsNot)):
+            mode = OverlapMode.IS
+        else:
+            return
+        if KnownNone.is_assignable(lhs, self) or KnownNone.is_assignable(rhs, self):
+            return
+        error = lhs.can_overlap(rhs, self, mode)
+        if error is None:
+            return
+        lhs_shown = lhs
+        rhs_shown = rhs
+        for ignored_extension in (
+            SysPlatformExtension,
+            SysVersionInfoExtension,
+            ConstraintExtension,
+            DefiniteValueExtension,
+        ):
+            lhs_shown, _ = unannotate_value(lhs_shown, ignored_extension)
+            rhs_shown, _ = unannotate_value(rhs_shown, ignored_extension)
+        self._show_error_if_checking(
+            msg=f"Comparison between objects that do not overlap: {lhs_shown} and {rhs_shown}",
+            error_code=ErrorCode.unsafe_comparison,
+            detail=str(error),
+            node=parent_node,
+        )
+
     def _visit_single_compare(
         self,
         lhs_node: ast.AST,
         lhs: Value,
-        op: ast.AST,
+        op: ast.cmpop,
         rhs_node: ast.AST,
         rhs: Value,
         parent_node: ast.AST,
     ) -> Value:
+        self.check_for_unsafe_comparison(op, lhs, rhs, parent_node)
+
         lhs_constraint = extract_constraints(lhs)
         rhs_constraint = extract_constraints(rhs)
         if isinstance(rhs, AnnotatedValue):

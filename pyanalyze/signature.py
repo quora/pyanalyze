@@ -458,7 +458,7 @@ class SigParameter:
 
     def __post_init__(self) -> None:
         # backward compatibility
-        if self.default is EMPTY:
+        if self.default is EMPTY:  # static analysis: ignore[unsafe_comparison]
             object.__setattr__(self, "default", None)
 
     def substitute_typevars(self, typevars: TypeVarMap) -> "SigParameter":
