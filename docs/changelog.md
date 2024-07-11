@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add new error code `unsafe_comparison`, which gets triggered
+  when two values are compared that can never be equal. (#784)
 - Add a mechanism to allow overriding the global variables in an
   analyzed module. Use this mechanism to set the type of
   `qcore.testing.Anything` to `Any`. (#786)
