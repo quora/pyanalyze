@@ -615,9 +615,9 @@ class KnownValue(Value):
             if self.val is other.val:
                 return None
             if mode is OverlapMode.IS:
-                if type(self.val) is type(other.val) and safe_equals(
-                    self.val, other.val
-                ):
+                # Allow different literals of the same type, otherwise
+                # we get lots of false positives.
+                if type(self.val) is type(other.val):
                     return None
                 return CanAssignError(f"{self} and {other} cannot overlap")
             elif mode is OverlapMode.MATCH:

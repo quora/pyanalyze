@@ -88,6 +88,17 @@ class TestUnsafeOverlap(TestNameCheckVisitorBase):
         def f(x: List[int], y: List[None]):
             assert x == y  # E: unsafe_comparison
 
+    @assert_passes()
+    def test_allow_is_with_literals(self):
+        from typing_extensions import Literal
+
+        def f(x: Literal[True], y: object):
+            assert True is False
+            if y == 0:
+                assert x is True
+            else:
+                assert x is False
+
 
 class TestOverrideEq(TestNameCheckVisitorBase):
     @assert_passes()
