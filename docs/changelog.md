@@ -5,6 +5,14 @@
 - Change implementation of implicit int/float and float/complex promotion
   in accordance with https://github.com/python/typing/pull/1748. Now,
   annotations of `float` implicitly mean `float | int`. (#778)
+- Improve representation of known module, function, and type objects
+  in error messages (#788)
+- Add a mechanism to allow overriding the global variables in an
+  analyzed module. Use this mechanism to set the type of
+  `qcore.testing.Anything` to `Any`. (#786)
+- Rename the `is_compatible` and `get_compatibility_error` functions
+  to `is_assignable` and `get_assignability_error` to align with the
+  terminology in the typing spec (#785)
 - Fix binary operations involving unions wrapped in `Annotated` (#779)
 - Fix various issues with Python 3.13 and 3.14 support (#773)
 - Improve `ParamSpec` support (#772, #777)

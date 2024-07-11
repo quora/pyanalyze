@@ -62,8 +62,16 @@ def test_any_value() -> None:
 def test_known_value() -> None:
     val = KnownValue(3)
     assert 3 == val.val
-    assert "Literal[3]" == str(val)
-    assert "Literal['']" == str(KnownValue(""))
+    assert str(val) == "Literal[3]"
+    assert str(KnownValue("")) == "Literal['']"
+    assert str(KnownValue(None)) == "None"
+    assert str(KnownValue(str)) == "type 'str'"
+    assert str(KnownValue(KnownValue)) == "type 'pyanalyze.value.KnownValue'"
+    assert (
+        str(KnownValue(test_known_value))
+        == "function 'pyanalyze.test_value.test_known_value'"
+    )
+    assert str(KnownValue(ast)) == "module 'ast'"
     assert val.is_type(int)
     assert not val.is_type(str)
 

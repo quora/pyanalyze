@@ -1,6 +1,7 @@
 # static analysis: ignore
 from .error_code import ErrorCode
 from .name_check_visitor import build_stacked_scopes
+from .options import Options
 from .stacked_scopes import ScopeType, uniq_chain
 from .test_name_check_visitor import TestNameCheckVisitorBase
 from .test_node_visitor import assert_passes, skip_before
@@ -29,7 +30,7 @@ class Module:
 
 class TestStackedScopes:
     def setup_method(self):
-        self.scopes = build_stacked_scopes(Module)
+        self.scopes = build_stacked_scopes(Module, options=Options({}))
 
     def test_scope_type(self):
         assert ScopeType.module_scope == self.scopes.scope_type()

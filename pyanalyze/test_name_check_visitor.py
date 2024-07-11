@@ -921,6 +921,13 @@ class TestImports(TestNameCheckVisitorBase):
 
             assert_is_value(assert_eq, KnownValue(_assert_eq))
 
+    @assert_passes()
+    def test_transform_globals(self):
+        from qcore.testing import Anything
+
+        def f():
+            assert_is_value(Anything, AnyValue(AnySource.explicit))
+
 
 class TestComprehensions(TestNameCheckVisitorBase):
     @assert_passes()
