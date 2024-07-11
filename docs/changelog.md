@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improve representation of known module, function, and type objects
+  in error messages (#788)
 - Add a mechanism to allow overriding the global variables in an
   analyzed module. Use this mechanism to set the type of
   `qcore.testing.Anything` to `Any`. (#786)
