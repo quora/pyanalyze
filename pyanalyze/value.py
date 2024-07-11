@@ -607,7 +607,7 @@ class KnownValue(Value):
         return val.simplify()
 
 
-def get_fully_qualified_name(obj: Union[FunctionType, type]):
+def get_fully_qualified_name(obj: Union[FunctionType, type]) -> str:
     mod = getattr(obj, "__module__", None)
     if mod == "builtins":
         mod = None
