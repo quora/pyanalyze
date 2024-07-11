@@ -3519,6 +3519,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             mode = OverlapMode.IS
         else:
             return
+        if KnownNone.is_assignable(lhs, self) or KnownNone.is_assignable(rhs, self):
+            return
         error = lhs.can_overlap(rhs, self, mode)
         if error is None:
             return

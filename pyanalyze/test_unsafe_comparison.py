@@ -60,6 +60,34 @@ class TestUnsafeOverlap(TestNameCheckVisitorBase):
         def capybara(x: int):
             assert x == ANY
 
+    @assert_passes()
+    def test_asynq(self):
+        from asynq import AsyncTask, asynq
+
+        from pyanalyze.value import (
+            AsyncTaskIncompleteValue,
+            TypedValue,
+            assert_is_value,
+        )
+
+        @asynq()
+        def f() -> int:
+            return 42
+
+        @asynq()
+        def caller():
+            x = f.asynq()
+            assert_is_value(x, AsyncTaskIncompleteValue(AsyncTask, TypedValue(int)))
+            if x == 42:  # E: unsafe_comparison
+                print("yay")
+
+    @assert_passes()
+    def test_inner_none(self):
+        from typing import List
+
+        def f(x: List[int], y: List[None]):
+            assert x == y  # E: unsafe_comparison
+
 
 class TestOverrideEq(TestNameCheckVisitorBase):
     @assert_passes()
