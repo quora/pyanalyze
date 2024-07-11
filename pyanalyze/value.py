@@ -26,7 +26,7 @@ import textwrap
 from collections import deque
 from dataclasses import InitVar, dataclass, field
 from itertools import chain
-from types import FunctionType
+from types import FunctionType, ModuleType
 from typing import (
     Any,
     Callable,
@@ -53,7 +53,13 @@ import pyanalyze
 from pyanalyze.error_code import Error
 from pyanalyze.extensions import CustomCheck, ExternalType
 
-from .safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
+from .safe import (
+    all_of_type,
+    get_fully_qualified_name,
+    safe_equals,
+    safe_isinstance,
+    safe_issubclass,
+)
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
@@ -583,6 +589,12 @@ class KnownValue(Value):
     def __str__(self) -> str:
         if self.val is None:
             return "None"
+        elif isinstance(self.val, ModuleType):
+            return f"module {self.val.__name__!r}"
+        elif isinstance(self.val, FunctionType):
+            return f"function {get_fully_qualified_name(self.val)!r}"
+        elif isinstance(self.val, type):
+            return f"type {get_fully_qualified_name(self.val)!r}"
         else:
             return f"Literal[{self.val!r}]"
 
@@ -599,6 +611,18 @@ class KnownValue(Value):
                 return self
             return TypedValue(type(val.val))
         return val.simplify()
+
+
+def get_fully_qualified_name(obj: Union[FunctionType, type]):
+    mod = getattr(obj, "__module__", None)
+    if mod == "builtins":
+        mod = None
+    name = getattr(obj, "__qualname__", None)
+    if name is None:
+        return repr(obj)
+    if mod:
+        return f"{mod}.{name}"
+    return name
 
 
 @dataclass(frozen=True)
