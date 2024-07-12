@@ -568,7 +568,7 @@ def make_type_var_value(tv: TypeVarLike, ctx: Context) -> TypeVarValue:
         )
     else:
         constraints = ()
-    if getattr(tv, "__default__", NoDefault) is not NoDefault:
+    if hasattr(tv, "__default__") and tv.__default__ is not NoDefault:
         default = _type_from_runtime(tv.__default__, ctx)
     else:
         default = None
