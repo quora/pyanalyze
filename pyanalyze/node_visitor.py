@@ -633,7 +633,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             ), "Must specify an error message or an error code"
             e = self.get_description_for_error_code(error_code)
 
-        if node:
+        if node and hasattr(node, "lineno") and hasattr(node, "col_offset"):
             lineno = node.lineno
             col_offset = node.col_offset
         else:

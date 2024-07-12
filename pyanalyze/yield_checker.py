@@ -62,7 +62,7 @@ class YieldInfo:
     def get_indentation(self) -> int:
         return get_indentation(self.lines[self.statement_node.lineno - 1])
 
-    def target_and_value(self) -> Tuple[List[ast.AST], List[ast.AST]]:
+    def target_and_value(self) -> Tuple[List[ast.expr], List[ast.expr]]:
         """Returns a pair of a list of target nodes and a list of value nodes."""
         assert self.yield_node.value is not None
         if isinstance(self.statement_node, ast.Assign):
@@ -590,7 +590,7 @@ class YieldChecker:
         )
         return Replacement(lines_to_delete, [new_code])
 
-    def _indentation_of_node(self, node: ast.AST) -> int:
+    def _indentation_of_node(self, node: ast.stmt) -> int:
         """Calculate the indentation of an AST node."""
         line = self.visitor._lines()[node.lineno - 1]
         # assumes that there is at least one space in the beginning which should be the case
