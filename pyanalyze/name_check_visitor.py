@@ -3543,10 +3543,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _visit_single_compare(
         self,
-        lhs_node: ast.AST,
+        lhs_node: ast.expr,
         lhs: Value,
         op: ast.cmpop,
-        rhs_node: ast.AST,
+        rhs_node: ast.expr,
         rhs: Value,
         parent_node: ast.AST,
     ) -> Value:
@@ -3733,10 +3733,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _visit_binop_internal(
         self,
-        left_node: ast.AST,
+        left_node: ast.expr,
         left_composite: Composite,
         op: ast.AST,
-        right_node: ast.AST,
+        right_node: ast.expr,
         right_composite: Composite,
         source_node: ast.AST,
         is_inplace: bool = False,

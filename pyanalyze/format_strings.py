@@ -395,11 +395,11 @@ class PercentFormatString:
 def check_string_format(
     node: ast.AST,
     format_str: Union[str, bytes],
-    args_node: ast.AST,
+    args_node: ast.expr,
     args: Value,
     on_error: Callable[..., None],
     ctx: CanAssignContext,
-) -> Tuple[Value, Optional[ast.AST]]:
+) -> Tuple[Value, Optional[ast.expr]]:
     """Checks that arguments to %-formatted strings are correct."""
     if isinstance(format_str, bytes):
         fs = PercentFormatString.from_bytes_pattern(format_str)
@@ -413,8 +413,8 @@ def check_string_format(
 
 
 def maybe_replace_with_fstring(
-    fs: PercentFormatString, args_node: ast.AST
-) -> Optional[ast.AST]:
+    fs: PercentFormatString, args_node: ast.expr
+) -> Optional[ast.expr]:
     """If appropriate, emits an error to replace this % format with an f-string."""
     # there are no bytes f-strings
     if isinstance(fs.pattern, bytes):

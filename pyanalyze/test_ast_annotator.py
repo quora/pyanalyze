@@ -69,6 +69,7 @@ def test_everything_annotated() -> None:
         for node in ast.walk(tree):
             if (
                 hasattr(node, "lineno")
+                and hasattr(node, "col_offset")
                 and not hasattr(node, "inferred_value")
                 and not isinstance(node, (ast.keyword, ast.arg))
             ):
