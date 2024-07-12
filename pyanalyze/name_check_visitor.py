@@ -4834,20 +4834,28 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return set_value
 
         def visit_TypeVar(self, node: ast.TypeVar) -> Value:
-            bound = constraints = None
+            bound = constraints = default = None
             if node.bound is not None:
                 if isinstance(node.bound, ast.Tuple):
                     constraints = [self.visit(elt) for elt in node.bound.elts]
                 else:
                     bound = self.visit(node.bound)
+            if sys.version_info >= (3, 13):
+                if node.default is not None:
+                    default = self.visit(node.default)
             tv = TypeVar(node.name)
             typevar = TypeVarValue(
                 tv,
-                type_from_value(bound, self, node) if bound is not None else None,
-                (
+                bound=type_from_value(bound, self, node) if bound is not None else None,
+                constraints=(
                     tuple(type_from_value(c, self, node) for c in constraints)
                     if constraints is not None
                     else ()
+                ),
+                default=(
+                    type_from_value(default, self, node)
+                    if default is not None
+                    else None
                 ),
             )
             self._set_name_in_scope(node.name, node, typevar)
