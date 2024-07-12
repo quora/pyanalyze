@@ -187,6 +187,7 @@ class YieldChecker:
     ) -> Iterator[None]:
         assert current_statement is not None
         if self.visitor.async_kind == AsyncFunctionKind.normal:
+            assert self.visitor.current_statement is not None
             self._check_for_duplicate_yields(node, self.visitor.current_statement)
 
         in_non_async_yield = self.visitor.async_kind == AsyncFunctionKind.non_async
@@ -293,7 +294,7 @@ class YieldChecker:
                 self.show_unnecessary_yield_error(unused, node, current_statement)
 
     def _check_for_duplicate_yields(
-        self, node: ast.Yield, current_statement: ast.AST
+        self, node: ast.Yield, current_statement: ast.stmt
     ) -> None:
         if not isinstance(node.value, ast.Tuple) or len(node.value.elts) < 2:
             return

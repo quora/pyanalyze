@@ -1086,6 +1086,8 @@ class ReplaceNodeTransformer(NodeTransformer):
 class ReplacingNodeVisitor(BaseNodeVisitor):
     """A NodeVisitor that enables replacing AST nodes directly in errors."""
 
+    current_statement: Optional[ast.stmt]
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.current_statement = None
