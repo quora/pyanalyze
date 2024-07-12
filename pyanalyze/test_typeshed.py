@@ -576,13 +576,14 @@ class TestGetGenericBases:
 
     def test_context_manager(self):
         int_tv = TypedValue(int)
+        missing = AnyValue(AnySource.generic_argument)
         self.check(
-            {contextlib.AbstractContextManager: [int_tv]},
+            {contextlib.AbstractContextManager: [int_tv, missing]},
             contextlib.AbstractContextManager,
             [int_tv],
         )
         self.check(
-            {contextlib.AbstractAsyncContextManager: [int_tv]},
+            {contextlib.AbstractAsyncContextManager: [int_tv, missing]},
             contextlib.AbstractAsyncContextManager,
             [int_tv],
         )

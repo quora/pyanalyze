@@ -3919,9 +3919,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Indexing
 
-    def visit_Ellipsis(self, node: ast.Ellipsis) -> Value:
-        return KnownValue(Ellipsis)
-
     def visit_Slice(self, node: ast.Slice) -> Value:
         lower = self.visit(node.lower) if node.lower is not None else None
         upper = self.visit(node.upper) if node.upper is not None else None
