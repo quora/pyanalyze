@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Fix crash when Pydantic 1 is installed (#793)
+- Fix error on use of TypeVar defaults in stubs (PEP 696). The
+  default is still ignored, but now the TypeVar is treated as
+  if it has no default. (#791)
 - Add new error code `unsafe_comparison`, which gets triggered
   when two values are compared that can never be equal. (#784)
 - Improve representation of known module, function, and type objects
