@@ -273,6 +273,14 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             two_pos_only(x=1)  # E: incompatible_call
             two_pos_only(1, y="x")  # E: incompatible_call
 
+    @assert_passes()
+    def test_typevar_with_default(self):
+        def capybara(x: int):
+            from _pyanalyze_tests.typevar import f
+            from typing_extensions import assert_type
+
+            assert_type(f(x), int)
+
     def test_typeddict(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.typeddict"
