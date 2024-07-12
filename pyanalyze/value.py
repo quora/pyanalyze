@@ -2189,6 +2189,7 @@ class TypeVarValue(Value):
 
     typevar: TypeVarLike
     bound: Optional[Value] = None
+    default: Optional[Value] = None  # unsupported
     constraints: Sequence[Value] = ()
     is_paramspec: bool = False
     is_typevartuple: bool = False  # unsupported
