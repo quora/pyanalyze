@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix crash when Pydantic 1 is installed (#793)
 - Add new error code `unsafe_comparison`, which gets triggered
   when two values are compared that can never be equal. (#784)
 - Improve representation of known module, function, and type objects

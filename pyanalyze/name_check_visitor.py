@@ -6082,6 +6082,9 @@ else:
     def _is_safe_pydantic_class(typ: type) -> bool:
         if not issubclass(typ, BaseModel):
             return False
+        # Pydantic 1 is unsupported but we shouldn't crash
+        if not safe_hasattr(typ, "model_config"):
+            return False
         # Pydantic classes have a __getattr__ that looks at two fields,
         # __private_attributes__ and __pydantic_extra__. The latter is
         # used only if this config is set. The former doesn't seem to have
