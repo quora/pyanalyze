@@ -281,6 +281,19 @@ class TestBundledStubs(TestNameCheckVisitorBase):
 
             assert_type(f(x), int)
 
+    @assert_passes()
+    def test_typing_extensions_paramspec(self):
+        def some_func(x: int) -> str:
+            return str(x)
+
+        def capybara(x: int):
+            from _pyanalyze_tests.paramspec import f, g
+            from typing_extensions import assert_type
+
+            assert_type(f(x), int)
+            assert_type(g(some_func, x), str)
+            g(some_func, "not an int")  # TODO should error
+
     def test_typeddict(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.typeddict"
