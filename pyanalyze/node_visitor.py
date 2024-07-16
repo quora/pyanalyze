@@ -633,7 +633,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             ), "Must specify an error message or an error code"
             e = self.get_description_for_error_code(error_code)
 
-        if node:
+        if node and hasattr(node, "lineno") and hasattr(node, "col_offset"):
             lineno = node.lineno
             col_offset = node.col_offset
         else:
@@ -1085,6 +1085,8 @@ class ReplaceNodeTransformer(NodeTransformer):
 
 class ReplacingNodeVisitor(BaseNodeVisitor):
     """A NodeVisitor that enables replacing AST nodes directly in errors."""
+
+    current_statement: Optional[ast.stmt]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

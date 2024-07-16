@@ -4,10 +4,18 @@ An object that represents a type.
 
 """
 
+import collections.abc
 import inspect
 from dataclasses import dataclass, field
-from typing import Container, Dict, Sequence, Set, Union
+from typing import Callable, Container, Dict, Sequence, Set, Union, cast
 from unittest import mock
+
+from pyanalyze.signature import (
+    BoundMethodSignature,
+    OverloadedSignature,
+    ParameterKind,
+    Signature,
+)
 
 from .safe import safe_in, safe_isinstance, safe_issubclass
 from .value import (
@@ -186,12 +194,35 @@ class TypeObject:
             bounds_maps.append(can_assign)
         return unify_bounds_maps(bounds_maps)
 
+    def overrides_eq(self, self_val: Value, ctx: CanAssignContext) -> bool:
+        if self.typ is type(None):
+            return False
+        member = ctx.get_attribute_from_value(self_val, "__eq__")
+        sig = ctx.signature_from_value(member)
+        if isinstance(sig, BoundMethodSignature):
+            sig = sig.signature
+        if isinstance(sig, OverloadedSignature):
+            return True
+        elif isinstance(sig, Signature):
+            if len(sig.parameters) != 2:
+                return True
+            param = list(sig.parameters.values())[1]
+            if param.kind in (
+                ParameterKind.POSITIONAL_ONLY,
+                ParameterKind.POSITIONAL_OR_KEYWORD,
+            ) and param.annotation == TypedValue(object):
+                return False
+        return True
+
     def is_instance(self, obj: object) -> bool:
         """Whether obj is an instance of this type."""
         return safe_isinstance(obj, self.typ)
 
     def is_exactly(self, types: Container[type]) -> bool:
         return self.typ in types
+
+    def can_be_unbound_method(self) -> bool:
+        return self.is_exactly({cast(type, Callable), collections.abc.Callable, object})
 
     def is_metatype_of(self, other: "TypeObject") -> bool:
         if isinstance(self.typ, type) and isinstance(other.typ, type):

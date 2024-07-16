@@ -5,6 +5,13 @@
 - Change implementation of implicit int/float and float/complex promotion
   in accordance with https://github.com/python/typing/pull/1748. Now,
   annotations of `float` implicitly mean `float | int`. (#778)
+- Fix crash on some occurrences of `ParamSpec` in stub files (#797)
+- Fix crash when Pydantic 1 is installed (#793)
+- Fix error on use of TypeVar defaults in stubs (PEP 696). The
+  default is still ignored, but now the TypeVar is treated as
+  if it has no default. (#791)
+- Add new error code `unsafe_comparison`, which gets triggered
+  when two values are compared that can never be equal. (#784)
 - Improve representation of known module, function, and type objects
   in error messages (#788)
 - Add a mechanism to allow overriding the global variables in an

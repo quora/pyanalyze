@@ -257,7 +257,7 @@ class TestCompare(TestNameCheckVisitorBase):
     @assert_passes()
     def test_failing_eq(self):
         class FlakyCapybara:
-            def __eq__(self, other: object) -> bool:
+            def __eq__(self, other: int) -> bool:
                 raise IndentationError
 
         fc = FlakyCapybara()

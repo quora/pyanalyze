@@ -50,6 +50,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from unittest.mock import ANY
 
 import asynq
 import qcore
@@ -195,10 +196,13 @@ from .value import (
     KVPair,
     MultiValuedValue,
     NoReturnConstraintExtension,
+    OverlapMode,
     ReferencingValue,
     SequenceValue,
     SkipDeprecatedExtension,
     SubclassValue,
+    SysPlatformExtension,
+    SysVersionInfoExtension,
     TypeAlias,
     TypeAliasValue,
     TypedValue,
@@ -629,7 +633,7 @@ def should_check_for_duplicate_values(cls: object, options: Options) -> bool:
 
 
 def _anything_to_any(obj: object) -> Optional[Value]:
-    if obj is Anything:
+    if obj is Anything or obj is ANY:
         return AnyValue(AnySource.explicit)
     return None
 
@@ -3504,15 +3508,50 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             unite_values(*results), AndConstraint.make(constraints)
         )
 
+    def check_for_unsafe_comparison(
+        self, op: ast.cmpop, lhs: Value, rhs: Value, parent_node: ast.AST
+    ) -> None:
+        if lhs == KnownNone or rhs == KnownNone:
+            return
+        if isinstance(op, (ast.Eq, ast.NotEq)):
+            mode = OverlapMode.EQ
+        elif isinstance(op, (ast.Is, ast.IsNot)):
+            mode = OverlapMode.IS
+        else:
+            return
+        if KnownNone.is_assignable(lhs, self) or KnownNone.is_assignable(rhs, self):
+            return
+        error = lhs.can_overlap(rhs, self, mode)
+        if error is None:
+            return
+        lhs_shown = lhs
+        rhs_shown = rhs
+        for ignored_extension in (
+            SysPlatformExtension,
+            SysVersionInfoExtension,
+            ConstraintExtension,
+            DefiniteValueExtension,
+        ):
+            lhs_shown, _ = unannotate_value(lhs_shown, ignored_extension)
+            rhs_shown, _ = unannotate_value(rhs_shown, ignored_extension)
+        self._show_error_if_checking(
+            msg=f"Comparison between objects that do not overlap: {lhs_shown} and {rhs_shown}",
+            error_code=ErrorCode.unsafe_comparison,
+            detail=str(error),
+            node=parent_node,
+        )
+
     def _visit_single_compare(
         self,
-        lhs_node: ast.AST,
+        lhs_node: ast.expr,
         lhs: Value,
-        op: ast.AST,
-        rhs_node: ast.AST,
+        op: ast.cmpop,
+        rhs_node: ast.expr,
         rhs: Value,
         parent_node: ast.AST,
     ) -> Value:
+        self.check_for_unsafe_comparison(op, lhs, rhs, parent_node)
+
         lhs_constraint = extract_constraints(lhs)
         rhs_constraint = extract_constraints(rhs)
         if isinstance(rhs, AnnotatedValue):
@@ -3694,10 +3733,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _visit_binop_internal(
         self,
-        left_node: ast.AST,
+        left_node: ast.expr,
         left_composite: Composite,
         op: ast.AST,
-        right_node: ast.AST,
+        right_node: ast.expr,
         right_composite: Composite,
         source_node: ast.AST,
         is_inplace: bool = False,
@@ -3879,9 +3918,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return left_result
 
     # Indexing
-
-    def visit_Ellipsis(self, node: ast.Ellipsis) -> Value:
-        return KnownValue(Ellipsis)
 
     def visit_Slice(self, node: ast.Slice) -> Value:
         lower = self.visit(node.lower) if node.lower is not None else None
@@ -4795,20 +4831,28 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return set_value
 
         def visit_TypeVar(self, node: ast.TypeVar) -> Value:
-            bound = constraints = None
+            bound = constraints = default = None
             if node.bound is not None:
                 if isinstance(node.bound, ast.Tuple):
                     constraints = [self.visit(elt) for elt in node.bound.elts]
                 else:
                     bound = self.visit(node.bound)
+            if sys.version_info >= (3, 13):
+                if node.default is not None:
+                    default = self.visit(node.default)
             tv = TypeVar(node.name)
             typevar = TypeVarValue(
                 tv,
-                type_from_value(bound, self, node) if bound is not None else None,
-                (
+                bound=type_from_value(bound, self, node) if bound is not None else None,
+                constraints=(
                     tuple(type_from_value(c, self, node) for c in constraints)
                     if constraints is not None
                     else ()
+                ),
+                default=(
+                    type_from_value(default, self, node)
+                    if default is not None
+                    else None
                 ),
             )
             self._set_name_in_scope(node.name, node, typevar)
@@ -6042,6 +6086,9 @@ else:
 
     def _is_safe_pydantic_class(typ: type) -> bool:
         if not issubclass(typ, BaseModel):
+            return False
+        # Pydantic 1 is unsupported but we shouldn't crash
+        if not safe_hasattr(typ, "model_config"):
             return False
         # Pydantic classes have a __getattr__ that looks at two fields,
         # __private_attributes__ and __pydantic_extra__. The latter is

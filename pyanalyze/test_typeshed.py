@@ -273,6 +273,27 @@ class TestBundledStubs(TestNameCheckVisitorBase):
             two_pos_only(x=1)  # E: incompatible_call
             two_pos_only(1, y="x")  # E: incompatible_call
 
+    @assert_passes()
+    def test_typevar_with_default(self):
+        def capybara(x: int):
+            from _pyanalyze_tests.typevar import f
+            from typing_extensions import assert_type
+
+            assert_type(f(x), int)
+
+    @assert_passes()
+    def test_typing_extensions_paramspec(self):
+        def some_func(x: int) -> str:
+            return str(x)
+
+        def capybara(x: int):
+            from _pyanalyze_tests.paramspec import f, g
+            from typing_extensions import assert_type
+
+            assert_type(f(x), int)
+            assert_type(g(some_func, x), str)
+            g(some_func, "not an int")  # TODO should error
+
     def test_typeddict(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
         mod = "_pyanalyze_tests.typeddict"
@@ -568,13 +589,14 @@ class TestGetGenericBases:
 
     def test_context_manager(self):
         int_tv = TypedValue(int)
+        missing = AnyValue(AnySource.generic_argument)
         self.check(
-            {contextlib.AbstractContextManager: [int_tv]},
+            {contextlib.AbstractContextManager: [int_tv, missing]},
             contextlib.AbstractContextManager,
             [int_tv],
         )
         self.check(
-            {contextlib.AbstractAsyncContextManager: [int_tv]},
+            {contextlib.AbstractAsyncContextManager: [int_tv, missing]},
             contextlib.AbstractAsyncContextManager,
             [int_tv],
         )

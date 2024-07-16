@@ -53,12 +53,12 @@ from .value import (
     DictIncompleteValue,
     KnownValue,
     KVPair,
+    OverlapMode,
     SequenceValue,
     SubclassValue,
     TypedValue,
     Value,
     flatten_values,
-    is_overlapping,
     kv_pairs_from_mapping,
     replace_known_sequence_value,
     unannotate,
@@ -423,12 +423,16 @@ class PatmaVisitor(ast.NodeVisitor):
         return Constraint(varname, typ, True, value)
 
     def check_impossible_pattern(self, node: ast.AST, value: Value) -> None:
-        if not is_overlapping(self.visitor.match_subject.value, value, self.visitor):
+        error = self.visitor.match_subject.value.can_overlap(
+            value, self.visitor, OverlapMode.MATCH
+        )
+        if error is not None:
             self.visitor.show_error(
                 node,
                 f"Impossible pattern: {self.visitor.match_subject.value} can never"
                 f" be {value}",
                 ErrorCode.impossible_pattern,
+                detail=str(error),
             )
 
 
@@ -475,7 +479,8 @@ def get_value_from_kv_pairs(
                     continue
                 elif is_required:
                     covered_keys.add(my_key)
-        if is_overlapping(key, pair.key, ctx):
+        maybe_error = key.can_overlap(pair.key, ctx, OverlapMode.MATCH)
+        if maybe_error is None:
             possible_values.append(pair.value)
             new_optional_pairs.add(pair)
     if not possible_values:

@@ -47,7 +47,9 @@ def get_indentation(line: str) -> int:
     return len(line) - len(line.lstrip())
 
 
-def get_line_range_for_node(node: ast.AST, lines: List[str]) -> List[int]:
+def get_line_range_for_node(
+    node: Union[ast.stmt, ast.expr], lines: List[str]
+) -> List[int]:
     """Returns the lines taken up by a Python ast node.
 
     lines is a list of code lines for the file the node came from.

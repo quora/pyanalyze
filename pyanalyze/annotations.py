@@ -50,7 +50,14 @@ from typing import (
 
 import qcore
 import typing_extensions
-from typing_extensions import Literal, ParamSpec, TypedDict, get_args, get_origin
+from typing_extensions import (
+    Literal,
+    NoDefault,
+    ParamSpec,
+    TypedDict,
+    get_args,
+    get_origin,
+)
 
 from pyanalyze.annotated_types import get_annotated_types_extension
 
@@ -550,18 +557,24 @@ def _type_from_runtime(
 def make_type_var_value(tv: TypeVarLike, ctx: Context) -> TypeVarValue:
     if (
         isinstance(tv, (TypeVar, typing_extensions.TypeVar))
-        and tv.__bound__ is not None
+        and getattr(tv, "__bound__", None) is not None
     ):
         bound = _type_from_runtime(tv.__bound__, ctx)
     else:
         bound = None
-    if isinstance(tv, (TypeVar, typing_extensions.TypeVar)) and tv.__constraints__:
+    if isinstance(tv, (TypeVar, typing_extensions.TypeVar)) and getattr(
+        tv, "__constraints__", ()
+    ):
         constraints = tuple(
             _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
         )
     else:
         constraints = ()
-    return TypeVarValue(tv, bound=bound, constraints=constraints)
+    if hasattr(tv, "__default__") and tv.__default__ is not NoDefault:
+        default = _type_from_runtime(tv.__default__, ctx)
+    else:
+        default = None
+    return TypeVarValue(tv, bound=bound, constraints=constraints, default=default)
 
 
 def _callable_args_from_runtime(
@@ -1072,7 +1085,7 @@ class _Visitor(ast.NodeVisitor):
                     else:
                         return None
             return KnownValue(func.val(*args, **kwargs))
-        elif func.val == TypeVar:
+        elif is_typing_name(func.val, "TypeVar"):
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             if not arg_values:
@@ -1087,17 +1100,21 @@ class _Visitor(ast.NodeVisitor):
             constraints = []
             for arg_value in arg_values[1:]:
                 constraints.append(_type_from_value(arg_value, self.ctx))
-            bound = None
+            bound = default = None
             for name, kwarg_value in kwarg_values:
-                if name in ("covariant", "contravariant"):
+                if name in ("covariant", "contravariant", "infer_variance"):
                     continue
                 elif name == "bound":
                     bound = _type_from_value(kwarg_value, self.ctx)
+                elif name == "default":
+                    default = _type_from_value(kwarg_value, self.ctx)
                 else:
                     self.ctx.show_error(f"Unrecognized TypeVar kwarg {name}", node=node)
                     return None
             tv = TypeVar(name_val.val)
-            return TypeVarValue(tv, bound, tuple(constraints))
+            return TypeVarValue(
+                tv, bound=bound, constraints=tuple(constraints), default=default
+            )
         elif is_typing_name(func.val, "ParamSpec"):
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
@@ -1113,6 +1130,7 @@ class _Visitor(ast.NodeVisitor):
                 )
                 return None
             for name, _ in kwarg_values:
+                # TODO support defaults
                 self.ctx.show_error(f"Unrecognized ParamSpec kwarg {name}", node=node)
                 return None
             tv = ParamSpec(name_val.val)

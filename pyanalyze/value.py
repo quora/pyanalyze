@@ -43,17 +43,15 @@ from typing import (
     Type,
     TypeVar,
     Union,
-    cast,
 )
 
 import qcore
-from typing_extensions import ParamSpec, Protocol
+from typing_extensions import ParamSpec, Protocol, assert_never
 
 import pyanalyze
 from pyanalyze.error_code import Error
 from pyanalyze.extensions import CustomCheck, ExternalType
-
-from .safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
+from pyanalyze.safe import all_of_type, safe_equals, safe_isinstance, safe_issubclass
 
 T = TypeVar("T")
 # __builtin__ in Python 2 and builtins in Python 3
@@ -89,6 +87,12 @@ else:
 TypeVarMap = Mapping[TypeVarLike, ExternalType["pyanalyze.value.Value"]]
 BoundsMap = Mapping[TypeVarLike, Sequence[ExternalType["pyanalyze.value.Bound"]]]
 GenericBases = Mapping[Union[type, str], TypeVarMap]
+
+
+class OverlapMode(enum.Enum):
+    IS = 1
+    MATCH = 2
+    EQ = 3
 
 
 class Value:
@@ -136,6 +140,36 @@ class Value:
         elif self == other:
             return {}
         return CanAssignError(f"Cannot assign {other} to {self}")
+
+    def can_overlap(
+        self, other: "Value", ctx: "CanAssignContext", mode: OverlapMode
+    ) -> Optional["CanAssignError"]:
+        """Returns whether self and other can overlap.
+
+        Return None if they can overlap, otherwise a CanAssignError explaining
+        why they cannot.
+
+        """
+        if isinstance(other, (AnyValue, VariableNameValue)):
+            return None
+        if isinstance(other, MultiValuedValue):
+            # allow overlap with Never
+            if other is NO_RETURN_VALUE:
+                return None
+            errors: List[CanAssignError] = []
+            for val in other.vals:
+                maybe_error = self.can_overlap(val, ctx, mode)
+                if maybe_error is None:
+                    return None
+                errors.append(maybe_error)
+            return CanAssignError("cannot overlap with union", errors)
+        if isinstance(other, AnnotatedValue):
+            return self.can_overlap(other.value, ctx, mode)
+        if isinstance(other, TypeVarValue):
+            return self.can_overlap(other.get_fallback_value(), ctx, mode)
+        if isinstance(other, TypeAliasValue):
+            return self.can_overlap(other.get_value(), ctx, mode)
+        return CanAssignError(f"{self} and {other} cannot overlap")
 
     def is_assignable(self, other: "Value", ctx: "CanAssignContext") -> bool:
         """Similar to :meth:`can_assign` but returns a bool for simplicity."""
@@ -406,6 +440,11 @@ class AnyValue(Value):
             return super().can_assign(other, ctx)
         return {}  # Always allowed
 
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        return None  # always overlaps
+
 
 UNRESOLVED_VALUE = AnyValue(AnySource.default)
 """The default instance of :class:`AnyValue`.
@@ -502,6 +541,13 @@ class TypeAliasValue(Value):
             return {}
         return other.can_assign(self.get_value(), ctx)
 
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        if isinstance(other, TypeAliasValue) and self.alias is other.alias:
+            return None
+        return self.get_value().can_overlap(other, ctx, mode)
+
 
 @dataclass(frozen=True)
 class UninitializedValue(Value):
@@ -559,6 +605,33 @@ class KnownValue(Value):
             if safe_equals(self.val, other.val) and type(self.val) is type(other.val):
                 return {}
         return super().can_assign(other, ctx)
+
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        if isinstance(other, (SubclassValue, TypedValue)):
+            return other.can_overlap(self, ctx, mode)
+        elif isinstance(other, KnownValue):
+            if self.val is other.val:
+                return None
+            if mode is OverlapMode.IS:
+                # Allow different literals of the same type, otherwise
+                # we get lots of false positives.
+                if type(self.val) is type(other.val):
+                    return None
+                return CanAssignError(f"{self} and {other} cannot overlap")
+            elif mode is OverlapMode.MATCH:
+                if safe_equals(self.val, other.val):
+                    return None
+                return CanAssignError(f"{self} and {other} cannot overlap")
+            elif mode is OverlapMode.EQ:
+                # For EQ mode we're more permissive and allow overlapping types
+                return TypedValue(type(self.val)).can_overlap(
+                    TypedValue(type(other.val)), ctx, mode
+                )
+            else:
+                assert_never(mode)
+        return super().can_overlap(other, ctx, mode)
 
     def __eq__(self, other: Value) -> bool:
         return (
@@ -695,6 +768,14 @@ class UnboundMethodValue(Value):
             return {}
         return CallableValue(signature).can_assign(other, ctx)
 
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        signature = self.get_signature(ctx)
+        if signature is None:
+            return None
+        return CallableValue(signature).can_overlap(other, ctx, mode)
+
     def get_signature(
         self, ctx: CanAssignContext
     ) -> Optional["pyanalyze.signature.ConcreteSignature"]:
@@ -771,9 +852,7 @@ class TypedValue(Value):
             elif isinstance(other.typ, (TypeVarValue, AnyValue)):
                 return {}
         elif isinstance(other, UnboundMethodValue):
-            if self_tobj.is_exactly(
-                {cast(type, Callable), collections.abc.Callable, object}
-            ):
+            if self_tobj.can_be_unbound_method():
                 return {}
         return super().can_assign(other, ctx)
 
@@ -808,6 +887,51 @@ class TypedValue(Value):
         elif isinstance(other, AnnotatedValue):
             return self.can_assign_thrift_enum(other.value, ctx)
         return CanAssignError(f"Cannot assign {other} to Thrift enum {self}")
+
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        self_tobj = self.get_type_object(ctx)
+        if self_tobj.is_thrift_enum:
+            if isinstance(other, (KnownValue, TypedValue)):
+                can_assign = self.can_assign_thrift_enum(other, ctx)
+                if isinstance(can_assign, CanAssignError):
+                    return can_assign
+                return None
+            else:
+                return super().can_overlap(other, ctx, mode)
+        elif isinstance(other, KnownValue):
+            if mode is OverlapMode.IS:
+                if self_tobj.is_instance(other.val):
+                    return None
+                return CanAssignError(f"{self} and {other} cannot overlap")
+            return self.can_overlap(TypedValue(type(other.val)), ctx, mode)
+        elif isinstance(other, TypedValue):
+            left_errors = self_tobj.can_assign(self, other, ctx)
+            if not isinstance(left_errors, CanAssignError):
+                return None
+            other_tobj = other.get_type_object(ctx)
+            right_errors = other_tobj.can_assign(other, self, ctx)
+            if not isinstance(right_errors, CanAssignError):
+                return None
+            if mode in (OverlapMode.EQ, OverlapMode.MATCH):
+                if self_tobj.overrides_eq(self, ctx) or other_tobj.overrides_eq(
+                    other, ctx
+                ):
+                    return None
+            return CanAssignError(
+                f"{self} and {other} cannot overlap", [left_errors, right_errors]
+            )
+        elif isinstance(other, SubclassValue):
+            if isinstance(other.typ, TypedValue):
+                error = self_tobj.can_assign(self, other, ctx)
+                if isinstance(error, CanAssignError):
+                    return error
+                return None
+            else:
+                return None
+        else:
+            return super().can_overlap(other, ctx, mode)
 
     def get_generic_args_for_type(
         self, typ: Union[type, super, str], ctx: CanAssignContext
@@ -893,6 +1017,15 @@ class NewTypeValue(TypedValue):
                 return CanAssignError(f"Cannot assign {other} to {self}")
         return super().can_assign(other, ctx)
 
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        if isinstance(other, NewTypeValue):
+            if self.newtype is other.newtype:
+                return None
+            return CanAssignError(f"NewTypes {self} and {other} cannot overlap")
+        return super().can_overlap(other, ctx, mode)
+
     def __str__(self) -> str:
         return f"NewType({self.name!r}, {stringify_object(self.typ)})"
 
@@ -942,6 +1075,21 @@ class GenericValue(TypedValue):
             return unify_bounds_maps(bounds_maps)
 
         return super().can_assign(original_other, ctx)
+
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        if isinstance(other, GenericValue) and self.typ is other.typ:
+            if len(self.args) != len(other.args):
+                return CanAssignError(f"Cannot overlap {self} and {other}")
+            for i, (my_arg, their_arg) in enumerate(zip(self.args, other.args)):
+                maybe_error = my_arg.can_overlap(their_arg, ctx, mode)
+                if maybe_error is not None:
+                    return CanAssignError(
+                        f"In generic argument {i} to {self}", [maybe_error]
+                    )
+            return None
+        return super().can_overlap(other, ctx, mode)
 
     def maybe_specify_error(
         self, i: int, other: Value, error: CanAssignError, ctx: CanAssignContext
@@ -1491,6 +1639,48 @@ class TypedDictValue(GenericValue):
             return unify_bounds_maps(bounds_maps)
         return super().can_assign(other, ctx)
 
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        other = replace_known_sequence_value(other)
+        if isinstance(other, TypedDictValue):
+            for key, entry in self.items.items():
+                if key not in other.items:
+                    if entry.required:
+                        if other.extra_keys is None:
+                            return CanAssignError(f"Key {key} is missing in {other}")
+                        else:
+                            maybe_error = entry.typ.can_overlap(
+                                other.extra_keys, ctx, mode
+                            )
+                            if maybe_error is not None:
+                                return CanAssignError(
+                                    f"Type for key {key} is incompatible with extra keys"
+                                    f" type {other.extra_keys}",
+                                    children=[maybe_error],
+                                )
+                else:
+                    their_entry = other.items[key]
+                    maybe_error = entry.typ.can_overlap(their_entry.typ, ctx, mode)
+                    if maybe_error is not None:
+                        return CanAssignError(
+                            f"Types for key {key} cannot overlap",
+                            children=[maybe_error],
+                        )
+            for key, entry in other.items.items():
+                if key not in self.items and entry.required:
+                    if self.extra_keys is None:
+                        return CanAssignError(f"Key {key} is missing in {self}")
+                    else:
+                        maybe_error = entry.typ.can_overlap(self.extra_keys, ctx, mode)
+                        if maybe_error is not None:
+                            return CanAssignError(
+                                f"Type for key {key} is incompatible with extra keys"
+                                f" type {self.extra_keys}",
+                                children=[maybe_error],
+                            )
+        return super().can_overlap(other, ctx, mode)
+
     def substitute_typevars(self, typevars: TypeVarMap) -> "TypedDictValue":
         return TypedDictValue(
             {
@@ -1606,8 +1796,43 @@ class CallableValue(TypedValue):
 
         return super().can_assign(other, ctx)
 
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        if not isinstance(other, (MultiValuedValue, AnyValue, AnnotatedValue)):
+            signature = ctx.signature_from_value(other)
+            return _signatures_overlap(self.signature, signature, ctx)
+        return super().can_overlap(other, ctx, mode)
+
     def __str__(self) -> str:
         return str(self.signature)
+
+
+def _signatures_overlap(
+    left: "pyanalyze.signature.MaybeSignature",
+    right: "pyanalyze.signature.MaybeSignature",
+    ctx: CanAssignContext,
+) -> Optional[CanAssignError]:
+    if left is None or right is None:
+        return CanAssignError("Not a callable type")
+    if isinstance(left, pyanalyze.signature.BoundMethodSignature):
+        left = left.get_signature(ctx=ctx)
+    if isinstance(right, pyanalyze.signature.BoundMethodSignature):
+        right = right.get_signature(ctx=ctx)
+    if isinstance(left, pyanalyze.signature.Signature) and isinstance(
+        right, pyanalyze.signature.Signature
+    ):
+        left_errors = left.can_assign(right, ctx)
+        if not isinstance(left_errors, CanAssignError):
+            return None
+        right_errors = right.can_assign(left, ctx)
+        if not isinstance(right_errors, CanAssignError):
+            return None
+        return CanAssignError(
+            f"Signatures {left} and {right} cannot overlap",
+            children=[left_errors, right_errors],
+        )
+    return None
 
 
 @dataclass(frozen=True)
@@ -1676,6 +1901,27 @@ class SubclassValue(Value):
             ):
                 return {}
         return super().can_assign(other, ctx)
+
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        if isinstance(other, (KnownValue, TypedValue)):
+            can_assign = self.can_assign(other, ctx)
+            if not isinstance(can_assign, CanAssignError):
+                return None
+            return can_assign
+        elif isinstance(other, SubclassValue):
+            left_errors = self.can_assign(other, ctx)
+            if not isinstance(left_errors, CanAssignError):
+                return None
+            right_errors = other.can_assign(self, ctx)
+            if not isinstance(right_errors, CanAssignError):
+                return None
+            return CanAssignError(
+                f"Types {self} and {other} cannot overlap",
+                children=[left_errors, right_errors],
+            )
+        return super().can_overlap(other, ctx, mode)
 
     def get_type(self) -> Optional[type]:
         if isinstance(self.typ, TypedValue):
@@ -1800,6 +2046,19 @@ class MultiValuedValue(Value):
             if not bounds_maps:
                 return CanAssignError("Cannot assign to Union", errors)
             return intersect_bounds_maps(bounds_maps)
+
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        if not self.vals:
+            return None
+        errors: List[CanAssignError] = []
+        for val in self.vals:
+            error = val.can_overlap(other, ctx, mode)
+            if error is None:
+                return None
+            errors.append(error)
+        return CanAssignError("Cannot overlap with Union", errors)
 
     def get_type_value(self) -> Value:
         if not self.vals:
@@ -1930,6 +2189,7 @@ class TypeVarValue(Value):
 
     typevar: TypeVarLike
     bound: Optional[Value] = None
+    default: Optional[Value] = None  # unsupported
     constraints: Sequence[Value] = ()
     is_paramspec: bool = False
     is_typevartuple: bool = False  # unsupported
@@ -1951,6 +2211,11 @@ class TypeVarValue(Value):
         else:
             bounds = [LowerBound(self.typevar, other), *self.get_inherent_bounds()]
         return self.make_bounds_map(bounds, other, ctx)
+
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        return self.get_fallback_value().can_overlap(other, ctx, mode)
 
     def can_be_assigned(self, left: Value, ctx: CanAssignContext) -> CanAssign:
         if left == self:
@@ -2369,6 +2634,11 @@ class AnnotatedValue(Value):
             bounds_maps.append(custom_can_assign)
         return unify_bounds_maps(bounds_maps)
 
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        return self.value.can_overlap(other, ctx, mode)
+
     def walk_values(self) -> Iterable[Value]:
         yield self
         yield from self.value.walk_values()
@@ -2443,6 +2713,11 @@ class VariableNameValue(AnyValue):
         if other == self:
             return {}
         return CanAssignError(f"Types {self} and {other} are different")
+
+    def can_overlap(
+        self, other: Value, ctx: CanAssignContext, mode: OverlapMode
+    ) -> Optional[CanAssignError]:
+        return None
 
     def __str__(self) -> str:
         return "<variable name: %s>" % ", ".join(self.varnames)
@@ -3108,7 +3383,22 @@ def can_assign_and_used_any(
     return tv_map, used_any
 
 
+def _deliteral(value: Value) -> Value:
+    value = unannotate(value)
+    if isinstance(value, KnownValue):
+        value = TypedValue(type(value.val))
+    if isinstance(value, SequenceValue):
+        value = TypedValue(value.typ)
+    return value
+
+
 def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:
+    # Fairly permissive checks for now; possibly this can be tightened up later.
+    left = _deliteral(left)
+    right = _deliteral(right)
+    if isinstance(left, MultiValuedValue) and left.vals:
+        # Swap the operands so we decompose and de-Literal the other union too
+        return any(is_overlapping(right, val, ctx) for val in left.vals)
     return left.is_assignable(right, ctx) or right.is_assignable(left, ctx)
 
 
