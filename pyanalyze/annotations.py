@@ -557,12 +557,14 @@ def _type_from_runtime(
 def make_type_var_value(tv: TypeVarLike, ctx: Context) -> TypeVarValue:
     if (
         isinstance(tv, (TypeVar, typing_extensions.TypeVar))
-        and tv.__bound__ is not None
+        and getattr(tv, "__bound__", None) is not None
     ):
         bound = _type_from_runtime(tv.__bound__, ctx)
     else:
         bound = None
-    if isinstance(tv, (TypeVar, typing_extensions.TypeVar)) and tv.__constraints__:
+    if isinstance(tv, (TypeVar, typing_extensions.TypeVar)) and getattr(
+        tv, "__constriants__", ()
+    ):
         constraints = tuple(
             _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
         )

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix crash on some occurrences of `ParamSpec` in stub files (#797)
 - Fix crash when Pydantic 1 is installed (#793)
 - Fix error on use of TypeVar defaults in stubs (PEP 696). The
   default is still ignored, but now the TypeVar is treated as
