@@ -1085,7 +1085,7 @@ class _Visitor(ast.NodeVisitor):
                     else:
                         return None
             return KnownValue(func.val(*args, **kwargs))
-        elif func.val == TypeVar:
+        elif is_typing_name(func.val, "TypeVar"):
             arg_values = [self.visit(arg) for arg in node.args]
             kwarg_values = [(kw.arg, self.visit(kw.value)) for kw in node.keywords]
             if not arg_values:
