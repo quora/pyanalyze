@@ -563,7 +563,7 @@ def make_type_var_value(tv: TypeVarLike, ctx: Context) -> TypeVarValue:
     else:
         bound = None
     if isinstance(tv, (TypeVar, typing_extensions.TypeVar)) and getattr(
-        tv, "__constriants__", ()
+        tv, "__constraints__", ()
     ):
         constraints = tuple(
             _type_from_runtime(constraint, ctx) for constraint in tv.__constraints__
