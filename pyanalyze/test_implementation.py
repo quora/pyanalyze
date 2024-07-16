@@ -1099,10 +1099,10 @@ class TestSequenceGetItem(TestNameCheckVisitorBase):
     def test_tuple_annotation(self):
         from typing import Tuple
 
-        def capybara(tpl: Tuple[int, str, float]) -> None:
+        def capybara(tpl: Tuple[int, str, bytes]) -> None:
             assert_is_value(tpl[0], TypedValue(int))
             assert_is_value(tpl[-2], TypedValue(str))
-            assert_is_value(tpl[2], TypedValue(float))
+            assert_is_value(tpl[2], TypedValue(bytes))
 
     @assert_passes()
     def test_list_in_lambda(self):
@@ -1189,7 +1189,7 @@ class TestDictGetItem(TestNameCheckVisitorBase):
         from typing_extensions import NotRequired, TypedDict
 
         class TD(TypedDict):
-            a: float
+            a: bytes
             b: NotRequired[bool]
 
         def capybara(i: int, seq: Sequence[int], td: TD, s: str):
@@ -1216,9 +1216,9 @@ class TestDictGetItem(TestNameCheckVisitorBase):
 
             d4 = {**d3, **td}
             assert_is_value(d4[1], KnownValue(1))
-            assert_is_value(d4["a"], TypedValue(float))
+            assert_is_value(d4["a"], TypedValue(bytes))
             assert_is_value(d4["b"], KnownValue(2) | TypedValue(bool))
-            assert_is_value(d4[s], TypedValue(float) | KnownValue(2) | TypedValue(bool))
+            assert_is_value(d4[s], TypedValue(bytes) | KnownValue(2) | TypedValue(bool))
 
     @assert_passes()
     def test(self):

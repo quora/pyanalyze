@@ -640,14 +640,14 @@ class TestSubclassValue(TestNameCheckVisitorBase):
         from typing import Type
 
         class EnumMeta(type):
-            def __getitem__(self, x: str) -> float:
-                return 42.0
+            def __getitem__(self, x: str) -> bytes:
+                return b"hi"
 
         class Enum(metaclass=EnumMeta):
             pass
 
         def capybara(enum: Type[Enum]) -> None:
-            assert_is_value(enum["x"], TypedValue(float))
+            assert_is_value(enum["x"], TypedValue(bytes))
 
     @assert_passes()
     def test_type_union(self):
@@ -1485,14 +1485,14 @@ class TestUnpacking(TestNameCheckVisitorBase):
             def keys(self) -> List[bool]:
                 raise NotImplementedError
 
-            def __getitem__(self, key: bool) -> float:
+            def __getitem__(self, key: bool) -> bytes:
                 raise NotImplementedError
 
         def capybara(m: MyMapping):
             assert_is_value(
                 {**m},
                 DictIncompleteValue(
-                    dict, [KVPair(TypedValue(bool), TypedValue(float), is_many=True)]
+                    dict, [KVPair(TypedValue(bool), TypedValue(bytes), is_many=True)]
                 ),
             )
 
@@ -1736,11 +1736,11 @@ class TestAnnAssign(TestNameCheckVisitorBase):
             assert_is_value(x, KnownValue(3))
             y: int = 3
             assert_is_value(y, TypedValue(int))
-            z: float
+            z: bytes
             print(z)  # E: undefined_name
 
-            y: float = 4.0  # E: already_declared
-            assert_is_value(y, TypedValue(float))
+            y: bytes = b"ytes"  # E: already_declared
+            assert_is_value(y, TypedValue(bytes))
 
     @assert_passes()
     def test_final(self):

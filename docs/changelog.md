@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Change implementation of implicit int/float and float/complex promotion
+  in accordance with https://github.com/python/typing/pull/1748. Now,
+  annotations of `float` implicitly mean `float | int`. (#778)
 - Fix crash on some occurrences of `ParamSpec` in stub files (#797)
 - Fix crash when Pydantic 1 is installed (#793)
 - Fix error on use of TypeVar defaults in stubs (PEP 696). The

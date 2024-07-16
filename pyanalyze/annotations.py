@@ -1300,6 +1300,10 @@ def _maybe_typed_value(val: Union[type, str]) -> Value:
         return _HashableValue(val)
     elif val is Callable or is_typing_name(val, "Callable"):
         return CallableValue(ANY_SIGNATURE)
+    elif val is float:
+        return TypedValue(float) | TypedValue(int)
+    elif val is complex:
+        return TypedValue(complex) | TypedValue(float) | TypedValue(int)
     return TypedValue(val)
 
 
