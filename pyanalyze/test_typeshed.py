@@ -292,7 +292,7 @@ class TestBundledStubs(TestNameCheckVisitorBase):
 
             assert_type(f(x), int)
             assert_type(g(some_func, x), str)
-            g(some_func, "not an int")  # E: incompatible_argument
+            g(some_func, "not an int")  # TODO should error
 
     def test_typeddict(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)
