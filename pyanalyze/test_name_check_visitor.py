@@ -2257,3 +2257,22 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
             async with async_empty_contextlib_manager():
                 a = 3
             assert_is_value(a, KnownValue(3))
+
+
+class TestMustUse(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_generator(self):
+        from typing import Generator
+
+        def gen() -> Generator[int, None, None]:
+            yield 1
+            yield 2
+
+        def capybara() -> None:
+            gen()  # E: must_use
+
+    @assert_passes()
+    def test_iterator(self):
+        def capybara() -> None:
+            iter([])  # E: must_use
+            iter({})  # E: must_use

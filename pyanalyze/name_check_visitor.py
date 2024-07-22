@@ -4658,6 +4658,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._show_error_if_checking(
                 node, error_code=ErrorCode.missing_await, replacement=replacement
             )
+        elif value.is_type(collections.abc.Iterator) or value.is_type(
+            collections.abc.AsyncIterator
+        ):
+            self._show_error_if_checking(
+                node,
+                f"Must use {value} (for example, by iterating over it)",
+                error_code=ErrorCode.must_use,
+            )
         return value
 
     # Assignments
