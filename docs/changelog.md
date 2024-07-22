@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Flag use of generators that are immediately discarded (#800)
 - Fix crash on some occurrences of `ParamSpec` in stub files (#797)
 - Fix crash when Pydantic 1 is installed (#793)
 - Fix error on use of TypeVar defaults in stubs (PEP 696). The

@@ -169,6 +169,7 @@ ErrorCode = ErrorRegistry(
         Error("readonly_typeddict", "TypedDict is read-only"),
         Error("generator_return", "Generator must return an iterable"),
         Error("unsafe_comparison", "Non-overlapping equality checks"),
+        Error("must_use", "Value cannot be discarded"),
     ]
 )
 
