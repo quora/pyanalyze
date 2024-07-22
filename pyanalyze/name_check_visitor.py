@@ -4658,8 +4658,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._show_error_if_checking(
                 node, error_code=ErrorCode.missing_await, replacement=replacement
             )
-        elif value.is_type(collections.abc.Iterator) or value.is_type(
-            collections.abc.AsyncIterator
+        elif value.is_type(collections.abc.Generator) or value.is_type(
+            collections.abc.AsyncGenerator
         ):
             self._show_error_if_checking(
                 node,

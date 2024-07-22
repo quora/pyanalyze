@@ -2272,7 +2272,12 @@ class TestMustUse(TestNameCheckVisitorBase):
             gen()  # E: must_use
 
     @assert_passes()
-    def test_iterator(self):
+    def test_async_generator(self):
+        from typing import AsyncGenerator
+
+        async def gen() -> AsyncGenerator[int, None]:
+            yield 1
+            yield 2
+
         def capybara() -> None:
-            iter([])  # E: must_use
-            iter({})  # E: must_use
+            gen()  # E: must_use
