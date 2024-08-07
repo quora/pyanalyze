@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Version 0.13.0 (August 7, 2024)
 
 - Flag use of generators that are immediately discarded (#800)
 - Fix crash on some occurrences of `ParamSpec` in stub files (#797)
