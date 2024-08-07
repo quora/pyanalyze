@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.13.1 (August 7, 2024)
+
+- Use Trusted Publishing to publish releases (#806)
+
 ## Version 0.13.0 (August 7, 2024)
 
 - Flag use of generators that are immediately discarded (#800)
