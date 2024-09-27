@@ -320,6 +320,8 @@ class CallContext:
     node: Optional[ast.AST]
     """AST node corresponding to the function call. Useful for
     showing errors."""
+    sig: "Signature"
+    inferred_return_value: Value
 
     def ast_for_arg(self, arg: str) -> Optional[ast.AST]:
         composite = self.composite_for_arg(arg)
@@ -1332,8 +1334,14 @@ class Signature:
                     visitor=ctx.visitor,
                     composites=composites,
                     node=ctx.node,
+                    sig=self,
+                    inferred_return_value=return_value,
                 )
-                return_value = self.impl(call_ctx)
+                with ctx.visitor.catch_errors() as caught_errors:
+                    return_value = self.impl(call_ctx)
+                if caught_errors:
+                    ctx.visitor.show_caught_errors(caught_errors)
+                    had_error = True
             elif self.evaluator is not None:
                 varmap = {
                     param: composite.value
@@ -1347,6 +1355,7 @@ class Signature:
                 )
                 return_value, errors = self.evaluator.evaluate(eval_ctx)
                 for error in errors:
+                    had_error = True
                     error_node = None
                     if error.argument is not None:
                         composite = bound_args[error.argument][1]

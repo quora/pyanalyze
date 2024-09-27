@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Flag invalid regexes in arguments to functions like
+  `re.search` (#816)
+
 ## Version 0.13.1 (August 7, 2024)
 
 - Use Trusted Publishing to publish releases (#806)

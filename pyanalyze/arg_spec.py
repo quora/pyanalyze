@@ -330,7 +330,7 @@ class UnwrapClass(PyObjectSequenceOption[_Unwrapper]):
         return typ
 
 
-_BUILTIN_KNOWN_SIGNATURES = []
+_BUILTIN_KNOWN_SIGNATURES = [implementation.get_default_argspecs_with_cache]
 
 try:
     import _pytest
@@ -784,6 +784,13 @@ class ArgSpecCache:
             obj, allow_call=allow_call, type_params=type_params
         )
         if argspec is not None:
+            if impl is not None:
+                if isinstance(argspec, OverloadedSignature):
+                    return OverloadedSignature(
+                        [replace(sig, impl=impl) for sig in argspec.signatures]
+                    )
+                else:
+                    return replace(argspec, impl=impl)
             return argspec
 
         if is_typeddict(obj) and not is_typing_name(obj, "TypedDict"):
