@@ -34,6 +34,7 @@ from .safe import hasattr_static, is_union, safe_isinstance, safe_issubclass
 from .signature import (
     ANY_SIGNATURE,
     CallContext,
+    ConcreteSignature,
     ImplReturn,
     OverloadedSignature,
     ParameterKind,
@@ -2238,7 +2239,11 @@ def get_default_argspecs() -> Dict[object, Signature]:
 
 def check_regex(pattern: Union[str, bytes]) -> Optional[CanAssignError]:
     try:
-        re.compile(pattern)
+        # TODO allow this without the useless isinstance()
+        if isinstance(pattern, str):
+            re.compile(pattern)
+        else:
+            re.compile(pattern)
     except re.error as e:
         return CanAssignError(
             f"Invalid regex pattern: {e}", error_code=ErrorCode.invalid_regex
@@ -2275,7 +2280,7 @@ def _re_impl_with_pattern(ctx: CallContext) -> Value:
 
 def get_default_argspecs_with_cache(
     asc: "pyanalyze.arg_spec.ArgSpecCache",
-) -> Dict[object, Signature]:
+) -> Dict[object, ConcreteSignature]:
     sigs = {}
     for func in (
         re.compile,
