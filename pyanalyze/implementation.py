@@ -2,6 +2,7 @@ import ast
 import collections
 import collections.abc
 import inspect
+import re
 import typing
 from itertools import product
 from typing import (
@@ -20,6 +21,8 @@ from typing import (
 import qcore
 import typing_extensions
 
+import pyanalyze
+
 from . import runtime
 from .annotated_types import MaxLen, MinLen
 from .annotations import type_from_value
@@ -32,6 +35,7 @@ from .signature import (
     ANY_SIGNATURE,
     CallContext,
     ImplReturn,
+    OverloadedSignature,
     ParameterKind,
     Signature,
     SigParameter,
@@ -2230,3 +2234,64 @@ def get_default_argspecs() -> Dict[object, Signature]:
             )
             signatures.append(sig)
     return {sig.callable: sig for sig in signatures}
+
+
+def check_regex(pattern: Union[str, bytes]) -> Optional[CanAssignError]:
+    try:
+        re.compile(pattern)
+    except re.error as e:
+        return CanAssignError(
+            f"Invalid regex pattern: {e}", error_code=ErrorCode.invalid_regex
+        )
+    return None
+
+
+def check_regex_in_value(value: Value) -> Optional[CanAssignError]:
+    errors = []
+    for subval in flatten_values(value):
+        if not isinstance(subval, KnownValue):
+            continue
+        if not isinstance(subval.val, (str, bytes)):
+            continue
+        maybe_error = check_regex(subval.val)
+        if maybe_error is not None:
+            errors.append(maybe_error)
+    if errors:
+        if len(errors) == 1:
+            return errors[0]
+        return pyanalyze.value.CanAssignError(
+            "Invalid regex", errors, pyanalyze.error_code.ErrorCode.invalid_regex
+        )
+    return None
+
+
+def _re_impl_with_pattern(ctx: CallContext) -> Value:
+    pattern = ctx.vars["pattern"]
+    error = check_regex_in_value(pattern)
+    if error is not None:
+        print(repr(error))
+        ctx.show_error(error.message, error_code=ErrorCode.invalid_regex, arg="pattern")
+    return TypedValue(re.Pattern)
+
+
+def get_default_argspecs_with_cache(
+    asc: "pyanalyze.arg_spec.ArgSpecCache",
+) -> Dict[object, Signature]:
+    sigs = {}
+    for func in (
+        re.compile,
+        re.search,
+        re.match,
+        re.fullmatch,
+        re.split,
+        re.findall,
+        re.finditer,
+        re.sub,
+        re.subn,
+    ):
+        sig = asc.get_argspec(func, impl=_re_impl_with_pattern)
+        assert isinstance(
+            sig, (Signature, OverloadedSignature)
+        ), f"failed to find signature for {func}: {sig}"
+        sigs[func] = sig
+    return sigs

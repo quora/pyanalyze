@@ -149,6 +149,27 @@ class NoAny(CustomCheck):
         )
 
 
+@dataclass(frozen=True)
+class ValidRegex(CustomCheck):
+    """Custom check that allows only values that are valid regular expressions.
+
+    Example::
+
+        def func(arg: Annotated[str, ValidRegex()]) -> None:
+            ...
+
+        func(".*")  # ok
+        func("[")  # error
+
+    """
+
+    def can_assign(self, value: "Value", ctx: "CanAssignContext") -> "CanAssign":
+        error = pyanalyze.implementation.check_regex_in_value(value)
+        if error is not None:
+            return error
+        return {}
+
+
 class _AsynqCallableMeta(type):
     def __getitem__(
         self, params: Tuple[Union[Literal[Ellipsis], List[object]], object]

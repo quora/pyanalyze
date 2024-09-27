@@ -1333,7 +1333,11 @@ class Signature:
                     composites=composites,
                     node=ctx.node,
                 )
-                return_value = self.impl(call_ctx)
+                with ctx.visitor.catch_errors() as caught_errors:
+                    return_value = self.impl(call_ctx)
+                if caught_errors:
+                    ctx.visitor.show_caught_errors(caught_errors)
+                    had_error = True
             elif self.evaluator is not None:
                 varmap = {
                     param: composite.value
@@ -1347,6 +1351,7 @@ class Signature:
                 )
                 return_value, errors = self.evaluator.evaluate(eval_ctx)
                 for error in errors:
+                    had_error = True
                     error_node = None
                     if error.argument is not None:
                         composite = bound_args[error.argument][1]
