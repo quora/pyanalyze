@@ -320,6 +320,8 @@ class CallContext:
     node: Optional[ast.AST]
     """AST node corresponding to the function call. Useful for
     showing errors."""
+    sig: "Signature"
+    inferred_return_value: Value
 
     def ast_for_arg(self, arg: str) -> Optional[ast.AST]:
         composite = self.composite_for_arg(arg)
@@ -1332,6 +1334,8 @@ class Signature:
                     visitor=ctx.visitor,
                     composites=composites,
                     node=ctx.node,
+                    sig=self,
+                    inferred_return_value=return_value,
                 )
                 with ctx.visitor.catch_errors() as caught_errors:
                     return_value = self.impl(call_ctx)

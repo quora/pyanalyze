@@ -2269,9 +2269,8 @@ def _re_impl_with_pattern(ctx: CallContext) -> Value:
     pattern = ctx.vars["pattern"]
     error = check_regex_in_value(pattern)
     if error is not None:
-        print(repr(error))
         ctx.show_error(error.message, error_code=ErrorCode.invalid_regex, arg="pattern")
-    return TypedValue(re.Pattern)
+    return ctx.inferred_return_value
 
 
 def get_default_argspecs_with_cache(
