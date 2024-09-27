@@ -1494,3 +1494,16 @@ class TestRegex(TestNameCheckVisitorBase):
 
             re.match(r"a", "b")
             re.match(rb"(", b"b")  # E: incompatible_call
+
+    @assert_passes()
+    def test_extension(self):
+        from typing_extensions import Annotated
+
+        from pyanalyze.extensions import ValidRegex
+
+        def f(x: Annotated[str, ValidRegex()]):
+            pass
+
+        def capybara():
+            f("x")
+            f(r"[")  # E: invalid_regex
