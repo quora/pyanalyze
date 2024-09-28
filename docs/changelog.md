@@ -3,7 +3,9 @@
 ## Unreleased
 
 - Add `value_always_false` error code to catch errors like
-  asserting on a value that is statically known to be None (#TODO)
+  asserting on a value that is statically known to be None (#817)
+- Flag invalid regexes in arguments to functions like
+  `re.search` (#816)
 
 ## Version 0.13.1 (August 7, 2024)
 

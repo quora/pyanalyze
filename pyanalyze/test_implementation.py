@@ -1476,3 +1476,34 @@ class TestNamedTuple(TestNameCheckVisitorBase):
         def capybara() -> None:
             # on 3.13+ we get a second error from calling the runtime
             NamedTuple("x", None, y=int)  # E: incompatible_call  # E: incompatible_call
+
+
+class TestRegex(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_compile(self):
+        import re
+
+        def capybara():
+            re.compile("a")
+            re.compile(b"a")
+            re.compile("[")  # E: incompatible_call
+            re.compile(b"[")  # E: incompatible_call
+
+            re.sub(r"a", "b", "c")
+            re.sub(rb"(", b"b", b"c")  # E: incompatible_call
+
+            re.match(r"a", "b")
+            re.match(rb"(", b"b")  # E: incompatible_call
+
+    @assert_passes()
+    def test_extension(self):
+        from typing_extensions import Annotated
+
+        from pyanalyze.extensions import ValidRegex
+
+        def f(x: Annotated[str, ValidRegex()]):
+            pass
+
+        def capybara():
+            f("x")
+            f(r"[")  # E: invalid_regex
