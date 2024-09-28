@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add `value_always_false` error code to catch errors like
+  asserting on a value that is statically known to be None (#TODO)
+
 ## Version 0.13.1 (August 7, 2024)
 
 - Use Trusted Publishing to publish releases (#806)

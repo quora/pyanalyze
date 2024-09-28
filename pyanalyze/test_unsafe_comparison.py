@@ -132,6 +132,6 @@ class TestOverrideEq(TestNameCheckVisitorBase):
         ):
             assert x == y  # E: unsafe_comparison
             assert y == x  # E: unsafe_comparison
-            assert fe1 == y  # OK
+            assert fe1 == y  # E: value_always_false
             assert fe2 == y  # OK
             assert fe3 == y  # OK

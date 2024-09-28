@@ -540,7 +540,7 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             z = []
 
             detail_text = None
-            if detail_text:
+            if detail_text:  # E: value_always_false
                 assert_is_value(detail_text, NO_RETURN_VALUE)
                 z += detail_text
 
