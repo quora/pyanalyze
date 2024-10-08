@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `value_always_false` error code to catch errors like
+  asserting on a value that is statically known to be None (#817)
 - Flag invalid regexes in arguments to functions like
   `re.search` (#816)
 

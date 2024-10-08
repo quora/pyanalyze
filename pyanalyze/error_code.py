@@ -133,6 +133,7 @@ ErrorCode = ErrorRegistry(
         Error("missing_parameter_annotation", "Missing function parameter annotation"),
         Error("type_always_true", "Type will always evaluate to 'True'"),
         Error("value_always_true", "Value will always evaluate to 'True'"),
+        Error("value_always_false", "Value will always evaluate to False"),
         Error("type_does_not_support_bool", "Type does not support bool()"),
         Error("missing_return", "Function may exit without returning a value"),
         Error(

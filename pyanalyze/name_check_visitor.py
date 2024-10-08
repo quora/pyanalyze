@@ -224,6 +224,7 @@ from .value import (
     replace_known_sequence_value,
     set_self,
     stringify_object,
+    unannotate,
     unannotate_value,
     unite_and_simplify,
     unite_values,
@@ -4204,7 +4205,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
         # We don't check value_always_true here; it's fine to have an assertion
         # that the type checker statically thinks is True.
-        self._check_boolability(test, node, disabled={ErrorCode.value_always_true})
+        self._check_boolability(test, node.test, disabled={ErrorCode.value_always_true})
 
     def add_constraint(self, node: object, constraint: AbstractConstraint) -> None:
         if constraint is NULL_CONSTRAINT:
@@ -4606,7 +4607,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if check_boolability:
             disabled = set()
         else:
-            disabled = {ErrorCode.type_always_true, ErrorCode.value_always_true}
+            disabled = {
+                ErrorCode.type_always_true,
+                ErrorCode.value_always_true,
+                ErrorCode.value_always_false,
+            }
         self._check_boolability(condition, node, disabled=disabled)
         return condition, constraint
 
@@ -4637,6 +4642,22 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     node,
                     f"{value} is always True",
                     error_code=ErrorCode.value_always_true,
+                )
+        elif boolability is Boolability.value_always_false:
+            if (
+                ErrorCode.value_always_false not in disabled
+                # allow "assert False"
+                and not (isinstance(node, ast.Constant) and node.value in (0, False))
+                and not (
+                    # Allow e.g. "if TYPE_CHECKING"
+                    unannotate(value) in (KnownValue(False), KnownValue(0))
+                    and isinstance(node, ast.Name)
+                )
+            ):
+                self.show_error(
+                    node,
+                    f"{value} is always False",
+                    error_code=ErrorCode.value_always_false,
                 )
 
     def visit_Expr(self, node: ast.Expr) -> Value:

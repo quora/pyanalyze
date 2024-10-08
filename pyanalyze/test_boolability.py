@@ -135,9 +135,14 @@ def test_get_boolability() -> None:
 class TestAssert(TestNameCheckVisitorBase):
     @assert_passes()
     def test_assert_never_fails(self):
+        def func():
+            pass
+
         def capybara():
             tpl = "this", "doesn't", "work"
             assert tpl  # E: type_always_true
+
+            assert func  # E: type_always_true
 
     @assert_passes()
     def test_assert_bad_bool(self):
@@ -151,6 +156,14 @@ class TestAssert(TestNameCheckVisitorBase):
 
         def capybara():
             assert x  # E: type_does_not_support_bool
+
+    @assert_passes()
+    def test_assert_none(self):
+        def f() -> None:
+            pass
+
+        def capybara():
+            assert f()  # E: value_always_false
 
 
 class TestConditionAlwaysTrue(TestNameCheckVisitorBase):
@@ -185,10 +198,10 @@ class TestConditionAlwaysTrue(TestNameCheckVisitorBase):
     def test_object():
         obj = object()
 
-        def capybara():
+        def capybara(x):
             True if obj else False  # E: type_always_true
-            obj and False  # E: type_always_true
-            [] and obj and False  # E: type_always_true
+            obj and x  # E: type_always_true
+            [] and obj and x  # E: type_always_true
             obj or True  # E: type_always_true
             not obj  # E: type_always_true
 
