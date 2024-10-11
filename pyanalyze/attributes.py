@@ -11,7 +11,7 @@ import types
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, ClassVar, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Optional, Union
 
 import asynq
 import qcore
@@ -82,7 +82,7 @@ class AttrContext:
 
     def get_attribute_from_typeshed_recursively(
         self, fq_name: str, *, on_class: bool
-    ) -> Tuple[Value, object]:
+    ) -> tuple[Value, object]:
         return UNINITIALIZED_VALUE, None
 
     def should_ignore_none_attributes(self) -> bool:
@@ -211,7 +211,7 @@ class TreatClassAttributeAsAny(PyObjectSequenceOption[_TCAA]):
         return any(func(val) for func in option_value)
 
 
-_CAT = Callable[[object], Optional[Tuple[Value, Value]]]
+_CAT = Callable[[object], Optional[tuple[Value, Value]]]
 
 
 class ClassAttributeTransformer(PyObjectSequenceOption[_CAT]):
@@ -503,7 +503,7 @@ class AnnotationsContext(Context):
 
 def _get_attribute_from_mro(
     typ: object, ctx: AttrContext, on_class: bool
-) -> Tuple[Value, object, bool]:
+) -> tuple[Value, object, bool]:
     # Then go through the MRO and find base classes that may define the attribute.
     if safe_isinstance(typ, type) and safe_issubclass(typ, Enum):
         # Special case, to avoid picking an attribute of Enum instances (e.g., name)

@@ -11,7 +11,7 @@ import sys
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Optional, Union
 
 import qcore
 from typing_extensions import Literal
@@ -101,7 +101,7 @@ class ArgumentKindCondition(Condition):
 @dataclass
 class PlatformCondition(Condition):
     actual: str
-    op: Type[ast.cmpop]
+    op: type[ast.cmpop]
     expected: object
 
     def display(self, negated: bool = False) -> CanAssignError:
@@ -115,8 +115,8 @@ class PlatformCondition(Condition):
 
 @dataclass
 class VersionCondition(Condition):
-    actual: Tuple[int, ...]
-    op: Type[ast.cmpop]
+    actual: tuple[int, ...]
+    op: type[ast.cmpop]
     expected: object
 
     def _display_version(self, version: object) -> str:
@@ -191,7 +191,7 @@ def subtract_unions(left: Value, right: Value) -> Value:
     return unite_values(*remaining)
 
 
-_Operator = Union[Type[ast.cmpop], Literal["is of type", "is not of type"]]
+_Operator = Union[type[ast.cmpop], Literal["is of type", "is not of type"]]
 
 
 @dataclass
@@ -205,7 +205,7 @@ def _dummy_impl(left: object, right: object) -> object:
     raise NotImplementedError
 
 
-_OP_TO_DATA: Dict[_Operator, _Comparator] = {
+_OP_TO_DATA: dict[_Operator, _Comparator] = {
     ast.Is: _Comparator("is", ast.IsNot, operator.is_),
     ast.IsNot: _Comparator("is not", ast.Is, operator.is_not),
     ast.Eq: _Comparator("==", ast.NotEq, operator.eq),
@@ -272,13 +272,13 @@ class Evaluator:
     node: Union[ast.FunctionDef, ast.AsyncFunctionDef]
     return_annotation: Value
 
-    def evaluate(self, ctx: EvalContext) -> Tuple[Value, Sequence[UserRaisedError]]:
+    def evaluate(self, ctx: EvalContext) -> tuple[Value, Sequence[UserRaisedError]]:
         visitor = EvaluateVisitor(self, ctx)
         result = visitor.run()
         errors = [e for e in visitor.errors if isinstance(e, UserRaisedError)]
         return result, errors
 
-    def validate(self, ctx: EvalContext) -> List[InvalidEvaluation]:
+    def validate(self, ctx: EvalContext) -> list[InvalidEvaluation]:
         visitor = EvaluateVisitor(self, ctx, validation_mode=True)
         visitor.run()
         return [
@@ -337,7 +337,7 @@ class ConditionEvaluator(ast.NodeVisitor):
     evaluator: Evaluator
     ctx: EvalContext
     validation_mode: bool = False
-    errors: List[EvaluateError] = field(default_factory=list, init=False)
+    errors: list[EvaluateError] = field(default_factory=list, init=False)
 
     def return_invalid(self, message: str, node: ast.AST) -> ConditionReturn:
         self.errors.append(InvalidEvaluation(message, node))
@@ -396,10 +396,7 @@ class ConditionEvaluator(ast.NodeVisitor):
                         )
                 else:
                     # Before 3.9 keyword nodes don't have a lineno
-                    if sys.version_info >= (3, 9):
-                        error_node = keyword
-                    else:
-                        error_node = node
+                    error_node = keyword
                     return self.return_invalid(
                         "Invalid keyword argument to is_of_type()", error_node
                     )
@@ -609,8 +606,8 @@ class ConditionEvaluator(ast.NodeVisitor):
 class EvaluateVisitor(ast.NodeVisitor):
     evaluator: Evaluator
     ctx: EvalContext
-    errors: List[EvaluateError] = field(default_factory=list)
-    active_conditions: List[Condition] = field(default_factory=list)
+    errors: list[EvaluateError] = field(default_factory=list)
+    active_conditions: list[Condition] = field(default_factory=list)
     validation_mode: bool = False
 
     def run(self) -> Value:
@@ -727,10 +724,7 @@ class EvaluateVisitor(ast.NodeVisitor):
                     return None
             else:
                 # Before 3.9 keyword nodes don't have a lineno
-                if sys.version_info >= (3, 9):
-                    error_node = keyword
-                else:
-                    error_node = call
+                error_node = keyword
                 self.add_invalid("Invalid keyword argument to show_error()", error_node)
                 return None
         self.errors.append(
@@ -778,7 +772,7 @@ class EvaluateVisitor(ast.NodeVisitor):
 
 def decompose_union(
     expected_type: Value, parent_value: Value, ctx: CanAssignContext, exclude_any: bool
-) -> Optional[Tuple[BoundsMap, Value]]:
+) -> Optional[tuple[BoundsMap, Value]]:
     value = unannotate(parent_value)
     if isinstance(value, MultiValuedValue):
         bounds_maps = []

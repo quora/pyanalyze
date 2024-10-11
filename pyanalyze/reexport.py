@@ -7,7 +7,7 @@ Functionality for dealing with implicit reexports.
 from ast import AST
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, Dict, List, Set, Tuple
+from typing import Callable
 
 from .error_code import ErrorCode
 from .node_visitor import ErrorContext
@@ -27,11 +27,11 @@ class ReexportConfig(PyObjectSequenceOption[_ReexportConfigProvider]):
 @dataclass
 class ImplicitReexportTracker:
     options: InitVar[Options]
-    completed_modules: Set[str] = field(default_factory=set)
-    module_to_reexports: Dict[str, Set[str]] = field(
+    completed_modules: set[str] = field(default_factory=set)
+    module_to_reexports: dict[str, set[str]] = field(
         default_factory=lambda: defaultdict(set)
     )
-    used_reexports: Dict[str, List[Tuple[str, AST, ErrorContext]]] = field(
+    used_reexports: dict[str, list[tuple[str, AST, ErrorContext]]] = field(
         default_factory=lambda: defaultdict(list)
     )
 

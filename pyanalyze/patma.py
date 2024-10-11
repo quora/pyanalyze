@@ -10,7 +10,7 @@ import enum
 import itertools
 from collections.abc import Container, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Optional, Set, Tuple, TypeVar, Union
+from typing import Any, Callable, Optional, TypeVar, Union
 
 import qcore
 
@@ -264,8 +264,8 @@ class PatmaVisitor(ast.NodeVisitor):
                 )
             ]
         kv_pairs = list(reversed(kv_pairs))
-        optional_pairs: Set[KVPair] = set()
-        removed_pairs: Set[KVPair] = set()
+        optional_pairs: set[KVPair] = set()
+        removed_pairs: set[KVPair] = set()
         for key, pattern in zip(node.keys, node.patterns):
             key_val = self.visitor.visit(key)
             value, new_optional_pairs, new_removed_pairs = get_value_from_kv_pairs(
@@ -440,11 +440,11 @@ def get_value_from_kv_pairs(
     ctx: CanAssignContext,
     optional_pairs: Container[KVPair],
     removed_pairs: Container[KVPair],
-) -> Tuple[Value, Set[KVPair], Set[KVPair]]:
+) -> tuple[Value, set[KVPair], set[KVPair]]:
     """Return the :class:`Value` for a specific key."""
     possible_values = []
-    covered_keys: Set[Value] = set()
-    new_optional_pairs: Set[KVPair] = set()
+    covered_keys: set[Value] = set()
+    new_optional_pairs: set[KVPair] = set()
     for pair in kv_pairs:
         if pair in removed_pairs:
             continue

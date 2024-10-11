@@ -12,7 +12,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from types import ModuleType, TracebackType
-from typing import Dict, List, Optional, Set, Type, TypeVar
+from typing import Optional, TypeVar
 
 import qcore
 
@@ -102,17 +102,17 @@ class UnusedObjectFinder:
     enabled: bool = False
     print_output: bool = True
     print_all: bool = False
-    usages: Dict[ModuleType, Dict[str, Set[str]]] = field(
+    usages: dict[ModuleType, dict[str, set[str]]] = field(
         default_factory=lambda: defaultdict(lambda: defaultdict(set)), init=False
     )
-    import_stars: Dict[ModuleType, Set[ModuleType]] = field(
+    import_stars: dict[ModuleType, set[ModuleType]] = field(
         default_factory=lambda: defaultdict(set), init=False
     )
-    module_to_import_stars: Dict[ModuleType, Set[ModuleType]] = field(
+    module_to_import_stars: dict[ModuleType, set[ModuleType]] = field(
         default_factory=lambda: defaultdict(set), init=False
     )
-    visited_modules: List[ModuleType] = field(default_factory=list)
-    recursive_stack: Set[ModuleType] = field(default_factory=set)
+    visited_modules: list[ModuleType] = field(default_factory=list)
+    recursive_stack: set[ModuleType] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         if self.options is None:
@@ -126,7 +126,7 @@ class UnusedObjectFinder:
 
     def __exit__(
         self,
-        exc_typ: Optional[Type[BaseException]],
+        exc_typ: Optional[type[BaseException]],
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> None:

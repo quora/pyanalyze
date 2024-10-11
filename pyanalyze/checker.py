@@ -11,7 +11,7 @@ import types
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, ContextManager, Dict, List, Optional, Set, Tuple, Union
+from typing import Callable, ContextManager, Optional, Union
 
 import qcore
 
@@ -55,7 +55,7 @@ from .value import (
     unite_values,
 )
 
-_BaseProvider = Callable[[Union[type, super]], Set[type]]
+_BaseProvider = Callable[[Union[type, super]], set[type]]
 
 
 class AdditionalBaseProviders(PyObjectSequenceOption[_BaseProvider]):
@@ -84,14 +84,14 @@ class Checker:
     ts_finder: TypeshedFinder = field(init=False)
     reexport_tracker: ImplicitReexportTracker = field(init=False)
     callable_tracker: CallableTracker = field(init=False)
-    type_object_cache: Dict[Union[type, super, str], TypeObject] = field(
+    type_object_cache: dict[Union[type, super, str], TypeObject] = field(
         default_factory=dict, init=False, repr=False
     )
-    assumed_compatibilities: List[Tuple[TypeObject, TypeObject]] = field(
+    assumed_compatibilities: list[tuple[TypeObject, TypeObject]] = field(
         default_factory=list
     )
-    vnv_map: Dict[str, VariableNameValue] = field(default_factory=dict)
-    type_alias_cache: Dict[object, TypeAlias] = field(default_factory=dict)
+    vnv_map: dict[str, VariableNameValue] = field(default_factory=dict)
+    type_alias_cache: dict[object, TypeAlias] = field(default_factory=dict)
     _should_exclude_any: bool = False
     _has_used_any_match: bool = False
 
@@ -119,10 +119,10 @@ class Checker:
     ) -> Optional[VariableNameValue]:
         return VariableNameValue.from_varname(varname, self.vnv_map)
 
-    def perform_final_checks(self) -> List[Failure]:
+    def perform_final_checks(self) -> list[Failure]:
         return self.callable_tracker.check()
 
-    def get_additional_bases(self, typ: Union[type, super]) -> Set[type]:
+    def get_additional_bases(self, typ: Union[type, super]) -> set[type]:
         bases = set()
         for provider in self.options.get_value_for(AdditionalBaseProviders):
             bases |= provider(typ)
@@ -183,7 +183,7 @@ class Checker:
 
     def _get_recursive_typeshed_bases(
         self, typ: Union[type, str]
-    ) -> Set[Union[type, str]]:
+    ) -> set[Union[type, str]]:
         seen = set()
         to_do = {typ}
         result = set()
@@ -197,11 +197,11 @@ class Checker:
             seen.add(typ)
         return result
 
-    def _get_typeshed_bases(self, typ: Union[type, str]) -> Set[Union[type, str]]:
+    def _get_typeshed_bases(self, typ: Union[type, str]) -> set[Union[type, str]]:
         base_values = self.ts_finder.get_bases_recursively(typ)
         return {base.typ for base in base_values if isinstance(base, TypedValue)}
 
-    def _get_protocol_members(self, bases: Iterable[Union[type, str]]) -> Set[str]:
+    def _get_protocol_members(self, bases: Iterable[Union[type, str]]) -> set[str]:
         return set(
             itertools.chain.from_iterable(
                 self.ts_finder.get_all_attributes(base) for base in bases
@@ -442,7 +442,7 @@ EXCLUDED_PROTOCOL_MEMBERS = {
 }
 
 
-def _extract_protocol_members(typ: type) -> Set[str]:
+def _extract_protocol_members(typ: type) -> set[str]:
     if (
         typ is object
         or is_typing_name(typ, "Generic")
@@ -468,7 +468,7 @@ class CheckerAttrContext(AttrContext):
 
     def get_attribute_from_typeshed_recursively(
         self, fq_name: str, *, on_class: bool
-    ) -> Tuple[Value, object]:
+    ) -> tuple[Value, object]:
         return self.checker.ts_finder.get_attribute_recursively(
             fq_name, self.attr, on_class=on_class
         )

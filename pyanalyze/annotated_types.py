@@ -8,7 +8,7 @@ import enum
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone, tzinfo
-from typing import Any, Callable, Optional, Type, Union
+from typing import Any, Callable, Optional, Union
 
 from pyanalyze.value import CanAssign, CanAssignContext, Value, flatten_values
 
@@ -127,7 +127,7 @@ class AnnotatedTypesCheck(CustomCheck):
 
 @dataclass(frozen=True)
 class EnumName(AnnotatedTypesCheck):
-    enum_cls: Type[enum.Enum]
+    enum_cls: type[enum.Enum]
 
     def predicate(self, value: str) -> bool:
         try:

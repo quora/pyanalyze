@@ -8,7 +8,7 @@ import inspect
 import sys
 import typing
 from collections.abc import Container, Sequence
-from typing import Any, Dict, NewType, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, NewType, Optional, TypeVar, Union
 
 import typing_extensions
 
@@ -56,7 +56,7 @@ def safe_equals(left: object, right: object) -> bool:
         return False
 
 
-def safe_issubclass(cls: type, class_or_tuple: Union[type, Tuple[type, ...]]) -> bool:
+def safe_issubclass(cls: type, class_or_tuple: Union[type, tuple[type, ...]]) -> bool:
     """Safe version of ``issubclass()``.
 
     Apart from incorrect arguments, ``issubclass(a, b)`` can throw an error
@@ -73,7 +73,7 @@ def safe_issubclass(cls: type, class_or_tuple: Union[type, Tuple[type, ...]]) ->
         return False
 
 
-def safe_isinstance(obj: object, class_or_tuple: Union[type, Tuple[type, ...]]) -> bool:
+def safe_isinstance(obj: object, class_or_tuple: Union[type, tuple[type, ...]]) -> bool:
     """Safe version of ``isinstance()``.
 
     ``isinstance(a, b)`` can throw an error in the following circumstances:
@@ -115,7 +115,7 @@ def is_hashable(obj: object) -> bool:
 
 
 def all_of_type(
-    elts: Sequence[object], typ: Type[T]
+    elts: Sequence[object], typ: type[T]
 ) -> typing_extensions.TypeGuard[Sequence[T]]:
     """Returns whether all elements of elts are instances of typ."""
     return all(isinstance(elt, typ) for elt in elts)
@@ -159,10 +159,10 @@ def is_instance_of_typing_name(obj: object, name: str) -> bool:
     return isinstance(obj, objs)
 
 
-_typing_name_cache: Dict[str, Tuple[Tuple[Any, ...], Tuple[str, ...]]] = {}
+_typing_name_cache: dict[str, tuple[tuple[Any, ...], tuple[str, ...]]] = {}
 
 
-def _fill_typing_name_cache(name: str) -> Tuple[Tuple[Any, ...], Tuple[str, ...]]:
+def _fill_typing_name_cache(name: str) -> tuple[tuple[Any, ...], tuple[str, ...]]:
     try:
         return _typing_name_cache[name]
     except KeyError:

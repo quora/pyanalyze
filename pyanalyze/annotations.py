@@ -34,11 +34,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ContextManager,
-    List,
     NewType,
     Optional,
-    Set,
-    Tuple,
     TypeVar,
     Union,
     cast,
@@ -140,7 +137,7 @@ class Context:
 
     should_suppress_undefined_names: bool = field(default=False, init=False)
     """While this is True, no errors are shown for undefined names."""
-    _being_evaluated: Set[int] = field(default_factory=set, init=False)
+    _being_evaluated: set[int] = field(default_factory=set, init=False)
 
     def suppress_undefined_names(self) -> ContextManager[None]:
         """Temporarily suppress errors about undefined names."""
@@ -795,7 +792,7 @@ def _type_from_subscripted_value(
             ctx.show_error("Optional[] takes only one argument")
             return AnyValue(AnySource.error)
         return unite_values(KnownValue(None), _type_from_value(members[0], ctx))
-    elif root is typing.Type or root is type:
+    elif root is type or root is type:
         if len(members) != 1:
             ctx.show_error("Type[] takes only one argument")
             return AnyValue(AnySource.error)
@@ -957,7 +954,7 @@ class _DefaultContext(Context):
 @dataclass(frozen=True)
 class _SubscriptedValue(Value):
     root: Optional[Value]
-    members: Tuple[Value, ...]
+    members: tuple[Value, ...]
 
 
 @dataclass(frozen=True)
@@ -969,7 +966,7 @@ class TypeQualifierValue(Value):
 @dataclass(frozen=True)
 class DecoratorValue(Value):
     decorator: object
-    args: Tuple[Value, ...]
+    args: tuple[Value, ...]
 
 
 class _Visitor(ast.NodeVisitor):
@@ -1160,7 +1157,7 @@ def _value_of_origin_args(
     is_typeddict: bool = False,
     allow_unpack: bool = False,
 ) -> Value:
-    if origin is typing.Type or origin is type:
+    if origin is type or origin is type:
         if not args:
             return TypedValue(type)
         return SubclassValue.make(_type_from_runtime(args[0], ctx))
@@ -1385,7 +1382,7 @@ def _make_callable_from_value(
 
 
 def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:
-    metadata_objs: List[Union[Value, Extension]] = []
+    metadata_objs: list[Union[Value, Extension]] = []
     for entry in metadata:
         if isinstance(entry, KnownValue):
             if isinstance(entry.val, ParameterTypeGuard):

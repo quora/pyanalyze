@@ -13,7 +13,7 @@ import types
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from itertools import zip_longest
-from typing import List, Optional, Tuple, TypeVar, Union
+from typing import Optional, TypeVar, Union
 
 import asynq
 from typing_extensions import Protocol
@@ -91,7 +91,7 @@ class FunctionInfo:
     # a list of tuples of (decorator function, applied decorator function, AST node). These are
     # different for decorators that take arguments, like @asynq(): the first element will be the
     # asynq function and the second will be the result of calling asynq().
-    decorators: List[Tuple[Value, Value, ast.AST]]
+    decorators: list[tuple[Value, Value, ast.AST]]
     node: FunctionNode
     params: Sequence[ParamInfo]
     return_annotation: Optional[Value]
@@ -242,7 +242,7 @@ def compute_parameters(
         *vararg_defaults,
         *kw_defaults,
     ]
-    args: List[Tuple[ParameterKind, ast.arg]] = [
+    args: list[tuple[ParameterKind, ast.arg]] = [
         (ParameterKind.POSITIONAL_ONLY, arg) for arg in posonly_args
     ] + [(ParameterKind.POSITIONAL_OR_KEYWORD, arg) for arg in node.args.args]
     if node.args.vararg is not None:
@@ -253,7 +253,7 @@ def compute_parameters(
     params = []
     tv_index = 1
 
-    seen_paramspec_args: Optional[Tuple[ast.arg, ParamSpecArgsValue]] = None
+    seen_paramspec_args: Optional[tuple[ast.arg, ParamSpecArgsValue]] = None
     for idx, (param, default) in enumerate(zip_longest(args, defaults)):
         assert param is not None, "must have more args than defaults"
         (kind, arg) = param

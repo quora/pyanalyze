@@ -19,12 +19,8 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Dict,
-    List,
     NamedTuple,
     Optional,
-    Set,
-    Tuple,
     TypeVar,
     Union,
 )
@@ -152,7 +148,7 @@ class PosOrKeyword:
 # None for positional args, str for keyword args,
 # ARGS for *args, KWARGS for **kwargs, PossibleArg for args that may
 # be missing, TypeVarValue for a ParamSpec.
-Argument = Tuple[
+Argument = tuple[
     Composite,
     Union[
         None,
@@ -165,7 +161,7 @@ Argument = Tuple[
 ]
 
 # Arguments bound to a call
-BoundArgs = Dict[str, Tuple[Position, Composite]]
+BoundArgs = dict[str, tuple[Position, Composite]]
 
 
 class CheckCallContext(Protocol):
@@ -193,7 +189,7 @@ class CheckCallContext(Protocol):
 class _CanAssignBasedContext:
     can_assign_ctx: CanAssignContext
     visitor: Optional["NameCheckVisitor"] = None
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     def on_error(
         self,
@@ -248,9 +244,9 @@ class ActualArguments:
 
     """
 
-    positionals: List[Tuple[bool, Composite]]
+    positionals: list[tuple[bool, Composite]]
     star_args: Optional[Value]  # represents the type of the elements of *args
-    keywords: Dict[str, Tuple[bool, Composite]]
+    keywords: dict[str, tuple[bool, Composite]]
     star_kwargs: Optional[Value]  # represents the type of the elements of **kwargs
     kwargs_required: bool
     pos_or_keyword_params: Container[Union[int, str]]
@@ -309,12 +305,12 @@ class ImplReturn(NamedTuple):
 class CallContext:
     """The context passed to an :term:`impl` function."""
 
-    vars: Dict[str, Value]
+    vars: dict[str, Value]
     """Dictionary of variable names passed to the function."""
     visitor: "NameCheckVisitor"
     """Using the visitor can allow various kinds of advanced logic
     in impl functions."""
-    composites: Dict[str, Composite]
+    composites: dict[str, Composite]
     node: Optional[ast.AST]
     """AST node corresponding to the function call. Useful for
     showing errors."""
@@ -537,7 +533,7 @@ class Signature:
 
     _return_key: ClassVar[str] = "%return"
 
-    parameters: Dict[str, SigParameter]
+    parameters: dict[str, SigParameter]
     """An ordered mapping of the signature's parameters."""
     return_value: Value
     """What the callable returns."""
@@ -554,10 +550,10 @@ class Signature:
     """Type evaluator for this function."""
     deprecated: Optional[str] = None
     """Deprecation message for this callable."""
-    typevars_of_params: Dict[str, List[TypeVarLike]] = field(
+    typevars_of_params: dict[str, list[TypeVarLike]] = field(
         init=False, default_factory=dict, repr=False, compare=False, hash=False
     )
-    all_typevars: Set[TypeVarLike] = field(
+    all_typevars: set[TypeVarLike] = field(
         init=False, default_factory=set, repr=False, compare=False, hash=False
     )
 
@@ -637,7 +633,7 @@ class Signature:
         ctx: CheckCallContext,
         typevar_map: Optional[TypeVarMap] = None,
         is_overload: bool = False,
-    ) -> Tuple[Optional[BoundsMap], bool, Optional[Value]]:
+    ) -> tuple[Optional[BoundsMap], bool, Optional[Value]]:
         """Check type compatibility for a single parameter.
 
         Returns a three-tuple:
@@ -693,7 +689,7 @@ class Signature:
     def _apply_annotated_constraints(
         self,
         raw_return: Union[Value, ImplReturn],
-        composites: Dict[str, Composite],
+        composites: dict[str, Composite],
         ctx: CheckCallContext,
     ) -> Value:
         if isinstance(raw_return, Value):
@@ -785,7 +781,7 @@ class Signature:
         return annotate_value(return_value, extensions)
 
     def _get_typeguard_varname(
-        self, composites: Dict[str, Composite]
+        self, composites: dict[str, Composite]
     ) -> Optional[VarnameWithOrigin]:
         # This might miss some cases where we should use the second argument instead. We'll
         # have to come up with additional heuristics if that comes up.
@@ -815,7 +811,7 @@ class Signature:
 
         """
         positional_index = 0
-        keywords_consumed: Set[str] = set()
+        keywords_consumed: set[str] = set()
         bound_args: BoundArgs = {}
         star_args_consumed = False
         star_kwargs_consumed = False
@@ -2007,7 +2003,7 @@ def preprocess_args(
     """Preprocess the argument list. Produces an ActualArguments object."""
 
     # Step 1: Split up args and kwargs if possible.
-    processed_args: List[Argument] = []
+    processed_args: list[Argument] = []
     kwargs_requireds = []
     param_spec = None
     param_spec_star_arg = None
@@ -2112,8 +2108,8 @@ def preprocess_args(
     # any single arguments that come after *args into *args, and we merge all *args.
     # But for keywords, we first get all the arguments with known keys, and after that unite
     # all the **kwargs into a single argument.
-    more_processed_args: List[Tuple[bool, Composite]] = []
-    more_processed_kwargs: Dict[str, Tuple[bool, Composite]] = {}
+    more_processed_args: list[tuple[bool, Composite]] = []
+    more_processed_kwargs: dict[str, tuple[bool, Composite]] = {}
     star_args: Optional[Value] = None
     star_kwargs: Optional[Value] = None
     is_ellipsis: bool = False
@@ -2191,7 +2187,7 @@ def preprocess_args(
 
 def _preprocess_kwargs_no_mvv(
     value: Value, ctx: CheckCallContext
-) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
+) -> Optional[tuple[dict[str, tuple[bool, Value]], Optional[Value]]]:
     """Preprocess a Value passed as **kwargs.
 
     Two possible return types:
@@ -2226,10 +2222,10 @@ def _preprocess_kwargs_no_mvv(
 
 def _preprocess_kwargs_kv_pairs(
     items: Sequence[KVPair], ctx: CheckCallContext
-) -> Optional[Tuple[Dict[str, Tuple[bool, Value]], Optional[Value]]]:
+) -> Optional[tuple[dict[str, tuple[bool, Value]], Optional[Value]]]:
     out_items = {}
     possible_values = []
-    covered_keys: Set[Value] = set()
+    covered_keys: set[Value] = set()
     for pair in reversed(items):
         if not pair.is_many:
             if isinstance(pair.key, AnnotatedValue):
@@ -2285,7 +2281,7 @@ def _preprocess_kwargs_kv_pairs(
 class OverloadedSignature:
     """Represent an overloaded function."""
 
-    signatures: Tuple[Signature, ...]
+    signatures: tuple[Signature, ...]
 
     def __init__(self, sigs: Sequence[Signature]) -> None:
         object.__setattr__(self, "signatures", tuple(sigs))
@@ -2371,9 +2367,9 @@ class OverloadedSignature:
             return AnyValue(AnySource.error)
 
         errors_per_overload = []
-        any_rets: List[CallReturn] = []
-        union_rets: List[CallReturn] = []
-        union_and_any_rets: List[CallReturn] = []
+        any_rets: list[CallReturn] = []
+        union_rets: list[CallReturn] = []
+        union_and_any_rets: list[CallReturn] = []
         sigs = [
             sig
             for sig, bound_args in zip(self.signatures, bound_args_per_overload)
@@ -2481,7 +2477,7 @@ class OverloadedSignature:
 
     def _make_detail(
         self,
-        errors_per_overload: Sequence[Sequence[Dict[str, Any]]],
+        errors_per_overload: Sequence[Sequence[dict[str, Any]]],
         sigs: Sequence[Signature],
     ) -> CanAssignError:
         details = []
@@ -2668,7 +2664,7 @@ MappingValue = GenericValue(collections.abc.Mapping, [TypeVarValue(K), TypeVarVa
 
 def can_assign_var_positional(
     my_param: SigParameter, args_annotation: Value, idx: int, ctx: CanAssignContext
-) -> Union[List[BoundsMap], CanAssignError]:
+) -> Union[list[BoundsMap], CanAssignError]:
     my_annotation = my_param.get_annotation()
     if isinstance(args_annotation, SequenceValue):
         members = args_annotation.get_member_sequence()
@@ -2706,7 +2702,7 @@ def can_assign_var_positional(
 
 def can_assign_var_keyword(
     my_param: SigParameter, kwargs_annotation: Value, ctx: CanAssignContext
-) -> Union[List[BoundsMap], CanAssignError]:
+) -> Union[list[BoundsMap], CanAssignError]:
     my_annotation = my_param.get_annotation()
     bounds_maps = []
     if isinstance(kwargs_annotation, TypedDictValue):
@@ -2751,7 +2747,7 @@ def can_assign_var_keyword(
 
 def decompose_union(
     expected_type: Value, parent_value: Value, ctx: CanAssignContext
-) -> Optional[Tuple[BoundsMap, bool, Value]]:
+) -> Optional[tuple[BoundsMap, bool, Value]]:
     value = unannotate(parent_value)
     if isinstance(value, MultiValuedValue):
         bounds_maps = []

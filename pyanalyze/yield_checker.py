@@ -15,7 +15,7 @@ import itertools
 import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, ContextManager, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, ContextManager, Optional
 
 import asynq
 import qcore
@@ -38,8 +38,8 @@ class YieldInfo:
 
     yield_node: ast.Yield
     statement_node: ast.stmt
-    lines: List[str]
-    line_range: List[int] = field(init=False)
+    lines: list[str]
+    line_range: list[int] = field(init=False)
 
     def __post_init__(self) -> None:
         self.line_range = get_line_range_for_node(self.statement_node, self.lines)
@@ -52,7 +52,7 @@ class YieldInfo:
     def get_indentation(self) -> int:
         return get_indentation(self.lines[self.statement_node.lineno - 1])
 
-    def target_and_value(self) -> Tuple[List[ast.expr], List[ast.expr]]:
+    def target_and_value(self) -> tuple[list[ast.expr], list[ast.expr]]:
         """Returns a pair of a list of target nodes and a list of value nodes."""
         assert self.yield_node.value is not None
         if isinstance(self.statement_node, ast.Assign):
@@ -158,15 +158,15 @@ class VarnameGenerator:
 @dataclass
 class YieldChecker:
     visitor: "pyanalyze.name_check_visitor.NameCheckVisitor"
-    variables_from_yield_result: Dict[str, bool] = field(default_factory=dict)
+    variables_from_yield_result: dict[str, bool] = field(default_factory=dict)
     in_yield_result_assignment: bool = False
     in_non_async_yield: bool = False
     last_yield_in_aug_assign: bool = False
     previous_yield: Optional[ast.Yield] = None
     statement_for_previous_yield: Optional[ast.stmt] = None
-    used_varnames: Set[str] = field(default_factory=set)
+    used_varnames: set[str] = field(default_factory=set)
     current_function_node: Optional[FunctionNode] = None
-    alerted_nodes: Set[FunctionNode] = field(default_factory=set)
+    alerted_nodes: set[FunctionNode] = field(default_factory=set)
 
     def set_function_node(self, node: FunctionNode) -> ContextManager[None]:
         return qcore.override(self, "current_function_node", node)
@@ -290,7 +290,7 @@ class YieldChecker:
             return
 
         duplicate_indices = {}  # index to first index
-        seen: Dict[str, int] = {}  # ast.dump result to index
+        seen: dict[str, int] = {}  # ast.dump result to index
         for i, member in enumerate(node.value.elts):
             # identical AST nodes don't compare equally, so just stringify them for comparison
             code = ast.dump(member)
@@ -382,7 +382,7 @@ class YieldChecker:
             node, message, ErrorCode.unnecessary_yield, replacement=replacement
         )
 
-    def _lines_of_node(self, yield_node: ast.Yield) -> List[int]:
+    def _lines_of_node(self, yield_node: ast.Yield) -> list[int]:
         """Returns the lines that the given yield node occupies."""
         first_lineno = yield_node.lineno
         lines = self.visitor._lines()
@@ -523,7 +523,7 @@ class YieldChecker:
 
     def _move_out_var_from_yield(
         self, yield_info: YieldInfo, indentation: int
-    ) -> Tuple[List[str], Optional[Replacement]]:
+    ) -> tuple[list[str], Optional[Replacement]]:
         """Helper for splitting up a yield node and moving it to an earlier place.
 
         For example, it will help turn:
@@ -611,7 +611,7 @@ class YieldChecker:
 
 def _camel_case_to_snake_case(s: str) -> str:
     """Converts a CamelCase string to snake_case."""
-    out: List[str] = []
+    out: list[str] = []
     last_was_uppercase = False
     for c in s:
         if c.isupper():

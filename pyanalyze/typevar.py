@@ -5,7 +5,7 @@ TypeVar solver.
 """
 
 from collections.abc import Iterable, Sequence
-from typing import Tuple, Union
+from typing import Union
 
 import qcore
 
@@ -36,7 +36,7 @@ def resolve_bounds_map(
     ctx: CanAssignContext,
     *,
     all_typevars: Iterable[TypeVarLike] = (),
-) -> Tuple[TypeVarMap, Sequence[CanAssignError]]:
+) -> tuple[TypeVarMap, Sequence[CanAssignError]]:
     tv_map = {tv: AnyValue(AnySource.generic_argument) for tv in all_typevars}
     errors = []
     for tv, bounds in bounds_map.items():

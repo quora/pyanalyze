@@ -13,7 +13,7 @@ import os
 import textwrap
 import traceback
 import types
-from typing import Optional, Type, Union
+from typing import Optional, Union
 
 from .analysis_lib import make_module
 from .error_code import ErrorCode
@@ -26,7 +26,7 @@ from .name_check_visitor import ClassAttributeChecker, NameCheckVisitor
 def annotate_code(
     code: str,
     *,
-    visitor_cls: Type[NameCheckVisitor] = NameCheckVisitor,
+    visitor_cls: type[NameCheckVisitor] = NameCheckVisitor,
     dump: bool = False,
     show_errors: bool = False,
     verbose: bool = False,
@@ -73,7 +73,7 @@ def annotate_code(
 def annotate_file(
     path: Union[str, "os.PathLike[str]"],
     *,
-    visitor_cls: Type[NameCheckVisitor] = NameCheckVisitor,
+    visitor_cls: type[NameCheckVisitor] = NameCheckVisitor,
     verbose: bool = False,
     dump: bool = False,
     show_errors: bool = False,
@@ -159,7 +159,7 @@ def _annotate_module(
     module: Optional[types.ModuleType],
     tree: ast.Module,
     code_str: str,
-    visitor_cls: Type[NameCheckVisitor],
+    visitor_cls: type[NameCheckVisitor],
     show_errors: bool = False,
 ) -> None:
     """Annotate the AST for a module with inferred values.

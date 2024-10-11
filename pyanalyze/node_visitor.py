@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Optional, Union
 
 import codemod
 import qcore
@@ -35,8 +35,8 @@ from typing_extensions import NotRequired, Protocol, TypedDict
 from . import analysis_lib, error_code
 from .safe import safe_getattr, safe_isinstance
 
-Error = Dict[str, Any]
-ErrorCodeContainer = Union[error_code.ErrorRegistry, Type[Enum]]
+Error = dict[str, Any]
+ErrorCodeContainer = Union[error_code.ErrorRegistry, type[Enum]]
 ErrorCodeInstance = Union[error_code.Error, Enum]
 
 
@@ -66,7 +66,7 @@ class _PatchWithDescription(codemod.Patch):
         self,
         start_line_number: int,
         end_line_number: Optional[int] = None,
-        new_lines: Optional[List[str]] = None,
+        new_lines: Optional[list[str]] = None,
         path: Optional[str] = None,
         description: Optional[str] = None,
     ) -> None:
@@ -84,9 +84,9 @@ class _PatchWithDescription(codemod.Patch):
 class _Query:
     """Simple equivalent of codemod.Query."""
 
-    patches: List[_PatchWithDescription]
+    patches: list[_PatchWithDescription]
 
-    def generate_patches(self) -> List[_PatchWithDescription]:
+    def generate_patches(self) -> list[_PatchWithDescription]:
         return self.patches
 
 
@@ -135,11 +135,11 @@ class Failure(TypedDict):
     col_offset: NotRequired[int]
     context: NotRequired[str]
     message: NotRequired[str]
-    extra_metadata: NotRequired[Dict[str, Any]]
+    extra_metadata: NotRequired[dict[str, Any]]
 
 
 class ErrorContext(Protocol):
-    all_failures: List[Failure]
+    all_failures: list[Failure]
 
     def show_error(
         self,
@@ -149,7 +149,7 @@ class ErrorContext(Protocol):
         *,
         detail: Optional[str] = None,
         save: bool = True,
-        extra_metadata: Optional[Dict[str, Any]] = None,
+        extra_metadata: Optional[dict[str, Any]] = None,
     ) -> Optional[Failure]:
         raise NotImplementedError
 
@@ -163,12 +163,12 @@ class BaseNodeVisitor(ast.NodeVisitor):
     default_module: Optional[ModuleType] = None  # module to run on by default
     # whether to look at FILE_ENVIRON_KEY to find files to run on
     should_check_environ_for_files: bool = True
-    caught_errors: Optional[List[Dict[str, Any]]] = None
+    caught_errors: Optional[list[dict[str, Any]]] = None
 
-    _changes_for_fixer: Dict[str, List[Replacement]] = collections.defaultdict(list)
+    _changes_for_fixer: dict[str, list[Replacement]] = collections.defaultdict(list)
 
     tree: ast.Module
-    all_failures: List[Failure]
+    all_failures: list[Failure]
     is_code_only: bool
 
     def __init__(
@@ -209,7 +209,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         self.caught_errors = None
         self.is_code_only = is_code_only
 
-    def check(self) -> List[Failure]:
+    def check(self) -> list[Failure]:
         """Runs the class's checks on a tree."""
         self.log(logging.INFO, "Check file", self.filename)
         self.visit(self.tree)
@@ -233,7 +233,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         self.logger.log(level, f"{qcore.safe_str(label)}: {qcore.safe_str(value)}")
 
     @qcore.caching.cached_per_instance()
-    def _lines(self) -> List[str]:
+    def _lines(self) -> list[str]:
         return [line + "\n" for line in self.contents.splitlines()]
 
     @qcore.caching.cached_per_instance()
@@ -256,7 +256,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
                 return True
         return False
 
-    def get_unused_ignores(self) -> List[Tuple[int, str]]:
+    def get_unused_ignores(self) -> list[tuple[int, str]]:
         """Returns line numbers and lines that have unused ignore comments."""
         return [
             (i, line)
@@ -298,7 +298,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         assert_passes: bool = True,
         include_tests: bool = False,
         **kwargs: Any,
-    ) -> List[Failure]:
+    ) -> list[Failure]:
         """Run checks on a single file.
 
         include_tests and assert_passes are arguments here for compatibility with check_all_files.
@@ -317,7 +317,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     @classmethod
     def check_all_files(
         cls, include_tests: bool = False, assert_passes: bool = True, **kwargs: Any
-    ) -> List[Failure]:
+    ) -> list[Failure]:
         """Runs the check for all files in scope or changed files if we are test-local."""
         if "settings" not in kwargs:
             kwargs["settings"] = cls._get_default_settings()
@@ -331,7 +331,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return all_failures
 
     @classmethod
-    def get_files_to_check(cls, include_tests: bool, **kwargs: Any) -> List[str]:
+    def get_files_to_check(cls, include_tests: bool, **kwargs: Any) -> list[str]:
         """Produce the list of files to check."""
         if cls.should_check_environ_for_files:
             environ_files = get_files_to_check_from_environ()
@@ -354,7 +354,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return kwargs
 
     @classmethod
-    def perform_final_checks(cls, kwargs: Mapping[str, Any]) -> List[Failure]:
+    def perform_final_checks(cls, kwargs: Mapping[str, Any]) -> list[Failure]:
         return []
 
     @classmethod
@@ -425,13 +425,13 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return 1 if failures else 0
 
     @classmethod
-    def _write_json_report(cls, output_file: str, failures: List[Failure]) -> None:
+    def _write_json_report(cls, output_file: str, failures: list[Failure]) -> None:
         failures = [_make_serializable(failure) for failure in failures]
         with open(output_file, "w") as f:
             json.dump(failures, f)
 
     @classmethod
-    def _write_markdown_report(cls, output_file: str, failures: List[Failure]) -> None:
+    def _write_markdown_report(cls, output_file: str, failures: list[Failure]) -> None:
         by_file = collections.defaultdict(list)
         for failure in failures:
             by_file[failure["filename"]].append(failure)
@@ -503,7 +503,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return had_failure
 
     @classmethod
-    def _apply_changes(cls, changes: Dict[str, List[Replacement]]) -> None:
+    def _apply_changes(cls, changes: dict[str, list[Replacement]]) -> None:
         for filename, changeset in changes.items():
             with open(filename) as f:
                 lines = f.readlines()
@@ -513,7 +513,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _apply_changes_to_lines(
-        cls, changes: List[Replacement], input_lines: Sequence[str]
+        cls, changes: list[Replacement], input_lines: Sequence[str]
     ) -> Sequence[str]:
         # only apply the first change because that change might affect other fixes
         # that test_scope came up for that file. So we break after finding first applicable fix.
@@ -532,7 +532,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return lines
 
     @classmethod
-    def _get_default_settings(cls) -> Optional[Dict[ErrorCodeInstance, bool]]:
+    def _get_default_settings(cls) -> Optional[dict[ErrorCodeInstance, bool]]:
         if cls.error_code_enum is None:
             return None
         else:
@@ -541,7 +541,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             }
 
     @contextmanager
-    def catch_errors(self) -> Iterator[List[Error]]:
+    def catch_errors(self) -> Iterator[list[Error]]:
         caught_errors = []
         with qcore.override(self, "caught_errors", caught_errors):
             yield caught_errors
@@ -566,7 +566,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         ignore_comment: str = IGNORE_COMMENT,
         detail: Optional[str] = None,
         save: bool = True,
-        extra_metadata: Optional[Dict[str, Any]] = None,
+        extra_metadata: Optional[dict[str, Any]] = None,
     ) -> Optional[Failure]:
         """Shows an error associated with this node.
 
@@ -713,13 +713,13 @@ class BaseNodeVisitor(ast.NodeVisitor):
             raise VisitorError(message, error_code)
         return error
 
-    def _get_attribute_path(self, node: ast.AST) -> Optional[List[str]]:
+    def _get_attribute_path(self, node: ast.AST) -> Optional[list[str]]:
         return analysis_lib.get_attribute_path(node)
 
     @classmethod
     def _run(
         cls, profile: bool = False, num_iterations: int = 1, **kwargs: Any
-    ) -> Optional[List[Failure]]:
+    ) -> Optional[list[Failure]]:
         result = None
         for _ in range(num_iterations):
             if profile:
@@ -735,7 +735,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         files: Optional[Sequence[str]] = None,
         code: Optional[str] = None,
         **kwargs: Any,
-    ) -> List[Failure]:
+    ) -> list[Failure]:
         if code is not None:
             return cls._run_on_code(code, **kwargs)
         files = files or cls.get_default_directories(**kwargs)
@@ -745,7 +745,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             return cls._run_on_files(_get_all_files(files), **kwargs)
 
     @classmethod
-    def _run_on_code(cls, code: str, **kwargs: Any) -> List[Failure]:
+    def _run_on_code(cls, code: str, **kwargs: Any) -> list[Failure]:
         try:
             tree = ast.parse(code)
         except Exception as e:
@@ -758,7 +758,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         return cls("<code>", code, tree, is_code_only=True, **kwargs).check()
 
     @classmethod
-    def _run_on_files(cls, files: Iterable[str], **kwargs: Any) -> List[Failure]:
+    def _run_on_files(cls, files: Iterable[str], **kwargs: Any) -> list[Failure]:
         all_failures = []
         args = [(filename, kwargs) for filename in sorted(files)]
         if kwargs.pop("parallel", False):
@@ -776,8 +776,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
 
     @classmethod
     def _check_file_single_arg(
-        cls, args: Tuple[str, Dict[str, Any]]
-    ) -> Tuple[List[Failure], Any]:
+        cls, args: tuple[str, dict[str, Any]]
+    ) -> tuple[list[Failure], Any]:
         filename, kwargs = args
         main_module = sys.modules["__main__"]
         try:
@@ -790,7 +790,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
     @classmethod
     def check_file_in_worker(
         cls, filename: str, **kwargs: Any
-    ) -> Tuple[List[Failure], Any]:
+    ) -> tuple[list[Failure], Any]:
         """Checks a single file in a parallel worker.
 
         Returns a tuple of (failures, extra data). The extra data will be passed to
@@ -821,12 +821,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             for code in cls.error_code_enum:
                 enabled_string = "on" if cls.is_enabled_by_default(code) else "off"
                 code_descriptions.append(
-                    "  - %s: %s (default: %s)"
-                    % (
-                        code.name,
-                        cls.get_description_for_error_code(code),
-                        enabled_string,
-                    )
+                    f"  - {code.name}: {cls.get_description_for_error_code(code)} (default: {enabled_string})"
                 )
 
             epilog = "Supported checks:\n" + "\n".join(code_descriptions)
@@ -1126,7 +1121,7 @@ class ReplacingNodeVisitor(BaseNodeVisitor):
 
 def get_files_to_check_from_environ(
     environ_key: str = FILE_ENVIRON_KEY,
-) -> Optional[List[str]]:
+) -> Optional[list[str]]:
     """Returns any files to run on specified in the FILE_ENVIRON_KEY that we should run on.
 
     If the key isn't in the environ, return None.
@@ -1171,7 +1166,7 @@ class _Profile:
         print(f"profiler output saved as {self.filename}")
 
 
-def _make_serializable(failure: Failure) -> Dict[str, Any]:
+def _make_serializable(failure: Failure) -> dict[str, Any]:
     result = dict(failure)
     if "code" in failure:
         result["code"] = failure["code"].name

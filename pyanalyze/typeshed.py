@@ -17,7 +17,7 @@ from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field, replace
 from enum import EnumMeta
 from types import GeneratorType, MethodDescriptorType, ModuleType
-from typing import Any, Dict, Generic, List, Optional, Set, Tuple, TypeVar, Union
+from typing import Any, Generic, Optional, TypeVar, Union
 
 import qcore
 import typeshed_client
@@ -110,7 +110,7 @@ class _AnnotationContext(Context):
 
 
 class _DummyErrorContext:
-    all_failures: List[Failure] = []
+    all_failures: list[Failure] = []
 
     def show_error(
         self,
@@ -120,7 +120,7 @@ class _DummyErrorContext:
         *,
         detail: Optional[str] = None,
         save: bool = True,
-        extra_metadata: Optional[Dict[str, Any]] = None,
+        extra_metadata: Optional[dict[str, Any]] = None,
     ) -> Optional[Failure]:
         return None
 
@@ -152,13 +152,13 @@ class TypeshedFinder:
     ctx: CanAssignContext = field(repr=False)
     verbose: bool = True
     resolver: typeshed_client.Resolver = field(default_factory=typeshed_client.Resolver)
-    _assignment_cache: Dict[Tuple[str, ast.AST], Value] = field(
+    _assignment_cache: dict[tuple[str, ast.AST], Value] = field(
         default_factory=dict, repr=False, init=False
     )
-    _attribute_cache: Dict[Tuple[str, str, bool], Value] = field(
+    _attribute_cache: dict[tuple[str, str, bool], Value] = field(
         default_factory=dict, repr=False, init=False
     )
-    _active_infos: List[typeshed_client.resolver.ResolvedName] = field(
+    _active_infos: list[typeshed_client.resolver.ResolvedName] = field(
         default_factory=list, repr=False, init=False
     )
 
@@ -281,11 +281,11 @@ class TypeshedFinder:
         )
         return sig
 
-    def get_bases(self, typ: type) -> Optional[List[Value]]:
+    def get_bases(self, typ: type) -> Optional[list[Value]]:
         """Return the base classes for this type, including generic bases."""
         return self.get_bases_for_value(TypedValue(typ))
 
-    def get_bases_for_value(self, val: Value) -> Optional[List[Value]]:
+    def get_bases_for_value(self, val: Value) -> Optional[list[Value]]:
         if isinstance(val, TypedValue):
             if isinstance(val.typ, type):
                 typ = val.typ
@@ -332,7 +332,7 @@ class TypeshedFinder:
             for base in bases
         )
 
-    def get_bases_recursively(self, typ: Union[type, str]) -> List[Value]:
+    def get_bases_recursively(self, typ: Union[type, str]) -> list[Value]:
         stack = [TypedValue(typ)]
         seen = set()
         bases = []
@@ -348,7 +348,7 @@ class TypeshedFinder:
                 bases += new_bases
         return bases
 
-    def get_bases_for_fq_name(self, fq_name: str) -> Optional[List[Value]]:
+    def get_bases_for_fq_name(self, fq_name: str) -> Optional[list[Value]]:
         if fq_name in (
             "typing.Generic",
             "typing.Protocol",
@@ -386,7 +386,7 @@ class TypeshedFinder:
 
     def get_attribute_recursively(
         self, fq_name: str, attr: str, *, on_class: bool
-    ) -> Tuple[Value, Union[type, str, None]]:
+    ) -> tuple[Value, Union[type, str, None]]:
         """Get an attribute from a fully qualified class.
 
         Returns a tuple (value, provider).
@@ -426,7 +426,7 @@ class TypeshedFinder:
                     return True
         return False
 
-    def get_all_attributes(self, typ: Union[type, str]) -> Set[str]:
+    def get_all_attributes(self, typ: Union[type, str]) -> set[str]:
         if isinstance(typ, str):
             fq_name = typ
         else:
@@ -553,7 +553,7 @@ class TypeshedFinder:
 
     def _get_child_info(
         self, info: typeshed_client.resolver.ResolvedName, attr: str, mod: str
-    ) -> Optional[Tuple[typeshed_client.resolver.ResolvedName, str]]:
+    ) -> Optional[tuple[typeshed_client.resolver.ResolvedName, str]]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
@@ -585,7 +585,7 @@ class TypeshedFinder:
 
     def _get_all_attributes_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str
-    ) -> Set[str]:
+    ) -> set[str]:
         if info is None:
             return set()
         elif isinstance(info, typeshed_client.ImportedInfo):
@@ -632,7 +632,7 @@ class TypeshedFinder:
 
     def _get_bases_from_info(
         self, info: typeshed_client.resolver.ResolvedName, mod: str, fq_name: str
-    ) -> Optional[List[Value]]:
+    ) -> Optional[list[Value]]:
         if info is None:
             return None
         elif isinstance(info, typeshed_client.ImportedInfo):
@@ -888,7 +888,7 @@ class TypeshedFinder:
         if node.decorator_list:
             objclass = None
         args = node.args
-        arguments: List[SigParameter] = []
+        arguments: list[SigParameter] = []
         num_pos_only_args = len(args.posonlyargs)
         defaults = args.defaults
         num_pos_only_defaults = len(defaults) - len(args.args)

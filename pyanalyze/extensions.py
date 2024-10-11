@@ -20,12 +20,8 @@ from typing import (
     Annotated,
     Any,
     Callable,
-    Dict,
-    List,
     NoReturn,
     Optional,
-    Tuple,
-    Type,
     TypeVar,
     Union,
 )
@@ -171,7 +167,7 @@ class ValidRegex(CustomCheck):
 
 class _AsynqCallableMeta(type):
     def __getitem__(
-        self, params: Tuple[Union[Literal[Ellipsis], List[object]], object]
+        self, params: tuple[Union[Literal[Ellipsis], list[object]], object]
     ) -> Any:
         if not isinstance(params, tuple) or len(params) != 2:
             raise TypeError(
@@ -201,7 +197,7 @@ class AsynqCallable(metaclass=_AsynqCallableMeta):
 
     """
 
-    args: Union[Literal[Ellipsis], Tuple[object, ...]]
+    args: Union[Literal[Ellipsis], tuple[object, ...]]
     return_type: object
 
     # Returns AsynqCallable but pyanalyze interprets that as AsynqCallable[..., Any]
@@ -230,7 +226,7 @@ class AsynqCallable(metaclass=_AsynqCallableMeta):
         return AsynqCallable(new_args, new_return_type)
 
     @property
-    def __parameters__(self) -> Tuple["TypeVar", ...]:
+    def __parameters__(self) -> tuple["TypeVar", ...]:
         params = []
         for arg in self._inner_types:
             if isinstance(arg, TypeVar):
@@ -250,7 +246,7 @@ class AsynqCallable(metaclass=_AsynqCallableMeta):
 
 
 class _ParameterGuardMeta(type):
-    def __getitem__(self, params: Tuple[str, object]) -> Any:
+    def __getitem__(self, params: tuple[str, object]) -> Any:
         if not isinstance(params, tuple) or len(params) != 2:
             raise TypeError(
                 f"{self.__name__}[...] should be instantiated "
@@ -294,7 +290,7 @@ class NoReturnGuard(metaclass=_ParameterGuardMeta):
 
 
 class _HasAttrGuardMeta(type):
-    def __getitem__(self, params: Tuple[str, str, object]) -> "HasAttrGuard":
+    def __getitem__(self, params: tuple[str, str, object]) -> "HasAttrGuard":
         if not isinstance(params, tuple) or len(params) != 3:
             raise TypeError(
                 "HasAttrGuard[...] should be instantiated "
@@ -503,11 +499,11 @@ def deprecated(__msg: str) -> typing.Callable[[_T], _T]:
     return decorator
 
 
-_overloads: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
-_type_evaluations: Dict[str, List[Callable[..., Any]]] = defaultdict(list)
+_overloads: dict[str, list[Callable[..., Any]]] = defaultdict(list)
+_type_evaluations: dict[str, list[Callable[..., Any]]] = defaultdict(list)
 
 
-def get_overloads(fully_qualified_name: str) -> List[Callable[..., Any]]:
+def get_overloads(fully_qualified_name: str) -> list[Callable[..., Any]]:
     """Return all defined runtime overloads for this fully qualified name."""
     return _overloads[fully_qualified_name]
 
@@ -644,7 +640,7 @@ class _EnumName:
     """
 
     # TODO after dropping 3.8: switch to a single class with __class_getitem__
-    def __getitem__(self, enum_cls: Type[enum.Enum]) -> Any:
+    def __getitem__(self, enum_cls: type[enum.Enum]) -> Any:
         return Annotated[str, pyanalyze.annotated_types.EnumName(enum_cls)]
 
 
