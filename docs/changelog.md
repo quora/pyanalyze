@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add support for Python 3.13 (#824)
 - Drop support for Python 3.8 (#820)
 - Flag invalid regexes in arguments to functions like
   `re.search` (#816)
