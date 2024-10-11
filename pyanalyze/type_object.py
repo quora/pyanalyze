@@ -6,8 +6,9 @@ An object that represents a type.
 
 import collections.abc
 import inspect
+from collections.abc import Container, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Container, Dict, Sequence, Set, Union, cast
+from typing import Callable, Dict, Set, Union, cast
 from unittest import mock
 
 from pyanalyze.signature import (

@@ -7,13 +7,14 @@ Module responsible for importing files.
 import importlib
 import importlib.util
 import sys
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
-from typing import Optional, Sequence, Tuple, cast
+from typing import Optional, Tuple, cast
 
 
-@lru_cache()
+@lru_cache
 def directory_has_init(path: Path) -> bool:
     return (path / "__init__.py").exists()
 

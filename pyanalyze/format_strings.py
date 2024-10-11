@@ -8,20 +8,12 @@ import ast
 import enum
 import re
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import (
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Match,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from re import Match
+from typing import Callable, Dict, List, Optional, Tuple, Union, runtime_checkable
 
-from typing_extensions import Literal, Protocol, runtime_checkable
+from typing_extensions import Literal, Protocol
 
 from .error_code import ErrorCode
 from .value import (
@@ -380,13 +372,9 @@ class PercentFormatString:
         num_args = len(all_args)
         num_specifiers = len(specifiers)
         if num_args < num_specifiers:
-            yield "too few arguments to format string: got {} but expected {}".format(
-                num_args, num_specifiers
-            )
+            yield f"too few arguments to format string: got {num_args} but expected {num_specifiers}"
         elif num_args > num_specifiers:
-            yield "too many arguments to format string: got {} but expected {}".format(
-                num_args, num_specifiers
-            )
+            yield f"too many arguments to format string: got {num_args} but expected {num_specifiers}"
         else:
             for arg, specifier in zip(all_args, specifiers):
                 yield from specifier.accept(arg, ctx)

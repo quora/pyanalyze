@@ -8,18 +8,9 @@ import ast
 import collections.abc
 import enum
 import itertools
+from collections.abc import Container, Sequence
 from dataclasses import dataclass, replace
-from typing import (
-    Any,
-    Callable,
-    Container,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, Optional, Set, Tuple, TypeVar, Union
 
 import qcore
 

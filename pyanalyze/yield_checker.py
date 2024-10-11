@@ -13,19 +13,9 @@ import ast
 import contextlib
 import itertools
 import logging
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-    Callable,
-    ContextManager,
-    Dict,
-    Iterator,
-    List,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-)
+from typing import Any, Callable, ContextManager, Dict, List, Optional, Set, Tuple
 
 import asynq
 import qcore

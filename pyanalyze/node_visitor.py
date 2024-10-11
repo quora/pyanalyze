@@ -19,24 +19,13 @@ import subprocess
 import sys
 import tempfile
 from builtins import print as real_print
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import ModuleType
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    Union,
-)
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import codemod
 import qcore

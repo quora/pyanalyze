@@ -25,6 +25,7 @@ import contextlib
 import enum
 from ast import AST
 from collections import OrderedDict, defaultdict
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from itertools import chain
 from types import ModuleType
@@ -34,12 +35,9 @@ from typing import (
     ContextManager,
     Dict,
     FrozenSet,
-    Iterable,
-    Iterator,
     List,
     NamedTuple,
     Optional,
-    Sequence,
     Set,
     Tuple,
     Type,

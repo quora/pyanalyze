@@ -5,9 +5,10 @@ Support for annotations from the annotated_types library.
 """
 
 import enum
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone, tzinfo
-from typing import Any, Callable, Iterable, Optional, Type, Union
+from typing import Any, Callable, Optional, Type, Union
 
 from pyanalyze.value import CanAssign, CanAssignContext, Value, flatten_values
 

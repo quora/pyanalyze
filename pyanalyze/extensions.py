@@ -12,19 +12,18 @@ be gracefully ignored by other type checkers.
 import enum
 import typing
 from collections import defaultdict
+from collections.abc import Container, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     Callable,
-    Container,
     Dict,
-    Iterable,
-    Iterator,
     List,
+    NoReturn,
     Optional,
-    Sequence,
     Tuple,
     Type,
     TypeVar,
@@ -33,7 +32,7 @@ from typing import (
 from typing import overload as real_overload
 
 import typing_extensions
-from typing_extensions import Annotated, Literal, NoReturn
+from typing_extensions import Literal
 
 import pyanalyze
 

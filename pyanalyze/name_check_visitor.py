@@ -27,23 +27,19 @@ import types
 import typing
 from abc import abstractmethod
 from argparse import ArgumentParser
+from collections.abc import Container, Generator, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
 from typing import (
+    Annotated,
     Any,
     Callable,
     ClassVar,
-    Container,
     ContextManager,
     Dict,
-    Generator,
-    Iterable,
-    Iterator,
     List,
-    Mapping,
     Optional,
-    Sequence,
     Set,
     Tuple,
     Type,
@@ -56,7 +52,7 @@ import asynq
 import qcore
 import typeshed_client
 from qcore.testing import Anything
-from typing_extensions import Annotated, Protocol, get_args, get_origin
+from typing_extensions import Protocol, get_args, get_origin
 
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
@@ -2622,9 +2618,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 # this is a SyntaxError, so it might be impossible to reach this branch
                 self._show_error_if_checking(
                     node,
-                    "nonlocal name {} does not exist in any enclosing scope".format(
-                        name
-                    ),
+                    f"nonlocal name {name} does not exist in any enclosing scope",
                     error_code=ErrorCode.bad_nonlocal,
                 )
                 defining_scope = self.scopes.module_scope()

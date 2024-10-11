@@ -8,21 +8,10 @@ import collections.abc
 import itertools
 import sys
 import types
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
-from typing import (
-    Callable,
-    ContextManager,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
-)
+from typing import Callable, ContextManager, Dict, List, Optional, Set, Tuple, Union
 
 import qcore
 

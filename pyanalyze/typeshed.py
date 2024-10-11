@@ -12,24 +12,12 @@ import inspect
 import sys
 import types
 from abc import abstractmethod
-from collections.abc import Collection, MutableMapping
+from collections.abc import Collection, Iterable, MutableMapping, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field, replace
 from enum import EnumMeta
 from types import GeneratorType, MethodDescriptorType, ModuleType
-from typing import (
-    Any,
-    Dict,
-    Generic,
-    Iterable,
-    List,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    TypeVar,
-    Union,
-)
+from typing import Any, Dict, Generic, List, Optional, Set, Tuple, TypeVar, Union
 
 import qcore
 import typeshed_client

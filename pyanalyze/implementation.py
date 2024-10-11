@@ -4,19 +4,9 @@ import collections.abc
 import inspect
 import re
 import typing
+from collections.abc import Iterable, Sequence
 from itertools import product
-from typing import (
-    Callable,
-    Dict,
-    Iterable,
-    NewType,
-    Optional,
-    Sequence,
-    Type,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import Callable, Dict, NewType, Optional, Type, TypeVar, Union, cast
 
 import qcore
 import typing_extensions

@@ -28,19 +28,15 @@ import ast
 import builtins
 import contextlib
 import typing
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Container, Generator, Hashable, Mapping, Sequence
 from dataclasses import InitVar, dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
-    Container,
     ContextManager,
-    Generator,
     List,
-    Mapping,
     NewType,
     Optional,
-    Sequence,
     Set,
     Tuple,
     TypeVar,

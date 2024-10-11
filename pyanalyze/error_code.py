@@ -4,8 +4,9 @@ Error codes used by test_scope.
 
 """
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator
+from typing import Dict
 
 import pyanalyze
 

@@ -11,6 +11,7 @@ import collections.abc
 import enum
 import inspect
 import itertools
+from collections.abc import Container, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from types import FunctionType, MethodType
 from typing import (
@@ -18,13 +19,10 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Container,
     Dict,
-    Iterable,
     List,
     NamedTuple,
     Optional,
-    Sequence,
     Set,
     Tuple,
     TypeVar,

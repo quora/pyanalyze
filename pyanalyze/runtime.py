@@ -4,7 +4,7 @@ Expose an interface for a runtime type checker.
 
 """
 
-from functools import lru_cache
+from functools import cache
 from typing import Optional
 
 from typing_extensions import deprecated
@@ -16,7 +16,7 @@ from .find_unused import used
 from .value import CanAssignError, KnownValue
 
 
-@lru_cache(maxsize=None)
+@cache
 def _get_checker() -> "pyanalyze.checker.Checker":
     return pyanalyze.checker.Checker()
 

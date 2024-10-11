@@ -9,19 +9,16 @@ import functools
 import pathlib
 import sys
 from collections import defaultdict
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
     Any,
     ClassVar,
-    Collection,
     Dict,
     FrozenSet,
     Generic,
-    Iterable,
-    Mapping,
     Optional,
-    Sequence,
     Set,
     Tuple,
     Type,

@@ -6,9 +6,10 @@ Suggest types for untyped code.
 
 import ast
 from collections import defaultdict
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import FunctionType
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .error_code import ErrorCode
 from .node_visitor import ErrorContext, Failure

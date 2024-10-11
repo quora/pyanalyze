@@ -8,9 +8,10 @@ import ast
 import inspect
 import sys
 import types
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, ClassVar, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, ClassVar, Optional, Tuple, Union
 
 import asynq
 import qcore

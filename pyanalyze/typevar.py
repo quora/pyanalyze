@@ -4,7 +4,8 @@ TypeVar solver.
 
 """
 
-from typing import Iterable, Sequence, Tuple, Union
+from collections.abc import Iterable, Sequence
+from typing import Tuple, Union
 
 import qcore
 

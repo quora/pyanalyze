@@ -24,6 +24,7 @@ import enum
 import sys
 import textwrap
 from collections import deque
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import InitVar, dataclass, field
 from itertools import chain
 from types import FunctionType, ModuleType
@@ -32,12 +33,8 @@ from typing import (
     Callable,
     ContextManager,
     Dict,
-    Iterable,
-    Iterator,
     List,
-    Mapping,
     Optional,
-    Sequence,
     Set,
     Tuple,
     Type,

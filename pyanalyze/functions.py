@@ -10,9 +10,10 @@ import collections.abc
 import enum
 import sys
 import types
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from itertools import zip_longest
-from typing import Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import List, Optional, Tuple, TypeVar, Union
 
 import asynq
 from typing_extensions import Protocol

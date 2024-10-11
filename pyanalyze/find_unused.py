@@ -9,9 +9,10 @@ import __future__
 import enum
 import inspect
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from types import ModuleType, TracebackType
-from typing import Dict, Iterable, List, Optional, Set, Type, TypeVar
+from typing import Dict, List, Optional, Set, Type, TypeVar
 
 import qcore
 

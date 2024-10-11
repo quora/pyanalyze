@@ -10,9 +10,10 @@ import os
 import secrets
 import sys
 import types
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Mapping, Optional, Set, Union
+from typing import Callable, List, Optional, Set, Union
 
 
 def _all_files(

@@ -8,8 +8,9 @@ import ast
 import contextlib
 import inspect
 import types
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Optional
 
 import asynq
 import qcore

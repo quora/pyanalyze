@@ -13,19 +13,17 @@ import inspect
 import sys
 import textwrap
 import typing
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
+from re import Pattern
 from types import FunctionType, MethodType, ModuleType
 from typing import (
     Any,
     Callable,
     Dict,
     Generic,
-    Iterator,
     List,
-    Mapping,
     Optional,
-    Pattern,
-    Sequence,
     Tuple,
     Type,
     TypeVar,

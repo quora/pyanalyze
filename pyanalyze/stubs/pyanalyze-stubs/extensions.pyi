@@ -2,7 +2,8 @@
 # from it, because typeshed_client doesn't let
 # stubs import from non-stub files.
 
-from typing import Any, Callable, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any, Callable, List, Optional
 
 def reveal_type(value: object) -> None: ...
 def get_overloads(fully_qualified_name: str) -> List[Callable[..., Any]]: ...

@@ -7,18 +7,8 @@
 import inspect
 import sys
 import typing
-from typing import (
-    Any,
-    Container,
-    Dict,
-    NewType,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from collections.abc import Container, Sequence
+from typing import Any, Dict, NewType, Optional, Tuple, Type, TypeVar, Union
 
 import typing_extensions
 
