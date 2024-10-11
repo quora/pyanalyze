@@ -204,7 +204,7 @@ def test_subclass_value() -> None:
     assert_can_assign(val, TypedValue(type))
     assert_cannot_assign(val, SubclassValue(TypedValue(str)))
     val = SubclassValue(TypedValue(str))
-    assert "Type[str]" == str(val)
+    assert str(val) == "type[str]"
     assert TypedValue(str) == val.typ
     assert val.is_type(str)
     assert not val.is_type(int)
@@ -288,7 +288,7 @@ def test_multi_valued_value() -> None:
         [TypedValue(int), KnownValue(None), TypedValue(str)]
     ) == val | TypedValue(str)
 
-    assert "Optional[int]" == str(val)
+    assert str(val) == "int | None"
     assert_can_assign(val, KnownValue(1))
     assert_can_assign(val, KnownValue(None))
     assert_cannot_assign(val, KnownValue(""))
@@ -299,20 +299,23 @@ def test_multi_valued_value() -> None:
         val, AnyValue(AnySource.marker) | TypedValue(int) | KnownValue(None)
     )
 
-    assert "Literal[1, 2]" == str(KnownValue(1) | KnownValue(2))
-    assert "Literal[1, 2, None]" == str(
-        KnownValue(1) | KnownValue(2) | KnownValue(None)
+    assert str(KnownValue(1) | KnownValue(2)) == "Literal[1, 2]"
+    assert (
+        str(KnownValue(1) | KnownValue(2) | KnownValue(None)) == "Literal[1, 2, None]"
     )
-    assert "Union[int, str]" == str(TypedValue(int) | TypedValue(str))
-    assert "Union[int, str, None]" == str(
-        TypedValue(int) | TypedValue(str) | KnownValue(None)
+    assert str(TypedValue(int) | TypedValue(str)) == "int | str"
+    assert (
+        str(TypedValue(int) | TypedValue(str) | KnownValue(None)) == "int | str | None"
     )
-    assert "Union[int, str, Literal[1, 2], None]" == str(
-        TypedValue(int)
-        | TypedValue(str)
-        | KnownValue(None)
-        | KnownValue(1)
-        | KnownValue(2)
+    assert (
+        str(
+            TypedValue(int)
+            | TypedValue(str)
+            | KnownValue(None)
+            | KnownValue(1)
+            | KnownValue(2)
+        )
+        == "int | str | Literal[1, 2] | None"
     )
 
 

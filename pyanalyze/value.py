@@ -1923,7 +1923,7 @@ class SubclassValue(Value):
             return AnyValue(AnySource.inference)
 
     def __str__(self) -> str:
-        return f"Type[{self.typ}]"
+        return f"type[{self.typ}]"
 
     @classmethod
     def make(cls, origin: Value, *, exactly: bool = False) -> Value:
@@ -2087,15 +2087,13 @@ class MultiValuedValue(Value):
             body = ", ".join(repr(val.val) for val in literals)
             return f"Literal[{body}]"
         else:
-            if not literals and has_none and len(others) == 1:
-                return f"Optional[{others[0]}]"
             elements = [str(val) for val in others]
             if literals:
                 body = ", ".join(repr(val.val) for val in literals)
                 elements.append(f"Literal[{body}]")
             if has_none:
                 elements.append("None")
-            return f"Union[{', '.join(elements)}]"
+            return " | ".join(elements)
 
     def walk_values(self) -> Iterable["Value"]:
         yield self
@@ -2233,10 +2231,10 @@ class TypeVarValue(Value):
 
     def __str__(self) -> str:
         if self.bound is not None:
-            return f"{self.typevar} <: {self.bound}"
+            return f"{self.typevar}: {self.bound}"
         elif self.constraints:
             constraints = ", ".join(map(str, self.constraints))
-            return f"{self.typevar} in ({constraints})"
+            return f"{self.typevar}: ({constraints})"
         return str(self.typevar)
 
 
