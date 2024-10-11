@@ -3,7 +3,6 @@ import collections
 import collections.abc
 import contextlib
 import io
-import sys
 import tempfile
 import textwrap
 import time
@@ -562,29 +561,16 @@ class TestGetGenericBases:
         )
 
     def test_struct_time(self):
-        if sys.version_info < (3, 9):
-            # Until 3.8 NamedTuple is actually a class.
-            expected = {
-                time.struct_time: [],
-                "_typeshed.structseq": [AnyValue(AnySource.explicit) | TypedValue(int)],
-                tuple: [TypedValue(int)],
-                collections.abc.Collection: [TypedValue(int)],
-                collections.abc.Reversible: [TypedValue(int)],
-                collections.abc.Iterable: [TypedValue(int)],
-                collections.abc.Sequence: [TypedValue(int)],
-                collections.abc.Container: [TypedValue(int)],
-            }
-        else:
-            expected = {
-                time.struct_time: [],
-                "_typeshed.structseq": [AnyValue(AnySource.explicit) | TypedValue(int)],
-                tuple: [TypedValue(int)],
-                collections.abc.Collection: [TypedValue(int)],
-                collections.abc.Reversible: [TypedValue(int)],
-                collections.abc.Iterable: [TypedValue(int)],
-                collections.abc.Sequence: [TypedValue(int)],
-                collections.abc.Container: [TypedValue(int)],
-            }
+        expected = {
+            time.struct_time: [],
+            "_typeshed.structseq": [AnyValue(AnySource.explicit) | TypedValue(int)],
+            tuple: [TypedValue(int)],
+            collections.abc.Collection: [TypedValue(int)],
+            collections.abc.Reversible: [TypedValue(int)],
+            collections.abc.Iterable: [TypedValue(int)],
+            collections.abc.Sequence: [TypedValue(int)],
+            collections.abc.Container: [TypedValue(int)],
+        }
         self.check(expected, time.struct_time)
 
     def test_context_manager(self):

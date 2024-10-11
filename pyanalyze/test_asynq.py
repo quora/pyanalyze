@@ -1,8 +1,7 @@
 # static analysis: ignore
-from .error_code import ErrorCode
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_fails, assert_passes
+from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .value import (
     AnySource,
@@ -106,17 +105,15 @@ class TestUnwrapYield(TestNameCheckVisitorBase):
 
 
 class TestTaskNeedsYield(TestNameCheckVisitorBase):
-    # couldn't change assert_fails to assert_passes for
-    # constfuture, async, and yielded because changes between Python 3.7 and 3.8
-    @assert_fails(ErrorCode.task_needs_yield)
+    @assert_passes()
     def test_constfuture(self):
         from asynq import ConstFuture, asynq
 
         @asynq()
         def bad_async_fn():
-            return ConstFuture(3)
+            return ConstFuture(3)  # E: task_needs_yield
 
-    @assert_fails(ErrorCode.task_needs_yield)
+    @assert_passes()
     def test_async(self):
         from asynq import asynq
 
@@ -126,9 +123,9 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
 
         @asynq()
         def bad_async_fn():
-            return async_fn.asynq()
+            return async_fn.asynq()  # E: task_needs_yield
 
-    @assert_fails(ErrorCode.task_needs_yield)
+    @assert_passes()
     def test_not_yielded(self):
         from asynq import asynq
 
@@ -136,7 +133,7 @@ class TestTaskNeedsYield(TestNameCheckVisitorBase):
 
         @asynq()
         def capybara(oid):
-            return async_fn.asynq(oid)
+            return async_fn.asynq(oid)  # E: task_needs_yield
 
     def test_not_yielded_replacement(self):
         self.assert_is_changed(
@@ -205,23 +202,20 @@ class TestReturn(TestNameCheckVisitorBase):
                 AsyncTaskIncompleteValue(FutureBase, AnyValue(AnySource.unannotated)),
             )
 
-    # Can't use assert_passes for those two because the location of the error
-    # changes between 3.7 and 3.8. Maybe we should hack the error code to
-    # always show the error for a function on the def line, not the decorator line.
-    @assert_fails(ErrorCode.missing_return)
+    @assert_passes()
     def test_asynq_missing_return(self):
         from asynq import asynq
 
-        @asynq()  # E: missing_return
-        def f() -> int:
+        @asynq()
+        def f() -> int:  # E: missing_return
             yield f.asynq()
 
-    @assert_fails(ErrorCode.missing_return)
+    @assert_passes()
     def test_asynq_missing_branch(self):
         from asynq import asynq
 
-        @asynq()  # E: missing_return
-        def capybara(cond: bool) -> int:
+        @asynq()
+        def capybara(cond: bool) -> int:  # E: missing_return
             if cond:
                 return 3
             yield capybara.asynq(False)

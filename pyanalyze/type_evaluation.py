@@ -395,10 +395,8 @@ class ConditionEvaluator(ast.NodeVisitor):
                             "exclude_any argument must be a literal bool", keyword.value
                         )
                 else:
-                    # Before 3.9 keyword nodes don't have a lineno
-                    error_node = keyword
                     return self.return_invalid(
-                        "Invalid keyword argument to is_of_type()", error_node
+                        "Invalid keyword argument to is_of_type()", keyword
                     )
             return self.visit_is_of_type(
                 varname_node, typ, "is of type", exclude_any=exclude_any
@@ -723,9 +721,7 @@ class EvaluateVisitor(ast.NodeVisitor):
                     )
                     return None
             else:
-                # Before 3.9 keyword nodes don't have a lineno
-                error_node = keyword
-                self.add_invalid("Invalid keyword argument to show_error()", error_node)
+                self.add_invalid("Invalid keyword argument to show_error()", keyword)
                 return None
         self.errors.append(
             UserRaisedError(message, list(self.active_conditions), argument)

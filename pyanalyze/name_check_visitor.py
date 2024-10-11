@@ -32,6 +32,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
+from types import GenericAlias
 from typing import Annotated, Any, Callable, ClassVar, Optional, TypeVar, Union
 from unittest.mock import ANY
 
@@ -218,13 +219,6 @@ if sys.version_info >= (3, 11):
     TryNode = ast.Try | ast.TryStar
 else:
     TryNode = ast.Try
-
-
-try:
-    from types import GenericAlias
-except ImportError:
-    # 3.8 and lower
-    GenericAlias = None
 
 
 T = TypeVar("T")
@@ -2514,18 +2508,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if val is tuple and value.val is not tuple:
                 # tuple[()]
                 return
-        if GenericAlias is not None and isinstance(val, GenericAlias):
+        if isinstance(val, GenericAlias):
             return
         generic_params = self.arg_spec_cache.get_type_parameters(val)
         if not generic_params:
             return
-        # On 3.8, ast.Index has no lineno
-        if sys.version_info < (3, 9) and not hasattr(node, "lineno"):
-            if isinstance(node, ast.Index):
-                node = node.value
-            else:
-                # Slice or ExtSlice, shouldn't happen
-                return
         self.show_error(
             node,
             f"Missing type parameters for generic type {stringify_object(value.val)}",
@@ -4993,8 +4980,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
             return self.being_assigned
         elif isinstance(node.ctx, ast.Load):
-            if sys.version_info >= (3, 9) and value == KnownValue(type):
-                # In Python 3.9+ "type[int]" is legal, but neither
+            if value == KnownValue(type):
+                # "type[int]" is legal, but neither
                 # type.__getitem__ nor type.__class_getitem__ exists at runtime. Support
                 # it directly instead.
                 if isinstance(index, KnownValue):
@@ -5029,9 +5016,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         )
                         # Special case to avoid "Unrecognized annotation types.GenericAlias" later;
                         # ideally we'd be more precise.
-                        if GenericAlias is not None and return_value == TypedValue(
-                            GenericAlias
-                        ):
+                        if return_value == TypedValue(GenericAlias):
                             return_value = self.check_call(
                                 node.value,
                                 cgi,
@@ -5398,9 +5383,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             composite = self.composite_from_name(node)
         elif isinstance(node, ast.Subscript):
             composite = self.composite_from_subscript(node)
-        elif sys.version_info < (3, 9) and isinstance(node, ast.Index):
-            composite = self.composite_from_node(node.value)
-        elif isinstance(node, (ast.ExtSlice, ast.Slice)):
+        elif isinstance(node, ast.Slice):
             # These don't have a .lineno attribute, which would otherwise cause trouble.
             composite = Composite(self.visit(node), None, None)
         elif isinstance(node, ast.NamedExpr):

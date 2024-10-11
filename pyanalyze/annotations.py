@@ -421,9 +421,6 @@ def _type_from_runtime(
     elif is_instance_of_typing_name(val, "_TypedDictMeta"):
         required_keys = getattr(val, "__required_keys__", None)
         readonly_keys = getattr(val, "__readonly_keys__", None)
-        # 3.8's typing.TypedDict doesn't have __required_keys__. With
-        # inheritance, this makes it apparently impossible to figure out which
-        # keys are required at runtime.
         total = getattr(val, "__total__", True)
         extra_keys = None
         if hasattr(val, "__extra_keys__"):
@@ -447,14 +444,7 @@ def _type_from_runtime(
             extra_keys=extra_keys,
             extra_keys_readonly=extra_readonly,
         )
-    elif val is InitVar:
-        # On 3.6 and 3.7, InitVar[T] just returns InitVar at runtime, so we can't
-        # get the actual type out.
-        return AnyValue(AnySource.inference)
     elif isinstance(val, InitVar):
-        # val.type exists only on 3.8+, but on earlier versions
-        # InitVar instances aren't being created
-        # static analysis: ignore[undefined_attribute]
         return type_from_runtime(val.type)
     elif val is AsynqCallable:
         return CallableValue(Signature.make([ELLIPSIS_PARAM], is_asynq=True))
@@ -759,10 +749,6 @@ def _type_from_subscripted_value(
     if root is typing.Union:
         return unite_values(*[_type_from_value(elt, ctx) for elt in members])
     elif is_typing_name(root, "Literal"):
-        # Note that in Python 3.8, the way typing's internal cache works means that
-        # Literal[1] and Literal[True] are cached to the same value, so if you use
-        # both, you'll get whichever one was used first in later calls. There's nothing
-        # we can do about that.
         if all(isinstance(elt, KnownValue) for elt in members):
             return unite_values(*members)
         else:
@@ -860,8 +846,6 @@ def _type_from_subscripted_value(
     elif isinstance(root, type):
         return GenericValue(root, [_type_from_value(elt, ctx) for elt in members])
     else:
-        # In Python 3.9, generics are implemented differently and typing.get_origin
-        # can help.
         origin = get_origin(root)
         if isinstance(origin, type):
             return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
@@ -1013,10 +997,6 @@ class _Visitor(ast.NodeVisitor):
             else:
                 kvpairs.append(KVPair(key, value))
         return DictIncompleteValue(dict, kvpairs)
-
-    def visit_Index(self, node: ast.Index) -> Value:
-        # class is unused in 3.9
-        return self.visit(node.value)  # static analysis: ignore[undefined_attribute]
 
     def visit_Constant(self, node: ast.Constant) -> Value:
         return KnownValue(node.value)
