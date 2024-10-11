@@ -1775,9 +1775,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             current_enum_members = {}
         else:
             current_enum_members = None
-        with qcore.override(self, "current_class", current_class), qcore.override(
-            self.asynq_checker, "current_class", current_class
-        ), qcore.override(self, "current_enum_members", current_enum_members):
+        with (
+            qcore.override(self, "current_class", current_class),
+            qcore.override(self.asynq_checker, "current_class", current_class),
+            qcore.override(self, "current_enum_members", current_enum_members),
+        ):
             yield
 
     def visit_ClassDef(self, node: ast.ClassDef) -> Value:
@@ -1845,14 +1847,22 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # If this is a nested class, we need to run the collecting phase to get data
             # about names accessed from the class.
             if len(self.scopes.scopes) > 2:
-                with self.scopes.add_scope(
-                    ScopeType.class_scope, scope_node=node, scope_object=current_class
-                ), self._set_current_class(current_class):
+                with (
+                    self.scopes.add_scope(
+                        ScopeType.class_scope,
+                        scope_node=node,
+                        scope_object=current_class,
+                    ),
+                    self._set_current_class(current_class),
+                ):
                     self._generic_visit_list(node.body)
         else:
-            with self.scopes.add_scope(
-                ScopeType.class_scope, scope_node=None, scope_object=current_class
-            ), self._set_current_class(current_class):
+            with (
+                self.scopes.add_scope(
+                    ScopeType.class_scope, scope_node=None, scope_object=current_class
+                ),
+                self._set_current_class(current_class),
+            ):
                 self._generic_visit_list(node.body)
 
             if current_class is not None:
@@ -2017,22 +2027,20 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     expected_return, TypeGuardExtension
                 )
 
-            with self.asynq_checker.set_func_name(
-                node.name,
-                async_kind=info.async_kind,
-                is_classmethod=info.is_classmethod,
-            ), qcore.override(
-                self, "yield_checker", YieldChecker(self)
-            ), qcore.override(
-                self, "is_async_def", isinstance(node, ast.AsyncFunctionDef)
-            ), qcore.override(
-                self, "current_function_name", node.name
-            ), qcore.override(
-                self, "current_function", potential_function
-            ), qcore.override(
-                self, "expected_return_value", expected_return
-            ), qcore.override(
-                self, "current_function_info", info
+            with (
+                self.asynq_checker.set_func_name(
+                    node.name,
+                    async_kind=info.async_kind,
+                    is_classmethod=info.is_classmethod,
+                ),
+                qcore.override(self, "yield_checker", YieldChecker(self)),
+                qcore.override(
+                    self, "is_async_def", isinstance(node, ast.AsyncFunctionDef)
+                ),
+                qcore.override(self, "current_function_name", node.name),
+                qcore.override(self, "current_function", potential_function),
+                qcore.override(self, "expected_return_value", expected_return),
+                qcore.override(self, "current_function_info", info),
             ):
                 result = self._visit_function_body(info)
 
@@ -2284,8 +2292,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         error.node, error.message, error_code=ErrorCode.bad_evaluator
                     )
                 if self.annotate:
-                    with self.catch_errors(), self.scopes.add_scope(
-                        ScopeType.function_scope, scope_node=node
+                    with (
+                        self.catch_errors(),
+                        self.scopes.add_scope(
+                            ScopeType.function_scope, scope_node=node
+                        ),
                     ):
                         self._generic_visit_list(node.body)
             return FunctionResult(parameters=params)
@@ -2295,12 +2306,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # scope propagate into this scope. This means that we'll use the constraints
         # of the place where the function is defined, not those of where the function
         # is called, which is strictly speaking wrong but should be fine in practice.
-        with self.scopes.add_scope(
-            ScopeType.function_scope, scope_node=node
-        ), qcore.override(self, "is_generator", False), qcore.override(
-            self, "async_kind", function_info.async_kind
-        ), qcore.override(
-            self, "_name_node_to_statement", {}
+        with (
+            self.scopes.add_scope(ScopeType.function_scope, scope_node=node),
+            qcore.override(self, "is_generator", False),
+            qcore.override(self, "async_kind", function_info.async_kind),
+            qcore.override(self, "_name_node_to_statement", {}),
         ):
             scope = self.scopes.current_scope()
             assert isinstance(scope, FunctionScope)
@@ -2321,12 +2331,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     VisitorState.check_names,
                 )
 
-            with qcore.override(
-                self, "state", VisitorState.collect_names
-            ), qcore.override(
-                self, "return_values", []
-            ), self.yield_checker.set_function_node(
-                node
+            with (
+                qcore.override(self, "state", VisitorState.collect_names),
+                qcore.override(self, "return_values", []),
+                self.yield_checker.set_function_node(node),
             ):
                 if isinstance(node, ast.Lambda):
                     self.visit(node.body)
@@ -2340,12 +2348,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # collect state) to evaluate the first one visited during the check state
             self.yield_checker.reset_yield_checks()
 
-            with qcore.override(self, "current_class", None), qcore.override(
-                self, "state", VisitorState.check_names
-            ), qcore.override(
-                self, "return_values", []
-            ), self.yield_checker.set_function_node(
-                node
+            with (
+                qcore.override(self, "current_class", None),
+                qcore.override(self, "state", VisitorState.check_names),
+                qcore.override(self, "return_values", []),
+                self.yield_checker.set_function_node(node),
             ):
                 if isinstance(node, ast.Lambda):
                     return_values = [self.visit(node.body)]
@@ -2989,14 +2996,16 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             # Strictly speaking this is unsafe to do for generator expressions, which may
             # be evaluated at a different place in the function than where they are defined,
             # but that is unlikely to be an issue in practice.
-            with self.scopes.add_scope(
-                ScopeType.function_scope, scope_node=node
-            ), qcore.override(self, "_name_node_to_statement", {}):
+            with (
+                self.scopes.add_scope(ScopeType.function_scope, scope_node=node),
+                qcore.override(self, "_name_node_to_statement", {}),
+            ):
                 return self._visit_comprehension_inner(node, typ, iterable_type)
 
-        with self.scopes.add_scope(
-            ScopeType.function_scope, scope_node=node
-        ), qcore.override(self, "_name_node_to_statement", {}):
+        with (
+            self.scopes.add_scope(ScopeType.function_scope, scope_node=node),
+            qcore.override(self, "_name_node_to_statement", {}),
+        ):
             scope = self.scopes.current_scope()
             assert isinstance(scope, FunctionScope)
             for state in (VisitorState.collect_names, VisitorState.check_names):
@@ -4687,9 +4696,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         is_yield = isinstance(node.value, ast.Yield)
         value = self.visit(node.value)
 
-        with qcore.override(
-            self, "being_assigned", value
-        ), self.yield_checker.check_yield_result_assignment(is_yield):
+        with (
+            qcore.override(self, "being_assigned", value),
+            self.yield_checker.check_yield_result_assignment(is_yield),
+        ):
             # syntax like 'x = y = 0' results in multiple targets
             self._generic_visit_list(node.targets)
 
@@ -4759,10 +4769,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             is_yield = False
             value = None
 
-        with qcore.override(
-            self, "being_assigned", value
-        ), self.yield_checker.check_yield_result_assignment(is_yield), qcore.override(
-            self, "ann_assign_type", (expected_type, is_final)
+        with (
+            qcore.override(self, "being_assigned", value),
+            self.yield_checker.check_yield_result_assignment(is_yield),
+            qcore.override(self, "ann_assign_type", (expected_type, is_final)),
         ):
             self.visit(node.target)
 
@@ -4779,9 +4789,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             node.target, lhs, node.op, node.value, rhs, node, is_inplace=True
         )
 
-        with qcore.override(
-            self, "being_assigned", value
-        ), self.yield_checker.check_yield_result_assignment(is_yield):
+        with (
+            qcore.override(self, "being_assigned", value),
+            self.yield_checker.check_yield_result_assignment(is_yield),
+        ):
             # syntax like 'x = y = 0' results in multiple targets
             self.visit(node.target)
 

@@ -758,9 +758,10 @@ class EvaluateVisitor(ast.NodeVisitor):
             self.visit_block(node.orelse)
             return None
         if condition.left_varmap is not None:
-            with self.ctx.narrow_variables(
-                condition.left_varmap
-            ), self.add_active_condition(condition.condition):
+            with (
+                self.ctx.narrow_variables(condition.left_varmap),
+                self.add_active_condition(condition.condition),
+            ):
                 left_result = self.visit_block(node.body)
         else:
             left_result = None

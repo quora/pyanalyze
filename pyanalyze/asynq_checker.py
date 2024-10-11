@@ -70,8 +70,9 @@ class AsynqChecker:
         # Override current_func_name only if this is the outermost function, so that data access
         # within nested functions is attributed to the outer function. However, for async inner
         # functions, check batching within the function separately.
-        with qcore.override(self, "current_async_kind", async_kind), qcore.override(
-            self, "is_classmethod", is_classmethod
+        with (
+            qcore.override(self, "current_async_kind", async_kind),
+            qcore.override(self, "is_classmethod", is_classmethod),
         ):
             if (
                 self.current_func_name is None
