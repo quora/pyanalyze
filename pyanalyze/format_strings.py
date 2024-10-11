@@ -372,9 +372,15 @@ class PercentFormatString:
         num_args = len(all_args)
         num_specifiers = len(specifiers)
         if num_args < num_specifiers:
-            yield f"too few arguments to format string: got {num_args} but expected {num_specifiers}"
+            yield (
+                f"too few arguments to format string: "
+                f"got {num_args} but expected {num_specifiers}"
+            )
         elif num_args > num_specifiers:
-            yield f"too many arguments to format string: got {num_args} but expected {num_specifiers}"
+            yield (
+                f"too many arguments to format string: "
+                f"got {num_args} but expected {num_specifiers}"
+            )
         else:
             for arg, specifier in zip(all_args, specifiers):
                 yield from specifier.accept(arg, ctx)

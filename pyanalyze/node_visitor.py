@@ -821,7 +821,8 @@ class BaseNodeVisitor(ast.NodeVisitor):
             for code in cls.error_code_enum:
                 enabled_string = "on" if cls.is_enabled_by_default(code) else "off"
                 code_descriptions.append(
-                    f"  - {code.name}: {cls.get_description_for_error_code(code)} (default: {enabled_string})"
+                    f"  - {code.name}: {cls.get_description_for_error_code(code)}"
+                    f" (default: {enabled_string})"
                 )
 
             epilog = "Supported checks:\n" + "\n".join(code_descriptions)

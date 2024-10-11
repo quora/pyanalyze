@@ -25,10 +25,11 @@ import sys
 import textwrap
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import InitVar, dataclass, field
 from itertools import chain
 from types import FunctionType, ModuleType
-from typing import Any, Callable, ContextManager, Optional, TypeVar, Union
+from typing import Any, Callable, Optional, TypeVar, Union
 
 import qcore
 from typing_extensions import ParamSpec, Protocol, assert_never
@@ -274,7 +275,7 @@ class CanAssignContext(Protocol):
         self,
         left: "pyanalyze.type_object.TypeObject",
         right: "pyanalyze.type_object.TypeObject",
-    ) -> ContextManager[None]:
+    ) -> AbstractContextManager[None]:
         return qcore.empty_context
 
     def has_used_any_match(self) -> bool:
@@ -284,12 +285,12 @@ class CanAssignContext(Protocol):
     def record_any_used(self) -> None:
         """Record that Any was used to secure a match."""
 
-    def reset_any_used(self) -> ContextManager[None]:
+    def reset_any_used(self) -> AbstractContextManager[None]:
         """Context that resets the value used by :meth:`has_used_any_match` and
         :meth:`record_any_match`."""
         return qcore.empty_context
 
-    def set_exclude_any(self) -> ContextManager[None]:
+    def set_exclude_any(self) -> AbstractContextManager[None]:
         """Within this context, `Any` is compatible only with itself."""
         return qcore.empty_context
 

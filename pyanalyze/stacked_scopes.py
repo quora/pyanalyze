@@ -26,10 +26,11 @@ import enum
 from ast import AST
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable, Iterator, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from itertools import chain
 from types import ModuleType
-from typing import Any, Callable, ContextManager, NamedTuple, Optional, TypeVar, Union
+from typing import Any, Callable, NamedTuple, Optional, TypeVar, Union
 
 import qcore
 
@@ -1508,14 +1509,14 @@ class StackedScopes:
         """
         self.scopes[-1].set(varname, value, node, state)
 
-    def suppressing_subscope(self) -> ContextManager[SubScope]:
+    def suppressing_subscope(self) -> AbstractContextManager[SubScope]:
         return self.scopes[-1].suppressing_subscope()
 
-    def subscope(self) -> ContextManager[SubScope]:
+    def subscope(self) -> AbstractContextManager[SubScope]:
         """Creates a new subscope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].subscope()
 
-    def loop_scope(self) -> ContextManager[list[SubScope]]:
+    def loop_scope(self) -> AbstractContextManager[list[SubScope]]:
         """Creates a new loop scope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].loop_scope()
 

@@ -9,9 +9,9 @@ import itertools
 import sys
 import types
 from collections.abc import Iterable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import InitVar, dataclass, field
-from typing import Callable, ContextManager, Optional, Union
+from typing import Callable, Optional, Union
 
 import qcore
 
@@ -263,12 +263,12 @@ class Checker:
         """Record that Any was used to secure a match."""
         self._has_used_any_match = True
 
-    def reset_any_used(self) -> ContextManager[None]:
+    def reset_any_used(self) -> AbstractContextManager[None]:
         """Context that resets the value used by :meth:`has_used_any_match` and
         :meth:`record_any_match`."""
         return qcore.override(self, "_has_used_any_match", False)
 
-    def set_exclude_any(self) -> ContextManager[None]:
+    def set_exclude_any(self) -> AbstractContextManager[None]:
         """Within this context, `Any` is compatible only with itself."""
         return qcore.override(self, "_should_exclude_any", True)
 

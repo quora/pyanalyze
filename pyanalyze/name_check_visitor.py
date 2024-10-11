@@ -28,19 +28,11 @@ import typing
 from abc import abstractmethod
 from argparse import ArgumentParser
 from collections.abc import Container, Generator, Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
-from typing import (
-    Annotated,
-    Any,
-    Callable,
-    ClassVar,
-    ContextManager,
-    Optional,
-    TypeVar,
-    Union,
-)
+from typing import Annotated, Any, Callable, ClassVar, Optional, TypeVar, Union
 from unittest.mock import ANY
 
 import asynq
@@ -1236,7 +1228,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def assume_compatibility(
         self, left: TypeObject, right: TypeObject
-    ) -> ContextManager[None]:
+    ) -> AbstractContextManager[None]:
         return self.checker.assume_compatibility(left, right)
 
     def has_used_any_match(self) -> bool:
@@ -1247,12 +1239,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """Record that Any was used to secure a match."""
         self._has_used_any_match = True
 
-    def reset_any_used(self) -> ContextManager[None]:
+    def reset_any_used(self) -> AbstractContextManager[None]:
         """Context that resets the value used by :meth:`has_used_any_match` and
         :meth:`record_any_match`."""
         return qcore.override(self, "_has_used_any_match", False)
 
-    def set_exclude_any(self) -> ContextManager[None]:
+    def set_exclude_any(self) -> AbstractContextManager[None]:
         """Within this context, `Any` is compatible only with itself."""
         return qcore.override(self, "_should_exclude_any", True)
 

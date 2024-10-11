@@ -14,8 +14,9 @@ import contextlib
 import itertools
 import logging
 from collections.abc import Iterator, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
-from typing import Any, Callable, ContextManager, Optional
+from typing import Any, Callable, Optional
 
 import asynq
 import qcore
@@ -168,7 +169,7 @@ class YieldChecker:
     current_function_node: Optional[FunctionNode] = None
     alerted_nodes: set[FunctionNode] = field(default_factory=set)
 
-    def set_function_node(self, node: FunctionNode) -> ContextManager[None]:
+    def set_function_node(self, node: FunctionNode) -> AbstractContextManager[None]:
         return qcore.override(self, "current_function_node", node)
 
     @contextlib.contextmanager
@@ -197,7 +198,9 @@ class YieldChecker:
 
     # Unnecessary yield checking
 
-    def check_yield_result_assignment(self, in_yield: bool) -> ContextManager[None]:
+    def check_yield_result_assignment(
+        self, in_yield: bool
+    ) -> AbstractContextManager[None]:
         return qcore.override(self, "in_yield_result_assignment", in_yield)
 
     def record_assignment(self, name: str) -> None:

@@ -29,17 +29,9 @@ import builtins
 import contextlib
 import typing
 from collections.abc import Callable, Container, Generator, Hashable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import InitVar, dataclass, field
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    ContextManager,
-    NewType,
-    Optional,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, NewType, Optional, TypeVar, Union, cast
 
 import qcore
 import typing_extensions
@@ -139,7 +131,7 @@ class Context:
     """While this is True, no errors are shown for undefined names."""
     _being_evaluated: set[int] = field(default_factory=set, init=False)
 
-    def suppress_undefined_names(self) -> ContextManager[None]:
+    def suppress_undefined_names(self) -> AbstractContextManager[None]:
         """Temporarily suppress errors about undefined names."""
         return qcore.override(self, "should_suppress_undefined_names", True)
 
