@@ -210,10 +210,19 @@ def test_get_argspec():
             Composite(KnownValue(ClassWithCall)),
         ) == asc.get_argspec(ClassWithCall.pure_async_classmethod)
 
+        # This behaves differently in 3.9 through 3.12 than in earlier and later
+        # versions. The behavior change was made in
+        # https://github.com/python/cpython/issues/63272
+        # and undone in https://github.com/python/cpython/issues/89519
+        if hasattr(ClassWithCall.classmethod_before_async, "decorator"):
+            callable = ClassWithCall.classmethod_before_async.decorator.fn
+        else:
+            callable = ClassWithCall.classmethod_before_async.__func__.fn
+
         assert BoundMethodSignature(
             Signature.make(
                 [SigParameter("cls"), SigParameter("ac")],
-                callable=ClassWithCall.classmethod_before_async.decorator.fn,
+                callable=callable,
                 is_asynq=True,
             ),
             Composite(KnownValue(ClassWithCall)),
