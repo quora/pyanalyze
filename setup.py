@@ -50,5 +50,5 @@ if __name__ == "__main__":
         # These are useful for unit tests of pyanalyze extensions
         # outside the package.
         package_data={"pyanalyze": package_data},
-        python_requires=">=3.8",
+        python_requires=">=3.9",
     )

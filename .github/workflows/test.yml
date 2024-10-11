@@ -16,9 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: py38
-            python: "3.8"
-            toxenv: py38
           - name: py39
             python: "3.9"
             toxenv: py39
