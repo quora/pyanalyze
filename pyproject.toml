@@ -76,3 +76,6 @@ ignore = [
 "pyanalyze/test_*.py" = [
   "UP",  # Want to test old-style code
 ]
+"pyanalyze/annotations.py" = [
+  "UP006",  # Need to refer to typing.Type
+]

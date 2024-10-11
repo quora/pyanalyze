@@ -784,7 +784,7 @@ def _type_from_subscripted_value(
             ctx.show_error("Optional[] takes only one argument")
             return AnyValue(AnySource.error)
         return unite_values(KnownValue(None), _type_from_value(members[0], ctx))
-    elif root is type or root is type:
+    elif root is typing.Type or root is type:
         if len(members) != 1:
             ctx.show_error("Type[] takes only one argument")
             return AnyValue(AnySource.error)
