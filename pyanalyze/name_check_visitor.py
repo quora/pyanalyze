@@ -4816,8 +4816,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 else:
                     bound = self.visit(node.bound)
             if sys.version_info >= (3, 13):
-                if node.default is not None:
-                    default = self.visit(node.default)
+                if node.default_value is not None:
+                    default = self.visit(node.default_value)
             tv = TypeVar(node.name)
             typevar = TypeVarValue(
                 tv,
