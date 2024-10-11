@@ -9,24 +9,10 @@ import functools
 import pathlib
 import sys
 from collections import defaultdict
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (
-    Any,
-    ClassVar,
-    Collection,
-    Dict,
-    FrozenSet,
-    Generic,
-    Iterable,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-)
+from typing import Any, ClassVar, Generic, Optional, TypeVar
 
 import qcore
 import tomli
@@ -67,7 +53,7 @@ else:
 
 
 T = TypeVar("T")
-ModulePath = Tuple[str, ...]
+ModulePath = tuple[str, ...]
 
 
 class InvalidConfigOption(Exception):
@@ -75,7 +61,7 @@ class InvalidConfigOption(Exception):
 
     @classmethod
     def from_parser(
-        cls, option_cls: Type["ConfigOption"], expected: str, value: object
+        cls, option_cls: type["ConfigOption"], expected: str, value: object
     ) -> "InvalidConfigOption":
         return cls(
             f"Invalid value for option {option_cls.name}: expected {expected} but got"
@@ -89,7 +75,7 @@ class NotFound(Exception):
 
 @dataclass
 class ConfigOption(Generic[T]):
-    registry: ClassVar[Dict[str, Type["ConfigOption"]]] = {}
+    registry: ClassVar[dict[str, type["ConfigOption"]]] = {}
 
     name: ClassVar[str]
     is_global: ClassVar[bool] = False
@@ -109,12 +95,12 @@ class ConfigOption(Generic[T]):
                 raise ValueError(f"{cls} is missing a default value")
 
     @classmethod
-    def parse(cls: "Type[ConfigOption[T]]", data: object, source_path: Path) -> T:
+    def parse(cls: "type[ConfigOption[T]]", data: object, source_path: Path) -> T:
         raise NotImplementedError
 
     @classmethod
     def get_value_from_instances(
-        cls: "Type[ConfigOption[T]]",
+        cls: "type[ConfigOption[T]]",
         instances: Sequence["ConfigOption[T]"],
         module_path: ModulePath,
     ) -> T:
@@ -126,7 +112,7 @@ class ConfigOption(Generic[T]):
     def is_applicable_to(self, module_path: ModulePath) -> bool:
         return module_path[: len(self.applicable_to)] == self.applicable_to
 
-    def sort_key(self) -> Tuple[object, ...]:
+    def sort_key(self) -> tuple[object, ...]:
         """We sort with the most specific option first."""
         return (
             not self.from_command_line,  # command line options first
@@ -143,7 +129,7 @@ class BooleanOption(ConfigOption[bool]):
     default_value = False
 
     @classmethod
-    def parse(cls: "Type[BooleanOption]", data: object, source_path: Path) -> bool:
+    def parse(cls: "type[BooleanOption]", data: object, source_path: Path) -> bool:
         if isinstance(data, bool):
             return data
         raise InvalidConfigOption.from_parser(cls, "bool", data)
@@ -160,7 +146,7 @@ class BooleanOption(ConfigOption[bool]):
 
 class IntegerOption(ConfigOption[int]):
     @classmethod
-    def parse(cls: "Type[IntegerOption]", data: object, source_path: Path) -> int:
+    def parse(cls: "type[IntegerOption]", data: object, source_path: Path) -> int:
         if isinstance(data, int):
             return data
         raise InvalidConfigOption.from_parser(cls, "int", data)
@@ -180,7 +166,7 @@ class ConcatenatedOption(ConfigOption[Sequence[T]]):
 
     @classmethod
     def get_value_from_instances(
-        cls: "Type[ConcatenatedOption[T]]",
+        cls: "type[ConcatenatedOption[T]]",
         instances: Sequence["ConcatenatedOption[T]"],
         module_path: ModulePath,
     ) -> Sequence[T]:
@@ -197,7 +183,7 @@ class StringSequenceOption(ConcatenatedOption[str]):
 
     @classmethod
     def parse(
-        cls: "Type[StringSequenceOption]", data: object, source_path: Path
+        cls: "type[StringSequenceOption]", data: object, source_path: Path
     ) -> Sequence[str]:
         if isinstance(data, (list, tuple)) and all(
             isinstance(elt, str) for elt in data
@@ -220,7 +206,7 @@ class PathSequenceOption(ConfigOption[Sequence[Path]]):
 
     @classmethod
     def parse(
-        cls: "Type[PathSequenceOption]", data: object, source_path: Path
+        cls: "type[PathSequenceOption]", data: object, source_path: Path
     ) -> Sequence[str]:
         if isinstance(data, (list, tuple)) and all(
             isinstance(elt, str) for elt in data
@@ -246,7 +232,7 @@ class PyObjectSequenceOption(ConcatenatedOption[T]):
 
     @classmethod
     def parse(
-        cls: "Type[PyObjectSequenceOption[T]]", data: object, source_path: Path
+        cls: "type[PyObjectSequenceOption[T]]", data: object, source_path: Path
     ) -> Sequence[T]:
         if not isinstance(data, (list, tuple)):
             raise InvalidConfigOption.from_parser(
@@ -303,13 +289,13 @@ class Options:
     def for_module(self, module_path: ModulePath) -> "Options":
         return Options(self.options, module_path)
 
-    def get_value_for(self, option: Type[ConfigOption[T]]) -> T:
+    def get_value_for(self, option: type[ConfigOption[T]]) -> T:
         try:
             return self._get_value_for_no_default(option)
         except NotFound:
             return option.default_value
 
-    def _get_value_for_no_default(self, option: Type[ConfigOption[T]]) -> T:
+    def _get_value_for_no_default(self, option: type[ConfigOption[T]]) -> T:
         instances = [*self.options.get(option.name, ()), option(option.default_value)]
         return option.get_value_from_instances(instances, self.module_path)
 
@@ -375,7 +361,7 @@ def parse_config_file(
 
 
 @functools.lru_cache
-def get_all_error_codes() -> FrozenSet[str]:
+def get_all_error_codes() -> frozenset[str]:
     return frozenset({error_code.name for error_code in ErrorCode})
 
 
@@ -393,7 +379,7 @@ def _parse_config_section(
                 "Top-level configuration should not set module option"
             )
 
-    enabled_error_codes: Set[str] = set()
+    enabled_error_codes: set[str] = set()
     all_error_codes = get_all_error_codes()
     disable_all_default_error_codes = False
 

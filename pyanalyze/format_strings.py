@@ -8,20 +8,12 @@ import ast
 import enum
 import re
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import (
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Match,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from re import Match
+from typing import Callable, Optional, Union, runtime_checkable
 
-from typing_extensions import Literal, Protocol, runtime_checkable
+from typing_extensions import Literal, Protocol
 
 from .error_code import ErrorCode
 from .value import (
@@ -303,7 +295,7 @@ class PercentFormatString:
         else:
             yield from self.accept_tuple_args(args, ctx)
 
-    def get_specifier_mapping(self) -> Dict[str, List[ConversionSpecifier]]:
+    def get_specifier_mapping(self) -> dict[str, list[ConversionSpecifier]]:
         """Return a mapping from mapping key to conversion specifiers for that mapping key."""
         out = defaultdict(list)
         for specifier in self.specifiers:
@@ -380,12 +372,14 @@ class PercentFormatString:
         num_args = len(all_args)
         num_specifiers = len(specifiers)
         if num_args < num_specifiers:
-            yield "too few arguments to format string: got {} but expected {}".format(
-                num_args, num_specifiers
+            yield (
+                f"too few arguments to format string: "
+                f"got {num_args} but expected {num_specifiers}"
             )
         elif num_args > num_specifiers:
-            yield "too many arguments to format string: got {} but expected {}".format(
-                num_args, num_specifiers
+            yield (
+                f"too many arguments to format string: "
+                f"got {num_args} but expected {num_specifiers}"
             )
         else:
             for arg, specifier in zip(all_args, specifiers):
@@ -399,7 +393,7 @@ def check_string_format(
     args: Value,
     on_error: Callable[..., None],
     ctx: CanAssignContext,
-) -> Tuple[Value, Optional[ast.expr]]:
+) -> tuple[Value, Optional[ast.expr]]:
     """Checks that arguments to %-formatted strings are correct."""
     if isinstance(format_str, bytes):
         fs = PercentFormatString.from_bytes_pattern(format_str)
@@ -482,8 +476,8 @@ def _is_simple_enough(node: ast.AST) -> bool:
 # .format()
 #
 
-FormatErrors = List[Tuple[int, str]]
-Children = List[Union[str, "ReplacementField"]]
+FormatErrors = list[tuple[int, str]]
+Children = list[Union[str, "ReplacementField"]]
 
 
 @dataclass
@@ -542,7 +536,7 @@ class IndexOrAttribute(enum.Enum):
 @dataclass
 class ReplacementField:
     arg_name: Union[None, int, str]
-    index_attribute: Sequence[Tuple[IndexOrAttribute, str]] = ()
+    index_attribute: Sequence[tuple[IndexOrAttribute, str]] = ()
     conversion: Optional[str] = None
     format_spec: Optional[FormatString] = None
 
@@ -555,7 +549,7 @@ class ReplacementField:
                     yield from child.iter_replacement_fields()
 
 
-def parse_format_string(string: str) -> Tuple[FormatString, FormatErrors]:
+def parse_format_string(string: str) -> tuple[FormatString, FormatErrors]:
     state = _ParserState(string)
     children = _parse_children(state, end_at=None)
     return FormatString(children), state.errors

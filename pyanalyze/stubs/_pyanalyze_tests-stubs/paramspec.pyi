@@ -1,4 +1,6 @@
-from typing_extensions import Callable, ParamSpec, TypeVar
+from typing import Callable
+
+from typing_extensions import ParamSpec, TypeVar
 
 T = TypeVar("T")
 P = ParamSpec("P")

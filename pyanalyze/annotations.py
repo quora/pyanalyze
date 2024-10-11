@@ -28,25 +28,10 @@ import ast
 import builtins
 import contextlib
 import typing
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Container, Generator, Hashable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import InitVar, dataclass, field
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Container,
-    ContextManager,
-    Generator,
-    List,
-    Mapping,
-    NewType,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, NewType, Optional, TypeVar, Union, cast
 
 import qcore
 import typing_extensions
@@ -144,9 +129,9 @@ class Context:
 
     should_suppress_undefined_names: bool = field(default=False, init=False)
     """While this is True, no errors are shown for undefined names."""
-    _being_evaluated: Set[int] = field(default_factory=set, init=False)
+    _being_evaluated: set[int] = field(default_factory=set, init=False)
 
-    def suppress_undefined_names(self) -> ContextManager[None]:
+    def suppress_undefined_names(self) -> AbstractContextManager[None]:
         """Temporarily suppress errors about undefined names."""
         return qcore.override(self, "should_suppress_undefined_names", True)
 
@@ -961,7 +946,7 @@ class _DefaultContext(Context):
 @dataclass(frozen=True)
 class _SubscriptedValue(Value):
     root: Optional[Value]
-    members: Tuple[Value, ...]
+    members: tuple[Value, ...]
 
 
 @dataclass(frozen=True)
@@ -973,7 +958,7 @@ class TypeQualifierValue(Value):
 @dataclass(frozen=True)
 class DecoratorValue(Value):
     decorator: object
-    args: Tuple[Value, ...]
+    args: tuple[Value, ...]
 
 
 class _Visitor(ast.NodeVisitor):
@@ -1164,7 +1149,7 @@ def _value_of_origin_args(
     is_typeddict: bool = False,
     allow_unpack: bool = False,
 ) -> Value:
-    if origin is typing.Type or origin is type:
+    if origin is type or origin is type:
         if not args:
             return TypedValue(type)
         return SubclassValue.make(_type_from_runtime(args[0], ctx))
@@ -1389,7 +1374,7 @@ def _make_callable_from_value(
 
 
 def _make_annotated(origin: Value, metadata: Sequence[Value], ctx: Context) -> Value:
-    metadata_objs: List[Union[Value, Extension]] = []
+    metadata_objs: list[Union[Value, Extension]] = []
     for entry in metadata:
         if isinstance(entry, KnownValue):
             if isinstance(entry.val, ParameterTypeGuard):

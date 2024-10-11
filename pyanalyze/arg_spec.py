@@ -13,24 +13,11 @@ import inspect
 import sys
 import textwrap
 import typing
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
+from re import Pattern
 from types import FunctionType, MethodType, ModuleType
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    Iterator,
-    List,
-    Mapping,
-    Optional,
-    Pattern,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, Generic, Optional, TypeVar, Union
 from unittest import mock
 
 import asynq
@@ -346,7 +333,7 @@ else:
     # specify the overloads. This will be unnecessary in 3.11+
     # where we get to use typing.get_overloads().
     def _raises_overload1(
-        expected_exception: Union[Type[_E], Tuple[Type[_E], ...]],
+        expected_exception: Union[type[_E], tuple[type[_E], ...]],
         *,
         match: Optional[Union[str, Pattern[str]]] = ...,
     ) -> _pytest.python_api.RaisesContext[_E]:
@@ -354,7 +341,7 @@ else:
 
     # TODO use ParamSpec here
     def _raises_overload2(
-        expected_exception: Union[Type[_E], Tuple[Type[_E], ...]],
+        expected_exception: Union[type[_E], tuple[type[_E], ...]],
         func: Callable[..., Any],
         *args: Any,
         **kwargs: Any,
@@ -363,7 +350,7 @@ else:
 
     def _get_pytest_signatures(
         arg_spec_cache: "ArgSpecCache",
-    ) -> Dict[object, ConcreteSignature]:
+    ) -> dict[object, ConcreteSignature]:
         """Return hardcoded Signatures for specific pytest functions."""
         sigs = [
             arg_spec_cache.get_concrete_signature(_raises_overload1),
@@ -486,7 +473,7 @@ class ArgSpecCache:
         is_wrapped: bool,
         index: int,
         seen_paramspec_args: Optional[ParamSpecArgsValue],
-    ) -> Tuple[Optional[SigParameter], bool, Optional[ParamSpecArgsValue]]:
+    ) -> tuple[Optional[SigParameter], bool, Optional[ParamSpecArgsValue]]:
         """Given an inspect.Parameter, returns a Parameter object."""
         if is_wrapped:
             typ = AnyValue(AnySource.inference)
@@ -1018,7 +1005,7 @@ class ArgSpecCache:
             # Python 2.
             return None
 
-    def get_type_parameters(self, typ: Union[type, str]) -> List[Value]:
+    def get_type_parameters(self, typ: Union[type, str]) -> list[Value]:
         bases = self.get_generic_bases(typ, substitute_typevars=False)
         tv_map = bases.get(typ, {})
         return [tv for tv in tv_map.values()]

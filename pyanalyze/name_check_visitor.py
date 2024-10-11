@@ -27,36 +27,19 @@ import types
 import typing
 from abc import abstractmethod
 from argparse import ArgumentParser
+from collections.abc import Container, Generator, Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    ClassVar,
-    Container,
-    ContextManager,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Annotated, Any, Callable, ClassVar, Optional, TypeVar, Union
 from unittest.mock import ANY
 
 import asynq
 import qcore
 import typeshed_client
 from qcore.testing import Anything
-from typing_extensions import Annotated, Protocol, get_args, get_origin
+from typing_extensions import Protocol, get_args, get_origin
 
 from . import attributes, format_strings, importer, node_visitor, type_evaluation
 from .analysis_lib import get_attribute_path
@@ -348,7 +331,7 @@ class CustomContextManager(Protocol[T, U]):
 
     def __exit__(
         self,
-        __exc_type: Optional[Type[BaseException]],
+        __exc_type: Optional[type[BaseException]],
         __exc_value: Optional[BaseException],
         __traceback: Optional[types.TracebackType],
     ) -> U:
@@ -361,7 +344,7 @@ class AsyncCustomContextManager(Protocol[T, U]):
 
     async def __aexit__(
         self,
-        __exc_type: Optional[Type[BaseException]],
+        __exc_type: Optional[type[BaseException]],
         __exc_value: Optional[BaseException],
         __traceback: Optional[types.TracebackType],
     ) -> U:
@@ -566,7 +549,7 @@ class IgnoredUnusedAttributes(StringSequenceOption):
     ]
 
 
-class IgnoredUnusedClassAttributes(ConcatenatedOption[Tuple[type, Set[str]]]):
+class IgnoredUnusedClassAttributes(ConcatenatedOption[tuple[type, set[str]]]):
     """List of pairs of (class, set of attribute names). When these attribute names are seen as
     unused on a child or base class of the class, they are not listed."""
 
@@ -575,7 +558,7 @@ class IgnoredUnusedClassAttributes(ConcatenatedOption[Tuple[type, Set[str]]]):
     should_create_command_line_option = False  # too complicated
 
     @classmethod
-    def parse(cls, data: object, source_path: Path) -> Sequence[Tuple[type, Set[str]]]:
+    def parse(cls, data: object, source_path: Path) -> Sequence[tuple[type, set[str]]]:
         if not isinstance(data, (list, tuple)):
             raise InvalidConfigOption.from_parser(
                 cls, "sequence of (type, [attribute]) pairs", data
@@ -700,7 +683,7 @@ class ClassAttributeChecker:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
+        exc_type: Optional[type[BaseException]],
         exc_value: Optional[BaseException],
         exc_traceback: Optional[types.TracebackType],
     ) -> None:
@@ -854,7 +837,7 @@ class ClassAttributeChecker:
         """
         all_attrs_read = collections.defaultdict(set)
 
-        def _add_attrs(typ: Any, attr_names_read: Set[str]) -> None:
+        def _add_attrs(typ: Any, attr_names_read: set[str]) -> None:
             if typ is None:
                 return
             all_attrs_read[typ] |= attr_names_read
@@ -883,7 +866,7 @@ class ClassAttributeChecker:
                 print(f"Unused method: {typ!r}.{attr}")
 
     # sort by module + name in order to get errors in a reasonable order
-    def _cls_sort(self, pair: Tuple[Any, Any]) -> Tuple[str, ...]:
+    def _cls_sort(self, pair: tuple[Any, Any]) -> tuple[str, ...]:
         typ = pair[0]
         if hasattr(typ, "__name__") and isinstance(typ.__name__, str):
             return (str(typ.__module__), str(typ.__name__))
@@ -1022,7 +1005,7 @@ class ClassAttributeChecker:
         return result
 
 
-_AstType = Union[Type[ast.AST], Tuple[Type[ast.AST], ...]]
+_AstType = Union[type[ast.AST], tuple[type[ast.AST], ...]]
 
 
 class StackedContexts:
@@ -1032,7 +1015,7 @@ class StackedContexts:
 
     """
 
-    contexts: List[ast.AST]
+    contexts: list[ast.AST]
 
     def __init__(self) -> None:
         self.contexts = []
@@ -1082,13 +1065,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     config_filename: ClassVar[Optional[str]] = None
     """Path (relative to this class's file) to a pyproject.toml config file."""
 
-    _argspec_to_retval: Dict[int, Tuple[Value, MaybeSignature]]
+    _argspec_to_retval: dict[int, tuple[Value, MaybeSignature]]
     _has_used_any_match: bool
-    _method_cache: Dict[Type[ast.AST], Callable[[Any], Optional[Value]]]
-    _name_node_to_statement: Optional[Dict[ast.AST, Optional[ast.AST]]]
+    _method_cache: dict[type[ast.AST], Callable[[Any], Optional[Value]]]
+    _name_node_to_statement: Optional[dict[ast.AST, Optional[ast.AST]]]
     _should_exclude_any: bool
-    _statement_types: Set[Type[ast.AST]]
-    ann_assign_type: Optional[Tuple[Optional[Value], bool]]
+    _statement_types: set[type[ast.AST]]
+    ann_assign_type: Optional[tuple[Optional[Value], bool]]
     annotate: bool
     arg_spec_cache: ArgSpecCache
     async_kind: AsyncFunctionKind
@@ -1098,17 +1081,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     checker: Checker
     collector: Optional[CallSiteCollector]
     current_class: Optional[type]
-    current_enum_members: Optional[Dict[object, str]]
+    current_enum_members: Optional[dict[object, str]]
     current_function: Optional[object]
     current_function_info: Optional[FunctionInfo]
     current_function_name: Optional[str]
     error_for_implicit_any: bool
     expected_return_value: Optional[Value]
-    future_imports: Set[str]
+    future_imports: set[str]
     in_annotation: bool
     in_comprehension_body: bool
     in_union_decomposition: bool
-    import_name_to_node: Dict[str, Union[ast.Import, ast.ImportFrom]]
+    import_name_to_node: dict[str, Union[ast.Import, ast.ImportFrom]]
     is_async_def: bool
     is_compiled: bool
     is_generator: bool
@@ -1117,7 +1100,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     node_context: StackedContexts
     options: Options
     reexport_tracker: ImplicitReexportTracker
-    return_values: List[Optional[Value]]
+    return_values: list[Optional[Value]]
     scopes: StackedScopes
     state: VisitorState
     unused_finder: UnusedObjectFinder
@@ -1245,7 +1228,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def assume_compatibility(
         self, left: TypeObject, right: TypeObject
-    ) -> ContextManager[None]:
+    ) -> AbstractContextManager[None]:
         return self.checker.assume_compatibility(left, right)
 
     def has_used_any_match(self) -> bool:
@@ -1256,12 +1239,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """Record that Any was used to secure a match."""
         self._has_used_any_match = True
 
-    def reset_any_used(self) -> ContextManager[None]:
+    def reset_any_used(self) -> AbstractContextManager[None]:
         """Context that resets the value used by :meth:`has_used_any_match` and
         :meth:`record_any_match`."""
         return qcore.override(self, "_has_used_any_match", False)
 
-    def set_exclude_any(self) -> ContextManager[None]:
+    def set_exclude_any(self) -> AbstractContextManager[None]:
         """Within this context, `Any` is compatible only with itself."""
         return qcore.override(self, "_should_exclude_any", True)
 
@@ -1283,7 +1266,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         # Only pickle the attributes needed to get error reporting working
         return self.__class__, (self.filename, self.contents, self.tree, self.settings)
 
-    def _load_module(self) -> Tuple[Optional[types.ModuleType], bool]:
+    def _load_module(self) -> tuple[Optional[types.ModuleType], bool]:
         """Sets the module_path and module for this file."""
         if not self.filename:
             return None, False
@@ -1334,7 +1317,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     traceback.print_exc()
             return None, False
 
-    def check(self, ignore_missing_module: bool = False) -> List[node_visitor.Failure]:
+    def check(self, ignore_missing_module: bool = False) -> list[node_visitor.Failure]:
         """Run the visitor on this module."""
         start_time = qcore.utime()
         try:
@@ -1461,7 +1444,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         *,
         replacement: Optional[node_visitor.Replacement] = None,
         detail: Optional[str] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
+        extra_metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """We usually should show errors only in the check_names state to avoid duplicate errors."""
         if self._is_checking():
@@ -1482,7 +1465,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         *,
         private: bool = False,
         lookup_node: object = None,
-    ) -> Tuple[Value, VarnameOrigin]:
+    ) -> tuple[Value, VarnameOrigin]:
         if lookup_node is None:
             lookup_node = node
 
@@ -1535,7 +1518,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _get_base_class_attributes(
         self, varname: str, node: ast.AST
-    ) -> Iterable[Tuple[Union[type, str], Value]]:
+    ) -> Iterable[tuple[Union[type, str], Value]]:
         if self.current_class is None:
             return
         for base_class in self.get_generic_bases(self.current_class):
@@ -1688,7 +1671,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         node: ast.Name,
         error_node: Optional[ast.AST] = None,
         suppress_errors: bool = False,
-    ) -> Tuple[Value, VarnameOrigin]:
+    ) -> tuple[Value, VarnameOrigin]:
         """Resolves a Name node to a value.
 
         :param node: Node to resolve the name from
@@ -1760,7 +1743,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def _get_first_import_node(self) -> ast.stmt:
         return min(self.import_name_to_node.values(), key=lambda node: node.lineno)
 
-    def _generic_visit_list(self, lst: Iterable[ast.AST]) -> List[Value]:
+    def _generic_visit_list(self, lst: Iterable[ast.AST]) -> list[Value]:
         return [self.visit(node) for node in lst]
 
     def _is_write_ctx(self, ctx: ast.AST) -> bool:
@@ -2622,9 +2605,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 # this is a SyntaxError, so it might be impossible to reach this branch
                 self._show_error_if_checking(
                     node,
-                    "nonlocal name {} does not exist in any enclosing scope".format(
-                        name
-                    ),
+                    f"nonlocal name {name} does not exist in any enclosing scope",
                     error_code=ErrorCode.bad_nonlocal,
                 )
                 defining_scope = self.scopes.module_scope()
@@ -2883,7 +2864,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if self.filename.endswith("/__init__.py"):
                 level -= 1
 
-            current_module_path: List[str] = self.module.__name__.split(".")
+            current_module_path: list[str] = self.module.__name__.split(".")
             if level >= len(current_module_path):
                 self._show_error_if_checking(
                     node,
@@ -3119,7 +3100,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_JoinedStr(self, node: ast.JoinedStr) -> Value:
         elements = self._generic_visit_list(node.values)
         limit = self.options.get_value_for(UnionSimplificationLimit)
-        possible_values: List[List[str]] = [[]]
+        possible_values: list[list[str]] = [[]]
         for elt in elements:
             subvals = list(flatten_values(elt))
             # Bail out if the list of possible values gets too long.
@@ -3249,7 +3230,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_Dict(self, node: ast.Dict) -> Value:
         ret = {}
-        all_pairs: List[KVPair] = []
+        all_pairs: list[KVPair] = []
         has_non_literal = False
         for key_node, value_node in zip(node.keys, node.values):
             value_val = self.visit(value_node)
@@ -3947,14 +3928,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             return TypedValue(slice)
 
     # These two are unused in 3.9 and higher
-    if sys.version_info < (3, 9):
-
-        def visit_ExtSlice(self, node: ast.ExtSlice) -> Value:
-            dims = [self.visit(dim) for dim in node.dims]
-            return self._maybe_make_sequence(tuple, dims, node)
-
-        def visit_Index(self, node: ast.Index) -> Value:
-            return self.visit(node.value)
 
     # Control flow
 
@@ -4316,7 +4289,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._set_name_in_scope(LEAVES_SCOPE, node, AnyValue(AnySource.marker))
 
     def _handle_loop_else(
-        self, orelse: List[ast.stmt], body_scope: SubScope, always_entered: bool
+        self, orelse: list[ast.stmt], body_scope: SubScope, always_entered: bool
     ) -> None:
         if always_entered:
             self.scopes.combine_subscopes([body_scope])
@@ -4389,7 +4362,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def visit_single_cm(
         self,
-        items: List[ast.withitem],
+        items: list[ast.withitem],
         body: Iterable[ast.AST],
         *,
         is_async: bool = False,
@@ -4516,7 +4489,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def _extract_exception_types(
         self, typ: Value, node: ast.AST, is_try_star: bool = False
-    ) -> List[Tuple[bool, Value]]:
+    ) -> list[tuple[bool, Value]]:
         possible_types = []
         for subval in flatten_values(typ, unwrap_annotated=True):
             subval = replace_known_sequence_value(subval)
@@ -4607,7 +4580,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     def constraint_from_condition(
         self, node: ast.AST, check_boolability: bool = True
-    ) -> Tuple[Value, AbstractConstraint]:
+    ) -> tuple[Value, AbstractConstraint]:
         condition = self._visit_possible_constraint(node)
         constraint = extract_constraints(condition)
         if self._is_collecting():
@@ -4716,8 +4689,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             if value.val in self.current_enum_members:
                 self._show_error_if_checking(
                     node,
-                    "Duplicate enum member: %s is used for both %s and %s"
-                    % (
+                    "Duplicate enum member: {} is used for both {} and {}".format(
                         value.val,
                         self.current_enum_members[value.val],
                         ", ".join(names),
@@ -5124,7 +5096,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         method_name: str,
         args: Iterable[Composite],
         allow_call: bool = False,
-    ) -> Union[Value, List[node_visitor.Error]]:
+    ) -> Union[Value, list[node_visitor.Error]]:
         """Use this for checking a dunder call that may fall back to another.
 
         There are three cases:
@@ -5155,7 +5127,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         method_name: str,
         args: Iterable[Composite],
         allow_call: bool = False,
-    ) -> Tuple[Value, bool]:
+    ) -> tuple[Value, bool]:
         val = callee_composite.value
         if isinstance(val, AnnotatedValue):
             val = val.value
@@ -5191,7 +5163,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         method_name: str,
         args: Iterable[Composite],
         allow_call: bool = False,
-    ) -> Tuple[Value, bool]:
+    ) -> tuple[Value, bool]:
         method_object = self._get_dunder(node, callee_composite.value, method_name)
         if method_object is UNINITIALIZED_VALUE:
             return AnyValue(AnySource.error), False
@@ -5473,7 +5445,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Call nodes
 
-    def visit_keyword(self, node: ast.keyword) -> Tuple[Optional[str], Composite]:
+    def visit_keyword(self, node: ast.keyword) -> tuple[Optional[str], Composite]:
         return (node.arg, self.composite_from_node(node.value))
 
     def visit_Call(self, node: ast.Call) -> Value:
@@ -5520,11 +5492,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return return_value
 
     def _can_perform_call(
-        self, args: Iterable[Value], keywords: Iterable[Tuple[Optional[str], Value]]
+        self, args: Iterable[Value], keywords: Iterable[tuple[Optional[str], Value]]
     ) -> Annotated[
         bool,
         ParameterTypeGuard["args", Iterable[KnownValue]],
-        ParameterTypeGuard["keywords", Iterable[Tuple[str, KnownValue]]],
+        ParameterTypeGuard["keywords", Iterable[tuple[str, KnownValue]]],
     ]:
         """Returns whether all of the arguments were inferred successfully."""
         return all(isinstance(arg, KnownValue) for arg in args) and all(
@@ -5537,7 +5509,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         node: Optional[ast.AST],
         callee: Value,
         args: Iterable[Composite],
-        keywords: Iterable[Tuple[Optional[str], Composite]] = (),
+        keywords: Iterable[tuple[Optional[str], Composite]] = (),
         *,
         allow_call: bool = False,
     ) -> Value:
@@ -5574,7 +5546,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         node: Optional[ast.AST],
         callee_wrapped: Value,
         args: Iterable[Composite],
-        keywords: Iterable[Tuple[Optional[str], Composite]] = (),
+        keywords: Iterable[tuple[Optional[str], Composite]] = (),
         *,
         allow_call: bool = False,
     ) -> Value:
@@ -5831,14 +5803,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     @classmethod
     def get_default_directories(
         cls, checker: Checker, **kwargs: Any
-    ) -> Tuple[str, ...]:
+    ) -> tuple[str, ...]:
         paths = checker.options.get_value_for(Paths)
         return tuple(str(path) for path in paths)
 
     @classmethod
     def _get_default_settings(
         cls,
-    ) -> Optional[Dict[node_visitor.ErrorCodeInstance, bool]]:
+    ) -> Optional[dict[node_visitor.ErrorCodeInstance, bool]]:
         return {}
 
     @classmethod
@@ -5883,13 +5855,13 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     @classmethod
     def perform_final_checks(
         cls, kwargs: Mapping[str, Any]
-    ) -> List[node_visitor.Failure]:
+    ) -> list[node_visitor.Failure]:
         return kwargs["checker"].perform_final_checks()
 
     @classmethod
     def _run_on_files(
         cls,
-        files: List[str],
+        files: list[str],
         *,
         checker: Checker,
         find_unused: bool = False,
@@ -5897,7 +5869,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         attribute_checker: Optional[ClassAttributeChecker] = None,
         unused_finder: Optional[UnusedObjectFinder] = None,
         **kwargs: Any,
-    ) -> List[node_visitor.Failure]:
+    ) -> list[node_visitor.Failure]:
         attribute_checker_enabled = checker.options.is_error_code_enabled_anywhere(
             ErrorCode.attribute_is_never_set
         )
@@ -5954,7 +5926,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         filename: str,
         attribute_checker: Optional[ClassAttributeChecker] = None,
         **kwargs: Any,
-    ) -> Tuple[List[node_visitor.Failure], Any]:
+    ) -> tuple[list[node_visitor.Failure], Any]:
         failures = cls.check_file(
             filename, attribute_checker=attribute_checker, **kwargs
         )
@@ -6019,7 +5991,7 @@ def build_stacked_scopes(
     return StackedScopes(module_vars, module, simplification_limit=simplification_limit)
 
 
-def _get_task_cls(fn: object) -> "Type[asynq.FutureBase[Any]]":
+def _get_task_cls(fn: object) -> "type[asynq.FutureBase[Any]]":
     """Returns the task class for an async function."""
 
     if hasattr(fn, "task_cls"):

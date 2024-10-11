@@ -24,26 +24,12 @@ import enum
 import sys
 import textwrap
 from collections import deque
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import InitVar, dataclass, field
 from itertools import chain
 from types import FunctionType, ModuleType
-from typing import (
-    Any,
-    Callable,
-    ContextManager,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, Optional, TypeVar, Union
 
 import qcore
 from typing_extensions import ParamSpec, Protocol, assert_never
@@ -156,7 +142,7 @@ class Value:
             # allow overlap with Never
             if other is NO_RETURN_VALUE:
                 return None
-            errors: List[CanAssignError] = []
+            errors: list[CanAssignError] = []
             for val in other.vals:
                 maybe_error = self.can_overlap(val, ctx, mode)
                 if maybe_error is None:
@@ -289,7 +275,7 @@ class CanAssignContext(Protocol):
         self,
         left: "pyanalyze.type_object.TypeObject",
         right: "pyanalyze.type_object.TypeObject",
-    ) -> ContextManager[None]:
+    ) -> AbstractContextManager[None]:
         return qcore.empty_context
 
     def has_used_any_match(self) -> bool:
@@ -299,12 +285,12 @@ class CanAssignContext(Protocol):
     def record_any_used(self) -> None:
         """Record that Any was used to secure a match."""
 
-    def reset_any_used(self) -> ContextManager[None]:
+    def reset_any_used(self) -> AbstractContextManager[None]:
         """Context that resets the value used by :meth:`has_used_any_match` and
         :meth:`record_any_match`."""
         return qcore.empty_context
 
-    def set_exclude_any(self) -> ContextManager[None]:
+    def set_exclude_any(self) -> AbstractContextManager[None]:
         """Within this context, `Any` is compatible only with itself."""
         return qcore.empty_context
 
@@ -327,7 +313,7 @@ class CanAssignError:
     """
 
     message: str = ""
-    children: List["CanAssignError"] = field(default_factory=list)
+    children: list["CanAssignError"] = field(default_factory=list)
     error_code: Optional[Error] = None
 
     def display(self, depth: int = 2) -> str:
@@ -935,7 +921,7 @@ class TypedValue(Value):
 
     def get_generic_args_for_type(
         self, typ: Union[type, super, str], ctx: CanAssignContext
-    ) -> Optional[List[Value]]:
+    ) -> Optional[list[Value]]:
         if isinstance(self, GenericValue):
             args = self.args
         else:
@@ -1038,7 +1024,7 @@ class GenericValue(TypedValue):
 
     """
 
-    args: Tuple[Value, ...]
+    args: tuple[Value, ...]
     """The generic arguments to the type."""
 
     def __init__(self, typ: Union[type, str], args: Iterable[Value]) -> None:
@@ -1181,11 +1167,11 @@ class SequenceValue(GenericValue):
 
     """
 
-    members: Tuple[Tuple[bool, Value], ...]
+    members: tuple[tuple[bool, Value], ...]
     """The elements of the sequence."""
 
     def __init__(
-        self, typ: Union[type, str], members: Sequence[Tuple[bool, Value]]
+        self, typ: Union[type, str], members: Sequence[tuple[bool, Value]]
     ) -> None:
         if members:
             args = (unite_values(*[typ for _, typ in members]),)
@@ -1212,7 +1198,7 @@ class SequenceValue(GenericValue):
 
     @classmethod
     def make_or_known(
-        cls, typ: type, members: Sequence[Tuple[bool, Value]]
+        cls, typ: type, members: Sequence[tuple[bool, Value]]
     ) -> Union[KnownValue, "SequenceValue"]:
         known_members = []
         for is_many, member in members:
@@ -1343,7 +1329,7 @@ class DictIncompleteValue(GenericValue):
 
     """
 
-    kv_pairs: Tuple[KVPair, ...]
+    kv_pairs: tuple[KVPair, ...]
     """Sequence of :class:`KVPair` objects representing the keys and values of the dict."""
 
     def __init__(self, typ: Union[type, str], kv_pairs: Sequence[KVPair]) -> None:
@@ -1382,14 +1368,14 @@ class DictIncompleteValue(GenericValue):
         return GenericValue(self.typ, [key, value])
 
     @property
-    def items(self) -> Sequence[Tuple[Value, Value]]:
+    def items(self) -> Sequence[tuple[Value, Value]]:
         """Sequence of pairs representing the keys and values of the dict."""
         return [(pair.key, pair.value) for pair in self.kv_pairs]
 
     def get_value(self, key: Value, ctx: CanAssignContext) -> Value:
         """Return the :class:`Value` for a specific key."""
         possible_values = []
-        covered_keys: Set[Value] = set()
+        covered_keys: set[Value] = set()
         for pair in reversed(self.kv_pairs):
             if not pair.is_many:
                 if isinstance(pair.key, AnnotatedValue):
@@ -1429,7 +1415,7 @@ class TypedDictEntry:
 class TypedDictValue(GenericValue):
     """Equivalent to ``typing.TypedDict``; a dictionary with a known set of string keys."""
 
-    items: Dict[str, TypedDictEntry]
+    items: dict[str, TypedDictEntry]
     """The items of the ``TypedDict``. Required items are represented as (True, value) and optional
     ones as (False, value)."""
     extra_keys: Optional[Value] = None
@@ -1439,7 +1425,7 @@ class TypedDictValue(GenericValue):
 
     def __init__(
         self,
-        items: Dict[str, TypedDictEntry],
+        items: dict[str, TypedDictEntry],
         extra_keys: Optional[Value] = None,
         extra_keys_readonly: bool = False,
     ) -> None:
@@ -1700,7 +1686,7 @@ class TypedDictValue(GenericValue):
         )
 
     def __str__(self) -> str:
-        entries: List[Tuple[str, object]] = list(self.items.items())
+        entries: list[tuple[str, object]] = list(self.items.items())
         if self.extra_keys is not None and self.extra_keys is not NO_RETURN_VALUE:
             extra_typ = str(self.extra_keys)
             if self.extra_keys_readonly:
@@ -1959,9 +1945,9 @@ class MultiValuedValue(Value):
     """Equivalent of ``typing.Union``. Represents the union of multiple values."""
 
     raw_vals: InitVar[Iterable[Value]]
-    vals: Tuple[Value, ...] = field(init=False)
+    vals: tuple[Value, ...] = field(init=False)
     """The underlying values of the union."""
-    _known_subvals: Optional[Tuple[Set[Tuple[object, type]], Sequence[Value]]] = field(
+    _known_subvals: Optional[tuple[set[tuple[object, type]], Sequence[Value]]] = field(
         init=False, repr=False, hash=False, compare=False
     )
 
@@ -1975,7 +1961,7 @@ class MultiValuedValue(Value):
 
     def _get_known_subvals(
         self,
-    ) -> Optional[Tuple[Set[Tuple[object, type]], Sequence[Value]]]:
+    ) -> Optional[tuple[set[tuple[object, type]], Sequence[Value]]]:
         # Not worth it for small unions
         if len(self.vals) < 10:
             return None
@@ -2052,7 +2038,7 @@ class MultiValuedValue(Value):
     ) -> Optional[CanAssignError]:
         if not self.vals:
             return None
-        errors: List[CanAssignError] = []
+        errors: list[CanAssignError] = []
         for val in self.vals:
             error = val.can_overlap(other, ctx, mode)
             if error is None:
@@ -2085,9 +2071,9 @@ class MultiValuedValue(Value):
     def __str__(self) -> str:
         if not self.vals:
             return "Never"
-        literals: List[KnownValue] = []
+        literals: list[KnownValue] = []
         has_none = False
-        others: List[Value] = []
+        others: list[Value] = []
         for val in self.vals:
             if val == KnownValue(None):
                 has_none = True
@@ -2588,7 +2574,7 @@ class AnnotatedValue(Value):
 
     value: Value
     """The underlying value."""
-    metadata: Tuple[Union[Value, Extension], ...]
+    metadata: tuple[Union[Value, Extension], ...]
     """The extensions associated with this value."""
 
     def __init__(
@@ -2645,19 +2631,19 @@ class AnnotatedValue(Value):
         for val in self.metadata:
             yield from val.walk_values()
 
-    def get_metadata_of_type(self, typ: Type[T]) -> Iterable[T]:
+    def get_metadata_of_type(self, typ: type[T]) -> Iterable[T]:
         """Return any metadata of the given type."""
         for data in self.metadata:
             if isinstance(data, typ):
                 yield data
 
-    def get_custom_check_of_type(self, typ: Type[T]) -> Iterable[T]:
+    def get_custom_check_of_type(self, typ: type[T]) -> Iterable[T]:
         """Return any CustomChecks of the given type in the metadata."""
         for custom_check in self.get_metadata_of_type(CustomCheckExtension):
             if isinstance(custom_check.custom_check, typ):
                 yield custom_check.custom_check
 
-    def has_metadata_of_type(self, typ: Type[Extension]) -> bool:
+    def has_metadata_of_type(self, typ: type[Extension]) -> bool:
         """Return whether there is metadat of the given type."""
         return any(isinstance(data, typ) for data in self.metadata)
 
@@ -2674,7 +2660,7 @@ class UnpackedValue(Value):
 
     value: Value
 
-    def get_elements(self) -> Optional[Sequence[Tuple[bool, Value]]]:
+    def get_elements(self) -> Optional[Sequence[tuple[bool, Value]]]:
         if isinstance(self.value, SequenceValue) and self.value.typ is tuple:
             return self.value.members
         elif isinstance(self.value, GenericValue) and self.value.typ is tuple:
@@ -2705,7 +2691,7 @@ class VariableNameValue(AnyValue):
         super().__init__(AnySource.variable_name)
         object.__setattr__(self, "varnames", tuple(varnames))
 
-    varnames: Tuple[str, ...]
+    varnames: tuple[str, ...]
 
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if not isinstance(other, VariableNameValue):
@@ -2720,11 +2706,11 @@ class VariableNameValue(AnyValue):
         return None
 
     def __str__(self) -> str:
-        return "<variable name: %s>" % ", ".join(self.varnames)
+        return "<variable name: {}>".format(", ".join(self.varnames))
 
     @classmethod
     def from_varname(
-        cls, varname: str, varname_map: Dict[str, "VariableNameValue"]
+        cls, varname: str, varname_map: dict[str, "VariableNameValue"]
     ) -> Optional["VariableNameValue"]:
         """Returns the VariableNameValue corresponding to a variable name.
 
@@ -2806,7 +2792,7 @@ def unify_bounds_maps(bounds_maps: Sequence[BoundsMap]) -> BoundsMap:
 
 
 def intersect_bounds_maps(bounds_maps: Sequence[BoundsMap]) -> BoundsMap:
-    intermediate: Dict[TypeVarLike, Set[Tuple[Bound, ...]]] = {}
+    intermediate: dict[TypeVarLike, set[tuple[Bound, ...]]] = {}
     for bounds_map in bounds_maps:
         for tv, bounds in bounds_map.items():
             intermediate.setdefault(tv, set()).add(tuple(bounds))
@@ -2847,8 +2833,8 @@ ExtensionT = TypeVar("ExtensionT", bound=Extension)
 
 
 def unannotate_value(
-    origin: Value, extension: Type[ExtensionT]
-) -> Tuple[Value, Sequence[ExtensionT]]:
+    origin: Value, extension: type[ExtensionT]
+) -> tuple[Value, Sequence[ExtensionT]]:
     if not isinstance(origin, AnnotatedValue):
         return origin, []
     matches = [
@@ -3234,7 +3220,7 @@ def is_async_iterable(
 
 def _create_unpacked_list(
     iterable_type: Value, target_length: int, post_starred_length: Optional[int]
-) -> List[Value]:
+) -> list[Value]:
     if post_starred_length is not None:
         return [
             *([iterable_type] * target_length),
@@ -3376,7 +3362,7 @@ def stringify_object(obj: Any) -> str:
 
 def can_assign_and_used_any(
     param_typ: Value, var_value: Value, ctx: CanAssignContext
-) -> Tuple[CanAssign, bool]:
+) -> tuple[CanAssign, bool]:
     with ctx.reset_any_used():
         tv_map = param_typ.can_assign(var_value, ctx)
         used_any = ctx.has_used_any_match()

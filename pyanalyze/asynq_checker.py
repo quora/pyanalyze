@@ -8,8 +8,9 @@ import ast
 import contextlib
 import inspect
 import types
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Optional
 
 import asynq
 import qcore
@@ -118,8 +119,7 @@ class AsynqChecker:
                 replacement_node = None
             self._show_impure_async_error(
                 node,
-                replacement_call="%s.%s_async"
-                % (_stringify_obj(inner_type), value.attr_name),
+                replacement_call=f"{_stringify_obj(inner_type)}.{value.attr_name}_async",
                 replacement_node=replacement_node,
             )
 
@@ -232,7 +232,7 @@ def _stringify_obj(obj: Any) -> str:
         return f"{_stringify_obj(cls)}.{obj.decorator.fn.__name__}"
     elif isinstance(obj, super):
         # self might not always be correct, but it's close enough
-        return "super(%s, self)" % _stringify_obj(obj.__self_class__)
+        return f"super({_stringify_obj(obj.__self_class__)}, self)"
     else:
         return f"{obj.__module__}.{obj.__name__}"
 

@@ -51,6 +51,7 @@ select = [
   "F",
   "E",
   "I",  # import sorting
+  "UP",
 ]
 
 ignore = [
@@ -69,4 +70,12 @@ ignore = [
   "E742",  # Ambiguous class name
   "E731",  # do not assign a lambda expression, use a def
   "E741",  # ambiguous variable name
+]
+
+[tool.ruff.lint.per-file-ignores]
+"pyanalyze/test_*.py" = [
+  "UP",  # Want to test old-style code
+]
+"pyanalyze/annotations.py" = [
+  "UP006",  # Need to refer to typing.Type
 ]

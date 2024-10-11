@@ -7,20 +7,21 @@ Module responsible for importing files.
 import importlib
 import importlib.util
 import sys
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
-from typing import Optional, Sequence, Tuple, cast
+from typing import Optional, cast
 
 
-@lru_cache()
+@lru_cache
 def directory_has_init(path: Path) -> bool:
     return (path / "__init__.py").exists()
 
 
 def load_module_from_file(
     filename: str, *, verbose: bool = False, import_paths: Sequence[str] = ()
-) -> Tuple[Optional[ModuleType], bool]:
+) -> tuple[Optional[ModuleType], bool]:
     """Import the Python code in the given file.
 
     Return a tuple (module object, whether it is a compiled file).

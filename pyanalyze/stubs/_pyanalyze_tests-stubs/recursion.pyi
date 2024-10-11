@@ -1,8 +1,9 @@
-from typing import AnyStr, ContextManager, Dict, Union
+from contextlib import AbstractContextManager
+from typing import AnyStr
 
 from typing_extensions import TypeAlias
 
-class _ScandirIterator(ContextManager[_ScandirIterator[AnyStr]]):
+class _ScandirIterator(AbstractContextManager[_ScandirIterator[AnyStr]]):
     def close(self) -> None: ...
 
-StrJson: TypeAlias = Union[str, Dict[str, StrJson]]
+StrJson: TypeAlias = str | dict[str, StrJson]

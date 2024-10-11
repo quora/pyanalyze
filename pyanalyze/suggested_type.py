@@ -6,9 +6,10 @@ Suggest types for untyped code.
 
 import ast
 from collections import defaultdict
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import FunctionType
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Optional, Union
 
 from .error_code import ErrorCode
 from .node_visitor import ErrorContext, Failure
@@ -46,7 +47,7 @@ class CallableData:
     ctx: ErrorContext
     sig: Signature
     scopes: StackedScopes
-    calls: List[CallArgs] = field(default_factory=list)
+    calls: list[CallArgs] = field(default_factory=list)
 
     def check(self) -> Iterator[Failure]:
         if not self.calls:
@@ -85,8 +86,8 @@ class CallableData:
 
 @dataclass
 class CallableTracker:
-    callable_to_data: Dict[object, CallableData] = field(default_factory=dict)
-    callable_to_calls: Dict[object, List[CallArgs]] = field(
+    callable_to_data: dict[object, CallableData] = field(default_factory=dict)
+    callable_to_calls: dict[object, list[CallArgs]] = field(
         default_factory=lambda: defaultdict(list)
     )
 
@@ -105,7 +106,7 @@ class CallableTracker:
         """Record the actual arguments passed in in a call."""
         self.callable_to_calls[callable].append(arguments)
 
-    def check(self) -> List[Failure]:
+    def check(self) -> list[Failure]:
         failures = []
         for callable, calls in self.callable_to_calls.items():
             if callable in self.callable_to_data:
@@ -117,7 +118,7 @@ class CallableTracker:
 
 def display_suggested_type(
     value: Value, scopes: StackedScopes
-) -> Tuple[str, Optional[Dict[str, Any]]]:
+) -> tuple[str, Optional[dict[str, Any]]]:
     value = prepare_type(value)
     if isinstance(value, MultiValuedValue) and value.vals:
         cae = CanAssignError("Union", [CanAssignError(str(val)) for val in value.vals])
@@ -203,8 +204,8 @@ def prepare_type(value: Value) -> Value:
         vals = [prepare_type(subval) for subval in value.vals]
         # Throw out Anys
         vals = [val for val in vals if not isinstance(val, AnyValue)]
-        type_literals: List[Tuple[Value, type]] = []
-        rest: List[Value] = []
+        type_literals: list[tuple[Value, type]] = []
+        rest: list[Value] = []
         for subval in vals:
             if (
                 isinstance(subval, SubclassValue)

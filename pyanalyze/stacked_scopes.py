@@ -25,27 +25,12 @@ import contextlib
 import enum
 from ast import AST
 from collections import OrderedDict, defaultdict
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field, replace
 from itertools import chain
 from types import ModuleType
-from typing import (
-    Any,
-    Callable,
-    ContextManager,
-    Dict,
-    FrozenSet,
-    Iterable,
-    Iterator,
-    List,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, NamedTuple, Optional, TypeVar, Union
 
 import qcore
 
@@ -98,7 +83,7 @@ class ScopeType(enum.Enum):
 # Nodes as used in scopes can be any object, as long as they are hashable.
 Node = object
 # Tag for a Varname that changes when the variable is assigned to.
-VarnameOrigin = FrozenSet[Optional[Node]]
+VarnameOrigin = frozenset[Optional[Node]]
 CompositeIndex = Union[str, KnownValue]
 
 EMPTY_ORIGIN = frozenset((None,))
@@ -139,7 +124,7 @@ Varname = Union[str, CompositeVariable]
 class VarnameWithOrigin:
     varname: str
     origin: VarnameOrigin = EMPTY_ORIGIN
-    indices: Sequence[Tuple[CompositeIndex, VarnameOrigin]] = ()
+    indices: Sequence[tuple[CompositeIndex, VarnameOrigin]] = ()
 
     def extend_with(
         self, index: CompositeIndex, origin: VarnameOrigin
@@ -148,7 +133,7 @@ class VarnameWithOrigin:
             self.varname, self.origin, (*self.indices, (index, origin))
         )
 
-    def get_all_varnames(self) -> Iterable[Tuple[Varname, VarnameOrigin]]:
+    def get_all_varnames(self) -> Iterable[tuple[Varname, VarnameOrigin]]:
         yield self.varname, self.origin
         for i, (_, origin) in enumerate(self.indices):
             varname = CompositeVariable(
@@ -173,7 +158,7 @@ class VarnameWithOrigin:
         return "".join(pieces)
 
 
-SubScope = Dict[Varname, List[Node]]
+SubScope = dict[Varname, list[Node]]
 
 # Type for Constraint.value if constraint type is predicate
 # PredicateFunc = Callable[[Value, bool], Optional[Value]]
@@ -517,7 +502,7 @@ class PredicateProvider(AbstractConstraint):
 
     varname: VarnameWithOrigin
     provider: Callable[[Value], Value]
-    value_transformer: Optional[Callable[[Value, Type[AST], object], Value]] = None
+    value_transformer: Optional[Callable[[Value, type[AST], object], Value]] = None
 
     def apply(self) -> Iterable[Constraint]:
         return []
@@ -531,7 +516,7 @@ class PredicateProvider(AbstractConstraint):
 class EquivalentConstraint(AbstractConstraint):
     """Represents multiple constraints that are either all true or all false."""
 
-    constraints: Tuple[AbstractConstraint, ...]
+    constraints: tuple[AbstractConstraint, ...]
 
     def apply(self) -> Iterable["Constraint"]:
         for cons in self.constraints:
@@ -567,7 +552,7 @@ class EquivalentConstraint(AbstractConstraint):
 class AndConstraint(AbstractConstraint):
     """Represents the AND of two constraints."""
 
-    constraints: Tuple[AbstractConstraint, ...]
+    constraints: tuple[AbstractConstraint, ...]
 
     def apply(self) -> Iterable["Constraint"]:
         for cons in self.constraints:
@@ -611,7 +596,7 @@ class AndConstraint(AbstractConstraint):
 class OrConstraint(AbstractConstraint):
     """Represents the OR of two constraints."""
 
-    constraints: Tuple[AbstractConstraint, ...]
+    constraints: tuple[AbstractConstraint, ...]
 
     def apply(self) -> Iterable[Constraint]:
         grouped = [self._group_constraints(cons) for cons in self.constraints]
@@ -641,7 +626,7 @@ class OrConstraint(AbstractConstraint):
 
     def _group_constraints(
         self, abstract_constraint: AbstractConstraint
-    ) -> Dict[VarnameWithOrigin, List[Constraint]]:
+    ) -> dict[VarnameWithOrigin, list[Constraint]]:
         by_varname = defaultdict(list)
         for constraint in abstract_constraint.apply():
             by_varname[constraint.varname].append(constraint)
@@ -689,9 +674,9 @@ class OrConstraint(AbstractConstraint):
 class _ConstrainedValue(Value):
     """Helper class, only used within a FunctionScope."""
 
-    definition_nodes: FrozenSet[Node]
+    definition_nodes: frozenset[Node]
     constraints: Sequence[Constraint]
-    resolution_cache: Dict[_LookupContext, Value] = field(
+    resolution_cache: dict[_LookupContext, Value] = field(
         default_factory=dict, init=False, compare=False, hash=False, repr=False
     )
 
@@ -708,12 +693,12 @@ class Scope:
     """
 
     scope_type: ScopeType
-    variables: Dict[Varname, Value] = field(default_factory=dict)
+    variables: dict[Varname, Value] = field(default_factory=dict)
     parent_scope: Optional["Scope"] = None
     scope_node: Optional[Node] = None
     scope_object: Optional[object] = None
     simplification_limit: Optional[int] = None
-    declared_types: Dict[str, Tuple[Optional[Value], bool, AST]] = field(
+    declared_types: dict[str, tuple[Optional[Value], bool, AST]] = field(
         default_factory=dict
     )
 
@@ -733,7 +718,7 @@ class Scope:
         node: object,
         state: VisitorState,
         from_parent_scope: bool = False,
-    ) -> Tuple[Value, Optional["Scope"], VarnameOrigin]:
+    ) -> tuple[Value, Optional["Scope"], VarnameOrigin]:
         local_value, origin = self.get_local(
             varname, node, state, from_parent_scope=from_parent_scope
         )
@@ -760,7 +745,7 @@ class Scope:
         state: VisitorState,
         from_parent_scope: bool = False,
         fallback_value: Optional[Value] = None,
-    ) -> Tuple[Value, VarnameOrigin]:
+    ) -> tuple[Value, VarnameOrigin]:
         if varname in self.variables:
             return self.variables[varname], EMPTY_ORIGIN
         else:
@@ -795,7 +780,7 @@ class Scope:
                 self.variables[varname] = unite_values(existing, value)
         return EMPTY_ORIGIN
 
-    def items(self) -> Iterable[Tuple[Varname, Value]]:
+    def items(self) -> Iterable[tuple[Varname, Value]]:
         return self.variables.items()
 
     def all_variables(self) -> Iterable[Varname]:
@@ -1019,13 +1004,13 @@ class FunctionScope(Scope):
     """
 
     name_to_current_definition_nodes: SubScope
-    usage_to_definition_nodes: Dict[Tuple[Node, Varname], List[Node]]
-    definition_node_to_value: Dict[Node, Value]
-    name_to_all_definition_nodes: Dict[Varname, Set[Node]]
-    name_to_composites: Dict[Varname, Set[CompositeVariable]]
-    referencing_value_vars: Dict[Varname, Value]
-    accessed_from_special_nodes: Set[Varname]
-    current_loop_scopes: List[SubScope]
+    usage_to_definition_nodes: dict[tuple[Node, Varname], list[Node]]
+    definition_node_to_value: dict[Node, Value]
+    name_to_all_definition_nodes: dict[Varname, set[Node]]
+    name_to_composites: dict[Varname, set[CompositeVariable]]
+    referencing_value_vars: dict[Varname, Value]
+    accessed_from_special_nodes: set[Varname]
+    current_loop_scopes: list[SubScope]
 
     def __init__(
         self,
@@ -1090,7 +1075,7 @@ class FunctionScope(Scope):
         self.name_to_current_definition_nodes[varname] = [node]
         self._add_composite(varname)
 
-    def _resolve_origin(self, definers: Iterable[Node]) -> FrozenSet[Node]:
+    def _resolve_origin(self, definers: Iterable[Node]) -> frozenset[Node]:
         seen = set()
         pending = set(definers)
         out = set()
@@ -1145,7 +1130,7 @@ class FunctionScope(Scope):
         state: VisitorState,
         from_parent_scope: bool = False,
         fallback_value: Optional[Value] = None,
-    ) -> Tuple[Value, VarnameOrigin]:
+    ) -> tuple[Value, VarnameOrigin]:
         self._add_composite(varname)
         ctx = _LookupContext(varname, fallback_value, node, state)
         if from_parent_scope:
@@ -1196,7 +1181,7 @@ class FunctionScope(Scope):
                 return EMPTY_ORIGIN
         return self._resolve_origin(definers)
 
-    def get_all_definition_nodes(self) -> Dict[Varname, Set[Node]]:
+    def get_all_definition_nodes(self) -> dict[Varname, builtins.set[Node]]:
         """Return a copy of name_to_all_definition_nodes."""
         return {
             key: set(nodes) for key, nodes in self.name_to_all_definition_nodes.items()
@@ -1262,7 +1247,7 @@ class FunctionScope(Scope):
             yield new_name_to_nodes
 
     @contextlib.contextmanager
-    def loop_scope(self) -> Iterator[List[SubScope]]:
+    def loop_scope(self) -> Iterator[list[SubScope]]:
         loop_scopes = []
         with self.subscope() as main_scope:
             loop_scopes.append(main_scope)
@@ -1371,7 +1356,7 @@ class FunctionScope(Scope):
                     )
                     self.name_to_composites[composite].add(varname)
 
-    def items(self) -> Iterable[Tuple[Varname, Value]]:
+    def items(self) -> Iterable[tuple[Varname, Value]]:
         raise NotImplementedError
 
     def all_variables(self) -> Iterable[Varname]:
@@ -1398,7 +1383,7 @@ class StackedScopes:
 
     def __init__(
         self,
-        module_vars: Dict[str, Value],
+        module_vars: dict[str, Value],
         module: Optional[ModuleType],
         *,
         simplification_limit: Optional[int] = None,
@@ -1491,7 +1476,7 @@ class StackedScopes:
 
     def get_with_scope(
         self, varname: Varname, node: Node, state: VisitorState
-    ) -> Tuple[Value, Optional[Scope], VarnameOrigin]:
+    ) -> tuple[Value, Optional[Scope], VarnameOrigin]:
         """Like :meth:`get`, but also returns the scope object the name was found in.
 
         Returns a (:class:`pyanalyze.value.Value`, :class:`Scope`, origin) tuple. The :class:`Scope`
@@ -1524,14 +1509,14 @@ class StackedScopes:
         """
         self.scopes[-1].set(varname, value, node, state)
 
-    def suppressing_subscope(self) -> ContextManager[SubScope]:
+    def suppressing_subscope(self) -> AbstractContextManager[SubScope]:
         return self.scopes[-1].suppressing_subscope()
 
-    def subscope(self) -> ContextManager[SubScope]:
+    def subscope(self) -> AbstractContextManager[SubScope]:
         """Creates a new subscope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].subscope()
 
-    def loop_scope(self) -> ContextManager[List[SubScope]]:
+    def loop_scope(self) -> AbstractContextManager[list[SubScope]]:
         """Creates a new loop scope (see the :class:`FunctionScope` docstring)."""
         return self.scopes[-1].loop_scope()
 
@@ -1580,7 +1565,7 @@ def constrain_value(
     )
 
 
-def uniq_chain(iterables: Iterable[Iterable[T]]) -> List[T]:
+def uniq_chain(iterables: Iterable[Iterable[T]]) -> list[T]:
     """Returns a flattened list, collapsing equal elements but preserving order."""
     return list(OrderedDict.fromkeys(chain.from_iterable(iterables)))
 

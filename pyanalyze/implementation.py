@@ -4,19 +4,9 @@ import collections.abc
 import inspect
 import re
 import typing
+from collections.abc import Iterable, Sequence
 from itertools import product
-from typing import (
-    Callable,
-    Dict,
-    Iterable,
-    NewType,
-    Optional,
-    Sequence,
-    Type,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import Callable, NewType, Optional, TypeVar, Union, cast
 
 import qcore
 import typing_extensions
@@ -1467,14 +1457,17 @@ def _str_format_impl(ctx: CallContext) -> Value:
         unused_indices = set(range(len(args))) - used_indices
         if unused_indices:
             ctx.show_error(
-                "Numbered argument(s) %s were not used"
-                % ", ".join(map(str, sorted(unused_indices))),
+                "Numbered argument(s) {} were not used".format(
+                    ", ".join(map(str, sorted(unused_indices)))
+                ),
                 error_code=ErrorCode.incompatible_call,
             )
         unused_kwargs = set(kwargs) - used_kwargs
         if unused_kwargs:
             ctx.show_error(
-                "Named argument(s) %s were not used" % ", ".join(sorted(unused_kwargs)),
+                "Named argument(s) {} were not used".format(
+                    ", ".join(sorted(unused_kwargs))
+                ),
                 error_code=ErrorCode.incompatible_call,
             )
     return TypedValue(str)
@@ -1567,7 +1560,7 @@ def len_of_value(val: Value) -> Value:
     return TypedValue(int)
 
 
-def len_transformer(val: Value, op: Type[ast.AST], comparator: object) -> Value:
+def len_transformer(val: Value, op: type[ast.AST], comparator: object) -> Value:
     if not isinstance(comparator, int):
         return val
     if isinstance(len_of_value(val), KnownValue):
@@ -1681,7 +1674,7 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
-def get_default_argspecs() -> Dict[object, Signature]:
+def get_default_argspecs() -> dict[object, Signature]:
     signatures = [
         # pyanalyze helpers
         Signature.make(
@@ -2280,7 +2273,7 @@ def _re_impl_with_pattern(ctx: CallContext) -> Value:
 
 def get_default_argspecs_with_cache(
     asc: "pyanalyze.arg_spec.ArgSpecCache",
-) -> Dict[object, ConcreteSignature]:
+) -> dict[object, ConcreteSignature]:
     sigs = {}
     for func in (
         re.compile,

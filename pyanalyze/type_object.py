@@ -6,8 +6,9 @@ An object that represents a type.
 
 import collections.abc
 import inspect
+from collections.abc import Container, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Container, Dict, Sequence, Set, Union, cast
+from typing import Callable, Union, cast
 from unittest import mock
 
 from pyanalyze.signature import (
@@ -51,13 +52,13 @@ def get_mro(typ: Union[type, super]) -> Sequence[type]:
 @dataclass
 class TypeObject:
     typ: Union[type, super, str]
-    base_classes: Set[Union[type, str]] = field(default_factory=set)
+    base_classes: set[Union[type, str]] = field(default_factory=set)
     is_protocol: bool = False
-    protocol_members: Set[str] = field(default_factory=set)
+    protocol_members: set[str] = field(default_factory=set)
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
-    artificial_bases: Set[type] = field(default_factory=set, init=False)
-    _protocol_positive_cache: Dict[Value, BoundsMap] = field(
+    artificial_bases: set[type] = field(default_factory=set, init=False)
+    _protocol_positive_cache: dict[Value, BoundsMap] = field(
         default_factory=dict, repr=False
     )
 

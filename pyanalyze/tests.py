@@ -5,7 +5,8 @@ Functions to be used in test_scope unit tests.
 
 """
 
-from typing import ClassVar, NoReturn, Sequence, Union, overload
+from collections.abc import Sequence
+from typing import ClassVar, NoReturn, Union, overload
 
 import qcore
 from asynq import AsyncTask, ConstFuture, async_proxy, asynq, get_async_fn, result
