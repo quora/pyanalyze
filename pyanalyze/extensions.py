@@ -631,7 +631,7 @@ def has_extra_keys(value_type: object = Any) -> Callable[[_T], _T]:
     return decorator
 
 
-class _EnumName:
+class EnumName:
     """A type representing the names of members of an enum.
 
     Equivalent to a Literal type, but using this will produce nicer error messages
@@ -639,9 +639,5 @@ class _EnumName:
 
     """
 
-    # TODO after dropping 3.8: switch to a single class with __class_getitem__
-    def __getitem__(self, enum_cls: type[enum.Enum]) -> Any:
+    def __class_getitem__(self, enum_cls: type[enum.Enum]) -> Any:
         return Annotated[str, pyanalyze.annotated_types.EnumName(enum_cls)]
-
-
-EnumName = _EnumName()

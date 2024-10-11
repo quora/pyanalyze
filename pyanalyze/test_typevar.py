@@ -91,7 +91,6 @@ class TestTypeVar(TestNameCheckVisitorBase):
             assert_is_value(mktemp(suffix="s"), KnownValue("s"))
             assert_is_value(mktemp("p", "s"), KnownValue("p") | KnownValue("s"))
 
-    @skip_before((3, 9))
     @assert_passes()
     def test_generic_constructor(self):
         from typing import Generic, TypeVar

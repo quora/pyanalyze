@@ -384,7 +384,6 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(omega, t_str_int | KnownValue(None))
             assert_is_value(empty, SequenceValue(tuple, []))
 
-    @skip_before((3, 9))
     @assert_passes()
     def test_builtin_tuples(self):
         from collections.abc import Iterable
@@ -412,7 +411,6 @@ class TestAnnotations(TestNameCheckVisitorBase):
             for elt in returner():
                 assert_is_value(elt, t_str_int)
 
-    @skip_before((3, 9))
     def test_builtin_tuples_string(self):
         self.assert_passes(
             """
@@ -536,14 +534,12 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(x, SubclassValue(TypedValue(str)))
             assert_is_value(y, SubclassValue(TypedValue(int)))
 
-    @skip_before((3, 9))
     @assert_passes()
     def test_lowercase_type(self):
         def capybara(x: type[str], y: "type[int]"):
             assert_is_value(x, SubclassValue(TypedValue(str)))
             assert_is_value(y, SubclassValue(TypedValue(int)))
 
-    @skip_before((3, 9))
     @assert_passes()
     def test_generic_alias(self):
         from queue import Queue
@@ -564,7 +560,6 @@ class TestAnnotations(TestNameCheckVisitorBase):
             )
             assert_is_value(z, GenericValue(tuple, [TypedValue(int)]))
 
-    @skip_before((3, 9))
     def test_pep604(self):
         self.assert_passes(
             """
@@ -581,18 +576,15 @@ class TestAnnotations(TestNameCheckVisitorBase):
         )
 
     @skip_before((3, 10))
+    @assert_passes()
     def test_pep604_runtime(self):
-        self.assert_passes(
-            """
-            def capybara(x: int | None, y: int | str) -> None:
-                assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
-                assert_is_value(y, MultiValuedValue([TypedValue(int), TypedValue(str)]))
+        def capybara(x: int | None, y: int | str) -> None:
+            assert_is_value(x, MultiValuedValue([TypedValue(int), KnownValue(None)]))
+            assert_is_value(y, MultiValuedValue([TypedValue(int), TypedValue(str)]))
 
-            def caller():
-                capybara(1, 2)
-                capybara(None, "x")
-            """
-        )
+        def caller():
+            capybara(1, 2)
+            capybara(None, "x")
 
     @assert_passes()
     def test_stringified_ops(self):
@@ -688,7 +680,6 @@ class TestAnnotated(TestNameCheckVisitorBase):
                 ),
             )
 
-    @skip_before((3, 9))
     @assert_passes()
     def test_typing(self):
         import collections.abc
@@ -730,7 +721,6 @@ class TestAnnotated(TestNameCheckVisitorBase):
                 ),
             )
 
-    @skip_before((3, 9))
     @assert_passes()
     def test_genericalias_nested_class(self):
         def capybara():
@@ -785,7 +775,6 @@ class TestCallable(TestNameCheckVisitorBase):
             assert_is_value(takes_seq([int("1")]), TypedValue(int))
             assert_is_value(two_args(1, "x"), TypedValue(float))
 
-    @skip_before((3, 9))
     @assert_passes()
     def test_abc_callable(self):
         from collections.abc import Callable, Sequence
@@ -1961,7 +1950,6 @@ class TestMissinGenericParameters(TestNameCheckVisitorBase):
         ) -> set:  # E: missing_generic_parameters
             return {1}
 
-    @skip_before((3, 9))
     @assert_passes()
     def test_with_pep_585(self):
         def capybara(
