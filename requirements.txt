@@ -7,5 +7,5 @@ typing_extensions>=4.1.1
 codemod
 myst-parser==4.0.0
 Sphinx==7.3.7
-black==24.8.0
+black==25.1.0
 ruff==0.8.0
