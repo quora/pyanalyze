@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 from pyanalyze.name_check_visitor import NameCheckVisitor
 
