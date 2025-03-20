@@ -25,9 +25,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # With newer versions of pip and setuptools, codemod fails to install
           python -m pip install --upgrade 'pip<25' 'setuptools<77' wheel
-          python -m pip --version
-          python -m pip freeze --all
           python -m pip install -e .
           python -m pip install -r "docs/requirements.txt"
       - name: Build documentation
