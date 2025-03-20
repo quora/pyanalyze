@@ -972,15 +972,13 @@ class TestDictDelitem(TestNameCheckVisitorBase):
             a: str
             b: NotRequired[int]
 
-        class ExtraItemsTD(TypedDict, closed=True):
+        class ExtraItemsTD(TypedDict, extra_items=int):
             a: str
             b: NotRequired[int]
-            __extra_items__: int
 
-        class ReadOnlyExtraItemsTD(TypedDict, closed=True):
+        class ReadOnlyExtraItemsTD(TypedDict, extra_items=ReadOnly[int]):
             a: str
             b: NotRequired[int]
-            __extra_items__: ReadOnly[int]
 
         def capybara(
             td: TD,
