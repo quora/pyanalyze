@@ -25,7 +25,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade 'pip<25' 'setuptools<77' wheel
           python -m pip --version
           python -m pip freeze --all
           python -m pip install -e .
