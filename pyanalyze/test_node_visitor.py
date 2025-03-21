@@ -459,3 +459,23 @@ def skip_before(version):
             return fn
 
     return decorator
+
+
+def skip_if(condition: bool):
+    """Decorator to skip a test if the condition is true.
+
+    Example usage:
+
+        @skip_if(sys.version_info >= (3, 0))
+        def test_xrange():
+            xrange(1)
+
+    """
+
+    def decorator(fn):
+        if condition:
+            return _dummy_function
+        else:
+            return fn
+
+    return decorator

@@ -426,12 +426,25 @@ def _type_from_runtime(
         # Deprecated
         if hasattr(val, "__extra_keys__"):
             extra_keys = _type_from_runtime(val.__extra_keys__, ctx, is_typeddict=True)
-        if hasattr(val, "__closed__") and val.__closed__:
-            extra_keys = NO_RETURN_VALUE
-        elif hasattr(val, "__extra_items__") and not is_typing_name(
-            val.__extra_items__, "NoExtraItems"
+        # typing_extensions 4.12
+        # static analysis: ignore[value_always_true]
+        if isinstance(val, typing_extensions._TypedDictMeta) and not hasattr(
+            typing_extensions, "TypeForm"
         ):
-            extra_keys = _type_from_runtime(val.__extra_items__, ctx, is_typeddict=True)
+            if hasattr(val, "__closed__") and val.__closed__:
+                extra_keys = _type_from_runtime(
+                    val.__extra_items__, ctx, is_typeddict=True
+                )
+        else:
+            # Newer typing-extensions
+            if hasattr(val, "__closed__") and val.__closed__:
+                extra_keys = NO_RETURN_VALUE
+            elif hasattr(val, "__extra_items__") and not is_typing_name(
+                val.__extra_items__, "NoExtraItems"
+            ):
+                extra_keys = _type_from_runtime(
+                    val.__extra_items__, ctx, is_typeddict=True
+                )
         extra_readonly = False
         while isinstance(extra_keys, TypeQualifierValue):
             if extra_keys.qualifier == "ReadOnly":
