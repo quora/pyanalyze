@@ -320,7 +320,6 @@ class UnwrapClass(PyObjectSequenceOption[_Unwrapper]):
 _BUILTIN_KNOWN_SIGNATURES = [implementation.get_default_argspecs_with_cache]
 
 try:
-    import _pytest
     import pytest
 except ImportError:
     # if pytest is not installed in this environment, don't use it
@@ -345,7 +344,7 @@ else:
         func: Callable[..., Any],
         *args: Any,
         **kwargs: Any,
-    ) -> _pytest._code.ExceptionInfo[_E]:
+    ) -> pytest.ExceptionInfo[_E]:
         raise NotImplementedError
 
     def _get_pytest_signatures(
