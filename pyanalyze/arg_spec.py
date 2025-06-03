@@ -336,7 +336,7 @@ else:
         expected_exception: Union[type[_E], tuple[type[_E], ...]],
         *,
         match: Optional[Union[str, Pattern[str]]] = ...,
-    ) -> _pytest.python_api.RaisesContext[_E]:
+    ) -> pytest.RaisesExc[_E]:
         raise NotImplementedError
 
     # TODO use ParamSpec here
