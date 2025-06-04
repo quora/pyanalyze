@@ -191,9 +191,7 @@ def capybara():
     def test_impure_async_call_to_method(self):
         from asynq import asynq
 
-        from pyanalyze.tests import CheckedForAsynq
-
-        class Capybara(CheckedForAsynq):
+        class Capybara:
             @asynq()
             def render_stuff(self):
                 return []
@@ -203,6 +201,55 @@ def capybara():
                 z = []
                 z += self.render_stuff()  # E: impure_async_call
                 return z
+
+    @assert_passes()
+    def test_impure_async_call_to_method_native(self):
+        from asynq import asynq
+
+        class Capybara:
+            @asynq()
+            def render_stuff(self):
+                return []
+
+            async def tree_bad(self):
+                z = []
+                z += self.render_stuff()  # E: impure_async_call
+                return z
+
+            async def tree_ok(self):
+                z = []
+                z += await self.render_stuff.asyncio()
+                return z
+
+    def test_replace_native_async(self):
+        self.assert_is_changed(
+            """
+from asynq import asynq
+
+class Capybara:
+    @asynq()
+    def render_stuff(self):
+        return []
+
+    async def tree(self):
+        z = []
+        z += self.render_stuff()
+        return z
+""",
+            """
+from asynq import asynq
+
+class Capybara:
+    @asynq()
+    def render_stuff(self):
+        return []
+
+    async def tree(self):
+        z = []
+        z += await self.render_stuff.asyncio()
+        return z
+""",
+        )
 
     @assert_passes()
     def test_pure_async_for_attributes(self):
