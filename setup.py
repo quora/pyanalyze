@@ -34,7 +34,7 @@ if __name__ == "__main__":
             "qcore>=0.5.1",
             "ast_decompiler>=0.4.0",
             "typeshed_client>=2.1.0",
-            "typing_extensions<4.14",
+            "typing_extensions==4.12",
             "codemod",
             "tomli>=1.1.0",
         ],
