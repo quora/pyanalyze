@@ -43,7 +43,7 @@ if __name__ == "__main__":
                 "pytest",
                 "mypy_extensions",
                 "attrs",
-                "pydantic",
+                "pydantic>=2.11.5",
                 "annotated-types",
             ]
         },
