@@ -1,6 +1,8 @@
 # static analysis: ignore
+import typing_extensions
+
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, only_before, skip_before
+from .test_node_visitor import assert_passes, only_before, skip_before, skip_if
 from .tests import make_simple_sequence
 from .value import (
     NO_RETURN_VALUE,
@@ -959,8 +961,61 @@ class TestDictDelitem(TestNameCheckVisitorBase):
             del d[1]
             del d[{}]  # E: unhashable_key
 
+    # typing_extensions 4.13.0+
+    @skip_if(not hasattr(typing_extensions, "TypeForm"))
     @assert_passes()
     def test_typeddict(self) -> None:
+        from typing_extensions import NotRequired, ReadOnly, TypedDict
+
+        class TD(TypedDict):
+            a: str
+            b: NotRequired[int]
+            c: ReadOnly[str]
+
+        class ClosedTD(TypedDict, closed=True):
+            a: str
+            b: NotRequired[int]
+
+        class ExtraItemsTD(TypedDict, extra_items=int):
+            a: str
+            b: NotRequired[int]
+
+        class ReadOnlyExtraItemsTD(TypedDict, extra_items=ReadOnly[int]):
+            a: str
+            b: NotRequired[int]
+
+        def capybara(
+            td: TD,
+            closed: ClosedTD,
+            extra_items: ExtraItemsTD,
+            readonly_extra: ReadOnlyExtraItemsTD,
+            s: str,
+        ) -> None:
+            del td[1]  # E: invalid_typeddict_key
+            del td["a"]  # E: incompatible_argument
+            del td["b"]  # ok
+            del td["c"]  # E: readonly_typeddict
+            del td[s]  # E: invalid_typeddict_key
+
+            del closed["a"]  # E: incompatible_argument
+            del closed["b"]  # ok
+            del closed["c"]  # E: invalid_typeddict_key
+            del closed[s]  # E: invalid_typeddict_key
+
+            del extra_items["a"]  # E: incompatible_argument
+            del extra_items["b"]  # ok
+            del extra_items["c"]  # ok
+            del extra_items[s]  # ok
+
+            del readonly_extra["a"]  # E: incompatible_argument
+            del readonly_extra["b"]  # ok
+            del readonly_extra["c"]  # E: readonly_typeddict
+            del readonly_extra[s]  # E: readonly_typeddict
+
+    # typing_extensions 4.12.0
+    @skip_if(hasattr(typing_extensions, "TypeForm"))
+    @assert_passes()
+    def test_typeddict_legacy(self) -> None:
         from typing_extensions import NotRequired, ReadOnly, TypedDict
 
         class TD(TypedDict):
