@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update PEP 728 support to the latest version, using the `extra_items=`
+  class argument instead of an `__extra_items__` key in the dict. (#855)
 - Add support for Python 3.13 (#824)
 - Drop support for Python 3.8 (#820)
 - Flag invalid regexes in arguments to functions like
