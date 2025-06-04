@@ -57,6 +57,7 @@ class AsynqChecker:
         init=False, default=AsyncFunctionKind.non_async
     )
     is_classmethod: bool = field(init=False, default=False)
+    is_native_async: bool = field(init=False, default=False)
 
     # Functions called from test_scope itself
 
@@ -66,6 +67,7 @@ class AsynqChecker:
         name: str,
         async_kind: AsyncFunctionKind = AsyncFunctionKind.non_async,
         is_classmethod: bool = False,
+        is_native_async: bool = False,
     ) -> Iterator[None]:
         """Sets the current function name for async data collection."""
         # Override current_func_name only if this is the outermost function, so that data access
@@ -74,6 +76,7 @@ class AsynqChecker:
         with (
             qcore.override(self, "current_async_kind", async_kind),
             qcore.override(self, "is_classmethod", is_classmethod),
+            qcore.override(self, "is_native_async", is_native_async),
         ):
             if (
                 self.current_func_name is None
@@ -88,16 +91,21 @@ class AsynqChecker:
         if not self.should_perform_async_checks():
             return
         if is_impure_async_fn(value):
-            func_node = ast.Attribute(value=node.func, attr="asynq")
+            attr = "asyncio" if self.is_native_async else "asynq"
+            func_node = ast.Attribute(value=node.func, attr=attr)
             call_node = replace_func_on_call_node(node, func_node)
-            replacement_node = ast.Yield(value=call_node)
+            if self.is_native_async:
+                replacement_node = ast.Await(value=call_node)
+            else:
+                replacement_node = ast.Yield(value=call_node)
             self._show_impure_async_error(
                 node,
-                replacement_call=get_pure_async_equivalent(value),
+                replacement_call=get_pure_async_equivalent(value, attr=attr),
                 replacement_node=replacement_node,
             )
         elif (
             isinstance(value, UnboundMethodValue)
+            and not self.is_native_async
             and value.secondary_attr_name is None
             and isinstance(value.composite.value, TypedValue)
         ):
@@ -129,6 +137,8 @@ class AsynqChecker:
             AsyncFunctionKind.pure,
         ):
             return True
+        if self.is_native_async:
+            return True
         if self.current_class is None or self.is_classmethod:
             return False
         if self.current_func_name in self.options.get_value_for(
@@ -153,14 +163,15 @@ class AsynqChecker:
         replacement_call: Optional[str] = None,
         replacement_node: Optional[ast.AST] = None,
     ) -> None:
+        op = "await" if self.is_native_async else "yield"
         if replacement_call is None:
-            message = "impure async call (you should yield it)"
+            message = f"impure async call (you should {op} it)"
         else:
-            message = f"impure async call (you should yield {replacement_call})"
+            message = f"impure async call (you should {op} {replacement_call})"
         if self.current_async_kind not in (
             AsyncFunctionKind.normal,
             AsyncFunctionKind.pure,
-        ):
+        ) and not self.is_native_async:
             # we're in a component method that is checked for async
             message += " and make this method async"
         if replacement_node is None:
@@ -188,14 +199,14 @@ def is_impure_async_fn(value: Value) -> bool:
     return False
 
 
-def get_pure_async_equivalent(value: Value) -> str:
+def get_pure_async_equivalent(value: Value, attr: str = "asynq") -> str:
     """Returns the pure-async equivalent of an async function."""
     assert is_impure_async_fn(value), f"{value} is not an impure async function"
     if isinstance(value, KnownValue):
-        return f"{_stringify_obj(value.val)}.asynq"
+        return f"{_stringify_obj(value.val)}.{attr}"
     elif isinstance(value, UnboundMethodValue):
         return _stringify_async_fn(
-            UnboundMethodValue(value.attr_name, value.composite, "asynq")
+            UnboundMethodValue(value.attr_name, value.composite, attr)
         )
     else:
         assert False, f"cannot get pure async equivalent of {value}"

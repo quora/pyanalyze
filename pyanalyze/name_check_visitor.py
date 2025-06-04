@@ -2009,6 +2009,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     node.name,
                     async_kind=info.async_kind,
                     is_classmethod=info.is_classmethod,
+                    is_native_async=isinstance(node, ast.AsyncFunctionDef),
                 ),
                 qcore.override(self, "yield_checker", YieldChecker(self)),
                 qcore.override(
