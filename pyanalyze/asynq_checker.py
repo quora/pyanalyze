@@ -168,10 +168,11 @@ class AsynqChecker:
             message = f"impure async call (you should {op} it)"
         else:
             message = f"impure async call (you should {op} {replacement_call})"
-        if self.current_async_kind not in (
-            AsyncFunctionKind.normal,
-            AsyncFunctionKind.pure,
-        ) and not self.is_native_async:
+        if (
+            self.current_async_kind
+            not in (AsyncFunctionKind.normal, AsyncFunctionKind.pure)
+            and not self.is_native_async
+        ):
             # we're in a component method that is checked for async
             message += " and make this method async"
         if replacement_node is None:
