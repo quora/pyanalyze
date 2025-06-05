@@ -204,6 +204,7 @@ def capybara():
 
     @assert_passes()
     def test_impure_async_call_to_method_union(self):
+        from typing import Union
         from asynq import asynq
 
         class CapybaraA:
@@ -217,7 +218,7 @@ def capybara():
                 return []
 
         @asynq()
-        def tree(c: CapybaraA | CapybaraB):
+        def tree(c: Union[CapybaraA, CapybaraB]):
             z = []
             z += c.render_stuff()  # E: impure_async_call
             return z
