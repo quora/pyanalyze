@@ -19,7 +19,14 @@ from .error_code import ErrorCode
 from .functions import AsyncFunctionKind
 from .options import Options, PyObjectSequenceOption, StringSequenceOption
 from .safe import safe_getattr, safe_hasattr
-from .value import AnnotatedValue, KnownValue, TypedValue, UnboundMethodValue, Value, MultiValuedValue
+from .value import (
+    AnnotatedValue,
+    KnownValue,
+    TypedValue,
+    UnboundMethodValue,
+    Value,
+    MultiValuedValue,
+)
 
 
 class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):
