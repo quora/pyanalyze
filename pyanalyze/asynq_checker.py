@@ -22,10 +22,10 @@ from .safe import safe_getattr, safe_hasattr
 from .value import (
     AnnotatedValue,
     KnownValue,
+    MultiValuedValue,
     TypedValue,
     UnboundMethodValue,
     Value,
-    MultiValuedValue,
 )
 
 
