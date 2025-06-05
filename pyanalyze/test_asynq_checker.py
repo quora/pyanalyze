@@ -205,6 +205,7 @@ def capybara():
     @assert_passes()
     def test_impure_async_call_to_method_union(self):
         from typing import Union
+
         from asynq import asynq
 
         class CapybaraA:
