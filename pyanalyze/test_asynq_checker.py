@@ -203,6 +203,28 @@ def capybara():
                 return z
 
     @assert_passes()
+    def test_impure_async_call_to_method_union(self):
+        from typing import Union
+
+        from asynq import asynq
+
+        class CapybaraA:
+            @asynq()
+            def render_stuff(self):
+                return []
+
+        class CapybaraB:
+            @asynq()
+            def render_stuff(self):
+                return []
+
+        @asynq()
+        def tree(c: Union[CapybaraA, CapybaraB]):
+            z = []
+            z += c.render_stuff()  # E: impure_async_call
+            return z
+
+    @assert_passes()
     def test_impure_async_call_to_method_native(self):
         from asynq import asynq
 

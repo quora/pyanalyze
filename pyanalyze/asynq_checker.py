@@ -19,7 +19,14 @@ from .error_code import ErrorCode
 from .functions import AsyncFunctionKind
 from .options import Options, PyObjectSequenceOption, StringSequenceOption
 from .safe import safe_getattr, safe_hasattr
-from .value import AnnotatedValue, KnownValue, TypedValue, UnboundMethodValue, Value
+from .value import (
+    AnnotatedValue,
+    KnownValue,
+    MultiValuedValue,
+    TypedValue,
+    UnboundMethodValue,
+    Value,
+)
 
 
 class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):
@@ -192,6 +199,8 @@ def is_impure_async_fn(value: Value) -> bool:
     """
     if isinstance(value, KnownValue):
         return asynq.is_async_fn(value.val) and not asynq.is_pure_async_fn(value.val)
+    elif isinstance(value, MultiValuedValue):
+        return all(is_impure_async_fn(v) for v in value.vals)
     elif isinstance(value, UnboundMethodValue):
         method = value.get_method()
         if method is None:
@@ -210,7 +219,7 @@ def get_pure_async_equivalent(value: Value, attr: str = "asynq") -> str:
             UnboundMethodValue(value.attr_name, value.composite, attr)
         )
     else:
-        assert False, f"cannot get pure async equivalent of {value}"
+        return f"<function>.{attr}"
 
 
 def _stringify_async_fn(value: Value) -> str:
