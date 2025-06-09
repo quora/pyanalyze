@@ -200,6 +200,8 @@ def is_impure_async_fn(value: Value) -> bool:
     if isinstance(value, KnownValue):
         return asynq.is_async_fn(value.val) and not asynq.is_pure_async_fn(value.val)
     elif isinstance(value, MultiValuedValue):
+        if not value.vals:
+            return False
         return all(is_impure_async_fn(v) for v in value.vals)
     elif isinstance(value, UnboundMethodValue):
         method = value.get_method()
