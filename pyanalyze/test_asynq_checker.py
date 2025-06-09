@@ -204,8 +204,9 @@ def capybara():
 
     @assert_passes()
     def test_never_is_not_impure_async(self):
-        from asynq import asynq
         from typing import NoReturn
+
+        from asynq import asynq
 
         def never() -> NoReturn:
             raise Exception()
