@@ -203,6 +203,21 @@ def capybara():
                 return z
 
     @assert_passes()
+    def test_never_is_not_impure_async(self):
+        from asynq import asynq
+        from typing import NoReturn
+
+        def never() -> NoReturn:
+            raise Exception()
+
+        class Capybara:
+            @asynq()
+            def tree(self):
+                z = []
+                z += never().render_stuff()
+                return z
+
+    @assert_passes()
     def test_impure_async_call_to_method_union(self):
         from typing import Union
 
