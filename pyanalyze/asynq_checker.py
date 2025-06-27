@@ -17,7 +17,12 @@ import qcore
 
 from .error_code import ErrorCode
 from .functions import AsyncFunctionKind
-from .options import Options, BooleanOption, PyObjectSequenceOption, StringSequenceOption
+from .options import (
+    Options,
+    BooleanOption,
+    PyObjectSequenceOption,
+    StringSequenceOption,
+)
 from .safe import safe_getattr, safe_hasattr
 from .value import (
     AnnotatedValue,
@@ -158,8 +163,14 @@ class AsynqChecker:
             MethodsNotCheckedForAsynq
         ):
             return False
-        if self.options.get_value_for(ForceChecksForAsynq):
-            return True
+        if (
+            self.options.get_value_for(ForceChecksForAsynq)
+            and self.module
+            and isinstance(self.module.__name__, str)
+        ):
+            module = self.module.__name__.split(".")[-1]
+            if not module.startswith("test"):
+                return True
         if self.current_class is None or self.is_classmethod:
             return False
         return self.should_check_class_for_async(self.current_class)
