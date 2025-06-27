@@ -17,7 +17,12 @@ import qcore
 
 from .error_code import ErrorCode
 from .functions import AsyncFunctionKind
-from .options import Options, PyObjectSequenceOption, StringSequenceOption
+from .options import (
+    BooleanOption,
+    Options,
+    PyObjectSequenceOption,
+    StringSequenceOption,
+)
 from .safe import safe_getattr, safe_hasattr
 from .value import (
     AnnotatedValue,
@@ -35,6 +40,14 @@ class ClassesCheckedForAsynq(PyObjectSequenceOption[type]):
     """
 
     name = "classes_checked_for_asynq"
+
+
+class ForceChecksForAsynq(BooleanOption):
+    """Normally, asynq calls to asynq functions are only enforced in functions that are already
+    asynq. If this is set, all asynq functions must be called asynq.
+    """
+
+    name = "force_checks_for_asynq"
 
 
 class NonAsynqModules(StringSequenceOption):
@@ -146,11 +159,19 @@ class AsynqChecker:
             return True
         if self.is_native_async:
             return True
-        if self.current_class is None or self.is_classmethod:
-            return False
         if self.current_func_name in self.options.get_value_for(
             MethodsNotCheckedForAsynq
         ):
+            return False
+        if (
+            self.options.get_value_for(ForceChecksForAsynq)
+            and self.module
+            and isinstance(self.module.__name__, str)
+        ):
+            module = self.module.__name__.split(".")[-1]
+            if not module.startswith("test"):
+                return True
+        if self.current_class is None or self.is_classmethod:
             return False
         return self.should_check_class_for_async(self.current_class)
 
