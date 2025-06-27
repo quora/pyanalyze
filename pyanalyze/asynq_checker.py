@@ -18,8 +18,8 @@ import qcore
 from .error_code import ErrorCode
 from .functions import AsyncFunctionKind
 from .options import (
-    Options,
     BooleanOption,
+    Options,
     PyObjectSequenceOption,
     StringSequenceOption,
 )
