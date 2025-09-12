@@ -220,6 +220,18 @@ class TestReturn(TestNameCheckVisitorBase):
                 return 3
             yield capybara.asynq(False)
 
+    @assert_passes()
+    def test_asyncio_correct_args(self):
+        from asynq import asynq
+
+        @asynq()
+        def capybara(arg: str) -> int:
+            return 0
+
+        async def test() -> None:
+            x: int = await capybara.asyncio(42)  # E: incompatible_argument
+            y: str = await capybara.asyncio("no")  # E: incompatible_assignment
+
 
 class TestBindDecorator(TestNameCheckVisitorBase):
     @assert_passes()
