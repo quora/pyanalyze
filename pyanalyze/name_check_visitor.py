@@ -5618,9 +5618,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         ) and callee_wrapped.secondary_attr_name in ("async", "asynq"):
             async_fn = callee_wrapped.get_method()
             return AsyncTaskIncompleteValue(_get_task_cls(async_fn), return_value)
-        if isinstance(
-            callee_wrapped, UnboundMethodValue
-        ) and callee_wrapped.secondary_attr_name == "asyncio":
+        if (
+            isinstance(callee_wrapped, UnboundMethodValue)
+            and callee_wrapped.secondary_attr_name == "asyncio"
+        ):
             return GenericValue(collections.abc.Awaitable, [return_value])
         elif isinstance(callee_wrapped, UnboundMethodValue) and asynq.is_pure_async_fn(
             callee_wrapped.get_method()
