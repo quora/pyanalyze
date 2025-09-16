@@ -147,7 +147,7 @@ def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
             yield
 
 
-def is_dot_asynq_function(obj: Any) -> bool:
+def is_dot_asynq_function(obj: Any, native: bool = False) -> bool:
     """Returns whether obj is the .asynq member on an async function."""
     try:
         self_obj = obj.__self__
@@ -170,7 +170,11 @@ def is_dot_asynq_function(obj: Any) -> bool:
     if not is_async_fn:
         return False
 
-    return getattr(obj, "__name__", None) in ("async", "asynq")
+    if native:
+        attributes = ("asyncio",)
+    else:
+        attributes = ("async", "asynq")
+    return getattr(obj, "__name__", None) in attributes
 
 
 @dataclass
@@ -666,7 +670,7 @@ class ArgSpecCache:
             return None  # lost cause
 
         # Cythonized methods, e.g. fn.asynq
-        if is_dot_asynq_function(obj):
+        if is_dot_asynq_function(obj) or is_dot_asynq_function(obj, native=True):
             try:
                 return self._cached_get_argspec(
                     obj.__self__, impl, is_asynq, in_overload_resolution
