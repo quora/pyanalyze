@@ -5612,7 +5612,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(callee_wrapped, KnownValue) and is_dot_asynq_function(
             callee_wrapped.val, native=True
         ):
-            return GenericValue(collections.abc.Awaitable, [return_value])
+            return make_coro_type(return_value)
         if isinstance(
             callee_wrapped, UnboundMethodValue
         ) and callee_wrapped.secondary_attr_name in ("async", "asynq"):
@@ -5622,7 +5622,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             isinstance(callee_wrapped, UnboundMethodValue)
             and callee_wrapped.secondary_attr_name == "asyncio"
         ):
-            return GenericValue(collections.abc.Awaitable, [return_value])
+            return make_coro_type(return_value)
         elif isinstance(callee_wrapped, UnboundMethodValue) and asynq.is_pure_async_fn(
             callee_wrapped.get_method()
         ):
