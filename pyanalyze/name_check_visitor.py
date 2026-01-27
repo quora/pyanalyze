@@ -5244,6 +5244,11 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 local_value = self._get_composite(composite.get_varname(), node, value)
                 if local_value is not UNINITIALIZED_VALUE:
                     value = local_value
+            if isinstance(root_composite.value, KnownValue) and isinstance(
+                root_composite.value.val, types.ModuleType
+            ):
+                name = f"{root_composite.value.val.__name__}.{node.attr}"
+                self.check_for_disallowed_import(node, name, check_parents=False)
             if root_composite.value == KnownValue(sys):
                 if node.attr == "platform":
                     value = annotate_value(value, [SYS_PLATFORM_EXTENSION])

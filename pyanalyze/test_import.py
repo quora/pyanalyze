@@ -63,12 +63,15 @@ class TestDisallowedImport(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_nested(self):
+        import email  # ok
         import email.base64mime  # ok
         import email.quoprimime  # E: disallowed_import
         from email.quoprimime import unquote  # E: disallowed_import
         from xml.etree import ElementTree  # E: disallowed_import
 
         print(email, unquote, ElementTree)
+
+        no_way = email.quoprimime  # E: disallowed_import
 
         def capybara():
             import email.base64mime  # ok
