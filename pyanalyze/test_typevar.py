@@ -1,7 +1,7 @@
 # static analysis: ignore
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
+from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .value import (
     AnnotatedValue,
@@ -142,7 +142,6 @@ class TestTypeVar(TestNameCheckVisitorBase):
         def capybara(c: Derived):
             take_base(c)  # E: incompatible_argument
 
-    @skip_before((3, 10))
     @assert_passes()
     def test_typeshed(self):
         from typing import List
@@ -387,7 +386,6 @@ class TestDunder(TestNameCheckVisitorBase):
 
 
 class TestGenericClasses(TestNameCheckVisitorBase):
-    @skip_before((3, 12))
     def test_generic(self):
         self.assert_passes(
             """
@@ -404,7 +402,6 @@ class TestGenericClasses(TestNameCheckVisitorBase):
         """
         )
 
-    @skip_before((3, 12))
     def test_generic_with_bound(self):
         self.assert_passes(
             """

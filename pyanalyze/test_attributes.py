@@ -2,7 +2,7 @@
 from typing import Dict, Union
 
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, only_before
+from .test_node_visitor import assert_passes
 from .value import (
     AnnotatedValue,
     AnySource,
@@ -276,21 +276,6 @@ class TestAttributes(TestNameCheckVisitorBase):
 
             f.attr = 42
             print(f.attr)
-
-    # TODO: Doesn't trigger incompatible_override on 3.11 for some reason.
-    @only_before((3, 11))
-    @assert_passes()
-    def test_enum_name(self):
-        import enum
-
-        class E(enum.Enum):
-            name = 1  # E: incompatible_override
-            no_name = 2
-
-        def capybara():
-            assert_is_value(E.no_name, KnownValue(E.no_name))
-            assert_is_value(E.name, KnownValue(E.name))
-            E.what_is_this  # E: undefined_attribute
 
     @assert_passes()
     def test_module_annotations(self):

@@ -215,10 +215,7 @@ from .value import (
 )
 from .yield_checker import YieldChecker
 
-if sys.version_info >= (3, 11):
-    TryNode = ast.Try | ast.TryStar
-else:
-    TryNode = ast.Try
+TryNode = ast.Try | ast.TryStar
 
 
 T = TypeVar("T")
@@ -315,8 +312,6 @@ AST_TO_REVERSE = {
 }
 
 SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL = [KnownValue(asynq.asynq), KnownValue(property)]
-if sys.version_info < (3, 11):
-    SAFE_DECORATORS_FOR_ARGSPEC_TO_RETVAL.append(KnownValue(asyncio.coroutine))
 
 
 class CustomContextManager(Protocol[T, U]):
@@ -1762,14 +1757,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> Value:
         self._generic_visit_list(node.decorator_list)
         class_obj = self._get_current_class_object(node)
-        if sys.version_info >= (3, 12) and node.type_params:
+        if node.type_params:
             ctx = self.scopes.add_scope(
                 ScopeType.annotation_scope, scope_node=node, scope_object=class_obj
             )
         else:
             ctx = qcore.empty_context
         with ctx:
-            if sys.version_info >= (3, 12) and node.type_params:
+            if node.type_params:
                 self.visit_type_param_values(node.type_params)
             self._generic_visit_list(node.bases)
             self._generic_visit_list(node.keywords)
@@ -1862,7 +1857,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         """Visits a function's decorator list."""
         async_kind = AsyncFunctionKind.non_async
         is_classmethod = False
-        is_decorated_coroutine = False
         is_staticmethod = False
         is_overload = False
         is_override = False
@@ -1895,10 +1889,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         is_classmethod = True
                     elif val is staticmethod:
                         is_staticmethod = True
-                    elif sys.version_info < (3, 11) and val is (
-                        asyncio.coroutine  # static analysis: ignore[undefined_attribute]
-                    ):
-                        is_decorated_coroutine = True
                     elif val is real_overload or val is overload:
                         is_overload = True
                     elif val is abstractmethod:
@@ -1908,11 +1898,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                     elif is_typing_name(val, "override"):
                         is_override = True
                 decorators.append((decorator_value, decorator_value, decorator))
-        if (
-            sys.version_info >= (3, 12)
-            and not isinstance(node, ast.Lambda)
-            and node.type_params
-        ):
+        if not isinstance(node, ast.Lambda) and node.type_params:
             ctx = self.scopes.add_scope(
                 ScopeType.annotation_scope,
                 scope_node=node,
@@ -1921,11 +1907,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             ctx = qcore.empty_context
         with ctx:
-            if (
-                sys.version_info >= (3, 12)
-                and not isinstance(node, ast.Lambda)
-                and node.type_params
-            ):
+            if not isinstance(node, ast.Lambda) and node.type_params:
                 type_params = self.visit_type_param_values(node.type_params)
             else:
                 type_params = []
@@ -1943,7 +1925,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 return_annotation = self.value_of_annotation(node.returns)
             yield FunctionInfo(
                 async_kind=async_kind,
-                is_decorated_coroutine=is_decorated_coroutine,
                 is_classmethod=is_classmethod,
                 is_staticmethod=is_staticmethod,
                 is_abstractmethod=is_abstractmethod,
@@ -2183,7 +2164,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             task_cls = _get_task_cls(info.potential_function)
             return_value = AsyncTaskIncompleteValue(task_cls, return_value)
 
-        if isinstance(info.node, ast.AsyncFunctionDef) or info.is_decorated_coroutine:
+        if isinstance(info.node, ast.AsyncFunctionDef):
             return_value = make_coro_type(return_value)
 
         if isinstance(val, KnownValue) and isinstance(val.val, property):
@@ -2679,12 +2660,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         force_public: bool = False,
         node: ast.AST,
     ) -> None:
-        # aliases only have a lineno attached in 3.10+
-        if sys.version_info >= (3, 10):
-            error_node = alias
-        else:
-            error_node = node
-        if self.check_deprecation(error_node, value):
+        if self.check_deprecation(alias, value):
             value = annotate_value(value, [SkipDeprecatedExtension()])
         if alias.asname is not None:
             self._set_name_in_scope(
@@ -2751,13 +2727,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if node.module is not None and node.level == 0:
             self.check_for_disallowed_import(node, node.module)
             for alias in node.names:
-                # Before 3.10 the alias doesn't have a lineno
-                if sys.version_info >= (3, 10):
-                    error_node = alias
-                else:
-                    error_node = node
                 self.check_for_disallowed_import(
-                    error_node, f"{node.module}.{alias.name}", check_parents=False
+                    alias, f"{node.module}.{alias.name}", check_parents=False
                 )
 
         self._maybe_record_usages_from_import(node)
@@ -3965,8 +3936,6 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         else:
             return TypedValue(slice)
 
-    # These two are unused in 3.9 and higher
-
     # Control flow
 
     def visit_Await(self, node: ast.Await) -> Value:
@@ -4501,10 +4470,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self.visit_try_except(node, is_try_star=is_try_star)
         self.yield_checker.reset_yield_checks()
 
-    if sys.version_info >= (3, 11):
-
-        def visit_TryStar(self, node: ast.TryStar) -> None:
-            self.visit_Try(node, is_try_star=True)
+    def visit_TryStar(self, node: ast.TryStar) -> None:
+        self.visit_Try(node, is_try_star=True)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.type is not None:
@@ -4515,7 +4482,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             )
             if node.name is not None:
                 to_assign = unite_values(*[typ for _, typ in possible_types])
-                if is_try_star and sys.version_info >= (3, 11):
+                if is_try_star:
                     if all(is_exception for is_exception, _ in possible_types):
                         base = ExceptionGroup
                     else:
@@ -4552,11 +4519,7 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 if isinstance(subval.val, type) and issubclass(
                     subval.val, BaseException
                 ):
-                    if (
-                        is_try_star
-                        and sys.version_info >= (3, 11)
-                        and issubclass(subval.val, BaseExceptionGroup)
-                    ):
+                    if is_try_star and issubclass(subval.val, BaseExceptionGroup):
                         self._show_error_if_checking(
                             node,
                             "ExceptionGroup cannot be used as the type in an"
@@ -4813,91 +4776,85 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         assert all_of_type(type_param_values, TypeVarValue)
         return type_param_values
 
-    if sys.version_info >= (3, 12):
-
-        def visit_TypeAlias(self, node: ast.TypeAlias) -> Value:
-            assert isinstance(node.name, ast.Name)
-            name = node.name.id
-            alias_val = self._get_local_object(name, node)
-            if isinstance(alias_val, KnownValue) and isinstance(
-                alias_val.val, typing.TypeAliasType
+    def visit_TypeAlias(self, node: ast.TypeAlias) -> Value:
+        assert isinstance(node.name, ast.Name)
+        name = node.name.id
+        alias_val = self._get_local_object(name, node)
+        if isinstance(alias_val, KnownValue) and isinstance(
+            alias_val.val, typing.TypeAliasType
+        ):
+            alias_obj = alias_val.val
+        else:
+            alias_obj = None
+        type_param_values = []
+        if self._is_checking():
+            with self.scopes.add_scope(
+                ScopeType.annotation_scope, scope_node=node, scope_object=alias_obj
             ):
-                alias_obj = alias_val.val
-            else:
-                alias_obj = None
-            type_param_values = []
-            if self._is_checking():
-                with self.scopes.add_scope(
-                    ScopeType.annotation_scope, scope_node=node, scope_object=alias_obj
-                ):
-                    if node.type_params:
-                        type_param_values = self.visit_type_param_values(
-                            node.type_params
-                        )
-                        with self.scopes.add_scope(
-                            ScopeType.annotation_scope,
-                            scope_node=node,
-                            scope_object=alias_obj,
-                        ):
-                            value = self.visit(node.value)
-                    else:
+                if node.type_params:
+                    type_param_values = self.visit_type_param_values(node.type_params)
+                    with self.scopes.add_scope(
+                        ScopeType.annotation_scope,
+                        scope_node=node,
+                        scope_object=alias_obj,
+                    ):
                         value = self.visit(node.value)
+                else:
+                    value = self.visit(node.value)
+        else:
+            value = None
+        if alias_obj is None:
+            if value is None:
+                alias_val = AnyValue(AnySource.inference)
             else:
-                value = None
-            if alias_obj is None:
-                if value is None:
-                    alias_val = AnyValue(AnySource.inference)
-                else:
-                    alias_val = TypeAliasValue(
-                        name,
-                        self.module.__name__ if self.module is not None else "",
-                        TypeAlias(
-                            lambda: type_from_value(value, self, node),
-                            lambda: tuple(val.typevar for val in type_param_values),
-                        ),
-                    )
-            set_value, _ = self._set_name_in_scope(name, node, alias_val)
-            return set_value
+                alias_val = TypeAliasValue(
+                    name,
+                    self.module.__name__ if self.module is not None else "",
+                    TypeAlias(
+                        lambda: type_from_value(value, self, node),
+                        lambda: tuple(val.typevar for val in type_param_values),
+                    ),
+                )
+        set_value, _ = self._set_name_in_scope(name, node, alias_val)
+        return set_value
 
-        def visit_TypeVar(self, node: ast.TypeVar) -> Value:
-            bound = constraints = default = None
-            if node.bound is not None:
-                if isinstance(node.bound, ast.Tuple):
-                    constraints = [self.visit(elt) for elt in node.bound.elts]
-                else:
-                    bound = self.visit(node.bound)
-            if sys.version_info >= (3, 13):
-                if node.default_value is not None:
-                    default = self.visit(node.default_value)
-            tv = TypeVar(node.name)
-            typevar = TypeVarValue(
-                tv,
-                bound=type_from_value(bound, self, node) if bound is not None else None,
-                constraints=(
-                    tuple(type_from_value(c, self, node) for c in constraints)
-                    if constraints is not None
-                    else ()
-                ),
-                default=(
-                    type_from_value(default, self, node)
-                    if default is not None
-                    else None
-                ),
-            )
-            self._set_name_in_scope(node.name, node, typevar)
-            return typevar
+    def visit_TypeVar(self, node: ast.TypeVar) -> Value:
+        bound = constraints = default = None
+        if node.bound is not None:
+            if isinstance(node.bound, ast.Tuple):
+                constraints = [self.visit(elt) for elt in node.bound.elts]
+            else:
+                bound = self.visit(node.bound)
+        if sys.version_info >= (3, 13):
+            if node.default_value is not None:
+                default = self.visit(node.default_value)
+        tv = TypeVar(node.name)
+        typevar = TypeVarValue(
+            tv,
+            bound=type_from_value(bound, self, node) if bound is not None else None,
+            constraints=(
+                tuple(type_from_value(c, self, node) for c in constraints)
+                if constraints is not None
+                else ()
+            ),
+            default=(
+                type_from_value(default, self, node) if default is not None else None
+            ),
+        )
+        self._set_name_in_scope(node.name, node, typevar)
+        return typevar
 
-        def visit_ParamSpec(self, node: ast.ParamSpec) -> Value:
-            ps = typing.ParamSpec(node.name)
-            typevar = TypeVarValue(ps, is_paramspec=True)
-            self._set_name_in_scope(node.name, node, typevar)
-            return typevar
+    def visit_ParamSpec(self, node: ast.ParamSpec) -> Value:
+        ps = typing.ParamSpec(node.name)
+        typevar = TypeVarValue(ps, is_paramspec=True)
+        self._set_name_in_scope(node.name, node, typevar)
+        return typevar
 
-        def visit_TypeVarTuple(self, node: ast.TypeVarTuple) -> Value:
-            tv = TypeVar(node.name)
-            typevar = TypeVarValue(tv, is_typevartuple=True)
-            self._set_name_in_scope(node.name, node, typevar)
-            return typevar
+    def visit_TypeVarTuple(self, node: ast.TypeVarTuple) -> Value:
+        tv = TypeVar(node.name)
+        typevar = TypeVarValue(tv, is_typevartuple=True)
+        self._set_name_in_scope(node.name, node, typevar)
+        return typevar
 
     def visit_Name(self, node: ast.Name, force_read: bool = False) -> Value:
         return self.composite_from_name(node, force_read=force_read).value
@@ -5712,58 +5669,53 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Match statements
 
-    if sys.version_info >= (3, 10):
-
-        def visit_Match(self, node: ast.Match) -> None:
-            subject = self.composite_from_node(node.subject)
-            patma_visitor = PatmaVisitor(self)
-            with qcore.override(self, "match_subject", subject):
-                constraints_to_apply = []
-                subscopes = []
-                for case in node.cases:
-                    with self.scopes.subscope() as case_scope:
-                        for constraint in constraints_to_apply:
-                            self.add_constraint(case, constraint)
-                        self.match_subject = self.match_subject._replace(
-                            value=constrain_value(
-                                self.match_subject.value,
-                                AndConstraint.make(constraints_to_apply),
-                            )
+    def visit_Match(self, node: ast.Match) -> None:
+        subject = self.composite_from_node(node.subject)
+        patma_visitor = PatmaVisitor(self)
+        with qcore.override(self, "match_subject", subject):
+            constraints_to_apply = []
+            subscopes = []
+            for case in node.cases:
+                with self.scopes.subscope() as case_scope:
+                    for constraint in constraints_to_apply:
+                        self.add_constraint(case, constraint)
+                    self.match_subject = self.match_subject._replace(
+                        value=constrain_value(
+                            self.match_subject.value,
+                            AndConstraint.make(constraints_to_apply),
                         )
-
-                        pattern_constraint = patma_visitor.visit(case.pattern)
-                        constraints = [pattern_constraint]
-                        self.add_constraint(case.pattern, pattern_constraint)
-                        if case.guard is not None:
-                            _, guard_constraint = self.constraint_from_condition(
-                                case.guard
-                            )
-                            self.add_constraint(case.guard, guard_constraint)
-                            constraints.append(guard_constraint)
-
-                        constraints_to_apply.append(
-                            AndConstraint.make(constraints).invert()
-                        )
-                        self._generic_visit_list(case.body)
-                        subscopes.append(case_scope)
-
-                    self.yield_checker.reset_yield_checks()
-
-                self.match_subject = self.match_subject._replace(
-                    value=constrain_value(
-                        self.match_subject.value,
-                        AndConstraint.make(constraints_to_apply),
                     )
-                )
 
-                if self.match_subject.value is NO_RETURN_VALUE:
-                    self._set_name_in_scope(LEAVES_SCOPE, node, NO_RETURN_VALUE)
-                else:
-                    with self.scopes.subscope() as else_scope:
-                        for constraint in constraints_to_apply:
-                            self.add_constraint(node, constraint)
-                        subscopes.append(else_scope)
-                self.scopes.combine_subscopes(subscopes)
+                    pattern_constraint = patma_visitor.visit(case.pattern)
+                    constraints = [pattern_constraint]
+                    self.add_constraint(case.pattern, pattern_constraint)
+                    if case.guard is not None:
+                        _, guard_constraint = self.constraint_from_condition(case.guard)
+                        self.add_constraint(case.guard, guard_constraint)
+                        constraints.append(guard_constraint)
+
+                    constraints_to_apply.append(
+                        AndConstraint.make(constraints).invert()
+                    )
+                    self._generic_visit_list(case.body)
+                    subscopes.append(case_scope)
+
+                self.yield_checker.reset_yield_checks()
+
+            self.match_subject = self.match_subject._replace(
+                value=constrain_value(
+                    self.match_subject.value, AndConstraint.make(constraints_to_apply)
+                )
+            )
+
+            if self.match_subject.value is NO_RETURN_VALUE:
+                self._set_name_in_scope(LEAVES_SCOPE, node, NO_RETURN_VALUE)
+            else:
+                with self.scopes.subscope() as else_scope:
+                    for constraint in constraints_to_apply:
+                        self.add_constraint(node, constraint)
+                    subscopes.append(else_scope)
+            self.scopes.combine_subscopes(subscopes)
 
     # Attribute checking
 

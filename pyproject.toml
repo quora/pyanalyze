@@ -1,5 +1,5 @@
 [tool.black]
-target-version = ['py39']
+target-version = ['py312']
 include = '\.pyi?$'
 skip-magic-trailing-comma = true
 preview = true

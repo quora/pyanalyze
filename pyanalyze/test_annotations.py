@@ -2,7 +2,7 @@
 from .error_code import ErrorCode
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
+from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .value import (
     AnnotatedValue,
@@ -575,7 +575,6 @@ class TestAnnotations(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     @assert_passes()
     def test_pep604_runtime(self):
         def capybara(x: int | None, y: int | str) -> None:
@@ -1958,7 +1957,6 @@ class TestMissinGenericParameters(TestNameCheckVisitorBase):
         ) -> None:
             pass
 
-    @skip_before((3, 10))
     @assert_passes()
     def test_union_or(self):
         def capybara(

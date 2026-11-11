@@ -1,6 +1,6 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
+from .test_node_visitor import assert_passes
 
 
 class TestExoticTry(TestNameCheckVisitorBase):
@@ -36,7 +36,6 @@ class TestExoticTry(TestNameCheckVisitorBase):
 
 
 class TestTryStar(TestNameCheckVisitorBase):
-    @skip_before((3, 11))
     def test_eg_types(self):
         self.assert_passes(
             """
@@ -58,7 +57,6 @@ class TestTryStar(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 11))
     def test_variable_scope(self):
         self.assert_passes(
             """
@@ -79,7 +77,6 @@ class TestTryStar(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 11))
     def test_try_else(self):
         self.assert_passes(
             """
@@ -103,7 +100,6 @@ class TestTryStar(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 11))
     def test_try_finally(self):
         self.assert_passes(
             """

@@ -5,10 +5,8 @@ Code for understanding function definitions.
 """
 
 import ast
-import asyncio
 import collections.abc
 import enum
-import sys
 import types
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
@@ -82,7 +80,6 @@ class FunctionInfo:
     async_kind: AsyncFunctionKind
     is_classmethod: bool  # has @classmethod
     is_staticmethod: bool  # has @staticmethod
-    is_decorated_coroutine: bool  # has @asyncio.coroutine
     is_overload: bool  # typing.overload or pyanalyze.extensions.overload
     is_override: bool  # @typing.override
     is_evaluated: bool  # @pyanalyze.extensions.evaluated
@@ -197,17 +194,11 @@ class AsyncProxyDecorators(PyObjectSequenceOption[object]):
     name = "async_proxy_decorators"
 
 
-_safe_decorators = [asynq.asynq, classmethod, staticmethod]
-if sys.version_info < (3, 11):
-    # static analysis: ignore[undefined_attribute]
-    _safe_decorators.append(asyncio.coroutine)
-
-
 class SafeDecoratorsForNestedFunctions(PyObjectSequenceOption[object]):
     """These decorators can safely be applied to nested functions."""
 
     name = "safe_decorators_for_nested_functions"
-    default_value = _safe_decorators
+    default_value = [asynq.asynq, classmethod, staticmethod]
 
 
 def _visit_default(node: ast.AST, ctx: Context) -> Value:

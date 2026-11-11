@@ -5,7 +5,7 @@
 """
 
 import inspect
-import sys
+import types
 import typing
 from collections.abc import Container, Sequence
 from typing import Any, NewType, Optional, TypeVar, Union
@@ -121,19 +121,8 @@ def all_of_type(
     return all(isinstance(elt, typ) for elt in elts)
 
 
-if sys.version_info >= (3, 10):
-
-    def is_newtype(obj: object) -> bool:
-        return isinstance(obj, NewType)
-
-else:
-
-    def is_newtype(obj: object) -> bool:
-        return (
-            inspect.isfunction(obj)
-            and hasattr(obj, "__supertype__")
-            and isinstance(obj.__supertype__, type)
-        )
+def is_newtype(obj: object) -> bool:
+    return isinstance(obj, NewType)
 
 
 def is_typing_name(obj: object, name: str) -> bool:
@@ -144,14 +133,8 @@ def is_typing_name(obj: object, name: str) -> bool:
     return safe_in(obj, names)
 
 
-try:
-    from types import UnionType
-except ImportError:
-    UnionType = None
-
-
 def is_union(obj: object) -> bool:
-    return is_typing_name(obj, "Union") or (UnionType is not None and obj is UnionType)
+    return is_typing_name(obj, "Union") or obj is types.UnionType
 
 
 def is_instance_of_typing_name(obj: object, name: str) -> bool:

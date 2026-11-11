@@ -1,7 +1,7 @@
 # static analysis: ignore
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
+from .test_node_visitor import assert_passes
 from .value import NO_RETURN_VALUE, TypedValue
 
 
@@ -14,7 +14,6 @@ class TestAnnotations(TestNameCheckVisitorBase):
             assert_is_value(n, NO_RETURN_VALUE)
             assert_is_value(o, NO_RETURN_VALUE)
 
-    @skip_before((3, 11))
     @assert_passes()
     def test_never(self):
         from typing import Never

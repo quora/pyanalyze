@@ -8,9 +8,19 @@ import ast
 import collections.abc
 import enum
 import itertools
+from ast import (
+    MatchAs,
+    MatchClass,
+    MatchMapping,
+    MatchOr,
+    MatchSequence,
+    MatchSingleton,
+    MatchStar,
+    MatchValue,
+)
 from collections.abc import Container, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Optional, TypeVar, Union
+from typing import Callable, Optional, TypeVar, Union
 
 import qcore
 
@@ -56,27 +66,6 @@ from .value import (
     unite_values,
     unpack_values,
 )
-
-try:
-    from ast import (
-        MatchAs,
-        MatchClass,
-        MatchMapping,
-        MatchOr,
-        MatchSequence,
-        MatchSingleton,
-        MatchStar,
-        MatchValue,
-    )
-except ImportError:
-    # 3.9 and lower
-    MatchAs = MatchClass = MatchMapping = Any
-    MatchOr = MatchSequence = MatchSingleton = MatchValue = Any
-
-    # Avoid false positive errors on isinstance() in 3.9 self check
-    class MatchStar(ast.AST):
-        pass
-
 
 # For these types, a single class subpattern matches the whole thing
 _SPECIAL_CLASS_PATTERN_TYPES = {

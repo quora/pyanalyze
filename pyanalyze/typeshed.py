@@ -75,10 +75,11 @@ from .value import (
     unannotate_value,
 )
 
-PROPERTY_LIKE = {KnownValue(property), KnownValue(types.DynamicClassAttribute)}
-
-if sys.version_info >= (3, 11):
-    PROPERTY_LIKE.add(KnownValue(enum.property))
+PROPERTY_LIKE = {
+    KnownValue(property),
+    KnownValue(types.DynamicClassAttribute),
+    KnownValue(enum.property),
+}
 
 
 T_co = TypeVar("T_co", covariant=True)
