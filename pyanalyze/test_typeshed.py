@@ -239,6 +239,7 @@ class TestBundledStubs(TestNameCheckVisitorBase):
         assert tsf.resolve_name(mod, "constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "aliased_constant") == TypedValue(int)
         assert tsf.resolve_name(mod, "explicitly_aliased_constant") == TypedValue(int)
+        assert tsf.resolve_name(mod, "pep695_aliased_constant") == TypedValue(int)
 
     def test_overloaded(self):
         tsf = TypeshedFinder.make(Checker(), TEST_OPTIONS, verbose=True)

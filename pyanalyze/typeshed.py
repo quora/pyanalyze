@@ -644,7 +644,7 @@ class TypeshedFinder:
             if isinstance(info.ast, ast.ClassDef):
                 bases = info.ast.bases
                 return [self._parse_type(base, mod) for base in bases]
-            elif isinstance(info.ast, ast.Assign):
+            elif isinstance(info.ast, (ast.Assign, ast.TypeAlias)):
                 val = self._parse_expr(info.ast.value, mod)
                 if isinstance(val, KnownValue) and isinstance(val.val, type):
                     new_fq_name = self._get_fq_name(val.val)
@@ -1175,11 +1175,14 @@ class TypeshedFinder:
                 return self._value_from_info(
                     info, new_fq_name.rsplit(".", maxsplit=1)[0]
                 )
-            if isinstance(info.ast, ast.Assign):
+            if isinstance(info.ast, (ast.Assign, ast.TypeAlias)):
                 key = (module, info.ast)
                 if key in self._assignment_cache:
                     return self._assignment_cache[key]
-                if isinstance(info.ast.value, ast.Call):
+                if isinstance(info.ast, ast.TypeAlias) and info.ast.type_params:
+                    # TODO support generic type aliases
+                    value = AnyValue(AnySource.inference)
+                elif isinstance(info.ast.value, ast.Call):
                     value = self._parse_call_assignment(info, module)
                 else:
                     value = self._parse_expr(info.ast.value, module)

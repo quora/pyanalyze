@@ -407,6 +407,10 @@ class AnyValue(Value):
     def can_assign(self, other: Value, ctx: CanAssignContext) -> CanAssign:
         if isinstance(other, (AnnotatedValue, MultiValuedValue)):
             return super().can_assign(other, ctx)
+        if self.source in _UNRESOLVED_SOURCES:
+            # An annotation we could not resolve accepts anything, so treat this as
+            # a match due to Any to avoid picking the wrong overload.
+            ctx.record_any_used()
         return {}  # Always allowed
 
     def can_overlap(
@@ -414,6 +418,12 @@ class AnyValue(Value):
     ) -> Optional[CanAssignError]:
         return None  # always overlaps
 
+
+_UNRESOLVED_SOURCES = {
+    AnySource.error,
+    AnySource.inference,
+    AnySource.unresolved_import,
+}
 
 UNRESOLVED_VALUE = AnyValue(AnySource.default)
 """The default instance of :class:`AnyValue`.

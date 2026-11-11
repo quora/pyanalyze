@@ -2321,7 +2321,8 @@ class OverloadedSignature:
         of ``Any``, which is unsafe in general. Returning a ``Union`` would be more precise, but
         may lead to false positives according to experience from other type checkers. A match
         "due to ``Any``" is defined as a check that succeeded because ``Any`` was on the right-hand
-        side but not the left-hand side of a typecheck.
+        side but not the left-hand side of a typecheck, or because the left-hand side is an
+        annotation that could not be resolved.
 
         This is implemented by setting a flag on the :class:`pyanalyze.value.CanAssignContext` when
         a type check succeeds due to ``Any``. This flag gets propagated to

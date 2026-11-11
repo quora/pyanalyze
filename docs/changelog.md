@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Support PEP 695 type aliases in stubs, and `*` unpacking (PEP 646) in
+  stubs and string annotations
+- Support subscripting generic aliases such as `Union[list[T], set[T]]` in
+  string annotations
+- Find overloads of functions whose `__module__` was changed after they were
+  defined, as pandas' `@set_module` does
+- Treat a match on an overload parameter whose annotation could not be
+  resolved as a match due to `Any`
 - Fix crash on `TypeAliasType` aliases with unhashable arguments, on
   truthiness checks of PEP 695 type aliases, and on classes inheriting
   from `Any`

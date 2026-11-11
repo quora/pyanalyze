@@ -987,6 +987,48 @@ class TestOverload(TestNameCheckVisitorBase):
             overloaded("a", "b")  # E: incompatible_call
 
     @assert_passes()
+    def test_changed_module(self):
+        from typing import overload
+
+        @overload
+        def overloaded(x: int) -> int:
+            raise NotImplementedError
+
+        @overload
+        def overloaded(x: str) -> str:
+            raise NotImplementedError
+
+        def overloaded(x: object) -> object:
+            return x
+
+        overloaded.__module__ = "somewhere_else"
+
+        def capybara():
+            assert_is_value(overloaded(1), TypedValue(int))
+
+    @assert_passes()
+    def test_unresolved_annotation(self):
+        from typing import List, overload
+
+        from typing_extensions import Literal
+
+        @overload
+        def overloaded(x: "Undefined") -> Literal[2]:  # E: undefined_name
+            raise NotImplementedError
+
+        @overload
+        def overloaded(x: List[int]) -> Literal[3]:
+            raise NotImplementedError
+
+        def overloaded(x: object) -> int:
+            raise NotImplementedError
+
+        def capybara(x: List[int]):
+            assert_is_value(
+                overloaded(x), AnyValue(AnySource.multiple_overload_matches)
+            )
+
+    @assert_passes()
     def test_list_any(self):
         from typing import Any, List, Union
 

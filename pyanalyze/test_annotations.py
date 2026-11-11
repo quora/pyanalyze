@@ -624,6 +624,22 @@ class TestAnnotations(TestNameCheckVisitorBase):
             )
 
     @assert_passes()
+    def test_subscripted_alias(self):
+        from typing import Callable, List, Set, TypeVar, Union
+
+        T = TypeVar("T")
+        Alias = Union[List[T], Set[T]]
+        CallableAlias = Callable[[T], T]
+
+        def capybara(x: "Alias[int]", f: "CallableAlias[str]"):
+            assert_is_value(
+                x,
+                GenericValue(list, [TypedValue(int)])
+                | GenericValue(set, [TypedValue(int)]),
+            )
+            assert_is_value(f(""), TypedValue(str))
+
+    @assert_passes()
     def test_initvar(self):
         from dataclasses import InitVar, dataclass
 
@@ -1952,6 +1968,7 @@ class TestUnpack(TestNameCheckVisitorBase):
         def capybara(
             x: Tuple[int, Unpack[Tuple[str, ...]]],
             y: "Tuple[int, Unpack[Tuple[str, ...]]]",
+            z: "Tuple[int, *Tuple[str, ...]]",
         ):
             assert_is_value(
                 x,
@@ -1961,6 +1978,12 @@ class TestUnpack(TestNameCheckVisitorBase):
             )
             assert_is_value(
                 y,
+                SequenceValue(
+                    tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
+                ),
+            )
+            assert_is_value(
+                z,
                 SequenceValue(
                     tuple, [(False, TypedValue(int)), (True, TypedValue(str))]
                 ),

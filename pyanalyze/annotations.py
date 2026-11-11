@@ -70,6 +70,7 @@ from .safe import (
     is_typing_name,
     is_union,
     resolve_lazy_import,
+    safe_getattr,
 )
 from .signature import (
     ANY_SIGNATURE,
@@ -873,6 +874,19 @@ def _type_from_subscripted_value(
     elif isinstance(root, type):
         return GenericValue(root, [_type_from_value(elt, ctx) for elt in members])
     else:
+        parameters = safe_getattr(root, "__parameters__", ())
+        if (
+            isinstance(parameters, tuple)
+            and len(parameters) == len(members)
+            and not is_instance_of_typing_name(root, "TypeAliasType")
+        ):
+            # A generic alias such as Union[list[T], set[T]], subscripted with
+            # its type arguments
+            typevars = {
+                param: _type_from_value(member, ctx)
+                for param, member in zip(parameters, members)
+            }
+            return _type_from_runtime(root, ctx).substitute_typevars(typevars)
         origin = get_origin(root)
         if isinstance(origin, type):
             return GenericValue(origin, [_type_from_value(elt, ctx) for elt in members])
@@ -999,6 +1013,10 @@ class _Visitor(ast.NodeVisitor):
     def visit_Attribute(self, node: ast.Attribute) -> Optional[Value]:
         root_value = self.visit(node.value)
         return self.ctx.get_attribute(root_value, node)
+
+    def visit_Starred(self, node: ast.Starred) -> Value:
+        # *X in a type expression (PEP 646) is equivalent to Unpack[X]
+        return _SubscriptedValue(KnownValue(typing.Unpack), (self.visit(node.value),))
 
     def visit_Tuple(self, node: ast.Tuple) -> Value:
         elts = [(False, self.visit(elt)) for elt in node.elts]

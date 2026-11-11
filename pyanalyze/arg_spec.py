@@ -17,7 +17,7 @@ import typing
 from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from re import Pattern
-from types import FunctionType, MethodType, ModuleType
+from types import FunctionType, MethodType, ModuleType, SimpleNamespace
 from typing import Any, Callable, Generic, Optional, TypeVar, Union
 from unittest import mock
 
@@ -692,9 +692,18 @@ class ArgSpecCache:
             if safe_hasattr(inner_obj, "__module__") and safe_hasattr(
                 inner_obj, "__qualname__"
             ):
-                sig = self._maybe_make_overloaded_signature(
-                    typing.get_overloads(inner_obj), impl, is_asynq
-                )
+                overloads = typing.get_overloads(inner_obj)
+                if not overloads and isinstance(inner_obj, FunctionType):
+                    module = inner_obj.__globals__.get("__name__")
+                    if module != inner_obj.__module__:
+                        # Decorators like pandas' @set_module change __module__
+                        # after the overloads were registered.
+                        overloads = typing.get_overloads(
+                            SimpleNamespace(  # static analysis: ignore[incompatible_argument]
+                                __module__=module, __qualname__=inner_obj.__qualname__
+                            )
+                        )
+                sig = self._maybe_make_overloaded_signature(overloads, impl, is_asynq)
                 if sig is not None:
                     return sig
             fq_name = get_fully_qualified_name(obj)
