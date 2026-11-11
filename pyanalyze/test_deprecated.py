@@ -56,6 +56,24 @@ class TestRuntime(TestNameCheckVisitorBase):
             deprecated_overload("x")
 
     @assert_passes()
+    def test_overload_matched_through_any(self):
+        from pyanalyze.extensions import deprecated, overload
+
+        @overload
+        def overloaded(x: int) -> str: ...
+
+        @overload
+        @deprecated("str support is deprecated")
+        def overloaded(x: str) -> str: ...
+
+        def overloaded(x):
+            return str(x)
+
+        def capybara(unannotated):
+            overloaded(unannotated)
+            overloaded("x")  # E: deprecated
+
+    @assert_passes()
     def test_function(self):
         from pyanalyze.extensions import deprecated
 

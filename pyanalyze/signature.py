@@ -2455,7 +2455,9 @@ class OverloadedSignature:
                 and not union_and_any_rets
                 and clean_ret is None
             ):
-                rets = any_rets
+                # All matches agree, so treat the call as using the first one. This way a
+                # deprecated overload is not reported when an earlier one also matches.
+                rets = any_rets[:1]
             else:
                 return AnyValue(AnySource.multiple_overload_matches)
         elif union_rets:
