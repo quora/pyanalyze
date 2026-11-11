@@ -13,7 +13,7 @@ import ast
 import contextlib
 import itertools
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -175,7 +175,7 @@ class YieldChecker:
     @contextlib.contextmanager
     def check_yield(
         self, node: ast.Yield, current_statement: ast.stmt
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         assert current_statement is not None
         if self.visitor.async_kind == AsyncFunctionKind.normal:
             assert self.visitor.current_statement is not None

@@ -2074,7 +2074,7 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
     def test_sync(self):
         import contextlib
         from types import TracebackType
-        from typing import ContextManager, Iterator, Optional, Type
+        from typing import ContextManager, Generator, Optional, Type
 
         class SuppressException:
             def __enter__(self) -> None:
@@ -2104,7 +2104,7 @@ class TestContextManagerWithSuppression(TestNameCheckVisitorBase):
             return EmptyContext()
 
         @contextlib.contextmanager
-        def empty_contextlib_manager() -> Iterator[None]:
+        def empty_contextlib_manager() -> Generator[None, None, None]:
             yield
 
         def use_suppress_exception():

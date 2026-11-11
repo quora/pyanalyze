@@ -571,7 +571,7 @@ class TestExamples(TestNameCheckVisitorBase):
 
     @assert_passes()
     def test_safe_contains(self):
-        from typing import Container, List, TypeVar
+        from typing import Collection, List, TypeVar
 
         from pyanalyze.extensions import evaluated, is_of_type, show_error
 
@@ -579,8 +579,8 @@ class TestExamples(TestNameCheckVisitorBase):
         T2 = TypeVar("T2")
 
         @evaluated
-        def safe_contains(elt: T1, container: Container[T2]) -> bool:
-            if not is_of_type(elt, T2) and not is_of_type(container, Container[T1]):
+        def safe_contains(elt: T1, container: Collection[T2]) -> bool:
+            if not is_of_type(elt, T2) and not is_of_type(container, Collection[T1]):
                 show_error("Element cannot be a member of container")
 
         def capybara(lst: List[int], o: object):

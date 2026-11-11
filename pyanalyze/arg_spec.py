@@ -14,7 +14,7 @@ import sys
 import textwrap
 import types
 import typing
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from re import Pattern
 from types import FunctionType, MethodType, ModuleType
@@ -91,7 +91,9 @@ _SELF_PARAM = inspect.Parameter("__self", inspect.Parameter.POSITIONAL_ONLY)
 
 @used  # exposed as an API
 @contextlib.contextmanager
-def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
+def with_implementation(
+    fn: object, implementation_fn: Impl
+) -> Generator[None, None, None]:
     """Temporarily sets the implementation of fn to be implementation_fn.
 
     This is useful for invoking test_scope to aggregate all calls to a particular function. For
@@ -1062,16 +1064,27 @@ class ArgSpecCache:
     ) -> Optional[GenericBases]:
         if bases is None:
             return None
-        # Put Generic first since it determines the order of the typevars. This matters
-        # for typing.Coroutine.
+        # Put Generic and Protocol first since they determine the order of the
+        # typevars. This matters for typing.Coroutine.
         bases = sorted(
             bases,
             key=lambda base: not isinstance(base, TypedValue)
-            or base.typ is not Generic,
+            or not (
+                is_typing_name(base.typ, "Generic")
+                or is_typing_name(base.typ, "Protocol")
+            ),
         )
         my_typevars = uniq_chain(extract_typevars(base) for base in bases)
+        defaults = {
+            val.typevar: val.default
+            for base in bases
+            for val in base.walk_values()
+            if isinstance(val, TypeVarValue)
+        }
         generic_bases = {}
-        generic_bases[typ] = {tv: TypeVarValue(tv) for tv in my_typevars}
+        generic_bases[typ] = {
+            tv: TypeVarValue(tv, default=defaults.get(tv)) for tv in my_typevars
+        }
         for base in bases:
             if isinstance(base, TypedValue):
                 if isinstance(base.typ, str):

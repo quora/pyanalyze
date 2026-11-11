@@ -172,10 +172,10 @@ class TestDecorators(TestNameCheckVisitorBase):
     @assert_passes()
     def test_asynccontextmanager(self):
         from contextlib import asynccontextmanager
-        from typing import AsyncIterator
+        from typing import AsyncGenerator
 
         @asynccontextmanager
-        async def make_cm() -> AsyncIterator[None]:
+        async def make_cm() -> AsyncGenerator[None, None]:
             yield
 
 

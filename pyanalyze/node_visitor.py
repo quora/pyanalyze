@@ -19,7 +19,7 @@ import subprocess
 import sys
 import tempfile
 from builtins import print as real_print
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Generator, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
@@ -541,7 +541,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             }
 
     @contextmanager
-    def catch_errors(self) -> Iterator[list[Error]]:
+    def catch_errors(self) -> Generator[list[Error], None, None]:
         caught_errors = []
         with qcore.override(self, "caught_errors", caught_errors):
             yield caught_errors

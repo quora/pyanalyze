@@ -8,7 +8,7 @@ import collections.abc
 import itertools
 import sys
 import types
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterable, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import InitVar, dataclass, field
 from typing import Callable, Optional, Union
@@ -202,11 +202,12 @@ class Checker:
         return {base.typ for base in base_values if isinstance(base, TypedValue)}
 
     def _get_protocol_members(self, bases: Iterable[Union[type, str]]) -> set[str]:
-        return set(
-            itertools.chain.from_iterable(
-                self.ts_finder.get_all_attributes(base) for base in bases
-            )
-        )
+        return {
+            attr
+            for base in bases
+            for attr in self.ts_finder.get_all_attributes(base)
+            if attr != "__slots__"
+        }
 
     def get_generic_bases(
         self, typ: Union[type, str], generic_args: Sequence[Value] = ()
@@ -231,7 +232,7 @@ class Checker:
     @contextmanager
     def assume_compatibility(
         self, left: TypeObject, right: TypeObject
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         """Context manager that notes that left and right can be assumed to be compatible."""
         pair = (left, right)
         self.assumed_compatibilities.append(pair)
@@ -418,6 +419,7 @@ EXCLUDED_PROTOCOL_MEMBERS = {
     "__new__",
     "__module__",
     "__parameters__",
+    "__slots__",
     "__subclasshook__",
     "__weakref__",
     "_abc_impl",

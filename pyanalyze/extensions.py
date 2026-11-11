@@ -12,7 +12,7 @@ be gracefully ignored by other type checkers.
 import enum
 import typing
 from collections import defaultdict
-from collections.abc import Container, Iterable, Iterator, Sequence
+from collections.abc import Container, Generator, Iterable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import (
@@ -450,7 +450,7 @@ def assert_type(val: _T, typ: Any) -> _T:
 
 
 @contextmanager
-def assert_error() -> Iterator[None]:
+def assert_error() -> Generator[None, None, None]:
     """Context manager that asserts that code produces a type checker error.
 
     Example::

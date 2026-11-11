@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pin typeshed_client to 2.15.0. Ignore `__slots__` in protocols
+  defined in stubs, respect the type parameter order of `Protocol[...]`
+  bases, and allow omitting type arguments for generic classes whose type
+  parameters all have defaults
 - Drop support for Python 3.9, 3.10 and 3.11
 - Update PEP 728 support to the latest version, using the `extra_items=`
   class argument instead of an `__extra_items__` key in the dict. (#855)

@@ -713,11 +713,6 @@ class TypeshedFinder:
             module_name = obj.__module__
             if module_name is None:
                 module_name = "builtins"
-            # Objects like io.BytesIO are technically in the _io module,
-            # but typeshed puts them in io, which at runtime just re-exports
-            # them.
-            if module_name == "_io":
-                module_name = "io"
             fq_name = ".".join([module_name, obj.__qualname__])
             # Avoid looking for stubs we won't find anyway.
             if not _obj_from_qualname_is(module_name, obj.__qualname__, obj):

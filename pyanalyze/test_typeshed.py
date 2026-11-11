@@ -1,8 +1,11 @@
 # static analysis: ignore
+import _io
+import abc
 import collections
 import collections.abc
 import contextlib
 import io
+import sys
 import tempfile
 import textwrap
 import time
@@ -82,8 +85,8 @@ class TestTypeshedClient(TestNameCheckVisitorBase):
         assert_with_maybe_generic(
             Sequence,
             [
-                GenericValue(Collection, (TypeVarValue(typevar=ANY),)),
                 GenericValue(Reversible, (TypeVarValue(typevar=ANY),)),
+                GenericValue(Collection, (TypeVarValue(typevar=ANY),)),
             ],
         )
         assert_with_maybe_generic(Set, [GenericValue(Collection, (TypeVarValue(ANY),))])
@@ -549,7 +552,7 @@ class TestGetGenericBases:
             {
                 "_collections_abc.dict_items": [TInt, TStr],
                 collections.abc.Iterable: [TTuple],
-                collections.abc.Container: [TTuple],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
                 collections.abc.Collection: [TTuple],
                 collections.abc.Set: [TTuple],
                 collections.abc.MappingView: [],
@@ -569,7 +572,7 @@ class TestGetGenericBases:
             collections.abc.Reversible: [TypedValue(int)],
             collections.abc.Iterable: [TypedValue(int)],
             collections.abc.Sequence: [TypedValue(int)],
-            collections.abc.Container: [TypedValue(int)],
+            collections.abc.Container: [AnyValue(AnySource.explicit)],
         }
         self.check(expected, time.struct_time)
 
@@ -577,12 +580,12 @@ class TestGetGenericBases:
         int_tv = TypedValue(int)
         missing = AnyValue(AnySource.generic_argument)
         self.check(
-            {contextlib.AbstractContextManager: [int_tv, missing]},
+            {contextlib.AbstractContextManager: [int_tv, missing], abc.ABC: []},
             contextlib.AbstractContextManager,
             [int_tv],
         )
         self.check(
-            {contextlib.AbstractAsyncContextManager: [int_tv, missing]},
+            {contextlib.AbstractAsyncContextManager: [int_tv, missing], abc.ABC: []},
             contextlib.AbstractAsyncContextManager,
             [int_tv],
         )
@@ -597,7 +600,7 @@ class TestGetGenericBases:
                 collections.abc.MappingView: [],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Collection: [int_tv],
-                collections.abc.Container: [int_tv],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
                 collections.abc.Sized: [],
             },
             collections.abc.ValuesView,
@@ -610,7 +613,7 @@ class TestGetGenericBases:
                 collections.abc.Set: [int_str_tuple],
                 collections.abc.Collection: [int_str_tuple],
                 collections.abc.Iterable: [int_str_tuple],
-                collections.abc.Container: [int_str_tuple],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
                 collections.abc.Sized: [],
             },
             collections.abc.ItemsView,
@@ -625,7 +628,7 @@ class TestGetGenericBases:
                 collections.abc.Reversible: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Sequence: [int_tv],
-                collections.abc.Container: [int_tv],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
             },
             collections.deque,
             [int_tv],
@@ -638,7 +641,7 @@ class TestGetGenericBases:
                 collections.abc.Mapping: [int_tv, str_tv],
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
-                collections.abc.Container: [int_tv],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
             },
             collections.defaultdict,
             [int_tv, str_tv],
@@ -655,7 +658,7 @@ class TestGetGenericBases:
                 collections.abc.Reversible: [int_tv],
                 collections.abc.Iterable: [int_tv],
                 collections.abc.Sequence: [int_tv],
-                collections.abc.Container: [int_tv],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
             },
             list,
             [int_tv],
@@ -667,7 +670,7 @@ class TestGetGenericBases:
                 collections.abc.Set: [int_tv],
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
-                collections.abc.Container: [int_tv],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
             },
             set,
             [int_tv],
@@ -679,7 +682,7 @@ class TestGetGenericBases:
                 collections.abc.Mapping: [int_tv, str_tv],
                 collections.abc.Collection: [int_tv],
                 collections.abc.Iterable: [int_tv],
-                collections.abc.Container: [int_tv],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
             },
             dict,
             [int_tv, str_tv],
@@ -691,10 +694,10 @@ class TestGetGenericBases:
                 io.BytesIO: [],
                 io.BufferedIOBase: [],
                 io.IOBase: [],
+                _io._BufferedIOBase: [],
+                _io._IOBase: [],
                 typing.BinaryIO: [],
                 typing.IO: [TypedValue(bytes)],
-                collections.abc.Iterator: [TypedValue(bytes)],
-                collections.abc.Iterable: [TypedValue(bytes)],
             },
             io.BytesIO,
         )
@@ -704,11 +707,25 @@ class TestGetGenericBases:
             {
                 collections.abc.Iterable: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Reversible: [AnyValue(AnySource.generic_argument)],
-                collections.abc.Container: [AnyValue(AnySource.generic_argument)],
+                collections.abc.Container: [AnyValue(AnySource.explicit)],
                 collections.abc.Collection: [AnyValue(AnySource.generic_argument)],
                 collections.abc.Sequence: [AnyValue(AnySource.generic_argument)],
-                urllib.parse.ParseResult: [],
-                urllib.parse._ParseResultBase: [],
+                # ParseResult is generic in the 3.15 stubs
+                urllib.parse.ParseResult: (
+                    [AnyValue(AnySource.generic_argument)]
+                    if sys.version_info >= (3, 15)
+                    else []
+                ),
+                # Before 3.14, the runtime name of _ParseResultBase is ParseResult
+                urllib.parse._ParseResultBase: (
+                    [TypedValue(str), AnyValue(AnySource.generic_argument)]
+                    if sys.version_info >= (3, 15)
+                    else (
+                        [TypedValue(str), TypedValue(str)]
+                        if sys.version_info >= (3, 14)
+                        else []
+                    )
+                ),
                 tuple: [AnyValue(AnySource.generic_argument)],
                 urllib.parse._ResultMixinStr: [],
                 urllib.parse._NetlocResultMixinBase: [TypedValue(str)],
@@ -723,9 +740,9 @@ class TestGetGenericBases:
             {
                 io.IOBase: [],
                 io.BufferedIOBase: [],
-                collections.abc.Iterable: [TypedValue(bytes)],
-                collections.abc.Iterator: [TypedValue(bytes)],
-                io.BufferedReader: [],
+                _io._BufferedIOBase: [],
+                _io._IOBase: [],
+                io.BufferedReader: [AnyValue(AnySource.generic_argument)],
                 typing.BinaryIO: [],
                 typing.IO: [TypedValue(bytes)],
             },
@@ -764,9 +781,9 @@ class TestParamSpec(TestNameCheckVisitorBase):
     @assert_passes()
     def test_contextmanager(self):
         import contextlib
-        from typing import Iterator
+        from typing import Generator
 
-        def cm(a: int) -> Iterator[str]:
+        def cm(a: int) -> Generator[str, None, None]:
             yield "hello"
 
         def capybara():

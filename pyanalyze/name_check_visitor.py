@@ -27,7 +27,7 @@ import types
 import typing
 from abc import abstractmethod
 from argparse import ArgumentParser
-from collections.abc import Container, Generator, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Container, Generator, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from itertools import chain
@@ -1022,7 +1022,7 @@ class StackedContexts:
         return None
 
     @contextlib.contextmanager
-    def add(self, value: ast.AST) -> Iterator[None]:
+    def add(self, value: ast.AST) -> Generator[None, None, None]:
         """Context manager to add a context to the stack."""
         self.contexts.append(value)
         try:
@@ -1742,7 +1742,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return isinstance(ctx, (ast.Load, ast.Del))
 
     @contextlib.contextmanager
-    def _set_current_class(self, current_class: Optional[type]) -> Iterator[None]:
+    def _set_current_class(
+        self, current_class: Optional[type]
+    ) -> Generator[None, None, None]:
         if should_check_for_duplicate_values(current_class, self.options):
             current_enum_members = {}
         else:
@@ -2493,7 +2495,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(val, GenericAlias):
             return
         generic_params = self.arg_spec_cache.get_type_parameters(val)
-        if not generic_params:
+        if not generic_params or all(
+            isinstance(param, TypeVarValue) and param.default is not None
+            for param in generic_params
+        ):
             return
         self.show_error(
             node,
@@ -4571,7 +4576,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return unite_values(then_val, else_val)
 
     @contextlib.contextmanager
-    def _subscope_and_maybe_supress(self, should_suppress: bool) -> Iterator[SubScope]:
+    def _subscope_and_maybe_supress(
+        self, should_suppress: bool
+    ) -> Generator[SubScope, None, None]:
         with self.scopes.subscope() as scope:
             if should_suppress:
                 with self.catch_errors():
