@@ -164,7 +164,7 @@ def remove_redundant_solutions(
     solutions: Sequence[Value], ctx: CanAssignContext
 ) -> Sequence[Value]:
     # This is going to be quadratic, so don't do it when there's too many
-    # opttions.
+    # options.
     initial_count = len(solutions)
     if initial_count > 10:
         return solutions
