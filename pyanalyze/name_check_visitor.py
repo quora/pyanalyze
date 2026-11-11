@@ -5572,6 +5572,8 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         *,
         allow_call: bool = False,
     ) -> Value:
+        if isinstance(callee, TypeAliasValue):
+            callee = callee.get_value()
         if isinstance(callee, MultiValuedValue):
             with qcore.override(self, "in_union_decomposition", True):
                 values = [

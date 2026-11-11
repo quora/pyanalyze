@@ -13,13 +13,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, ClassVar, Optional, Union
 
-import asynq
 import qcore
 
 from .annotated_types import EnumName
 from .annotations import Context, type_from_annotations, type_from_runtime
 from .options import Options, PyObjectSequenceOption
-from .safe import get_annotations, safe_isinstance, safe_issubclass
+from .safe import get_annotations, is_async_fn, safe_isinstance, safe_issubclass
 from .signature import MaybeSignature
 from .stacked_scopes import Composite
 from .value import (
@@ -256,7 +255,7 @@ def _unwrap_value_from_subclass(result: Value, ctx: AttrContext) -> Value:
             and _static_hasattr(cls_val, "instance")
             and not isinstance(cls_val.instance, type)
         )
-        or asynq.is_async_fn(cls_val)
+        or is_async_fn(cls_val)
     ):
         # static or class method
         return KnownValue(cls_val)
@@ -374,7 +373,7 @@ def _unwrap_value_from_typed(result: Value, typ: type, ctx: AttrContext) -> Valu
     ):
         # non-static method
         return UnboundMethodValue(ctx.attr, ctx.root_composite, typevars=typevars)
-    elif asynq.is_async_fn(cls_val):
+    elif is_async_fn(cls_val):
         # static or class method
         return result
     elif _static_hasattr(cls_val, "func_code"):

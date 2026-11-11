@@ -40,6 +40,7 @@ from .safe import (
     all_of_type,
     get_fully_qualified_name,
     hasattr_static,
+    is_async_fn,
     is_newtype,
     is_typing_name,
     safe_equals,
@@ -151,13 +152,7 @@ def is_dot_asynq_function(obj: Any, native: bool = False) -> bool:
         return False
     if obj is self_obj:
         return False
-    try:
-        is_async_fn = asynq.is_async_fn(self_obj)
-    except Exception:
-        # The object may have a buggy __getattr__. Ignore it. This happens with
-        # pylons request objects.
-        return False
-    if not is_async_fn:
+    if not is_async_fn(self_obj):
         return False
 
     if native:
@@ -1113,6 +1108,9 @@ class ArgSpecCache:
                 else:
                     args = ()
                 generic_bases.update(self.get_generic_bases(base.typ, args))
+            elif isinstance(base, AnyValue):
+                # e.g. class C(Any), which is allowed at runtime in 3.11+
+                continue
             else:
                 return None
         return generic_bases

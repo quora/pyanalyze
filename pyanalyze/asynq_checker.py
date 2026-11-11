@@ -23,7 +23,7 @@ from .options import (
     PyObjectSequenceOption,
     StringSequenceOption,
 )
-from .safe import safe_getattr, safe_hasattr
+from .safe import is_async_fn, safe_getattr, safe_hasattr
 from .value import (
     AnnotatedValue,
     KnownValue,
@@ -219,7 +219,7 @@ def is_impure_async_fn(value: Value) -> bool:
 
     """
     if isinstance(value, KnownValue):
-        return asynq.is_async_fn(value.val) and not asynq.is_pure_async_fn(value.val)
+        return is_async_fn(value.val) and not asynq.is_pure_async_fn(value.val)
     elif isinstance(value, MultiValuedValue):
         if not value.vals:
             return False
@@ -228,7 +228,7 @@ def is_impure_async_fn(value: Value) -> bool:
         method = value.get_method()
         if method is None:
             return False
-        return asynq.is_async_fn(method) and not asynq.is_pure_async_fn(method)
+        return is_async_fn(method) and not asynq.is_pure_async_fn(method)
     return False
 
 

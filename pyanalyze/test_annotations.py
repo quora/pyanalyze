@@ -125,6 +125,21 @@ class TestAnnotations(TestNameCheckVisitorBase):
             print(y)  # just asserting that this doesn't cause errors
 
     @assert_passes()
+    def test_newtype_over_generic_alias(self):
+        from typing import NewType
+
+        Ids = NewType("Ids", list[int])
+        Pair = NewType("Pair", tuple[int, int])
+
+        def capybara(ids: Ids, pair: Pair) -> None:
+            assert_is_value(ids, NewTypeValue(Ids))
+            assert_is_value(pair, NewTypeValue(Pair))
+            ids.append(1)
+
+        def caller() -> None:
+            capybara(Ids([1]), Pair((1, 2)))
+
+    @assert_passes()
     def test_literal(self):
         from typing_extensions import Literal
 
@@ -1891,6 +1906,23 @@ class TestParamSpec(TestNameCheckVisitorBase):
             func(**kwargs)  # E: incompatible_call
             func(*args, **kwargs, **kwargs)  # E: incompatible_call
             func(*args, **kwargs)
+
+    @assert_passes()
+    def test_list_argument_for_generic_class(self):
+        from typing import Callable, Generic
+
+        from typing_extensions import ParamSpec, assert_type
+
+        P = ParamSpec("P")
+
+        class Handler(Generic[P]):
+            def get(self) -> Callable[P, int]:
+                raise NotImplementedError
+
+        def capybara(handler: Handler[[int, str]]) -> None:
+            func = handler.get()
+            assert_type(func(1, "x"), int)
+            func("x")  # E: incompatible_call
 
 
 class TestTypeAlias(TestNameCheckVisitorBase):

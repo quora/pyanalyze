@@ -98,3 +98,41 @@ class TestTypeAliasType(TestNameCheckVisitorBase):
                 f("x")  # E: incompatible_argument
         """
         )
+
+    @assert_passes()
+    def test_paramspec_argument(self):
+        from typing import Callable
+
+        from typing_extensions import ParamSpec, TypeAliasType, assert_type
+
+        P = ParamSpec("P")
+        Handler = TypeAliasType("Handler", Callable[P, int], type_params=(P,))
+
+        def capybara(handler: Handler[[int, str]]) -> None:
+            assert_type(handler(1, "x"), int)
+            handler("x")  # E: incompatible_call
+
+    @assert_passes()
+    def test_call(self):
+        from typing import Callable
+
+        from typing_extensions import TypeAliasType, assert_type
+
+        Callback = TypeAliasType("Callback", Callable[[int], str])
+
+        def capybara(callback: Callback) -> None:
+            assert_type(callback(1), str)
+            callback("x")  # E: incompatible_argument
+
+    def test_312_truthiness(self):
+        self.assert_passes(
+            """
+            from typing_extensions import assert_type
+            type MaybeInt = int | None
+
+            def capybara(x: MaybeInt) -> None:
+                if x:
+                    assert_type(x, MaybeInt)
+                assert_type(not x, bool)
+        """
+        )

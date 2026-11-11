@@ -542,3 +542,12 @@ def test_get_pure_async_equivalent():
             UnboundMethodValue("async_method", Composite(TypedValue(PropertyObject)))
         )
     )
+
+
+class _RaisingGetattr:
+    def __getattr__(self, attr: str) -> object:
+        raise RuntimeError(f"cannot load {attr}")
+
+
+def test_is_impure_async_fn_raising_getattr():
+    assert not is_impure_async_fn(KnownValue(_RaisingGetattr()))

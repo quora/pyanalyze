@@ -86,6 +86,11 @@ def load_module_from_file(
                     parent_module = importlib.import_module(parent_module_path)
                 except ImportError:
                     continue
+                # The parent package may have imported this module already
+                if module_path in sys.modules:
+                    existing = cast(ModuleType, sys.modules[module_path])
+                    is_compiled = getattr(existing, "__file__", None) != str(abspath)
+                    return existing, is_compiled
             else:
                 parent_module = child_name = None
 

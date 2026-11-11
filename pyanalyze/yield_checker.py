@@ -29,6 +29,7 @@ from .asynq_checker import AsyncFunctionKind
 from .error_code import ErrorCode
 from .functions import FunctionNode
 from .node_visitor import Replacement
+from .safe import is_async_fn
 from .stacked_scopes import VisitorState
 from .value import UNINITIALIZED_VALUE, KnownValue, UnboundMethodValue, Value
 
@@ -605,11 +606,11 @@ class YieldChecker:
 
     def is_async_fn(self, obj: Any) -> bool:
         if hasattr(obj, "__self__"):
-            if isinstance(
-                obj.__self__, asynq.decorators.AsyncDecorator
-            ) or asynq.is_async_fn(obj.__self__):
+            if isinstance(obj.__self__, asynq.decorators.AsyncDecorator) or is_async_fn(
+                obj.__self__
+            ):
                 return True
-        return asynq.is_async_fn(obj)
+        return is_async_fn(obj)
 
 
 def _camel_case_to_snake_case(s: str) -> str:

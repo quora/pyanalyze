@@ -203,7 +203,14 @@ DISABLED_BY_DEFAULT = {
 
 @used  # exposed as an API
 def register_error_code(name: str, description: str) -> Error:
-    """Register an additional error code. For use in extensions."""
+    """Register an additional error code. For use in extensions.
+
+    Registering the same name again returns the existing error code, so modules
+    that call this can be reloaded.
+
+    """
+    if name in ErrorCode.errors:
+        return ErrorCode.errors[name]
     member = ErrorCode.register(name, description)
     type(
         name,

@@ -11,6 +11,7 @@ import typing
 from collections.abc import Container, Mapping, Sequence
 from typing import Any, NewType, Optional, TypeVar, Union
 
+import asynq
 import typing_extensions
 
 try:
@@ -80,6 +81,16 @@ def resolve_lazy_import(obj: object) -> object:
         except Exception:
             return obj
     return obj
+
+
+def is_async_fn(obj: object) -> bool:
+    """Safe version of ``asynq.is_async_fn()``."""
+    try:
+        return asynq.is_async_fn(obj)
+    except Exception:
+        # This does certain attribute accesses, which may raise if the object has
+        # an unusual __getattr__ (e.g. lazily loaded client proxies).
+        return False
 
 
 def safe_getattr(value: object, attr: str, default: object) -> Any:

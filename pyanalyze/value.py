@@ -28,7 +28,7 @@ from contextlib import AbstractContextManager
 from dataclasses import InitVar, dataclass, field
 from itertools import chain
 from types import FunctionType, ModuleType
-from typing import Any, Callable, Optional, TypeVar, Union
+from typing import Any, Callable, Optional, TypeVar, Union, get_origin
 
 import qcore
 from typing_extensions import ParamSpec, Protocol, assert_never
@@ -517,6 +517,12 @@ class TypeAliasValue(Value):
             return None
         return self.get_value().can_overlap(other, ctx, mode)
 
+    def __str__(self) -> str:
+        text = f"{self.module}.{self.name}"
+        if self.type_arguments:
+            text += f"[{', '.join(map(str, self.type_arguments))}]"
+        return text
+
 
 @dataclass(frozen=True)
 class UninitializedValue(Value):
@@ -956,8 +962,9 @@ class NewTypeValue(TypedValue):
 
     Corresponds to ``typing.NewType``.
 
-    This is a subclass of :class:`TypedValue`. Currently only NewTypes over simple,
-    non-generic types are supported.
+    This is a subclass of :class:`TypedValue`. For a NewType over a generic alias
+    such as ``list[int]``, the type is the origin class (``list``) and the generic
+    arguments are not used.
 
     """
 
@@ -967,7 +974,8 @@ class NewTypeValue(TypedValue):
     """Underlying ``NewType`` object."""
 
     def __init__(self, newtype: Any) -> None:
-        super().__init__(newtype.__supertype__)
+        supertype = newtype.__supertype__
+        super().__init__(get_origin(supertype) or supertype)
         self.name = newtype.__name__
         self.newtype = newtype
 

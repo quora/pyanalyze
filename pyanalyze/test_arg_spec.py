@@ -441,3 +441,16 @@ class TestPytestRaises(TestNameCheckVisitorBase):
                 pass
 
             pytest.raises()  # E: incompatible_call
+
+
+class TestAnyBase(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test(self):
+        from typing import Any
+
+        class Capybara(Any):
+            pass
+
+        def capybara(c: Capybara) -> None:
+            assert_is_value(c, TypedValue(Capybara))
+            assert_is_value(Capybara(), TypedValue(Capybara))

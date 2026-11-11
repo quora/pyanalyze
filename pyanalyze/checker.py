@@ -49,6 +49,7 @@ from .value import (
     MultiValuedValue,
     SubclassValue,
     TypeAlias,
+    TypeAliasValue,
     TypedValue,
     TypeVarValue,
     UnboundMethodValue,
@@ -292,6 +293,8 @@ class Checker:
     ) -> MaybeSignature:
         if isinstance(value, AnnotatedValue):
             value = value.value
+        if isinstance(value, TypeAliasValue):
+            value = value.get_value()
         if isinstance(value, TypeVarValue):
             value = value.get_fallback_value()
         if isinstance(value, KnownValue):
