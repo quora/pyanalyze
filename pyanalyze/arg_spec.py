@@ -84,6 +84,9 @@ from .value import (
     make_coro_type,
 )
 
+if sys.version_info >= (3, 14):
+    import annotationlib
+
 _ENUM_CALL = enum.Enum.__call__.__func__
 
 _SELF_PARAM = inspect.Parameter("__self", inspect.Parameter.POSITIONAL_ONLY)
@@ -821,7 +824,13 @@ class ArgSpecCache:
                 inspect_sig,
                 function_object=obj,
                 callable_object=obj,
-                is_async=asyncio.iscoroutinefunction(obj),
+                # asyncio.iscoroutinefunction() is deprecated, but before 3.13
+                # only it recognizes async functions mocked with create_autospec()
+                is_async=(
+                    inspect.iscoroutinefunction(obj)
+                    if sys.version_info >= (3, 13)
+                    else asyncio.iscoroutinefunction(obj)
+                ),
                 impl=impl,
                 is_asynq=is_asynq,
             )
@@ -985,6 +994,14 @@ class ArgSpecCache:
         try:
             # follow_wrapped=True leads to problems with decorators that
             # mess with the arguments, such as mock.patch.
+            if sys.version_info >= (3, 14):
+                # Keep names that are not defined at runtime (e.g., imports under
+                # TYPE_CHECKING) as forward references instead of raising NameError.
+                return inspect.signature(
+                    obj,
+                    follow_wrapped=False,
+                    annotation_format=annotationlib.Format.FORWARDREF,
+                )
             return inspect.signature(obj, follow_wrapped=False)
         except (TypeError, ValueError, AttributeError):
             # TypeError if signature() does not support the object, ValueError

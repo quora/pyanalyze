@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add support for Python 3.14 and 3.15
+- Support lazily evaluated annotations (PEP 649) that refer to names
+  defined only under `TYPE_CHECKING`
+- Support template strings (PEP 750), lazy imports (PEP 810) and unpacking
+  in comprehensions (PEP 798)
+- Fix crash on annotations using `types.UnionType` in Python 3.14+
+- Detect `@deprecated` in stubs on Python 3.14
 - Pin typeshed_client to 2.15.0. Ignore `__slots__` in protocols
   defined in stubs, respect the type parameter order of `Protocol[...]`
   bases, and allow omitting type arguments for generic classes whose type

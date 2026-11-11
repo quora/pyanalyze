@@ -662,6 +662,8 @@ class TypeshedFinder:
                     typeshed_client.ImportedName,
                     # typeshed pretends the class is a function
                     ast.FunctionDef,
+                    # e.g. "Union: _SpecialForm", which is types.UnionType in 3.14+
+                    ast.AnnAssign,
                 ),
             ):
                 return None

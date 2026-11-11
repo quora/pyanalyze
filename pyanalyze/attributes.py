@@ -19,7 +19,7 @@ import qcore
 from .annotated_types import EnumName
 from .annotations import Context, type_from_annotations, type_from_runtime
 from .options import Options, PyObjectSequenceOption
-from .safe import safe_isinstance, safe_issubclass
+from .safe import get_annotations, safe_isinstance, safe_issubclass
 from .signature import MaybeSignature
 from .stacked_scopes import Composite
 from .value import (
@@ -515,7 +515,7 @@ def _get_attribute_from_mro(
             pass
     elif safe_isinstance(typ, types.ModuleType):
         try:
-            annotations = typ.__annotations__
+            annotations = get_annotations(typ)
         except Exception:
             pass
         else:
@@ -554,7 +554,7 @@ def _get_attribute_from_mro(
                     continue
 
                 try:
-                    annotations = base_cls.__annotations__
+                    annotations = get_annotations(base_cls)
                 except Exception:
                     pass
                 else:

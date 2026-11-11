@@ -5,9 +5,10 @@
 """
 
 import inspect
+import sys
 import types
 import typing
-from collections.abc import Container, Sequence
+from collections.abc import Container, Mapping, Sequence
 from typing import Any, NewType, Optional, TypeVar, Union
 
 import typing_extensions
@@ -16,6 +17,9 @@ try:
     import mypy_extensions
 except ImportError:
     mypy_extensions = None
+
+if sys.version_info >= (3, 14):
+    import annotationlib
 
 T = TypeVar("T")
 
@@ -38,6 +42,44 @@ def safe_hasattr(item: object, member: str) -> bool:
         return hasattr(item, member)
     except Exception:
         return False
+
+
+def get_annotations(obj: object) -> Mapping[str, Any]:
+    """Return the annotations defined directly on a class or module."""
+    try:
+        return getattr(obj, "__annotations__", {})
+    except NameError:
+        if sys.version_info < (3, 14):
+            raise
+        # Annotations are evaluated lazily, so they may refer to names that are
+        # never defined at runtime (e.g., imports under TYPE_CHECKING). Keep those
+        # as forward references.
+        return annotationlib.get_annotations(
+            obj, format=annotationlib.Format.FORWARDREF
+        )
+
+
+def is_lazy_import(obj: object) -> bool:
+    """Return whether obj is the proxy for a lazy import (PEP 810).
+
+    Module globals hold such a proxy until the name is first used.
+
+    """
+    return sys.version_info >= (3, 15) and isinstance(obj, types.LazyImportType)
+
+
+def resolve_lazy_import(obj: object) -> object:
+    """Return the object that a lazy import refers to.
+
+    If the import fails, the proxy is returned unchanged.
+
+    """
+    if sys.version_info >= (3, 15) and isinstance(obj, types.LazyImportType):
+        try:
+            return obj.resolve()
+        except Exception:
+            return obj
+    return obj
 
 
 def safe_getattr(value: object, attr: str, default: object) -> Any:

@@ -6,7 +6,6 @@ The checker maintains global state that is preserved across different modules.
 
 import collections.abc
 import itertools
-import sys
 import types
 from collections.abc import Generator, Iterable, Sequence
 from contextlib import AbstractContextManager, contextmanager
@@ -20,7 +19,12 @@ from .attributes import AttrContext, get_attribute
 from .node_visitor import Failure
 from .options import Options, PyObjectSequenceOption
 from .reexport import ImplicitReexportTracker
-from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
+from .safe import (
+    get_annotations,
+    is_instance_of_typing_name,
+    is_typing_name,
+    safe_getattr,
+)
 from .shared_options import VariableNameValues
 from .signature import (
     ANY_SIGNATURE,
@@ -412,7 +416,9 @@ class Checker:
 EXCLUDED_PROTOCOL_MEMBERS = {
     "__abstractmethods__",
     "__annotate__",
+    "__annotate_func__",
     "__annotations__",
+    "__annotations_cache__",
     "__dict__",
     "__doc__",
     "__init__",
@@ -452,9 +458,7 @@ def _extract_protocol_members(typ: type) -> set[str]:
     ):
         return set()
     members = set(typ.__dict__) - EXCLUDED_PROTOCOL_MEMBERS
-    # Starting in 3.10 __annotations__ always exists on types
-    if sys.version_info >= (3, 10) or hasattr(typ, "__annotations__"):
-        members |= set(typ.__annotations__)
+    members |= set(get_annotations(typ))
     return members
 
 
