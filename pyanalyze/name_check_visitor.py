@@ -3861,6 +3861,23 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 allow_call=allow_call,
             )
 
+        if not left_errors:
+            # The interesting case: the left operand supports the operation.
+            # Naively we might want to return the left result, but that fails
+            # in a case like this:
+            #     df: Any
+            #     1 + df
+            # because this would return "int" (which is what int.__add__ returns),
+            # and "df" might be an object that implements __radd__.
+            # Instead, we return Any if that's what the reflected method returns.
+            # This handles the case above but might return the wrong result in
+            # some other rare cases.
+            if self._reflected_dunder_returns_any(
+                source_node, right_composite, rmethod, left_composite, allow_call
+            ):
+                return AnyValue(AnySource.from_another)
+            return left_result
+
         with self.catch_errors() as right_errors:
             right_result, _ = self._check_dunder_call(
                 source_node,
@@ -3869,31 +3886,64 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 [left_composite],
                 allow_call=allow_call,
             )
-        if left_errors:
-            if right_errors:
-                self.show_error(
-                    source_node,
-                    f"Unsupported operands for {description}: {left} and {right}",
-                    error_code=ErrorCode.unsupported_operation,
+        if right_errors:
+            self.show_error(
+                source_node,
+                f"Unsupported operands for {description}: {left} and {right}",
+                error_code=ErrorCode.unsupported_operation,
+            )
+            return AnyValue(AnySource.error)
+        return right_result
+
+    def _reflected_dunder_returns_any(
+        self,
+        node: ast.AST,
+        callee_composite: Composite,
+        method_name: str,
+        arg: Composite,
+        allow_call: bool,
+    ) -> bool:
+        """Whether calling a reflected method (e.g., ``__radd__``) succeeds and returns Any.
+
+        This gives the same answer as checking the call with :meth:`_check_dunder_call`
+        and looking at the errors and the return value, but for a union it stops at
+        the first member that decides the answer. The answer is no as soon as one
+        member rejects the call or returns a concrete type, which is the common case,
+        and unions of literals can have thousands of members.
+
+        """
+        val = callee_composite.value
+        if isinstance(val, AnnotatedValue):
+            val = val.value
+        if not isinstance(val, MultiValuedValue):
+            with self.catch_errors() as errors:
+                result, _ = self._check_dunder_call_no_mvv(
+                    node, callee_composite, method_name, [arg], allow_call
                 )
-                return AnyValue(AnySource.error)
-            return right_result
-        else:
-            if right_errors:
-                return left_result
-            # The interesting case: neither threw an error. Naively we might
-            # want to return the left result, but that fails in a case like
-            # this:
-            #     df: Any
-            #     1 + df
-            # because this would return "int" (which is what int.__add__ returns),
-            # and "df" might be an object that implements __radd__.
-            # Instead, we return Any if that's the right_result. This handles
-            # the case above but might return the wrong result in some other rare
-            # cases.
-            if isinstance(right_result, AnyValue):
-                return AnyValue(AnySource.from_another)
-            return left_result
+            return not errors and isinstance(result, AnyValue)
+
+        results = []
+        with (
+            self.catch_errors() as errors,
+            qcore.override(self, "in_union_decomposition", True),
+        ):
+            for subval in val.vals:
+                result, _ = self._check_dunder_call_no_mvv(
+                    node,
+                    Composite(subval, callee_composite.varname, callee_composite.node),
+                    method_name,
+                    [arg],
+                    allow_call,
+                )
+                # Literals and types stay in the union of the results whatever
+                # the other members return, so that union cannot be Any.
+                if errors or isinstance(result, (KnownValue, TypedValue)):
+                    return False
+                results.append(result)
+        united = unite_and_simplify(
+            *results, limit=self.options.get_value_for(UnionSimplificationLimit)
+        )
+        return isinstance(united, AnyValue)
 
     # Indexing
 

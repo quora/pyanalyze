@@ -1982,6 +1982,26 @@ class MultiValuedValue(Value):
             ]
             return known_values, remaining_vals
 
+    def _has_identical_literal(self, other: "KnownValue") -> bool:
+        """Whether `other` is a literal for the very same object as one of our members.
+
+        If so, that member accepts `other` with an empty bounds map, which makes
+        the bounds map for the whole union empty too, so there is no need to check
+        the other members. This matters for unions of unhashable literals with a
+        slow ``__eq__`` or ``__repr__`` (e.g., protobuf messages): the hash-based
+        optimization does not apply to them, and we would compare `other` against
+        every member and format an error message for each one that does not match,
+        only to discard them all.
+
+        """
+        other_val = other.val
+        # Function literals are checked as callables, so leave them alone.
+        if isinstance(other_val, FunctionType):
+            return False
+        return any(
+            isinstance(val, KnownValue) and val.val is other_val for val in self.vals
+        )
+
     def substitute_typevars(self, typevars: TypeVarMap) -> Value:
         if not self.vals or not typevars:
             return self
@@ -2010,15 +2030,20 @@ class MultiValuedValue(Value):
             return {}
         else:
             my_vals = self.vals
-            if isinstance(other, KnownValue) and self._known_subvals is not None:
-                known_values, my_vals = self._known_subvals
-                try:
-                    is_present = (other.val, type(other.val)) in known_values
-                except TypeError:
-                    pass  # not hashable
-                else:
-                    if is_present:
-                        return {}
+            if isinstance(other, KnownValue):
+                if self._known_subvals is not None:
+                    known_values, my_vals = self._known_subvals
+                    try:
+                        is_present = (other.val, type(other.val)) in known_values
+                    except TypeError:
+                        # not hashable
+                        if self._has_identical_literal(other):
+                            return {}
+                    else:
+                        if is_present:
+                            return {}
+                elif self._has_identical_literal(other):
+                    return {}
 
             bounds_maps = []
             errors = []
