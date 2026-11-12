@@ -162,6 +162,69 @@ class TestOperators(TestNameCheckVisitorBase):
             assert_is_value(HasBoth() + HasBoth(), TypedValue(HasBoth))
 
     @assert_passes()
+    def test_rop_union(self):
+        from typing import Any, Union
+
+        class Left:
+            def __add__(self, other: object) -> "Left":
+                raise NotImplementedError
+
+        class RaddAny:
+            def __radd__(self, other: object) -> Any:
+                raise NotImplementedError
+
+        class OtherRaddAny:
+            def __radd__(self, other: object) -> Any:
+                raise NotImplementedError
+
+        class RaddInt:
+            def __radd__(self, other: object) -> int:
+                raise NotImplementedError
+
+        class RaddStrOnly:
+            def __radd__(self, other: str) -> Any:
+                raise NotImplementedError
+
+        class NoRadd:
+            pass
+
+        def capybara(
+            left: Left,
+            all_any: Union[RaddAny, OtherRaddAny],
+            any_first: Union[RaddAny, RaddInt],
+            any_last: Union[RaddInt, RaddAny],
+            rejects: Union[RaddAny, RaddStrOnly],
+            missing: Union[RaddAny, NoRadd],
+        ) -> None:
+            # The reflected method only wins if every member of the union returns Any
+            assert_is_value(left + all_any, AnyValue(AnySource.from_another))
+            assert_is_value(left + any_first, TypedValue(Left))
+            assert_is_value(left + any_last, TypedValue(Left))
+            assert_is_value(left + rejects, TypedValue(Left))
+            assert_is_value(left + missing, TypedValue(Left))
+
+    @assert_passes()
+    def test_rop_union_fallback(self):
+        from typing import Union
+
+        class NoAdd:
+            pass
+
+        class RaddInt:
+            def __radd__(self, other: object) -> int:
+                raise NotImplementedError
+
+        class RaddStr:
+            def __radd__(self, other: object) -> str:
+                raise NotImplementedError
+
+        def capybara(
+            left: NoAdd, right: Union[RaddInt, RaddStr], bad: Union[RaddInt, NoAdd]
+        ):
+            assert_is_value(left + right, TypedValue(int) | TypedValue(str))
+            left + bad  # E: unsupported_operation
+
+    @assert_passes()
     def test_unsupported_unary_op(self):
         def capybara():
             ~"capybara"  # E: unsupported_operation

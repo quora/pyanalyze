@@ -8,6 +8,7 @@ import typing
 from typing import NewType
 from unittest import mock
 
+import pytest
 from typing_extensions import Protocol, runtime_checkable
 
 from . import tests, value
@@ -325,6 +326,61 @@ def test_large_union_optimization() -> None:
     assert_cannot_assign(val, KnownValue(234234))
     assert_cannot_assign(val, KnownValue(True))
     assert_can_assign(val, KnownValue(""))
+
+
+class _Unhashable:
+    """Stand-in for objects like protobuf messages, which are costly to compare or format."""
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __init__(self, num: int, calls: list[str]) -> None:
+        self.num = num
+        self.calls = calls
+
+    def __eq__(self, other: object) -> bool:
+        self.calls.append("eq")
+        return isinstance(other, _Unhashable) and self.num == other.num
+
+    def __repr__(self) -> str:
+        self.calls.append("repr")
+        return f"_Unhashable({self.num})"
+
+
+@pytest.mark.parametrize("size", [3, 20])
+def test_union_identical_unhashable_literal(size: int) -> None:
+    calls: list[str] = []
+    objs = [_Unhashable(i, calls) for i in range(size)]
+    val = MultiValuedValue([KnownValue(obj) for obj in objs])
+
+    # Members that are the very same object match without touching the others
+    for obj in objs:
+        assert_can_assign(val, KnownValue(obj))
+    assert_can_assign(val, val)
+    assert calls == []
+
+    # Equal but not identical objects still go through the full check
+    assert_can_assign(val, KnownValue(_Unhashable(1, calls)))
+    assert_cannot_assign(val, KnownValue(_Unhashable(size, calls)))
+    assert "eq" in calls
+
+
+def test_union_identical_literal_mixed() -> None:
+    calls: list[str] = []
+    obj = _Unhashable(0, calls)
+    # Large enough for the hash-based optimization to apply
+    val = MultiValuedValue([*[KnownValue(i) for i in range(20)], KnownValue(obj)])
+    assert_can_assign(val, KnownValue(obj))
+    assert calls == []
+    assert_can_assign(val, KnownValue(1))
+    assert_cannot_assign(val, KnownValue(True))
+
+    def func(x: int) -> None:
+        pass
+
+    val = KnownValue(func) | KnownValue(None)
+    assert_can_assign(val, KnownValue(func))
+    assert_can_assign(val, KnownValue(None))
+    assert_cannot_assign(val, KnownValue(len))
 
 
 class ThriftEnum(object):
