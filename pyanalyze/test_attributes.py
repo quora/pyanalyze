@@ -188,6 +188,33 @@ class TestAttributes(TestNameCheckVisitorBase):
             bm.b  # E: undefined_attribute
 
     @assert_passes()
+    def test_pydantic_subclass(self):
+        from pydantic import BaseModel
+
+        class Base(BaseModel):
+            a: int
+
+        class Child(Base):
+            b: str
+
+        class Extra(BaseModel, extra="allow"):
+            a: int
+
+        class NotAModel:
+            model_config = {"extra": "forbid"}
+
+            def __getattr__(self, name: str) -> int:
+                return 0
+
+        def capybara(child: Child, extra: Extra, not_a_model: NotAModel) -> None:
+            assert_is_value(child.a, TypedValue(int))
+            assert_is_value(child.b, TypedValue(str))
+            child.c  # E: undefined_attribute
+
+            extra.b
+            not_a_model.b
+
+    @assert_passes()
     def test_union(self):
         from dataclasses import dataclass
         from typing import Union

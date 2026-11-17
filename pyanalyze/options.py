@@ -10,7 +10,7 @@ import pathlib
 from argparse import BooleanOptionalAction
 from collections import defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Generic, Optional, TypeVar
 
@@ -237,6 +237,10 @@ class PyObjectSequenceOption(ConcatenatedOption[T]):
 class Options:
     options: Mapping[str, Sequence[ConfigOption[Any]]]
     module_path: ModulePath = ()
+    # Option values never change after construction, and lookups are hot.
+    _value_cache: dict[type[ConfigOption[Any]], Any] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     @classmethod
     def from_option_list(
@@ -260,20 +264,25 @@ class Options:
 
     def get_value_for(self, option: type[ConfigOption[T]]) -> T:
         try:
-            return self._get_value_for_no_default(option)
-        except NotFound:
-            return option.default_value
+            value = self._value_cache[option]
+        except KeyError:
+            try:
+                value = self._get_value_for_no_default(option)
+            except NotFound:
+                value = option.default_value
+            self._value_cache[option] = value
+        if isinstance(value, list):
+            # ConcatenatedOption builds a new list on every call, so callers
+            # may mutate the result. Do not hand out the cached list.
+            return list(value)
+        return value
 
     def _get_value_for_no_default(self, option: type[ConfigOption[T]]) -> T:
         instances = [*self.options.get(option.name, ()), option(option.default_value)]
         return option.get_value_from_instances(instances, self.module_path)
 
     def is_error_code_enabled(self, code: Error) -> bool:
-        option = ConfigOption.registry[code.name]
-        try:
-            return self._get_value_for_no_default(option)
-        except NotFound:
-            return option.default_value
+        return self.get_value_for(ConfigOption.registry[code.name])
 
     def is_error_code_enabled_anywhere(self, code: Error) -> bool:
         option = ConfigOption.registry[code.name]
