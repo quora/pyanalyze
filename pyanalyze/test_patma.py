@@ -1,10 +1,8 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import skip_before
 
 
 class TestPatma(TestNameCheckVisitorBase):
-    @skip_before((3, 10))
     def test_singletons(self):
         self.assert_passes(
             """
@@ -18,7 +16,6 @@ class TestPatma(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     def test_value(self):
         self.assert_passes(
             """
@@ -41,7 +38,6 @@ class TestPatma(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     def test_sequence(self):
         self.assert_passes(
             """
@@ -80,7 +76,6 @@ class TestPatma(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     def test_or(self):
         self.assert_passes(
             """
@@ -96,7 +91,6 @@ class TestPatma(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     def test_mapping(self):
         self.assert_passes(
             """
@@ -117,7 +111,6 @@ class TestPatma(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     def test_class_pattern(self):
         self.assert_passes(
             """
@@ -161,7 +154,6 @@ class TestPatma(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     def test_bool_narrowing(self):
         self.assert_passes(
             """
@@ -190,7 +182,6 @@ class TestPatma(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     def test_enum_narrowing(self):
         self.assert_passes(
             """
@@ -213,7 +204,6 @@ class TestPatma(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     def test_exhaustive(self):
         self.assert_passes(
             """
@@ -244,7 +234,6 @@ class TestPatma(TestNameCheckVisitorBase):
             """
         )
 
-    @skip_before((3, 10))
     def test_reassign_in_tuple(self):
         self.assert_passes(
             """

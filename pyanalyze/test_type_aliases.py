@@ -1,6 +1,6 @@
 # static analysis: ignore
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, skip_before
+from .test_node_visitor import assert_passes
 
 
 class TestRecursion(TestNameCheckVisitorBase):
@@ -51,7 +51,6 @@ class TestTypeAliasType(TestNameCheckVisitorBase):
             f([i])
             f([s])  # E: incompatible_argument
 
-    @skip_before((3, 12))
     def test_312(self):
         self.assert_passes(
             """
@@ -68,7 +67,6 @@ class TestTypeAliasType(TestNameCheckVisitorBase):
         """
         )
 
-    @skip_before((3, 12))
     def test_312_generic(self):
         self.assert_passes(
             """
@@ -85,7 +83,6 @@ class TestTypeAliasType(TestNameCheckVisitorBase):
         """
         )
 
-    @skip_before((3, 12))
     def test_312_local_alias(self):
         self.assert_passes(
             """

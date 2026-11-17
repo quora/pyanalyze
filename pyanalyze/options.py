@@ -7,7 +7,7 @@ Structured configuration options.
 import argparse
 import functools
 import pathlib
-import sys
+from argparse import BooleanOptionalAction
 from collections import defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -20,37 +20,6 @@ import tomli
 from .error_code import Error, ErrorCode
 from .find_unused import used
 from .safe import safe_in
-
-if sys.version_info >= (3, 10, 3):
-    from argparse import BooleanOptionalAction
-else:
-    # 3.8 and lower do not have BooleanOptionalAction (modified from CPython)
-    # 3.9.10 and 3.10.2 are affected by https://github.com/python/cpython/issues/90238
-    class BooleanOptionalAction(argparse.Action):
-        def __init__(self, option_strings: Sequence[str], **kwargs: Any) -> None:
-            _option_strings = []
-            for option_string in option_strings:
-                _option_strings.append(option_string)
-
-                if option_string.startswith("--"):
-                    option_string = "--no-" + option_string[2:]
-                    _option_strings.append(option_string)
-
-            super().__init__(option_strings=_option_strings, nargs=0, **kwargs)
-
-        def __call__(
-            self,
-            parser: argparse.ArgumentParser,
-            namespace: argparse.Namespace,
-            values: object,
-            option_string: Optional[str] = None,
-        ) -> None:
-            if option_string is not None and option_string in self.option_strings:
-                setattr(namespace, self.dest, not option_string.startswith("--no-"))
-
-        def format_usage(self) -> str:
-            return " | ".join(self.option_strings)
-
 
 T = TypeVar("T")
 ModulePath = tuple[str, ...]

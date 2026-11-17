@@ -1,7 +1,7 @@
 # static analysis: ignore
 from .implementation import assert_is_value
 from .test_name_check_visitor import TestNameCheckVisitorBase
-from .test_node_visitor import assert_passes, only_before
+from .test_node_visitor import assert_passes
 from .tests import make_simple_sequence
 from .value import (
     AnySource,
@@ -83,69 +83,6 @@ class TestAsyncAwait(TestNameCheckVisitorBase):
 
 
 class TestMissingAwait(TestNameCheckVisitorBase):
-    @only_before((3, 11))
-    @assert_passes()
-    def test_asyncio_coroutine_internal(self):
-        import asyncio
-
-        @asyncio.coroutine
-        def f():
-            yield from asyncio.sleep(3)
-
-        @asyncio.coroutine
-        def g():
-            f()  # E: missing_await
-
-    @only_before((3, 11))
-    @assert_passes()
-    def test_yield_from(self):
-        import asyncio
-
-        @asyncio.coroutine
-        def f():
-            yield from asyncio.sleep(3)
-
-        @asyncio.coroutine
-        def g():
-            yield from f()
-
-    @only_before((3, 11))
-    @assert_passes()
-    def test_asyncio_coroutine_external(self):
-        import asyncio
-
-        @asyncio.coroutine
-        def f():
-            asyncio.sleep(3)  # E: missing_await
-
-    @only_before((3, 11))
-    def test_add_yield_from(self):
-        self.assert_is_changed(
-            """
-            import asyncio
-
-            @asyncio.coroutine
-            def f():
-                asyncio.sleep(3)
-            """,
-            """
-            import asyncio
-
-            @asyncio.coroutine
-            def f():
-                yield from asyncio.sleep(3)
-            """,
-        )
-
-    @only_before((3, 11))
-    @assert_passes()
-    def test_has_yield_from_external(self):
-        import asyncio
-
-        @asyncio.coroutine
-        def f():
-            yield from asyncio.sleep(3)
-
     @assert_passes()
     def test_async_def_internal(self):
         async def f():
@@ -194,22 +131,6 @@ class TestMissingAwait(TestNameCheckVisitorBase):
 
 
 class TestArgSpec(TestNameCheckVisitorBase):
-    @only_before((3, 11))
-    @assert_passes()
-    def test_asyncio_coroutine(self):
-        import asyncio
-
-        from pyanalyze.value import make_coro_type
-
-        @asyncio.coroutine
-        def f():
-            yield from asyncio.sleep(3)
-            return 42
-
-        @asyncio.coroutine
-        def g():
-            assert_is_value(f(), make_coro_type(KnownValue(42)))
-
     @assert_passes()
     def test_coroutine_from_typeshed(self):
         import asyncio

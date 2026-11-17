@@ -16,15 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: py39
-            python: "3.9"
-            toxenv: py39
-          - name: py310
-            python: "3.10"
-            toxenv: py310
-          - name: py311
-            python: "3.11"
-            toxenv: py311
           - name: py312
             python: "3.12"
             toxenv: py312

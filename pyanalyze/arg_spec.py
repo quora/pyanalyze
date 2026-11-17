@@ -12,6 +12,7 @@ import enum
 import inspect
 import sys
 import textwrap
+import types
 import typing
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -82,22 +83,6 @@ from .value import (
     extract_typevars,
     make_coro_type,
 )
-
-_GET_OVERLOADS = []
-
-try:
-    from typing_extensions import get_overloads
-except ImportError:
-    pass
-else:
-    _GET_OVERLOADS.append(get_overloads)
-if sys.version_info >= (3, 11):
-    # TODO: support version checks
-    # static analysis: ignore[undefined_attribute]
-    _GET_OVERLOADS.append(typing.get_overloads)
-
-# types.MethodWrapperType in 3.7+
-MethodWrapperType = type(object().__str__)
 
 _ENUM_CALL = enum.Enum.__call__.__func__
 
@@ -331,10 +316,8 @@ except ImportError:
 else:
     _E = TypeVar("_E", bound=BaseException)
 
-    # pytest.raises gets imported before our @overload
-    # monkeypatch takes effect, so we need to manually
-    # specify the overloads. This will be unnecessary in 3.11+
-    # where we get to use typing.get_overloads().
+    # pytest's own overloads for pytest.raises infer less precise
+    # types, so we specify the overloads manually.
     def _raises_overload1(
         expected_exception: Union[type[_E], tuple[type[_E], ...]],
         *,
@@ -679,7 +662,7 @@ class ArgSpecCache:
                 # some cythonized methods have __self__ but it is not a function
                 pass
 
-        if safe_isinstance(obj, MethodWrapperType):
+        if safe_isinstance(obj, types.MethodWrapperType):
             try:
                 unbound = getattr(obj.__objclass__, obj.__name__)
             except Exception:
@@ -705,16 +688,15 @@ class ArgSpecCache:
         # Must be after the check for bound methods, because otherwise we
         # won't bind self correctly.
         if not in_overload_resolution:
-            for get_overloads_func in _GET_OVERLOADS:
-                inner_obj = safe_getattr(obj, "__func__", obj)
-                if safe_hasattr(inner_obj, "__module__") and safe_hasattr(
-                    inner_obj, "__qualname__"
-                ):
-                    sig = self._maybe_make_overloaded_signature(
-                        get_overloads_func(inner_obj), impl, is_asynq
-                    )
-                    if sig is not None:
-                        return sig
+            inner_obj = safe_getattr(obj, "__func__", obj)
+            if safe_hasattr(inner_obj, "__module__") and safe_hasattr(
+                inner_obj, "__qualname__"
+            ):
+                sig = self._maybe_make_overloaded_signature(
+                    typing.get_overloads(inner_obj), impl, is_asynq
+                )
+                if sig is not None:
+                    return sig
             fq_name = get_fully_qualified_name(obj)
             if fq_name is not None:
                 sig = self._maybe_make_overloaded_signature(
