@@ -164,7 +164,7 @@ class UnusedObjectFinder:
         for attr, value in module.__dict__.items():
             usages = self.usages[module][attr]
             if self.print_all:
-                message = "%d (%s)" % (len(usages), usages)
+                message = f"{len(usages)} ({usages})"
                 yield UnusedObject(module, attr, value, message)
                 continue
             # Ignore attributes injected by Python

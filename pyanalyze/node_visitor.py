@@ -441,7 +441,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
         )
 
         with open(output_file, "w") as f:
-            f.write("%d total failures in %d files\n\n" % (len(failures), len(by_file)))
+            f.write(f"{len(failures)} total failures in {len(by_file)} files\n\n")
             for filename, file_failures in sorted(by_file.items()):
                 if filename != UNUSED_OBJECT_FILENAME:
                     filename = filename[len(prefix) :]
@@ -677,7 +677,7 @@ class BaseNodeVisitor(ast.NodeVisitor):
             for i in range(min_line, max_line):
                 # four columns for the line number
                 # app/view/question/__init__.py is 6900 lines
-                context += "%4d: %s" % (i, lines[i - 1])
+                context += f"{i:4d}: {lines[i - 1]}"
                 if i == lineno and col_offset is not None:
                     # caret to indicate the position of the error
                     context += " " * (6 + col_offset) + "^\n"

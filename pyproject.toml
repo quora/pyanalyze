@@ -44,7 +44,7 @@ implicit_any = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [
@@ -70,10 +70,19 @@ ignore = [
   "E742",  # Ambiguous class name
   "E731",  # do not assign a lambda expression, use a def
   "E741",  # ambiguous variable name
+  "UP007",  # TODO: switch to X | Y unions in a separate change
+  "UP045",  # TODO: switch to X | None in a separate change
+  "UP035",  # typing_extensions versions of typing names are used on purpose
+  "UP040",  # PEP 695 syntax (type X = ...) is not used yet
+  "UP046",  # PEP 695 syntax (class C[T]) is not used yet
+  "UP047",  # PEP 695 syntax (def f[T]) is not used yet
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "pyanalyze/test_*.py" = [
+  "UP",  # Want to test old-style code
+]
+"pyanalyze/stubs/**" = [
   "UP",  # Want to test old-style code
 ]
 "pyanalyze/annotations.py" = [
