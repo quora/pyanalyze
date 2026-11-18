@@ -6,9 +6,8 @@ The checker maintains global state that is preserved across different modules.
 
 import collections.abc
 import itertools
-import sys
 import types
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterable, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import InitVar, dataclass, field
 from typing import Callable, Optional, Union
@@ -20,7 +19,12 @@ from .attributes import AttrContext, get_attribute
 from .node_visitor import Failure
 from .options import Options, PyObjectSequenceOption
 from .reexport import ImplicitReexportTracker
-from .safe import is_instance_of_typing_name, is_typing_name, safe_getattr
+from .safe import (
+    get_annotations,
+    is_instance_of_typing_name,
+    is_typing_name,
+    safe_getattr,
+)
 from .shared_options import VariableNameValues
 from .signature import (
     ANY_SIGNATURE,
@@ -202,11 +206,12 @@ class Checker:
         return {base.typ for base in base_values if isinstance(base, TypedValue)}
 
     def _get_protocol_members(self, bases: Iterable[Union[type, str]]) -> set[str]:
-        return set(
-            itertools.chain.from_iterable(
-                self.ts_finder.get_all_attributes(base) for base in bases
-            )
-        )
+        return {
+            attr
+            for base in bases
+            for attr in self.ts_finder.get_all_attributes(base)
+            if attr != "__slots__"
+        }
 
     def get_generic_bases(
         self, typ: Union[type, str], generic_args: Sequence[Value] = ()
@@ -231,7 +236,7 @@ class Checker:
     @contextmanager
     def assume_compatibility(
         self, left: TypeObject, right: TypeObject
-    ) -> Iterator[None]:
+    ) -> Generator[None, None, None]:
         """Context manager that notes that left and right can be assumed to be compatible."""
         pair = (left, right)
         self.assumed_compatibilities.append(pair)
@@ -411,13 +416,16 @@ class Checker:
 EXCLUDED_PROTOCOL_MEMBERS = {
     "__abstractmethods__",
     "__annotate__",
+    "__annotate_func__",
     "__annotations__",
+    "__annotations_cache__",
     "__dict__",
     "__doc__",
     "__init__",
     "__new__",
     "__module__",
     "__parameters__",
+    "__slots__",
     "__subclasshook__",
     "__weakref__",
     "_abc_impl",
@@ -450,9 +458,7 @@ def _extract_protocol_members(typ: type) -> set[str]:
     ):
         return set()
     members = set(typ.__dict__) - EXCLUDED_PROTOCOL_MEMBERS
-    # Starting in 3.10 __annotations__ always exists on types
-    if sys.version_info >= (3, 10) or hasattr(typ, "__annotations__"):
-        members |= set(typ.__annotations__)
+    members |= set(get_annotations(typ))
     return members
 
 

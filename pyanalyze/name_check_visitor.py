@@ -27,7 +27,7 @@ import types
 import typing
 from abc import abstractmethod
 from argparse import ArgumentParser
-from collections.abc import Container, Generator, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Container, Generator, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from itertools import chain
@@ -99,8 +99,11 @@ from .predicates import EqualsPredicate, InPredicate
 from .reexport import ImplicitReexportTracker
 from .safe import (
     all_of_type,
+    get_annotations,
     is_dataclass_type,
     is_hashable,
+    is_lazy_import,
+    resolve_lazy_import,
     safe_getattr,
     safe_hasattr,
     safe_isinstance,
@@ -214,6 +217,9 @@ from .value import (
     unpack_values,
 )
 from .yield_checker import YieldChecker
+
+if sys.version_info >= (3, 14):
+    from string.templatelib import Template
 
 TryNode = ast.Try | ast.TryStar
 
@@ -1022,7 +1028,7 @@ class StackedContexts:
         return None
 
     @contextlib.contextmanager
-    def add(self, value: ast.AST) -> Iterator[None]:
+    def add(self, value: ast.AST) -> Generator[None, None, None]:
         """Context manager to add a context to the stack."""
         self.contexts.append(value)
         try:
@@ -1742,7 +1748,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return isinstance(ctx, (ast.Load, ast.Del))
 
     @contextlib.contextmanager
-    def _set_current_class(self, current_class: Optional[type]) -> Iterator[None]:
+    def _set_current_class(
+        self, current_class: Optional[type]
+    ) -> Generator[None, None, None]:
         if should_check_for_duplicate_values(current_class, self.options):
             current_enum_members = {}
         else:
@@ -2493,7 +2501,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         if isinstance(val, GenericAlias):
             return
         generic_params = self.arg_spec_cache.get_type_parameters(val)
-        if not generic_params:
+        if not generic_params or all(
+            isinstance(param, TypeVarValue) and param.default is not None
+            for param in generic_params
+        ):
             return
         self.show_error(
             node,
@@ -2645,6 +2656,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         for alias in node.names:
             self.check_for_disallowed_import(node, alias.name)
             self._try_to_import(alias.name)
+            if (
+                sys.version_info >= (3, 15)
+                and node.is_lazy
+                and alias.asname is None
+                and "." in alias.name
+            ):
+                # A lazy import of a missing submodule fails only on first use.
+                self._get_module(alias.name, node)
             # "import a.b" sets the name "a", but "import a.b as c" sets "c" to the value "a.b"
             varname = (
                 alias.name if alias.asname is not None else alias.name.split(".")[0]
@@ -2779,7 +2798,10 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                         if name.startswith("_"):
                             continue
                         self._set_name_in_scope(
-                            name, alias, KnownValue(val), private=False
+                            name,
+                            alias,
+                            KnownValue(resolve_lazy_import(val)),
+                            private=False,
                         )
                 else:
                     self._show_error_if_checking(
@@ -2962,11 +2984,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         typ: type,
         iterable_type: Union[Value, Sequence[Value]],
     ) -> Value:
+        # PEP 798 unpacking, e.g. [*x for x in xs] or {**d for d in ds}
+        if isinstance(node, ast.DictComp):
+            is_unpacking = node.value is None
+        else:
+            is_unpacking = isinstance(node.elt, ast.Starred)
         if not isinstance(iterable_type, Value):
             # If it is a simple comprehension (only one generator, no ifs) and we know
             # the exact iterated values, we try to infer an IncompleteValue instead.
             if (
-                len(node.generators) == 1
+                not is_unpacking
+                and len(node.generators) == 1
                 and not node.generators[0].ifs
                 and 0
                 < len(iterable_type)
@@ -3016,7 +3044,23 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             finally:
                 self.node_context.contexts.pop()
 
+        if isinstance(node, ast.DictComp) and is_unpacking:
+            with qcore.override(self, "in_comprehension_body", True):
+                mapping = self.visit(node.key)
+            pairs = kv_pairs_from_mapping(mapping, self)
+            if isinstance(pairs, CanAssignError):
+                self._show_error_if_checking(
+                    node.key,
+                    f"{mapping} is not a mapping",
+                    ErrorCode.unsupported_operation,
+                    detail=str(pairs),
+                )
+                return TypedValue(dict)
+            return DictIncompleteValue(
+                dict, [KVPair(pair.key, pair.value, is_many=True) for pair in pairs]
+            )
         if isinstance(node, ast.DictComp):
+            assert node.value is not None
             with qcore.override(self, "in_comprehension_body", True):
                 key_value = self.visit(node.key)
                 value_value = self.visit(node.value)
@@ -3036,6 +3080,17 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
         with qcore.override(self, "in_comprehension_body", True):
             member_value = self.visit(node.elt)
+            if isinstance(member_value, _StarredValue):
+                elt_value = is_iterable(member_value.value, self)
+                if isinstance(elt_value, CanAssignError):
+                    self._show_error_if_checking(
+                        member_value.node,
+                        f"{member_value.value} is not iterable",
+                        ErrorCode.unsupported_operation,
+                        detail=str(elt_value),
+                    )
+                    elt_value = AnyValue(AnySource.error)
+                member_value = elt_value
 
             if typ is set:
                 hashability = check_hashability(member_value, self)
@@ -3076,6 +3131,12 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
                 lst + [new_elt] for lst in possible_values for new_elt in to_add
             ]
         return unite_values(*[KnownValue("".join(lst)) for lst in possible_values])
+
+    if sys.version_info >= (3, 14):
+
+        def visit_TemplateStr(self, node: ast.TemplateStr) -> Value:
+            self._generic_visit_list(node.values)
+            return TypedValue(Template)
 
     def visit_FormattedValue(self, node: ast.FormattedValue) -> Value:
         val = self.visit(node.value)
@@ -4571,7 +4632,9 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
         return unite_values(then_val, else_val)
 
     @contextlib.contextmanager
-    def _subscope_and_maybe_supress(self, should_suppress: bool) -> Iterator[SubScope]:
+    def _subscope_and_maybe_supress(
+        self, should_suppress: bool
+    ) -> Generator[SubScope, None, None]:
         with self.scopes.subscope() as scope:
             if should_suppress:
                 with self.catch_errors():
@@ -5977,8 +6040,12 @@ def build_stacked_scopes(
         module_vars = {"__name__": TypedValue(str), "__file__": TypedValue(str)}
     else:
         module_vars = {}
-        annotations = getattr(module, "__annotations__", {})
+        annotations = get_annotations(module)
         for key, value in module.__dict__.items():
+            value = resolve_lazy_import(value)
+            if is_lazy_import(value):
+                # The import fails, so let the import statement determine the value.
+                continue
             val = type_from_annotations(annotations, key, globals=module.__dict__)
             if val is None:
                 for transformer in options.get_value_for(TransformGlobals):
@@ -6048,7 +6115,7 @@ def _static_hasattr(value: object, attr: str) -> bool:
 
 def _has_annotation_for_attr(typ: type, attr: str) -> bool:
     try:
-        return attr in typ.__annotations__
+        return attr in get_annotations(typ)
     except Exception:
         # __annotations__ doesn't exist or isn't a dict
         return False

@@ -27,7 +27,9 @@ show errors.
 import ast
 import builtins
 import contextlib
+import sys
 import typing
+import warnings
 from collections.abc import Callable, Container, Generator, Hashable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import InitVar, dataclass, field
@@ -61,7 +63,13 @@ from .extensions import (
 from .find_unused import used
 from .functions import FunctionDefNode
 from .node_visitor import ErrorContext
-from .safe import is_instance_of_typing_name, is_typing_name, is_union
+from .safe import (
+    get_annotations,
+    is_instance_of_typing_name,
+    is_typing_name,
+    is_union,
+    resolve_lazy_import,
+)
 from .signature import (
     ANY_SIGNATURE,
     ELLIPSIS_PARAM,
@@ -175,7 +183,7 @@ class Context:
 
     def get_name_from_globals(self, name: str, globals: Mapping[str, Any]) -> Value:
         if name in globals:
-            return KnownValue(globals[name])
+            return KnownValue(resolve_lazy_import(globals[name]))
         elif hasattr(builtins, name):
             return KnownValue(getattr(builtins, name))
         return self.handle_undefined_name(name)
@@ -452,15 +460,18 @@ def _type_from_runtime(
             else:
                 ctx.show_error(f"{extra_keys.qualifier} not allowed on extra_keys")
             extra_keys = extra_keys.value
-        return TypedDictValue(
-            {
+        # Recursive TypedDicts can refer to themselves without quotes in 3.14+
+        if ctx.is_being_evaluted(val):
+            return AnyValue(AnySource.inference)
+        with ctx.add_evaluation(val):
+            items = {
                 key: _get_typeddict_value(
                     value, ctx, key, required_keys, total, readonly_keys
                 )
-                for key, value in val.__annotations__.items()
-            },
-            extra_keys=extra_keys,
-            extra_keys_readonly=extra_readonly,
+                for key, value in get_annotations(val).items()
+            }
+        return TypedDictValue(
+            items, extra_keys=extra_keys, extra_keys_readonly=extra_readonly
         )
     elif isinstance(val, InitVar):
         return type_from_runtime(val.type)
@@ -1118,7 +1129,12 @@ class _Visitor(ast.NodeVisitor):
                 return None
             tv = ParamSpec(name_val.val)
             return TypeVarValue(tv, is_paramspec=True)
-        elif is_typing_name(func.val, "deprecated") or func.val is deprecated:
+        elif (
+            is_typing_name(func.val, "deprecated")
+            or func.val is deprecated
+            # typing_extensions.deprecated is a separate object in 3.14
+            or (sys.version_info >= (3, 13) and func.val is warnings.deprecated)
+        ):
             if node.keywords:
                 self.ctx.show_error(
                     "deprecated() does not accept keyword arguments", node=node

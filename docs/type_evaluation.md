@@ -647,14 +647,14 @@ that checks whether two types have any overlap:
     T2 = TypeVar("T2")
 
     @evaluated
-    def safe_contains(elt: T1, container: Container[T2]) -> bool:
-        if not is_of_type(elt, T2) and not is_of_type(container, Container[T1]):
+    def safe_contains(elt: T1, container: Collection[T2]) -> bool:
+        if not is_of_type(elt, T2) and not is_of_type(container, Collection[T1]):
             show_error("Element cannot be a member of container")
 
     lst: List[int]
     safe_contains("x", lst)  # error
     safe_contains(True, lst)  # ok (bool is a subclass of int)
-    safe_contains(object(), lst)  # ok (List[int] is a subclass of Container[object])
+    safe_contains(object(), lst)  # ok (List[int] is a subclass of Collection[object])
 
 Thus, type evaluation provides a way to implement checks similar to mypy's
 [strict equality](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-strict-equality)

@@ -3,6 +3,7 @@ import collections
 import collections.abc
 import inspect
 import re
+import sys
 import typing
 from collections.abc import Iterable, Sequence
 from itertools import product
@@ -1615,6 +1616,12 @@ def _any_impl(ctx: CallContext) -> Value:
     return AnyValue(AnySource.error)
 
 
+# These calls are deprecated in 3.13 and fail at runtime in 3.15+
+_NAMEDTUPLE_DEPRECATION_CODE = (
+    ErrorCode.incompatible_call if sys.version_info >= (3, 15) else ErrorCode.deprecated
+)
+
+
 # Should not be necessary, but by default we pick up a wrong signature for
 # typing.NamedTuple
 def _namedtuple_impl(ctx: CallContext) -> Value:
@@ -1629,14 +1636,14 @@ def _namedtuple_impl(ctx: CallContext) -> Value:
                 'Creating "NamedTuple" classes using keyword arguments'
                 " is deprecated and will be disallowed in Python 3.15. "
                 "Use the class-based or functional syntax instead.",
-                ErrorCode.deprecated,
+                _NAMEDTUPLE_DEPRECATION_CODE,
                 arg="kwargs",
             )
         else:
             ctx.show_error(
                 'Failing to pass a value for the "fields" parameter'
                 " is deprecated and will be disallowed in Python 3.15.",
-                ErrorCode.deprecated,
+                _NAMEDTUPLE_DEPRECATION_CODE,
             )
     elif ctx.vars["fields"] == KnownValue(None):
         if has_kwargs:
@@ -1650,7 +1657,7 @@ def _namedtuple_impl(ctx: CallContext) -> Value:
             ctx.show_error(
                 'Passing "None" as the "fields" parameter '
                 " is deprecated and will be disallowed in Python 3.15.",
-                ErrorCode.deprecated,
+                _NAMEDTUPLE_DEPRECATION_CODE,
                 arg="fields",
             )
     elif has_kwargs:

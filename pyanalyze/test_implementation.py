@@ -1508,12 +1508,30 @@ class TestNamedTuple(TestNameCheckVisitorBase):
         from typing import NamedTuple
 
         def capybara() -> None:
-            NamedTuple("x", y=int)  # E: deprecated
-            NamedTuple("x")  # E: deprecated
-            NamedTuple("x", None)  # E: deprecated
             NamedTuple("x", [("y", int)], z=str)  # E: incompatible_call
 
             NamedTuple("x", [("y", int)])  # ok
+
+    @only_before((3, 15))
+    @assert_passes()
+    def test_namedtuple_before_3_15(self):
+        from typing import NamedTuple
+
+        def capybara() -> None:
+            NamedTuple("x", y=int)  # E: deprecated
+            NamedTuple("x")  # E: deprecated
+            NamedTuple("x", None)  # E: deprecated
+
+    @skip_before((3, 15))
+    @assert_passes()
+    def test_namedtuple_after_3_15(self):
+        from typing import NamedTuple
+
+        def capybara() -> None:
+            NamedTuple("x", y=int)  # E: incompatible_call
+            NamedTuple("x")  # E: incompatible_call
+            # we get a second error from calling the runtime
+            NamedTuple("x", None)  # E: incompatible_call  # E: incompatible_call
 
     @only_before((3, 13))
     @assert_passes()

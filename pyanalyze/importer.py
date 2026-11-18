@@ -106,6 +106,8 @@ def load_module_from_file(
 def import_module(module_path: str, filename: Path) -> ModuleType:
     """Import a file under an arbitrary module name."""
     spec = importlib.util.spec_from_file_location(module_path, filename)
+    if spec is None:
+        raise ImportError(f"Cannot import {module_path} from {filename}: no spec found")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_path] = module
     spec.loader.exec_module(module)
