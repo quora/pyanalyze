@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Do not report a deprecated overload when a call matches it only through
+  `Any` and an earlier overload matches as well
 - Drop support for Python 3.9, 3.10 and 3.11
 - Update PEP 728 support to the latest version, using the `extra_items=`
   class argument instead of an `__extra_items__` key in the dict. (#855)
