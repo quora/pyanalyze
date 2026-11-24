@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- When a call passes `*args` or `**kwargs` of unknown length or keys (anything
+  but a tuple or `TypedDict`), try the overloads that take `*args` or `**kwargs`
+  first, as mypy does. `asyncio.gather(*coros)` is now `list[T]`, not `tuple[T]`
 - Support PEP 695 type aliases in stubs, and `*` unpacking (PEP 646) in
   stubs and string annotations
 - Support subscripting generic aliases such as `Union[list[T], set[T]]` in

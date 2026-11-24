@@ -252,6 +252,11 @@ class ActualArguments:
     pos_or_keyword_params: Container[Union[int, str]]
     ellipsis: bool = False
     param_spec: Optional[TypeVarValue] = None
+    # Whether the call passes *args or **kwargs whose length or keys are not fixed by
+    # their type. A list can be split into positionals when we know its contents, but
+    # like mypy we only treat tuples and TypedDicts as having a fixed shape.
+    has_unshaped_star_args: bool = False
+    has_unshaped_star_kwargs: bool = False
 
 
 class CallReturn(NamedTuple):
@@ -1096,6 +1101,8 @@ class Signature:
                         ),
                         kwargs_required=actual_args.kwargs_required,
                         pos_or_keyword_params=actual_args.pos_or_keyword_params,
+                        has_unshaped_star_args=actual_args.has_unshaped_star_args,
+                        has_unshaped_star_kwargs=actual_args.has_unshaped_star_kwargs,
                     )
                     star_args_consumed = True
                     star_kwargs_consumed = True
@@ -2008,6 +2015,8 @@ def preprocess_args(
     param_spec = None
     param_spec_star_arg = None
     seen_param_spec_kwargs = False
+    has_unshaped_star_args = False
+    has_unshaped_star_kwargs = False
     for arg, label in args:
         if label is ARGS:
             if isinstance(arg.value, ParamSpecArgsValue):
@@ -2018,6 +2027,8 @@ def preprocess_args(
                 param_spec = TypeVarValue(arg.value.param_spec)
                 param_spec_star_arg = arg
                 continue
+            if not _is_tuple_shaped(arg.value):
+                has_unshaped_star_args = True
             concrete_values = concrete_values_from_iterable(
                 arg.value, ctx.can_assign_ctx
             )
@@ -2057,6 +2068,11 @@ def preprocess_args(
                     )
                 seen_param_spec_kwargs = True
                 continue
+            if not all(
+                isinstance(subval, TypedDictValue)
+                for subval in flatten_values(arg.value, unwrap_annotated=True)
+            ):
+                has_unshaped_star_kwargs = True
             items = {}
             extra_values = []
             if arg.value is NO_RETURN_VALUE:
@@ -2182,7 +2198,57 @@ def preprocess_args(
         ellipsis=is_ellipsis,
         pos_or_keyword_params=pok_indices,
         param_spec=param_spec,
+        has_unshaped_star_args=has_unshaped_star_args,
+        has_unshaped_star_kwargs=has_unshaped_star_kwargs,
     )
+
+
+def _prefer_star_overloads(
+    sigs: Sequence["Signature"], actual_args: ActualArguments
+) -> list["Signature"]:
+    """Move the overloads that take the call's unshaped *args or **kwargs to the front.
+
+    This follows mypy's ``plausible_overload_call_targets``. The order is otherwise kept.
+    """
+    if not (actual_args.has_unshaped_star_args or actual_args.has_unshaped_star_kwargs):
+        return list(sigs)
+    star_sigs = []
+    other_sigs = []
+    for sig in sigs:
+        kinds = {param.kind for param in sig.parameters.values()}
+        if (
+            actual_args.has_unshaped_star_args and ParameterKind.VAR_POSITIONAL in kinds
+        ) or (
+            actual_args.has_unshaped_star_kwargs and ParameterKind.VAR_KEYWORD in kinds
+        ):
+            star_sigs.append(sig)
+        else:
+            other_sigs.append(sig)
+    return star_sigs + other_sigs
+
+
+def _is_tuple_shaped(value: Value) -> bool:
+    """Whether every possible value is a tuple whose length is fixed by its type."""
+    for subval in flatten_values(value, unwrap_annotated=True):
+        if isinstance(subval, KnownValue):
+            if not isinstance(subval.val, tuple):
+                return False
+        elif isinstance(subval, SequenceValue):
+            if not (isinstance(subval.typ, type) and issubclass(subval.typ, tuple)):
+                return False
+            # tuple[int, *tuple[str, ...]] has no fixed length.
+            if any(is_many for is_many, _ in subval.members):
+                return False
+        elif isinstance(subval, TypedValue) and not isinstance(subval, GenericValue):
+            # A NamedTuple class has a fixed length; plain tuple does not.
+            typ = subval.typ
+            if not (
+                isinstance(typ, type) and issubclass(typ, tuple) and typ is not tuple
+            ):
+                return False
+        else:
+            return False
+    return True
 
 
 def _preprocess_kwargs_no_mvv(
@@ -2328,6 +2394,12 @@ class OverloadedSignature:
         a type check succeeds due to ``Any``. This flag gets propagated to
         :attr:`ImplReturn.used_any_for_match`.
 
+        As in mypy, if the call passes ``*args`` or ``**kwargs`` whose length or keys are not
+        fixed by their type (anything but a tuple or ``TypedDict``), overloads that take
+        ``*args`` or ``**kwargs`` respectively are tried before the others. Otherwise
+        ``f(*lst)`` would bind to the first overload with a single positional parameter,
+        although ``lst`` may hold any number of elements.
+
         If an overload does not match, but one of the arguments passed was a ``Union``, we try all
         the components of the ``Union`` separately. If some of them match, we subtract them from the
         ``Union`` and try the remaining overloads with a narrower ``Union``. In this case, we return
@@ -2376,6 +2448,7 @@ class OverloadedSignature:
             for sig, bound_args in zip(self.signatures, bound_args_per_overload)
             if bound_args is not None
         ]
+        sigs = _prefer_star_overloads(sigs, actual_args)
         last = len(sigs) - 1
         for i, sig in enumerate(sigs):
             with visitor.catch_errors() as caught_errors:

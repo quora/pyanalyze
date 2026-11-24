@@ -1252,6 +1252,88 @@ class TestOverload(TestNameCheckVisitorBase):
             assert_type(inst.meth(1), str)
             assert_type(inst.meth(""), int)
 
+    @assert_passes()
+    def test_star_args_of_unknown_length(self):
+        from typing import NamedTuple, Tuple
+
+        from typing_extensions import Unpack
+
+        from pyanalyze.extensions import assert_type, overload
+
+        @overload
+        def f(x: int, /) -> str:
+            raise NotImplementedError
+
+        @overload
+        def f(x: int, y: int, /) -> bytes:
+            raise NotImplementedError
+
+        @overload
+        def f(*xs: int) -> float:
+            raise NotImplementedError
+
+        def f(*xs: int) -> object:
+            raise NotImplementedError
+
+        class Pair(NamedTuple):
+            a: int
+            b: int
+
+        def capybara(
+            lst: list[int],
+            tpl: Tuple[int, ...],
+            mixed: Tuple[int, Unpack[Tuple[int, ...]]],
+        ) -> None:
+            assert_type(f(*lst), float)
+            assert_type(f(*tpl), float)
+            assert_type(f(*mixed), float)
+            # A list may change length, so its known contents don't fix the overload.
+            assert_type(f(*[1, 2]), float)
+            assert_type(f(*(1, 2)), bytes)
+            assert_type(f(*Pair(1, 2)), bytes)
+            assert_type(f(1), str)
+
+    @assert_passes()
+    def test_star_kwargs_of_unknown_keys(self):
+        from typing_extensions import TypedDict
+
+        from pyanalyze.extensions import assert_type, overload
+
+        class TD(TypedDict):
+            a: int
+
+        @overload
+        def f(*, a: int) -> str:
+            raise NotImplementedError
+
+        @overload
+        def f(**kwargs: int) -> float:
+            raise NotImplementedError
+
+        def f(**kwargs: int) -> object:
+            raise NotImplementedError
+
+        def capybara(d: dict[str, int], td: TD) -> None:
+            assert_type(f(**d), float)
+            assert_type(f(**td), str)
+            assert_type(f(a=1), str)
+
+    @assert_passes()
+    def test_asyncio_gather_star_args(self):
+        import asyncio
+        from typing import List, Tuple
+
+        from pyanalyze.extensions import assert_type
+
+        async def coro(x: str) -> str:
+            return x
+
+        async def capybara(xs: List[str]) -> None:
+            assert_type(await asyncio.gather(*[coro(x) for x in xs]), List[str])
+            coros = [coro(x) for x in ("a", "b")]
+            assert_type(await asyncio.gather(*coros), List[str])
+            assert_type(await asyncio.gather(coro("a"), coro("b")), Tuple[str, str])
+
 
 class TestSelfAnnotation(TestNameCheckVisitorBase):
     @assert_passes()
