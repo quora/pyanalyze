@@ -8,7 +8,7 @@ import ast
 import contextlib
 import operator
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Union
@@ -254,7 +254,7 @@ class EvalContext:
     tv_map: TypeVarMap
 
     @contextmanager
-    def narrow_variables(self, varmap: Optional[VarMap]) -> Iterator[None]:
+    def narrow_variables(self, varmap: Optional[VarMap]) -> Generator[None, None, None]:
         if varmap is None:
             yield
             return
@@ -626,7 +626,7 @@ class EvaluateVisitor(ast.NodeVisitor):
         self.errors.append(error)
 
     @contextmanager
-    def add_active_condition(self, condition: Condition) -> Iterator[None]:
+    def add_active_condition(self, condition: Condition) -> Generator[None, None, None]:
         self.active_conditions.append(condition)
         try:
             yield

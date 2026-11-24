@@ -14,7 +14,7 @@ import sys
 import textwrap
 import types
 import typing
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from re import Pattern
 from types import FunctionType, MethodType, ModuleType
@@ -84,6 +84,9 @@ from .value import (
     make_coro_type,
 )
 
+if sys.version_info >= (3, 14):
+    import annotationlib
+
 _ENUM_CALL = enum.Enum.__call__.__func__
 
 _SELF_PARAM = inspect.Parameter("__self", inspect.Parameter.POSITIONAL_ONLY)
@@ -91,7 +94,9 @@ _SELF_PARAM = inspect.Parameter("__self", inspect.Parameter.POSITIONAL_ONLY)
 
 @used  # exposed as an API
 @contextlib.contextmanager
-def with_implementation(fn: object, implementation_fn: Impl) -> Iterator[None]:
+def with_implementation(
+    fn: object, implementation_fn: Impl
+) -> Generator[None, None, None]:
     """Temporarily sets the implementation of fn to be implementation_fn.
 
     This is useful for invoking test_scope to aggregate all calls to a particular function. For
@@ -819,7 +824,13 @@ class ArgSpecCache:
                 inspect_sig,
                 function_object=obj,
                 callable_object=obj,
-                is_async=asyncio.iscoroutinefunction(obj),
+                # asyncio.iscoroutinefunction() is deprecated, but before 3.13
+                # only it recognizes async functions mocked with create_autospec()
+                is_async=(
+                    inspect.iscoroutinefunction(obj)
+                    if sys.version_info >= (3, 13)
+                    else asyncio.iscoroutinefunction(obj)
+                ),
                 impl=impl,
                 is_asynq=is_asynq,
             )
@@ -983,6 +994,14 @@ class ArgSpecCache:
         try:
             # follow_wrapped=True leads to problems with decorators that
             # mess with the arguments, such as mock.patch.
+            if sys.version_info >= (3, 14):
+                # Keep names that are not defined at runtime (e.g., imports under
+                # TYPE_CHECKING) as forward references instead of raising NameError.
+                return inspect.signature(
+                    obj,
+                    follow_wrapped=False,
+                    annotation_format=annotationlib.Format.FORWARDREF,
+                )
             return inspect.signature(obj, follow_wrapped=False)
         except (TypeError, ValueError, AttributeError):
             # TypeError if signature() does not support the object, ValueError
@@ -1062,16 +1081,27 @@ class ArgSpecCache:
     ) -> Optional[GenericBases]:
         if bases is None:
             return None
-        # Put Generic first since it determines the order of the typevars. This matters
-        # for typing.Coroutine.
+        # Put Generic and Protocol first since they determine the order of the
+        # typevars. This matters for typing.Coroutine.
         bases = sorted(
             bases,
             key=lambda base: not isinstance(base, TypedValue)
-            or base.typ is not Generic,
+            or not (
+                is_typing_name(base.typ, "Generic")
+                or is_typing_name(base.typ, "Protocol")
+            ),
         )
         my_typevars = uniq_chain(extract_typevars(base) for base in bases)
+        defaults = {
+            val.typevar: val.default
+            for base in bases
+            for val in base.walk_values()
+            if isinstance(val, TypeVarValue)
+        }
         generic_bases = {}
-        generic_bases[typ] = {tv: TypeVarValue(tv) for tv in my_typevars}
+        generic_bases[typ] = {
+            tv: TypeVarValue(tv, default=defaults.get(tv)) for tv in my_typevars
+        }
         for base in bases:
             if isinstance(base, TypedValue):
                 if isinstance(base.typ, str):
