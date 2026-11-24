@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Infer `dict.keys()`, `.values()` and `.items()` as `dict_keys`,
+  `dict_values` and `dict_items`, as typeshed does, so that methods such
+  as `__reversed__` are available. Methods that classes such as the dict
+  views get from their stub base classes are now found even though the
+  runtime class only registers with the ABC. Method stubs are now parsed
+  in the module of the stub rather than the runtime `__module__`
 - Do not report `unsafe_comparison` when comparing sets, frozensets and
   dict key or item views whose element types overlap, as mypy does
 - Fix type inference when the same value is matched against a protocol

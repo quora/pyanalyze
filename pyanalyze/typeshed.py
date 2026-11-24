@@ -192,8 +192,11 @@ class TypeshedFinder:
         if fq_name is None:
             return None
         info = self._get_info_for_name(fq_name)
+        # Use the module of the stub, which may differ from the runtime
+        # __module__ (e.g., the dict views claim to live in builtins).
+        mod, _ = fq_name.rsplit(".", maxsplit=1)
         sig = self._get_method_signature_from_info(
-            info, obj, fq_name, objclass.__module__, objclass, allow_call=allow_call
+            info, obj, fq_name, mod, objclass, allow_call=allow_call
         )
         return sig
 
@@ -334,19 +337,20 @@ class TypeshedFinder:
         )
 
     def get_bases_recursively(self, typ: Union[type, str]) -> list[Value]:
-        stack = [TypedValue(typ)]
+        # Breadth-first, so nearer bases come first.
+        # TODO return MRO order
+        queue: collections.deque[Value] = collections.deque([TypedValue(typ)])
         seen = set()
         bases = []
-        # TODO return MRO order
-        while stack:
-            next_base = stack.pop()
+        while queue:
+            next_base = queue.popleft()
             if next_base in seen:
                 continue
             seen.add(next_base)
             bases.append(next_base)
             new_bases = self.get_bases_for_value(next_base)
             if new_bases is not None:
-                bases += new_bases
+                queue.extend(new_bases)
         return bases
 
     def get_bases_for_fq_name(self, fq_name: str) -> Optional[list[Value]]:
@@ -386,7 +390,7 @@ class TypeshedFinder:
             return val
 
     def get_attribute_recursively(
-        self, fq_name: str, attr: str, *, on_class: bool
+        self, fq_name: Union[type, str], attr: str, *, on_class: bool
     ) -> tuple[Value, Union[type, str, None]]:
         """Get an attribute from a fully qualified class.
 
@@ -708,6 +712,11 @@ class TypeshedFinder:
     def _get_fq_name(self, obj: Any) -> Optional[str]:
         if obj is GeneratorType:
             return "typing.Generator"
+        # The dict views claim to live in builtins, but typeshed defines them in
+        # _collections_abc
+        for view_type, view_name in _DICT_VIEW_NAMES:
+            if obj is view_type:
+                return view_name
         # It claims to be io.open, but typeshed puts it in builtins
         if obj is open:
             return "builtins.open"
@@ -992,6 +1001,16 @@ class TypeshedFinder:
             if bases is None:
                 typ = TypedValue(objclass)
             else:
+                # Generic[...] and Protocol[...] set the order of the type
+                # parameters, as in ArgSpecCache._extract_bases
+                bases = sorted(
+                    bases,
+                    key=lambda base: not isinstance(base, TypedValue)
+                    or not (
+                        is_typing_name(base.typ, "Generic")
+                        or is_typing_name(base.typ, "Protocol")
+                    ),
+                )
                 typevars = uniq_chain(extract_typevars(base) for base in bases)
                 if typevars:
                     typ = GenericValue(
@@ -1224,6 +1243,13 @@ class TypeshedFinder:
         else:
             self.log("Ignoring info", info)
             return AnyValue(AnySource.inference)
+
+
+_DICT_VIEW_NAMES = (
+    (type({}.keys()), "_collections_abc.dict_keys"),
+    (type({}.values()), "_collections_abc.dict_values"),
+    (type({}.items()), "_collections_abc.dict_items"),
+)
 
 
 def _obj_from_qualname_is(module_name: str, qualname: str, obj: object) -> bool:

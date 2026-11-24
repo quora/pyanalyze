@@ -476,7 +476,7 @@ class CheckerAttrContext(AttrContext):
         return self.checker.ts_finder.get_attribute(typ, self.attr, on_class=on_class)
 
     def get_attribute_from_typeshed_recursively(
-        self, fq_name: str, *, on_class: bool
+        self, fq_name: Union[type, str], *, on_class: bool
     ) -> tuple[Value, object]:
         return self.checker.ts_finder.get_attribute_recursively(
             fq_name, self.attr, on_class=on_class

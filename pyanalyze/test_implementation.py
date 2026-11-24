@@ -923,6 +923,49 @@ class TestGenericMutators(TestNameCheckVisitorBase):
             )
 
 
+class TestDictViews(TestNameCheckVisitorBase):
+    @assert_passes()
+    def test_view_types(self):
+        from _collections_abc import dict_items, dict_keys, dict_values
+        from typing import Dict
+
+        def capybara(d: Dict[str, int]):
+            assert_is_value(
+                d.keys(), GenericValue(dict_keys, [TypedValue(str), TypedValue(int)])
+            )
+            assert_is_value(
+                d.values(),
+                GenericValue(dict_values, [TypedValue(str), TypedValue(int)]),
+            )
+            assert_is_value(
+                d.items(), GenericValue(dict_items, [TypedValue(str), TypedValue(int)])
+            )
+
+    @assert_passes()
+    def test_view_methods(self):
+        from collections.abc import Iterator
+        from typing import Dict
+
+        def capybara(d: Dict[str, int], x: int):
+            # these come from the stubs' base classes, since at runtime the views
+            # are only registered with the ABCs
+            assert_is_value(
+                reversed(d.values()), GenericValue(Iterator, [TypedValue(int)])
+            )
+            assert_is_value(list(d.keys()), GenericValue(list, [TypedValue(str)]))
+            assert_is_value(len(d.keys()), TypedValue(int))
+            print(x in d.values())
+
+    @assert_passes()
+    def test_contains_on_literal_values(self):
+        PREFIXES = {"a": "x", "b": "y"}
+
+        def capybara(token: str):
+            # ValuesView.__contains__ takes object, so this must not be checked
+            # against the element type
+            assert_is_value(token in PREFIXES.values(), TypedValue(bool))
+
+
 class TestDictDelitem(TestNameCheckVisitorBase):
     @assert_passes()
     def test_incomplete(self) -> None:

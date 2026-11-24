@@ -80,7 +80,7 @@ class AttrContext:
         return UNINITIALIZED_VALUE
 
     def get_attribute_from_typeshed_recursively(
-        self, fq_name: str, *, on_class: bool
+        self, fq_name: Union[type, str], *, on_class: bool
     ) -> tuple[Value, object]:
         return UNINITIALIZED_VALUE, None
 
@@ -592,6 +592,16 @@ def _get_attribute_from_mro(
         except Exception:
             # It exists, but has a broken __getattr__ or something
             return AnyValue(AnySource.inference), typ, True
+
+        if safe_isinstance(typ, type):
+            # Classes such as the dict views are registered with their ABCs at
+            # runtime instead of inheriting from them, so the runtime MRO misses
+            # methods that the stubs give them through their base classes.
+            typeshed_type, provider = ctx.get_attribute_from_typeshed_recursively(
+                typ, on_class=on_class or ctx.skip_unwrap
+            )
+            if typeshed_type is not UNINITIALIZED_VALUE:
+                return typeshed_type, provider, False
 
     return UNINITIALIZED_VALUE, object, False
 
