@@ -904,6 +904,17 @@ class TypedValue(Value):
                     other, ctx
                 ):
                     return None
+                # set, frozenset and the dict key and item views compare equal
+                # when they have the same elements, as in mypy
+                if _is_set_like(self) and _is_set_like(other):
+                    self_elt = self.get_generic_arg_for_type(
+                        collections.abc.Set, ctx, 0
+                    )
+                    other_elt = other.get_generic_arg_for_type(
+                        collections.abc.Set, ctx, 0
+                    )
+                    if self_elt.can_overlap(other_elt, ctx, mode) is None:
+                        return None
             return CanAssignError(
                 f"{self} and {other} cannot overlap", [left_errors, right_errors]
             )
@@ -3407,6 +3418,12 @@ def _deliteral(value: Value) -> Value:
     if isinstance(value, SequenceValue):
         value = TypedValue(value.typ)
     return value
+
+
+def _is_set_like(value: "TypedValue") -> bool:
+    return isinstance(value.typ, type) and safe_issubclass(
+        value.typ, collections.abc.Set
+    )
 
 
 def is_overlapping(left: Value, right: Value, ctx: CanAssignContext) -> bool:

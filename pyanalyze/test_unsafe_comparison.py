@@ -91,6 +91,27 @@ class TestUnsafeOverlap(TestNameCheckVisitorBase):
             assert x == y  # E: unsafe_comparison
 
     @assert_passes()
+    def test_set_like(self):
+        from typing import AbstractSet, Dict, FrozenSet, KeysView, Set
+
+        def capybara(
+            d: Dict[str, int],
+            kv: KeysView[str],
+            s: Set[str],
+            fs: FrozenSet[str],
+            si: Set[int],
+            a: AbstractSet[str],
+        ):
+            # set, frozenset and the dict key and item views compare by content
+            assert d.keys() == s
+            assert kv == fs
+            assert d.items() == {("a", 1)}
+            assert fs == s
+            assert a == s
+            assert s == si  # E: unsafe_comparison
+            assert d.keys() == [1]  # E: unsafe_comparison
+
+    @assert_passes()
     def test_allow_is_with_literals(self):
         from typing_extensions import Literal
 
