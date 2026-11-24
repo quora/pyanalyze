@@ -2887,6 +2887,13 @@ def unite_values(*values: Value) -> Value:
     """
     if not values:
         return NO_RETURN_VALUE
+    if len(values) == 1:
+        # Fast path: there is nothing to deduplicate, so avoid hashing the value.
+        value = values[0]
+        if not is_union(value):
+            if _is_unreachable(value):
+                return AnyValue(AnySource.unreachable)
+            return value
     # Make sure order is consistent; conceptually this is a set but
     # sets have unpredictable iteration order.
     hashable_vals = {}

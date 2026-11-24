@@ -765,3 +765,41 @@ def test_can_overlap() -> None:
         TypedValue(str).can_overlap(KnownValue(None), CTX, OverlapMode.EQ),
         CanAssignError,
     )
+
+
+def test_unite_values_single_value() -> None:
+    hash_calls = []
+
+    class CountingValue(TypedValue):
+        def __hash__(self) -> int:
+            hash_calls.append(self)
+            return super().__hash__()
+
+    val = CountingValue(int)
+    assert value.unite_values(val) is val
+    assert not hash_calls
+    # With more than one value we still deduplicate.
+    assert value.unite_values(val, val) is val
+    assert hash_calls
+
+    annotated = AnnotatedValue(TypedValue(int), [KnownValue(1)])
+    assert value.unite_values(annotated) is annotated
+
+    unreachable = AnyValue(AnySource.unreachable)
+    assert value.unite_values(unreachable) == unreachable
+    assert value.unite_values(AnnotatedValue(unreachable, [KnownValue(1)])) == AnyValue(
+        AnySource.unreachable
+    )
+
+    # A single union is still flattened and deduplicated.
+    union = MultiValuedValue([TypedValue(int), TypedValue(int)])
+    assert value.unite_values(union) == TypedValue(int)
+    annotated_union = AnnotatedValue(
+        MultiValuedValue([TypedValue(int), TypedValue(str)]), [KnownValue(1)]
+    )
+    assert value.unite_values(annotated_union) == MultiValuedValue(
+        [
+            AnnotatedValue(TypedValue(int), [KnownValue(1)]),
+            AnnotatedValue(TypedValue(str), [KnownValue(1)]),
+        ]
+    )
