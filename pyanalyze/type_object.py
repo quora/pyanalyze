@@ -58,7 +58,7 @@ class TypeObject:
     is_thrift_enum: bool = field(init=False)
     is_universally_assignable: bool = field(init=False)
     artificial_bases: set[type] = field(default_factory=set, init=False)
-    _protocol_positive_cache: dict[Value, BoundsMap] = field(
+    _protocol_positive_cache: dict[tuple[Value, Value], BoundsMap] = field(
         default_factory=dict, repr=False
     )
 
@@ -143,7 +143,10 @@ class TypeObject:
                 return CanAssignError(
                     f"Cannot assign super object {other_val} to protocol {self}"
                 )
-            bounds_map = self._protocol_positive_cache.get(other_val)
+            # The bounds depend on both sides: the same value matched against
+            # Iterable[T1] and Iterable[T2] binds different type variables.
+            cache_key = (self_val, other_val)
+            bounds_map = self._protocol_positive_cache.get(cache_key)
             if bounds_map is not None:
                 return bounds_map
             # This is a guard against infinite recursion if the Protocol is recursive
@@ -160,7 +163,7 @@ class TypeObject:
                             result = subresult
                             break
             if not isinstance(result, CanAssignError):
-                self._protocol_positive_cache[other_val] = result
+                self._protocol_positive_cache[cache_key] = result
             return result
 
     def _is_compatible_with_protocol(

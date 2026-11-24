@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix type inference when the same value is matched against a protocol
+  with different type arguments, e.g. `sorted(zip(a, b), key=itemgetter(1))`
+  is now `list[tuple[A, B]]` instead of `list[SupportsGetItem[Any, Any]]`
 - Accept any callable for `Callable[[Unpack[Ts]], T]` with a `TypeVarTuple`,
   instead of reporting an error, and support `Unpack` of a tuple in `Callable`
   parameter lists. This fixes false positives on `loop.run_in_executor()` and

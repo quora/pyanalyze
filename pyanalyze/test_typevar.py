@@ -184,6 +184,23 @@ class TestTypeVar(TestNameCheckVisitorBase):
 
 class TestSolve(TestNameCheckVisitorBase):
     @assert_passes()
+    def test_protocol_match_bounds_per_protocol(self):
+        # sorted() first tries the overload taking Iterable[SupportsRichComparisonT].
+        # The type variables bound by that protocol match must not be reused when
+        # the same value is matched against Iterable[_T] in the next overload.
+        from operator import itemgetter
+        from typing import List
+
+        def capybara(a: List[str], b: List[int]):
+            pair = SequenceValue(
+                tuple, [(False, TypedValue(str)), (False, TypedValue(int))]
+            )
+            pairs = sorted(zip(a, b), key=itemgetter(1))
+            assert_is_value(pairs, GenericValue(list, [pair]))
+            sorted(zip(a, b))
+            assert_is_value(list(zip(a, b)), GenericValue(list, [pair]))
+
+    @assert_passes()
     def test_filter_like(self):
         from typing import Callable, TypeVar
 
