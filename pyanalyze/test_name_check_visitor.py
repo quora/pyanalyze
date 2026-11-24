@@ -1029,6 +1029,45 @@ class TestComprehensions(TestNameCheckVisitorBase):
                 ),
             )
 
+    @skip_before((3, 15))
+    def test_unpacking(self):
+        # PEP 798 syntax doesn't parse before 3.15, so the code is a string
+        self.assert_passes(
+            """
+            import types
+
+            def capybara(
+                xs: list[list[int]], ss: list[set[str]], ds: list[dict[str, int]], n: int
+            ) -> None:
+                assert_is_value(
+                    [*x for x in xs], SequenceValue(list, [(True, TypedValue(int))])
+                )
+                assert_is_value(
+                    {*s for s in ss}, SequenceValue(set, [(True, TypedValue(str))])
+                )
+                assert_is_value(
+                    (*x for x in xs),
+                    GenericValue(
+                        types.GeneratorType,
+                        [TypedValue(int), KnownValue(None), KnownValue(None)],
+                    ),
+                )
+                assert_is_value(
+                    {**d for d in ds},
+                    DictIncompleteValue(
+                        dict, [KVPair(TypedValue(str), TypedValue(int), is_many=True)]
+                    ),
+                )
+                assert_is_value(
+                    [*n for _ in xs],  # E: unsupported_operation
+                    SequenceValue(list, [(True, AnyValue(AnySource.error))]),
+                )
+                assert_is_value(
+                    {**n for _ in xs}, TypedValue(dict)  # E: unsupported_operation
+                )
+            """
+        )
+
 
 class TestIterationTarget(TestNameCheckVisitorBase):
     @assert_passes()
