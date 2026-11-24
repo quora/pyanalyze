@@ -806,6 +806,59 @@ class TestCallable(TestNameCheckVisitorBase):
             assert_is_value(two_args(1, "x"), TypedValue(float))
 
     @assert_passes()
+    def test_unpack(self):
+        from typing import Callable, Tuple, TypeVarTuple
+
+        from typing_extensions import Unpack
+
+        Ts = TypeVarTuple("Ts")
+
+        def fixed(a: int, b: str, c: bytes) -> None:
+            pass
+
+        def variadic(a: int, *rest: str) -> None:
+            pass
+
+        def takes_fixed(cb: Callable[[int, Unpack[Tuple[str, bytes]]], None]) -> None:
+            pass
+
+        def takes_variadic(cb: Callable[[int, Unpack[Tuple[str, ...]]], None]) -> None:
+            pass
+
+        # TypeVarTuple is not supported, so these accept any callable.
+        def takes_ts(cb: Callable[[Unpack[Ts]], None]) -> None:
+            pass
+
+        def takes_ts_quoted(cb: "Callable[[Unpack[Ts]], None]") -> None:
+            pass
+
+        def capybara() -> None:
+            takes_fixed(fixed)
+            takes_fixed(variadic)  # E: incompatible_argument
+            takes_variadic(variadic)
+            takes_variadic(fixed)  # E: incompatible_argument
+            takes_ts(fixed)
+            takes_ts(variadic)
+            takes_ts_quoted(fixed)
+
+    @assert_passes()
+    def test_unpack_type_var_tuple_in_stub(self):
+        import asyncio
+
+        def make_request() -> int:
+            return 1
+
+        def two_args(a: int, b: str) -> None:
+            pass
+
+        async def capybara() -> None:
+            loop = asyncio.get_event_loop()
+            assert_is_value(
+                await loop.run_in_executor(None, make_request), TypedValue(int)
+            )
+            loop.call_soon(two_args, 1, "x")
+
+    @assert_passes()
     def test_abc_callable(self):
         from collections.abc import Callable, Sequence
         from typing import TypeVar

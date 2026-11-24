@@ -598,19 +598,31 @@ def _callable_args_from_runtime(
                     "__P", kind=ParameterKind.PARAM_SPEC, annotation=param_spec
                 )
                 return [param]
-        types = [_type_from_runtime(arg, ctx) for arg in arg_types]
-        params = [
-            SigParameter(
-                f"@{i}",
-                kind=(
-                    ParameterKind.PARAM_SPEC
-                    if isinstance(typ, TypeVarValue) and typ.is_paramspec
-                    else ParameterKind.POSITIONAL_ONLY
-                ),
-                annotation=typ,
+        params = []
+        for arg in arg_types:
+            if is_typing_name(get_origin(arg), "Unpack") and len(get_args(arg)) == 1:
+                (inner,) = get_args(arg)
+                if is_instance_of_typing_name(inner, "TypeVarTuple"):
+                    return [ELLIPSIS_PARAM]
+                unpacked_params = _params_from_unpacked(
+                    _type_from_runtime(inner, ctx), len(params), ctx
+                )
+                if unpacked_params is None:
+                    return [ELLIPSIS_PARAM]
+                params += unpacked_params
+                continue
+            typ = _type_from_runtime(arg, ctx)
+            params.append(
+                SigParameter(
+                    f"@{len(params)}",
+                    kind=(
+                        ParameterKind.PARAM_SPEC
+                        if isinstance(typ, TypeVarValue) and typ.is_paramspec
+                        else ParameterKind.POSITIONAL_ONLY
+                    ),
+                    annotation=typ,
+                )
             )
-            for i, typ in enumerate(types)
-        ]
         return params
     elif is_instance_of_typing_name(arg_types, "ParamSpec"):
         param_spec = TypeVarValue(arg_types, is_paramspec=True)
@@ -623,6 +635,44 @@ def _callable_args_from_runtime(
     else:
         ctx.show_error(f"Invalid arguments to {label}: {arg_types!r}")
         return [ELLIPSIS_PARAM]
+
+
+def _is_type_var_tuple(value: Value) -> bool:
+    # Stubs give the TypeVarTuple's type; runtime annotations give the object itself.
+    if isinstance(value, KnownValue):
+        return is_instance_of_typing_name(value.val, "TypeVarTuple")
+    return isinstance(value, TypedValue) and is_typing_name(value.typ, "TypeVarTuple")
+
+
+def _params_from_unpacked(
+    typ: Value, start: int, ctx: Context
+) -> Optional[list[SigParameter]]:
+    """Return the parameters for ``Unpack[typ]`` in a Callable parameter list.
+
+    Returns None when the elements are not known, which the caller turns into ``...``.
+    TypeVarTuple is not supported (callers check for it first), so a callback typed
+    ``Callable[[Unpack[Ts]], T]`` accepts any arguments instead of being rejected.
+    """
+    elements = UnpackedValue(typ).get_elements()
+    if elements is None:
+        ctx.show_error(f"Invalid usage of Unpack with {typ}")
+        return None
+    params = []
+    for is_many, element in elements:
+        if is_many:
+            param = SigParameter(
+                f"@{start + len(params)}",
+                kind=ParameterKind.VAR_POSITIONAL,
+                annotation=GenericValue(tuple, [element]),
+            )
+        else:
+            param = SigParameter(
+                f"@{start + len(params)}",
+                kind=ParameterKind.POSITIONAL_ONLY,
+                annotation=element,
+            )
+        params.append(param)
+    return params
 
 
 def _args_from_concatenate(concatenate: Any, ctx: Context) -> Sequence[SigParameter]:
@@ -1356,17 +1406,37 @@ def _make_callable_from_value(
         )
     elif isinstance(args, SequenceValue):
         params = []
-        for i, (is_many, arg) in enumerate(args.members):
+        for is_many, arg in args.members:
+            if (
+                isinstance(arg, _SubscriptedValue)
+                and isinstance(arg.root, KnownValue)
+                and is_typing_name(arg.root.val, "Unpack")
+                and len(arg.members) == 1
+            ):
+                (inner,) = arg.members
+                if _is_type_var_tuple(inner):
+                    unpacked_params = None
+                else:
+                    unpacked_params = _params_from_unpacked(
+                        _type_from_value(inner, ctx), len(params), ctx
+                    )
+                if unpacked_params is None:
+                    params = [ELLIPSIS_PARAM]
+                    break
+                params += unpacked_params
+                continue
             annotation = _type_from_value(arg, ctx)
             if is_many:
                 param = SigParameter(
-                    f"@{i}",
+                    f"@{len(params)}",
                     kind=ParameterKind.VAR_POSITIONAL,
                     annotation=GenericValue(tuple, [annotation]),
                 )
             else:
                 param = SigParameter(
-                    f"@{i}", kind=ParameterKind.POSITIONAL_ONLY, annotation=annotation
+                    f"@{len(params)}",
+                    kind=ParameterKind.POSITIONAL_ONLY,
+                    annotation=annotation,
                 )
             params.append(param)
         try:

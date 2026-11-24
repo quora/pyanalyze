@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Accept any callable for `Callable[[Unpack[Ts]], T]` with a `TypeVarTuple`,
+  instead of reporting an error, and support `Unpack` of a tuple in `Callable`
+  parameter lists. This fixes false positives on `loop.run_in_executor()` and
+  `loop.call_soon()`
 - When a call passes `*args` or `**kwargs` of unknown length or keys (anything
   but a tuple or `TypedDict`), try the overloads that take `*args` or `**kwargs`
   first, as mypy does. `asyncio.gather(*coros)` is now `list[T]`, not `tuple[T]`
