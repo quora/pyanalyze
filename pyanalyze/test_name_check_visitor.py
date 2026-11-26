@@ -2335,3 +2335,43 @@ class TestMustUse(TestNameCheckVisitorBase):
 
         def capybara() -> None:
             gen()  # E: must_use
+
+
+class TestImplicitAny(TestNameCheckVisitorBase):
+    @assert_passes(settings={ErrorCode.implicit_any: True})
+    def test_class_keywords(self):
+        from typing_extensions import TypedDict
+
+        class A(TypedDict, closed=True):
+            f1: str
+            f2: int
+
+        class B(TypedDict, total=False):
+            f1: str
+
+    @assert_passes(settings={ErrorCode.implicit_any: True})
+    def test_class_keyword_value_checked(self):
+        from typing import Any
+
+        class Base:
+            def __init_subclass__(cls, flag: Any = None) -> None:
+                pass
+
+        def make_any(x):
+            return x  # E: implicit_any
+
+        explicit_val: Any = True
+
+        class Ok(Base, flag=explicit_val):
+            pass
+
+        class Bad(Base, flag=make_any(1)):  # E: implicit_any
+            pass
+
+    @assert_passes(settings={ErrorCode.implicit_any: True})
+    def test_with_statement(self):
+        from contextlib import nullcontext
+
+        def capybara() -> int:
+            with nullcontext(1) as x:
+                return x

@@ -4439,14 +4439,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
             self._generic_visit_list(body)
             return
         first_item = items[0]
-        can_suppress = self.visit_withitem(first_item, is_async)
+        can_suppress = self._visit_withitem(first_item, is_async)
         if can_suppress:
             with self.scopes.suppressing_subscope():
                 self.visit_single_cm(items[1:], body, is_async=is_async)
         else:
             self.visit_single_cm(items[1:], body, is_async=is_async)
 
-    def visit_withitem(self, node: ast.withitem, is_async: bool = False) -> bool:
+    def _visit_withitem(self, node: ast.withitem, is_async: bool = False) -> bool:
         context = self.visit(node.context_expr)
         if is_async:
             protocol = AsyncCustomContextManager
@@ -5504,14 +5504,14 @@ class NameCheckVisitor(node_visitor.ReplacingNodeVisitor):
 
     # Call nodes
 
-    def visit_keyword(self, node: ast.keyword) -> tuple[Optional[str], Composite]:
+    def _visit_keyword(self, node: ast.keyword) -> tuple[Optional[str], Composite]:
         return (node.arg, self.composite_from_node(node.value))
 
     def visit_Call(self, node: ast.Call) -> Value:
         callee_wrapped = self.visit(node.func)
         args = [self.composite_from_node(arg) for arg in node.args]
         if node.keywords:
-            keywords = [self.visit_keyword(kw) for kw in node.keywords]
+            keywords = [self._visit_keyword(kw) for kw in node.keywords]
         else:
             keywords = []
 
